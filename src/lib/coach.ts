@@ -79,10 +79,19 @@ const UCB_C = 0.06
 export interface ArmStats {
   id: StrategyId
   n: number
+  /** Shrunk toward the overall average — see armStats. */
   mean: number
+  /** Unshrunk average, for honest display of what was measured. */
+  rawMean: number
   /** Mean expressed as seconds gained per week on the step's key hold. */
   secPerWeek: number
 }
+
+/**
+ * Strength of the pull toward the overall average. With k = 2, a strategy
+ * needs a couple of measured sessions before its own result dominates.
+ */
+const SHRINKAGE_K = 2
 
 export interface CoachPick {
   strategy: StrategyId
@@ -149,10 +158,20 @@ export function armStats(state: AppState): ArmStats[] {
     acc[s.strategy].total += r
   }
   const unlockSec = STEP_BY_ID[state.stepId]?.unlockSec ?? 20
+
+  // Isometric results are noisy, so a strategy with one lucky session must not
+  // outrank one with five solid ones. Each arm's average is pulled toward the
+  // overall average in proportion to how little evidence supports it
+  // (empirical-Bayes shrinkage); evidence earns influence.
+  const totalN = STRATEGIES.reduce((t, d) => t + acc[d.id].n, 0)
+  const grandTotal = STRATEGIES.reduce((t, d) => t + acc[d.id].total, 0)
+  const grandMean = totalN > 0 ? grandTotal / totalN : 0
+
   return STRATEGIES.map((def) => {
     const a = acc[def.id]
-    const mean = a.n > 0 ? a.total / a.n : 0
-    return { id: def.id, n: a.n, mean, secPerWeek: mean * unlockSec }
+    const rawMean = a.n > 0 ? a.total / a.n : 0
+    const mean = a.n > 0 ? (a.total + SHRINKAGE_K * grandMean) / (a.n + SHRINKAGE_K) : 0
+    return { id: def.id, n: a.n, mean, rawMean, secPerWeek: rawMean * unlockSec }
   })
 }
 
@@ -328,11 +347,16 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       kind: 'warn',
     })
   } else if (sig.mainHitRate !== null) {
+    // Two sets is thin evidence; four is reasonable. Scale the size of the
+    // change to how much data stands behind it rather than reacting fully to
+    // a single lucky or unlucky session.
+    const confidence = Math.min(1, sig.mainSetCount / 4)
+    const step = 0.1 * confidence
     if (sig.mainHitRate >= 0.8) {
-      targetFactor = 1.1
+      targetFactor = 1 + step
       targetIntent = 'up'
     } else if (sig.mainHitRate < 0.5) {
-      targetFactor = 0.9
+      targetFactor = 1 - step
       targetIntent = 'down'
     }
   }
@@ -436,14 +460,20 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
 
   // Explain the target only in terms of what actually happened to it.
   if (targetIntent === 'up' && targetFactor > 1.02) {
-    decisions.push({ text: 'You hit nearly every set last time — nudging the target up 10%.', kind: 'good' })
+    decisions.push({
+      text: `You hit nearly every set last time — nudging the target up ${Math.round((targetFactor - 1) * 100)}%.`,
+      kind: 'good',
+    })
   } else if (targetIntent === 'up' && targetFactor <= 1.02) {
     decisions.push({
       text: 'You earned a target increase, but recovery comes first today — it is banked for your next hard session.',
       kind: 'info',
     })
   } else if (targetIntent === 'down') {
-    decisions.push({ text: 'Most sets fell short last time — easing the target back 10% to rebuild quality.', kind: 'info' })
+    decisions.push({
+      text: `Most sets fell short last time — easing the target back ${Math.round((1 - targetFactor) * 100)}% to rebuild quality.`,
+      kind: 'info',
+    })
   }
 
   // When a rail overrules the bandit, say so rather than quoting the bandit.

@@ -74,6 +74,121 @@ function Stepper({
   )
 }
 
+/**
+ * Measures how long it takes to actually hit the button. Five trials, median
+ * taken — one slow tap should not define the correction.
+ */
+function LatencyCalibrator({ onDone }: { onDone: (sec: number) => void }) {
+  const TRIALS = 5
+  const [stage, setStage] = useState<'idle' | 'waiting' | 'go' | 'done'>('idle')
+  const [times, setTimes] = useState<number[]>([])
+  const [reachAdd, setReachAdd] = useState(false)
+  const goAtRef = useRef(0)
+  const timerRef = useRef<number | undefined>(undefined)
+
+  const schedule = () => {
+    setStage('waiting')
+    window.clearTimeout(timerRef.current)
+    timerRef.current = window.setTimeout(
+      () => {
+        goAtRef.current = Date.now()
+        setStage('go')
+      },
+      1200 + Math.random() * 1800,
+    )
+  }
+
+  useEffect(() => () => window.clearTimeout(timerRef.current), [])
+
+  const tap = () => {
+    if (stage === 'idle') return schedule()
+    if (stage === 'waiting') {
+      // Jumped the gun — just re-arm rather than recording a bogus 0.
+      schedule()
+      return
+    }
+    if (stage === 'go') {
+      const ms = Date.now() - goAtRef.current
+      const next = [...times, ms]
+      setTimes(next)
+      if (next.length >= TRIALS) setStage('done')
+      else schedule()
+    }
+  }
+
+  const sorted = [...times].sort((a, b) => a - b)
+  const medianMs = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0
+  const suggested = Math.min(2, Math.max(0, Math.round((medianMs / 1000 + (reachAdd ? 0.5 : 0)) * 10) / 10))
+
+  return (
+    <div className="p-6">
+      <div className="pr-10">
+        <h2 className="font-display text-[20px] font-bold text-ink">Calibrate your reaction</h2>
+        <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">
+          Tap the panel the instant it turns orange. Five times — the middle result is used, so one slow tap will not
+          skew it.
+        </p>
+      </div>
+
+      <button
+        onClick={tap}
+        className={`mt-4 grid h-44 w-full place-items-center rounded-2xl border-2 text-center transition ${
+          stage === 'go'
+            ? 'border-transparent text-on-accent'
+            : stage === 'waiting'
+              ? 'border-line bg-raised text-ink2'
+              : 'border-line bg-raised text-ink'
+        }`}
+        style={stage === 'go' ? { background: 'var(--t-btn-accent)' } : undefined}
+      >
+        <span className="font-display text-[19px] font-semibold">
+          {stage === 'idle'
+            ? 'Tap to begin'
+            : stage === 'waiting'
+              ? 'Wait for it…'
+              : stage === 'go'
+                ? 'TAP NOW'
+                : `Median ${(medianMs / 1000).toFixed(2)}s`}
+        </span>
+      </button>
+
+      <div className="mt-2 flex justify-center gap-1.5">
+        {Array.from({ length: TRIALS }, (_, i) => (
+          <span key={i} className={`h-1.5 w-8 rounded-full ${i < times.length ? 'bg-accent' : 'bg-line'}`} />
+        ))}
+      </div>
+
+      {stage === 'done' ? (
+        <div className="mt-4">
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-line bg-raised p-3">
+            <input
+              type="checkbox"
+              checked={reachAdd}
+              onChange={(e) => setReachAdd(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-[var(--t-accent)]"
+            />
+            <span className="text-[13px] leading-relaxed text-ink2">
+              My phone is out of reach during holds, so I have to come out of the position first
+              <span className="text-ink3"> (adds 0.5s)</span>
+            </span>
+          </label>
+          <button
+            onClick={() => onDone(suggested)}
+            className="mt-3 w-full rounded-2xl px-6 py-3.5 font-display text-[16px] font-semibold text-on-accent shadow-card transition hover:brightness-105"
+            style={{ background: 'var(--t-btn-accent)' }}
+          >
+            Use {suggested.toFixed(1)}s
+          </button>
+        </div>
+      ) : (
+        <p className="mt-3 text-center text-[12.5px] text-ink3">
+          This measures pure tap speed. If you have to move to reach the phone, the real delay is larger.
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function Settings() {
   const { state, dispatch } = useStore()
   const s = state.settings
@@ -82,6 +197,7 @@ export function Settings() {
   const [confirmSample, setConfirmSample] = useState(false)
   const [name, setName] = useState(state.name)
   const [storage, setStorage] = useState<StorageInfo | null>(null)
+  const [calibrating, setCalibrating] = useState(false)
 
   useEffect(() => {
     void storageInfo().then(setStorage)
@@ -176,6 +292,25 @@ export function Settings() {
             max={300}
             step={15}
             format={(v) => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`}
+          />
+        </Row>
+        <Row
+          label="Stop reaction delay"
+          hint="The gap between coming out of a hold and actually hitting stop. Subtracted from every timed hold so your seconds mean what they say."
+        >
+          <button
+            onClick={() => setCalibrating(true)}
+            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+          >
+            Calibrate
+          </button>
+          <Stepper
+            value={Math.round(s.stopLatencySec * 10)}
+            onChange={(v) => set({ stopLatencySec: v / 10 })}
+            min={0}
+            max={20}
+            step={1}
+            format={(v) => `${(v / 10).toFixed(1)}s`}
           />
         </Row>
         <Row label="Rest after accessories">
@@ -318,6 +453,16 @@ export function Settings() {
           and see a professional about persistent pain.
         </p>
       </div>
+
+      <Modal open={calibrating} onClose={() => setCalibrating(false)}>
+        <LatencyCalibrator
+          onDone={(sec) => {
+            set({ stopLatencySec: sec })
+            setCalibrating(false)
+            pushToast(`Reaction delay set to ${sec.toFixed(1)}s.`, 'success')
+          }}
+        />
+      </Modal>
 
       <Modal open={confirmSample} onClose={() => setConfirmSample(false)}>
         <div className="p-6">

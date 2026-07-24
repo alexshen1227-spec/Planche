@@ -143,10 +143,20 @@ export function Stats() {
             )
           })}
         </div>
-        <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">
-          Rates are measured on your current step's key hold and recomputed from your history — deleting a session
-          updates them honestly.
-        </p>
+        <div className="mt-3 space-y-1 text-[12.5px] leading-relaxed text-ink3">
+          <p>
+            Rates are measured on your current step's key hold and recomputed from your history — deleting a session
+            updates them honestly.
+          </p>
+          <p>
+            Noise is handled deliberately: averages are pulled toward the overall mean until a strategy has real
+            evidence behind it, targets anchor on your typical hold rather than your single best, and swings above ~22%
+            pause changes instead of driving them.
+            {state.settings.stopLatencySec > 0 ? (
+              <> Timed holds have your {state.settings.stopLatencySec.toFixed(1)}s stop reaction removed.</>
+            ) : null}
+          </p>
+        </div>
       </div>
 
       {/* Consistency heatmap */}

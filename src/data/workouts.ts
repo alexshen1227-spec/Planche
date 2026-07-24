@@ -2,6 +2,7 @@ import type { AppState, Block, BlockTarget, StepId, Workout } from '../types'
 import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID, stepBefore } from './progressions'
 import { buildPlan, type CoachPlan, type WarmupLevel } from '../lib/coach'
+import { median } from '../lib/signals'
 
 const hold = (sec: number): BlockTarget => ({ kind: 'hold', sec })
 const reps = (n: number): BlockTarget => ({ kind: 'reps', reps: n })
@@ -24,18 +25,34 @@ export function estimateMinutes(blocks: Block[]): number {
 // (src/lib/coach.ts). This module only assembles blocks from that plan.
 
 /**
- * Working-set target that adapts to how the last session actually went:
- * hit ≥80% of your main sets and the bar nudges up; miss most and it backs
- * off. Anchored to ~60% of your best, never above the unlock bar.
+ * Working-set target, anchored robustly.
+ *
+ * Anchoring on the all-time best is tempting but fragile: a single
+ * mis-measured or lucky hold would permanently inflate every future target
+ * and quietly set the athlete up to fail every set. Instead the anchor is the
+ * median of recent session bests — immune to one bad value — and the all-time
+ * best is only allowed to pull it up a little. Hit-rate then nudges it.
  */
 export function adaptiveTarget(state: AppState, stepId: StepId): number {
   const step = STEP_BY_ID[stepId]
-  const best = state.prs[step.keyExerciseId]?.value
+  const keyId = step.keyExerciseId
+  const best = state.prs[keyId]?.value
   if (!best) return step.startSec
-  let t = best * 0.6
+
+  const recentBests = [...state.sessions]
+    .sort((a, b) => a.startedAt - b.startedAt)
+    .slice(-6)
+    .map((s) => s.sets.reduce((b, x) => (x.exerciseId === keyId && x.value > b ? x.value : b), 0))
+    .filter((v) => v > 0)
+
+  const typical = median(recentBests)
+  // Blend: mostly what you can repeat, with a nod to your peak.
+  const anchor = typical === null ? best : typical * 0.75 + Math.min(best, typical * 1.5) * 0.25
+  let t = anchor * 0.6
+
   const lastMain = [...state.sessions]
     .sort((a, b) => b.startedAt - a.startedAt)
-    .map((s) => s.sets.filter((x) => x.exerciseId === step.keyExerciseId && x.section === 'main'))
+    .map((s) => s.sets.filter((x) => x.exerciseId === keyId && x.section === 'main'))
     .find((sets) => sets.length >= 2)
   if (lastMain) {
     const hitRate = lastMain.filter((x) => x.value >= x.target).length / lastMain.length

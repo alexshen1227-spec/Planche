@@ -80,6 +80,7 @@ export function SessionPlayer({
   const totalSets = useMemo(() => workout.blocks.reduce((n, b) => n + b.sets, 0), [workout])
   const doneSets = logs.length
   const bestBefore = exercise ? state.prs[exercise.id]?.value : undefined
+  const latency = exercise?.type === 'hold' ? Math.max(0, state.settings.stopLatencySec) : 0
 
   // Shared 100ms clock (also keeps the header session-elapsed ticking).
   useEffect(() => {
@@ -90,6 +91,12 @@ export function SessionPlayer({
 
   const leadRemaining = Math.max(0, (leadEnd - now) / 1000)
   const holdElapsed = phase === 'hold' ? Math.max(0, (now - holdStart) / 1000) : 0
+  /**
+   * What the hold will actually be logged as. Cues fire on this rather than
+   * the raw stopwatch, so a PR or a target can never be earned by the gap
+   * between coming out of the position and reaching the button.
+   */
+  const holdCredited = Math.max(0, holdElapsed - latency)
   const restRemaining = Math.max(0, (restEnd - now) / 1000)
 
   // Mirror the live session to storage on every meaningful change, and again
@@ -191,33 +198,33 @@ export function SessionPlayer({
   // Chime + announce when the target is reached mid-hold.
   useEffect(() => {
     if (phase !== 'hold' || !block || block.target.kind !== 'hold') return
-    if (!targetHitRef.current && holdElapsed >= block.target.sec) {
+    if (!targetHitRef.current && holdCredited >= block.target.sec) {
       targetHitRef.current = true
       sfx.target()
       buzz(40)
       if (state.settings.voice) speak('Target')
     }
-  }, [phase, holdElapsed, block, state.settings.voice])
+  }, [phase, holdCredited, block, state.settings.voice])
 
   // Spoken 5-second counts mid-hold — the screen is unreadable upside-down.
   useEffect(() => {
     if (phase !== 'hold' || !state.settings.voice || !block) return
-    const whole = Math.floor(holdElapsed)
+    const whole = Math.floor(holdCredited)
     const target = block.target.kind === 'hold' ? block.target.sec : 0
     if (whole >= 5 && whole % 5 === 0 && whole !== target && whole !== lastCountRef.current) {
       lastCountRef.current = whole
       speak(String(whole))
     }
-  }, [phase, holdElapsed, block, state.settings.voice])
+  }, [phase, holdCredited, block, state.settings.voice])
 
   // Haptic pulse the moment a live hold becomes a PR.
   useEffect(() => {
     if (phase !== 'hold' || prBuzzedRef.current) return
-    if (bestBefore !== undefined && holdElapsed > bestBefore) {
+    if (bestBefore !== undefined && holdCredited > bestBefore) {
       prBuzzedRef.current = true
       buzz([30, 40, 30])
     }
-  }, [phase, holdElapsed, bestBefore])
+  }, [phase, holdCredited, bestBefore])
 
   const advance = useCallback(
     (withRest: boolean) => {
@@ -246,7 +253,7 @@ export function SessionPlayer({
   )
 
   const logSet = useCallback(
-    (value: number) => {
+    (value: number, raw?: number) => {
       if (!block || !exercise) return
       setLogs((l) => [
         ...l,
@@ -254,6 +261,7 @@ export function SessionPlayer({
           exerciseId: exercise.id,
           kind: exercise.type,
           value,
+          ...(raw !== undefined && Math.abs(raw - value) > 0.05 ? { raw } : {}),
           target: block.target.kind === 'hold' ? block.target.sec : block.target.reps,
           section: block.section,
           at: Date.now(),
@@ -265,11 +273,14 @@ export function SessionPlayer({
   )
 
   const stopHold = useCallback(() => {
-    const v = Math.round(((Date.now() - holdStart) / 1000) * 10) / 10
+    const raw = Math.round(((Date.now() - holdStart) / 1000) * 10) / 10
+    // You come out of the hold, then reach for the button. That gap is time
+    // you were not actually holding, so it comes back off.
+    const v = Math.max(0, Math.round((raw - latency) * 10) / 10)
     sfx.stop()
     if (bestBefore !== undefined && v > bestBefore) sfx.pr()
-    logSet(v)
-  }, [holdStart, logSet, bestBefore])
+    logSet(v, raw)
+  }, [holdStart, logSet, bestBefore, latency])
 
   const beginSet = useCallback(() => {
     if (!block || !exercise) return
@@ -565,8 +576,8 @@ export function SessionPlayer({
 
     if (phase === 'hold') {
       const target = block.target.kind === 'hold' ? block.target.sec : 0
-      const overTarget = holdElapsed >= target
-      const isPr = bestBefore !== undefined && holdElapsed > bestBefore
+      const overTarget = holdCredited >= target
+      const isPr = bestBefore !== undefined && holdCredited > bestBefore
       return (
         <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
           <div className="mt-2 text-[14px] font-medium text-ink2">
@@ -575,7 +586,7 @@ export function SessionPlayer({
           <div className="relative mt-4">
             <div className="pointer-events-none absolute inset-6 rounded-full bg-accent-soft blur-3xl" />
             <ProgressRing
-              value={Math.min(1, holdElapsed / Math.max(1, target))}
+              value={Math.min(1, holdCredited / Math.max(1, target))}
               size={290}
               stroke={13}
               glow
@@ -599,6 +610,9 @@ export function SessionPlayer({
                     <span className="text-ink3 tnum">target {target}s</span>
                   )}
                 </div>
+                {latency > 0 ? (
+                  <div className="mt-0.5 text-[11.5px] text-ink3 tnum">counts as {holdCredited.toFixed(1)}s</div>
+                ) : null}
               </div>
             </ProgressRing>
           </div>
@@ -666,6 +680,11 @@ export function SessionPlayer({
           {lastLog ? (
             <div className="mt-5 flex items-center gap-2 rounded-full border border-line bg-surface py-1.5 pl-4 pr-1.5 text-[13.5px] text-ink2">
               Logged {lastLog.kind === 'hold' ? fmtHold(lastLog.value) : `${lastLog.value} reps`}
+              {lastLog.raw !== undefined ? (
+                <span className="text-[12px] text-ink3 tnum">
+                  ({lastLog.raw.toFixed(1)}s − {(lastLog.raw - lastLog.value).toFixed(1)}s reaction)
+                </span>
+              ) : null}
               <span className="flex gap-1">
                 <button
                   onClick={() => adjustLastLog(-1)}

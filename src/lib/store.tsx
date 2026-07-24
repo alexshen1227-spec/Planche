@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
   warmup: true,
   beeps: true,
   sessionMinutes: 30,
+  stopLatencySec: 0.4,
 }
 
 export function initialState(): AppState {

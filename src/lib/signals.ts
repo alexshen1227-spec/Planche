@@ -78,6 +78,8 @@ export interface Signals {
 
   /** Fraction of last session's main sets that reached their target. */
   mainHitRate: number | null
+  /** How many main sets that rate is based on — thin evidence gets less say. */
+  mainSetCount: number
   /** Robust centre of recent session bests on the key hold. */
   mainMedian: number | null
   /** Spread of recent bests as a fraction of the median. */
@@ -132,8 +134,10 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const trendPerWeek = slopePerWeek(withKey.slice(-6).map((s) => ({ at: s.startedAt, value: bestIn(s, keyId) })))
 
   let mainHitRate: number | null = null
+  let mainSetCount = 0
   if (last) {
     const mains = keySetsOf(last, keyId, 'main')
+    mainSetCount = mains.length
     if (mains.length > 0) mainHitRate = mains.filter((s) => s.value >= s.target).length / mains.length
   }
 
@@ -197,6 +201,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     lastCheckIn,
     daysSinceCheckIn,
     mainHitRate,
+    mainSetCount,
     mainMedian,
     variability,
     noisy,

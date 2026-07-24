@@ -79,8 +79,10 @@ export interface Workout {
 export interface SetLog {
   exerciseId: string
   kind: ExerciseType
-  /** Seconds for holds, reps for rep work. */
+  /** Seconds for holds, reps for rep work. Latency-corrected for holds. */
   value: number
+  /** Stopwatch reading before reaction-time correction, when it differed. */
+  raw?: number
   target: number
   section: Section
   at: number
@@ -122,6 +124,11 @@ export interface Settings {
   beeps: boolean
   /** Time budget for generated sessions, minutes. */
   sessionMinutes: number
+  /**
+   * Seconds between actually coming out of a hold and the stop button being
+   * pressed. Subtracted from timed holds so the numbers mean what they say.
+   */
+  stopLatencySec: number
 }
 
 export interface AppState {
