@@ -29,7 +29,8 @@ Then open http://localhost:5173.
 - **Path** — the 8-step road (Foundations → Lean → Frog → Tuck → Advanced Tuck → One-Leg → Straddle → Full) with coaching notes, form checklists, common mistakes and unlock bars. Clear a bar and the next step opens automatically.
 - **Library** — 27 exercises with how-to steps, cues, mistakes and your best marks.
 - **Progress** — hold-trend chart with goal line, weekly volume chart, a GitHub-style consistency heatmap, PR board, 24 achievements with live progress bars, full session history (delete recalculates everything).
-- **Settings** — dark/light/system theme, sounds and countdown beeps, rest durations, weekly goal, JSON export/import backup, sample-data mode, full reset.
+- **Settings** — dark/light/system theme, sounds and countdown beeps, rest durations, weekly goal, session length, JSON export/import backup, sample-data mode, full reset.
+- **Safe on device** — the app is a full PWA: a service worker precaches everything so it opens with no signal; `navigator.storage.persist()` asks the browser to protect the data from cleanup; every change is mirrored to a second on-device copy in IndexedDB and silently restored if localStorage is ever wiped or corrupted; and the dashboard nudges you to export a backup file once real history accumulates.
 
 ## Stack
 

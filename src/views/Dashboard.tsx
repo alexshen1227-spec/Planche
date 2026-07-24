@@ -8,6 +8,8 @@ import { tipOfTheDay } from '../data/tips'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { sessionsInWeekOf, weekStreak, totalHoldSec, sessionHighlight, paceToUnlock } from '../lib/stats'
 import { addDays, dayKey, fmtDate, fmtDuration, fmtHold, weekStart } from '../lib/time'
+import { exportData } from '../lib/exportImport'
+import { pushToast } from '../lib/toast'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { ProgressRing, Stat, SectionTitle } from '../components/ui'
@@ -43,7 +45,7 @@ function WeekStrip({ trainedDays }: { trainedDays: Set<string> }) {
 }
 
 export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => void; go: (t: Tab) => void }) {
-  const { state } = useStore()
+  const { state, dispatch } = useStore()
   const step = STEP_BY_ID[state.stepId]
   const keyEx = EXERCISE_BY_ID[step.keyExerciseId]
   const best = state.prs[step.keyExerciseId]?.value ?? 0
@@ -162,6 +164,31 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
           </button>
         </div>
       </div>
+
+      {/* Backup nudge once real history has accumulated */}
+      {state.sessions.length >= 8 &&
+      (!state.lastBackupAt || Date.now() - state.lastBackupAt > 30 * 86_400_000) ? (
+        <div className="animate-rise mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-5 py-3.5" style={{ animationDelay: '20ms' }}>
+          <div className="flex items-center gap-2.5 text-[14px] text-ink2">
+            <Icon name="download" size={16} className="text-ink3" />
+            <span>
+              <span className="font-semibold text-ink">{state.sessions.length} sessions</span> live only on this
+              device. Keep a copy somewhere safe.
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              const stamped = { ...state, lastBackupAt: Date.now() }
+              exportData(stamped)
+              dispatch({ type: 'REPLACE', state: stamped })
+              pushToast('Backup exported.', 'success')
+            }}
+            className="rounded-lg border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 transition hover:text-ink"
+          >
+            Export backup
+          </button>
+        </div>
+      ) : null}
 
       {/* Recovery nudge on trained days */}
       {trainedToday ? (

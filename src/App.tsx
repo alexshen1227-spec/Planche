@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useRegisterSW } from 'virtual:pwa-register/react'
 import type { Tab, Workout } from './types'
 import { useStore } from './lib/store'
 import { Icon, type IconName } from './components/Icon'
@@ -13,14 +14,13 @@ import { Onboarding } from './views/Onboarding'
 import { SessionPlayer } from './views/SessionPlayer'
 
 /**
- * Watches the deployed version.json for a build id different from the one
- * baked into this bundle. Checks on load, on tab focus, and every 5 minutes,
- * so a fresh deploy surfaces a refresh prompt within moments of coming back.
+ * Fallback updater for browsers without service workers: poll the deployed
+ * version.json for a build id different from the one baked into this bundle.
  */
-function useUpdateCheck(): boolean {
+function useVersionJsonCheck(enabled: boolean): boolean {
   const [stale, setStale] = useState(false)
   useEffect(() => {
-    if (!import.meta.env.PROD) return
+    if (!enabled || !import.meta.env.PROD) return
     let stopped = false
     const check = async () => {
       try {
@@ -45,21 +45,45 @@ function useUpdateCheck(): boolean {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onFocus)
     }
-  }, [])
+  }, [enabled])
   return stale
 }
 
+const HAS_SW = 'serviceWorker' in navigator
+
 function UpdateBanner() {
-  const stale = useUpdateCheck()
+  // Primary path: the service worker precaches the app (works offline) and
+  // reports when a newer build is waiting. The banner activates it on accept.
+  const {
+    needRefresh: [needRefresh],
+    updateServiceWorker,
+  } = useRegisterSW({
+    onRegisteredSW(_url, registration) {
+      if (!registration) return
+      const check = () => {
+        if (document.visibilityState === 'visible') void registration.update()
+      }
+      window.setInterval(() => void registration.update(), 5 * 60_000)
+      window.addEventListener('focus', check)
+      document.addEventListener('visibilitychange', check)
+    },
+  })
+  const staleFallback = useVersionJsonCheck(!HAS_SW)
   const [dismissed, setDismissed] = useState(false)
-  if (!stale || dismissed) return null
+
+  const show = (needRefresh || staleFallback) && !dismissed
+  if (!show) return null
+  const refresh = () => {
+    if (needRefresh) void updateServiceWorker(true)
+    else window.location.reload()
+  }
   return (
     <div className="fixed inset-x-0 bottom-20 z-[65] flex justify-center px-4 lg:bottom-6">
       <div className="animate-rise flex items-center gap-3 rounded-2xl border border-accent/35 bg-raised py-2.5 pl-4 pr-2.5 shadow-pop backdrop-blur">
         <Icon name="sparkle" size={17} className="shrink-0 text-accent" />
         <span className="text-[13.5px] font-medium text-ink">A new version of Planche Lab is ready.</span>
         <button
-          onClick={() => window.location.reload()}
+          onClick={refresh}
           className="rounded-lg px-3.5 py-1.5 text-[13px] font-semibold text-on-accent transition hover:brightness-105"
           style={{ background: 'var(--t-btn-accent)' }}
         >
@@ -95,6 +119,7 @@ export default function App() {
     return (
       <>
         <Onboarding />
+        <UpdateBanner />
         <Toasts />
       </>
     )

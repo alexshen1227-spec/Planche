@@ -1,8 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Settings as SettingsShape } from '../types'
 import { useStore, normalizeState } from '../lib/store'
 import { STEP_BY_ID } from '../data/progressions'
 import { exportData, readImportFile } from '../lib/exportImport'
+import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
+import { fmtDate } from '../lib/time'
 import { buildSampleState } from '../data/sample'
 import { pushToast } from '../lib/toast'
 import { sfx } from '../lib/audio'
@@ -79,6 +81,11 @@ export function Settings() {
   const [confirmReset, setConfirmReset] = useState(false)
   const [confirmSample, setConfirmSample] = useState(false)
   const [name, setName] = useState(state.name)
+  const [storage, setStorage] = useState<StorageInfo | null>(null)
+
+  useEffect(() => {
+    void storageInfo().then(setStorage)
+  }, [])
 
   const set = (patch: Partial<SettingsShape>) => dispatch({ type: 'SET_SETTINGS', patch })
 
@@ -215,9 +222,44 @@ export function Settings() {
 
       <SectionTitle>Data</SectionTitle>
       <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
-        <Row label="Export backup" hint="Everything — sessions, records, achievements — as a JSON file.">
+        <Row
+          label="On-device safety"
+          hint={
+            storage === null
+              ? 'Data lives in this browser, plus an automatic second on-device backup.'
+              : storage.persisted
+                ? `Protected — the browser won't auto-delete this data.${storage.usageBytes !== null ? ` Using ${Math.max(1, Math.round(storage.usageBytes / 1024))} KB.` : ''} A second on-device backup updates automatically.`
+                : 'Best-effort — the browser could clear this under disk pressure. A second on-device backup updates automatically; exporting a file is still the strongest protection.'
+          }
+        >
+          {storage !== null && storage.persisted === false ? (
+            <button
+              onClick={() =>
+                void requestPersistence().then((granted) => {
+                  void storageInfo().then(setStorage)
+                  pushToast(granted ? 'Storage is now protected.' : 'Browser declined — install the app or export backups.', granted ? 'success' : 'info', 4500)
+                })
+              }
+              className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+            >
+              Protect
+            </button>
+          ) : (
+            <span className={`text-[13px] font-semibold ${storage?.persisted ? 'text-ok' : 'text-ink3'}`}>
+              {storage === null ? '…' : storage.persisted ? '✓ Protected' : '—'}
+            </span>
+          )}
+        </Row>
+        <Row
+          label="Export backup"
+          hint={`Everything — sessions, records, achievements — as a JSON file. Last export: ${state.lastBackupAt ? fmtDate(state.lastBackupAt) : 'never'}.`}
+        >
           <button
-            onClick={() => exportData(state)}
+            onClick={() => {
+              const stamped = { ...state, lastBackupAt: Date.now() }
+              exportData(stamped)
+              dispatch({ type: 'REPLACE', state: stamped })
+            }}
             className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
           >
             <Icon name="download" size={15} /> Export

@@ -1,8 +1,10 @@
-import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react'
 import type { AppState, Session, Settings, StepId } from '../types'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
 import { applySession } from './engine'
 import { configureAudio } from './audio'
+import { readMirror, requestPersistence, writeMirror } from './persist'
+import { pushToast } from './toast'
 
 const STORAGE_KEY = 'planchelab.v1'
 const THEME_KEY = 'planchelab.theme'
@@ -51,6 +53,7 @@ export function normalizeState(raw: unknown): AppState {
     onboarded: Boolean(r.onboarded),
     name: typeof r.name === 'string' ? r.name : '',
     startedAt: typeof r.startedAt === 'number' ? r.startedAt : Date.now(),
+    lastBackupAt: typeof r.lastBackupAt === 'number' ? r.lastBackupAt : undefined,
     stepId,
     unlocked,
     sessions: Array.isArray(r.sessions) ? (r.sessions as Session[]) : [],
@@ -63,12 +66,19 @@ export function normalizeState(raw: unknown): AppState {
   }
 }
 
+/** Whether boot found a usable primary copy — drives mirror-restore logic. */
+let bootedFresh = false
+
 function loadState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return initialState()
+    if (!raw) {
+      bootedFresh = true
+      return initialState()
+    }
     return normalizeState(JSON.parse(raw))
   } catch {
+    bootedFresh = true
     return initialState()
   }
 }
@@ -142,15 +152,49 @@ const StoreCtx = createContext<StoreValue | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, loadState)
+  const mirrorTimer = useRef<number | undefined>(undefined)
 
-  // Persist on every change.
+  // Persist on every change: localStorage immediately, the IndexedDB mirror
+  // debounced (it's the recovery copy, not the hot path).
   useEffect(() => {
+    let json: string
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+      json = JSON.stringify(state)
+      localStorage.setItem(STORAGE_KEY, json)
     } catch {
       // Storage full or unavailable — the app still works for this session.
+      return
     }
+    window.clearTimeout(mirrorTimer.current)
+    mirrorTimer.current = window.setTimeout(() => void writeMirror(json), 1500)
   }, [state])
+
+  // If the primary copy was missing or corrupt at boot, restore silently
+  // from the IndexedDB mirror (real data only — never overwrite fresh use).
+  useEffect(() => {
+    if (!bootedFresh) return
+    bootedFresh = false
+    void (async () => {
+      const raw = await readMirror()
+      if (!raw) return
+      try {
+        const recovered = normalizeState(JSON.parse(raw))
+        if (recovered.onboarded || recovered.sessions.length > 0) {
+          dispatch({ type: 'REPLACE', state: recovered })
+          pushToast('Restored your data from the on-device backup.', 'success', 5000)
+        }
+      } catch {
+        /* mirror unreadable too — nothing to restore */
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Once there is anything worth protecting, ask the browser to exempt this
+  // origin from automatic storage cleanup.
+  useEffect(() => {
+    if (state.onboarded) void requestPersistence()
+  }, [state.onboarded])
 
   // Theme: apply the class and mirror the choice for the pre-paint bootstrap.
   useEffect(() => {

@@ -115,6 +115,8 @@ export interface AppState {
   onboarded: boolean
   name: string
   startedAt: number
+  /** When the user last exported a backup file. */
+  lastBackupAt?: number
   stepId: StepId
   unlocked: StepId[]
   sessions: Session[]
