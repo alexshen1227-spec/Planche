@@ -1,0 +1,192 @@
+import { useEffect, useState } from 'react'
+import type { Tab, Workout } from './types'
+import { useStore } from './lib/store'
+import { Icon, type IconName } from './components/Icon'
+import { Toasts } from './components/Toasts'
+import { Dashboard } from './views/Dashboard'
+import { Train } from './views/Train'
+import { Path } from './views/Path'
+import { Library } from './views/Library'
+import { Stats } from './views/Stats'
+import { Settings } from './views/Settings'
+import { Onboarding } from './views/Onboarding'
+import { SessionPlayer } from './views/SessionPlayer'
+
+/**
+ * Watches the deployed version.json for a build id different from the one
+ * baked into this bundle. Checks on load, on tab focus, and every 5 minutes,
+ * so a fresh deploy surfaces a refresh prompt within moments of coming back.
+ */
+function useUpdateCheck(): boolean {
+  const [stale, setStale] = useState(false)
+  useEffect(() => {
+    if (!import.meta.env.PROD) return
+    let stopped = false
+    const check = async () => {
+      try {
+        const res = await fetch(`${import.meta.env.BASE_URL}version.json?t=${Date.now()}`, { cache: 'no-store' })
+        if (!res.ok) return
+        const data = (await res.json()) as { build?: string }
+        if (!stopped && data.build && data.build !== __BUILD_ID__) setStale(true)
+      } catch {
+        /* offline — try again next interval */
+      }
+    }
+    void check()
+    const iv = window.setInterval(() => void check(), 5 * 60_000)
+    const onFocus = () => {
+      if (document.visibilityState === 'visible') void check()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      stopped = true
+      window.clearInterval(iv)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+  }, [])
+  return stale
+}
+
+function UpdateBanner() {
+  const stale = useUpdateCheck()
+  const [dismissed, setDismissed] = useState(false)
+  if (!stale || dismissed) return null
+  return (
+    <div className="fixed inset-x-0 bottom-20 z-[65] flex justify-center px-4 lg:bottom-6">
+      <div className="animate-rise flex items-center gap-3 rounded-2xl border border-accent/35 bg-raised py-2.5 pl-4 pr-2.5 shadow-pop backdrop-blur">
+        <Icon name="sparkle" size={17} className="shrink-0 text-accent" />
+        <span className="text-[13.5px] font-medium text-ink">A new version of Planche Lab is ready.</span>
+        <button
+          onClick={() => window.location.reload()}
+          className="rounded-lg px-3.5 py-1.5 text-[13px] font-semibold text-on-accent transition hover:brightness-105"
+          style={{ background: 'var(--t-btn-accent)' }}
+        >
+          Refresh
+        </button>
+        <button
+          onClick={() => setDismissed(true)}
+          aria-label="Dismiss update notice"
+          className="grid h-7 w-7 place-items-center rounded-lg text-ink3 transition hover:text-ink"
+        >
+          <Icon name="x" size={14} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const NAV: { tab: Tab; label: string; icon: IconName }[] = [
+  { tab: 'home', label: 'Home', icon: 'home' },
+  { tab: 'train', label: 'Train', icon: 'bolt' },
+  { tab: 'path', label: 'Path', icon: 'route' },
+  { tab: 'library', label: 'Library', icon: 'book' },
+  { tab: 'stats', label: 'Progress', icon: 'chart' },
+  { tab: 'settings', label: 'Settings', icon: 'sliders' },
+]
+
+export default function App() {
+  const { state } = useStore()
+  const [tab, setTab] = useState<Tab>('home')
+  const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null)
+
+  if (!state.onboarded) {
+    return (
+      <>
+        <Onboarding />
+        <Toasts />
+      </>
+    )
+  }
+
+  return (
+    <div className="app-ambient grain min-h-screen">
+      <div className="mx-auto flex w-full max-w-6xl gap-6 px-4 pb-24 pt-5 sm:px-6 lg:pb-10 lg:pt-8">
+        {/* Sidebar (desktop) */}
+        <aside className="sticky top-8 hidden h-fit w-52 shrink-0 lg:block">
+          <div className="mb-8 flex items-center gap-2.5 px-2">
+            <div
+              className="grid h-9 w-9 place-items-center rounded-xl text-on-accent"
+              style={{ background: 'var(--t-btn-accent)' }}
+            >
+              {/* tiny planche glyph */}
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <circle cx="18.5" cy="9" r="2.6" fill="currentColor" />
+                <rect x="2.5" y="10.5" width="13.5" height="3.2" rx="1.6" fill="currentColor" />
+                <rect x="8.5" y="13.5" width="3" height="7" rx="1.5" fill="currentColor" />
+              </svg>
+            </div>
+            <div>
+              <div className="font-display text-[16px] font-bold leading-tight text-ink">Planche Lab</div>
+              <div className="text-[11.5px] font-medium text-ink3">own the hold</div>
+            </div>
+          </div>
+          <nav className="space-y-1">
+            {NAV.map((n) => (
+              <button
+                key={n.tab}
+                onClick={() => setTab(n.tab)}
+                className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-[14.5px] font-medium transition ${
+                  tab === n.tab
+                    ? 'bg-surface text-ink shadow-card border border-line'
+                    : 'border border-transparent text-ink2 hover:bg-surface/60 hover:text-ink'
+                }`}
+              >
+                <Icon name={n.icon} size={18} className={tab === n.tab ? 'text-accent' : ''} />
+                {n.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+
+        {/* Content */}
+        <main className="min-w-0 flex-1">
+          {/* Mobile header */}
+          <div className="mb-5 flex items-center gap-2.5 lg:hidden">
+            <div
+              className="grid h-8 w-8 place-items-center rounded-lg text-on-accent"
+              style={{ background: 'var(--t-btn-accent)' }}
+            >
+              <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+                <circle cx="18.5" cy="9" r="2.6" fill="currentColor" />
+                <rect x="2.5" y="10.5" width="13.5" height="3.2" rx="1.6" fill="currentColor" />
+                <rect x="8.5" y="13.5" width="3" height="7" rx="1.5" fill="currentColor" />
+              </svg>
+            </div>
+            <span className="font-display text-[16px] font-bold text-ink">Planche Lab</span>
+          </div>
+
+          {tab === 'home' ? <Dashboard startWorkout={setActiveWorkout} go={setTab} /> : null}
+          {tab === 'train' ? <Train startWorkout={setActiveWorkout} /> : null}
+          {tab === 'path' ? <Path startWorkout={setActiveWorkout} /> : null}
+          {tab === 'library' ? <Library /> : null}
+          {tab === 'stats' ? <Stats /> : null}
+          {tab === 'settings' ? <Settings /> : null}
+        </main>
+      </div>
+
+      {/* Bottom tab bar (mobile) */}
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 backdrop-blur-lg lg:hidden">
+        <div className="mx-auto flex max-w-lg items-stretch justify-around px-2 pb-[max(env(safe-area-inset-bottom),6px)] pt-1.5">
+          {NAV.map((n) => (
+            <button
+              key={n.tab}
+              onClick={() => setTab(n.tab)}
+              className={`flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-[10.5px] font-medium transition ${
+                tab === n.tab ? 'text-accent' : 'text-ink3 hover:text-ink2'
+              }`}
+            >
+              <Icon name={n.icon} size={21} />
+              {n.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {activeWorkout ? <SessionPlayer workout={activeWorkout} onExit={() => setActiveWorkout(null)} /> : null}
+      <UpdateBanner />
+      <Toasts />
+    </div>
+  )
+}
