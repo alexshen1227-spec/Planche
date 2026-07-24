@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react'
-import type { AppState, Session, Settings, StepId } from '../types'
+import type { AppState, Session, SetLog, Settings, StepId } from '../types'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
 import { applySession } from './engine'
 import { configureAudio } from './audio'
@@ -20,16 +20,22 @@ export const DEFAULT_SETTINGS: Settings = {
   warmup: true,
   beeps: true,
   sessionMinutes: 30,
-  stopLatencySec: 0.4,
+  // Coming out of a hold and then reaching the button is realistically about
+  // a second unless the phone is literally in your hand.
+  stopLatencySec: 1,
 }
+
+/** The stop-latency default before it was found to be optimistic. */
+const LEGACY_LATENCY = 0.4
 
 export function initialState(): AppState {
   return {
-    version: 1,
+    version: 2,
     onboarded: false,
     name: '',
     startedAt: Date.now(),
     stepId: 'foundations',
+    baseStepId: 'foundations',
     unlocked: ['foundations'],
     sessions: [],
     prs: {},
@@ -37,6 +43,49 @@ export function initialState(): AppState {
     videoLinks: {},
     settings: { ...DEFAULT_SETTINGS },
   }
+}
+
+function clampNum(v: unknown, lo: number, hi: number, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
+}
+
+/**
+ * Drop anything that would crash the app downstream. An imported file is
+ * untrusted input: a session without a `sets` array used to white-screen every
+ * screen that sums it, and the bad state was already persisted by then.
+ */
+function sanitizeSessions(raw: unknown): Session[] {
+  if (!Array.isArray(raw)) return []
+  const out: Session[] = []
+  for (const s of raw) {
+    if (typeof s !== 'object' || s === null) continue
+    const c = s as Partial<Session>
+    if (typeof c.startedAt !== 'number' || !Number.isFinite(c.startedAt)) continue
+    const sets = Array.isArray(c.sets)
+      ? c.sets.filter(
+          (x): x is Session['sets'][number] =>
+            typeof x === 'object' &&
+            x !== null &&
+            typeof (x as SetLog).exerciseId === 'string' &&
+            typeof (x as SetLog).value === 'number' &&
+            Number.isFinite((x as SetLog).value),
+        )
+      : []
+    out.push({
+      id: typeof c.id === 'string' && c.id ? c.id : crypto.randomUUID(),
+      startedAt: c.startedAt,
+      endedAt: typeof c.endedAt === 'number' ? c.endedAt : c.startedAt,
+      workoutName: typeof c.workoutName === 'string' ? c.workoutName : 'Session',
+      workoutKind: c.workoutKind === 'template' || c.workoutKind === 'test' ? c.workoutKind : 'auto',
+      stepId: c.stepId && STEP_BY_ID[c.stepId] ? c.stepId : 'foundations',
+      sets,
+      rpe: typeof c.rpe === 'number' ? c.rpe : undefined,
+      notes: typeof c.notes === 'string' ? c.notes : undefined,
+      strategy: c.strategy,
+      checkIn: c.checkIn,
+    })
+  }
+  return out
 }
 
 /** Coerce anything (old versions, imported files) into a valid AppState. */
@@ -50,15 +99,39 @@ export function normalizeState(raw: unknown): AppState {
     : []
   if (!unlocked.includes('foundations')) unlocked.unshift('foundations')
   if (!unlocked.includes(stepId)) unlocked.push(stepId)
+
+  const rawSettings = (typeof r.settings === 'object' && r.settings !== null ? r.settings : {}) as Partial<Settings>
+  const settings: Settings = {
+    ...DEFAULT_SETTINGS,
+    ...rawSettings,
+    // Numeric settings come from an editable file; a zero or NaN here would
+    // stall loops and divide-by-zero their way across the whole UI.
+    weeklyGoal: clampNum(rawSettings.weeklyGoal, 1, 14, DEFAULT_SETTINGS.weeklyGoal),
+    sessionMinutes: clampNum(rawSettings.sessionMinutes, 5, 120, DEFAULT_SETTINGS.sessionMinutes),
+    restMainSec: clampNum(rawSettings.restMainSec, 15, 600, DEFAULT_SETTINGS.restMainSec),
+    restAccessorySec: clampNum(rawSettings.restAccessorySec, 10, 600, DEFAULT_SETTINGS.restAccessorySec),
+    stopLatencySec: clampNum(rawSettings.stopLatencySec, 0, 5, DEFAULT_SETTINGS.stopLatencySec),
+    volume: clampNum(rawSettings.volume, 0, 1, DEFAULT_SETTINGS.volume),
+  }
+  // One-time migration: anyone still carrying the old optimistic default gets
+  // the realistic one. Deliberate choices made after this are left alone.
+  const priorVersion = typeof r.version === 'number' ? r.version : 1
+  if (priorVersion < 2 && settings.stopLatencySec === LEGACY_LATENCY) {
+    settings.stopLatencySec = DEFAULT_SETTINGS.stopLatencySec
+  }
+
   return {
-    version: 1,
+    version: 2,
     onboarded: Boolean(r.onboarded),
     name: typeof r.name === 'string' ? r.name : '',
     startedAt: typeof r.startedAt === 'number' ? r.startedAt : Date.now(),
     lastBackupAt: typeof r.lastBackupAt === 'number' ? r.lastBackupAt : undefined,
     stepId,
+    // Older saves predate this field and their placement is unrecoverable, so
+    // anchor at the current step: never demote someone who is already there.
+    baseStepId: r.baseStepId && STEP_BY_ID[r.baseStepId] ? r.baseStepId : stepId,
     unlocked,
-    sessions: Array.isArray(r.sessions) ? (r.sessions as Session[]) : [],
+    sessions: sanitizeSessions(r.sessions),
     prs: typeof r.prs === 'object' && r.prs !== null ? (r.prs as AppState['prs']) : {},
     achievements:
       typeof r.achievements === 'object' && r.achievements !== null
@@ -68,7 +141,7 @@ export function normalizeState(raw: unknown): AppState {
       typeof r.videoLinks === 'object' && r.videoLinks !== null
         ? (r.videoLinks as AppState['videoLinks'])
         : {},
-    settings: { ...DEFAULT_SETTINGS, ...(typeof r.settings === 'object' ? r.settings : {}) },
+    settings,
   }
 }
 
@@ -91,13 +164,15 @@ function loadState(): AppState {
 
 /** Rebuild PRs / unlocks / achievements by replaying history (after deletes/imports). */
 function replay(state: AppState, sessions: Session[]): AppState {
+  const base = STEP_BY_ID[state.baseStepId] ? state.baseStepId : 'foundations'
+  const baseOrder = STEP_BY_ID[base].order
   let acc: AppState = {
     ...state,
     sessions: [],
     prs: {},
     achievements: {},
-    stepId: 'foundations',
-    unlocked: ['foundations'],
+    stepId: base,
+    unlocked: STEPS.filter((s) => s.order <= baseOrder).map((s) => s.id),
   }
   for (const s of [...sessions].sort((a, b) => a.startedAt - b.startedAt)) {
     acc = applySession(acc, s).next
@@ -139,6 +214,7 @@ function reducer(state: AppState, action: Action): AppState {
         name: action.name,
         startedAt: Date.now(),
         stepId: action.stepId,
+        baseStepId: action.stepId,
         unlocked,
         settings: { ...state.settings, weeklyGoal: action.weeklyGoal },
       }

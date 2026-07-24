@@ -82,7 +82,8 @@ function LatencyCalibrator({ onDone }: { onDone: (sec: number) => void }) {
   const TRIALS = 5
   const [stage, setStage] = useState<'idle' | 'waiting' | 'go' | 'done'>('idle')
   const [times, setTimes] = useState<number[]>([])
-  const [reachAdd, setReachAdd] = useState(false)
+  // Most people put the phone down to hold a planche, so assume that.
+  const [reachAdd, setReachAdd] = useState(true)
   const goAtRef = useRef(0)
   const timerRef = useRef<number | undefined>(undefined)
 
@@ -118,7 +119,9 @@ function LatencyCalibrator({ onDone }: { onDone: (sec: number) => void }) {
 
   const sorted = [...times].sort((a, b) => a - b)
   const medianMs = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0
-  const suggested = Math.min(2, Math.max(0, Math.round((medianMs / 1000 + (reachAdd ? 0.5 : 0)) * 10) / 10))
+  // Floor at 0.2s: nobody registers a deliberate stop faster than that, so a
+  // freak measurement should not zero out the correction entirely.
+  const suggested = Math.min(2, Math.max(0.2, Math.round((medianMs / 1000 + (reachAdd ? 0.5 : 0)) * 10) / 10))
 
   return (
     <div className="p-6">
@@ -202,6 +205,12 @@ export function Settings() {
   useEffect(() => {
     void storageInfo().then(setStorage)
   }, [])
+
+  // Keep the field in step with imports, sample data and resets — otherwise
+  // pressing Save afterwards would write back a stale name.
+  useEffect(() => {
+    setName(state.name)
+  }, [state.name])
 
   const set = (patch: Partial<SettingsShape>) => dispatch({ type: 'SET_SETTINGS', patch })
 

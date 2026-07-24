@@ -50,12 +50,16 @@ export function SessionPlayer({
   const [leadEnd, setLeadEnd] = useState(0)
   const [holdStart, setHoldStart] = useState(0)
   const [restEnd, setRestEnd] = useState(0)
+  /** Duration the current rest was started with — the ring's denominator. */
+  const [restTotal, setRestTotal] = useState(0)
   const [pendingReps, setPendingReps] = useState(0)
   const [rpe, setRpe] = useState<number | undefined>(resumeFrom?.rpe)
   const [notes, setNotes] = useState(resumeFrom?.notes ?? '')
   /** Seconds from a hold that was cut short by the page being discarded. */
   const [interrupted, setInterrupted] = useState<number | null>(
-    resumeFrom?.wasHolding && resumeFrom.holdElapsed > 1 ? resumeFrom.holdElapsed : null,
+    resumeFrom?.wasHolding && resumeFrom.holdElapsed > 1
+      ? Math.round(resumeFrom.holdElapsed * 10) / 10
+      : null,
   )
   const [events, setEvents] = useState<SessionEvents | null>(null)
   const [savedSession, setSavedSession] = useState<Session | null>(null)
@@ -72,6 +76,14 @@ export function SessionPlayer({
   const prBuzzedRef = useRef(false)
   /** Hold elapsed frozen at the moment the page was hidden. */
   const frozenElapsedRef = useRef<number | null>(null)
+  /**
+   * The exact set the interrupted hold belongs to. Without this the recovery
+   * card would follow you to later exercises and could log a planche hold as
+   * reps of whatever came next.
+   */
+  const interruptedAt = useRef(
+    resumeFrom ? { bi: resumeFrom.blockIndex, si: resumeFrom.setIndex } : null,
+  )
 
   useWakeLock(phase !== 'summary' && phase !== 'celebrate')
 
@@ -79,7 +91,15 @@ export function SessionPlayer({
   const exercise = block ? EXERCISE_BY_ID[block.exerciseId] : undefined
   const totalSets = useMemo(() => workout.blocks.reduce((n, b) => n + b.sets, 0), [workout])
   const doneSets = logs.length
-  const bestBefore = exercise ? state.prs[exercise.id]?.value : undefined
+  // The record to beat includes anything already set earlier in this session,
+  // otherwise a second, weaker set would celebrate as a PR too.
+  const bestBefore = useMemo(() => {
+    if (!exercise) return undefined
+    const stored = state.prs[exercise.id]?.value
+    const thisSession = logs.reduce((b, l) => (l.exerciseId === exercise.id && l.value > b ? l.value : b), 0)
+    if (stored === undefined && thisSession === 0) return undefined
+    return Math.max(stored ?? 0, thisSession)
+  }, [exercise, state.prs, logs])
   const latency = exercise?.type === 'hold' ? Math.max(0, state.settings.stopLatencySec) : 0
 
   // Shared 100ms clock (also keeps the header session-elapsed ticking).
@@ -243,7 +263,10 @@ export function SessionPlayer({
         setSi(si + 1)
       }
       if (withRest) {
+        // Both taken from the block just finished; the index has already moved
+        // on, so reading it later would mix two different blocks' rests.
         setRestEnd(Date.now() + b.restSec * 1000)
+        setRestTotal(b.restSec)
         setPhase('rest')
       } else {
         setPhase('ready')
@@ -312,7 +335,11 @@ export function SessionPlayer({
       if (l.length === 0) return l
       const last = l[l.length - 1]
       const value = Math.max(0, Math.round((last.value + delta) * 10) / 10)
-      return [...l.slice(0, -1), { ...last, value }]
+      // Hand-edited now, so the original stopwatch reading no longer explains
+      // it — keeping it would render a nonsense negative reaction time.
+      const { raw: _dropped, ...rest } = last
+      void _dropped
+      return [...l.slice(0, -1), { ...rest, value }]
     })
   }, [])
 
@@ -373,6 +400,9 @@ export function SessionPlayer({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      // A dialog is on top: let it own the keyboard, or Escape would also open
+      // the exit prompt and Space would start the set behind the overlay.
+      if (document.querySelector('[role="dialog"]')) return
       if (e.code === 'Space') {
         e.preventDefault()
         if (phase === 'intro') setPhase('ready')
@@ -405,7 +435,16 @@ export function SessionPlayer({
         </div>
       </div>
       <button
-        onClick={() => (phase === 'summary' || phase === 'celebrate' ? onExit() : setConfirmExit(true))}
+        onClick={() => {
+          if (phase === 'summary' || phase === 'celebrate') {
+            // Leaving a finished session without saving discards it, so the
+            // draft must go too or it reopens on next launch.
+            clearDraft()
+            onExit()
+          } else {
+            setConfirmExit(true)
+          }
+        }}
         aria-label="Exit session"
         className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line bg-surface text-ink2 hover:text-ink"
       >
@@ -490,7 +529,9 @@ export function SessionPlayer({
           ) : (
             <div className="mt-6" />
           )}
-          {interrupted !== null ? (
+          {interrupted !== null &&
+          interruptedAt.current?.bi === bi &&
+          interruptedAt.current?.si === si ? (
             <div className="mx-auto mt-3 max-w-sm rounded-2xl border border-accent/30 bg-accent-soft p-4 text-left">
               <div className="text-[13.5px] font-semibold text-ink">Your last hold was interrupted</div>
               <p className="mt-0.5 text-[13px] leading-relaxed text-ink2">
@@ -500,8 +541,11 @@ export function SessionPlayer({
               <div className="mt-2.5 flex gap-2">
                 <button
                   onClick={() => {
+                    // No button was pressed to end this one, so there is no
+                    // reaction delay to subtract.
                     logSet(interrupted)
                     setInterrupted(null)
+                    interruptedAt.current = null
                   }}
                   className="flex-1 rounded-lg px-3 py-2 text-[13px] font-semibold text-on-accent"
                   style={{ background: 'var(--t-btn-accent)' }}
@@ -509,7 +553,10 @@ export function SessionPlayer({
                   Log {fmtHold(interrupted)}
                 </button>
                 <button
-                  onClick={() => setInterrupted(null)}
+                  onClick={() => {
+                    setInterrupted(null)
+                    interruptedAt.current = null
+                  }}
                   className="flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
                 >
                   Redo the set
@@ -668,7 +715,7 @@ export function SessionPlayer({
     if (phase === 'rest') {
       const nb = workout.blocks[bi]
       const nx = EXERCISE_BY_ID[nb.exerciseId]
-      const total = nb.restSec
+      const total = restTotal || nb.restSec
       return (
         <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
           <div className="mt-4 text-[14px] font-medium uppercase tracking-wide text-ink3">Rest</div>
@@ -788,6 +835,9 @@ export function SessionPlayer({
           >
             Discard
           </button>
+          <p className="mt-2 text-center text-[12px] text-ink3">
+            Unsaved sessions are not kept — save it to bank the work.
+          </p>
         </div>
       )
     }

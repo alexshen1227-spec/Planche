@@ -47,6 +47,14 @@ export function loadDraft(): SessionDraft | null {
     if (!raw) return null
     const d = JSON.parse(raw) as SessionDraft
     if (d?.v !== 1 || !d.workout || !Array.isArray(d.logs)) return null
+    // Nothing logged and nothing mid-hold means nothing to lose — don't force
+    // someone back into a session they only opened and walked away from. An
+    // interrupted first hold still counts as work worth recovering.
+    const holdInFlight = d.wasHolding && d.holdElapsed > 1
+    if (d.logs.length === 0 && !holdInFlight) {
+      clearDraft()
+      return null
+    }
     if (Date.now() - d.savedAt > MAX_AGE_MS) {
       clearDraft()
       return null

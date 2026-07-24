@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import type { Tab, Workout } from './types'
 import { useStore } from './lib/store'
@@ -55,6 +55,7 @@ function useVersionJsonCheck(enabled: boolean): boolean {
 const HAS_SW = 'serviceWorker' in navigator
 
 function UpdateBanner() {
+  const regRef = useRef<ServiceWorkerRegistration | null>(null)
   // Primary path: the service worker precaches the app (works offline) and
   // reports when a newer build is waiting. The banner activates it on accept.
   const {
@@ -62,15 +63,25 @@ function UpdateBanner() {
     updateServiceWorker,
   } = useRegisterSW({
     onRegisteredSW(_url, registration) {
-      if (!registration) return
-      const check = () => {
-        if (document.visibilityState === 'visible') void registration.update()
-      }
-      window.setInterval(() => void registration.update(), 5 * 60_000)
-      window.addEventListener('focus', check)
-      document.addEventListener('visibilitychange', check)
+      regRef.current = registration ?? null
     },
   })
+
+  // Kept in an effect rather than the registration callback so the timer and
+  // listeners are actually torn down instead of accumulating.
+  useEffect(() => {
+    const check = () => {
+      if (document.visibilityState === 'visible') void regRef.current?.update()
+    }
+    const iv = window.setInterval(check, 5 * 60_000)
+    window.addEventListener('focus', check)
+    document.addEventListener('visibilitychange', check)
+    return () => {
+      window.clearInterval(iv)
+      window.removeEventListener('focus', check)
+      document.removeEventListener('visibilitychange', check)
+    }
+  }, [])
   const staleFallback = useVersionJsonCheck(!HAS_SW)
   const [dismissed, setDismissed] = useState(false)
 
@@ -131,11 +142,12 @@ export default function App() {
     setActiveWorkout(w)
   }
 
+  // Rendered once, outside the onboarding branch: mounting it in both places
+  // left the first instance's update timer and listeners running forever.
   if (!state.onboarded) {
     return (
       <>
         <Onboarding />
-        <UpdateBanner />
         <Toasts />
       </>
     )

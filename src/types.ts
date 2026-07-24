@@ -132,13 +132,18 @@ export interface Settings {
 }
 
 export interface AppState {
-  version: 1
+  version: 2
   onboarded: boolean
   name: string
   startedAt: number
   /** When the user last exported a backup file. */
   lastBackupAt?: number
   stepId: StepId
+  /**
+   * Where onboarding placed the athlete. Replaying history rewinds to here,
+   * never below it — deleting a session must not undo your starting point.
+   */
+  baseStepId: StepId
   unlocked: StepId[]
   sessions: Session[]
   prs: Record<string, PR>
