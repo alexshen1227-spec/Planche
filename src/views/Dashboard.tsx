@@ -7,7 +7,7 @@ import { todaysSession, maxTestWorkout, TEMPLATES } from '../data/workouts'
 import { tipOfTheDay } from '../data/tips'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { sessionsInWeekOf, weekStreak, totalHoldSec, sessionHighlight, paceToUnlock } from '../lib/stats'
-import { pickStrategy, STRATEGY_BY_ID, coachConfidence } from '../lib/coach'
+import { buildPlan, STRATEGY_BY_ID, coachConfidence } from '../lib/coach'
 import { addDays, dayKey, fmtDate, fmtDuration, fmtHold, weekStart } from '../lib/time'
 import { exportData } from '../lib/exportImport'
 import { pushToast } from '../lib/toast'
@@ -63,7 +63,7 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
   const trainedToday = state.sessions.some((s) => dayKey(s.startedAt) === dayKey(Date.now()))
   const tip = tipOfTheDay()
   const pace = paceToUnlock(state)
-  const pick = useMemo(() => pickStrategy(state), [state])
+  const plan = useMemo(() => buildPlan(state), [state])
   const confidence = useMemo(() => coachConfidence(state), [state])
 
   const recent = useMemo(() => [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).slice(0, 3), [state.sessions])
@@ -249,14 +249,30 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
             <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-accent">
               <Icon name="target" size={15} /> Coach
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span className="rounded-full bg-accent-soft px-3 py-1 text-[13px] font-semibold text-accent">
-                {STRATEGY_BY_ID[pick.strategy].name}
+                {STRATEGY_BY_ID[plan.strategy].name}
               </span>
-              <span className="text-[13px] text-ink3">picked for today</span>
+              <span className="rounded-full border border-line bg-raised px-3 py-1 text-[12.5px] font-medium text-ink2">
+                {plan.warmup === 'extended' ? 'Full warm-up' : plan.warmup === 'short' ? 'Short warm-up' : 'Standard warm-up'}
+              </span>
+              <span className="rounded-full border border-line bg-raised px-3 py-1 text-[12.5px] font-medium text-ink2 tnum">
+                {Math.floor(plan.restMainSec / 60)}:{String(plan.restMainSec % 60).padStart(2, '0')} rest
+              </span>
             </div>
-            <p className="mt-1.5 max-w-xl text-[13.5px] leading-relaxed text-ink2">{pick.reason}</p>
-            <p className="mt-1 text-[13px] text-ink3">{STRATEGY_BY_ID[pick.strategy].blurb}</p>
+            <p className="mt-2 max-w-xl text-[13.5px] leading-relaxed text-ink2">{plan.strategyReason}</p>
+            <ul className="mt-2 space-y-1.5">
+              {plan.decisions.slice(0, 3).map((d) => (
+                <li key={d.text} className="flex gap-2 text-[13px] leading-relaxed">
+                  <span
+                    className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${
+                      d.kind === 'warn' ? 'bg-danger' : d.kind === 'good' ? 'bg-ok' : 'bg-ink3'
+                    }`}
+                  />
+                  <span className="text-ink2">{d.text}</span>
+                </li>
+              ))}
+            </ul>
           </div>
           <button
             onClick={() => go('stats')}

@@ -391,6 +391,61 @@ export const EXERCISES: Exercise[] = [
     mistakes: ['Bent knees', 'Straining the neck upward'],
     muscles: ['Lower back', 'Glutes', 'Hamstrings'],
   },
+  // ————— General warm-up —————
+  {
+    id: 'jumping-jacks',
+    name: 'Jumping Jacks',
+    category: 'general',
+    type: 'reps',
+    difficulty: 1,
+    equipment: ['None'],
+    blurb: 'Raises body temperature and heart rate so everything that follows is safer.',
+    howTo: [
+      'Stand tall, arms at your sides.',
+      'Jump the feet wide while the arms sweep overhead.',
+      'Jump back together. Keep it light and springy.',
+      'If jumping is not an option, step side to side with the same arm swing.',
+    ],
+    cues: ['Light on the feet', 'Full arm sweep overhead', 'Breathe'],
+    mistakes: ['Half-range arms', 'Going so hard it becomes the workout'],
+    muscles: ['Whole body', 'Cardiovascular'],
+  },
+  {
+    id: 'arm-circles',
+    name: 'Arm Circles',
+    category: 'general',
+    type: 'reps',
+    difficulty: 1,
+    equipment: ['None'],
+    blurb: 'Wakes up the shoulders through full range before they get loaded.',
+    howTo: [
+      'Stand with arms out to the sides at shoulder height.',
+      'Draw small circles forward, growing bigger over about 10 reps.',
+      'Reverse the direction and repeat.',
+      'Finish with a few big overhead sweeps.',
+    ],
+    cues: ['Start small, grow bigger', 'Relaxed neck', 'Both directions'],
+    mistakes: ['Shrugging into the ears', 'Rushing through tiny circles'],
+    muscles: ['Deltoids', 'Rotator cuff', 'Upper back'],
+  },
+  {
+    id: 'cat-cow',
+    name: 'Cat–Cow',
+    category: 'general',
+    type: 'reps',
+    difficulty: 1,
+    equipment: ['Floor'],
+    blurb: 'Spine and scapula mobility on all fours — also gently loads the wrists.',
+    howTo: [
+      'On hands and knees, hands under shoulders.',
+      'Round the back and push the floor away (cat).',
+      'Then drop the belly and lift the chest (cow).',
+      'Move slowly with your breath.',
+    ],
+    cues: ['Push tall in the cat', 'Move slow', 'Feel the shoulder blades slide'],
+    mistakes: ['Only moving the lower back', 'Cranking the neck'],
+    muscles: ['Spine', 'Serratus', 'Wrists'],
+  },
   // ————— Wrists & prehab —————
   {
     id: 'wrist-circles',
@@ -503,6 +558,7 @@ export const EXERCISE_BY_ID: Record<string, Exercise> = Object.fromEntries(
 )
 
 export const CATEGORY_LABEL: Record<Exercise['category'], string> = {
+  general: 'General warm-up',
   planche: 'Planche line',
   push: 'Pushing strength',
   scapula: 'Scapula',

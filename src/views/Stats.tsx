@@ -4,7 +4,7 @@ import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID, STEPS } from '../data/progressions'
 import { ACHIEVEMENTS } from '../data/achievements'
 import { bestSeries, weeklyVolume, totalHoldSec, totalSets, sessionHoldSec } from '../lib/stats'
-import { armStats, STRATEGY_BY_ID, formatRate, pickStrategy } from '../lib/coach'
+import { armStats, STRATEGY_BY_ID, formatRate, buildPlan } from '../lib/coach'
 import { fmtDate, fmtTime, fmtDuration, fmtHold, fmtClock } from '../lib/time'
 import { HoldLineChart, VolumeBarChart, TrainingHeatmap } from '../components/charts'
 import { Icon } from '../components/Icon'
@@ -19,7 +19,7 @@ export function Stats() {
 
   const series = useMemo(() => bestSeries(state, chartEx), [state, chartEx])
   const arms = useMemo(() => armStats(state), [state])
-  const coachPick = useMemo(() => pickStrategy(state), [state])
+  const coachPick = useMemo(() => buildPlan(state), [state])
   const bestArm = useMemo(() => [...arms].filter((a) => a.n > 0).sort((a, b) => b.mean - a.mean)[0], [arms])
   const maxArmRate = useMemo(() => Math.max(0.001, ...arms.map((a) => Math.abs(a.secPerWeek))), [arms])
   const volume = useMemo(() => weeklyVolume(state, 12), [state])

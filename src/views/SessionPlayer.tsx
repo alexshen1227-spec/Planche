@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Exercise, Section, Session, SessionEvents, SetLog, Workout } from '../types'
+import type { CheckIn, Exercise, Section, Session, SessionEvents, SetLog, Workout } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
@@ -8,6 +8,8 @@ import { applySession } from '../lib/engine'
 import { sfx, speak, buzz } from '../lib/audio'
 import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
+import { clearDraft, saveDraft, type SessionDraft } from '../lib/draft'
+import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { Icon } from '../components/Icon'
@@ -26,30 +28,50 @@ const SECTION_LABEL: Record<Section, string> = {
 
 const LEAD_SEC = 5
 
-export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: () => void }) {
+export function SessionPlayer({
+  workout,
+  onExit,
+  resumeFrom,
+  askCheckIn = false,
+  onCheckInAnswered,
+}: {
+  workout: Workout
+  onExit: () => void
+  resumeFrom?: SessionDraft | null
+  askCheckIn?: boolean
+  onCheckInAnswered?: (c: CheckIn) => void
+}) {
   const { state, dispatch } = useStore()
-  const [phase, setPhase] = useState<Phase>('intro')
-  const [bi, setBi] = useState(0)
-  const [si, setSi] = useState(0)
-  const [logs, setLogs] = useState<SetLog[]>([])
+  const [phase, setPhase] = useState<Phase>(resumeFrom ? 'ready' : 'intro')
+  const [bi, setBi] = useState(resumeFrom?.blockIndex ?? 0)
+  const [si, setSi] = useState(resumeFrom?.setIndex ?? 0)
+  const [logs, setLogs] = useState<SetLog[]>(resumeFrom?.logs ?? [])
   const [now, setNow] = useState(() => Date.now())
   const [leadEnd, setLeadEnd] = useState(0)
   const [holdStart, setHoldStart] = useState(0)
   const [restEnd, setRestEnd] = useState(0)
   const [pendingReps, setPendingReps] = useState(0)
-  const [rpe, setRpe] = useState<number | undefined>()
-  const [notes, setNotes] = useState('')
+  const [rpe, setRpe] = useState<number | undefined>(resumeFrom?.rpe)
+  const [notes, setNotes] = useState(resumeFrom?.notes ?? '')
+  /** Seconds from a hold that was cut short by the page being discarded. */
+  const [interrupted, setInterrupted] = useState<number | null>(
+    resumeFrom?.wasHolding && resumeFrom.holdElapsed > 1 ? resumeFrom.holdElapsed : null,
+  )
   const [events, setEvents] = useState<SessionEvents | null>(null)
   const [savedSession, setSavedSession] = useState<Session | null>(null)
   const [confirmExit, setConfirmExit] = useState(false)
   const [showDemo, setShowDemo] = useState(false)
   const [showRpeHelp, setShowRpeHelp] = useState(false)
+  const [checkIn, setCheckIn] = useState<CheckIn | null>(null)
+  const [showCheckIn, setShowCheckIn] = useState(askCheckIn && !resumeFrom)
   const [insight, setInsight] = useState<{ delta: number; label: string } | null>(null)
-  const startedAtRef = useRef(Date.now())
+  const startedAtRef = useRef(resumeFrom?.startedAt ?? Date.now())
   const lastBeepRef = useRef(-1)
   const targetHitRef = useRef(false)
   const lastCountRef = useRef(-1)
   const prBuzzedRef = useRef(false)
+  /** Hold elapsed frozen at the moment the page was hidden. */
+  const frozenElapsedRef = useRef<number | null>(null)
 
   useWakeLock(phase !== 'summary' && phase !== 'celebrate')
 
@@ -69,6 +91,67 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
   const leadRemaining = Math.max(0, (leadEnd - now) / 1000)
   const holdElapsed = phase === 'hold' ? Math.max(0, (now - holdStart) / 1000) : 0
   const restRemaining = Math.max(0, (restEnd - now) / 1000)
+
+  // Mirror the live session to storage on every meaningful change, and again
+  // the instant the page is hidden — a backgrounded tab can be discarded by
+  // the OS without warning, and this is what makes that survivable.
+  useEffect(() => {
+    if (phase === 'celebrate') return
+    const snapshot = () => {
+      // Once the screen is off the athlete is no longer holding, so the
+      // elapsed value is frozen at the moment the page was hidden rather
+      // than left to climb while the tab is torn down.
+      const live = Math.max(0, (Date.now() - holdStart) / 1000)
+      const elapsed = phase === 'hold' ? (frozenElapsedRef.current ?? live) : 0
+      saveDraft({
+        workout,
+        startedAt: startedAtRef.current,
+        blockIndex: bi,
+        setIndex: si,
+        logs,
+        wasHolding: phase === 'hold',
+        holdElapsed: elapsed,
+        restEndsAt: phase === 'rest' ? restEnd : null,
+        rpe,
+        notes,
+      })
+    }
+    snapshot()
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        if (phase === 'hold') frozenElapsedRef.current = Math.max(0, (Date.now() - holdStart) / 1000)
+        snapshot()
+      } else {
+        frozenElapsedRef.current = null
+      }
+    }
+    const onPageHide = () => {
+      if (phase === 'hold' && frozenElapsedRef.current === null) {
+        frozenElapsedRef.current = Math.max(0, (Date.now() - holdStart) / 1000)
+      }
+      snapshot()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', onPageHide)
+    // Keep the live value fresh while visible, so an abrupt kill still
+    // recovers a realistic number.
+    const iv =
+      phase === 'hold'
+        ? window.setInterval(() => {
+            if (document.visibilityState === 'visible') snapshot()
+          }, 2000)
+        : undefined
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', onPageHide)
+      if (iv) window.clearInterval(iv)
+    }
+  }, [phase, bi, si, logs, holdStart, restEnd, rpe, notes, workout])
+
+  useEffect(() => {
+    if (resumeFrom) pushToast('Session restored — nothing was lost.', 'success', 4500)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Countdown cues for lead-in and rest: spoken when voice is on, ticks otherwise.
   useEffect(() => {
@@ -234,6 +317,7 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
       rpe,
       notes: notes.trim() || undefined,
       strategy: workout.strategy,
+      checkIn: checkIn ?? undefined,
     }
     const { events: raw } = applySession(state, session)
     // First-ever values on accessories are technically PRs but not worth a
@@ -265,6 +349,7 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
       })
     }
     dispatch({ type: 'SAVE_SESSION', session })
+    clearDraft()
     setEvents(ev)
     setSavedSession(session)
     setPhase('celebrate')
@@ -394,6 +479,33 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
           ) : (
             <div className="mt-6" />
           )}
+          {interrupted !== null ? (
+            <div className="mx-auto mt-3 max-w-sm rounded-2xl border border-accent/30 bg-accent-soft p-4 text-left">
+              <div className="text-[13.5px] font-semibold text-ink">Your last hold was interrupted</div>
+              <p className="mt-0.5 text-[13px] leading-relaxed text-ink2">
+                Your phone locked mid-set. It had reached{' '}
+                <span className="font-semibold text-ink tnum">{fmtHold(interrupted)}</span> — log it, or redo the set.
+              </p>
+              <div className="mt-2.5 flex gap-2">
+                <button
+                  onClick={() => {
+                    logSet(interrupted)
+                    setInterrupted(null)
+                  }}
+                  className="flex-1 rounded-lg px-3 py-2 text-[13px] font-semibold text-on-accent"
+                  style={{ background: 'var(--t-btn-accent)' }}
+                >
+                  Log {fmtHold(interrupted)}
+                </button>
+                <button
+                  onClick={() => setInterrupted(null)}
+                  className="flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+                >
+                  Redo the set
+                </button>
+              </div>
+            </div>
+          ) : null}
           <div className="mx-auto mt-2 max-w-sm space-y-1.5">
             {exercise.cues.slice(0, 3).map((c) => (
               <div key={c} className="rounded-xl border border-line bg-surface px-4 py-2 text-[13.5px] text-ink2">
@@ -745,6 +857,25 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
         {phase !== 'celebrate' ? progressBar : null}
         {body()}
       </div>
+      <Modal open={showCheckIn} onClose={() => setShowCheckIn(false)}>
+        <CheckInForm
+          onDone={(c) => {
+            setCheckIn(c)
+            setShowCheckIn(false)
+            // Re-plan today's session with the answers, not just tomorrow's.
+            onCheckInAnswered?.(c)
+            if (c.joints === 'pain') {
+              pushToast("Today's session has been scaled back and intensity locked out.", 'info', 5500)
+            } else if (c.joints === 'niggle') {
+              pushToast('Adjusted — longer warm-up, no max-intensity work today.', 'info', 5000)
+            } else if (c.energy === 'tired') {
+              pushToast('Adjusted — trimmed volume so today still counts.', 'info', 4500)
+            }
+          }}
+          onSkip={() => setShowCheckIn(false)}
+        />
+      </Modal>
+
       <Modal open={showDemo} onClose={() => setShowDemo(false)} wide>
         {exercise ? <DemoHelp exercise={exercise} pinnedUrl={state.videoLinks[exercise.id]} /> : null}
       </Modal>
@@ -789,7 +920,10 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
               Keep training
             </button>
             <button
-              onClick={onExit}
+              onClick={() => {
+                clearDraft()
+                onExit()
+              }}
               className="flex-1 rounded-xl bg-danger py-3 text-[14.5px] font-semibold text-white"
             >
               Leave
@@ -797,6 +931,96 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
           </div>
         </div>
       </Modal>
+    </div>
+  )
+}
+
+/** The coach's periodic readiness questions — answers change today's plan. */
+function CheckInForm({ onDone, onSkip }: { onDone: (c: CheckIn) => void; onSkip: () => void }) {
+  const [joints, setJoints] = useState<CheckIn['joints'] | null>(null)
+  const [energy, setEnergy] = useState<CheckIn['energy'] | null>(null)
+
+  const JOINTS: { id: CheckIn['joints']; label: string; hint: string }[] = [
+    { id: 'good', label: 'All good', hint: 'Wrists and elbows feel normal' },
+    { id: 'niggle', label: 'A bit off', hint: 'Slight ache or stiffness, no real pain' },
+    { id: 'pain', label: 'Painful', hint: 'Sharp or persistent joint pain' },
+  ]
+  const ENERGY: { id: CheckIn['energy']; label: string }[] = [
+    { id: 'fresh', label: 'Fresh' },
+    { id: 'ok', label: 'Okay' },
+    { id: 'tired', label: 'Tired' },
+  ]
+
+  return (
+    <div className="p-6">
+      <div className="pr-10">
+        <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-accent">
+          <Icon name="target" size={14} /> Quick check-in
+        </div>
+        <h2 className="mt-1 font-display text-[20px] font-bold text-ink">How are you feeling?</h2>
+        <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">
+          Two questions. Your answers change today's warm-up, intensity and volume — being honest here is what keeps
+          you training instead of recovering.
+        </p>
+      </div>
+
+      <div className="mt-4">
+        <div className="text-[13px] font-semibold text-ink">Wrists, elbows and shoulders</div>
+        <div className="mt-2 space-y-2">
+          {JOINTS.map((j) => (
+            <button
+              key={j.id}
+              onClick={() => setJoints(j.id)}
+              className={`flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition ${
+                joints === j.id ? 'border-accent bg-accent-soft' : 'border-line bg-raised hover:border-line-strong'
+              }`}
+            >
+              <span>
+                <span className="block text-[14px] font-medium text-ink">{j.label}</span>
+                <span className="block text-[12.5px] text-ink2">{j.hint}</span>
+              </span>
+              <span
+                className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 ${
+                  joints === j.id ? 'border-accent bg-accent text-on-accent' : 'border-line-strong'
+                }`}
+              >
+                {joints === j.id ? <Icon name="check" size={11} strokeWidth={3} /> : null}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <div className="text-[13px] font-semibold text-ink">Energy today</div>
+        <div className="mt-2 flex gap-2">
+          {ENERGY.map((e) => (
+            <button
+              key={e.id}
+              onClick={() => setEnergy(e.id)}
+              className={`flex-1 rounded-xl border py-2.5 text-[13.5px] font-medium transition ${
+                energy === e.id
+                  ? 'border-transparent bg-accent text-on-accent'
+                  : 'border-line bg-raised text-ink2 hover:text-ink'
+              }`}
+            >
+              {e.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <button
+        disabled={!joints || !energy}
+        onClick={() => joints && energy && onDone({ joints, energy, at: Date.now() })}
+        className="mt-5 w-full rounded-2xl px-6 py-3.5 font-display text-[16px] font-semibold text-on-accent shadow-card transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
+        style={{ background: 'var(--t-btn-accent)' }}
+      >
+        Start session
+      </button>
+      <button onClick={onSkip} className="mt-2 w-full py-2 text-[13px] font-medium text-ink3 hover:text-ink">
+        Skip for now
+      </button>
     </div>
   )
 }

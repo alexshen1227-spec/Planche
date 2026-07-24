@@ -1,8 +1,7 @@
 import type { AppState, Block, BlockTarget, StepId, Workout } from '../types'
 import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID, stepBefore } from './progressions'
-import { dayKey } from '../lib/time'
-import { pickStrategy, STRATEGY_BY_ID } from '../lib/coach'
+import { buildPlan, type CoachPlan, type WarmupLevel } from '../lib/coach'
 
 const hold = (sec: number): BlockTarget => ({ kind: 'hold', sec })
 const reps = (n: number): BlockTarget => ({ kind: 'reps', reps: n })
@@ -21,43 +20,8 @@ export function estimateMinutes(blocks: Block[]): number {
 }
 
 // ————————————————————————————— Adaptive engine —————————————————————————————
-
-export type DayType = 'push' | 'standard' | 'technique'
-
-export interface DayContext {
-  type: DayType
-  reason: string
-  restDays: number
-}
-
-/**
- * Reads recovery state from the log: fresh athletes get pushed, cooked
- * athletes get a technique day. This is what keeps hard days hard and easy
- * days actually easy — the fastest sustainable route up the progression.
- */
-export function dayContext(state: AppState, now = Date.now()): DayContext {
-  const last = [...state.sessions].sort((a, b) => b.startedAt - a.startedAt)[0]
-  if (!last) return { type: 'standard', reason: 'First session — establishing your baseline.', restDays: 99 }
-  const dayMs = 86_400_000
-  const restDays = Math.max(
-    0,
-    Math.round((new Date(dayKey(now)).getTime() - new Date(dayKey(last.startedAt)).getTime()) / dayMs),
-  )
-  if (restDays === 0) {
-    return { type: 'technique', reason: 'Second visit today — light skill work only, tendons keep score.', restDays }
-  }
-  if (restDays === 1 && (last.rpe ?? 8) >= 9) {
-    return { type: 'technique', reason: 'Yesterday hit RPE 9+ — today recovers it into strength.', restDays }
-  }
-  if (restDays >= 2) {
-    return {
-      type: 'push',
-      reason: `${restDays} rest day${restDays > 1 ? 's' : ''} banked — you're fresh, so today pushes.`,
-      restDays,
-    }
-  }
-  return { type: 'standard', reason: 'Build day — steady volume at working intensity.', restDays }
-}
+// Day type, rest, warm-up level and emphasis all come from the coach's plan
+// (src/lib/coach.ts). This module only assembles blocks from that plan.
 
 /**
  * Working-set target that adapts to how the last session actually went:
@@ -81,12 +45,6 @@ export function adaptiveTarget(state: AppState, stepId: StepId): number {
   return clamp(Math.round(t), 3, step.unlockSec)
 }
 
-/** True when the athlete is close enough to test the unlock for real. */
-export function unlockAttemptReady(state: AppState, stepId: StepId): boolean {
-  const step = STEP_BY_ID[stepId]
-  const best = state.prs[step.keyExerciseId]?.value ?? 0
-  return best >= step.unlockSec * 0.85 && best < step.unlockSec
-}
 
 /**
  * Trim a session to the athlete's time budget, sacrificing least-important
@@ -130,45 +88,74 @@ function fitToBudget(blocks: Block[], budgetMin: number): Block[] {
   return out
 }
 
-const DAY_LABEL: Record<DayType, string> = {
-  push: 'Push Day',
-  standard: 'Build Day',
-  technique: 'Technique Day',
+/**
+ * Warm-up scales with what the coach observed: cold, achy, or warm-up-skipping
+ * athletes get general prep first. Wrists are in every version — they are the
+ * most common reason people stop training.
+ */
+function warmupFor(stepId: StepId, level: WarmupLevel): Block[] {
+  const step = STEP_BY_ID[stepId]
+  const blocks: Block[] = []
+  if (level === 'extended') {
+    blocks.push(
+      {
+        exerciseId: 'jumping-jacks',
+        sets: 1,
+        target: reps(30),
+        restSec: 15,
+        section: 'warmup',
+        note: 'Get genuinely warm before anything gets loaded.',
+      },
+      { exerciseId: 'arm-circles', sets: 1, target: reps(10), restSec: 10, section: 'warmup' },
+      { exerciseId: 'cat-cow', sets: 1, target: reps(8), restSec: 10, section: 'warmup' },
+    )
+  } else if (level === 'standard') {
+    blocks.push({ exerciseId: 'arm-circles', sets: 1, target: reps(10), restSec: 10, section: 'warmup' })
+  }
+  blocks.push(
+    { exerciseId: 'wrist-circles', sets: 1, target: reps(10), restSec: 10, section: 'warmup' },
+    { exerciseId: 'wrist-rocks', sets: 1, target: reps(8), restSec: 15, section: 'warmup' },
+  )
+  if (level !== 'short') {
+    blocks.push({ exerciseId: 'scap-pushup', sets: 1, target: reps(8), restSec: 25, section: 'warmup' })
+  }
+  if (step.order >= 1) {
+    blocks.push({
+      exerciseId: 'planche-lean',
+      sets: 1,
+      target: hold(8),
+      restSec: 40,
+      section: 'warmup',
+      note: 'Easy primer lean — grease the pattern, save the juice.',
+    })
+  } else {
+    blocks.push({ exerciseId: 'plank', sets: 1, target: hold(20), restSec: 40, section: 'warmup' })
+  }
+  return blocks
 }
 
-/** The recommended session for wherever — and however recovered — the athlete is. */
-export function todaysSession(state: AppState): Workout {
+const DAY_LABEL: Record<CoachPlan['dayType'], string> = {
+  push: 'Push Day',
+  build: 'Build Day',
+  technique: 'Technique Day',
+  deload: 'Deload Day',
+}
+
+/** The recommended session, assembled from the coach's plan for today. */
+export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
   const stepId = state.stepId
   const step = STEP_BY_ID[stepId]
-  const ctx = dayContext(state)
-  const rMain = ctx.type === 'technique' ? Math.max(60, state.settings.restMainSec - 30) : state.settings.restMainSec
-  const rAcc = state.settings.restAccessorySec
+  const plan = planIn ?? buildPlan(state)
+  const rMain = plan.restMainSec
+  const rAcc = plan.restAccessorySec
+  const vol = plan.volumeFactor
+  const scale = (n: number) => Math.max(1, Math.round(n * vol))
   const blocks: Block[] = []
 
-  // Short, targeted warm-up (~3 min): wrists first, always.
-  if (state.settings.warmup) {
-    blocks.push(
-      { exerciseId: 'wrist-circles', sets: 1, target: reps(10), restSec: 10, section: 'warmup' },
-      { exerciseId: 'wrist-rocks', sets: 1, target: reps(8), restSec: 20, section: 'warmup' },
-      { exerciseId: 'scap-pushup', sets: 1, target: reps(8), restSec: 30, section: 'warmup' },
-    )
-    if (step.order >= 1) {
-      blocks.push({
-        exerciseId: 'planche-lean',
-        sets: 1,
-        target: hold(8),
-        restSec: 45,
-        section: 'warmup',
-        note: 'Easy primer lean — grease the pattern, save the juice.',
-      })
-    } else {
-      blocks.push({ exerciseId: 'plank', sets: 1, target: hold(20), restSec: 45, section: 'warmup' })
-    }
-  }
+  if (state.settings.warmup) blocks.push(...warmupFor(stepId, plan.warmup))
 
-  // Fresh + close to the bar → attempt the unlock while at your best.
-  const attempt = ctx.type === 'push' && unlockAttemptReady(state, stepId)
-  if (attempt) {
+  // Fresh and within reach → attempt the unlock while at your best.
+  if (plan.queueUnlockAttempt) {
     blocks.push({
       exerciseId: step.keyExerciseId,
       sets: 1,
@@ -179,33 +166,29 @@ export function todaysSession(state: AppState): Workout {
     })
   }
 
-  // Main isometrics: adaptive target, shaped by whichever strategy the coach
-  // has found produces your fastest gains. Recovery days override the shape.
-  const pick = pickStrategy(state)
-  const strategy = ctx.type === 'technique' ? 'technique' : pick.strategy
-  const shape = STRATEGY_BY_ID[strategy]
+  // Main isometrics, shaped by the strategy the coach measured as fastest.
   const baseTarget = adaptiveTarget(state, stepId)
-  const target = clamp(Math.round(baseTarget * shape.targetFactor), 3, step.unlockSec)
-  const baseSets = attempt ? 3 : 4
+  const target = clamp(Math.round(baseTarget * plan.targetFactor), 3, step.unlockSec)
+  const baseSets = plan.queueUnlockAttempt ? 3 : 4
   blocks.push({
     exerciseId: step.keyExerciseId,
-    sets: clamp(baseSets + shape.setsDelta, 2, 8),
+    sets: clamp(scale(baseSets + plan.setsDelta), 2, 8),
     target: hold(target),
-    restSec: Math.round(rMain * shape.restFactor),
+    restSec: rMain,
     section: 'main',
     note:
-      strategy === 'technique'
+      plan.strategy === 'technique'
         ? 'Easy targets today — perfect positions, zero grinding.'
-        : strategy === 'intensity'
+        : plan.strategy === 'intensity'
           ? 'Heavy holds. Rest fully between sets and keep the arms locked.'
-          : strategy === 'density'
+          : plan.strategy === 'density'
             ? 'Short rests on purpose — expect the later sets to feel spicy.'
             : 'Stop each set ~2s before failure. Quality over seconds.',
   })
 
   // One back-off block on the previous step keeps old positions honest.
   const prev = stepBefore(stepId)
-  if (prev && prev.order >= 1 && ctx.type !== 'technique') {
+  if (prev && prev.order >= 1 && plan.dayType !== 'technique' && plan.dayType !== 'deload') {
     blocks.push({
       exerciseId: prev.keyExerciseId,
       sets: 2,
@@ -216,33 +199,50 @@ export function todaysSession(state: AppState): Workout {
     })
   }
 
-  // Strength accessories — trimmed on technique days.
-  if (ctx.type === 'technique') {
-    blocks.push({ exerciseId: 'frog-stand', sets: 2, target: hold(15), restSec: rAcc, section: 'strength', note: 'Balance practice — cheap on tendons, great for skill.' })
+  // Accessories: the coach decides what is actually limiting you.
+  const easy = plan.dayType === 'technique' || plan.dayType === 'deload'
+  if (easy) {
+    blocks.push({
+      exerciseId: 'frog-stand',
+      sets: 2,
+      target: hold(15),
+      restSec: rAcc,
+      section: 'strength',
+      note: 'Balance practice — cheap on tendons, great for skill.',
+    })
+  } else if (plan.accessoryEmphasis === 'balance') {
+    blocks.push(
+      { exerciseId: 'frog-stand', sets: scale(3), target: hold(20), restSec: rAcc, section: 'strength', note: 'Balance is the limiter right now, not raw strength.' },
+      { exerciseId: 'pppu', sets: scale(2), target: reps(6), restSec: rAcc, section: 'strength' },
+    )
+  } else if (plan.accessoryEmphasis === 'pressing') {
+    blocks.push(
+      { exerciseId: 'pppu', sets: scale(4), target: reps(6), restSec: rAcc, section: 'strength', note: 'Extra pressing volume — this is what unblocks a stalled hold.' },
+      { exerciseId: 'pike-pushup', sets: scale(3), target: reps(8), restSec: rAcc, section: 'strength' },
+    )
   } else if (step.order <= 2) {
     blocks.push(
-      { exerciseId: 'pppu', sets: 3, target: reps(5), restSec: rAcc, section: 'strength' },
-      { exerciseId: 'pushup', sets: 2, target: reps(10), restSec: rAcc, section: 'strength' },
+      { exerciseId: 'pppu', sets: scale(3), target: reps(5), restSec: rAcc, section: 'strength' },
+      { exerciseId: 'pushup', sets: scale(2), target: reps(10), restSec: rAcc, section: 'strength' },
     )
   } else if (step.order <= 4) {
     blocks.push(
-      { exerciseId: 'pppu', sets: 3, target: reps(6), restSec: rAcc, section: 'strength' },
-      { exerciseId: 'pike-pushup', sets: 2, target: reps(8), restSec: rAcc, section: 'strength' },
+      { exerciseId: 'pppu', sets: scale(3), target: reps(6), restSec: rAcc, section: 'strength' },
+      { exerciseId: 'pike-pushup', sets: scale(2), target: reps(8), restSec: rAcc, section: 'strength' },
     )
   } else {
     blocks.push(
-      { exerciseId: 'tuck-planche-pushup', sets: 3, target: reps(4), restSec: rMain, section: 'strength' },
-      { exerciseId: 'pppu', sets: 2, target: reps(8), restSec: rAcc, section: 'strength' },
+      { exerciseId: 'tuck-planche-pushup', sets: scale(3), target: reps(4), restSec: rMain, section: 'strength' },
+      { exerciseId: 'pppu', sets: scale(2), target: reps(8), restSec: rAcc, section: 'strength' },
     )
   }
 
-  // Core: one block, two on longer budgets (the trimmer sorts it out).
-  blocks.push({ exerciseId: 'hollow-hold', sets: 2, target: hold(30), restSec: 45, section: 'core' })
-  if (step.order >= 3) {
+  blocks.push({ exerciseId: 'hollow-hold', sets: scale(2), target: hold(30), restSec: 45, section: 'core' })
+  if (step.order >= 3 && !easy) {
     blocks.push({ exerciseId: 'l-sit', sets: 2, target: hold(12), restSec: 60, section: 'core' })
   }
 
-  // Short cooldown (~2 min): give back what the lean took.
+  // Cooldown: give back what the lean took.
   blocks.push(
     { exerciseId: 'wrist-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
     { exerciseId: 'shoulder-extension-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
@@ -251,17 +251,17 @@ export function todaysSession(state: AppState): Workout {
     blocks.push({ exerciseId: 'pancake-stretch', sets: 1, target: hold(40), restSec: 10, section: 'cooldown' })
   }
 
-  const budget = ctx.type === 'technique' ? Math.min(20, state.settings.sessionMinutes) : state.settings.sessionMinutes
+  const budget = easy ? Math.min(22, state.settings.sessionMinutes) : state.settings.sessionMinutes
   const fitted = fitToBudget(blocks, budget)
 
   return {
-    id: `auto-${stepId}-${ctx.type}-${strategy}`,
-    name: `${step.name} · ${DAY_LABEL[ctx.type]}`,
-    focus: `${ctx.reason}${attempt ? ' An unlock attempt is queued while you are freshest.' : ''}`,
+    id: `auto-${stepId}-${plan.dayType}-${plan.strategy}`,
+    name: `${step.name} · ${DAY_LABEL[plan.dayType]}`,
+    focus: plan.dayReason,
     minutes: estimateMinutes(fitted),
     kind: 'auto',
     blocks: fitted,
-    strategy,
+    strategy: plan.strategy,
   }
 }
 

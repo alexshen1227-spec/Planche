@@ -10,7 +10,14 @@ export type StepId =
   | 'straddle'
   | 'full'
 
-export type Category = 'planche' | 'push' | 'scapula' | 'core' | 'wrist' | 'mobility'
+export type Category = 'planche' | 'push' | 'scapula' | 'core' | 'wrist' | 'mobility' | 'general'
+
+/** Answers to the coach's periodic pre-session check-in. */
+export interface CheckIn {
+  joints: 'good' | 'niggle' | 'pain'
+  energy: 'fresh' | 'ok' | 'tired'
+  at: number
+}
 
 export type ExerciseType = 'hold' | 'reps'
 
@@ -93,6 +100,8 @@ export interface Session {
   notes?: string
   /** Which coach strategy shaped this session (drives its learning). */
   strategy?: StrategyId
+  /** Pre-session readiness answers, when the coach asked. */
+  checkIn?: CheckIn
 }
 
 export interface PR {

@@ -9,7 +9,7 @@ import { fmtHold, fmtDate } from '../lib/time'
 import { Icon } from '../components/Icon'
 import { Modal, Chip } from '../components/ui'
 
-const CATS: (Category | 'all')[] = ['all', 'planche', 'push', 'scapula', 'core', 'wrist', 'mobility']
+const CATS: (Category | 'all')[] = ['all', 'planche', 'push', 'scapula', 'core', 'wrist', 'general', 'mobility']
 
 export function Library() {
   const [pane, setPane] = useState<'exercises' | 'basics'>('exercises')

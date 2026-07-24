@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import type { Tab, Workout } from './types'
 import { useStore } from './lib/store'
+import { loadDraft } from './lib/draft'
+import { buildPlan } from './lib/coach'
+import { todaysSession } from './data/workouts'
 import { Icon, type IconName } from './components/Icon'
 import { Toasts } from './components/Toasts'
 import { Dashboard } from './views/Dashboard'
@@ -113,7 +116,20 @@ const NAV: { tab: Tab; label: string; icon: IconName }[] = [
 export default function App() {
   const { state } = useStore()
   const [tab, setTab] = useState<Tab>('home')
-  const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null)
+  // An interrupted session (phone slept, tab discarded) is picked back up
+  // automatically on the next load instead of being silently lost.
+  const [resumeDraft] = useState(() => loadDraft())
+  const [activeWorkout, setActiveWorkout] = useState<Workout | null>(resumeDraft?.workout ?? null)
+  const [resuming, setResuming] = useState(resumeDraft !== null)
+
+  const [askCheckIn, setAskCheckIn] = useState(false)
+
+  const startWorkout = (w: Workout) => {
+    setResuming(false)
+    // Only ask on generated sessions — templates are the athlete's own call.
+    setAskCheckIn(w.kind === 'auto' && buildPlan(state).askCheckIn)
+    setActiveWorkout(w)
+  }
 
   if (!state.onboarded) {
     return (
@@ -182,9 +198,9 @@ export default function App() {
             <span className="font-display text-[16px] font-bold text-ink">Planche Lab</span>
           </div>
 
-          {tab === 'home' ? <Dashboard startWorkout={setActiveWorkout} go={setTab} /> : null}
-          {tab === 'train' ? <Train startWorkout={setActiveWorkout} /> : null}
-          {tab === 'path' ? <Path startWorkout={setActiveWorkout} /> : null}
+          {tab === 'home' ? <Dashboard startWorkout={startWorkout} go={setTab} /> : null}
+          {tab === 'train' ? <Train startWorkout={startWorkout} /> : null}
+          {tab === 'path' ? <Path startWorkout={startWorkout} /> : null}
           {tab === 'library' ? <Library /> : null}
           {tab === 'stats' ? <Stats /> : null}
           {tab === 'settings' ? <Settings /> : null}
@@ -209,7 +225,24 @@ export default function App() {
         </div>
       </nav>
 
-      {activeWorkout ? <SessionPlayer workout={activeWorkout} onExit={() => setActiveWorkout(null)} /> : null}
+      {activeWorkout ? (
+        <SessionPlayer
+          workout={activeWorkout}
+          resumeFrom={resuming ? resumeDraft : null}
+          askCheckIn={askCheckIn}
+          onCheckInAnswered={(c) => {
+            // Nothing is logged yet at this point, so the session can be
+            // safely rebuilt around what the athlete just reported.
+            if (activeWorkout.kind !== 'auto') return
+            setActiveWorkout(todaysSession(state, buildPlan(state, Date.now(), c)))
+          }}
+          onExit={() => {
+            setResuming(false)
+            setAskCheckIn(false)
+            setActiveWorkout(null)
+          }}
+        />
+      ) : null}
       <UpdateBanner />
       <Toasts />
     </div>
