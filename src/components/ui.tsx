@@ -1,4 +1,5 @@
 import { useEffect, useId, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
 
 export function Modal({
@@ -26,7 +27,10 @@ export function Modal({
   }, [open, onClose])
 
   if (!open) return null
-  return (
+  // Portalled to <body>: the views animate in with a transform, and a
+  // transformed ancestor becomes the containing block for fixed children —
+  // which would place this overlay down the page instead of over the viewport.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 backdrop-blur-sm sm:items-center sm:p-6 animate-fade"
       onMouseDown={(e) => {
@@ -49,7 +53,8 @@ export function Modal({
         </button>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

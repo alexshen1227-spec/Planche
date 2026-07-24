@@ -66,6 +66,7 @@ export interface Workout {
   minutes: number
   kind: 'auto' | 'template' | 'test'
   blocks: Block[]
+  strategy?: StrategyId
 }
 
 export interface SetLog {
@@ -78,6 +79,8 @@ export interface SetLog {
   at: number
 }
 
+export type StrategyId = 'balanced' | 'volume' | 'intensity' | 'density' | 'technique'
+
 export interface Session {
   id: string
   startedAt: number
@@ -88,6 +91,8 @@ export interface Session {
   sets: SetLog[]
   rpe?: number
   notes?: string
+  /** Which coach strategy shaped this session (drives its learning). */
+  strategy?: StrategyId
 }
 
 export interface PR {
@@ -123,6 +128,8 @@ export interface AppState {
   prs: Record<string, PR>
   /** Achievement id -> unlock timestamp. */
   achievements: Record<string, number>
+  /** Exercise id -> a demo video URL the user pinned themselves. */
+  videoLinks: Record<string, string>
   settings: Settings
 }
 

@@ -7,6 +7,7 @@ import { todaysSession, maxTestWorkout, TEMPLATES } from '../data/workouts'
 import { tipOfTheDay } from '../data/tips'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { sessionsInWeekOf, weekStreak, totalHoldSec, sessionHighlight, paceToUnlock } from '../lib/stats'
+import { pickStrategy, STRATEGY_BY_ID, coachConfidence } from '../lib/coach'
 import { addDays, dayKey, fmtDate, fmtDuration, fmtHold, weekStart } from '../lib/time'
 import { exportData } from '../lib/exportImport'
 import { pushToast } from '../lib/toast'
@@ -62,6 +63,8 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
   const trainedToday = state.sessions.some((s) => dayKey(s.startedAt) === dayKey(Date.now()))
   const tip = tipOfTheDay()
   const pace = paceToUnlock(state)
+  const pick = useMemo(() => pickStrategy(state), [state])
+  const confidence = useMemo(() => coachConfidence(state), [state])
 
   const recent = useMemo(() => [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).slice(0, 3), [state.sessions])
   const trainedDays = useMemo(() => new Set(state.sessions.map((s) => dayKey(s.startedAt))), [state.sessions])
@@ -237,6 +240,44 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
           value={<span className="tnum">{state.sessions.length}</span>}
           sub={fmtDate(state.startedAt) === 'Today' ? 'started today' : `since ${fmtDate(state.startedAt)}`}
         />
+      </div>
+
+      {/* Coach */}
+      <div className="animate-rise card-sheen mt-4 rounded-2xl border border-line bg-surface p-5 shadow-card" style={{ animationDelay: '110ms' }}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-accent">
+              <Icon name="target" size={15} /> Coach
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-accent-soft px-3 py-1 text-[13px] font-semibold text-accent">
+                {STRATEGY_BY_ID[pick.strategy].name}
+              </span>
+              <span className="text-[13px] text-ink3">picked for today</span>
+            </div>
+            <p className="mt-1.5 max-w-xl text-[13.5px] leading-relaxed text-ink2">{pick.reason}</p>
+            <p className="mt-1 text-[13px] text-ink3">{STRATEGY_BY_ID[pick.strategy].blurb}</p>
+          </div>
+          <button
+            onClick={() => go('stats')}
+            className="shrink-0 rounded-lg border border-line bg-raised px-3 py-2 text-[12.5px] font-medium text-ink2 transition hover:text-ink"
+          >
+            What it learned →
+          </button>
+        </div>
+        <div className="mt-3 flex items-center gap-2 text-[12.5px] text-ink3">
+          <div className="h-1 w-24 overflow-hidden rounded-full bg-line">
+            <div
+              className="h-full rounded-full bg-accent/70"
+              style={{ width: `${Math.min(100, (confidence.evaluated / 12) * 100)}%` }}
+            />
+          </div>
+          <span className="tnum">
+            {confidence.evaluated === 0
+              ? 'Learning starts after your first couple of sessions'
+              : `${confidence.evaluated} session${confidence.evaluated === 1 ? '' : 's'} measured · ${confidence.tested}/5 approaches tested`}
+          </span>
+        </div>
       </div>
 
       {/* Tip + achievements */}

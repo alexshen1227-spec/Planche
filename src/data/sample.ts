@@ -1,4 +1,4 @@
-import type { AppState, Session, SetLog, Section } from '../types'
+import type { AppState, Session, SetLog, Section, StrategyId } from '../types'
 import { applySession } from '../lib/engine'
 import { initialState } from '../lib/store'
 import { addDays } from '../lib/time'
@@ -33,6 +33,12 @@ export function buildSampleState(): AppState {
     { day: 4, hour: 18 },
   ]
 
+  // Rotate strategies and let this simulated athlete respond best to volume,
+  // so the coach has a real signal to discover in the demo history.
+  const rotation: StrategyId[] = ['balanced', 'volume', 'intensity', 'density', 'technique']
+  let rotIdx = 0
+  let prevStrategy: StrategyId | null = null
+
   for (let week = 0; week < 9; week++) {
     for (const slot of weekPlan) {
       const at = addDays(start, week * 7 + slot.day)
@@ -40,6 +46,11 @@ export function buildSampleState(): AppState {
       t0.setHours(slot.hour, 10, 0, 0)
       const begin = t0.getTime()
       if (begin > now) continue
+
+      const strategy = rotation[rotIdx % rotation.length]
+      rotIdx += 1
+      const boost = prevStrategy === 'volume' ? 2 : 0
+      prevStrategy = strategy
 
       const sets: SetLog[] = []
       let clock = begin
@@ -69,7 +80,7 @@ export function buildSampleState(): AppState {
         add(holdSet('frog-stand', best, Math.round(best * 0.6), 'main', clock))
         add(holdSet('planche-lean', jitter(30, 3), 20, 'main', clock))
       } else {
-        const best = Math.round(4 + (week - 6) * 3.4 + (slot.day / 4) * 1.6)
+        const best = Math.round(4 + (week - 6) * 3.4 + (slot.day / 4) * 1.6 + boost)
         for (let i = 0; i < 4; i++) add(holdSet('tuck-planche', jitter(Math.max(3, best * 0.65), 1), Math.max(3, Math.round(best * 0.6)), 'main', clock))
         add(holdSet('tuck-planche', best, Math.max(3, Math.round(best * 0.6)), 'main', clock))
         add(holdSet('planche-lean', jitter(31, 3), 20, 'main', clock))
@@ -91,6 +102,7 @@ export function buildSampleState(): AppState {
         stepId: 'foundations',
         sets,
         rpe: 7 + Math.round(Math.random()),
+        strategy,
       })
     }
   }

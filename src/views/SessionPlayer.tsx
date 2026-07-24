@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Section, Session, SessionEvents, SetLog, Workout } from '../types'
+import type { Exercise, Section, Session, SessionEvents, SetLog, Workout } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
@@ -9,6 +9,7 @@ import { sfx, speak, buzz } from '../lib/audio'
 import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
 import { fmtClock, fmtHold } from '../lib/time'
+import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { ProgressRing, Modal } from '../components/ui'
@@ -41,6 +42,8 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
   const [events, setEvents] = useState<SessionEvents | null>(null)
   const [savedSession, setSavedSession] = useState<Session | null>(null)
   const [confirmExit, setConfirmExit] = useState(false)
+  const [showDemo, setShowDemo] = useState(false)
+  const [showRpeHelp, setShowRpeHelp] = useState(false)
   const [insight, setInsight] = useState<{ delta: number; label: string } | null>(null)
   const startedAtRef = useRef(Date.now())
   const lastBeepRef = useRef(-1)
@@ -230,6 +233,7 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
       sets: logs,
       rpe,
       notes: notes.trim() || undefined,
+      strategy: workout.strategy,
     }
     const { events: raw } = applySession(state, session)
     // First-ever values on accessories are technically PRs but not worth a
@@ -410,7 +414,10 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
             <Icon name="play" size={18} />
             {isHold ? `Start · ${LEAD_SEC}s lead-in` : 'Begin set'}
           </button>
-          <div className="mt-3 flex justify-center gap-5 text-[13px]">
+          <div className="mt-3 flex flex-wrap justify-center gap-5 text-[13px]">
+            <button onClick={() => setShowDemo(true)} className="text-accent underline-offset-2 hover:underline">
+              How do I do this?
+            </button>
             <button onClick={skipSet} className="text-ink3 underline-offset-2 hover:text-ink hover:underline">
               Skip set
             </button>
@@ -603,7 +610,16 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
             ))}
           </div>
           <div className="mt-5">
-            <div className="mb-2 text-[14px] font-medium text-ink">How hard was it? (RPE)</div>
+            <div className="mb-2 flex items-center justify-center gap-2 text-[14px] font-medium text-ink">
+              How hard was it? (RPE)
+              <button
+                onClick={() => setShowRpeHelp(true)}
+                aria-label="What is RPE?"
+                className="grid h-5 w-5 place-items-center rounded-full border border-line text-ink3 hover:text-ink"
+              >
+                <Icon name="info" size={12} />
+              </button>
+            </div>
             <div className="flex gap-2">
               {[6, 7, 8, 9, 10].map((n) => (
                 <button
@@ -729,6 +745,34 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
         {phase !== 'celebrate' ? progressBar : null}
         {body()}
       </div>
+      <Modal open={showDemo} onClose={() => setShowDemo(false)} wide>
+        {exercise ? <DemoHelp exercise={exercise} pinnedUrl={state.videoLinks[exercise.id]} /> : null}
+      </Modal>
+
+      <Modal open={showRpeHelp} onClose={() => setShowRpeHelp(false)}>
+        <div className="p-6">
+          <h2 className="font-display text-[19px] font-semibold text-ink">What is RPE?</h2>
+          <p className="mt-1.5 text-[14px] leading-relaxed text-ink2">
+            Rate of Perceived Exertion — how hard the whole session felt. Be honest: the app uses it to decide how hard
+            to make your next one.
+          </p>
+          <div className="mt-4 space-y-1.5 text-[13.5px]">
+            {[
+              ['6', 'Easy. Could have done a lot more.'],
+              ['7', 'Comfortable. A few solid sets left.'],
+              ['8', 'Hard but clean. The target for most days.'],
+              ['9', 'Very hard. Form started to fray.'],
+              ['10', 'Everything you had.'],
+            ].map(([n, d]) => (
+              <div key={n} className="flex gap-3 rounded-xl bg-raised px-3 py-2">
+                <span className="font-display font-bold text-accent tnum">{n}</span>
+                <span className="text-ink2">{d}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={confirmExit} onClose={() => setConfirmExit(false)}>
         <div className="p-6">
           <h2 className="font-display text-[19px] font-semibold text-ink">Leave this session?</h2>
@@ -753,6 +797,65 @@ export function SessionPlayer({ workout, onExit }: { workout: Workout; onExit: (
           </div>
         </div>
       </Modal>
+    </div>
+  )
+}
+
+function DemoHelp({ exercise, pinnedUrl }: { exercise: Exercise; pinnedUrl?: string }) {
+  const pinnedId = pinnedUrl ? youtubeId(pinnedUrl) : null
+  return (
+    <div className="p-6 sm:p-7">
+      <div className="pr-10">
+        <h2 className="font-display text-[21px] font-bold text-ink">{exercise.name}</h2>
+        <p className="mt-1 text-[14px] leading-relaxed text-ink2">{exercise.blurb}</p>
+      </div>
+      {pinnedId ? (
+        <div className="relative mt-4 w-full overflow-hidden rounded-xl border border-line" style={{ paddingTop: '56.25%' }}>
+          <iframe
+            src={embedUrl(pinnedId)}
+            title={`${exercise.name} demo`}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            className="absolute inset-0 h-full w-full"
+          />
+        </div>
+      ) : (
+        <a
+          href={demoSearchUrl(exercise)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-line bg-raised py-3 text-[14px] font-medium text-ink transition hover:border-line-strong"
+        >
+          <Icon name="play" size={15} className="text-accent" /> Watch demos on YouTube
+        </a>
+      )}
+      <div className="mt-4 rounded-2xl border border-line bg-raised p-4">
+        <div className="mb-2 text-[13px] font-semibold text-ink">Step by step</div>
+        <ol className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
+          {exercise.howTo.map((s, i) => (
+            <li key={s} className="flex gap-2.5">
+              <span className="font-display font-semibold text-accent tnum">{i + 1}</span>
+              {s}
+            </li>
+          ))}
+        </ol>
+      </div>
+      <div className="mt-3 rounded-2xl border border-line bg-raised p-4">
+        <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-danger">
+          <Icon name="x" size={14} /> Watch out for
+        </div>
+        <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
+          {exercise.mistakes.map((m) => (
+            <li key={m} className="flex gap-2">
+              <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-ink3" />
+              {m}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <p className="mt-3 text-[12.5px] text-ink3">
+        Tip: pin your favourite demo in the Learn tab and it will play here instead of a search.
+      </p>
     </div>
   )
 }

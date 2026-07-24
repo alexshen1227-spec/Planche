@@ -4,6 +4,7 @@ import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID, STEPS } from '../data/progressions'
 import { ACHIEVEMENTS } from '../data/achievements'
 import { bestSeries, weeklyVolume, totalHoldSec, totalSets, sessionHoldSec } from '../lib/stats'
+import { armStats, STRATEGY_BY_ID, formatRate, pickStrategy } from '../lib/coach'
 import { fmtDate, fmtTime, fmtDuration, fmtHold, fmtClock } from '../lib/time'
 import { HoldLineChart, VolumeBarChart, TrainingHeatmap } from '../components/charts'
 import { Icon } from '../components/Icon'
@@ -17,6 +18,10 @@ export function Stats() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const series = useMemo(() => bestSeries(state, chartEx), [state, chartEx])
+  const arms = useMemo(() => armStats(state), [state])
+  const coachPick = useMemo(() => pickStrategy(state), [state])
+  const bestArm = useMemo(() => [...arms].filter((a) => a.n > 0).sort((a, b) => b.mean - a.mean)[0], [arms])
+  const maxArmRate = useMemo(() => Math.max(0.001, ...arms.map((a) => Math.abs(a.secPerWeek))), [arms])
   const volume = useMemo(() => weeklyVolume(state, 12), [state])
   const sessions = useMemo(() => [...state.sessions].sort((a, b) => b.startedAt - a.startedAt), [state.sessions])
 
@@ -84,6 +89,64 @@ export function Stats() {
         <div className="mt-3">
           <VolumeBarChart weeks={volume} />
         </div>
+      </div>
+
+      {/* What the coach learned */}
+      <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-card">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="font-display text-[16px] font-semibold text-ink">What your coach has learned</div>
+            <div className="max-w-xl text-[13px] leading-relaxed text-ink2">
+              It tries different ways of shaping your main sets, then measures how much your key hold actually moved by
+              the next session. The fastest approach gets used most, and untested ones get their turn.
+            </div>
+          </div>
+          <span className="rounded-full bg-accent-soft px-3 py-1 text-[12.5px] font-semibold text-accent">
+            Today: {STRATEGY_BY_ID[coachPick.strategy].name}
+          </span>
+        </div>
+
+        <div className="mt-4 space-y-2.5">
+          {arms.map((a) => {
+            const def = STRATEGY_BY_ID[a.id]
+            const isBest = bestArm && a.id === bestArm.id && a.n > 0
+            return (
+              <div key={a.id} className="rounded-2xl border border-line bg-raised p-3.5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px] font-semibold text-ink">{def.name}</span>
+                    {isBest ? (
+                      <span className="rounded-full bg-ok-soft px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-ok">
+                        fastest
+                      </span>
+                    ) : null}
+                    {a.id === coachPick.strategy ? (
+                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-accent">
+                        today
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="text-[13px] font-medium text-ink2 tnum">
+                    {a.n === 0 ? 'not tested yet' : `${formatRate(a.secPerWeek)} · ${a.n} session${a.n === 1 ? '' : 's'}`}
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
+                  <div
+                    className={`h-full rounded-full ${a.secPerWeek < 0 ? 'bg-danger/60' : isBest ? 'bg-ok' : 'bg-accent/60'}`}
+                    style={{
+                      width: `${a.n === 0 ? 0 : Math.max(3, (Math.abs(a.secPerWeek) / maxArmRate) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <div className="mt-1.5 text-[12.5px] leading-relaxed text-ink3">{def.blurb}</div>
+              </div>
+            )
+          })}
+        </div>
+        <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">
+          Rates are measured on your current step's key hold and recomputed from your history — deleting a session
+          updates them honestly.
+        </p>
       </div>
 
       {/* Consistency heatmap */}

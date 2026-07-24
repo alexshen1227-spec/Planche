@@ -105,7 +105,7 @@ const NAV: { tab: Tab; label: string; icon: IconName }[] = [
   { tab: 'home', label: 'Home', icon: 'home' },
   { tab: 'train', label: 'Train', icon: 'bolt' },
   { tab: 'path', label: 'Path', icon: 'route' },
-  { tab: 'library', label: 'Library', icon: 'book' },
+  { tab: 'library', label: 'Learn', icon: 'book' },
   { tab: 'stats', label: 'Progress', icon: 'chart' },
   { tab: 'settings', label: 'Settings', icon: 'sliders' },
 ]

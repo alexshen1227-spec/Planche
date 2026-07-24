@@ -2,6 +2,7 @@ import type { AppState, Block, BlockTarget, StepId, Workout } from '../types'
 import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID, stepBefore } from './progressions'
 import { dayKey } from '../lib/time'
+import { pickStrategy, STRATEGY_BY_ID } from '../lib/coach'
 
 const hold = (sec: number): BlockTarget => ({ kind: 'hold', sec })
 const reps = (n: number): BlockTarget => ({ kind: 'reps', reps: n })
@@ -178,19 +179,28 @@ export function todaysSession(state: AppState): Workout {
     })
   }
 
-  // Main isometrics at the adaptive working target.
+  // Main isometrics: adaptive target, shaped by whichever strategy the coach
+  // has found produces your fastest gains. Recovery days override the shape.
+  const pick = pickStrategy(state)
+  const strategy = ctx.type === 'technique' ? 'technique' : pick.strategy
+  const shape = STRATEGY_BY_ID[strategy]
   const baseTarget = adaptiveTarget(state, stepId)
-  const target = ctx.type === 'technique' ? Math.max(3, Math.round(baseTarget * 0.75)) : baseTarget
+  const target = clamp(Math.round(baseTarget * shape.targetFactor), 3, step.unlockSec)
+  const baseSets = attempt ? 3 : 4
   blocks.push({
     exerciseId: step.keyExerciseId,
-    sets: ctx.type === 'technique' ? 3 : attempt ? 3 : 4,
+    sets: clamp(baseSets + shape.setsDelta, 2, 8),
     target: hold(target),
-    restSec: rMain,
+    restSec: Math.round(rMain * shape.restFactor),
     section: 'main',
     note:
-      ctx.type === 'technique'
+      strategy === 'technique'
         ? 'Easy targets today — perfect positions, zero grinding.'
-        : 'Stop each set ~2s before failure. Quality over seconds.',
+        : strategy === 'intensity'
+          ? 'Heavy holds. Rest fully between sets and keep the arms locked.'
+          : strategy === 'density'
+            ? 'Short rests on purpose — expect the later sets to feel spicy.'
+            : 'Stop each set ~2s before failure. Quality over seconds.',
   })
 
   // One back-off block on the previous step keeps old positions honest.
@@ -245,12 +255,13 @@ export function todaysSession(state: AppState): Workout {
   const fitted = fitToBudget(blocks, budget)
 
   return {
-    id: `auto-${stepId}-${ctx.type}`,
+    id: `auto-${stepId}-${ctx.type}-${strategy}`,
     name: `${step.name} · ${DAY_LABEL[ctx.type]}`,
     focus: `${ctx.reason}${attempt ? ' An unlock attempt is queued while you are freshest.' : ''}`,
     minutes: estimateMinutes(fitted),
     kind: 'auto',
     blocks: fitted,
+    strategy,
   }
 }
 

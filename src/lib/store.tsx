@@ -33,6 +33,7 @@ export function initialState(): AppState {
     sessions: [],
     prs: {},
     achievements: {},
+    videoLinks: {},
     settings: { ...DEFAULT_SETTINGS },
   }
 }
@@ -61,6 +62,10 @@ export function normalizeState(raw: unknown): AppState {
     achievements:
       typeof r.achievements === 'object' && r.achievements !== null
         ? (r.achievements as AppState['achievements'])
+        : {},
+    videoLinks:
+      typeof r.videoLinks === 'object' && r.videoLinks !== null
+        ? (r.videoLinks as AppState['videoLinks'])
         : {},
     settings: { ...DEFAULT_SETTINGS, ...(typeof r.settings === 'object' ? r.settings : {}) },
   }
@@ -105,6 +110,7 @@ export type Action =
   | { type: 'SET_SETTINGS'; patch: Partial<Settings> }
   | { type: 'SET_STEP'; stepId: StepId }
   | { type: 'COMPLETE_ONBOARDING'; name: string; stepId: StepId; weeklyGoal: number }
+  | { type: 'SET_VIDEO'; exerciseId: string; url: string | null }
   | { type: 'REPLACE'; state: AppState }
   | { type: 'RESET' }
 
@@ -135,6 +141,12 @@ function reducer(state: AppState, action: Action): AppState {
         unlocked,
         settings: { ...state.settings, weeklyGoal: action.weeklyGoal },
       }
+    }
+    case 'SET_VIDEO': {
+      const videoLinks = { ...state.videoLinks }
+      if (action.url) videoLinks[action.exerciseId] = action.url
+      else delete videoLinks[action.exerciseId]
+      return { ...state, videoLinks }
     }
     case 'REPLACE':
       return normalizeState(action.state)
