@@ -50,6 +50,8 @@ const MIN_FRAMES = 3
  */
 interface PoseProfile {
   label: string
+  /** No geometric checks apply — say so rather than implying it looked good. */
+  noChecks?: boolean
   /** Elbow angle below this counts as bent. Undefined = do not check. */
   minElbowDeg?: number
   /** Knee angle below this counts as bent. Undefined = legs are meant to bend. */
@@ -81,9 +83,12 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
     checkShrug: true,
   },
   'frog-stand': {
-    // Arms are allowed to bend here; balance is the skill being trained.
+    // Balance, not shape: bent arms and tucked knees are both correct here, so
+    // there is nothing meaningful to measure. Saying that is better than
+    // running zero checks and reporting "clean".
     label: 'Frog stand',
-    checkShrug: true,
+    noChecks: true,
+    checkShrug: false,
   },
   'tuck-planche': {
     // Knees are meant to be at the chest, so knee and hip angles are not faults.
@@ -166,6 +171,11 @@ function pickSide(kps: Kp[]): 'left' | 'right' | null {
   return l >= r ? 'left' : 'right'
 }
 
+/** Angles come back NaN when two keypoints coincide; never let that through. */
+function push(arr: number[], v: number) {
+  if (Number.isFinite(v)) arr.push(v)
+}
+
 function median(xs: number[]): number | undefined {
   if (!xs.length) return undefined
   const s = [...xs].sort((a, b) => a - b)
@@ -202,6 +212,43 @@ async function getDetector() {
   return detectorPromise
 }
 
+/**
+ * MediaRecorder WebM has no duration in its header, so `video.duration` reads
+ * Infinity — which used to fail every analysis on browsers without MP4
+ * recording (Firefox, and Chromium builds without proprietary codecs).
+ * Seeking far past the end forces the browser to compute the real duration.
+ */
+function resolveDuration(video: HTMLVideoElement): Promise<number> {
+  const d = video.duration
+  if (Number.isFinite(d) && d > 0) return Promise.resolve(d)
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      video.removeEventListener('durationchange', onChange)
+      const real = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
+      // Put playback back somewhere sane before sampling begins.
+      try {
+        video.currentTime = 0
+      } catch {
+        /* ignore */
+      }
+      resolve(real)
+    }
+    const onChange = () => {
+      if (Number.isFinite(video.duration) && video.duration > 0) finish()
+    }
+    video.addEventListener('durationchange', onChange)
+    try {
+      video.currentTime = 1e101
+    } catch {
+      finish()
+    }
+    window.setTimeout(finish, 3000)
+  })
+}
+
 function seekTo(video: HTMLVideoElement, t: number): Promise<void> {
   return new Promise((resolve) => {
     let done = false
@@ -225,6 +272,12 @@ export async function analyseClip(
   const empty: PoseFormResult = { ok: false, confidence: 0, framesUsed: 0, issues: [], notes: [], good: [] }
   const profile = POSE_PROFILES[exerciseId]
   if (!profile) return { ...empty, reason: 'This movement is not one the camera can assess.' }
+  if (profile.noChecks) {
+    return {
+      ...empty,
+      reason: `A ${profile.label.toLowerCase()} is about balance rather than a fixed shape, so there is nothing here the camera can judge for you. Rate it yourself.`,
+    }
+  }
 
   const url = URL.createObjectURL(blob)
   const video = document.createElement('video')
@@ -240,7 +293,7 @@ export async function analyseClip(
     })
 
     const detector = await getDetector()
-    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
+    const duration = await resolveDuration(video)
     if (duration === 0) return { ...empty, reason: 'That clip has no readable duration.' }
 
     // Sample the middle of the hold; the ends are getting in and falling out.
@@ -270,17 +323,21 @@ export async function analyseClip(
       const elbow = byName(kps, `${side}_elbow`)
       const wrist = byName(kps, `${side}_wrist`)
       const hip = byName(kps, `${side}_hip`)
-      const ear = byName(kps, `${side}_ear`) ?? byName(kps, 'nose')
+      // Ear only — the nose sits much further from the shoulder, so falling
+      // back to it against the same threshold always reads as "not shrugged".
+      const ear = byName(kps, `${side}_ear`)
       if (!shoulder || !hip) continue
 
       const torso = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y)
       if (torso < 1) continue
 
-      confidences.push(
-        ([shoulder, elbow, wrist, hip].filter(Boolean) as Kp[]).reduce((t2, k) => t2 + (k.score ?? 0), 0) / 4,
-      )
+      // Averaged over the points actually found. Dividing by a fixed four
+      // penalised clips where a wrist was hidden behind a parallette, which
+      // then failed the confidence gate despite tracking everything else.
+      const found = [shoulder, elbow, wrist, hip].filter(Boolean) as Kp[]
+      confidences.push(found.reduce((t2, k) => t2 + (k.score ?? 0), 0) / found.length)
 
-      if (elbow && wrist) elbows.push(angleDeg(shoulder, elbow, wrist))
+      if (elbow && wrist) push(elbows, angleDeg(shoulder, elbow, wrist))
 
       // Legs: take the straighter side, since one-leg work deliberately keeps
       // the other tucked and the extended leg is the one being judged.
@@ -288,10 +345,10 @@ export async function analyseClip(
         const h = byName(kps, `${s}_hip`)
         const k = byName(kps, `${s}_knee`)
         const a = byName(kps, `${s}_ankle`)
-        if (h && k && a) knees.push(angleDeg(h, k, a))
+        if (h && k && a) push(knees, angleDeg(h, k, a))
         if (h && k) {
           const sh = byName(kps, `${s}_shoulder`) ?? shoulder
-          hipAngles.push(angleDeg(sh, h, k))
+          push(hipAngles, angleDeg(sh, h, k))
         }
       }
 
@@ -302,9 +359,9 @@ export async function analyseClip(
         // Lean is signed by which way the body points, so it reads the same
         // whichever way round the phone was set up.
         const facing = Math.sign(shoulder.x - hip.x) || 1
-        leans.push(((shoulder.x - wrist.x) * facing) / torso)
+        push(leans, ((shoulder.x - wrist.x) * facing) / torso)
       }
-      if (ear) shrugs.push(Math.hypot(shoulder.x - ear.x, shoulder.y - ear.y) / torso)
+      if (ear) push(shrugs, Math.hypot(shoulder.x - ear.x, shoulder.y - ear.y) / torso)
     }
 
     const framesUsed = confidences.length
@@ -362,7 +419,9 @@ export async function analyseClip(
 
     if (profile.minHipAngleDeg !== undefined && hipAngleDeg !== undefined) {
       if (hipAngleDeg < profile.minHipAngleDeg) {
-        issues.push('pike')
+        // Its own issue, not "hips too high": a closed hip angle means the
+        // body is still folded, which is the opposite complaint.
+        issues.push('closed')
         notes.push(
           `Hips were only about ${Math.round(hipAngleDeg)}° open — this position wants closer to ${profile.minHipAngleDeg}°.`,
         )
@@ -386,9 +445,11 @@ export async function analyseClip(
       } else good.push('Good forward lean')
     }
 
-    if (profile.checkShrug && shrugRatio !== undefined && shrugRatio < 0.32) {
-      issues.push('shrug')
-      notes.push('Your shoulders looked shrugged up toward your ears — push the floor away and keep them down.')
+    if (profile.checkShrug && shrugRatio !== undefined) {
+      if (shrugRatio < 0.32) {
+        issues.push('shrug')
+        notes.push('Your shoulders looked shrugged up toward your ears — push the floor away and keep them down.')
+      } else good.push('Shoulders down, not shrugged')
     }
 
     return {
@@ -411,6 +472,22 @@ export async function analyseClip(
     URL.revokeObjectURL(url)
     video.src = ''
   }
+}
+
+/**
+ * Keep loader internals out of the athlete's face. A failed dynamic import
+ * reads as a stack-trace-ish string that means nothing mid-workout.
+ */
+export function friendlyResult(res: PoseFormResult): PoseFormResult {
+  if (res.ok || !res.reason) return res
+  const technical = /import|fetch|module|network|backend|webgl|undefined|\.js/i.test(res.reason)
+  return technical
+    ? {
+        ...res,
+        reason:
+          'The form checker could not load. It needs a connection the first time it runs — try again once you are online.',
+      }
+    : res
 }
 
 /** Fetch a stored clip's blob so it can be analysed. */

@@ -42,6 +42,7 @@ export type FormIssue =
   | 'shrug'
   | 'pike'
   | 'sag'
+  | 'closed'
   | 'knees'
   | 'lean'
   | 'hips'

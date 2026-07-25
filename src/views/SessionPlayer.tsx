@@ -22,7 +22,7 @@ import { useWakeLock } from '../lib/wakeLock'
 import { clearDraft, saveDraft, type SessionDraft } from '../lib/draft'
 import { useFormRecorder } from '../lib/recorder'
 import { saveClip, getClipUrl } from '../lib/clips'
-import { analyseClip, blobFromUrl, isFilmable, type PoseFormResult } from '../lib/poseForm'
+import { analyseClip, blobFromUrl, friendlyResult, isFilmable, type PoseFormResult } from '../lib/poseForm'
 import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
@@ -234,6 +234,10 @@ export function SessionPlayer({
   useEffect(() => {
     if (phase === 'lead' && leadRemaining <= 0) {
       sfx.go()
+      // Recording starts with the hold, not with the lead-in. Filming the
+      // walk into position put upright frames inside the analysed window,
+      // and a single standing frame reads as perfectly locked arms.
+      if (filming) void recorder.start()
       if (state.settings.voice) speak('Go')
       targetHitRef.current = false
       lastCountRef.current = -1
@@ -241,7 +245,8 @@ export function SessionPlayer({
       setHoldStart(Date.now())
       setPhase('hold')
     }
-  }, [phase, leadRemaining, state.settings.voice])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, leadRemaining, state.settings.voice, filming])
 
   // Rest finished → back to ready.
   useEffect(() => {
@@ -358,7 +363,6 @@ export function SessionPlayer({
     if (!block || !exercise) return
     lastBeepRef.current = -1
     if (exercise.type === 'hold') {
-      if (filming) void recorder.start()
       setLeadEnd(Date.now() + LEAD_SEC * 1000)
       setPhase('lead')
     } else {
@@ -845,7 +849,7 @@ export function SessionPlayer({
             </div>
           </ProgressRing>
           {lastLog ? (
-            <div className="mt-5 flex items-center gap-2 rounded-full border border-line bg-surface py-1.5 pl-4 pr-1.5 text-[13.5px] text-ink2">
+            <div className="mt-5 flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-2xl border border-line bg-surface px-4 py-2 text-[13.5px] text-ink2">
               Logged {lastLog.kind === 'hold' ? fmtHold(lastLog.value) : `${lastLog.value} reps`}
               {lastLog.raw !== undefined ? (
                 <span className="text-[12px] text-ink3 tnum">
@@ -1158,6 +1162,7 @@ export const FORM_ISSUE_LABEL: Record<FormIssue, string> = {
   shrug: 'Shoulders shrugged',
   pike: 'Hips too high',
   sag: 'Hips too low',
+  closed: 'Hips not open enough',
   knees: 'Knees bent',
   lean: 'Not enough lean',
   hips: 'Hips sagged',
@@ -1166,7 +1171,7 @@ export const FORM_ISSUE_LABEL: Record<FormIssue, string> = {
 
 /** Offered for tapping; the two legacy values are readable but not selectable. */
 const FORM_ISSUES: { id: FormIssue; label: string }[] = (
-  ['arms', 'scapula', 'shrug', 'pike', 'sag', 'knees', 'lean'] as FormIssue[]
+  ['arms', 'scapula', 'shrug', 'pike', 'sag', 'closed', 'knees', 'lean'] as FormIssue[]
 ).map((id) => ({ id, label: FORM_ISSUE_LABEL[id] }))
 
 /**
@@ -1194,9 +1199,12 @@ function FormCheckRow({
     setAnalysing(true)
     try {
       const blob = await blobFromUrl(clipUrl)
-      const res = blob ? await analyseClip(blob, exerciseId) : null
-      setAnalysis(res)
-      if (res?.ok) {
+      const res: PoseFormResult = blob
+        ? await analyseClip(blob, exerciseId)
+        : // Never leave the button looking like it did nothing.
+          { ok: false, confidence: 0, framesUsed: 0, issues: [], notes: [], good: [], reason: 'That clip could not be loaded.' }
+      setAnalysis(friendlyResult(res))
+      if (res.ok) {
         // Pre-fills the answer; the athlete still confirms it, because the
         // model is guessing at a body position it was barely trained on.
         setIssues(res.issues)
@@ -1228,8 +1236,16 @@ function FormCheckRow({
     }
   }, [clipKey])
 
+  // Committed on every tap rather than behind a Save button: the rest timer
+  // can expire mid-selection and used to throw the whole rating away.
   const commit = (r: FormRating, iss: FormIssue[]) =>
     onDone({ rating: r, ...(iss.length ? { issues: iss } : {}), ...(clipKey ? { clipKey } : {}) })
+
+  const toggleIssue = (id: FormIssue) => {
+    const next = issues.includes(id) ? issues.filter((x) => x !== id) : [...issues, id]
+    setIssues(next)
+    if (rating) commit(rating, next)
+  }
 
   return (
     <div className="mx-auto mt-5 w-full max-w-sm rounded-2xl border border-line bg-surface p-4">
@@ -1246,11 +1262,17 @@ function FormCheckRow({
           <button
             onClick={() => void runAnalysis()}
             disabled={analysing}
+            aria-busy={analysing}
             className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-raised py-2 text-[13px] font-semibold text-ink transition hover:border-line-strong disabled:opacity-60"
           >
             <Icon name="sparkle" size={14} className="text-accent" />
             {analysing ? 'Checking your position…' : 'Check my form automatically'}
           </button>
+          {analysing ? (
+            <p className="mt-1 text-center text-[11.5px] text-ink3" role="status">
+              First run downloads the checker — it is quick after that.
+            </p>
+          ) : null}
           {analysis ? (
             <div
               className={`mt-2 rounded-xl border p-3 text-[12.5px] leading-relaxed ${
@@ -1300,8 +1322,10 @@ function FormCheckRow({
             key={id}
             onClick={() => {
               setRating(id)
-              if (id === 'clean') commit(id, [])
+              commit(id, id === 'clean' ? [] : issues)
+              if (id === 'clean') setIssues([])
             }}
+            aria-pressed={rating === id}
             className={`flex-1 rounded-xl border py-2 text-[13px] font-medium transition ${
               rating === id
                 ? 'border-transparent bg-accent text-on-accent'
@@ -1323,7 +1347,8 @@ function FormCheckRow({
               return (
                 <button
                   key={f.id}
-                  onClick={() => setIssues((v) => (on ? v.filter((x) => x !== f.id) : [...v, f.id]))}
+                  onClick={() => toggleIssue(f.id)}
+                  aria-pressed={on}
                   className={`rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition ${
                     on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2'
                   }`}
@@ -1333,12 +1358,7 @@ function FormCheckRow({
               )
             })}
           </div>
-          <button
-            onClick={() => commit(rating, issues)}
-            className="mt-2.5 w-full rounded-xl border border-line bg-raised py-2 text-[13px] font-semibold text-ink"
-          >
-            Save
-          </button>
+          <p className="mt-2 text-[11.5px] text-ink3">Saved as you tap — no need to confirm.</p>
         </div>
       ) : null}
     </div>

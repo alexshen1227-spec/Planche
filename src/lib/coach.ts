@@ -369,6 +369,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     shrug: 'shoulders shrugging up',
     pike: 'hips riding too high',
     sag: 'hips dropping',
+    closed: 'hips not opening enough',
     knees: 'knees bending',
     lean: 'not leaning far enough forward',
     hips: 'hips sagging',

@@ -6,6 +6,8 @@ import { exportData, readImportFile } from '../lib/exportImport'
 import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
 import { listClips, clearAllClips } from '../lib/clips'
 import { fmtDate } from '../lib/time'
+import { fmtWeight } from '../lib/units'
+import { MeasurePrompt, lastOf } from '../components/MeasurePrompt'
 import { buildSampleState } from '../data/sample'
 import { pushToast } from '../lib/toast'
 import { sfx } from '../lib/audio'
@@ -24,11 +26,12 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   )
 }
 
-function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
     <button
       role="switch"
       aria-checked={on}
+      aria-label={label}
       onClick={() => onChange(!on)}
       className={`relative h-7 w-12 rounded-full transition ${on ? 'bg-accent' : 'bg-line-strong'}`}
     >
@@ -122,7 +125,7 @@ function LatencyCalibrator({ onDone }: { onDone: (sec: number) => void }) {
   const medianMs = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0
   // Floor at 0.2s: nobody registers a deliberate stop faster than that, so a
   // freak measurement should not zero out the correction entirely.
-  const suggested = Math.min(2, Math.max(0.2, Math.round((medianMs / 1000 + (reachAdd ? 0.5 : 0)) * 10) / 10))
+  const suggested = Math.min(5, Math.max(0.2, Math.round((medianMs / 1000 + (reachAdd ? 1.6 : 0)) * 10) / 10))
 
   return (
     <div className="p-6">
@@ -172,8 +175,8 @@ function LatencyCalibrator({ onDone }: { onDone: (sec: number) => void }) {
               className="mt-0.5 h-4 w-4 accent-[var(--t-accent)]"
             />
             <span className="text-[13px] leading-relaxed text-ink2">
-              My phone is out of reach during holds, so I have to come out of the position first
-              <span className="text-ink3"> (adds 0.5s)</span>
+              My phone is propped up to film, so I have to come out of the position and walk to it
+              <span className="text-ink3"> (adds 1.6s)</span>
             </span>
           </label>
           <button
@@ -202,6 +205,8 @@ export function Settings() {
   const [name, setName] = useState(state.name)
   const [storage, setStorage] = useState<StorageInfo | null>(null)
   const [calibrating, setCalibrating] = useState(false)
+  const [loggingWeight, setLoggingWeight] = useState(false)
+  const lastWeight = lastOf(state, 'weightKg')
   const [clipCount, setClipCount] = useState(0)
   const [clipBytes, setClipBytes] = useState(0)
 
@@ -271,6 +276,21 @@ export function Settings() {
         <Row label="Weekly session goal" hint="Drives the streak. 3–4 is the sweet spot for planche work.">
           <Stepper value={s.weeklyGoal} onChange={(v) => set({ weeklyGoal: v })} min={1} max={7} />
         </Row>
+        <Row
+          label="Bodyweight"
+          hint={
+            lastWeight
+              ? `Last logged ${fmtWeight(lastWeight.value, s.units)} on ${fmtDate(lastWeight.at)}.`
+              : 'Not logged yet. Planche is strength-to-weight, so the coach reads your holds against it.'
+          }
+        >
+          <button
+            onClick={() => setLoggingWeight(true)}
+            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+          >
+            Log now
+          </button>
+        </Row>
         <Row label="Session length" hint="Generated sessions trim themselves to fit this budget.">
           <Stepper
             value={s.sessionMinutes}
@@ -321,15 +341,15 @@ export function Settings() {
       <SectionTitle>Training</SectionTitle>
       <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
         <Row label="Include warm-up blocks" hint="Wrist prep and scapula activation at the start of generated sessions.">
-          <Toggle on={s.warmup} onChange={(v) => set({ warmup: v })} />
+          <Toggle label="Include warm-up blocks" on={s.warmup} onChange={(v) => set({ warmup: v })} />
         </Row>
         <Row
           label="Film main holds"
           hint="Records a short clip of planche holds from your camera so you can compare your position over time. Stays on this device, and you can switch it off for any individual set."
         >
-          <Toggle on={s.recordForm} onChange={(v) => set({ recordForm: v })} />
+          <Toggle label="Film main holds" on={s.recordForm} onChange={(v) => set({ recordForm: v })} />
         </Row>
-        <Row label="Saved form clips" hint={`${clipCount} clip${clipCount === 1 ? '' : 's'} · ${(clipBytes / 1048576).toFixed(1)} MB on this device.`}>
+        <Row label="Saved form clips" hint={`${clipCount} clip${clipCount === 1 ? '' : 's'} Â· ${(clipBytes / 1048576).toFixed(1)} MB on this device.`}>
           <button
             onClick={() => {
               void clearAllClips().then(() => {
@@ -368,7 +388,9 @@ export function Settings() {
             value={Math.round(s.stopLatencySec * 10)}
             onChange={(v) => set({ stopLatencySec: v / 10 })}
             min={0}
-            max={20}
+            // Must sit above the default (2.3s); a lower ceiling silently
+            // clamped the shipped value downward on the first tap.
+            max={50}
             step={1}
             format={(v) => `${(v / 10).toFixed(1)}s`}
           />
@@ -388,13 +410,13 @@ export function Settings() {
       <SectionTitle>Sound</SectionTitle>
       <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
         <Row label="Sounds" hint="Start/stop chimes, PR fanfares.">
-          <Toggle on={s.sound} onChange={(v) => set({ sound: v })} />
+          <Toggle label="Sounds" on={s.sound} onChange={(v) => set({ sound: v })} />
         </Row>
         <Row label="Voice cues" hint="Spoken counts every 5s mid-hold, plus go/target calls — you can't read a screen upside-down.">
-          <Toggle on={s.voice} onChange={(v) => set({ voice: v })} />
+          <Toggle label="Voice cues" on={s.voice} onChange={(v) => set({ voice: v })} />
         </Row>
         <Row label="Countdown beeps" hint="3-2-1 ticks before holds and rests (voice replaces these when it's on).">
-          <Toggle on={s.beeps} onChange={(v) => set({ beeps: v })} />
+          <Toggle label="Countdown beeps" on={s.beeps} onChange={(v) => set({ beeps: v })} />
         </Row>
         <Row label="Volume">
           <input
@@ -441,7 +463,7 @@ export function Settings() {
             </button>
           ) : (
             <span className={`text-[13px] font-semibold ${storage?.persisted ? 'text-ok' : 'text-ink3'}`}>
-              {storage === null ? '…' : storage.persisted ? '✓ Protected' : '—'}
+              {storage === null ? '…' : storage.persisted ? 'âœ“ Protected' : '—'}
             </span>
           )}
         </Row>
@@ -500,11 +522,11 @@ export function Settings() {
       <SectionTitle>About</SectionTitle>
       <div className="rounded-2xl border border-line bg-surface p-5 text-[13.5px] leading-relaxed text-ink2 shadow-card">
         <p>
-          <span className="font-display font-semibold text-ink">Planche Lab</span> · a local-first training companion
+          <span className="font-display font-semibold text-ink">Planche Lab</span> Â· a local-first training companion
           for learning the planche. All data lives in your browser — nothing leaves your machine.
         </p>
         <p className="mt-2">
-          Progressions follow standard gymnastics-strength practice (leans → frog → tuck → advanced tuck → straddle →
+          Progressions follow standard gymnastics-strength practice (leans â†’ frog â†’ tuck â†’ advanced tuck â†’ straddle â†’
           full). Expect the road to take 1–3+ years depending on starting point, bodyweight and consistency — that's
           normal, not failure.
         </p>
@@ -513,6 +535,8 @@ export function Settings() {
           and see a professional about persistent pain.
         </p>
       </div>
+
+      <MeasurePrompt open={loggingWeight} onClose={() => setLoggingWeight(false)} />
 
       <Modal open={calibrating} onClose={() => setCalibrating(false)}>
         <LatencyCalibrator
@@ -588,3 +612,4 @@ export function Settings() {
     </div>
   )
 }
+

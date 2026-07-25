@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listClips, getClipUrl, deleteClip, setPinned, type ClipMeta } from '../lib/clips'
-import { analyseClip, blobFromUrl, type PoseFormResult } from '../lib/poseForm'
+import { analyseClip, blobFromUrl, friendlyResult, type PoseFormResult } from '../lib/poseForm'
 import { fmtDate, fmtHold } from '../lib/time'
 import { pushToast } from '../lib/toast'
 import { Icon } from './Icon'
@@ -22,8 +22,10 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
     setBusy(key)
     try {
       const blob = await blobFromUrl(url)
-      const res = blob ? await analyseClip(blob, exerciseId) : null
-      if (res) setAnalysis((a) => ({ ...a, [key]: res }))
+      const res: PoseFormResult = blob
+        ? await analyseClip(blob, exerciseId)
+        : { ok: false, confidence: 0, framesUsed: 0, issues: [], notes: [], good: [], reason: 'That clip could not be loaded.' }
+      setAnalysis((a) => ({ ...a, [key]: friendlyResult(res) }))
     } finally {
       setBusy(null)
     }

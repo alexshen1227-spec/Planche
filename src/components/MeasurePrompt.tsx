@@ -51,6 +51,7 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
   const [heightCm, setHeightCm] = useState('')
   const [heightFt, setHeightFt] = useState('')
   const [heightIn, setHeightIn] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
   const save = () => {
     const wNum = parseFloat(weight)
@@ -64,11 +65,20 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
       const inch = parseFloat(heightIn) || 0
       if (Number.isFinite(ft) && ft > 0) newHeight = (ft * 12 + inch) * CM_PER_IN
     }
+    // Typing something unparseable used to close the dialog silently and
+    // snooze, so it looked saved when nothing had been recorded.
+    if (weight.trim() && weightKg === undefined) {
+      setError('That weight did not read as a number — try something like 72.5.')
+      return
+    }
     if (weightKg === undefined && newHeight === undefined) {
       dismiss()
       return
     }
     dispatch({ type: 'LOG_MEASUREMENT', weightKg, heightCm: newHeight })
+    // Snooze regardless of which field was filled: a height-only save left
+    // the weekly weight check due, so it reappeared on every launch.
+    dispatch({ type: 'SNOOZE_MEASURE' })
     pushToast('Logged. The coach will factor it in.', 'success')
     onClose()
   }
@@ -98,12 +108,19 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
           <span className="text-[13px] font-medium text-ink2">Bodyweight ({weightUnitLabel(units)})</span>
           <input
             value={weight}
-            onChange={(e) => setWeight(e.target.value)}
+            onChange={(e) => {
+              setWeight(e.target.value)
+              setError(null)
+            }}
             inputMode="decimal"
             autoFocus
             placeholder={weightUnitLabel(units)}
-            className="mt-1.5 w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+            aria-invalid={error !== null}
+            className={`mt-1.5 w-full rounded-xl border bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent ${
+              error ? 'border-danger' : 'border-line'
+            }`}
           />
+          {error ? <span className="mt-1 block text-[12.5px] text-danger">{error}</span> : null}
           {lastW ? (
             <span className="mt-1 block text-[12px] text-ink3">
               Last logged {new Date(lastW.at).toLocaleDateString()} — leave blank to skip.
@@ -142,7 +159,9 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
                 />
               </div>
             )}
-            <span className="mt-1 block text-[12px] text-ink3">Leave blank to keep {fmtHeight(lastH?.value, units)}.</span>
+            <span className="mt-1 block text-[12px] text-ink3">
+              {lastH ? `Leave blank to keep ${fmtHeight(lastH.value, units)}.` : 'Optional.'}
+            </span>
           </div>
         ) : null}
 

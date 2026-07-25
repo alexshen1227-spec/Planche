@@ -70,7 +70,21 @@ function clampNum(v: unknown, lo: number, hi: number, fallback: number): number 
 }
 
 const FORM_RATINGS = new Set(['clean', 'slipped', 'broke'])
-const FORM_ISSUES = new Set(['arms', 'scapula', 'hips', 'level'])
+// Must list every FormIssue. Anything missing here is silently stripped from
+// saved sessions on the next load, which quietly discards what the camera
+// detected — keep this in step with the union in types.ts.
+const FORM_ISSUES = new Set<FormIssue>([
+  'arms',
+  'scapula',
+  'shrug',
+  'pike',
+  'sag',
+  'closed',
+  'knees',
+  'lean',
+  'hips',
+  'level',
+])
 const EQUIPMENT_IDS = new Set(['floor', 'parallettes', 'band', 'pullup-bar', 'dip-bars'])
 
 /** A hand-edited `issues` string would otherwise be iterated per character. */
@@ -79,7 +93,7 @@ function sanitizeForm(f: unknown): FormCheck | undefined {
   const c = f as Partial<FormCheck>
   if (typeof c.rating !== 'string' || !FORM_RATINGS.has(c.rating)) return undefined
   const issues = Array.isArray(c.issues)
-    ? c.issues.filter((i): i is FormIssue => typeof i === 'string' && FORM_ISSUES.has(i))
+    ? c.issues.filter((i): i is FormIssue => typeof i === 'string' && FORM_ISSUES.has(i as FormIssue))
     : undefined
   return {
     rating: c.rating as FormCheck['rating'],
