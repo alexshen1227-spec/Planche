@@ -107,7 +107,22 @@ export function buildSampleState(): AppState {
     }
   }
 
-  let state: AppState = { ...initialState(), onboarded: true, name: 'Sample Athlete', startedAt: start }
+  // A weekly weigh-in that drifts slightly, so the bodyweight panel and the
+  // coach's strength-to-weight reading have something real to work with.
+  const measurements = Array.from({ length: 9 }, (_, w) => ({
+    at: addDays(start, w * 7),
+    weightKg: Math.round((72 - w * 0.15 + (Math.random() - 0.5) * 0.6) * 10) / 10,
+    ...(w === 0 ? { heightCm: 178 } : {}),
+  })).filter((m) => m.at <= now)
+
+  let state: AppState = {
+    ...initialState(),
+    onboarded: true,
+    name: 'Sample Athlete',
+    startedAt: start,
+    profile: { equipment: ['floor', 'parallettes'], heightCm: 178 },
+    measurements,
+  }
   for (const s of sessions) {
     s.stepId = state.stepId
     s.workoutName = `${STEP_BY_ID[state.stepId].name} Day`

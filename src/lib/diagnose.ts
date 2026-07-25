@@ -141,7 +141,11 @@ export function diagnose(state: AppState, now = Date.now()): Diagnosis {
 
   const summary = !plateaued
     ? gainPerWeek && gainPerWeek > 0.15
-      ? `You are progressing at about ${gainPerWeek.toFixed(1)}s per week. Nothing here needs fixing.`
+      ? causes.length === 0
+        ? `You are progressing at about ${gainPerWeek.toFixed(1)}s per week. Nothing here needs fixing.`
+        : `You are progressing at about ${gainPerWeek.toFixed(1)}s per week — good. ${
+            causes.length === 1 ? 'One thing' : `${causes.length} things`
+          } worth tightening before it stalls.`
       : 'Not enough history yet to call a plateau — keep logging and this will sharpen up.'
     : causes.length === 0
       ? `Flat for about ${weeksFlat} weeks, but nothing in your log stands out as the cause. That usually means it is sleep, stress or nutrition — the things this app cannot see.`
