@@ -5,6 +5,9 @@ import { STEP_BY_ID, STEPS } from '../data/progressions'
 import { ACHIEVEMENTS } from '../data/achievements'
 import { bestSeries, weeklyVolume, totalHoldSec, totalSets, sessionHoldSec } from '../lib/stats'
 import { armStats, STRATEGY_BY_ID, formatRate, buildPlan } from '../lib/coach'
+import { diagnose, weakLinks } from '../lib/diagnose'
+import { fmtWeight } from '../lib/units'
+import { lastOf } from '../components/MeasurePrompt'
 import { fmtDate, fmtTime, fmtDuration, fmtHold, fmtClock } from '../lib/time'
 import { HoldLineChart, VolumeBarChart, TrainingHeatmap } from '../components/charts'
 import { Icon } from '../components/Icon'
@@ -22,6 +25,9 @@ export function Stats() {
   const coachPick = useMemo(() => buildPlan(state), [state])
   const bestArm = useMemo(() => [...arms].filter((a) => a.n > 0).sort((a, b) => b.mean - a.mean)[0], [arms])
   const maxArmRate = useMemo(() => Math.max(0.001, ...arms.map((a) => Math.abs(a.secPerWeek))), [arms])
+  const diag = useMemo(() => diagnose(state), [state])
+  const links = useMemo(() => weakLinks(state), [state])
+  const weightNow = useMemo(() => lastOf(state, 'weightKg'), [state])
   const volume = useMemo(() => weeklyVolume(state, 12), [state])
   const sessions = useMemo(() => [...state.sessions].sort((a, b) => b.startedAt - a.startedAt), [state.sessions])
 
@@ -90,6 +96,105 @@ export function Stats() {
           <VolumeBarChart weeks={volume} />
         </div>
       </div>
+
+      {/* Plateau diagnostic */}
+      <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-card">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="font-display text-[16px] font-semibold text-ink">Why am I stuck?</div>
+          {diag.plateaued ? (
+            <span className="rounded-full bg-danger-soft px-3 py-1 text-[12.5px] font-semibold text-danger">
+              Flat ~{diag.weeksFlat} weeks
+            </span>
+          ) : (
+            <span className="rounded-full bg-ok-soft px-3 py-1 text-[12.5px] font-semibold text-ok">Progressing</span>
+          )}
+        </div>
+        <p className="mt-1 max-w-2xl text-[13.5px] leading-relaxed text-ink2">{diag.summary}</p>
+        {diag.causes.length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {diag.causes.map((c) => (
+              <div key={c.id} className="rounded-2xl border border-line bg-raised p-3.5">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      c.severity === 'high' ? 'bg-danger' : c.severity === 'medium' ? 'bg-accent' : 'bg-ink3'
+                    }`}
+                  />
+                  <span className="text-[14px] font-semibold text-ink">{c.title}</span>
+                </div>
+                <p className="mt-1 text-[13px] leading-relaxed text-ink2">{c.detail}</p>
+                <p className="mt-1 text-[13px] leading-relaxed text-ink">
+                  <span className="font-medium text-accent">Do this:</span> {c.fix}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Weak links */}
+      <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-card">
+        <div className="font-display text-[16px] font-semibold text-ink">What is holding you back</div>
+        <div className="max-w-2xl text-[13px] leading-relaxed text-ink2">
+          The four qualities that most often cap a planche. Anything marked limiting is probably costing you more than
+          extra planche practice would gain.
+        </div>
+        <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+          {links.map((l) => (
+            <div key={l.id} className="rounded-2xl border border-line bg-raised p-3.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[14px] font-semibold text-ink">{l.name}</span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                    l.status === 'limiting'
+                      ? 'bg-danger-soft text-danger'
+                      : l.status === 'strong'
+                        ? 'bg-ok-soft text-ok'
+                        : l.status === 'adequate'
+                          ? 'bg-accent-soft text-accent'
+                          : 'bg-line text-ink3'
+                  }`}
+                >
+                  {l.status}
+                </span>
+              </div>
+              <div className="mt-1 text-[12.5px] text-ink2 tnum">
+                {l.best === null ? 'Not tested yet' : `${Math.round(l.best)}${l.unit === 's' ? 's' : ' reps'}`}
+                <span className="text-ink3">
+                  {' '}
+                  / {l.benchmark}
+                  {l.unit === 's' ? 's' : ' reps'} target
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-line">
+                <div
+                  className={`h-full rounded-full ${
+                    l.status === 'limiting' ? 'bg-danger' : l.status === 'strong' ? 'bg-ok' : 'bg-accent'
+                  }`}
+                  style={{ width: `${Math.min(100, (l.ratio ?? 0) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink3">{l.what}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Bodyweight */}
+      {weightNow ? (
+        <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-card">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="font-display text-[16px] font-semibold text-ink">Bodyweight</div>
+            <div className="text-[13px] text-ink2 tnum">
+              Now {fmtWeight(weightNow.value, state.settings.units)}
+            </div>
+          </div>
+          <p className="mt-1 text-[13px] leading-relaxed text-ink2">
+            Holding the same seconds at a heavier bodyweight is a strength gain — the coach reads your holds against
+            this rather than in isolation.
+          </p>
+        </div>
+      ) : null}
 
       {/* What the coach learned */}
       <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-card">

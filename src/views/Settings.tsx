@@ -4,6 +4,7 @@ import { useStore, normalizeState } from '../lib/store'
 import { STEP_BY_ID } from '../data/progressions'
 import { exportData, readImportFile } from '../lib/exportImport'
 import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
+import { listClips, clearAllClips } from '../lib/clips'
 import { fmtDate } from '../lib/time'
 import { buildSampleState } from '../data/sample'
 import { pushToast } from '../lib/toast'
@@ -201,6 +202,15 @@ export function Settings() {
   const [name, setName] = useState(state.name)
   const [storage, setStorage] = useState<StorageInfo | null>(null)
   const [calibrating, setCalibrating] = useState(false)
+  const [clipCount, setClipCount] = useState(0)
+  const [clipBytes, setClipBytes] = useState(0)
+
+  useEffect(() => {
+    void listClips().then((c) => {
+      setClipCount(c.length)
+      setClipBytes(c.reduce((t, x) => t + x.bytes, 0))
+    })
+  }, [])
 
   useEffect(() => {
     void storageInfo().then(setStorage)
@@ -270,6 +280,21 @@ export function Settings() {
 
       <SectionTitle>Appearance</SectionTitle>
       <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
+        <Row label="Units" hint="Used for bodyweight and height.">
+          <div className="flex overflow-hidden rounded-xl border border-line">
+            {(['metric', 'imperial'] as const).map((u) => (
+              <button
+                key={u}
+                onClick={() => set({ units: u })}
+                className={`px-3.5 py-2 text-[13.5px] font-medium transition ${
+                  s.units === u ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
+                }`}
+              >
+                {u === 'metric' ? 'kg / cm' : 'lb / ft'}
+              </button>
+            ))}
+          </div>
+        </Row>
         <Row label="Theme">
           <div className="flex overflow-hidden rounded-xl border border-line">
             {(['dark', 'light', 'system'] as const).map((t) => (
@@ -292,6 +317,27 @@ export function Settings() {
       <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
         <Row label="Include warm-up blocks" hint="Wrist prep and scapula activation at the start of generated sessions.">
           <Toggle on={s.warmup} onChange={(v) => set({ warmup: v })} />
+        </Row>
+        <Row
+          label="Film main holds"
+          hint="Records a short clip of planche holds from your camera so you can compare your position over time. Stays on this device, and you can switch it off for any individual set."
+        >
+          <Toggle on={s.recordForm} onChange={(v) => set({ recordForm: v })} />
+        </Row>
+        <Row label="Saved form clips" hint={`${clipCount} clip${clipCount === 1 ? '' : 's'} · ${(clipBytes / 1048576).toFixed(1)} MB on this device.`}>
+          <button
+            onClick={() => {
+              void clearAllClips().then(() => {
+                setClipCount(0)
+                setClipBytes(0)
+                pushToast('Form clips deleted.', 'info')
+              })
+            }}
+            disabled={clipCount === 0}
+            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink disabled:opacity-40"
+          >
+            Delete all
+          </button>
         </Row>
         <Row label="Rest after main work" hint="Hard isometrics want 2–3 minutes.">
           <Stepper

@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CheckIn, Exercise, Section, Session, SessionEvents, SetLog, Workout } from '../types'
+import type {
+  CheckIn,
+  Exercise,
+  FormCheck,
+  FormIssue,
+  FormRating,
+  Section,
+  Session,
+  SessionEvents,
+  SetLog,
+  Workout,
+} from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
@@ -9,6 +20,8 @@ import { sfx, speak, buzz } from '../lib/audio'
 import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
 import { clearDraft, saveDraft, type SessionDraft } from '../lib/draft'
+import { useFormRecorder } from '../lib/recorder'
+import { saveClip, getClipUrl } from '../lib/clips'
 import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
@@ -67,6 +80,9 @@ export function SessionPlayer({
   const [showDemo, setShowDemo] = useState(false)
   const [showRpeHelp, setShowRpeHelp] = useState(false)
   const [checkIn, setCheckIn] = useState<CheckIn | null>(null)
+  const [cameraOn, setCameraOn] = useState(state.settings.recordForm)
+  const [pendingClip, setPendingClip] = useState<string | null>(null)
+  const recorder = useFormRecorder()
   const [showCheckIn, setShowCheckIn] = useState(askCheckIn && !resumeFrom)
   const [insight, setInsight] = useState<{ delta: number; label: string } | null>(null)
   const startedAtRef = useRef(resumeFrom?.startedAt ?? Date.now())
@@ -101,6 +117,9 @@ export function SessionPlayer({
     return Math.max(stored ?? 0, thisSession)
   }, [exercise, state.prs, logs])
   const latency = exercise?.type === 'hold' ? Math.max(0, state.settings.stopLatencySec) : 0
+  /** Form clips are only worth capturing on the sets that actually matter. */
+  const filmable = block?.section === 'main' && exercise?.type === 'hold' && exercise.category === 'planche'
+  const filming = Boolean(filmable && cameraOn && recorder.supported)
 
   // Shared 100ms clock (also keeps the header session-elapsed ticking).
   useEffect(() => {
@@ -179,6 +198,14 @@ export function SessionPlayer({
     if (resumeFrom) pushToast('Session restored — nothing was lost.', 'success', 4500)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Open the camera while setting up so the shot can be framed, and close it
+  // again as soon as filming is not imminent — no stray camera light.
+  const { prepare: prepareCamera, release: releaseCamera } = recorder
+  useEffect(() => {
+    if (phase === 'ready' && filming) void prepareCamera()
+    else if (phase !== 'lead' && phase !== 'hold' && phase !== 'ready') releaseCamera()
+  }, [phase, filming, prepareCamera, releaseCamera])
 
   // Countdown cues for lead-in and rest: spoken when voice is on, ticks otherwise.
   useEffect(() => {
@@ -302,20 +329,29 @@ export function SessionPlayer({
     const v = Math.max(0, Math.round((raw - latency) * 10) / 10)
     sfx.stop()
     if (bestBefore !== undefined && v > bestBefore) sfx.pr()
+    if (filming && exercise) {
+      const exId = exercise.id
+      void recorder.stop().then(async (blob) => {
+        if (!blob) return
+        const key = await saveClip(exId, blob, v)
+        if (key) setPendingClip(key)
+      })
+    }
     logSet(v, raw)
-  }, [holdStart, logSet, bestBefore, latency])
+  }, [holdStart, logSet, bestBefore, latency, filming, exercise, recorder])
 
   const beginSet = useCallback(() => {
     if (!block || !exercise) return
     lastBeepRef.current = -1
     if (exercise.type === 'hold') {
+      if (filming) void recorder.start()
       setLeadEnd(Date.now() + LEAD_SEC * 1000)
       setPhase('lead')
     } else {
       setPendingReps(block.target.kind === 'reps' ? block.target.reps : 0)
       setPhase('reps')
     }
-  }, [block, exercise])
+  }, [block, exercise, filming, recorder])
 
   const skipSet = useCallback(() => advance(false), [advance])
 
@@ -329,6 +365,15 @@ export function SessionPlayer({
       setPhase('ready')
     }
   }, [bi, workout])
+
+  /** Attach the self-assessed form to the set that was just logged. */
+  const setLastForm = useCallback((form: FormCheck) => {
+    setLogs((l) => {
+      if (l.length === 0) return l
+      const last = l[l.length - 1]
+      return [...l.slice(0, -1), { ...last, form }]
+    })
+  }, [])
 
   const adjustLastLog = useCallback((delta: number) => {
     setLogs((l) => {
@@ -576,6 +621,51 @@ export function SessionPlayer({
               </div>
             ) : null}
           </div>
+          {filmable && recorder.supported ? (
+            <div className="mx-auto mt-3 w-full max-w-sm">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-2.5">
+                <span className="flex items-center gap-2 text-[13.5px] text-ink2">
+                  <Icon name="monitor" size={15} className={cameraOn ? 'text-accent' : 'text-ink3'} />
+                  {cameraOn ? 'Filming this set' : 'Camera off'}
+                </span>
+                <button
+                  onClick={() => {
+                    const next = !cameraOn
+                    setCameraOn(next)
+                    if (next) void recorder.prepare()
+                    else recorder.release()
+                  }}
+                  role="switch"
+                  aria-checked={cameraOn}
+                  aria-label="Film this set"
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${cameraOn ? 'bg-accent' : 'bg-line-strong'}`}
+                >
+                  <span
+                    className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-all ${cameraOn ? 'left-6' : 'left-1'}`}
+                  />
+                </button>
+              </div>
+              {cameraOn ? (
+                <div className="relative mt-2 overflow-hidden rounded-2xl border border-line bg-black">
+                  <video
+                    ref={recorder.videoRef}
+                    muted
+                    playsInline
+                    className="h-40 w-full object-cover"
+                  />
+                  <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-accent/60" />
+                  <div className="absolute inset-x-0 bottom-0 bg-black/55 px-3 py-1.5 text-[11.5px] text-white/85">
+                    Set the phone side-on. The line shows level — your shoulders and hips should sit on it.
+                  </div>
+                </div>
+              ) : null}
+              {recorder.status === 'denied' ? (
+                <p className="mt-1.5 text-[12.5px] text-danger">
+                  Camera access was blocked. Allow it in your browser settings, or leave this off.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <button
             onClick={beginSet}
             className="mt-6 inline-flex w-full max-w-sm items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99]"
@@ -750,6 +840,16 @@ export function SessionPlayer({
               </span>
             </div>
           ) : null}
+          {lastLog?.kind === 'hold' && lastLog.section === 'main' && !lastLog.form ? (
+            <FormCheckRow
+              clipKey={pendingClip}
+              onDone={(form) => {
+                setLastForm(form)
+                setPendingClip(null)
+              }}
+            />
+          ) : null}
+
           <div className="mt-5 text-[14px] text-ink2">
             Next: <span className="font-medium text-ink">{nx.name}</span> · set {si + 1}/{nb.sets}
           </div>
@@ -1000,6 +1100,105 @@ export function SessionPlayer({
           </div>
         </div>
       </Modal>
+    </div>
+  )
+}
+
+const FORM_ISSUES: { id: FormIssue; label: string }[] = [
+  { id: 'arms', label: 'Elbows bent' },
+  { id: 'scapula', label: 'Lost protraction' },
+  { id: 'hips', label: 'Hips sagged' },
+  { id: 'level', label: 'Not level' },
+]
+
+/**
+ * One tap for the common case, detail only when something went wrong. This is
+ * the only signal the coach has about *quality* — without it, seconds earned
+ * with bent arms look identical to clean ones.
+ */
+function FormCheckRow({ clipKey, onDone }: { clipKey: string | null; onDone: (f: FormCheck) => void }) {
+  const [rating, setRating] = useState<FormRating | null>(null)
+  const [issues, setIssues] = useState<FormIssue[]>([])
+  const [clipUrl, setClipUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let url: string | null = null
+    if (clipKey) {
+      void getClipUrl(clipKey).then((u) => {
+        url = u
+        setClipUrl(u)
+      })
+    }
+    return () => {
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [clipKey])
+
+  const commit = (r: FormRating, iss: FormIssue[]) =>
+    onDone({ rating: r, ...(iss.length ? { issues: iss } : {}), ...(clipKey ? { clipKey } : {}) })
+
+  return (
+    <div className="mx-auto mt-5 w-full max-w-sm rounded-2xl border border-line bg-surface p-4">
+      {clipUrl ? (
+        <video
+          src={clipUrl}
+          controls
+          playsInline
+          className="mb-3 h-40 w-full rounded-xl border border-line bg-black object-cover"
+        />
+      ) : null}
+      <div className="text-[13px] font-semibold text-ink">How did that set look?</div>
+      <div className="mt-2 flex gap-2">
+        {(
+          [
+            ['clean', 'Clean'],
+            ['slipped', 'Slipped'],
+            ['broke', 'Broke down'],
+          ] as [FormRating, string][]
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => {
+              setRating(id)
+              if (id === 'clean') commit(id, [])
+            }}
+            className={`flex-1 rounded-xl border py-2 text-[13px] font-medium transition ${
+              rating === id
+                ? 'border-transparent bg-accent text-on-accent'
+                : 'border-line bg-raised text-ink2 hover:text-ink'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {rating && rating !== 'clean' ? (
+        <div className="mt-3">
+          <div className="text-[12.5px] text-ink2">What gave out?</div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {FORM_ISSUES.map((f) => {
+              const on = issues.includes(f.id)
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => setIssues((v) => (on ? v.filter((x) => x !== f.id) : [...v, f.id]))}
+                  className={`rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition ${
+                    on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              )
+            })}
+          </div>
+          <button
+            onClick={() => commit(rating, issues)}
+            className="mt-2.5 w-full rounded-xl border border-line bg-raised py-2 text-[13px] font-semibold text-ink"
+          >
+            Save
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react'
-import type { AppState, Session, SetLog, Settings, StepId } from '../types'
+import type { AppState, Measurement, Profile, Session, SetLog, Settings, StepId, Units } from '../types'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
 import { applySession } from './engine'
 import { configureAudio } from './audio'
@@ -23,6 +23,8 @@ export const DEFAULT_SETTINGS: Settings = {
   // Coming out of a hold and then reaching the button is realistically about
   // a second unless the phone is literally in your hand.
   stopLatencySec: 1,
+  units: 'metric',
+  recordForm: true,
 }
 
 /** The stop-latency default before it was found to be optimistic. */
@@ -41,12 +43,18 @@ export function initialState(): AppState {
     prs: {},
     achievements: {},
     videoLinks: {},
+    profile: { equipment: ['floor'] },
+    measurements: [],
     settings: { ...DEFAULT_SETTINGS },
   }
 }
 
 function clampNum(v: unknown, lo: number, hi: number, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
+}
+
+function clampOptional(v: unknown, lo: number, hi: number): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : undefined
 }
 
 /**
@@ -141,6 +149,28 @@ export function normalizeState(raw: unknown): AppState {
       typeof r.videoLinks === 'object' && r.videoLinks !== null
         ? (r.videoLinks as AppState['videoLinks'])
         : {},
+    profile: {
+      equipment:
+        Array.isArray(r.profile?.equipment) && r.profile.equipment.length > 0
+          ? r.profile.equipment
+          : ['floor'],
+      heightCm: clampOptional(r.profile?.heightCm, 100, 250),
+      injuryNote: typeof r.profile?.injuryNote === 'string' ? r.profile.injuryNote : undefined,
+      birthYear: clampOptional(r.profile?.birthYear, 1920, new Date().getFullYear()),
+    },
+    measurements: Array.isArray(r.measurements)
+      ? r.measurements
+          .filter(
+            (m): m is Measurement =>
+              typeof m === 'object' && m !== null && typeof (m as Measurement).at === 'number',
+          )
+          .map((m) => ({
+            at: m.at,
+            weightKg: clampOptional(m.weightKg, 20, 400),
+            heightCm: clampOptional(m.heightCm, 100, 250),
+          }))
+          .sort((a, b) => a.at - b.at)
+      : [],
     settings,
   }
 }
@@ -185,8 +215,19 @@ export type Action =
   | { type: 'DELETE_SESSION'; id: string }
   | { type: 'SET_SETTINGS'; patch: Partial<Settings> }
   | { type: 'SET_STEP'; stepId: StepId }
-  | { type: 'COMPLETE_ONBOARDING'; name: string; stepId: StepId; weeklyGoal: number }
+  | {
+      type: 'COMPLETE_ONBOARDING'
+      name: string
+      stepId: StepId
+      weeklyGoal: number
+      profile: Profile
+      units: Units
+      weightKg?: number
+      heightCm?: number
+    }
   | { type: 'SET_VIDEO'; exerciseId: string; url: string | null }
+  | { type: 'LOG_MEASUREMENT'; weightKg?: number; heightCm?: number }
+  | { type: 'SET_PROFILE'; patch: Partial<Profile> }
   | { type: 'REPLACE'; state: AppState }
   | { type: 'RESET' }
 
@@ -216,7 +257,12 @@ function reducer(state: AppState, action: Action): AppState {
         stepId: action.stepId,
         baseStepId: action.stepId,
         unlocked,
-        settings: { ...state.settings, weeklyGoal: action.weeklyGoal },
+        profile: { ...action.profile, heightCm: action.heightCm ?? action.profile.heightCm },
+        measurements:
+          action.weightKg !== undefined || action.heightCm !== undefined
+            ? [{ at: Date.now(), weightKg: action.weightKg, heightCm: action.heightCm }]
+            : [],
+        settings: { ...state.settings, weeklyGoal: action.weeklyGoal, units: action.units },
       }
     }
     case 'SET_VIDEO': {
@@ -225,6 +271,19 @@ function reducer(state: AppState, action: Action): AppState {
       else delete videoLinks[action.exerciseId]
       return { ...state, videoLinks }
     }
+    case 'LOG_MEASUREMENT': {
+      const entry: Measurement = { at: Date.now() }
+      if (action.weightKg !== undefined) entry.weightKg = action.weightKg
+      if (action.heightCm !== undefined) entry.heightCm = action.heightCm
+      if (entry.weightKg === undefined && entry.heightCm === undefined) return state
+      return {
+        ...state,
+        measurements: [...state.measurements, entry],
+        profile: action.heightCm !== undefined ? { ...state.profile, heightCm: action.heightCm } : state.profile,
+      }
+    }
+    case 'SET_PROFILE':
+      return { ...state, profile: { ...state.profile, ...action.patch } }
     case 'REPLACE':
       return normalizeState(action.state)
     case 'RESET':

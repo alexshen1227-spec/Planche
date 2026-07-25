@@ -361,6 +361,37 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     }
   }
 
+  // Form outranks the clock. Seconds bought with bent arms are not progress,
+  // they are a slower road and a louder injury risk.
+  const FORM_LABEL: Record<string, string> = {
+    arms: 'elbows bending',
+    scapula: 'losing protraction',
+    hips: 'hips sagging',
+    level: 'body not level',
+  }
+  if (sig.formDegrading) {
+    targetFactor = Math.min(targetFactor, 0.9)
+    targetIntent = 'steady'
+    decisions.push({
+      text: 'Your holds are getting longer but your own form ratings are getting worse — that is a stall dressed up as progress. Backing the target off to rebuild the position.',
+      kind: 'warn',
+    })
+  } else if (sig.formCleanRate !== null && sig.formCleanRate < 0.5) {
+    targetFactor = Math.min(targetFactor, 0.9)
+    decisions.push({
+      text: `Only ${Math.round(sig.formCleanRate * 100)}% of your recent main sets were clean. Easier targets today so the position is the thing you practise.`,
+      kind: 'warn',
+    })
+  }
+  if (sig.topFormIssue) {
+    const label = FORM_LABEL[sig.topFormIssue.issue] ?? sig.topFormIssue.issue
+    decisions.push({
+      text: `Your most common breakdown is ${label} (${sig.topFormIssue.count} sets). That is the cue to hold in your head today.`,
+      kind: 'info',
+    })
+    if (sig.topFormIssue.issue === 'scapula' || sig.topFormIssue.issue === 'arms') accessoryEmphasis = 'pressing'
+  }
+
   if (sig.lastWasOutlier) {
     decisions.push({
       text: 'Your last best was far outside your usual range — if the setup was different (parallettes vs floor), it is not being trusted as a new baseline.',

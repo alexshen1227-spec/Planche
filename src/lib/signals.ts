@@ -100,6 +100,17 @@ export interface Signals {
   warmupRate: number
   skippedLastWarmup: boolean
 
+  /** Share of recent main holds self-rated clean (null when never rated). */
+  formCleanRate: number | null
+  /** The failure the athlete reports most often, if there is a clear one. */
+  topFormIssue: { issue: string; count: number } | null
+  /** Seconds are climbing while form ratings are getting worse. */
+  formDegrading: boolean
+
+  weightKg: number | null
+  /** Bodyweight change per week over the last ~8 weeks. */
+  weightTrendPerWeek: number | null
+
   sessionsPerWeek: number
   daysSinceMaxTest: number | null
   /** Weeks since the last deliberately easy week. */
@@ -170,6 +181,33 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     accessoryTrend === 'flat' && trendPerWeek !== null && trendPerWeek <= 0.2 && pressPoints.length >= 3
 
   // ——— Adherence ———
+  // ——— Form quality, the only non-numeric signal available ———
+  const ratedSets = sessions
+    .slice(-8)
+    .flatMap((s) => s.sets.filter((x) => x.form && x.section === 'main'))
+  const formCleanRate = ratedSets.length
+    ? ratedSets.filter((x) => x.form!.rating === 'clean').length / ratedSets.length
+    : null
+  const issueCounts = new Map<string, number>()
+  for (const s of ratedSets) for (const i of s.form?.issues ?? []) issueCounts.set(i, (issueCounts.get(i) ?? 0) + 1)
+  const topEntry = [...issueCounts.entries()].sort((a, b) => b[1] - a[1])[0]
+  const topFormIssue = topEntry && topEntry[1] >= 2 ? { issue: topEntry[0], count: topEntry[1] } : null
+  // Chasing seconds while positions fall apart is the classic way to stall.
+  const half = Math.floor(ratedSets.length / 2)
+  const cleanIn = (arr: typeof ratedSets) =>
+    arr.length ? arr.filter((x) => x.form!.rating === 'clean').length / arr.length : null
+  const earlyClean = half >= 2 ? cleanIn(ratedSets.slice(0, half)) : null
+  const lateClean = half >= 2 ? cleanIn(ratedSets.slice(half)) : null
+  const formDegrading =
+    earlyClean !== null && lateClean !== null && lateClean < earlyClean - 0.25 && (trendPerWeek ?? 0) >= 0
+
+  // ——— Bodyweight ———
+  const weights = state.measurements.filter((m) => m.weightKg !== undefined)
+  const weightKg = weights.length ? weights[weights.length - 1].weightKg! : null
+  const weightTrendPerWeek = slopePerWeek(
+    weights.slice(-8).map((m) => ({ at: m.at, value: m.weightKg! })),
+  )
+
   const recentTen = sessions.slice(-10)
   const withWarmup = recentTen.filter((s) => s.sets.some((x) => x.section === 'warmup'))
   const warmupRate = recentTen.length ? withWarmup.length / recentTen.length : 1
@@ -209,6 +247,11 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     lastWasOutlier,
     accessoryTrend,
     pressingLags,
+    formCleanRate,
+    topFormIssue,
+    formDegrading,
+    weightKg,
+    weightTrendPerWeek,
     warmupRate,
     skippedLastWarmup,
     sessionsPerWeek,

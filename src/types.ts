@@ -12,6 +12,38 @@ export type StepId =
 
 export type Category = 'planche' | 'push' | 'scapula' | 'core' | 'wrist' | 'mobility' | 'general'
 
+export type Units = 'metric' | 'imperial'
+
+export type EquipmentId = 'floor' | 'parallettes' | 'band' | 'pullup-bar' | 'dip-bars'
+
+export interface Measurement {
+  at: number
+  weightKg?: number
+  heightCm?: number
+}
+
+export interface Profile {
+  /** Latest known height; also mirrored into the measurement log. */
+  heightCm?: number
+  equipment: EquipmentId[]
+  /** Free-text note about anything currently sore or previously injured. */
+  injuryNote?: string
+  /** Optional — only used to soften recovery expectations. */
+  birthYear?: number
+}
+
+/** What went wrong in a hold, when the athlete says it was not clean. */
+export type FormIssue = 'arms' | 'scapula' | 'hips' | 'level'
+
+export type FormRating = 'clean' | 'slipped' | 'broke'
+
+export interface FormCheck {
+  rating: FormRating
+  issues?: FormIssue[]
+  /** Key of the recorded clip in the clip store, when one was kept. */
+  clipKey?: string
+}
+
 /** Answers to the coach's periodic pre-session check-in. */
 export interface CheckIn {
   joints: 'good' | 'niggle' | 'pain'
@@ -86,6 +118,8 @@ export interface SetLog {
   target: number
   section: Section
   at: number
+  /** Self-assessed quality of this set, when the coach asked. */
+  form?: FormCheck
 }
 
 export type StrategyId = 'balanced' | 'volume' | 'intensity' | 'density' | 'technique'
@@ -124,6 +158,9 @@ export interface Settings {
   beeps: boolean
   /** Time budget for generated sessions, minutes. */
   sessionMinutes: number
+  units: Units
+  /** Record a short clip of main-work holds from the camera. */
+  recordForm: boolean
   /**
    * Seconds between actually coming out of a hold and the stop button being
    * pressed. Subtracted from timed holds so the numbers mean what they say.
@@ -151,6 +188,9 @@ export interface AppState {
   achievements: Record<string, number>
   /** Exercise id -> a demo video URL the user pinned themselves. */
   videoLinks: Record<string, string>
+  profile: Profile
+  /** Bodyweight / height log, oldest first. */
+  measurements: Measurement[]
   settings: Settings
 }
 

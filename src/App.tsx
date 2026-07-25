@@ -5,6 +5,7 @@ import { useStore } from './lib/store'
 import { loadDraft } from './lib/draft'
 import { buildPlan } from './lib/coach'
 import { todaysSession } from './data/workouts'
+import { MeasurePrompt, measurementDue } from './components/MeasurePrompt'
 import { Icon, type IconName } from './components/Icon'
 import { Toasts } from './components/Toasts'
 import { Dashboard } from './views/Dashboard'
@@ -134,6 +135,15 @@ export default function App() {
   const [resuming, setResuming] = useState(resumeDraft !== null)
 
   const [askCheckIn, setAskCheckIn] = useState(false)
+  // Asked once on open when it comes due, never mid-workout.
+  const [showMeasure, setShowMeasure] = useState(false)
+  useEffect(() => {
+    if (state.onboarded && !activeWorkout && measurementDue(state).weight) {
+      const t = window.setTimeout(() => setShowMeasure(true), 900)
+      return () => window.clearTimeout(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.onboarded])
 
   const startWorkout = (w: Workout) => {
     setResuming(false)
@@ -237,6 +247,7 @@ export default function App() {
         </div>
       </nav>
 
+      <MeasurePrompt open={showMeasure} onClose={() => setShowMeasure(false)} />
       {activeWorkout ? (
         <SessionPlayer
           workout={activeWorkout}
