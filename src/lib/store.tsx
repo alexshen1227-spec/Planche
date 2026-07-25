@@ -132,6 +132,8 @@ function sanitizeAuto(a: unknown): AutoForm | undefined {
   return {
     issues,
     confidence: num(c.confidence) ?? 0,
+    cleanSeconds: clampOptional(c.cleanSeconds, 0, 3600),
+    cleanRatio: clampOptional(c.cleanRatio, 0, 1),
     elbowDeg: num(c.elbowDeg),
     kneeDeg: num(c.kneeDeg),
     hipAngleDeg: num(c.hipAngleDeg),

@@ -56,6 +56,13 @@ export type FormRating = 'clean' | 'slipped' | 'broke'
 export interface AutoForm {
   issues: FormIssue[]
   confidence: number
+  /**
+   * Seconds that stayed inside the camera's tolerant form envelope before a
+   * sustained breakdown. Progression credit is capped here when available.
+   */
+  cleanSeconds?: number
+  /** Clean seconds divided by the athlete's credited hold. */
+  cleanRatio?: number
   elbowDeg?: number
   kneeDeg?: number
   hipAngleDeg?: number

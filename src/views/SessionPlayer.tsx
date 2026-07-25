@@ -1443,6 +1443,8 @@ function FormCheckRow({
         const auto = {
           issues: res.issues,
           confidence: res.confidence,
+          cleanSeconds: res.cleanSeconds,
+          cleanRatio: res.cleanRatio,
           elbowDeg: res.elbowDeg,
           kneeDeg: res.kneeDeg,
           hipAngleDeg: res.hipAngleDeg,
@@ -1527,6 +1529,8 @@ function FormCheckRow({
             auto: {
               issues: analysis.issues,
               confidence: analysis.confidence,
+              cleanSeconds: analysis.cleanSeconds,
+              cleanRatio: analysis.cleanRatio,
               elbowDeg: analysis.elbowDeg,
               kneeDeg: analysis.kneeDeg,
               hipAngleDeg: analysis.hipAngleDeg,
@@ -1585,6 +1589,24 @@ function FormCheckRow({
             >
               {analysis.ok ? (
                 <>
+                  {analysis.cleanSeconds !== undefined ? (
+                    <div
+                      className={`mb-2 rounded-lg px-2.5 py-2 ${
+                        analysis.cleanSeconds + 0.05 >= creditedHoldSec
+                          ? 'bg-ok-soft text-ok'
+                          : 'bg-accent-soft text-accent'
+                      }`}
+                    >
+                      <span className="font-semibold">
+                        Camera-verified clean window: {analysis.cleanSeconds.toFixed(1)}s
+                      </span>
+                      <span className="text-[11.5px]">
+                        {' '}
+                        of {creditedHoldSec.toFixed(1)}s. One noisy frame is ignored; a sustained material breakdown
+                        stops progression credit.
+                      </span>
+                    </div>
+                  ) : null}
                   {analysis.notes.length > 0 ? (
                     <div className="space-y-1">
                       {analysis.notes.map((n) => (
@@ -1699,7 +1721,10 @@ function FormCheckRow({
           role="status"
         >
           {progressionFormPassed
-            ? value?.auto?.issues.length === 1
+            ? value?.auto?.cleanSeconds !== undefined &&
+              value.auto.cleanSeconds + 0.05 < creditedHoldSec
+              ? `Evidence complete — ${value.auto.cleanSeconds.toFixed(1)}s of this hold count toward progression before the sustained breakdown.`
+              : value?.auto?.issues.length === 1
               ? 'Progression evidence complete — your Clean rating plus one isolated camera flag.'
               : 'Progression evidence complete — athlete and filmed form checks agree.'
             : needsManualReplayReview

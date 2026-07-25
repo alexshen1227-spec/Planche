@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog } from '../types'
 import { initialState, normalizeState, rebuildDerivedState } from './store'
 import { applySession } from './engine'
-import { qualifyingProgress } from './progression'
-import { sustainedMinimum } from './poseForm'
+import { progressionCredit, qualifyingProgress } from './progression'
+import { sustainedCleanSeconds, sustainedMinimum } from './poseForm'
 import { buildPlan, rewardFor } from './coach'
 import { painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
 import { validateImport } from './exportImport'
@@ -27,11 +27,12 @@ function form(
   confirmed = true,
   cameraIssues: FormIssue[] = [],
   confidence = 0.9,
+  cleanSeconds?: number,
 ): FormCheck {
   return {
     rating,
     confirmed,
-    auto: { issues: cameraIssues, confidence },
+    auto: { issues: cameraIssues, confidence, cleanSeconds },
   }
 }
 
@@ -108,6 +109,15 @@ describe('progression safety', () => {
       log('ppp-hold', 35, { form: form('clean', true, ['arms', 'sag']) }),
     ])
     expect(applySession(state(), multiple).next.stepId).toBe('foundations')
+  })
+
+  it('credits only the camera-verified clean portion of a confirmed hold', () => {
+    const set = log('ppp-hold', 34, { form: form('clean', true, [], 0.9, 24.2) })
+    expect(progressionCredit(set, 'ppp-hold')).toBe(24.2)
+    expect(applySession(state(), session('foundations', [set])).next.stepId).toBe('foundations')
+
+    const controlled = log('ppp-hold', 31, { form: form('clean', true, [], 0.9, 30.4) })
+    expect(applySession(state(), session('foundations', [controlled])).next.stepId).toBe('lean')
   })
 
   it('rejects an unconfirmed or low-confidence form check', () => {
@@ -201,6 +211,22 @@ describe('camera evaluator primitives', () => {
   it('prefers broadly compatible WebM before falling back to MP4', () => {
     const supported = new Set(['video/webm', 'video/mp4'])
     expect(selectRecorderMime((mime) => supported.has(mime))).toBe('video/webm')
+  })
+
+  it('ignores one noisy frame but caps clean time at a sustained breakdown', () => {
+    expect(
+      sustainedCleanSeconds(
+        [
+          { t: 2, bad: false },
+          { t: 4, bad: true },
+          { t: 6, bad: false },
+          { t: 8, bad: true },
+          { t: 10, bad: true },
+        ],
+        12,
+      ),
+    ).toBe(8)
+    expect(sustainedCleanSeconds([{ t: 6, bad: true }], 12)).toBe(12)
   })
 })
 

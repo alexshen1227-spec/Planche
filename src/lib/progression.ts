@@ -52,6 +52,17 @@ export function isQualifyingSet(set: SetLog, exerciseId: string): boolean {
   )
 }
 
+/**
+ * Camera analysis can see a hold start clean and then break down. Keep the
+ * honest PR, but only credit the clean portion toward progression. Older
+ * evidence has no cleanSeconds field and retains its historical value.
+ */
+export function progressionCredit(set: SetLog, exerciseId: string): number {
+  if (!isQualifyingSet(set, exerciseId)) return 0
+  const cameraClean = set.form?.auto?.cleanSeconds
+  return cameraClean === undefined ? set.value : Math.min(set.value, Math.max(0, cameraClean))
+}
+
 export function qualifyingProgress(
   state: Pick<AppState, 'sessions'>,
   stepId: StepId,
@@ -62,11 +73,20 @@ export function qualifyingProgress(
     .filter((session) => session.workoutName !== 'Quick Log')
     .flatMap((session) => session.sets.filter((set) => isQualifyingSet(set, step.keyExerciseId)))
   if (!EXERCISE_BY_ID[step.keyExerciseId]?.perSide) {
-    return { value: sets.reduce((best, set) => Math.max(best, set.value), 0) }
+    return {
+      value: sets.reduce(
+        (best, set) => Math.max(best, progressionCredit(set, step.keyExerciseId)),
+        0,
+      ),
+    }
   }
 
-  const left = sets.filter((set) => set.side === 'left').reduce((best, set) => Math.max(best, set.value), 0)
-  const right = sets.filter((set) => set.side === 'right').reduce((best, set) => Math.max(best, set.value), 0)
+  const left = sets
+    .filter((set) => set.side === 'left')
+    .reduce((best, set) => Math.max(best, progressionCredit(set, step.keyExerciseId)), 0)
+  const right = sets
+    .filter((set) => set.side === 'right')
+    .reduce((best, set) => Math.max(best, progressionCredit(set, step.keyExerciseId)), 0)
   return { value: Math.min(left, right), left, right }
 }
 

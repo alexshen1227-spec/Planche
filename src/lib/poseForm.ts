@@ -20,6 +20,10 @@ export interface PoseFormResult {
   reason?: string
   confidence: number
   framesUsed: number
+  /** Credited seconds before the first sustained, material form breakdown. */
+  cleanSeconds?: number
+  /** Clean seconds divided by the timer's credited hold. */
+  cleanRatio?: number
   /** Sustained elbow angle, degrees (lower quartile of frames; 180 = locked). */
   elbowDeg?: number
   /** Shoulder→hip→knee angle: how open the hips are (lower quartile). */
@@ -71,6 +75,17 @@ interface PoseProfile {
   /** Judge the deliberately extended leg, rather than the tucked leg. */
   oneLeg?: boolean
   checkShrug: boolean
+}
+
+interface FrameReading {
+  t: number
+  elbowDeg?: number
+  kneeDeg?: number
+  hipAngleDeg?: number
+  hipOffset?: number
+  leanRatio?: number
+  shrugRatio?: number
+  asymmetry?: number
 }
 
 export const POSE_PROFILES: Record<string, PoseProfile> = {
@@ -156,6 +171,74 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
     minLeanRatio: 0.4,
     checkShrug: true,
   },
+}
+
+/**
+ * A small tolerance outside the headline thresholds keeps one near-boundary
+ * estimate from stealing time. These are deliberately still narrow enough to
+ * catch a material loss of the position.
+ */
+function materiallyOutsideEnvelope(frame: FrameReading, profile: PoseProfile): boolean | null {
+  const required: (number | undefined)[] = []
+  const failed: boolean[] = []
+  const check = (value: number | undefined, didFail: (n: number) => boolean) => {
+    required.push(value)
+    if (value !== undefined) failed.push(didFail(value))
+  }
+
+  if (profile.minElbowDeg !== undefined) {
+    check(frame.elbowDeg, (n) => n < profile.minElbowDeg! - 5)
+  }
+  if (profile.minKneeDeg !== undefined) {
+    check(frame.kneeDeg, (n) => n < profile.minKneeDeg! - 7)
+  }
+  if (profile.minHipAngleDeg !== undefined) {
+    check(frame.hipAngleDeg, (n) => n < profile.minHipAngleDeg! - 8)
+  }
+  if (profile.levelTolerance !== undefined) {
+    check(frame.hipOffset, (n) => Math.abs(n) > profile.levelTolerance! + 0.08)
+  }
+  if (profile.minLeanRatio !== undefined) {
+    check(frame.leanRatio, (n) => n < profile.minLeanRatio! - 0.06)
+  }
+  // Ears are frequently occluded side-on, so shrug remains an advisory check
+  // when visible rather than making the whole frame unjudgeable.
+  if (profile.checkShrug && frame.shrugRatio !== undefined) {
+    failed.push(frame.shrugRatio < 0.27)
+  }
+
+  // Shoulder symmetry is only judgeable away from a true side view.
+  if (frame.asymmetry !== undefined) failed.push(frame.asymmetry > 0.28)
+  if (required.some((value) => value === undefined)) return null
+  return failed.some(Boolean)
+}
+
+/**
+ * Returns the portion of a hold before a sustained breakdown. A single bad
+ * sample is treated as detector noise; two consecutive judgeable samples are
+ * required. Exported so this progression-critical rule stays regression-tested.
+ */
+export function sustainedCleanSeconds(
+  samples: { t: number; bad: boolean }[],
+  creditedHoldSec: number,
+  minimumBadSamples = 2,
+): number {
+  const hold = Math.max(0, creditedHoldSec)
+  let badRun = 0
+  let badRunStartedAt = hold
+  for (const sample of [...samples].sort((a, b) => a.t - b.t)) {
+    if (!sample.bad) {
+      badRun = 0
+      badRunStartedAt = hold
+      continue
+    }
+    if (badRun === 0) badRunStartedAt = sample.t
+    badRun += 1
+    if (badRun >= Math.max(1, minimumBadSamples)) {
+      return Math.round(Math.min(hold, Math.max(0, badRunStartedAt)) * 10) / 10
+    }
+  }
+  return Math.round(hold * 10) / 10
 }
 
 /** Positions worth filming for automated or replay-based form review. */
@@ -331,15 +414,15 @@ export async function analyseClip(
 
     // Analyse the credited hold, not the walk back to the phone after it. The
     // timer's value is intentionally the authority for where useful work ends.
-    // Roughly one frame per second so long holds are not under-sampled and
-    // short ones are not over-billed.
+    // Sample across nearly the whole credited hold. Roughly 1.25 frames per
+    // second catches short breakdowns without making on-device analysis drag.
     const holdWindow =
       creditedHoldSec !== undefined && Number.isFinite(creditedHoldSec) && creditedHoldSec > 0
         ? Math.min(duration, creditedHoldSec + 0.25)
         : duration
-    const n = sampleCount ?? Math.round(Math.min(16, Math.max(6, holdWindow)))
-    const from = Math.min(holdWindow * 0.1, 0.35)
-    const to = Math.max(from, holdWindow * 0.92)
+    const n = sampleCount ?? Math.round(Math.min(24, Math.max(8, holdWindow * 1.25)))
+    const from = Math.min(holdWindow * 0.04, 0.15)
+    const to = Math.max(from, holdWindow * 0.98)
     const times = Array.from({ length: n }, (_, i) =>
       n === 1 ? (from + to) / 2 : from + ((to - from) * i) / (n - 1),
     )
@@ -353,6 +436,7 @@ export async function analyseClip(
     const confidences: number[] = []
     const asymmetries: number[] = []
     const drifts: number[] = []
+    const frameReadings: FrameReading[] = []
     // Timestamped copies of the metrics that fatigue visibly, so the hold can
     // be compared against itself: early third vs final third.
     const elbowSeries: { t: number; v: number }[] = []
@@ -391,10 +475,14 @@ export async function analyseClip(
       const found = [shoulder, elbow, wrist, hip].filter(Boolean) as Kp[]
       confidences.push(found.reduce((t2, k) => t2 + (k.score ?? 0), 0) / found.length)
 
+      let frameElbowDeg: number | undefined
       if (elbow && wrist) {
         const e = angleDeg(shoulder, elbow, wrist)
         push(elbows, e)
-        if (Number.isFinite(e)) elbowSeries.push({ t, v: e })
+        if (Number.isFinite(e)) {
+          frameElbowDeg = e
+          elbowSeries.push({ t, v: e })
+        }
       }
 
       // Keep the two legs separate within a frame. One-leg work judges the
@@ -412,22 +500,40 @@ export async function analyseClip(
           push(frameHips, angleDeg(sh, h, k))
         }
       }
-      if (frameKnees.length) push(knees, profile.oneLeg ? Math.max(...frameKnees) : Math.min(...frameKnees))
-      if (frameHips.length) push(hipAngles, profile.oneLeg ? Math.max(...frameHips) : Math.min(...frameHips))
+      const frameKneeDeg = frameKnees.length
+        ? profile.oneLeg
+          ? Math.max(...frameKnees)
+          : Math.min(...frameKnees)
+        : undefined
+      const frameHipAngleDeg = frameHips.length
+        ? profile.oneLeg
+          ? Math.max(...frameHips)
+          : Math.min(...frameHips)
+        : undefined
+      if (frameKneeDeg !== undefined) push(knees, frameKneeDeg)
+      if (frameHipAngleDeg !== undefined) push(hipAngles, frameHipAngleDeg)
 
       // Screen y grows downward, so a hip above the shoulders is negative dy.
-      hipOffsets.push((shoulder.y - hip.y) / torso)
-      lineSeries.push({ t, v: (shoulder.y - hip.y) / torso })
+      const frameHipOffset = (shoulder.y - hip.y) / torso
+      hipOffsets.push(frameHipOffset)
+      lineSeries.push({ t, v: frameHipOffset })
 
+      let frameLeanRatio: number | undefined
       if (wrist) {
         // Lean is signed by which way the body points, so it reads the same
         // whichever way round the phone was set up.
         const facing = Math.sign(shoulder.x - hip.x) || 1
         const lean = ((shoulder.x - wrist.x) * facing) / torso
         push(leans, lean)
-        if (Number.isFinite(lean)) leanSeries.push({ t, v: lean })
+        if (Number.isFinite(lean)) {
+          frameLeanRatio = lean
+          leanSeries.push({ t, v: lean })
+        }
       }
-      if (ear) push(shrugs, Math.hypot(shoulder.x - ear.x, shoulder.y - ear.y) / torso)
+      const frameShrugRatio = ear
+        ? Math.hypot(shoulder.x - ear.x, shoulder.y - ear.y) / torso
+        : undefined
+      if (frameShrugRatio !== undefined) push(shrugs, frameShrugRatio)
 
       // Twisting is only visible when the camera can actually see both
       // shoulders. Filmed dead side-on the far one is occluded and the model
@@ -435,12 +541,25 @@ export async function analyseClip(
       // measure when the two are genuinely separated in frame.
       const ls = byName(kps, 'left_shoulder')
       const rs = byName(kps, 'right_shoulder')
+      let frameAsymmetry: number | undefined
       if (ls && rs && Math.abs(ls.x - rs.x) / torso > 0.4) {
-        push(asymmetries, Math.abs(ls.y - rs.y) / torso)
+        frameAsymmetry = Math.abs(ls.y - rs.y) / torso
+        push(asymmetries, frameAsymmetry)
         // Wider still means the camera is closer to head-on than side-on, and
         // every angle this analyser measures is projected garbage from there.
         if (Math.abs(ls.x - rs.x) / torso > 0.62) frontalFrames++
       }
+
+      frameReadings.push({
+        t,
+        elbowDeg: frameElbowDeg,
+        kneeDeg: frameKneeDeg,
+        hipAngleDeg: frameHipAngleDeg,
+        hipOffset: frameHipOffset,
+        leanRatio: frameLeanRatio,
+        shrugRatio: frameShrugRatio,
+        asymmetry: frameAsymmetry,
+      })
 
       // How far the position travels per second. Samples are seconds apart, so
       // this is positional drift, not tremor — dividing by the real gap keeps
@@ -537,6 +656,17 @@ export async function analyseClip(
         reason: 'Tracking confidence was too low to judge form from this clip.',
       }
     }
+
+    const creditedSeconds =
+      creditedHoldSec !== undefined && Number.isFinite(creditedHoldSec) && creditedHoldSec > 0
+        ? Math.min(duration, creditedHoldSec)
+        : duration
+    const envelopeSamples = frameReadings.flatMap((frame) => {
+      const outside = materiallyOutsideEnvelope(frame, profile)
+      return outside === null ? [] : [{ t: frame.t, bad: outside }]
+    })
+    const cleanSeconds = sustainedCleanSeconds(envelopeSamples, creditedSeconds)
+    const cleanRatio = creditedSeconds > 0 ? Math.min(1, cleanSeconds / creditedSeconds) : 0
 
     const issues: FormIssue[] = []
     const notes: string[] = []
@@ -654,12 +784,21 @@ export async function analyseClip(
     if (!fadeSeen && holdWindow >= 8 && (elbowTrend || lineTrend || leanTrend)) {
       details.push('Shape held up through the whole hold — no visible fade from start to finish.')
     }
+    if (cleanSeconds < creditedSeconds) {
+      details.push(
+        `The clean window ended near ${cleanSeconds.toFixed(1)}s after two consecutive samples fell outside the tolerant form envelope.`,
+      )
+    } else {
+      details.push('No sustained material breakdown was found across the credited hold.')
+    }
     details.push('Scapular protraction is not measured by this camera check — confirm it yourself.')
 
     return {
       ok: true,
       confidence,
       framesUsed,
+      cleanSeconds,
+      cleanRatio,
       elbowDeg,
       kneeDeg,
       hipAngleDeg,
