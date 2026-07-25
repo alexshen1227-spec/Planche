@@ -6,6 +6,7 @@ import { loadDraft } from './lib/draft'
 import { buildPlan } from './lib/coach'
 import { todaysSession } from './data/workouts'
 import { MeasurePrompt, measurementDue } from './components/MeasurePrompt'
+import { pruneClips } from './lib/clips'
 import { Icon, type IconName } from './components/Icon'
 import { Toasts } from './components/Toasts'
 import { Dashboard } from './views/Dashboard'
@@ -135,6 +136,12 @@ export default function App() {
   const [resuming, setResuming] = useState(resumeDraft !== null)
 
   const [askCheckIn, setAskCheckIn] = useState(false)
+
+  // Sweep expired footage once per launch, so storage does not creep up over
+  // months even if a session never finishes.
+  useEffect(() => {
+    void pruneClips()
+  }, [])
   // Asked once on open when it comes due, never mid-workout.
   const [showMeasure, setShowMeasure] = useState(false)
   useEffect(() => {

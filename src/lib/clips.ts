@@ -10,8 +10,13 @@
 const DB_NAME = 'planchelab-clips'
 const BLOBS = 'clips'
 const META = 'meta'
-/** Clips kept per exercise before the oldest is dropped. */
-export const CLIPS_PER_EXERCISE = 3
+/**
+ * Retention: the last month of footage, so you can compare against how you
+ * looked a few weeks ago, with a per-exercise cap so a heavy week cannot fill
+ * the device. Pinned clips are exempt from both — that is what pinning means.
+ */
+export const CLIP_RETENTION_DAYS = 30
+export const CLIPS_PER_EXERCISE = 8
 
 export interface ClipMeta {
   key: string
@@ -149,13 +154,40 @@ export async function saveClip(exerciseId: string, blob: Blob, seconds: number):
   } catch {
     return null // quota or storage failure: no dangling reference is handed back
   }
-  try {
-    const mine = (await listClips(exerciseId)).filter((c) => !c.pinned)
-    for (const stale of mine.slice(CLIPS_PER_EXERCISE)) await deleteClip(stale.key)
-  } catch {
-    /* eviction is best effort — the clip itself is safely stored */
-  }
+  void pruneClips(exerciseId)
   return key
+}
+
+/**
+ * Drop anything past the retention window, plus anything beyond the per-
+ * exercise cap. Runs after each save and on app start so storage cannot creep
+ * up over months of training.
+ */
+export async function pruneClips(exerciseId?: string): Promise<number> {
+  try {
+    const cutoff = Date.now() - CLIP_RETENTION_DAYS * 86_400_000
+    const all = await listClips(exerciseId)
+    const doomed = new Set<string>()
+
+    for (const c of all) if (!c.pinned && c.at < cutoff) doomed.add(c.key)
+
+    const byExercise = new Map<string, ClipMeta[]>()
+    for (const c of all) {
+      if (c.pinned || doomed.has(c.key)) continue
+      const list = byExercise.get(c.exerciseId) ?? []
+      list.push(c)
+      byExercise.set(c.exerciseId, list)
+    }
+    // listClips is newest-first, so anything past the cap is the older tail.
+    for (const list of byExercise.values()) {
+      for (const stale of list.slice(CLIPS_PER_EXERCISE)) doomed.add(stale.key)
+    }
+
+    for (const key of doomed) await deleteClip(key)
+    return doomed.size
+  } catch {
+    return 0
+  }
 }
 
 export async function clipsTotalBytes(): Promise<number> {

@@ -82,6 +82,8 @@ const FORM_ISSUES = new Set<FormIssue>([
   'closed',
   'knees',
   'lean',
+  'twist',
+  'narrow',
   'hips',
   'level',
 ])
@@ -96,6 +98,8 @@ function sanitizeForm(f: unknown): FormCheck | undefined {
     ? c.issues.filter((i): i is FormIssue => typeof i === 'string' && FORM_ISSUES.has(i as FormIssue))
     : undefined
   return {
+    // Spread-preserve for the same reason as sessions: unknown fields survive.
+    ...c,
     rating: c.rating as FormCheck['rating'],
     ...(issues && issues.length ? { issues } : {}),
     ...(typeof c.clipKey === 'string' ? { clipKey: c.clipKey } : {}),
@@ -131,6 +135,10 @@ function sanitizeSessions(raw: unknown): Session[] {
           .map((x) => ({ ...x, form: sanitizeForm(x.form) }))
       : []
     out.push({
+      // Spread first so anything this version does not know about survives.
+      // Rebuilding from an explicit field list silently drops data whenever a
+      // new field is added and someone forgets to list it here.
+      ...(c as Session),
       id: typeof c.id === 'string' && c.id ? c.id : crypto.randomUUID(),
       startedAt: c.startedAt,
       endedAt: typeof c.endedAt === 'number' ? c.endedAt : c.startedAt,
@@ -140,8 +148,6 @@ function sanitizeSessions(raw: unknown): Session[] {
       sets,
       rpe: typeof c.rpe === 'number' ? c.rpe : undefined,
       notes: typeof c.notes === 'string' ? c.notes : undefined,
-      strategy: c.strategy,
-      checkIn: c.checkIn,
     })
   }
   return out
@@ -235,6 +241,9 @@ export function normalizeState(raw: unknown): AppState {
 /** Whether boot found a usable primary copy — drives mirror-restore logic. */
 let bootedFresh = false
 
+/** Kept so a bad migration is recoverable rather than terminal. */
+const BACKUP_KEY = 'planchelab.prev'
+
 function loadState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -242,10 +251,39 @@ function loadState(): AppState {
       bootedFresh = true
       return initialState()
     }
-    return normalizeState(JSON.parse(raw))
+    const parsed = JSON.parse(raw)
+    const next = normalizeState(parsed)
+
+    // Upgrades are the moment data is most at risk. Snapshot what was on disk
+    // before this version rewrites it, and shout if the rewrite lost sessions.
+    const priorVersion = typeof parsed?.version === 'number' ? parsed.version : 1
+    if (priorVersion !== next.version) {
+      try {
+        localStorage.setItem(BACKUP_KEY, raw)
+      } catch {
+        /* a full disk should not block the upgrade */
+      }
+    }
+    const before = Array.isArray(parsed?.sessions) ? parsed.sessions.length : 0
+    if (next.sessions.length < before) {
+      console.warn(`Planche Lab: ${before - next.sessions.length} session(s) failed validation and were dropped.`)
+    }
+    return next
   } catch {
     bootedFresh = true
     return initialState()
+  }
+}
+
+/** The pre-upgrade snapshot, if one exists. */
+export function previousBackup(): { json: string; sessions: number } | null {
+  try {
+    const raw = localStorage.getItem(BACKUP_KEY)
+    if (!raw) return null
+    const p = JSON.parse(raw)
+    return { json: raw, sessions: Array.isArray(p?.sessions) ? p.sessions.length : 0 }
+  } catch {
+    return null
   }
 }
 

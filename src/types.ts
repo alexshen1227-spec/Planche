@@ -45,16 +45,33 @@ export type FormIssue =
   | 'closed'
   | 'knees'
   | 'lean'
+  | 'twist'
+  | 'narrow'
   | 'hips'
   | 'level'
 
 export type FormRating = 'clean' | 'slipped' | 'broke'
+
+/** What the camera measured, kept even if the athlete never confirms it. */
+export interface AutoForm {
+  issues: FormIssue[]
+  confidence: number
+  elbowDeg?: number
+  kneeDeg?: number
+  hipAngleDeg?: number
+  hipOffset?: number
+  leanRatio?: number
+  /** Keypoint jitter across frames — high means the hold was shaky. */
+  wobble?: number
+}
 
 export interface FormCheck {
   rating: FormRating
   issues?: FormIssue[]
   /** Key of the recorded clip in the clip store, when one was kept. */
   clipKey?: string
+  /** Objective reading from the clip, independent of the athlete's rating. */
+  auto?: AutoForm
 }
 
 /** Answers to the coach's periodic pre-session check-in. */
@@ -133,6 +150,8 @@ export interface SetLog {
   at: number
   /** Self-assessed quality of this set, when the coach asked. */
   form?: FormCheck
+  /** Which side a unilateral movement was performed on. */
+  side?: 'left' | 'right'
 }
 
 export type StrategyId = 'balanced' | 'volume' | 'intensity' | 'density' | 'technique'

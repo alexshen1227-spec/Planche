@@ -11,6 +11,27 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, v))
 }
 
+/**
+ * Unilateral work is stored as two rounds per set — left then right — so the
+ * player can label each side and both get logged separately.
+ */
+function withSides(blocks: Block[]): Block[] {
+  return blocks.map((b) =>
+    EXERCISE_BY_ID[b.exerciseId]?.perSide ? { ...b, sets: b.sets * 2 } : b,
+  )
+}
+
+/**
+ * How a block reads in a plan list. Unilateral blocks are stored doubled, so
+ * showing the raw count would claim twice the rounds actually prescribed.
+ */
+export function describeBlock(b: Block): string {
+  const perSide = EXERCISE_BY_ID[b.exerciseId]?.perSide
+  const rounds = perSide ? Math.ceil(b.sets / 2) : b.sets
+  const target = b.target.kind === 'hold' ? `${b.target.sec}s` : `${b.target.reps}`
+  return `${rounds}×${target}${perSide ? ' / side' : ''}`
+}
+
 export function estimateMinutes(blocks: Block[]): number {
   let sec = 0
   for (const b of blocks) {
@@ -73,10 +94,12 @@ function fitToBudget(blocks: Block[], budgetMin: number): Block[] {
   for (let guard = 0; guard < 40 && estimateMinutes(out) > budgetMin; guard++) {
     let changed = false
     // 1. Shave sets off strength/core blocks (from the back), floor 2.
+    //    Unilateral blocks come off in pairs so a side never goes untrained.
     for (let i = out.length - 1; i >= 0; i--) {
       const b = out[i]
-      if ((b.section === 'strength' || b.section === 'core') && b.sets > 2) {
-        b.sets -= 1
+      const stepSize = EXERCISE_BY_ID[b.exerciseId]?.perSide ? 2 : 1
+      if ((b.section === 'strength' || b.section === 'core') && b.sets - stepSize >= 2) {
+        b.sets -= stepSize
         changed = true
         break
       }
@@ -94,10 +117,13 @@ function fitToBudget(blocks: Block[], budgetMin: number): Block[] {
       out.splice(coreIdx[coreIdx.length - 1], 1)
       continue
     }
-    // 4. Reduce main sets, floor 3.
-    const main = out.find((b) => b.section === 'main' && b.sets > 3)
+    // 4. Reduce main sets, floor 3 (again in pairs for unilateral work).
+    const main = out.find((b) => {
+      const stepSize = EXERCISE_BY_ID[b.exerciseId]?.perSide ? 2 : 1
+      return b.section === 'main' && b.sets - stepSize >= 3
+    })
     if (main) {
-      main.sets -= 1
+      main.sets -= EXERCISE_BY_ID[main.exerciseId]?.perSide ? 2 : 1
       continue
     }
     break
@@ -269,7 +295,9 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
   }
 
   const budget = easy ? Math.min(22, state.settings.sessionMinutes) : state.settings.sessionMinutes
-  const fitted = fitToBudget(blocks, budget)
+  // Sides are expanded before trimming, so the budget accounts for the fact
+  // that unilateral work costs twice as long.
+  const fitted = fitToBudget(withSides(blocks), budget)
 
   return {
     id: `auto-${stepId}-${plan.dayType}-${plan.strategy}`,

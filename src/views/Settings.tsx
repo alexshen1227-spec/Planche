@@ -4,7 +4,7 @@ import { useStore, normalizeState } from '../lib/store'
 import { STEP_BY_ID } from '../data/progressions'
 import { exportData, readImportFile } from '../lib/exportImport'
 import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
-import { listClips, clearAllClips } from '../lib/clips'
+import { listClips, clearAllClips, CLIP_RETENTION_DAYS } from '../lib/clips'
 import { fmtDate } from '../lib/time'
 import { fmtWeight } from '../lib/units'
 import { MeasurePrompt, lastOf } from '../components/MeasurePrompt'
@@ -349,7 +349,10 @@ export function Settings() {
         >
           <Toggle label="Film main holds" on={s.recordForm} onChange={(v) => set({ recordForm: v })} />
         </Row>
-        <Row label="Saved form clips" hint={`${clipCount} clip${clipCount === 1 ? '' : 's'} Â· ${(clipBytes / 1048576).toFixed(1)} MB on this device.`}>
+        <Row
+          label="Saved form clips"
+          hint={`${clipCount} clip${clipCount === 1 ? '' : 's'} · ${(clipBytes / 1048576).toFixed(1)} MB. Kept for ${CLIP_RETENTION_DAYS} days then deleted automatically — pinned clips are kept for good.`}
+        >
           <button
             onClick={() => {
               void clearAllClips().then(() => {
@@ -522,7 +525,7 @@ export function Settings() {
       <SectionTitle>About</SectionTitle>
       <div className="rounded-2xl border border-line bg-surface p-5 text-[13.5px] leading-relaxed text-ink2 shadow-card">
         <p>
-          <span className="font-display font-semibold text-ink">Planche Lab</span> Â· a local-first training companion
+          <span className="font-display font-semibold text-ink">Planche Lab</span> · a local-first training companion
           for learning the planche. All data lives in your browser — nothing leaves your machine.
         </p>
         <p className="mt-2">

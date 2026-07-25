@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { Section, Session, Workout } from '../types'
 import { useStore } from '../lib/store'
-import { todaysSession, maxTestWorkout, TEMPLATES } from '../data/workouts'
+import { todaysSession, maxTestWorkout, TEMPLATES, describeBlock } from '../data/workouts'
 import { EXERCISES, EXERCISE_BY_ID, CATEGORY_LABEL } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { applySession } from '../lib/engine'
@@ -130,9 +130,7 @@ export function Train({ startWorkout }: { startWorkout: (w: Workout) => void }) 
                         return (
                           <div key={i} className="flex items-baseline justify-between gap-3 text-[14px]">
                             <span className="text-ink">{ex.name}</span>
-                            <span className="shrink-0 text-ink2 tnum">
-                              {b.sets}×{b.target.kind === 'hold' ? `${b.target.sec}s` : b.target.reps}
-                            </span>
+                            <span className="shrink-0 text-ink2 tnum">{describeBlock(b)}</span>
                           </div>
                         )
                       })}

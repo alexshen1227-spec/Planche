@@ -13,6 +13,7 @@ import type {
 } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
+import { describeBlock } from '../data/workouts'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { useStore } from '../lib/store'
 import { applySession } from '../lib/engine'
@@ -22,7 +23,14 @@ import { useWakeLock } from '../lib/wakeLock'
 import { clearDraft, saveDraft, type SessionDraft } from '../lib/draft'
 import { useFormRecorder } from '../lib/recorder'
 import { saveClip, getClipUrl } from '../lib/clips'
-import { analyseClip, blobFromUrl, friendlyResult, isFilmable, type PoseFormResult } from '../lib/poseForm'
+import {
+  analyseClip,
+  blobFromUrl,
+  emptyResult,
+  friendlyResult,
+  isFilmable,
+  type PoseFormResult,
+} from '../lib/poseForm'
 import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
@@ -111,6 +119,15 @@ export function SessionPlayer({
   const exercise = block ? EXERCISE_BY_ID[block.exerciseId] : undefined
   const totalSets = useMemo(() => workout.blocks.reduce((n, b) => n + b.sets, 0), [workout])
   const doneSets = logs.length
+  /**
+   * Unilateral work runs twice per set — left then right — so both sides get
+   * the same dose. The set counter still shows the real number of rounds.
+   */
+  const perSide = Boolean(exercise?.perSide)
+  const side: 'left' | 'right' = si % 2 === 0 ? 'left' : 'right'
+  const roundsPerSet = perSide ? 2 : 1
+  const displaySet = Math.floor(si / roundsPerSet) + 1
+  const displayTotal = block ? Math.ceil(block.sets / roundsPerSet) : 0
   // The record to beat includes anything already set earlier in this session,
   // otherwise a second, weaker set would celebrate as a PR too.
   const bestBefore = useMemo(() => {
@@ -328,6 +345,7 @@ export function SessionPlayer({
           kind: exercise.type,
           value,
           ...(raw !== undefined && Math.abs(raw - value) > 0.05 ? { raw } : {}),
+          ...(exercise.perSide ? { side } : {}),
           target: block.target.kind === 'hold' ? block.target.sec : block.target.reps,
           section: block.section,
           at: Date.now(),
@@ -335,7 +353,7 @@ export function SessionPlayer({
       ])
       advance(true)
     },
-    [block, exercise, advance],
+    [block, exercise, advance, side],
   )
 
   const stopHold = useCallback(() => {
@@ -552,9 +570,7 @@ export function SessionPlayer({
                         return (
                           <div key={i} className="flex items-baseline justify-between gap-3 text-[14px]">
                             <span className="text-ink">{ex.name}</span>
-                            <span className="shrink-0 text-ink2 tnum">
-                              {b.sets}×{b.target.kind === 'hold' ? `${b.target.sec}s` : b.target.reps}
-                            </span>
+                            <span className="shrink-0 text-ink2 tnum">{describeBlock(b)}</span>
                           </div>
                         )
                       })}
@@ -595,12 +611,20 @@ export function SessionPlayer({
       return (
         <div className="mx-auto w-full max-w-lg px-5 pb-10 text-center">
           <div className="mt-4 text-[13px] font-semibold uppercase tracking-wide text-accent">
-            {SECTION_LABEL[block.section]} · Set {si + 1} of {block.sets}
+            {SECTION_LABEL[block.section]} · Set {displaySet} of {displayTotal}
           </div>
           <h1 className="mt-1 font-display text-[30px] font-bold leading-tight text-ink">{exercise.name}</h1>
+          {perSide ? (
+            <div className="mt-1.5 inline-flex items-center gap-2 rounded-full bg-accent-soft px-3.5 py-1 text-[14px] font-semibold text-accent">
+              {side === 'left' ? 'Left side' : 'Right side'}
+              <span className="text-[12px] font-normal text-ink2">
+                {side === 'left' ? 'then you’ll do the right' : 'second half of this set'}
+              </span>
+            </div>
+          ) : null}
           <div className="mt-1 text-[15px] text-ink2 tnum">
             Target {target}
-            {exercise.perSide ? ' / side' : ''}
+            {perSide ? ' this side' : ''}
             {bestBefore ? ` · Best ${exercise.type === 'hold' ? fmtHold(bestBefore) : `${bestBefore} reps`}` : ''}
           </div>
           {exercise.category === 'planche' ? (
@@ -752,7 +776,8 @@ export function SessionPlayer({
       return (
         <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
           <div className="mt-2 text-[14px] font-medium text-ink2">
-            {exercise.name} · Set {si + 1}/{block.sets}
+            {exercise.name} · Set {displaySet}/{displayTotal}
+            {perSide ? ` · ${side === 'left' ? 'Left' : 'Right'}` : ''}
           </div>
           <div className="relative mt-4">
             <div className="pointer-events-none absolute inset-6 rounded-full bg-accent-soft blur-3xl" />
@@ -802,7 +827,8 @@ export function SessionPlayer({
       return (
         <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
           <div className="mt-4 text-[14px] font-medium text-ink2">
-            {exercise.name} · Set {si + 1}/{block.sets}
+            {exercise.name} · Set {displaySet}/{displayTotal}
+            {perSide ? ` · ${side === 'left' ? 'Left' : 'Right'}` : ''}
           </div>
           <div className="mt-2 text-[15px] text-ink2">Do your set, then log the reps.</div>
           <div className="mt-6 flex items-center gap-5">
@@ -886,7 +912,14 @@ export function SessionPlayer({
           ) : null}
 
           <div className="mt-5 text-[14px] text-ink2">
-            Next: <span className="font-medium text-ink">{nx.name}</span> · set {si + 1}/{nb.sets}
+            Next: <span className="font-medium text-ink">{nx.name}</span>
+            {nx.perSide ? (
+              <>
+                {' '}
+                · <span className="font-medium text-ink">{si % 2 === 0 ? 'left' : 'right'} side</span>
+              </>
+            ) : null}{' '}
+            · set {Math.floor(si / (nx.perSide ? 2 : 1)) + 1}/{Math.ceil(nb.sets / (nx.perSide ? 2 : 1))}
           </div>
           <div className="mt-5 flex gap-3">
             <button
@@ -1165,13 +1198,15 @@ export const FORM_ISSUE_LABEL: Record<FormIssue, string> = {
   closed: 'Hips not open enough',
   knees: 'Knees bent',
   lean: 'Not enough lean',
+  twist: 'Twisted / uneven',
+  narrow: 'Legs not placed right',
   hips: 'Hips sagged',
   level: 'Not level',
 }
 
 /** Offered for tapping; the two legacy values are readable but not selectable. */
 const FORM_ISSUES: { id: FormIssue; label: string }[] = (
-  ['arms', 'scapula', 'shrug', 'pike', 'sag', 'closed', 'knees', 'lean'] as FormIssue[]
+  ['arms', 'scapula', 'shrug', 'pike', 'sag', 'closed', 'knees', 'lean', 'twist', 'narrow'] as FormIssue[]
 ).map((id) => ({ id, label: FORM_ISSUE_LABEL[id] }))
 
 /**
@@ -1202,7 +1237,7 @@ function FormCheckRow({
       const res: PoseFormResult = blob
         ? await analyseClip(blob, exerciseId)
         : // Never leave the button looking like it did nothing.
-          { ok: false, confidence: 0, framesUsed: 0, issues: [], notes: [], good: [], reason: 'That clip could not be loaded.' }
+          emptyResult('That clip could not be loaded.')
       setAnalysis(friendlyResult(res))
       if (res.ok) {
         // Pre-fills the answer; the athlete still confirms it, because the
@@ -1239,7 +1274,27 @@ function FormCheckRow({
   // Committed on every tap rather than behind a Save button: the rest timer
   // can expire mid-selection and used to throw the whole rating away.
   const commit = (r: FormRating, iss: FormIssue[]) =>
-    onDone({ rating: r, ...(iss.length ? { issues: iss } : {}), ...(clipKey ? { clipKey } : {}) })
+    onDone({
+      rating: r,
+      ...(iss.length ? { issues: iss } : {}),
+      ...(clipKey ? { clipKey } : {}),
+      // The camera's own reading rides along, so the coach has an objective
+      // record even when the athlete's rating disagrees with it.
+      ...(analysis?.ok
+        ? {
+            auto: {
+              issues: analysis.issues,
+              confidence: analysis.confidence,
+              elbowDeg: analysis.elbowDeg,
+              kneeDeg: analysis.kneeDeg,
+              hipAngleDeg: analysis.hipAngleDeg,
+              hipOffset: analysis.hipOffset,
+              leanRatio: analysis.leanRatio,
+              wobble: analysis.wobble,
+            },
+          }
+        : {}),
+    })
 
   const toggleIssue = (id: FormIssue) => {
     const next = issues.includes(id) ? issues.filter((x) => x !== id) : [...issues, id]
@@ -1281,8 +1336,20 @@ function FormCheckRow({
             >
               {analysis.ok ? (
                 <>
+                  {analysis.notes.length > 0 ? (
+                    <div className="space-y-1">
+                      {analysis.notes.map((n) => (
+                        <div key={n} className="flex gap-1.5">
+                          <span className="mt-[6px] h-1 w-1 shrink-0 rounded-full bg-accent" />
+                          <span>{n}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="font-medium text-ok">Nothing to correct — that looked clean.</div>
+                  )}
                   {analysis.good.length ? (
-                    <div className="mb-1.5 flex flex-wrap gap-1">
+                    <div className="mt-2 flex flex-wrap gap-1">
                       {analysis.good.map((g) => (
                         <span key={g} className="rounded-full bg-ok-soft px-2 py-0.5 text-[11.5px] font-medium text-ok">
                           ✓ {g}
@@ -1290,17 +1357,20 @@ function FormCheckRow({
                       ))}
                     </div>
                   ) : null}
-                  {analysis.notes.map((n) => (
-                    <div key={n} className="flex gap-1.5">
-                      <span className="mt-[6px] h-1 w-1 shrink-0 rounded-full bg-accent" />
-                      <span>{n}</span>
-                    </div>
-                  ))}
-                  {analysis.notes.length === 0 ? <div className="text-ok">Nothing to correct — that looked clean.</div> : null}
-                  <div className="mt-1.5 text-ink3">
-                    Measured across {analysis.framesUsed} frames, {Math.round(analysis.confidence * 100)}% tracking
-                    confidence. It is a guess from a side-on view — correct it below if it read you wrong.
-                  </div>
+                  {
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-[11.5px] text-ink3">Measurement detail</summary>
+                      <div className="mt-1 space-y-0.5 text-[11.5px] text-ink3">
+                        {analysis.details.map((d) => (
+                          <div key={d}>{d}</div>
+                        ))}
+                        <div>
+                          {analysis.framesUsed} frames · {Math.round(analysis.confidence * 100)}% tracking confidence.
+                          A side-on estimate, not a verdict — correct it below if it read you wrong.
+                        </div>
+                      </div>
+                    </details>
+                  }
                 </>
               ) : (
                 (analysis.reason ?? 'Could not analyse that clip.')

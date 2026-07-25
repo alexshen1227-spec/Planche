@@ -108,6 +108,10 @@ export interface Signals {
   topFormIssue: { issue: string; count: number } | null
   /** Seconds are climbing while form ratings are getting worse. */
   formDegrading: boolean
+  /** Average camera-measured shakiness across recent filmed sets. */
+  meanWobble: number | null
+  /** How many sets the camera has measured recently. */
+  cameraSetCount: number
 
   weightKg: number | null
   /** Bodyweight change per week over the last ~8 weeks. */
@@ -190,10 +194,27 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const formCleanRate = ratedSets.length
     ? ratedSets.filter((x) => x.form!.rating === 'clean').length / ratedSets.length
     : null
+  // Counts both what the athlete reported and what the camera measured. The
+  // camera's reading survives even when a set was never rated, so a recurring
+  // fault is not invisible just because the rest screen was skipped.
   const issueCounts = new Map<string, number>()
+  const cameraSets = sessions.slice(-8).flatMap((s) => s.sets.filter((x) => x.form?.auto && x.section === 'main'))
   for (const s of ratedSets) for (const i of s.form?.issues ?? []) issueCounts.set(i, (issueCounts.get(i) ?? 0) + 1)
+  for (const s of cameraSets) {
+    for (const i of s.form!.auto!.issues) {
+      // Half-weight: an unconfirmed machine reading is weaker evidence than
+      // the athlete saying it themselves.
+      issueCounts.set(i, (issueCounts.get(i) ?? 0) + 0.5)
+    }
+  }
   const topEntry = [...issueCounts.entries()].sort((a, b) => b[1] - a[1])[0]
-  const topFormIssue = topEntry && topEntry[1] >= 2 ? { issue: topEntry[0], count: topEntry[1] } : null
+  const topFormIssue =
+    topEntry && topEntry[1] >= 2 ? { issue: topEntry[0], count: Math.round(topEntry[1]) } : null
+
+  // Shakiness the camera saw, averaged over recent filmed sets: consistently
+  // high means the prescribed holds are sitting at the very limit.
+  const wobbles = cameraSets.map((s) => s.form!.auto!.wobble).filter((w): w is number => w !== undefined)
+  const meanWobble = wobbles.length >= 3 ? wobbles.reduce((a, b) => a + b, 0) / wobbles.length : null
   // Chasing seconds while positions fall apart is the classic way to stall.
   const half = Math.floor(ratedSets.length / 2)
   const cleanIn = (arr: typeof ratedSets) =>
@@ -252,6 +273,8 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     formCleanRate,
     formRatedCount: ratedSets.length,
     topFormIssue,
+    meanWobble,
+    cameraSetCount: cameraSets.length,
     formDegrading,
     weightKg,
     weightTrendPerWeek,

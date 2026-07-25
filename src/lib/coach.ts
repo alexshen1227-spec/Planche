@@ -372,6 +372,8 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     closed: 'hips not opening enough',
     knees: 'knees bending',
     lean: 'not leaning far enough forward',
+    twist: 'twisting — one side sitting higher',
+    narrow: 'leg position',
     hips: 'hips sagging',
     level: 'body not level',
   }
@@ -398,6 +400,17 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     // A bending arm or a collapsing shoulder blade is a strength problem;
     // extra pressing volume is what actually fixes it.
     if (['scapula', 'arms', 'shrug'].includes(sig.topFormIssue.issue)) accessoryEmphasis = 'pressing'
+  }
+
+  // The camera can see something the athlete cannot: consistent shaking means
+  // the prescribed hold is sitting at the very edge, which buys fatigue rather
+  // than practice.
+  if (sig.meanWobble !== null && sig.meanWobble > 0.075 && sig.cameraSetCount >= 3) {
+    targetFactor = Math.min(targetFactor, 0.9)
+    decisions.push({
+      text: 'Your filmed sets show a lot of shaking, which means those holds are right at your limit. Easing the target so you practise the position instead of surviving it.',
+      kind: 'info',
+    })
   }
 
   if (sig.lastWasOutlier) {
