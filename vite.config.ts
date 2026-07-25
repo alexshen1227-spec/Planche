@@ -37,14 +37,47 @@ export default defineConfig({
       includeAssets: ['icon.svg', 'manifest.webmanifest'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,woff2,webmanifest}'],
-        // version.json must always come from the network — it is the update signal.
-        globIgnores: ['**/version.json'],
+        globIgnores: [
+          // version.json must always come from the network — it is the update signal.
+          '**/version.json',
+          // The pose model is several megabytes and only some sessions ask for
+          // it, so it is fetched on demand and cached after first use rather
+          // than forced onto every install.
+          '**/pose-*.js',
+        ],
         cleanupOutdatedCaches: true,
+        runtimeCaching: [
+          {
+            urlPattern: /\/assets\/pose-.*\.js$/,
+            handler: 'CacheFirst',
+            options: { cacheName: 'pose-lib', expiration: { maxEntries: 4 } },
+          },
+          {
+            // MoveNet weights, served from Google's model hosting.
+            urlPattern: /^https:\/\/(storage\.googleapis\.com|www\.kaggle\.com|tfhub\.dev)\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'pose-model',
+              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 90 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
       },
     }),
   ],
   define: {
     __BUILD_ID__: JSON.stringify(buildId),
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // Predictable name so the service worker can treat the pose stack as
+        // an on-demand download rather than part of the app shell.
+        manualChunks: (id) =>
+          id.includes('@tensorflow') || id.includes('pose-detection') ? 'pose' : undefined,
+      },
+    },
   },
   server: { port: 5173, strictPort: true },
 })

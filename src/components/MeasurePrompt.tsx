@@ -8,8 +8,8 @@ import { Modal } from './ui'
 
 const DAY = 86_400_000
 const WEIGHT_EVERY_DAYS = 7
-/** Height barely moves for most people, so confirming monthly is plenty. */
-const HEIGHT_EVERY_DAYS = 28
+/** Asked alongside weight — leaving it blank keeps the previous value. */
+const HEIGHT_EVERY_DAYS = 7
 
 export function lastOf(state: AppState, field: 'weightKg' | 'heightCm'): { at: number; value: number } | null {
   for (let i = state.measurements.length - 1; i >= 0; i--) {
@@ -129,7 +129,7 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
                 />
               </div>
             )}
-            <span className="mt-1 block text-[12px] text-ink3">Only asked occasionally — blank keeps what you had.</span>
+            <span className="mt-1 block text-[12px] text-ink3">Leave blank to keep {fmtHeight(lastH?.value, units)}.</span>
           </div>
         ) : null}
 

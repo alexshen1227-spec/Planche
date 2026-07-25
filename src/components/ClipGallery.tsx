@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listClips, getClipUrl, deleteClip, setPinned, type ClipMeta } from '../lib/clips'
+import { analyseClip, blobFromUrl, type PoseFormResult } from '../lib/poseForm'
 import { fmtDate, fmtHold } from '../lib/time'
 import { pushToast } from '../lib/toast'
 import { Icon } from './Icon'
@@ -12,6 +13,21 @@ import { Icon } from './Icon'
 export function ClipGallery({ exerciseId }: { exerciseId: string }) {
   const [clips, setClips] = useState<ClipMeta[] | null>(null)
   const [urls, setUrls] = useState<Record<string, string>>({})
+  const [analysis, setAnalysis] = useState<Record<string, PoseFormResult | undefined>>({})
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const analyse = async (key: string) => {
+    const url = urls[key]
+    if (!url) return
+    setBusy(key)
+    try {
+      const blob = await blobFromUrl(url)
+      const res = blob ? await analyseClip(blob) : null
+      if (res) setAnalysis((a) => ({ ...a, [key]: res }))
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const load = () => {
     void listClips(exerciseId).then(setClips)
@@ -67,11 +83,27 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
               loading…
             </div>
           )}
+          {analysis[c.key] ? (
+            <div className="mt-1.5 rounded-lg border border-line bg-raised p-2 text-[12px] leading-relaxed text-ink2">
+              {analysis[c.key]!.ok
+                ? analysis[c.key]!.notes.join(' ')
+                : (analysis[c.key]!.reason ?? 'Could not analyse.')}
+            </div>
+          ) : null}
           <div className="mt-1.5 flex items-center justify-between gap-2 px-0.5">
             <span className="text-[12.5px] text-ink2 tnum">
               {fmtDate(c.at)} · {fmtHold(c.seconds)}
             </span>
             <span className="flex items-center gap-1">
+              <button
+                onClick={() => void analyse(c.key)}
+                disabled={busy === c.key || !urls[c.key]}
+                aria-label="Check form"
+                title="Check form automatically"
+                className="grid h-7 w-7 place-items-center rounded-lg border border-line bg-raised text-ink3 hover:text-accent disabled:opacity-40"
+              >
+                <Icon name={busy === c.key ? 'clock' : 'sparkle'} size={13} />
+              </button>
               <button
                 onClick={() =>
                   void setPinned(c.key, !c.pinned).then(() => {

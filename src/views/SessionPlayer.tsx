@@ -22,6 +22,7 @@ import { useWakeLock } from '../lib/wakeLock'
 import { clearDraft, saveDraft, type SessionDraft } from '../lib/draft'
 import { useFormRecorder } from '../lib/recorder'
 import { saveClip, getClipUrl } from '../lib/clips'
+import { analyseClip, blobFromUrl, type PoseFormResult } from '../lib/poseForm'
 import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
@@ -1148,6 +1149,26 @@ function FormCheckRow({ clipKey, onDone }: { clipKey: string | null; onDone: (f:
   const [rating, setRating] = useState<FormRating | null>(null)
   const [issues, setIssues] = useState<FormIssue[]>([])
   const [clipUrl, setClipUrl] = useState<string | null>(null)
+  const [analysis, setAnalysis] = useState<PoseFormResult | null>(null)
+  const [analysing, setAnalysing] = useState(false)
+
+  const runAnalysis = async () => {
+    if (!clipUrl) return
+    setAnalysing(true)
+    try {
+      const blob = await blobFromUrl(clipUrl)
+      const res = blob ? await analyseClip(blob) : null
+      setAnalysis(res)
+      if (res?.ok) {
+        // Pre-fills the answer; the athlete still confirms it, because the
+        // model is guessing at a body position it was barely trained on.
+        setIssues(res.issues)
+        setRating(res.issues.length === 0 ? 'clean' : res.issues.length > 1 ? 'broke' : 'slipped')
+      }
+    } finally {
+      setAnalysing(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -1183,6 +1204,42 @@ function FormCheckRow({ clipKey, onDone }: { clipKey: string | null; onDone: (f:
           className="mb-3 h-40 w-full rounded-xl border border-line bg-black object-cover"
         />
       ) : null}
+      {clipUrl ? (
+        <div className="mb-3">
+          <button
+            onClick={() => void runAnalysis()}
+            disabled={analysing}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-raised py-2 text-[13px] font-semibold text-ink transition hover:border-line-strong disabled:opacity-60"
+          >
+            <Icon name="sparkle" size={14} className="text-accent" />
+            {analysing ? 'Checking your position…' : 'Check my form automatically'}
+          </button>
+          {analysis ? (
+            <div
+              className={`mt-2 rounded-xl border p-3 text-[12.5px] leading-relaxed ${
+                analysis.ok ? 'border-line bg-raised text-ink2' : 'border-line bg-raised text-ink3'
+              }`}
+            >
+              {analysis.ok ? (
+                <>
+                  {analysis.notes.map((n) => (
+                    <div key={n} className="flex gap-1.5">
+                      <span className="mt-[6px] h-1 w-1 shrink-0 rounded-full bg-accent" />
+                      <span>{n}</span>
+                    </div>
+                  ))}
+                  <div className="mt-1.5 text-ink3">
+                    Measured across {analysis.framesUsed} frames, {Math.round(analysis.confidence * 100)}% tracking
+                    confidence. It is a guess from a side-on view — correct it below if it read you wrong.
+                  </div>
+                </>
+              ) : (
+                (analysis.reason ?? 'Could not analyse that clip.')
+              )}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="text-[13px] font-semibold text-ink">How did that set look?</div>
       <div className="mt-2 flex gap-2">
         {(
@@ -1210,7 +1267,9 @@ function FormCheckRow({ clipKey, onDone }: { clipKey: string | null; onDone: (f:
       </div>
       {rating && rating !== 'clean' ? (
         <div className="mt-3">
-          <div className="text-[12.5px] text-ink2">What gave out?</div>
+          <div className="text-[12.5px] text-ink2">
+            What gave out?{analysis?.ok && analysis.issues.length ? ' (pre-filled from the clip)' : ''}
+          </div>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {FORM_ISSUES.map((f) => {
               const on = issues.includes(f.id)
