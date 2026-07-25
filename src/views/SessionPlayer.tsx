@@ -523,6 +523,14 @@ export function SessionPlayer({
   function body() {
     if (phase === 'intro') {
       const sections = [...new Set(workout.blocks.map((b) => b.section))]
+      // Say up front that filming happens — it only appears once the main
+      // work starts, which is several sets in and easy to be surprised by.
+      const willFilm =
+        cameraOn &&
+        recorder.supported &&
+        workout.blocks.some(
+          (b) => b.section === 'main' && EXERCISE_BY_ID[b.exerciseId]?.category === 'planche',
+        )
       return (
         <div className="mx-auto w-full max-w-lg px-5 pb-10">
           <div className="mt-6 rounded-3xl border border-line bg-surface p-6 shadow-card">
@@ -554,6 +562,18 @@ export function SessionPlayer({
               ))}
             </div>
           </div>
+          {willFilm ? (
+            <div className="mt-4 flex items-start gap-2.5 rounded-2xl border border-line bg-surface px-4 py-3 text-left">
+              <Icon name="monitor" size={16} className="mt-0.5 shrink-0 text-accent" />
+              <div>
+                <div className="text-[13.5px] font-medium text-ink">Your main sets will be filmed</div>
+                <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink2">
+                  Stand your phone side-on when you reach the main work — a preview and a level guide appear before
+                  each set, and you can switch the camera off there or in Settings.
+                </p>
+              </div>
+            </div>
+          ) : null}
           <button
             onClick={() => setPhase('ready')}
             className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99]"
