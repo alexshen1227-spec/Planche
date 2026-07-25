@@ -13,7 +13,8 @@ import type {
 } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
-import { describeBlock } from '../data/workouts'
+import { describeBlock, adaptiveTarget } from '../data/workouts'
+import { debriefSession, type CoachDecision } from '../lib/coach'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { useStore } from '../lib/store'
 import { applySession } from '../lib/engine'
@@ -29,6 +30,8 @@ import {
   emptyResult,
   friendlyResult,
   isFilmable,
+  poseModelReady,
+  warmDetector,
   type PoseFormResult,
 } from '../lib/poseForm'
 import { pushToast } from '../lib/toast'
@@ -94,6 +97,7 @@ export function SessionPlayer({
   const recorder = useFormRecorder()
   const [showCheckIn, setShowCheckIn] = useState(askCheckIn && !resumeFrom)
   const [insight, setInsight] = useState<{ delta: number; label: string } | null>(null)
+  const [debrief, setDebrief] = useState<CoachDecision[]>([])
   const startedAtRef = useRef(resumeFrom?.startedAt ?? Date.now())
   const lastBeepRef = useRef(-1)
   const targetHitRef = useRef(false)
@@ -143,6 +147,14 @@ export function SessionPlayer({
   // covers every key hold on the road, including the foundations plank.
   const filmable = Boolean(block?.section === 'main' && exercise && isFilmable(exercise.id))
   const filming = Boolean(filmable && cameraOn && recorder.supported)
+
+  // Spin the pose model up while the athlete is still getting into position,
+  // so an automatic check lands right after the clip instead of stalling on
+  // the model load. warmDetector is a no-op until the first manual run has
+  // proven the model downloads on this device.
+  useEffect(() => {
+    if (filming && state.settings.autoAnalyze) warmDetector()
+  }, [filming, state.settings.autoAnalyze])
 
   // Shared 100ms clock (also keeps the header session-elapsed ticking).
   useEffect(() => {
@@ -448,7 +460,11 @@ export function SessionPlayer({
       strategy: workout.strategy,
       checkIn: checkIn ?? undefined,
     }
-    const { events: raw } = applySession(state, session)
+    const { next, events: raw } = applySession(state, session)
+    // The coach reacts to every finished session, whatever kind it was.
+    const targetBefore = adaptiveTarget(state, state.stepId)
+    const targetAfter = next.stepId === state.stepId ? adaptiveTarget(next, next.stepId) : undefined
+    setDebrief(debriefSession(state, next, session, { before: targetBefore, after: targetAfter }))
     // First-ever values on accessories are technically PRs but not worth a
     // party — celebrate improvements, plus any first planche-line numbers.
     const ev: SessionEvents = {
@@ -916,6 +932,7 @@ export function SessionPlayer({
               clipKey={pendingClip}
               exerciseId={lastLog.exerciseId}
               value={lastLog.form}
+              autoRun={state.settings.autoAnalyze}
               onDone={(form) => {
                 setLastForm(form)
                 setPendingClip(null)
@@ -978,6 +995,7 @@ export function SessionPlayer({
                 clipKey={pendingClip}
                 exerciseId={lastMain.exerciseId}
                 value={lastMain.form}
+                autoRun={state.settings.autoAnalyze}
                 onDone={(form) => {
                   setLogs((l) => l.map((x) => (x === lastMain ? { ...x, form } : x)))
                   setPendingClip(null)
@@ -1063,6 +1081,25 @@ export function SessionPlayer({
             >
               <Icon name="chart" size={15} className={insight.delta >= 0 ? 'text-ok' : 'text-ink3'} />
               {insight.label}
+            </div>
+          ) : null}
+          {debrief.length > 0 ? (
+            <div className="mt-4 rounded-2xl border border-line bg-surface p-4 text-left">
+              <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-accent">
+                <Icon name="target" size={14} /> Coach's read
+              </div>
+              <ul className="space-y-1.5">
+                {debrief.map((d) => (
+                  <li key={d.text} className="flex gap-2 text-[13.5px] leading-relaxed">
+                    <span
+                      className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${
+                        d.kind === 'warn' ? 'bg-danger' : d.kind === 'good' ? 'bg-ok' : 'bg-ink3'
+                      }`}
+                    />
+                    <span className="text-ink2">{d.text}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
           {events.prs.length > 0 ? (
@@ -1232,6 +1269,9 @@ function issuesFor(exerciseId: string): { id: FormIssue; label: string }[] {
   return (ISSUES_BY_EXERCISE[exerciseId] ?? COMMON_ISSUES).map((id) => ({ id, label: FORM_ISSUE_LABEL[id] }))
 }
 
+/** Clips whose automatic analysis is currently running, across row instances. */
+const autoAnalysisInFlight = new Set<string>()
+
 /**
  * One tap for the common case, detail only when something went wrong. This is
  * the only signal the coach has about *quality* — without it, seconds earned
@@ -1241,12 +1281,15 @@ function FormCheckRow({
   clipKey,
   exerciseId,
   value,
+  autoRun,
   onDone,
 }: {
   clipKey: string | null
   exerciseId: string
   /** Already-saved rating, so the panel reflects it instead of looking blank. */
   value?: FormCheck
+  /** Kick the analysis off unprompted once the clip is ready. */
+  autoRun?: boolean
   onDone: (f: FormCheck) => void
 }) {
   const [rating, setRating] = useState<FormRating | null>(value?.rating ?? null)
@@ -1254,6 +1297,12 @@ function FormCheckRow({
   const [clipUrl, setClipUrl] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<PoseFormResult | null>(null)
   const [analysing, setAnalysing] = useState(false)
+  const autoRanRef = useRef(false)
+  // Mirrors of rating/issues that async code can read after its awaits — the
+  // state the closure captured goes stale, and an analysis resolving after a
+  // tap used to overwrite the athlete's own answer with the model's.
+  const ratingRef = useRef<FormRating | null>(value?.rating ?? null)
+  const issuesRef = useRef<FormIssue[]>(value?.issues ?? [])
 
   const runAnalysis = async () => {
     if (!clipUrl) return
@@ -1266,33 +1315,63 @@ function FormCheckRow({
           emptyResult('That clip could not be loaded.')
       setAnalysis(friendlyResult(res))
       if (res.ok) {
-        // Pre-fills the answer and saves it immediately — it used to render as
-        // selected while storing nothing, so a rest timer expiring lost it.
-        // The athlete can still correct it; the model is guessing at a body
-        // position it was barely trained on.
-        const r: FormRating = res.issues.length === 0 ? 'clean' : res.issues.length > 1 ? 'broke' : 'slipped'
-        setIssues(res.issues)
-        setRating(r)
-        onDone({
-          rating: r,
-          ...(res.issues.length ? { issues: res.issues } : {}),
-          ...(clipKey ? { clipKey } : {}),
-          auto: {
-            issues: res.issues,
-            confidence: res.confidence,
-            elbowDeg: res.elbowDeg,
-            kneeDeg: res.kneeDeg,
-            hipAngleDeg: res.hipAngleDeg,
-            hipOffset: res.hipOffset,
-            leanRatio: res.leanRatio,
-            wobble: res.wobble,
-          },
-        })
+        const auto = {
+          issues: res.issues,
+          confidence: res.confidence,
+          elbowDeg: res.elbowDeg,
+          kneeDeg: res.kneeDeg,
+          hipAngleDeg: res.hipAngleDeg,
+          hipOffset: res.hipOffset,
+          leanRatio: res.leanRatio,
+          wobble: res.wobble,
+        }
+        if (ratingRef.current !== null) {
+          // The athlete answered while the check was running — their word
+          // stands. File the camera's reading alongside it, don't overwrite.
+          onDone({
+            rating: ratingRef.current,
+            ...(issuesRef.current.length ? { issues: issuesRef.current } : {}),
+            ...(clipKey ? { clipKey } : {}),
+            auto,
+          })
+        } else {
+          // Pre-fills the answer and saves it immediately — it used to render
+          // as selected while storing nothing, so a rest timer expiring lost
+          // it. The athlete can still correct it; the model is guessing at a
+          // body position it was barely trained on.
+          const r: FormRating = res.issues.length === 0 ? 'clean' : res.issues.length > 1 ? 'broke' : 'slipped'
+          ratingRef.current = r
+          issuesRef.current = res.issues
+          setIssues(res.issues)
+          setRating(r)
+          onDone({
+            rating: r,
+            ...(res.issues.length ? { issues: res.issues } : {}),
+            ...(clipKey ? { clipKey } : {}),
+            auto,
+          })
+        }
       }
     } finally {
       setAnalysing(false)
     }
   }
+
+  // Fires at most once per set when auto-check is on: only after the clip is
+  // readable, only if the model is already cached on this device, and never
+  // over a rating that has already been put down. The in-flight set covers
+  // the same clip mounting twice (rest screen row → skip rest → finish row).
+  useEffect(() => {
+    if (!autoRun || !clipUrl || autoRanRef.current || analysing || analysis || rating !== null) return
+    if (!poseModelReady()) return
+    if (clipKey && autoAnalysisInFlight.has(clipKey)) return
+    autoRanRef.current = true
+    if (clipKey) autoAnalysisInFlight.add(clipKey)
+    void runAnalysis().finally(() => {
+      if (clipKey) autoAnalysisInFlight.delete(clipKey)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRun, clipUrl, rating, analysing, analysis])
 
   useEffect(() => {
     let cancelled = false
@@ -1342,6 +1421,7 @@ function FormCheckRow({
 
   const toggleIssue = (id: FormIssue) => {
     const next = issues.includes(id) ? issues.filter((x) => x !== id) : [...issues, id]
+    issuesRef.current = next
     setIssues(next)
     if (rating) commit(rating, next)
   }
@@ -1435,6 +1515,10 @@ function FormCheckRow({
           <button
             key={id}
             onClick={() => {
+              // Refs updated synchronously so an analysis resolving a moment
+              // later sees this tap and defers to it.
+              ratingRef.current = id
+              issuesRef.current = id === 'clean' ? [] : issues
               setRating(id)
               commit(id, id === 'clean' ? [] : issues)
               if (id === 'clean') setIssues([])

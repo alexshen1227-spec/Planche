@@ -156,8 +156,10 @@ export default function App() {
 
   const startWorkout = (w: Workout) => {
     setResuming(false)
-    // Only ask on generated sessions — templates are the athlete's own call.
-    setAskCheckIn(w.kind === 'auto' && buildPlan(state).askCheckIn)
+    // Asked on every kind of session when due — a check-in before a template
+    // still feeds the rails and the record, even though only generated
+    // sessions get reshaped by the answer.
+    setAskCheckIn(buildPlan(state).askCheckIn)
     setActiveWorkout(w)
   }
 

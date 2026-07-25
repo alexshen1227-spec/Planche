@@ -20,11 +20,11 @@ export interface PoseFormResult {
   reason?: string
   confidence: number
   framesUsed: number
-  /** Straightest observed elbow angle, degrees (180 = locked). */
+  /** Sustained elbow angle, degrees (75th percentile of frames; 180 = locked). */
   elbowDeg?: number
-  /** Shoulder→hip→knee angle: how open the hips are. */
+  /** Shoulder→hip→knee angle: how open the hips are (75th percentile). */
   hipAngleDeg?: number
-  /** Straightest observed knee angle. */
+  /** Sustained knee angle (75th percentile of frames). */
   kneeDeg?: number
   /** Hip height relative to shoulders, as a fraction of torso length.
    * Positive = hips above shoulders. */
@@ -214,15 +214,45 @@ async function getDetector() {
       await import('@tensorflow/tfjs-backend-webgl')
       await tf.setBackend('webgl')
       await tf.ready()
-      return poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
+      const detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
         modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
       })
+      try {
+        localStorage.setItem(POSE_READY_KEY, '1')
+      } catch {
+        /* private mode — warming just stays off */
+      }
+      return detector
     })().catch((e) => {
       detectorPromise = null // let a later attempt retry rather than fail forever
       throw e
     })
   }
   return detectorPromise
+}
+
+const POSE_READY_KEY = 'planchelab.poseReady'
+
+/** True once the model has loaded successfully at least once on this device. */
+export function poseModelReady(): boolean {
+  try {
+    return localStorage.getItem(POSE_READY_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Start loading the detector while the athlete is still setting up, so the
+ * first analysis of the session does not sit through the model spin-up. Gated
+ * on the ready flag: it never silently pulls megabytes on a fresh install —
+ * the first ever load still happens on an explicit "Check my form" tap.
+ */
+export function warmDetector(): void {
+  if (!poseModelReady()) return
+  void getDetector().catch(() => {
+    /* offline — the explicit tap will surface the error */
+  })
 }
 
 /**
@@ -285,7 +315,7 @@ export function emptyResult(reason?: string): PoseFormResult {
 export async function analyseClip(
   blob: Blob,
   exerciseId: string,
-  sampleCount = 10,
+  sampleCount?: number,
 ): Promise<PoseFormResult> {
   const empty = emptyResult()
   const profile = POSE_PROFILES[exerciseId]
@@ -315,10 +345,13 @@ export async function analyseClip(
     if (duration === 0) return { ...empty, reason: 'That clip has no readable duration.' }
 
     // Sample the middle of the hold; the ends are getting in and falling out.
+    // Roughly one frame per second so long holds are not under-sampled and
+    // short ones are not over-billed.
+    const n = sampleCount ?? Math.round(Math.min(16, Math.max(6, duration)))
     const from = duration * 0.25
     const to = duration * 0.85
-    const times = Array.from({ length: sampleCount }, (_, i) =>
-      sampleCount === 1 ? (from + to) / 2 : from + ((to - from) * i) / (sampleCount - 1),
+    const times = Array.from({ length: n }, (_, i) =>
+      n === 1 ? (from + to) / 2 : from + ((to - from) * i) / (n - 1),
     )
 
     const elbows: number[] = []
@@ -330,6 +363,12 @@ export async function analyseClip(
     const confidences: number[] = []
     const asymmetries: number[] = []
     const drifts: number[] = []
+    // Timestamped copies of the metrics that fatigue visibly, so the hold can
+    // be compared against itself: early third vs final third.
+    const elbowSeries: { t: number; v: number }[] = []
+    const lineSeries: { t: number; v: number }[] = []
+    const leanSeries: { t: number; v: number }[] = []
+    let frontalFrames = 0
     let prevAnchor: { sx: number; sy: number; hx: number; hy: number; torso: number; t: number } | null = null
 
     for (const t of times) {
@@ -358,7 +397,11 @@ export async function analyseClip(
       const found = [shoulder, elbow, wrist, hip].filter(Boolean) as Kp[]
       confidences.push(found.reduce((t2, k) => t2 + (k.score ?? 0), 0) / found.length)
 
-      if (elbow && wrist) push(elbows, angleDeg(shoulder, elbow, wrist))
+      if (elbow && wrist) {
+        const e = angleDeg(shoulder, elbow, wrist)
+        push(elbows, e)
+        if (Number.isFinite(e)) elbowSeries.push({ t, v: e })
+      }
 
       // Legs: take the straighter side, since one-leg work deliberately keeps
       // the other tucked and the extended leg is the one being judged.
@@ -375,12 +418,15 @@ export async function analyseClip(
 
       // Screen y grows downward, so a hip above the shoulders is negative dy.
       hipOffsets.push((shoulder.y - hip.y) / torso)
+      lineSeries.push({ t, v: (shoulder.y - hip.y) / torso })
 
       if (wrist) {
         // Lean is signed by which way the body points, so it reads the same
         // whichever way round the phone was set up.
         const facing = Math.sign(shoulder.x - hip.x) || 1
-        push(leans, ((shoulder.x - wrist.x) * facing) / torso)
+        const lean = ((shoulder.x - wrist.x) * facing) / torso
+        push(leans, lean)
+        if (Number.isFinite(lean)) leanSeries.push({ t, v: lean })
       }
       if (ear) push(shrugs, Math.hypot(shoulder.x - ear.x, shoulder.y - ear.y) / torso)
 
@@ -392,6 +438,9 @@ export async function analyseClip(
       const rs = byName(kps, 'right_shoulder')
       if (ls && rs && Math.abs(ls.x - rs.x) / torso > 0.4) {
         push(asymmetries, Math.abs(ls.y - rs.y) / torso)
+        // Wider still means the camera is closer to head-on than side-on, and
+        // every angle this analyser measures is projected garbage from there.
+        if (Math.abs(ls.x - rs.x) / torso > 0.62) frontalFrames++
       }
 
       // How far the position travels per second. Samples are seconds apart, so
@@ -420,17 +469,50 @@ export async function analyseClip(
       }
     }
 
+    if (frontalFrames / framesUsed > 0.5) {
+      return {
+        ...empty,
+        framesUsed,
+        reason:
+          'This looks filmed head-on. Elbow, hip and lean angles cannot be judged from the front — set the phone off to your side instead.',
+      }
+    }
+
     const confidence = confidences.reduce((a, b) => a + b, 0) / framesUsed
-    // Best observed values: we are asking whether the position was ever
-    // genuinely achieved, not what the average frame looked like.
-    const elbowDeg = elbows.length ? Math.max(...elbows) : undefined
-    const kneeDeg = knees.length ? Math.max(...knees) : undefined
-    const hipAngleDeg = hipAngles.length ? Math.max(...hipAngles) : undefined
+    // 75th percentile, not the single best frame: one lucky frame of locked
+    // elbows used to pass the whole set. This asks whether the position was
+    // actually *kept*, while still forgiving the odd mistracked sample. The
+    // peaks stay around so the feedback can say "you had it, then lost it".
+    const p75 = (xs: number[]) => {
+      if (!xs.length) return undefined
+      const s = [...xs].sort((a, b) => a - b)
+      return s[Math.min(s.length - 1, Math.floor(s.length * 0.75))]
+    }
+    const elbowPeak = elbows.length ? Math.max(...elbows) : undefined
+    const kneePeak = knees.length ? Math.max(...knees) : undefined
+    const hipAnglePeak = hipAngles.length ? Math.max(...hipAngles) : undefined
+    const elbowDeg = p75(elbows)
+    const kneeDeg = p75(knees)
+    const hipAngleDeg = p75(hipAngles)
     const hipOffset = median(hipOffsets)
     const leanRatio = median(leans)
     const shrugRatio = median(shrugs)
     const asymmetry = median(asymmetries)
     const wobble = median(drifts)
+
+    // Median of the first and final thirds of the sampled window, for the
+    // "clean early, broke down late" comparisons. Needs a hold long enough to
+    // have thirds worth talking about.
+    const thirds = (xs: { t: number; v: number }[]) => {
+      if (xs.length < 6) return null
+      const t1 = from + (to - from) / 3
+      const t2 = from + (2 * (to - from)) / 3
+      const early = xs.filter((p) => p.t <= t1).map((p) => p.v)
+      const late = xs.filter((p) => p.t >= t2).map((p) => p.v)
+      const e = median(early)
+      const l = median(late)
+      return e !== undefined && l !== undefined ? { early: e, late: l } : null
+    }
 
     if (confidence < 0.35) {
       return {
@@ -455,14 +537,22 @@ export async function analyseClip(
     if (profile.minElbowDeg !== undefined && elbowDeg !== undefined) {
       if (elbowDeg < profile.minElbowDeg) {
         issues.push('arms')
-        notes.push(`Elbows reached about ${Math.round(elbowDeg)}° at their straightest — locked reads near 180°.`)
+        notes.push(
+          elbowPeak !== undefined && elbowPeak >= profile.minElbowDeg
+            ? `Elbows locked at their best (${Math.round(elbowPeak)}°) but sat nearer ${Math.round(elbowDeg)}° for much of the hold — keep the lock the whole way.`
+            : `Elbows reached about ${Math.round(elbowPeak ?? elbowDeg)}° at their straightest — locked reads near 180°.`,
+        )
       } else good.push(`Elbows locked (${Math.round(elbowDeg)}°)`)
     }
 
     if (profile.minKneeDeg !== undefined && kneeDeg !== undefined) {
       if (kneeDeg < profile.minKneeDeg) {
         issues.push('knees')
-        notes.push(`Knees measured about ${Math.round(kneeDeg)}° — straight legs read near 180°.`)
+        notes.push(
+          kneePeak !== undefined && kneePeak >= profile.minKneeDeg
+            ? `Legs straightened fully at some point (${Math.round(kneePeak)}°) but bent for much of the hold — squeeze them straight and keep them there.`
+            : `Knees measured about ${Math.round(kneePeak ?? kneeDeg)}° — straight legs read near 180°.`,
+        )
       } else good.push(`Legs straight (${Math.round(kneeDeg)}°)`)
     }
 
@@ -472,7 +562,9 @@ export async function analyseClip(
         // body is still folded, which is the opposite complaint.
         issues.push('closed')
         notes.push(
-          `Hips were only about ${Math.round(hipAngleDeg)}° open — this position wants closer to ${profile.minHipAngleDeg}°.`,
+          hipAnglePeak !== undefined && hipAnglePeak >= profile.minHipAngleDeg
+            ? `Hips opened to ${Math.round(hipAnglePeak)}° at their best but closed back down for much of the hold — this position wants ${profile.minHipAngleDeg}°+ held, not visited.`
+            : `Hips were only about ${Math.round(hipAngleDeg)}° open — this position wants closer to ${profile.minHipAngleDeg}°.`,
         )
       } else good.push(`Hips open (${Math.round(hipAngleDeg)}°)`)
     }
@@ -517,6 +609,37 @@ export async function analyseClip(
       } else if (wobble < 0.015) {
         details.push('Position held very steady.')
       }
+    }
+
+    // ——— Early vs late: did the shape survive the fatigue? ———
+    // Each comparison stays quiet when the headline check already complained
+    // about the same thing, so the panel never nags twice for one fault.
+    const elbowTrend = thirds(elbowSeries)
+    const lineTrend = thirds(lineSeries)
+    const leanTrend = thirds(leanSeries)
+    let fadeSeen = false
+
+    if (elbowTrend && elbowTrend.early - elbowTrend.late > 8 && !issues.includes('arms')) {
+      fadeSeen = true
+      notes.push(
+        `Elbows were straighter early (${Math.round(elbowTrend.early)}°) than late (${Math.round(elbowTrend.late)}°) — the lock gave out as you tired. End the set before that point.`,
+      )
+    }
+    if (lineTrend && !issues.includes('sag') && !issues.includes('pike')) {
+      if (lineTrend.early - lineTrend.late > 0.18) {
+        fadeSeen = true
+        notes.push('You started level but the hips sank through the hold — the line broke down late, not from the start.')
+      } else if (lineTrend.late - lineTrend.early > 0.18) {
+        fadeSeen = true
+        notes.push('Your hips crept upward as the hold went on — fatigue was folding you toward a pike.')
+      }
+    }
+    if (leanTrend && leanTrend.early - leanTrend.late > 0.12 && !issues.includes('lean')) {
+      fadeSeen = true
+      notes.push('Your lean pulled back over the hold — shoulders drifted toward your hands as you tired.')
+    }
+    if (!fadeSeen && duration >= 8 && (elbowTrend || lineTrend || leanTrend)) {
+      details.push('Shape held up through the whole hold — no visible fade from start to finish.')
     }
 
     return {

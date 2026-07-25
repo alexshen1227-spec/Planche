@@ -193,6 +193,8 @@ export interface Settings {
   units: Units
   /** Record a short clip of main-work holds from the camera. */
   recordForm: boolean
+  /** Run the form check on each clip automatically once the model is cached. */
+  autoAnalyze: boolean
   /**
    * Seconds between actually coming out of a hold and the stop button being
    * pressed. Subtracted from timed holds so the numbers mean what they say.

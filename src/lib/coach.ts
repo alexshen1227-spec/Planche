@@ -1,6 +1,6 @@
 import type { AppState, CheckIn, Session, StrategyId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
-import { readSignals, observedRestSec, median, type Signals } from './signals'
+import { readSignals, observedRestSec, median, strainOf, LOADED_STRAIN, type Signals } from './signals'
 
 /**
  * The coach is an on-device optimizer, not a chatbot.
@@ -290,7 +290,7 @@ function smartRest(state: AppState, restFactor: number, sig: Signals): number {
   )
   if (observed !== null) rest = rest * 0.7 + observed * 0.3
 
-  if ((sig.lastRpe ?? 0) >= 9) rest *= 1.2
+  if ((sig.lastLoadedRpe ?? 0) >= 9) rest *= 1.2
   if (sig.lastCheckIn?.energy === 'tired') rest *= 1.1
   if (sig.mainHitRate !== null && sig.mainHitRate < 0.5) rest *= 1.15
 
@@ -317,15 +317,28 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   let accessoryEmphasis: CoachPlan['accessoryEmphasis'] = 'none'
 
   // ——— Recovery state sets the day's character ———
-  if (sig.restDays === 0 && sig.totalSessions > 0) {
+  // Judged on training LOAD, not on whether any session existed: a ten-minute
+  // wrist routine yesterday neither blocks a push day nor grants one, and a
+  // heavy template session counts even though the bandit never shaped it.
+  if (sig.daysSinceLoaded === 0 && sig.totalSessions > 0) {
     dayType = 'technique'
-    dayReason = 'Second session today — skill work only, tendons keep score.'
-  } else if (sig.restDays === 1 && (sig.lastRpe ?? 0) >= 9) {
+    dayReason = 'Second loaded session today — skill work only, tendons keep score.'
+  } else if (sig.readinessLoad !== null && sig.readinessLoad > 1.5) {
     dayType = 'technique'
-    dayReason = 'Yesterday hit RPE 9+ — today turns that into strength instead of fatigue.'
-  } else if (sig.restDays >= 2) {
+    dayReason =
+      'Your recent training load is running well above your own four-week normal — today recovers it into strength instead of stacking more on top.'
+  } else if (sig.daysSinceLoaded === 1 && (sig.lastLoadedRpe ?? 0) >= 9) {
+    dayType = 'technique'
+    dayReason = 'Your last hard session hit RPE 9+ — today turns that into strength instead of fatigue.'
+  } else if (sig.daysSinceLoaded >= 2) {
     dayType = 'push'
-    dayReason = `${sig.restDays} rest day${sig.restDays > 1 ? 's' : ''} banked — you're fresh, so today pushes.`
+    dayReason =
+      sig.restDays < sig.daysSinceLoaded
+        ? `No hard training in ${sig.daysSinceLoaded} days (light work doesn't count against you) — you're fresh, so today pushes.`
+        : `${sig.daysSinceLoaded} rest day${sig.daysSinceLoaded > 1 ? 's' : ''} banked — you're fresh, so today pushes.`
+  } else if (sig.readinessLoad !== null && sig.readinessLoad < 0.6 && sig.daysSinceLoaded >= 1) {
+    dayType = 'push'
+    dayReason = 'Your load has been light lately and yesterday was easy — fresh enough to push.'
   }
 
   // ——— Deload is scheduled, not earned ———
@@ -417,6 +430,17 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     decisions.push({
       text: 'Your last best was far outside your usual range — if the setup was different (parallettes vs floor), it is not being trusted as a new baseline.',
       kind: 'warn',
+    })
+  }
+
+  // ——— Left/right balance on unilateral work ———
+  if (sig.sideGap) {
+    const g = sig.sideGap
+    decisions.push({
+      text: `Your ${g.weakSide} side is trailing on unilateral work (${Math.round(g.weakMean)}s vs ${Math.round(
+        g.strongMean,
+      )}s, ~${Math.round(g.gapPct * 100)}% behind). Lead every set with the ${g.weakSide} side while it catches up — never let the strong side set the dose.`,
+      kind: 'info',
     })
   }
 
@@ -572,4 +596,92 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     decisions,
     signals: sig,
   }
+}
+
+// ————————————————————————————— The debrief —————————————————————————————
+
+/**
+ * What the coach noticed about a session the athlete just finished — ANY
+ * session: generated, template, max test or quick log. Shown on the finish
+ * screen, capped at three bullets so it reads as coaching, not a report.
+ */
+export function debriefSession(
+  prev: AppState,
+  next: AppState,
+  session: Session,
+  targets?: { before: number; after?: number },
+): CoachDecision[] {
+  const out: CoachDecision[] = []
+  const step = STEP_BY_ID[session.stepId]
+
+  // Form slipped in this specific session — the highest-priority thing to say.
+  const rated = session.sets.filter((x) => x.form && x.section === 'main')
+  const clean = rated.filter((x) => x.form!.rating === 'clean').length
+  if (rated.length >= 2 && clean / rated.length < 0.5) {
+    out.push({
+      text: 'More rated sets slipped than held clean today. The next session eases the target — clean positions are the product, seconds are just the receipt.',
+      kind: 'warn',
+    })
+  }
+
+  // Unusually big day, judged against the athlete's own recent sessions.
+  const thisStrain = strainOf(session)
+  const priorStrains = prev.sessions
+    .slice(-10)
+    .map(strainOf)
+    .filter((s) => s >= LOADED_STRAIN)
+  const typical = median(priorStrains)
+  if (typical !== null && priorStrains.length >= 3 && thisStrain >= typical * 1.4) {
+    out.push({
+      text: 'That was one of your biggest sessions in weeks. Expect it to echo tomorrow — the plan will lean easier until it settles.',
+      kind: 'info',
+    })
+  }
+
+  // The number that actually changes their next session.
+  if (targets && targets.after !== undefined && Math.abs(targets.after - targets.before) >= 1) {
+    const up = targets.after > targets.before
+    out.push({
+      text: `Working target moves ${targets.before}s → ${targets.after}s next session${up ? '' : ' — rebuilding quality before pushing again'}.`,
+      kind: up ? 'good' : 'info',
+    })
+  }
+
+  // A max test that missed the bar: name the gap instead of leaving silence.
+  if (session.workoutKind === 'test' && next.stepId === session.stepId) {
+    const best = session.sets.reduce(
+      (b, x) => (x.exerciseId === step.keyExerciseId && x.value > b ? x.value : b),
+      0,
+    )
+    if (best > 0 && best < step.unlockSec) {
+      out.push({
+        text: `Best attempt ${Math.round(best * 10) / 10}s against the ${step.unlockSec}s bar — ${Math.round((step.unlockSec - best) * 10) / 10}s to close. That is a gap training shrinks, not a verdict.`,
+        kind: 'info',
+      })
+    }
+  }
+
+  // Left/right gap inside this session's unilateral work.
+  const sided = session.sets.filter((x) => x.side && x.kind === 'hold' && x.value > 0)
+  const lv = sided.filter((x) => x.side === 'left').map((x) => x.value)
+  const rv = sided.filter((x) => x.side === 'right').map((x) => x.value)
+  const lm = median(lv)
+  const rm = median(rv)
+  if (lm !== null && rm !== null && Math.max(lm, rm) > 0) {
+    const gap = Math.abs(lm - rm) / Math.max(lm, rm)
+    if (gap >= 0.15) {
+      const weak = lm < rm ? 'left' : 'right'
+      out.push({
+        text: `Your ${weak} side trailed today (${Math.round(Math.min(lm, rm))}s vs ${Math.round(Math.max(lm, rm))}s). Lead with it next time so the strong side never sets the pace.`,
+        kind: 'info',
+      })
+    }
+  }
+
+  // If nothing needed saying, say the good thing rather than nothing.
+  if (out.length === 0 && rated.length >= 2 && clean === rated.length) {
+    out.push({ text: 'Every rated set held clean. That is exactly how unlocks get built.', kind: 'good' })
+  }
+
+  return out.slice(0, 3)
 }

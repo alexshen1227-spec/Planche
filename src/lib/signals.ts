@@ -1,5 +1,6 @@
 import type { AppState, CheckIn, Session, SetLog } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
+import { EXERCISE_BY_ID } from '../data/exercises'
 import { dayKey } from './time'
 
 /**
@@ -53,6 +54,40 @@ export function observedRestSec(session: Session, exerciseId: string): number | 
   return median(rests)
 }
 
+/**
+ * How much a session actually costs, in planche-relevant units.
+ *
+ * Not all training is equal: a minute of straight-arm planche work loads the
+ * tendons far harder than a minute of wrist circles. Without this, a 10-minute
+ * prehab session yesterday reads the same as a max session, and the coach
+ * blocks a push day for no reason — or worse, schedules one after a beating.
+ */
+const CATEGORY_STRAIN: Record<string, number> = {
+  planche: 1.5,
+  push: 1.0,
+  scapula: 0.8,
+  core: 0.5,
+  general: 0.2,
+  wrist: 0.1,
+  mobility: 0.1,
+}
+
+export function strainOf(session: Session): number {
+  let s = 0
+  for (const set of session.sets) {
+    const cat = EXERCISE_BY_ID[set.exerciseId]?.category
+    const factor = (cat && CATEGORY_STRAIN[cat]) || 0.3
+    const seconds = set.kind === 'hold' ? set.value : set.value * 2
+    s += seconds * factor
+  }
+  // RPE scales the whole session: the same sets at RPE 9 cost more than at 7.
+  const rpeFactor = session.rpe ? Math.min(1.25, Math.max(0.75, session.rpe / 8)) : 1
+  return s * rpeFactor
+}
+
+/** Below this a session is upkeep, not training — it should not block a push day. */
+export const LOADED_STRAIN = 60
+
 /** Linear slope (units per week) over timestamped points. */
 function slopePerWeek(points: { at: number; value: number }[]): number | null {
   if (points.length < 3) return null
@@ -69,10 +104,32 @@ function slopePerWeek(points: { at: number; value: number }[]): number | null {
   return (num / den) * 7 * DAY
 }
 
+export interface SideGap {
+  exerciseId: string
+  weakSide: 'left' | 'right'
+  weakMean: number
+  strongMean: number
+  /** 0–1 fraction the weak side trails the strong one by. */
+  gapPct: number
+}
+
 export interface Signals {
-  /** Days since the last logged session. */
+  /** Days since the last logged session of any kind. */
   restDays: number
   lastRpe?: number
+  /** Days since the last session with meaningful training load. */
+  daysSinceLoaded: number
+  /** RPE of that loaded session — a light prehab day can't mask it. */
+  lastLoadedRpe?: number
+  /**
+   * Recent decayed load against the athlete's own 4-week normal.
+   * ~1 = typical, >1.5 = piling up, <0.6 = well rested. Null without history.
+   */
+  readinessLoad: number | null
+  /** Average daily strain over the last 28 days (or the shorter span actually logged). */
+  chronicDailyStrain: number | null
+  /** Left/right imbalance on unilateral work, when both sides have data. */
+  sideGap: SideGap | null
   lastCheckIn?: AppState['sessions'][number]['checkIn']
   daysSinceCheckIn: number | null
 
@@ -138,6 +195,60 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     ? Math.max(0, Math.round((new Date(dayKey(now)).getTime() - new Date(dayKey(last.startedAt)).getTime()) / DAY))
     : 99
 
+  // ——— Training load: what recovery actually depends on ———
+  const lastLoaded = [...sessions].reverse().find((s) => strainOf(s) >= LOADED_STRAIN)
+  const daysSinceLoaded = lastLoaded
+    ? Math.max(0, Math.round((new Date(dayKey(now)).getTime() - new Date(dayKey(lastLoaded.startedAt)).getTime()) / DAY))
+    : 99
+  const lastLoadedRpe = lastLoaded?.rpe
+
+  const monthAgo = now - 28 * DAY
+  const monthSessions = sessions.filter((s) => s.startedAt >= monthAgo)
+  const chronicTotal = monthSessions.reduce((t, s) => t + strainOf(s), 0)
+  // Divided over the days actually logged, not a flat 28: someone in their
+  // first fortnight would otherwise read as ~2× "over their own normal" for
+  // training at a perfectly steady cadence, and get technique days forever.
+  const oldestMonth = monthSessions.length ? Math.min(...monthSessions.map((s) => s.startedAt)) : now
+  const chronicSpanDays = Math.min(28, Math.max(7, (now - oldestMonth) / DAY))
+  const chronicDailyStrain = monthSessions.length >= 4 ? chronicTotal / chronicSpanDays : null
+  // Acute load: strain decayed with a 2-day half-life, so yesterday's session
+  // weighs on today and last week's barely registers.
+  // Age clamped at 0: a session stamped in the future (a device clock that
+  // was wrong and then corrected) must not decay backwards into a multiplier.
+  const acute = sessions
+    .filter((s) => s.startedAt >= now - 7 * DAY)
+    .reduce((t, s) => t + strainOf(s) * 0.5 ** (Math.max(0, now - s.startedAt) / (2 * DAY)), 0)
+  // A "typical" acute value is ~2.5 days' worth of chronic load.
+  const readinessLoad =
+    chronicDailyStrain !== null && chronicDailyStrain > 5 ? acute / (chronicDailyStrain * 2.5) : null
+
+  // ——— Left/right balance on unilateral work ———
+  const sidedHolds = sessions
+    .slice(-10)
+    .flatMap((s) => s.sets.filter((x) => x.side && x.kind === 'hold' && x.value > 0))
+  const byExercise = new Map<string, SetLog[]>()
+  for (const x of sidedHolds) {
+    const list = byExercise.get(x.exerciseId) ?? []
+    list.push(x)
+    byExercise.set(x.exerciseId, list)
+  }
+  let sideGap: SideGap | null = null
+  const mostSided = [...byExercise.entries()].sort((a, b) => b[1].length - a[1].length)[0]
+  if (mostSided) {
+    const [exerciseId, sets] = mostSided
+    const leftVals = sets.filter((x) => x.side === 'left').map((x) => x.value)
+    const rightVals = sets.filter((x) => x.side === 'right').map((x) => x.value)
+    const l = median(leftVals)
+    const r = median(rightVals)
+    if (l !== null && r !== null && leftVals.length >= 2 && rightVals.length >= 2 && Math.max(l, r) > 0) {
+      const weakSide = l < r ? 'left' : 'right'
+      const weakMean = Math.min(l, r)
+      const strongMean = Math.max(l, r)
+      const gapPct = (strongMean - weakMean) / strongMean
+      if (gapPct >= 0.15) sideGap = { exerciseId, weakSide, weakMean, strongMean, gapPct }
+    }
+  }
+
   // ——— Key-hold performance, measured robustly ———
   const withKey = sessions.filter((s) => bestIn(s, keyId) > 0)
   const recent = withKey.slice(-6)
@@ -150,12 +261,18 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
 
   const trendPerWeek = slopePerWeek(withKey.slice(-6).map((s) => ({ at: s.startedAt, value: bestIn(s, keyId) })))
 
+  // Hit rate from the most recent session that actually trained the key hold,
+  // not the literal last session — a wrist day in between used to null this
+  // out and silently skip the target adjustment.
   let mainHitRate: number | null = null
   let mainSetCount = 0
-  if (last) {
-    const mains = keySetsOf(last, keyId, 'main')
+  const lastRelevant = [...sessions]
+    .reverse()
+    .find((s) => now - s.startedAt <= 14 * DAY && keySetsOf(s, keyId, 'main').length > 0)
+  if (lastRelevant) {
+    const mains = keySetsOf(lastRelevant, keyId, 'main')
     mainSetCount = mains.length
-    if (mains.length > 0) mainHitRate = mains.filter((s) => s.value >= s.target).length / mains.length
+    mainHitRate = mains.filter((s) => s.value >= s.target).length / mains.length
   }
 
   // An outlier is a value far outside the robust range of the ones before it.
@@ -267,6 +384,11 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   return {
     restDays,
     lastRpe: last?.rpe,
+    daysSinceLoaded,
+    lastLoadedRpe,
+    readinessLoad,
+    chronicDailyStrain,
+    sideGap,
     lastCheckIn,
     daysSinceCheckIn,
     mainHitRate,

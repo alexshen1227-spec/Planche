@@ -120,12 +120,22 @@ export function diagnose(state: AppState, now = Date.now()): Diagnosis {
     })
   }
 
-  if ((sig.lastRpe ?? 0) >= 9 && sig.restDays <= 1) {
+  if ((sig.lastLoadedRpe ?? 0) >= 9 && sig.daysSinceLoaded <= 1) {
     causes.push({
       id: 'recovery',
       title: 'Training hard on short rest',
-      detail: 'Your last session was RPE 9+ and you are back within a day.',
+      detail: 'Your last hard session was RPE 9+ and you are back within a day.',
       fix: 'Straight-arm work is neural — it wants a fresh nervous system. Put a genuine rest day, or a technique day, between hard sessions.',
+      severity: 'medium',
+    })
+  }
+
+  if (sig.readinessLoad !== null && sig.readinessLoad > 1.5) {
+    causes.push({
+      id: 'overload',
+      title: 'Load is piling up faster than usual',
+      detail: 'Your last few days carry noticeably more training than your own four-week normal.',
+      fix: 'Spikes like this are where progress stalls and joints complain. Let the next day or two run easy — the coach is already planning for it.',
       severity: 'medium',
     })
   }

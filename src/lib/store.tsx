@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   stopLatencySec: 2.3,
   units: 'metric',
   recordForm: true,
+  autoAnalyze: true,
 }
 
 /**
@@ -209,6 +210,7 @@ export function normalizeState(raw: unknown): AppState {
     // An unrecognised unit would silently make the whole app read imperial.
     units: rawSettings.units === 'imperial' ? 'imperial' : 'metric',
     recordForm: typeof rawSettings.recordForm === 'boolean' ? rawSettings.recordForm : DEFAULT_SETTINGS.recordForm,
+    autoAnalyze: typeof rawSettings.autoAnalyze === 'boolean' ? rawSettings.autoAnalyze : DEFAULT_SETTINGS.autoAnalyze,
   }
   // One-time migration: anyone still carrying the old optimistic default gets
   // the realistic one. Deliberate choices made after this are left alone.

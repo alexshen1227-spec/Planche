@@ -350,6 +350,12 @@ export function Settings() {
           <Toggle label="Film main holds" on={s.recordForm} onChange={(v) => set({ recordForm: v })} />
         </Row>
         <Row
+          label="Auto form check"
+          hint="Analyses each filmed hold on its own as soon as the clip is ready, instead of waiting for a tap. Skipped until the checker has been run once, so it never downloads the model without you asking."
+        >
+          <Toggle label="Auto form check" on={s.autoAnalyze} onChange={(v) => set({ autoAnalyze: v })} />
+        </Row>
+        <Row
           label="Saved form clips"
           hint={`${clipCount} clip${clipCount === 1 ? '' : 's'} · ${(clipBytes / 1048576).toFixed(1)} MB. Kept for ${CLIP_RETENTION_DAYS} days then deleted automatically — pinned clips are kept for good.`}
         >
