@@ -122,7 +122,7 @@ export const STEPS: StepDef[] = [
       'Glutes on, lower back doing quiet work',
     ],
     mistakes: [
-      'Calling a slightly-unrounded tuck an advanced tuck — the camera decides',
+      'Calling a slightly-unrounded tuck an advanced tuck — review side video and confirm the shape',
       'Losing scapular protraction as the back flattens',
       'Adding flat-back time while the elbows quietly bend',
     ],

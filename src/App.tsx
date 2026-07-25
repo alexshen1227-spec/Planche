@@ -4,7 +4,7 @@ import type { Tab, Workout } from './types'
 import { useStore } from './lib/store'
 import { loadDraft } from './lib/draft'
 import { buildPlan } from './lib/coach'
-import { todaysSession } from './data/workouts'
+import { adjustedTemplateWorkout, painSafeRecoveryWorkout, todaysSession } from './data/workouts'
 import { MeasurePrompt, measurementDue } from './components/MeasurePrompt'
 import { pruneClips } from './lib/clips'
 import { Icon, type IconName } from './components/Icon'
@@ -156,11 +156,18 @@ export default function App() {
 
   const startWorkout = (w: Workout) => {
     setResuming(false)
+    const plan = buildPlan(state)
+    let nextWorkout = w
+    if (plan.loadPermission === 'none') {
+      nextWorkout = painSafeRecoveryWorkout()
+    } else if (w.kind === 'template' && plan.loadPermission === 'reduced' && plan.signals.lastCheckIn) {
+      nextWorkout = adjustedTemplateWorkout(w, plan.signals.lastCheckIn)
+    }
     // Asked on every kind of session when due — a check-in before a template
     // still feeds the rails and the record, even though only generated
     // sessions get reshaped by the answer.
-    setAskCheckIn(buildPlan(state).askCheckIn)
-    setActiveWorkout(w)
+    setAskCheckIn(w.kind === 'test' || plan.askCheckIn)
+    setActiveWorkout(nextWorkout)
   }
 
   // Rendered once, outside the onboarding branch: mounting it in both places
@@ -267,8 +274,20 @@ export default function App() {
           onCheckInAnswered={(c) => {
             // Nothing is logged yet at this point, so the session can be
             // safely rebuilt around what the athlete just reported.
-            if (activeWorkout.kind !== 'auto') return
-            setActiveWorkout(todaysSession(state, buildPlan(state, Date.now(), c)))
+            const plan = buildPlan(state, Date.now(), c)
+            if (c.joints === 'pain') {
+              setActiveWorkout(painSafeRecoveryWorkout())
+            } else if (activeWorkout.kind === 'auto') {
+              setActiveWorkout(todaysSession(state, plan))
+            } else if (
+              activeWorkout.kind === 'test' &&
+              (c.joints !== 'good' || c.energy === 'tired')
+            ) {
+              // Any joint concern or low energy cancels an all-out test.
+              setActiveWorkout(todaysSession(state, plan))
+            } else {
+              setActiveWorkout(adjustedTemplateWorkout(activeWorkout, c))
+            }
           }}
           onExit={() => {
             setResuming(false)

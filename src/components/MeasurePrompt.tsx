@@ -9,7 +9,9 @@ import { Modal } from './ui'
 const DAY = 86_400_000
 const WEIGHT_EVERY_DAYS = 7
 /** Asked alongside weight — leaving it blank keeps the previous value. */
-const HEIGHT_EVERY_DAYS = 7
+// Adult height changes slowly; weekly prompts add friction without improving
+// programming. Keep the value editable, but only re-ask twice a year.
+const HEIGHT_EVERY_DAYS = 180
 
 export function lastOf(state: AppState, field: 'weightKg' | 'heightCm'): { at: number; value: number } | null {
   for (let i = state.measurements.length - 1; i >= 0; i--) {
@@ -55,20 +57,34 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
 
   const save = () => {
     const wNum = parseFloat(weight)
-    const weightKg = Number.isFinite(wNum) && wNum > 0 ? displayToKg(wNum, units) : undefined
+    const parsedWeight = Number.isFinite(wNum) && wNum > 0 ? displayToKg(wNum, units) : undefined
+    const weightKg =
+      parsedWeight !== undefined && parsedWeight >= 20 && parsedWeight <= 400 ? parsedWeight : undefined
     let newHeight: number | undefined
     if (units === 'metric') {
       const n = parseFloat(heightCm)
-      if (Number.isFinite(n) && n > 0) newHeight = n
+      if (Number.isFinite(n) && n >= 100 && n <= 250) newHeight = n
     } else {
       const ft = parseFloat(heightFt)
       const inch = parseFloat(heightIn) || 0
-      if (Number.isFinite(ft) && ft > 0) newHeight = (ft * 12 + inch) * CM_PER_IN
+      if (Number.isFinite(ft) && ft > 0 && Number.isFinite(inch) && inch >= 0 && inch < 12) {
+        const cm = (ft * 12 + inch) * CM_PER_IN
+        if (cm >= 100 && cm <= 250) newHeight = cm
+      }
     }
     // Typing something unparseable used to close the dialog silently and
     // snooze, so it looked saved when nothing had been recorded.
     if (weight.trim() && weightKg === undefined) {
-      setError('That weight did not read as a number — try something like 72.5.')
+      setError(`Enter a bodyweight between ${units === 'metric' ? '20–400 kg' : '44–882 lb'}.`)
+      return
+    }
+    const heightEntered = units === 'metric' ? heightCm.trim() : heightFt.trim() || heightIn.trim()
+    if (heightEntered && newHeight === undefined) {
+      setError(
+        units === 'metric'
+          ? 'Enter a height between 100–250 cm.'
+          : 'Enter a realistic height; inches must be from 0 to under 12.',
+      )
       return
     }
     if (weightKg === undefined && newHeight === undefined) {
@@ -79,7 +95,7 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
     // Snooze regardless of which field was filled: a height-only save left
     // the weekly weight check due, so it reappeared on every launch.
     dispatch({ type: 'SNOOZE_MEASURE' })
-    pushToast('Logged. The coach will factor it in.', 'success')
+    pushToast('Logged as progress context.', 'success')
     onClose()
   }
 
@@ -99,8 +115,8 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
           </div>
           <h2 className="mt-1 font-display text-[20px] font-bold text-ink">Where are you at?</h2>
           <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">
-            Planche is strength-to-weight, so the coach reads your holds against your bodyweight rather than in
-            isolation. Skip it any time — it is never a target, just context.
+            Planche is strength-to-weight, so bodyweight helps you interpret the same hold over time. Skip it any
+            time — it is never a target, just context.
           </p>
         </div>
 

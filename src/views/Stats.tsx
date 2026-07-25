@@ -190,8 +190,8 @@ export function Stats() {
             </div>
           </div>
           <p className="mt-1 text-[13px] leading-relaxed text-ink2">
-            Holding the same seconds at a heavier bodyweight is a strength gain — the coach reads your holds against
-            this rather than in isolation.
+            Holding the same clean seconds at a heavier bodyweight can be useful strength-to-weight context. The
+            progression bar itself still uses form-qualified seconds.
           </p>
         </div>
       ) : null}

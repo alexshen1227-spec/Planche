@@ -55,20 +55,44 @@ export function Onboarding() {
   const [heightIn, setHeightIn] = useState('')
   const [equipment, setEquipment] = useState<EquipmentId[]>(['floor'])
   const [injuryNote, setInjuryNote] = useState('')
+  const [measurementError, setMeasurementError] = useState<string | null>(null)
 
   const parsedWeight = (() => {
     const n = parseFloat(weight)
-    return Number.isFinite(n) && n > 0 ? displayToKg(n, units) : undefined
+    const kg = Number.isFinite(n) && n > 0 ? displayToKg(n, units) : undefined
+    return kg !== undefined && kg >= 20 && kg <= 400 ? kg : undefined
   })()
   const parsedHeight = (() => {
     if (units === 'metric') {
       const n = parseFloat(heightCm)
-      return Number.isFinite(n) && n > 0 ? n : undefined
+      return Number.isFinite(n) && n >= 100 && n <= 250 ? n : undefined
     }
     const ft = parseFloat(heightFt)
     const inch = parseFloat(heightIn) || 0
-    return Number.isFinite(ft) && ft > 0 ? (ft * 12 + inch) * CM_PER_IN : undefined
+    const cm =
+      Number.isFinite(ft) && ft > 0 && Number.isFinite(inch) && inch >= 0 && inch < 12
+        ? (ft * 12 + inch) * CM_PER_IN
+        : undefined
+    return cm !== undefined && cm >= 100 && cm <= 250 ? cm : undefined
   })()
+
+  const continueFromDetails = () => {
+    if (weight.trim() && parsedWeight === undefined) {
+      setMeasurementError(`Enter a bodyweight between ${units === 'metric' ? '20–400 kg' : '44–882 lb'}.`)
+      return
+    }
+    const heightEntered = units === 'metric' ? heightCm.trim() : heightFt.trim() || heightIn.trim()
+    if (heightEntered && parsedHeight === undefined) {
+      setMeasurementError(
+        units === 'metric'
+          ? 'Enter a height between 100–250 cm.'
+          : 'Enter a realistic height; inches must be from 0 to under 12.',
+      )
+      return
+    }
+    setMeasurementError(null)
+    setPage(3)
+  }
 
   const finish = () => {
     dispatch({
@@ -107,8 +131,8 @@ export function Onboarding() {
             </div>
             <h1 className="font-display text-[34px] font-bold leading-tight text-ink">Planche Lab</h1>
             <p className="mx-auto mt-2 max-w-md text-[15px] leading-relaxed text-ink2">
-              A patient, structured road from your first planche lean to the full planche — guided sessions, honest
-              progress tracking, and every hold timed.
+              A focused, adaptive road to the fastest sustainable planche progress — guided sessions, honest form
+              tracking, and every hold timed.
             </p>
             <div className="mx-auto mt-7 max-w-sm text-left">
               <label className="text-[13.5px] font-medium text-ink2">What should we call you? (optional)</label>
@@ -184,7 +208,7 @@ export function Onboarding() {
           <div className="animate-rise">
             <h1 className="text-center font-display text-[26px] font-bold text-ink">A few quick details</h1>
             <p className="mt-1 text-center text-[14px] text-ink2">
-              All optional, all stays on your device. It lets the coach account for what you can actually train with.
+              All optional, all stays on your device. Equipment shapes exercise choices; measurements add context.
             </p>
 
             <div className="mt-5 flex justify-center">
@@ -248,7 +272,7 @@ export function Onboarding() {
                   </div>
                 )}
                 <span className="mt-1 block text-[12px] text-ink3">
-                  Taller athletes carry a longer lever — targets are read against that.
+                  Height gives useful lever-length context; it does not change your unlock bar.
                 </span>
               </label>
             </div>
@@ -297,13 +321,18 @@ export function Onboarding() {
                 Back
               </button>
               <button
-                onClick={() => setPage(3)}
+                onClick={continueFromDetails}
                 className="flex flex-1 items-center justify-center gap-2 rounded-2xl px-6 py-3.5 font-display text-[16px] font-semibold text-on-accent shadow-card transition hover:brightness-105"
                 style={{ background: 'var(--t-btn-accent)' }}
               >
                 Continue <Icon name="arrowR" size={16} />
               </button>
             </div>
+            {measurementError ? (
+              <p className="mt-2 text-center text-[12.5px] text-danger" role="alert">
+                {measurementError}
+              </p>
+            ) : null}
           </div>
         ) : null}
 

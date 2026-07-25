@@ -1,6 +1,7 @@
 import type { AppState, CheckIn, Session, StrategyId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { readSignals, observedRestSec, median, strainOf, LOADED_STRAIN, type Signals } from './signals'
+import { qualifyingProgress, qualifyingSessionValue } from './progression'
 
 /**
  * The coach is an on-device optimizer, not a chatbot.
@@ -78,6 +79,8 @@ const UCB_C = 0.06
 
 export interface ArmStats {
   id: StrategyId
+  /** Sessions in which this strategy was actually attempted on this step. */
+  attempts: number
   n: number
   /** Shrunk toward the overall average — see armStats. */
   mean: number
@@ -99,43 +102,41 @@ export interface CoachPick {
   exploring: boolean
 }
 
-function bestInSession(session: Session, exerciseId: string): number {
-  let best = 0
-  for (const set of session.sets) if (set.exerciseId === exerciseId && set.value > best) best = set.value
-  return best
-}
-
 /**
- * Reward for one session: how much the step's key hold moved between this
- * session and the next one that trained it. Attribution is deliberately
- * tight — crediting a whole fortnight to one session smears every strategy
- * together. Expressed as "fraction of the unlock bar gained per week" so
- * steps of different sizes stay comparable, and allowed to go negative so a
- * strategy that costs you ground actually scores worse.
+ * Reward for one strategy session: change from a robust pre-session baseline
+ * to the next one or two comparable sessions. The strategy session's own best
+ * is deliberately excluded: intensity days prescribe higher targets than
+ * technique days, so comparing each arm to itself created regression-to-mean
+ * bias rather than learning.
  */
-function rewardFor(sessions: Session[], session: Session): number | null {
+export function rewardFor(sessions: Session[], session: Session): number | null {
   const step = STEP_BY_ID[session.stepId]
   if (!step) return null
-  const keyId = step.keyExerciseId
-  const own = bestInSession(session, keyId)
-  if (own <= 0) return null // this session never trained the key hold
+  const qualifyingBest = (candidate: Session) => qualifyingSessionValue(candidate, session.stepId)
+  if (qualifyingBest(session) <= 0) return null
+  const prior = sessions
+    .filter((s) => s.startedAt < session.startedAt && qualifyingBest(s) > 0)
+    .slice(-3)
+    .map(qualifyingBest)
+  const follow = sessions
+    .filter(
+      (s) =>
+        s.startedAt > session.startedAt &&
+        s.startedAt <= session.startedAt + ATTRIBUTION_DAYS * DAY &&
+        qualifyingBest(s) > 0,
+    )
+    .slice(0, 2)
+  const before = median(prior)
+  const after = median(follow.map(qualifyingBest))
+  if (prior.length < 2 || before === null || after === null || follow.length === 0) return null
 
-  const next = sessions.find(
-    (s) =>
-      s.startedAt > session.startedAt &&
-      s.startedAt <= session.startedAt + ATTRIBUTION_DAYS * DAY &&
-      bestInSession(s, keyId) > 0,
-  )
-  if (!next) return null // not evaluable yet
-
-  const nextBest = bestInSession(next, keyId)
-  const days = Math.max(1, (next.startedAt - session.startedAt) / DAY)
-  let reward = ((nextBest - own) / days) * 7 / step.unlockSec
+  const days = Math.max(1, (follow[follow.length - 1].startedAt - session.startedAt) / DAY)
+  let reward = ((after - before) / days) * 7 / step.unlockSec
 
   // Clearing the bar is the whole point — weight it.
-  if (own < step.unlockSec && nextBest >= step.unlockSec) reward += 0.15
+  if (before < step.unlockSec && after >= step.unlockSec) reward += 0.15
   // Grinding at RPE 9+ and going nowhere is a cost, not a neutral outcome.
-  if ((session.rpe ?? 0) >= 9 && nextBest <= own) reward -= 0.03
+  if ((session.rpe ?? 0) >= 9 && after <= before) reward -= 0.03
 
   return Math.max(-0.2, Math.min(0.6, reward))
 }
@@ -143,15 +144,17 @@ function rewardFor(sessions: Session[], session: Session): number | null {
 /** Per-strategy performance, derived fresh from history. */
 export function armStats(state: AppState): ArmStats[] {
   const sessions = [...state.sessions].sort((a, b) => a.startedAt - b.startedAt)
-  const acc: Record<StrategyId, { n: number; total: number }> = {
-    balanced: { n: 0, total: 0 },
-    volume: { n: 0, total: 0 },
-    intensity: { n: 0, total: 0 },
-    density: { n: 0, total: 0 },
-    technique: { n: 0, total: 0 },
+  const acc: Record<StrategyId, { attempts: number; n: number; total: number }> = {
+    balanced: { attempts: 0, n: 0, total: 0 },
+    volume: { attempts: 0, n: 0, total: 0 },
+    intensity: { attempts: 0, n: 0, total: 0 },
+    density: { attempts: 0, n: 0, total: 0 },
+    technique: { attempts: 0, n: 0, total: 0 },
   }
   for (const s of sessions) {
-    if (!s.strategy || !acc[s.strategy]) continue
+    if (!s.strategy || !acc[s.strategy] || s.stepId !== state.stepId) continue
+    if (qualifyingSessionValue(s, state.stepId) <= 0) continue
+    acc[s.strategy].attempts += 1
     const r = rewardFor(sessions, s)
     if (r === null) continue
     acc[s.strategy].n += 1
@@ -171,7 +174,7 @@ export function armStats(state: AppState): ArmStats[] {
     const a = acc[def.id]
     const rawMean = a.n > 0 ? a.total / a.n : 0
     const mean = a.n > 0 ? (a.total + SHRINKAGE_K * grandMean) / (a.n + SHRINKAGE_K) : 0
-    return { id: def.id, n: a.n, mean, rawMean, secPerWeek: rawMean * unlockSec }
+    return { id: def.id, attempts: a.attempts, n: a.n, mean, rawMean, secPerWeek: rawMean * unlockSec }
   })
 }
 
@@ -181,9 +184,9 @@ export function armStats(state: AppState): ArmStats[] {
  */
 export function pickStrategy(state: AppState): CoachPick {
   const stats = armStats(state)
-  const totalN = stats.reduce((t, s) => t + s.n, 0)
+  const totalN = stats.reduce((t, s) => t + s.attempts, 0)
 
-  const untested = stats.find((s) => s.n === 0)
+  const untested = stats.find((s) => s.attempts === 0)
   if (untested) {
     return {
       strategy: untested.id,
@@ -198,7 +201,7 @@ export function pickStrategy(state: AppState): CoachPick {
   let best = stats[0]
   let bestScore = -Infinity
   for (const s of stats) {
-    const score = s.mean + UCB_C * Math.sqrt(Math.log(totalN + 1) / s.n)
+    const score = s.mean + UCB_C * Math.sqrt(Math.log(totalN + 1) / Math.max(1, s.attempts))
     if (score > bestScore) {
       bestScore = score
       best = s
@@ -235,7 +238,7 @@ export function coachConfidence(state: AppState): { evaluated: number; tested: n
 
 // ————————————————————————————— The planner —————————————————————————————
 
-export type DayType = 'push' | 'build' | 'technique' | 'deload'
+export type DayType = 'push' | 'build' | 'technique' | 'deload' | 'recovery'
 export type WarmupLevel = 'short' | 'standard' | 'extended'
 
 export interface CoachDecision {
@@ -257,6 +260,8 @@ export interface CoachPlan {
   suggestMaxTest: boolean
   accessoryEmphasis: 'pressing' | 'balance' | 'core' | 'none'
   volumeFactor: number
+  /** Whether loaded upper-body planche work is appropriate today. */
+  loadPermission: 'normal' | 'reduced' | 'none'
   askCheckIn: boolean
   decisions: CoachDecision[]
   signals: Signals
@@ -284,9 +289,9 @@ function smartRest(state: AppState, restFactor: number, sig: Signals): number {
 
   const observed = median(
     state.sessions
-      .slice(-6)
       .map((s) => observedRestSec(s, step.keyExerciseId))
-      .filter((r): r is number => r !== null),
+      .filter((r): r is number => r !== null)
+      .slice(-6),
   )
   if (observed !== null) rest = rest * 0.7 + observed * 0.3
 
@@ -315,6 +320,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   let warmup: WarmupLevel = 'standard'
   let queueUnlockAttempt = false
   let accessoryEmphasis: CoachPlan['accessoryEmphasis'] = 'none'
+  let loadPermission: CoachPlan['loadPermission'] = 'normal'
 
   // ——— Recovery state sets the day's character ———
   // Judged on training LOAD, not on whether any session existed: a ten-minute
@@ -342,9 +348,11 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   }
 
   // ——— Deload is scheduled, not earned ———
-  if (sig.weeksSinceDeload >= 5 && sig.totalSessions >= 12) {
+  if (sig.deloadActive || (sig.weeksSinceDeload >= 5 && sig.totalSessions >= 12)) {
     dayType = 'deload'
-    dayReason = `${sig.weeksSinceDeload} weeks without an easy week — this one is deliberately light. Strength lands during recovery.`
+    dayReason = sig.deloadActive
+      ? 'Your deload week is active — keep the whole week deliberately light so fatigue can clear.'
+      : `${sig.weeksSinceDeload} weeks without an easy week — this one is deliberately light. Strength lands during recovery.`
     decisions.push({ text: 'Deload scheduled — adaptation happens on easy weeks.', kind: 'info' })
   }
 
@@ -465,7 +473,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   if (sig.skippedLastWarmup || sig.warmupRate < 0.7) {
     warmup = 'extended'
     decisions.push({
-      text: 'Warm-ups have been getting skipped. Today includes the full one — wrist pain is the most common reason people stop training.',
+      text: 'Warm-ups have been getting skipped. Today includes the full one so wrists, elbows and shoulders are prepared before loading.',
       kind: 'warn',
     })
   } else if (sig.restDays >= 4) {
@@ -476,7 +484,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   }
 
   // ——— Opportunities ———
-  const best = state.prs[step.keyExerciseId]?.value ?? 0
+  const best = qualifyingProgress(state, state.stepId).value
   if (dayType === 'push' && best >= step.unlockSec * 0.85 && best < step.unlockSec && !sig.noisy) {
     queueUnlockAttempt = true
     decisions.push({
@@ -484,7 +492,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       kind: 'good',
     })
   }
-  const suggestMaxTest =
+  let suggestMaxTest =
     (sig.daysSinceMaxTest === null ? sig.totalSessions >= 8 : sig.daysSinceMaxTest >= 21) &&
     sig.restDays >= 2 &&
     !sig.noisy &&
@@ -493,18 +501,19 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // ——————————————— SAFETY RAILS — these always win ———————————————
   const joints = sig.lastCheckIn?.joints
   const checkInAge = sig.daysSinceCheckIn
-  const checkInFresh = checkInAge !== null && checkInAge <= 5
+  const checkInFresh = checkInAge !== null && checkInAge <= 7
 
   if (checkInFresh && joints === 'pain') {
-    dayType = 'technique'
-    dayReason = 'You reported joint pain — today is deliberately easy. Tendons take months to heal and weeks to calm down.'
+    dayType = 'recovery'
+    dayReason = 'You reported joint pain — loaded planche work is off today. Use only pain-free recovery movement.'
     strategy = 'technique'
-    targetFactor = Math.min(targetFactor, 0.7)
-    volumeFactor = 0.6
-    warmup = 'extended'
+    targetFactor = 0.6
+    volumeFactor = 0.5
+    loadPermission = 'none'
     queueUnlockAttempt = false
+    suggestMaxTest = false
     decisions.push({
-      text: 'Joint pain reported — intensity is locked out until you report otherwise. If it persists past two weeks, see a physio rather than training through it.',
+      text: 'Joint pain reported — no loaded planche, pressing or wrist work today. Stop any recovery movement that reproduces symptoms and seek a qualified clinician for severe, worsening or persistent pain.',
       kind: 'warn',
     })
   } else if (checkInFresh && joints === 'niggle') {
@@ -512,6 +521,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     targetFactor = Math.min(targetFactor, 1)
     volumeFactor = Math.min(volumeFactor, 0.85)
     warmup = 'extended'
+    loadPermission = 'reduced'
     queueUnlockAttempt = false
     decisions.push({ text: 'You flagged a niggle — no max-intensity work today, longer warm-up, slightly less volume.', kind: 'warn' })
   }
@@ -530,6 +540,10 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     strategy = 'technique'
     targetFactor = Math.min(targetFactor, 0.7)
     volumeFactor = Math.min(volumeFactor, 0.6)
+    queueUnlockAttempt = false
+  }
+  if (dayType === 'recovery') {
+    strategy = 'technique'
     queueUnlockAttempt = false
   }
 
@@ -557,7 +571,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // When a rail overrules the bandit, say so rather than quoting the bandit.
   const overridden = strategy !== pick.strategy
   const strategyReason = overridden
-    ? `${STRATEGY_BY_ID[pick.strategy].name} is your fastest approach, but it is on hold today — ${dayReason.charAt(0).toLowerCase()}${dayReason.slice(1)}`
+    ? `${STRATEGY_BY_ID[pick.strategy].name} was selected, but it is on hold today — ${dayReason.charAt(0).toLowerCase()}${dayReason.slice(1)}`
     : pick.reason
   const finalSets = clampTo(shape.setsDelta, LIMITS.setsDelta)
   const restMainSec = smartRest(state, shape.restFactor, sig)
@@ -566,13 +580,24 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   ) * 5
 
   // Ask for a check-in when the answer would actually change something.
+  const injuryCheckDue = Boolean(
+    state.profile.injuryNote?.trim() && (checkInAge === null || checkInAge >= 2),
+  )
   const askCheckIn =
-    sig.totalSessions >= 1 &&
-    (checkInAge === null ||
-      checkInAge >= 7 ||
-      (sig.lastRpe ?? 0) >= 9 ||
-      sig.restDays >= 5 ||
-      (checkInFresh && joints !== 'good' && checkInAge >= 2))
+    injuryCheckDue ||
+    (sig.totalSessions >= 1 &&
+      (checkInAge === null ||
+        checkInAge >= 3 ||
+        (sig.lastRpe ?? 0) >= 9 ||
+        sig.restDays >= 5 ||
+        (checkInFresh && joints !== 'good' && checkInAge >= 2)))
+
+  if (state.profile.injuryNote?.trim() && (checkInAge === null || checkInAge >= 2)) {
+    decisions.push({
+      text: `Your profile notes a prior or current issue (“${state.profile.injuryNote.trim().slice(0, 80)}”). The check-in gets the final say before loading today.`,
+      kind: 'warn',
+    })
+  }
 
   if (decisions.length === 0) {
     decisions.push({ text: 'Everything looks steady — running your best-performing setup unchanged.', kind: 'good' })
@@ -592,6 +617,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     suggestMaxTest,
     accessoryEmphasis,
     volumeFactor: clampTo(volumeFactor, LIMITS.volume),
+    loadPermission,
     askCheckIn,
     decisions,
     signals: sig,

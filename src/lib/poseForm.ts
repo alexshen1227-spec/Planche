@@ -20,11 +20,11 @@ export interface PoseFormResult {
   reason?: string
   confidence: number
   framesUsed: number
-  /** Sustained elbow angle, degrees (75th percentile of frames; 180 = locked). */
+  /** Sustained elbow angle, degrees (lower quartile of frames; 180 = locked). */
   elbowDeg?: number
-  /** Shoulder→hip→knee angle: how open the hips are (75th percentile). */
+  /** Shoulder→hip→knee angle: how open the hips are (lower quartile). */
   hipAngleDeg?: number
-  /** Sustained knee angle (75th percentile of frames). */
+  /** Sustained knee angle (lower quartile of frames). */
   kneeDeg?: number
   /** Hip height relative to shoulders, as a fraction of torso length.
    * Positive = hips above shoulders. */
@@ -68,6 +68,8 @@ interface PoseProfile {
   minHipAngleDeg?: number
   /** Shoulders should travel at least this far past the wrists. */
   minLeanRatio?: number
+  /** Judge the deliberately extended leg, rather than the tucked leg. */
+  oneLeg?: boolean
   checkShrug: boolean
 }
 
@@ -125,6 +127,7 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
     levelTolerance: 0.3,
     minHipAngleDeg: 120,
     minLeanRatio: 0.3,
+    oneLeg: true,
     checkShrug: true,
   },
   'straddle-planche': {
@@ -316,6 +319,7 @@ export async function analyseClip(
   blob: Blob,
   exerciseId: string,
   sampleCount?: number,
+  creditedHoldSec?: number,
 ): Promise<PoseFormResult> {
   const empty = emptyResult()
   const profile = POSE_PROFILES[exerciseId]
@@ -344,12 +348,17 @@ export async function analyseClip(
     const duration = await resolveDuration(video)
     if (duration === 0) return { ...empty, reason: 'That clip has no readable duration.' }
 
-    // Sample the middle of the hold; the ends are getting in and falling out.
+    // Analyse the credited hold, not the walk back to the phone after it. The
+    // timer's value is intentionally the authority for where useful work ends.
     // Roughly one frame per second so long holds are not under-sampled and
     // short ones are not over-billed.
-    const n = sampleCount ?? Math.round(Math.min(16, Math.max(6, duration)))
-    const from = duration * 0.25
-    const to = duration * 0.85
+    const holdWindow =
+      creditedHoldSec !== undefined && Number.isFinite(creditedHoldSec) && creditedHoldSec > 0
+        ? Math.min(duration, creditedHoldSec + 0.25)
+        : duration
+    const n = sampleCount ?? Math.round(Math.min(16, Math.max(6, holdWindow)))
+    const from = Math.min(holdWindow * 0.1, 0.35)
+    const to = Math.max(from, holdWindow * 0.92)
     const times = Array.from({ length: n }, (_, i) =>
       n === 1 ? (from + to) / 2 : from + ((to - from) * i) / (n - 1),
     )
@@ -369,6 +378,7 @@ export async function analyseClip(
     const lineSeries: { t: number; v: number }[] = []
     const leanSeries: { t: number; v: number }[] = []
     let frontalFrames = 0
+    let trackedSide: 'left' | 'right' | null = null
     let prevAnchor: { sx: number; sy: number; hx: number; hy: number; torso: number; t: number } | null = null
 
     for (const t of times) {
@@ -376,7 +386,9 @@ export async function analyseClip(
       const poses = await detector.estimatePoses(video)
       const kps = poses[0]?.keypoints
       if (!kps?.length) continue
-      const side = pickSide(kps)
+      // Keep anatomical identity stable through the clip. Switching to
+      // whichever side scores higher on each frame creates fake angle jumps.
+      const side: 'left' | 'right' | null = trackedSide ?? pickSide(kps)
       if (!side) continue
 
       const shoulder = byName(kps, `${side}_shoulder`)
@@ -387,6 +399,7 @@ export async function analyseClip(
       // back to it against the same threshold always reads as "not shrugged".
       const ear = byName(kps, `${side}_ear`)
       if (!shoulder || !hip) continue
+      trackedSide = side
 
       const torso = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y)
       if (torso < 1) continue
@@ -403,18 +416,23 @@ export async function analyseClip(
         if (Number.isFinite(e)) elbowSeries.push({ t, v: e })
       }
 
-      // Legs: take the straighter side, since one-leg work deliberately keeps
-      // the other tucked and the extended leg is the one being judged.
+      // Keep the two legs separate within a frame. One-leg work judges the
+      // extended (straighter) leg; full/straddle work judges the weaker leg so
+      // one locked knee cannot hide the other bending.
+      const frameKnees: number[] = []
+      const frameHips: number[] = []
       for (const s of ['left', 'right'] as const) {
         const h = byName(kps, `${s}_hip`)
         const k = byName(kps, `${s}_knee`)
         const a = byName(kps, `${s}_ankle`)
-        if (h && k && a) push(knees, angleDeg(h, k, a))
+        if (h && k && a) push(frameKnees, angleDeg(h, k, a))
         if (h && k) {
           const sh = byName(kps, `${s}_shoulder`) ?? shoulder
-          push(hipAngles, angleDeg(sh, h, k))
+          push(frameHips, angleDeg(sh, h, k))
         }
       }
+      if (frameKnees.length) push(knees, profile.oneLeg ? Math.max(...frameKnees) : Math.min(...frameKnees))
+      if (frameHips.length) push(hipAngles, profile.oneLeg ? Math.max(...frameHips) : Math.min(...frameHips))
 
       // Screen y grows downward, so a hip above the shoulders is negative dy.
       hipOffsets.push((shoulder.y - hip.y) / torso)
@@ -479,21 +497,31 @@ export async function analyseClip(
     }
 
     const confidence = confidences.reduce((a, b) => a + b, 0) / framesUsed
-    // 75th percentile, not the single best frame: one lucky frame of locked
-    // elbows used to pass the whole set. This asks whether the position was
-    // actually *kept*, while still forgiving the odd mistracked sample. The
-    // peaks stay around so the feedback can say "you had it, then lost it".
-    const p75 = (xs: number[]) => {
-      if (!xs.length) return undefined
-      const s = [...xs].sort((a, b) => a - b)
-      return s[Math.min(s.length - 1, Math.floor(s.length * 0.75))]
+    // Every criterion which can change the verdict must be observable for a
+    // majority of tracked frames. Missing wrists/elbows/knees are "unknown",
+    // never a silent pass.
+    const requiredCoverage = Math.max(MIN_FRAMES, Math.ceil(framesUsed * 0.55))
+    const missing: string[] = []
+    if (profile.minElbowDeg !== undefined && elbows.length < requiredCoverage) missing.push('elbows')
+    if (profile.minKneeDeg !== undefined && knees.length < requiredCoverage) missing.push('knees')
+    if (profile.minHipAngleDeg !== undefined && hipAngles.length < requiredCoverage) missing.push('hips')
+    if (profile.levelTolerance !== undefined && hipOffsets.length < requiredCoverage) missing.push('body line')
+    if (profile.minLeanRatio !== undefined && leans.length < requiredCoverage) missing.push('forward lean')
+    if (missing.length) {
+      return {
+        ...empty,
+        framesUsed,
+        confidence,
+        reason: `Could not see enough of your ${missing.join(', ')} to judge this hold. Keep your whole body and both hands in frame, side-on.`,
+      }
     }
+
     const elbowPeak = elbows.length ? Math.max(...elbows) : undefined
     const kneePeak = knees.length ? Math.max(...knees) : undefined
     const hipAnglePeak = hipAngles.length ? Math.max(...hipAngles) : undefined
-    const elbowDeg = p75(elbows)
-    const kneeDeg = p75(knees)
-    const hipAngleDeg = p75(hipAngles)
+    const elbowDeg = sustainedMinimum(elbows)
+    const kneeDeg = sustainedMinimum(knees)
+    const hipAngleDeg = sustainedMinimum(hipAngles)
     const hipOffset = median(hipOffsets)
     const leanRatio = median(leans)
     const shrugRatio = median(shrugs)
@@ -621,6 +649,7 @@ export async function analyseClip(
 
     if (elbowTrend && elbowTrend.early - elbowTrend.late > 8 && !issues.includes('arms')) {
       fadeSeen = true
+      issues.push('arms')
       notes.push(
         `Elbows were straighter early (${Math.round(elbowTrend.early)}°) than late (${Math.round(elbowTrend.late)}°) — the lock gave out as you tired. End the set before that point.`,
       )
@@ -628,19 +657,23 @@ export async function analyseClip(
     if (lineTrend && !issues.includes('sag') && !issues.includes('pike')) {
       if (lineTrend.early - lineTrend.late > 0.18) {
         fadeSeen = true
+        issues.push('sag')
         notes.push('You started level but the hips sank through the hold — the line broke down late, not from the start.')
       } else if (lineTrend.late - lineTrend.early > 0.18) {
         fadeSeen = true
+        issues.push('pike')
         notes.push('Your hips crept upward as the hold went on — fatigue was folding you toward a pike.')
       }
     }
     if (leanTrend && leanTrend.early - leanTrend.late > 0.12 && !issues.includes('lean')) {
       fadeSeen = true
+      issues.push('lean')
       notes.push('Your lean pulled back over the hold — shoulders drifted toward your hands as you tired.')
     }
-    if (!fadeSeen && duration >= 8 && (elbowTrend || lineTrend || leanTrend)) {
+    if (!fadeSeen && holdWindow >= 8 && (elbowTrend || lineTrend || leanTrend)) {
       details.push('Shape held up through the whole hold — no visible fade from start to finish.')
     }
+    details.push('Scapular protraction is not measured by this camera check — confirm it yourself.')
 
     return {
       ok: true,
@@ -665,6 +698,13 @@ export async function analyseClip(
     URL.revokeObjectURL(url)
     video.src = ''
   }
+}
+
+/** A robust "kept through the hold" minimum that forgives a few bad detections. */
+export function sustainedMinimum(xs: number[]): number | undefined {
+  if (!xs.length) return undefined
+  const sorted = [...xs].sort((a, b) => a - b)
+  return sorted[Math.max(0, Math.ceil(sorted.length * 0.25) - 1)]
 }
 
 /**

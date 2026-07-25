@@ -120,26 +120,28 @@ export async function getClipUrl(key: string): Promise<string | null> {
   }
 }
 
-export async function deleteClip(key: string): Promise<void> {
+export async function deleteClip(key: string): Promise<boolean> {
   try {
     await withTx([BLOBS, META], 'readwrite', (tx) => {
       tx.objectStore(BLOBS).delete(key)
       tx.objectStore(META).delete(key)
     })
+    return true
   } catch {
-    /* best effort */
+    return false
   }
 }
 
-export async function setPinned(key: string, pinned: boolean): Promise<void> {
+export async function setPinned(key: string, pinned: boolean): Promise<boolean> {
   try {
     await withTx([META], 'readwrite', async (tx) => {
       const store = tx.objectStore(META)
       const rec = await reqAsPromise(store.get(key) as IDBRequest<ClipMeta | undefined>)
       if (rec) store.put({ ...rec, pinned })
     })
+    return true
   } catch {
-    /* best effort */
+    return false
   }
 }
 
@@ -194,13 +196,14 @@ export async function clipsTotalBytes(): Promise<number> {
   return (await listClips()).reduce((t, c) => t + c.bytes, 0)
 }
 
-export async function clearAllClips(): Promise<void> {
+export async function clearAllClips(): Promise<boolean> {
   try {
     await withTx([BLOBS, META], 'readwrite', (tx) => {
       tx.objectStore(BLOBS).clear()
       tx.objectStore(META).clear()
     })
+    return true
   } catch {
-    /* best effort */
+    return false
   }
 }

@@ -1,14 +1,16 @@
 let ctx: AudioContext | null = null
-let enabled = true
+let toneEnabled = true
+let voiceEnabled = true
 let volume = 0.7
 
-export function configureAudio(on: boolean, vol: number) {
-  enabled = on
+export function configureAudio(soundOn: boolean, voiceOn: boolean, vol: number) {
+  toneEnabled = soundOn
+  voiceEnabled = voiceOn
   volume = vol
 }
 
 function ac(): AudioContext | null {
-  if (!enabled) return null
+  if (!toneEnabled) return null
   try {
     ctx ??= new AudioContext()
     if (ctx.state === 'suspended') void ctx.resume()
@@ -41,7 +43,7 @@ function tone(freq: number, dur: number, delay = 0, type: OscillatorType = 'sine
  * so rapid cues never pile up.
  */
 export function speak(text: string) {
-  if (!enabled) return
+  if (!voiceEnabled) return
   try {
     speechSynthesis.cancel()
     const u = new SpeechSynthesisUtterance(text)

@@ -5,7 +5,7 @@ export interface Tip {
 
 export const TIPS: Tip[] = [
   { title: 'Straight arms are the whole game', body: 'A bent-arm planche is a different exercise. If the elbows bend, shorten the hold or regress the step — never trade lockout for seconds.' },
-  { title: 'Film from the side', body: 'Your proprioception lies, especially about flat backs and hip height. A 10-second side video tells the truth every time.' },
+  { title: 'Film from the side', body: 'Side video can reveal flat-back and hip-height errors you cannot feel. Treat automated estimates as suggestions and confirm them yourself.' },
   { title: 'Stop two seconds early', body: 'Isometrics respond best around RPE 8. End each hold ~2s before collapse; the ugly shaking seconds mostly train bad positions.' },
   { title: 'Warm wrists, long career', body: 'Two minutes of circles, rocks and palm lifts before every session. Wrist pain is the #1 reason people quit planche training.' },
   { title: 'Rest like you mean it', body: 'Between hard sets, take 2–3 minutes. Straight-arm strength is neural — fatigue stacking just teaches worse positions.' },
@@ -21,7 +21,7 @@ export const TIPS: Tip[] = [
   { title: 'Seconds are streaky', body: 'A 12s day after a 16s day means nothing. Judge progress on two-week trends, not single sessions.' },
   { title: 'Sleep is a training day', body: 'Straight-arm strength is nervous-system strength. A short night can erase 20% of your holds — plan tests for rested days.' },
   { title: 'Own it before you leave it', body: 'The unlock targets are minimums. Banking extra seconds on the current step makes the next one arrive faster, not slower.' },
-  { title: 'Elbow pain protocol', body: 'Inner-elbow ache = biceps tendon complaining about straight-arm load. Drop lean intensity 30%, add light curls for blood flow, and give it two weeks.' },
+  { title: 'Do not diagnose pain by location', body: 'If elbow, wrist or shoulder pain is new or worsening, stop the provoking movement and seek qualified help when it is severe or persistent.' },
 ]
 
 export function tipOfTheDay(now = Date.now()): Tip {

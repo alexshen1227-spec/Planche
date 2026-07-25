@@ -1,8 +1,9 @@
-import type { AppState, Block, BlockTarget, StepId, Workout } from '../types'
+import type { AppState, Block, BlockTarget, CheckIn, StepId, Workout } from '../types'
 import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID, stepBefore } from './progressions'
 import { buildPlan, type CoachPlan, type WarmupLevel } from '../lib/coach'
 import { median } from '../lib/signals'
+import { qualifyingProgress, qualifyingSessionValue } from '../lib/progression'
 
 const hold = (sec: number): BlockTarget => ({ kind: 'hold', sec })
 const reps = (n: number): BlockTarget => ({ kind: 'reps', reps: n })
@@ -63,34 +64,24 @@ export function estimateMinutes(blocks: Block[]): number {
  * mis-measured or lucky hold would permanently inflate every future target
  * and quietly set the athlete up to fail every set. Instead the anchor is the
  * median of recent session bests — immune to one bad value — and the all-time
- * best is only allowed to pull it up a little. Hit-rate then nudges it.
+ * best is only allowed to pull it up a little. The coach applies the one
+ * evidence-scaled hit-rate nudge later; doing it here as well caused swings.
  */
 export function adaptiveTarget(state: AppState, stepId: StepId): number {
   const step = STEP_BY_ID[stepId]
-  const keyId = step.keyExerciseId
-  const best = state.prs[keyId]?.value
+  const best = qualifyingProgress(state, stepId).value
   if (!best) return step.startSec
 
   const recentBests = [...state.sessions]
     .sort((a, b) => a.startedAt - b.startedAt)
-    .slice(-6)
-    .map((s) => s.sets.reduce((b, x) => (x.exerciseId === keyId && x.value > b ? x.value : b), 0))
+    .map((s) => qualifyingSessionValue(s, stepId))
     .filter((v) => v > 0)
+    .slice(-6)
 
   const typical = median(recentBests)
   // Blend: mostly what you can repeat, with a nod to your peak.
   const anchor = typical === null ? best : typical * 0.75 + Math.min(best, typical * 1.5) * 0.25
-  let t = anchor * 0.6
-
-  const lastMain = [...state.sessions]
-    .sort((a, b) => b.startedAt - a.startedAt)
-    .map((s) => s.sets.filter((x) => x.exerciseId === keyId && x.section === 'main'))
-    .find((sets) => sets.length >= 2)
-  if (lastMain) {
-    const hitRate = lastMain.filter((x) => x.value >= x.target).length / lastMain.length
-    if (hitRate >= 0.8) t *= 1.15
-    else if (hitRate < 0.5) t *= 0.85
-  }
+  const t = anchor * 0.6
   return clamp(Math.round(t), 3, step.unlockSec)
 }
 
@@ -193,6 +184,67 @@ const DAY_LABEL: Record<CoachPlan['dayType'], string> = {
   build: 'Build Day',
   technique: 'Technique Day',
   deload: 'Deload Day',
+  recovery: 'Pain-Safe Recovery',
+}
+
+export function painSafeRecoveryWorkout(): Workout {
+  const blocks: Block[] = [
+    {
+      exerciseId: 'jumping-jacks',
+      sets: 2,
+      target: reps(20),
+      restSec: 30,
+      section: 'warmup',
+      note: 'Easy pace. Skip if the arm motion reproduces symptoms.',
+    },
+    { exerciseId: 'hollow-hold', sets: 3, target: hold(20), restSec: 60, section: 'core' },
+    { exerciseId: 'leg-lifts', sets: 3, target: reps(8), restSec: 60, section: 'core' },
+    { exerciseId: 'arch-hold', sets: 2, target: hold(15), restSec: 45, section: 'core' },
+    { exerciseId: 'pancake-stretch', sets: 2, target: hold(30), restSec: 30, section: 'cooldown' },
+  ]
+  return {
+    id: 'pain-safe-recovery',
+    name: 'Pain-Safe Recovery',
+    focus:
+      'No loaded planche, pressing or wrist work. Use only pain-free movement; stop anything that reproduces symptoms.',
+    minutes: estimateMinutes(blocks),
+    kind: 'auto',
+    blocks,
+    strategy: 'technique',
+  }
+}
+
+/** Apply a readiness answer to a user-selected template before it can start. */
+export function adjustedTemplateWorkout(workout: Workout, checkIn: CheckIn): Workout {
+  if (checkIn.joints === 'pain') return painSafeRecoveryWorkout()
+  if (workout.kind !== 'template' || (checkIn.joints === 'good' && checkIn.energy !== 'tired')) return workout
+
+  const jointScale = checkIn.joints === 'niggle' ? 0.8 : 1
+  const volumeScale = checkIn.energy === 'tired' ? 0.8 : checkIn.joints === 'niggle' ? 0.8 : 1
+  const blocks = workout.blocks.map((block) => {
+    if (block.section === 'warmup' || block.section === 'cooldown') return block
+    const category = EXERCISE_BY_ID[block.exerciseId]?.category
+    const upperLoaded = category === 'planche' || category === 'push' || category === 'scapula' || category === 'wrist'
+    const targetFactor = upperLoaded ? jointScale : 1
+    const target =
+      block.target.kind === 'hold'
+        ? hold(Math.max(3, Math.round(block.target.sec * targetFactor)))
+        : reps(Math.max(1, Math.round(block.target.reps * targetFactor)))
+    return {
+      ...block,
+      sets: Math.max(1, Math.round(block.sets * volumeScale)),
+      target,
+      restSec: upperLoaded ? Math.max(block.restSec, 90) : block.restSec,
+    }
+  })
+  return {
+    ...workout,
+    id: `${workout.id}-readiness-adjusted`,
+    name: `${workout.name} · Adjusted`,
+    focus: `${workout.focus} Scaled for today's ${checkIn.joints === 'niggle' ? 'joint niggle' : 'low energy'}; stop any set that worsens symptoms.`,
+    minutes: estimateMinutes(blocks),
+    blocks,
+  }
 }
 
 /** The recommended session, assembled from the coach's plan for today. */
@@ -200,13 +252,16 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
   const stepId = state.stepId
   const step = STEP_BY_ID[stepId]
   const plan = planIn ?? buildPlan(state)
+  if (plan.loadPermission === 'none') return painSafeRecoveryWorkout()
   const rMain = plan.restMainSec
   const rAcc = plan.restAccessorySec
   const vol = plan.volumeFactor
   const scale = (n: number) => Math.max(1, Math.round(n * vol))
   const blocks: Block[] = []
 
-  if (state.settings.warmup) blocks.push(...warmupFor(stepId, plan.warmup))
+  // An extended warm-up is a coach safety rail and cannot be disabled by the
+  // convenience preference.
+  if (state.settings.warmup || plan.warmup === 'extended') blocks.push(...warmupFor(stepId, plan.warmup))
 
   // Fresh and within reach → attempt the unlock while at your best.
   if (plan.queueUnlockAttempt) {
@@ -286,8 +341,23 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
     )
   } else {
     blocks.push(
-      { exerciseId: 'tuck-planche-pushup', sets: scale(3), target: reps(4), restSec: rMain, section: 'strength' },
-      { exerciseId: 'pppu', sets: scale(2), target: reps(8), restSec: rAcc, section: 'strength' },
+      state.profile.equipment.includes('parallettes')
+        ? {
+            exerciseId: 'tuck-planche-pushup',
+            sets: scale(3),
+            target: reps(4),
+            restSec: rMain,
+            section: 'strength',
+          }
+        : {
+            exerciseId: 'pppu',
+            sets: scale(3),
+            target: reps(8),
+            restSec: rMain,
+            section: 'strength',
+            note: 'Floor-friendly pressing substitute; parallettes are not in your equipment profile.',
+          },
+      { exerciseId: 'pike-pushup', sets: scale(2), target: reps(8), restSec: rAcc, section: 'strength' },
     )
   }
 

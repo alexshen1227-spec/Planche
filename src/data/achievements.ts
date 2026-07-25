@@ -1,6 +1,7 @@
 import type { AppState, Session } from '../types'
 import { totalHoldSec, weekStreak } from '../lib/stats'
 import { EXERCISE_BY_ID } from './exercises'
+import { isQualifyingSet } from '../lib/progression'
 
 export interface AchievementDef {
   id: string
@@ -13,13 +14,19 @@ export interface AchievementDef {
   progress?: (state: AppState) => { current: number; target: number }
 }
 
-const prAtLeast = (state: AppState, exerciseId: string, sec: number) =>
-  (state.prs[exerciseId]?.value ?? 0) >= sec
+const cleanBest = (state: AppState, exerciseId: string) =>
+  state.sessions
+    .filter((session) => session.workoutName !== 'Quick Log')
+    .flatMap((session) => session.sets)
+    .filter((set) => isQualifyingSet(set, exerciseId))
+    .reduce((best, set) => Math.max(best, set.value), 0)
+
+const prAtLeast = (state: AppState, exerciseId: string, sec: number) => cleanBest(state, exerciseId) >= sec
 
 const prProgress =
   (exerciseId: string, target: number) =>
   (s: AppState): { current: number; target: number } => ({
-    current: Math.min(target, Math.round(s.prs[exerciseId]?.value ?? 0)),
+    current: Math.min(target, Math.round(cleanBest(s, exerciseId))),
     target,
   })
 

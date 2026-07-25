@@ -33,6 +33,8 @@ export function useFormRecorder() {
   const openingRef = useRef<Promise<boolean> | null>(null)
   /** In-flight stop, so teardown cannot destroy a clip mid-finalise. */
   const stoppingRef = useRef<Promise<Blob | null> | null>(null)
+  /** Invalidates camera permission requests that resolve after release/unmount. */
+  const openGenerationRef = useRef(0)
 
   const supported =
     typeof navigator !== 'undefined' &&
@@ -50,19 +52,29 @@ export function useFormRecorder() {
       setStatus('unsupported')
       return Promise.resolve(false)
     }
-    if (streamRef.current) return Promise.resolve(true)
+    if (streamRef.current) {
+      if (streamRef.current.getVideoTracks().some((track) => track.readyState === 'live')) {
+        return Promise.resolve(true)
+      }
+      stopStream()
+    }
     // getUserMedia can take seconds behind a permission sheet. Without this
     // guard, tapping Start mid-request opens a second camera and orphans the
     // first stream — leaving the camera indicator on for good.
     if (openingRef.current) return openingRef.current
 
     setStatus('starting')
+    const generation = ++openGenerationRef.current
     const attempt = navigator.mediaDevices
       .getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24 } },
         audio: false,
       })
       .then((stream) => {
+        if (generation !== openGenerationRef.current) {
+          stream.getTracks().forEach((t) => t.stop())
+          return false
+        }
         if (streamRef.current) {
           // Lost a race with another caller — drop this one rather than leak.
           stream.getTracks().forEach((t) => t.stop())
@@ -106,10 +118,13 @@ export function useFormRecorder() {
       setStatus('recording')
       return true
     } catch {
-      setStatus('denied')
+      // Construction/codec errors are not a permission denial, and a failed
+      // recorder must never leave the camera indicator burning.
+      stopStream()
+      setStatus('unsupported')
       return false
     }
-  }, [prepare])
+  }, [prepare, stopStream])
 
   /** Stop and hand back the clip; resolves null if nothing usable was captured. */
   const stop = useCallback((): Promise<Blob | null> => {
@@ -119,18 +134,27 @@ export function useFormRecorder() {
       return Promise.resolve(null)
     }
     const finished = new Promise<Blob | null>((resolve) => {
-      rec.onstop = () => {
-        const type = rec.mimeType || 'video/webm'
-        const blob = chunksRef.current.length ? new Blob(chunksRef.current, { type }) : null
-        chunksRef.current = []
+      let settled = false
+      const finish = (blob: Blob | null) => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timeout)
         recorderRef.current = null
         setStatus('idle')
         resolve(blob && blob.size > 0 ? blob : null)
       }
+      rec.onstop = () => {
+        const type = rec.mimeType || 'video/webm'
+        const blob = chunksRef.current.length ? new Blob(chunksRef.current, { type }) : null
+        chunksRef.current = []
+        finish(blob)
+      }
+      rec.onerror = () => finish(null)
+      const timeout = window.setTimeout(() => finish(null), 5000)
       try {
         rec.stop()
       } catch {
-        resolve(null)
+        finish(null)
       }
     })
     stoppingRef.current = finished
@@ -153,6 +177,7 @@ export function useFormRecorder() {
   }, [stopStream])
 
   const release = useCallback(() => {
+    openGenerationRef.current++
     // Idempotent on purpose: this is called from an effect, and setting state
     // when there is nothing to release would re-render into a loop.
     if (!recorderRef.current && !streamRef.current) return
@@ -167,7 +192,13 @@ export function useFormRecorder() {
   }, [teardown])
 
   // Never leave the camera light on, even if a stop is still in flight.
-  useEffect(() => teardown, [teardown])
+  useEffect(
+    () => () => {
+      openGenerationRef.current++
+      teardown()
+    },
+    [teardown],
+  )
 
   // Stable identity — consumers use this in effect dependency lists.
   return useMemo(

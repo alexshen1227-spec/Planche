@@ -2,6 +2,7 @@ import type { AppState, Session } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { addDays, weekStart } from './time'
+import { isQualifyingSet } from './progression'
 
 export function totalHoldSec(state: AppState): number {
   let t = 0
@@ -42,7 +43,17 @@ export function bestSeries(state: AppState, exerciseId: string): { at: number; v
   const out: { at: number; value: number }[] = []
   for (const s of [...state.sessions].sort((a, b) => a.startedAt - b.startedAt)) {
     let best = 0
-    for (const set of s.sets) if (set.exerciseId === exerciseId && set.value > best) best = set.value
+    const progressionExercise =
+      EXERCISE_BY_ID[exerciseId]?.category === 'planche' || exerciseId === 'ppp-hold'
+    for (const set of s.sets) {
+      if (
+        set.exerciseId === exerciseId &&
+        set.value > best &&
+        (!progressionExercise || isQualifyingSet(set, exerciseId))
+      ) {
+        best = set.value
+      }
+    }
     if (best > 0) out.push({ at: s.startedAt, value: best })
   }
   return out

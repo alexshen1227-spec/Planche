@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Settings as SettingsShape } from '../types'
-import { useStore, normalizeState } from '../lib/store'
+import { useStore, normalizeState, rebuildDerivedState } from '../lib/store'
 import { STEP_BY_ID } from '../data/progressions'
-import { exportData, readImportFile } from '../lib/exportImport'
+import { exportData, readImportFile, validateImport } from '../lib/exportImport'
 import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
 import { listClips, clearAllClips, CLIP_RETENTION_DAYS } from '../lib/clips'
 import { fmtDate } from '../lib/time'
@@ -203,6 +203,7 @@ export function Settings() {
   const [confirmReset, setConfirmReset] = useState(false)
   const [confirmSample, setConfirmSample] = useState(false)
   const [name, setName] = useState(state.name)
+  const [injuryNote, setInjuryNote] = useState(state.profile.injuryNote ?? '')
   const [storage, setStorage] = useState<StorageInfo | null>(null)
   const [calibrating, setCalibrating] = useState(false)
   const [loggingWeight, setLoggingWeight] = useState(false)
@@ -225,19 +226,29 @@ export function Settings() {
   // pressing Save afterwards would write back a stale name.
   useEffect(() => {
     setName(state.name)
-  }, [state.name])
+    setInjuryNote(state.profile.injuryNote ?? '')
+  }, [state.name, state.profile.injuryNote])
 
   const set = (patch: Partial<SettingsShape>) => dispatch({ type: 'SET_SETTINGS', patch })
 
   const onImport = async (file: File) => {
     try {
       const raw = await readImportFile(file)
+      validateImport(raw)
+      const normalized = normalizeState(raw)
+      const rawSessionCount = raw.sessions.length
+      if (normalized.sessions.length !== rawSessionCount) {
+        throw new Error(
+          `${rawSessionCount - normalized.sessions.length} invalid session(s) were found. Nothing was imported.`,
+        )
+      }
+      const rebuilt = rebuildDerivedState(normalized)
       // Clips belong to the history being replaced; keeping them would surface
       // the previous data's videos under the imported sessions.
-      await clearAllClips()
+      if (!(await clearAllClips())) throw new Error('Could not clear existing clips. Nothing was imported.')
       setClipCount(0)
       setClipBytes(0)
-      dispatch({ type: 'REPLACE', state: normalizeState(raw) })
+      dispatch({ type: 'REPLACE', state: rebuilt })
       pushToast('Data imported.', 'success')
     } catch (err) {
       pushToast(err instanceof Error ? err.message : 'Import failed.', 'danger')
@@ -276,12 +287,31 @@ export function Settings() {
         <Row label="Weekly session goal" hint="Drives the streak. 3–4 is the sweet spot for planche work.">
           <Stepper value={s.weeklyGoal} onChange={(v) => set({ weeklyGoal: v })} min={1} max={7} />
         </Row>
+        <Row label="Joint / injury note" hint="The coach uses this to require a fresh readiness check before loading.">
+          <div className="flex min-w-0 flex-1 flex-wrap justify-end gap-2">
+            <input
+              value={injuryNote}
+              onChange={(e) => setInjuryNote(e.target.value)}
+              placeholder="e.g. left wrist feels irritated"
+              className="min-w-52 flex-1 rounded-xl border border-line bg-raised px-3 py-2 text-[14px] text-ink outline-none focus:border-accent"
+            />
+            <button
+              onClick={() => {
+                dispatch({ type: 'SET_PROFILE', patch: { injuryNote: injuryNote.trim() || undefined } })
+                pushToast('Joint note saved.', 'success')
+              }}
+              className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+            >
+              Save
+            </button>
+          </div>
+        </Row>
         <Row
           label="Bodyweight"
           hint={
             lastWeight
               ? `Last logged ${fmtWeight(lastWeight.value, s.units)} on ${fmtDate(lastWeight.at)}.`
-              : 'Not logged yet. Planche is strength-to-weight, so the coach reads your holds against it.'
+              : 'Not logged yet. Optional context for interpreting strength-to-weight progress.'
           }
         >
           <button
@@ -361,10 +391,14 @@ export function Settings() {
         >
           <button
             onClick={() => {
-              void clearAllClips().then(() => {
-                setClipCount(0)
-                setClipBytes(0)
-                pushToast('Form clips deleted.', 'info')
+              void clearAllClips().then((ok) => {
+                if (ok) {
+                  setClipCount(0)
+                  setClipBytes(0)
+                  pushToast('Form clips deleted.', 'info')
+                } else {
+                  pushToast('The clips could not be deleted. Try again.', 'danger')
+                }
               })
             }}
             disabled={clipCount === 0}
@@ -472,7 +506,7 @@ export function Settings() {
             </button>
           ) : (
             <span className={`text-[13px] font-semibold ${storage?.persisted ? 'text-ok' : 'text-ink3'}`}>
-              {storage === null ? '…' : storage.persisted ? 'âœ“ Protected' : '—'}
+              {storage === null ? '…' : storage.persisted ? '✓ Protected' : '—'}
             </span>
           )}
         </Row>
@@ -535,7 +569,7 @@ export function Settings() {
           for learning the planche. All data lives in your browser — nothing leaves your machine.
         </p>
         <p className="mt-2">
-          Progressions follow standard gymnastics-strength practice (leans â†’ frog â†’ tuck â†’ advanced tuck â†’ straddle â†’
+          Progressions follow standard gymnastics-strength practice (leans → frog → tuck → advanced tuck → straddle →
           full). Expect the road to take 1–3+ years depending on starting point, bodyweight and consistency — that's
           normal, not failure.
         </p>
@@ -600,13 +634,15 @@ export function Settings() {
               Cancel
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 // Clips live in their own database — a reset that left the
                 // athlete's videos on the device would contradict the copy.
-                void clearAllClips().then(() => {
-                  setClipCount(0)
-                  setClipBytes(0)
-                })
+                if (!(await clearAllClips())) {
+                  pushToast('Could not delete form clips, so no data was reset.', 'danger')
+                  return
+                }
+                setClipCount(0)
+                setClipBytes(0)
                 dispatch({ type: 'RESET' })
                 setConfirmReset(false)
                 pushToast('Everything reset. Fresh start!', 'info')
@@ -621,4 +657,3 @@ export function Settings() {
     </div>
   )
 }
-

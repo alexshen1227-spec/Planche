@@ -1,4 +1,4 @@
-import type { SetLog, Workout } from '../types'
+import type { CheckIn, SetLog, Workout } from '../types'
 
 /**
  * Crash-proof live-session storage.
@@ -14,7 +14,7 @@ const KEY = 'planchelab.draft'
 const MAX_AGE_MS = 18 * 3_600_000
 
 export interface SessionDraft {
-  v: 1
+  v: 1 | 2
   savedAt: number
   workout: Workout
   startedAt: number
@@ -26,6 +26,13 @@ export interface SessionDraft {
   /** Seconds already accumulated on that interrupted hold. */
   holdElapsed: number
   restEndsAt: number | null
+  /** Stable phases that can be resumed exactly. Older v1 drafts omit this. */
+  phase?: 'ready' | 'rest' | 'summary'
+  /** A backgrounded hold awaiting the athlete's log-or-redo decision. */
+  interrupted?: number
+  interruptedAt?: { bi: number; si: number }
+  restTotal?: number
+  checkIn?: CheckIn
   rpe?: number
   notes?: string
 }
@@ -34,7 +41,7 @@ export type DraftInput = Omit<SessionDraft, 'v' | 'savedAt'>
 
 export function saveDraft(input: DraftInput): void {
   try {
-    const draft: SessionDraft = { ...input, v: 1, savedAt: Date.now() }
+    const draft: SessionDraft = { ...input, v: 2, savedAt: Date.now() }
     localStorage.setItem(KEY, JSON.stringify(draft))
   } catch {
     // Storage unavailable — the session still runs, it just can't be resumed.
@@ -46,7 +53,7 @@ export function loadDraft(): SessionDraft | null {
     const raw = localStorage.getItem(KEY)
     if (!raw) return null
     const d = JSON.parse(raw) as SessionDraft
-    if (d?.v !== 1 || !d.workout || !Array.isArray(d.logs)) return null
+    if ((d?.v !== 1 && d?.v !== 2) || !d.workout || !Array.isArray(d.logs)) return null
     // Nothing logged and nothing mid-hold means nothing to lose — don't force
     // someone back into a session they only opened and walked away from. An
     // interrupted first hold still counts as work worth recovering.

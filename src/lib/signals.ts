@@ -2,6 +2,7 @@ import type { AppState, CheckIn, Session, SetLog } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { dayKey } from './time'
+import { isQualifyingSet, qualifyingSessionValue } from './progression'
 
 /**
  * Everything the coach can observe, derived from the log alone.
@@ -178,6 +179,8 @@ export interface Signals {
   daysSinceMaxTest: number | null
   /** Weeks since the last deliberately easy week. */
   weeksSinceDeload: number
+  /** True during the seven-day block started by the latest deload session. */
+  deloadActive: boolean
   totalSessions: number
 }
 
@@ -250,16 +253,18 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   }
 
   // ——— Key-hold performance, measured robustly ———
-  const withKey = sessions.filter((s) => bestIn(s, keyId) > 0)
+  const withKey = sessions.filter((s) => qualifyingSessionValue(s, state.stepId) > 0)
   const recent = withKey.slice(-6)
-  const recentBests = recent.map((s) => bestIn(s, keyId))
+  const recentBests = recent.map((s) => qualifyingSessionValue(s, state.stepId))
   const mainMedian = median(recentBests)
   const spread = mad(recentBests)
   const variability = mainMedian && mainMedian > 0 && spread !== null ? spread / mainMedian : null
   // Isometrics swing day to day; past ~22% deviation the signal is mostly noise.
   const noisy = variability !== null && variability > 0.22 && recentBests.length >= 3
 
-  const trendPerWeek = slopePerWeek(withKey.slice(-6).map((s) => ({ at: s.startedAt, value: bestIn(s, keyId) })))
+  const trendPerWeek = slopePerWeek(
+    withKey.slice(-6).map((s) => ({ at: s.startedAt, value: qualifyingSessionValue(s, state.stepId) })),
+  )
 
   // Hit rate from the most recent session that actually trained the key hold,
   // not the literal last session — a wrist day in between used to null this
@@ -272,16 +277,17 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   if (lastRelevant) {
     const mains = keySetsOf(lastRelevant, keyId, 'main')
     mainSetCount = mains.length
-    mainHitRate = mains.filter((s) => s.value >= s.target).length / mains.length
+    mainHitRate =
+      mains.filter((s) => isQualifyingSet(s, keyId) && s.value >= s.target).length / mains.length
   }
 
   // An outlier is a value far outside the robust range of the ones before it.
   let lastWasOutlier = false
   if (withKey.length >= 4) {
-    const prior = withKey.slice(-5, -1).map((s) => bestIn(s, keyId))
+    const prior = withKey.slice(-5, -1).map((s) => qualifyingSessionValue(s, state.stepId))
     const pm = median(prior)
     const pmad = mad(prior)
-    const latest = bestIn(withKey[withKey.length - 1], keyId)
+    const latest = qualifyingSessionValue(withKey[withKey.length - 1], state.stepId)
     if (pm !== null && pmad !== null && pmad > 0) {
       lastWasOutlier = Math.abs(latest - pm) > Math.max(3, 3.5 * pmad)
     }
@@ -289,10 +295,19 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
 
   // ——— Accessory pressing work ———
   const pressIds = ['pppu', 'pike-pushup', 'tuck-planche-pushup', 'pushup', 'dip']
-  const pressPoints = sessions
-    .slice(-8)
+  const recentPressSessions = sessions.slice(-12)
+  const pressId =
+    pressIds
+      .map((id) => ({
+        id,
+        count: recentPressSessions.filter((s) => bestIn(s, id) > 0).length,
+      }))
+      .sort((a, b) => b.count - a.count)[0]?.id ?? pressIds[0]
+  // Compare one repeated movement with itself. Raw reps from push-ups, dips
+  // and PPPUs are not interchangeable strength units.
+  const pressPoints = recentPressSessions
     .map((s) => {
-      const best = pressIds.reduce((b, id) => Math.max(b, bestIn(s, id)), 0)
+      const best = bestIn(s, pressId)
       return best > 0 ? { at: s.startedAt, value: best } : null
     })
     .filter((p): p is { at: number; value: number } => p !== null)
@@ -307,7 +322,12 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // ——— Form quality, the only non-numeric signal available ———
   const ratedSets = sessions
     .slice(-8)
-    .flatMap((s) => s.sets.filter((x) => x.form && x.section === 'main'))
+    .flatMap((s) =>
+      s.sets.filter(
+        (x) =>
+          x.exerciseId === keyId && x.form && x.form.confirmed !== false && x.section === 'main',
+      ),
+    )
   const formCleanRate = ratedSets.length
     ? ratedSets.filter((x) => x.form!.rating === 'clean').length / ratedSets.length
     : null
@@ -325,12 +345,23 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   }
   const cameraSets = sessions
     .slice(-8)
-    .flatMap((s) => s.sets.filter((x) => x.form?.auto && Array.isArray(x.form.auto.issues) && x.section === 'main'))
-  for (const s of ratedSets) for (const i of s.form?.issues ?? []) bump(i, 1)
+    .flatMap((s) =>
+      s.sets.filter(
+        (x) =>
+          x.exerciseId === keyId && x.form?.auto && Array.isArray(x.form.auto.issues) && x.section === 'main',
+      ),
+    )
   for (const s of cameraSets) {
-    // Half weight: an unconfirmed machine reading is weaker evidence than the
-    // athlete saying it themselves.
-    for (const i of s.form!.auto!.issues) bump(i, 0.5)
+    // Never count the same set twice. A confirmed athlete answer wins; until
+    // then the model remains weaker, advisory evidence.
+    if (s.form?.confirmed !== false) {
+      for (const i of s.form?.issues ?? []) bump(i, 1)
+    } else {
+      for (const i of s.form!.auto!.issues) bump(i, 0.5)
+    }
+  }
+  for (const s of ratedSets.filter((s) => !s.form?.auto)) {
+    for (const i of s.form?.issues ?? []) bump(i, 1)
   }
   const topEntry = [...issueWeight.entries()].sort((a, b) => b[1] - a[1])[0]
   const topFormIssue =
@@ -372,6 +403,16 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const weeksSinceDeload = lastDeload
     ? Math.floor((now - lastDeload.startedAt) / (7 * DAY))
     : Math.floor((now - (sessions[0]?.startedAt ?? now)) / (7 * DAY))
+  let deloadActive = false
+  if (lastDeload && now - lastDeload.startedAt < 7 * DAY) {
+    const lastIndex = sessions.indexOf(lastDeload)
+    let blockStart = lastDeload.startedAt
+    for (let i = lastIndex - 1; i >= 0; i--) {
+      if (!sessions[i].workoutName.toLowerCase().includes('deload')) break
+      blockStart = sessions[i].startedAt
+    }
+    deloadActive = now - blockStart < 7 * DAY
+  }
 
   const lastWithCheckIn = [...sessions].reverse().find((s) => s.checkIn)
   const lastCheckIn = freshCheckIn ?? lastWithCheckIn?.checkIn
@@ -413,6 +454,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     sessionsPerWeek,
     daysSinceMaxTest,
     weeksSinceDeload,
+    deloadActive,
     totalSessions: sessions.length,
   }
 }

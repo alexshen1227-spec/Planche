@@ -1,6 +1,7 @@
 import type { AppState, Session, SessionEvents, StepId } from '../types'
 import { ACHIEVEMENTS } from '../data/achievements'
 import { STEP_BY_ID, stepAfter } from '../data/progressions'
+import { isQualifyingSet, qualifyingProgress } from './progression'
 
 /**
  * Pure state transition for saving a session: updates history and PRs,
@@ -28,7 +29,8 @@ export function applySession(state: AppState, session: Session): { next: AppStat
 
   let next: AppState = { ...state, prs, sessions: [...state.sessions, session] }
 
-  // Advance along the road while the current step's unlock bar is cleared.
+  // Advance only from a clean main-work hold. PRs remain an honest record of
+  // best effort, but a poor-form/accessory/one-sided number is not mastery.
   const unlocked = [...state.unlocked]
   let stepId: StepId = state.stepId
   let unlockedStep: StepId | undefined
@@ -36,8 +38,16 @@ export function applySession(state: AppState, session: Session): { next: AppStat
     const cur = STEP_BY_ID[stepId]
     const following = stepAfter(stepId)
     if (!following) break
-    const pr = prs[cur.keyExerciseId]?.value ?? 0
-    if (pr < cur.unlockSec) break
+    // Saving unrelated work must not snap an athlete back up after they
+    // deliberately selected a lower unlocked step.
+    if (
+      session.workoutName === 'Quick Log' ||
+      !session.sets.some((set) => isQualifyingSet(set, cur.keyExerciseId))
+    ) {
+      break
+    }
+    const qualified = qualifyingProgress(state, stepId, [session])
+    if (qualified.value < cur.unlockSec) break
     if (!unlocked.includes(following.id)) unlocked.push(following.id)
     stepId = following.id
     unlockedStep = following.id

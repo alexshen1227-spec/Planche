@@ -14,6 +14,7 @@ import type {
   Units,
 } from '../types'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
+import { EXERCISE_BY_ID } from '../data/exercises'
 import { applySession } from './engine'
 import { configureAudio } from './audio'
 import { readMirror, requestPersistence, writeMirror } from './persist'
@@ -90,6 +91,8 @@ const FORM_ISSUES = new Set<FormIssue>([
   'level',
 ])
 const EQUIPMENT_IDS = new Set(['floor', 'parallettes', 'band', 'pullup-bar', 'dip-bars'])
+const SECTIONS = new Set(['warmup', 'main', 'strength', 'core', 'cooldown'])
+const STRATEGIES = new Set(['balanced', 'volume', 'intensity', 'density', 'technique'])
 
 /**
  * A hand-edited `issues` string would otherwise be iterated per character.
@@ -108,6 +111,7 @@ function sanitizeForm(f: unknown): FormCheck | undefined {
     : []
 
   const out: FormCheck = { rating: c.rating as FormCheck['rating'] }
+  if (typeof c.confirmed === 'boolean') out.confirmed = c.confirmed
   if (issues.length) out.issues = issues
   if (typeof c.clipKey === 'string') out.clipKey = c.clipKey
 
@@ -148,36 +152,57 @@ function clampOptional(v: unknown, lo: number, hi: number): number | undefined {
 function sanitizeSessions(raw: unknown): Session[] {
   if (!Array.isArray(raw)) return []
   const out: Session[] = []
+  const ids = new Set<string>()
   for (const s of raw) {
     if (typeof s !== 'object' || s === null) continue
     const c = s as Partial<Session>
     if (typeof c.startedAt !== 'number' || !Number.isFinite(c.startedAt)) continue
-    const sets = Array.isArray(c.sets)
-      ? c.sets
-          .filter(
-            (x): x is Session['sets'][number] =>
-              typeof x === 'object' &&
-              x !== null &&
-              typeof (x as SetLog).exerciseId === 'string' &&
-              typeof (x as SetLog).value === 'number' &&
-              Number.isFinite((x as SetLog).value),
-          )
-          .map((x) => ({ ...x, form: sanitizeForm(x.form) }))
-      : []
+    const sets: SetLog[] = []
+    if (Array.isArray(c.sets)) {
+      for (const rawSet of c.sets) {
+        if (typeof rawSet !== 'object' || rawSet === null) continue
+        const x = rawSet as Partial<SetLog>
+        const exercise = typeof x.exerciseId === 'string' ? EXERCISE_BY_ID[x.exerciseId] : undefined
+        if (!exercise || typeof x.value !== 'number' || !Number.isFinite(x.value)) continue
+        const kind = x.kind === 'hold' || x.kind === 'reps' ? x.kind : exercise.type
+        const section = typeof x.section === 'string' && SECTIONS.has(x.section) ? x.section : 'main'
+        sets.push({
+          exerciseId: exercise.id,
+          kind,
+          value: clampNum(x.value, 0, kind === 'hold' ? 3600 : 1000, 0),
+          ...(typeof x.raw === 'number' && Number.isFinite(x.raw)
+            ? { raw: clampNum(x.raw, 0, 3600, 0) }
+            : {}),
+          target: clampNum(x.target, 0, kind === 'hold' ? 3600 : 1000, 0),
+          section: section as SetLog['section'],
+          at: typeof x.at === 'number' && Number.isFinite(x.at) ? x.at : c.startedAt,
+          ...(x.side === 'left' || x.side === 'right' ? { side: x.side } : {}),
+          ...(sanitizeForm(x.form) ? { form: sanitizeForm(x.form) } : {}),
+        })
+      }
+    }
+    let id = typeof c.id === 'string' && c.id ? c.id : crypto.randomUUID()
+    if (ids.has(id)) id = crypto.randomUUID()
+    ids.add(id)
+    const checkIn =
+      c.checkIn &&
+      (c.checkIn.joints === 'good' || c.checkIn.joints === 'niggle' || c.checkIn.joints === 'pain') &&
+      (c.checkIn.energy === 'fresh' || c.checkIn.energy === 'ok' || c.checkIn.energy === 'tired') &&
+      typeof c.checkIn.at === 'number'
+        ? c.checkIn
+        : undefined
     out.push({
-      // Spread first so anything this version does not know about survives.
-      // Rebuilding from an explicit field list silently drops data whenever a
-      // new field is added and someone forgets to list it here.
-      ...(c as Session),
-      id: typeof c.id === 'string' && c.id ? c.id : crypto.randomUUID(),
+      id,
       startedAt: c.startedAt,
-      endedAt: typeof c.endedAt === 'number' ? c.endedAt : c.startedAt,
+      endedAt: typeof c.endedAt === 'number' && Number.isFinite(c.endedAt) ? c.endedAt : c.startedAt,
       workoutName: typeof c.workoutName === 'string' ? c.workoutName : 'Session',
       workoutKind: c.workoutKind === 'template' || c.workoutKind === 'test' ? c.workoutKind : 'auto',
       stepId: c.stepId && STEP_BY_ID[c.stepId] ? c.stepId : 'foundations',
       sets,
-      rpe: typeof c.rpe === 'number' ? c.rpe : undefined,
+      rpe: typeof c.rpe === 'number' && Number.isFinite(c.rpe) ? clampNum(c.rpe, 1, 10, 8) : undefined,
       notes: typeof c.notes === 'string' ? c.notes : undefined,
+      strategy: typeof c.strategy === 'string' && STRATEGIES.has(c.strategy) ? c.strategy : undefined,
+      checkIn,
     })
   }
   return out
@@ -209,6 +234,12 @@ export function normalizeState(raw: unknown): AppState {
     volume: clampNum(rawSettings.volume, 0, 1, DEFAULT_SETTINGS.volume),
     // An unrecognised unit would silently make the whole app read imperial.
     units: rawSettings.units === 'imperial' ? 'imperial' : 'metric',
+    theme:
+      rawSettings.theme === 'light' || rawSettings.theme === 'system' ? rawSettings.theme : DEFAULT_SETTINGS.theme,
+    sound: typeof rawSettings.sound === 'boolean' ? rawSettings.sound : DEFAULT_SETTINGS.sound,
+    voice: typeof rawSettings.voice === 'boolean' ? rawSettings.voice : DEFAULT_SETTINGS.voice,
+    warmup: typeof rawSettings.warmup === 'boolean' ? rawSettings.warmup : DEFAULT_SETTINGS.warmup,
+    beeps: typeof rawSettings.beeps === 'boolean' ? rawSettings.beeps : DEFAULT_SETTINGS.beeps,
     recordForm: typeof rawSettings.recordForm === 'boolean' ? rawSettings.recordForm : DEFAULT_SETTINGS.recordForm,
     autoAnalyze: typeof rawSettings.autoAnalyze === 'boolean' ? rawSettings.autoAnalyze : DEFAULT_SETTINGS.autoAnalyze,
   }
@@ -232,14 +263,34 @@ export function normalizeState(raw: unknown): AppState {
     baseStepId: r.baseStepId && STEP_BY_ID[r.baseStepId] ? r.baseStepId : stepId,
     unlocked,
     sessions: sanitizeSessions(r.sessions),
-    prs: typeof r.prs === 'object' && r.prs !== null ? (r.prs as AppState['prs']) : {},
+    prs:
+      typeof r.prs === 'object' && r.prs !== null
+        ? Object.fromEntries(
+            Object.entries(r.prs).filter(
+              ([id, pr]) =>
+                Boolean(EXERCISE_BY_ID[id]) &&
+                typeof pr === 'object' &&
+                pr !== null &&
+                typeof pr.value === 'number' &&
+                Number.isFinite(pr.value) &&
+                typeof pr.at === 'number' &&
+                Number.isFinite(pr.at),
+            ),
+          )
+        : {},
     achievements:
       typeof r.achievements === 'object' && r.achievements !== null
-        ? (r.achievements as AppState['achievements'])
+        ? Object.fromEntries(
+            Object.entries(r.achievements).filter(([, at]) => typeof at === 'number' && Number.isFinite(at)),
+          )
         : {},
     videoLinks:
       typeof r.videoLinks === 'object' && r.videoLinks !== null
-        ? (r.videoLinks as AppState['videoLinks'])
+        ? Object.fromEntries(
+            Object.entries(r.videoLinks).filter(
+              ([id, url]) => Boolean(EXERCISE_BY_ID[id]) && typeof url === 'string',
+            ),
+          )
         : {},
     profile: {
       equipment: (() => {
@@ -319,7 +370,7 @@ export function previousBackup(): { json: string; sessions: number } | null {
 }
 
 /** Rebuild PRs / unlocks / achievements by replaying history (after deletes/imports). */
-function replay(state: AppState, sessions: Session[]): AppState {
+export function rebuildDerivedState(state: AppState, sessions = state.sessions): AppState {
   const base = STEP_BY_ID[state.baseStepId] ? state.baseStepId : 'foundations'
   const baseOrder = STEP_BY_ID[base].order
   let acc: AppState = {
@@ -355,6 +406,7 @@ export type Action =
   | { type: 'LOG_MEASUREMENT'; weightKg?: number; heightCm?: number }
   | { type: 'SNOOZE_MEASURE' }
   | { type: 'SET_PROFILE'; patch: Partial<Profile> }
+  | { type: 'MERGE_EXTERNAL'; sessions: Session[] }
   | { type: 'REPLACE'; state: AppState }
   | { type: 'RESET' }
 
@@ -363,7 +415,7 @@ function reducer(state: AppState, action: Action): AppState {
     case 'SAVE_SESSION':
       return applySession(state, action.session).next
     case 'DELETE_SESSION':
-      return replay(
+      return rebuildDerivedState(
         state,
         state.sessions.filter((s) => s.id !== action.id),
       )
@@ -400,19 +452,36 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'LOG_MEASUREMENT': {
       const entry: Measurement = { at: Date.now() }
-      if (action.weightKg !== undefined) entry.weightKg = action.weightKg
-      if (action.heightCm !== undefined) entry.heightCm = action.heightCm
+      if (action.weightKg !== undefined && action.weightKg >= 20 && action.weightKg <= 400) {
+        entry.weightKg = action.weightKg
+      }
+      if (action.heightCm !== undefined && action.heightCm >= 100 && action.heightCm <= 250) {
+        entry.heightCm = action.heightCm
+      }
       if (entry.weightKg === undefined && entry.heightCm === undefined) return state
       return {
         ...state,
         measurements: [...state.measurements, entry],
-        profile: action.heightCm !== undefined ? { ...state.profile, heightCm: action.heightCm } : state.profile,
+        profile: entry.heightCm !== undefined ? { ...state.profile, heightCm: entry.heightCm } : state.profile,
       }
     }
     case 'SNOOZE_MEASURE':
       return { ...state, measureSnoozedAt: Date.now() }
     case 'SET_PROFILE':
       return { ...state, profile: { ...state.profile, ...action.patch } }
+    case 'MERGE_EXTERNAL': {
+      const byId = new Map(state.sessions.map((session) => [session.id, session]))
+      let changed = false
+      for (const incoming of action.sessions) {
+        const current = byId.get(incoming.id)
+        if (!current || incoming.endedAt > current.endedAt) {
+          byId.set(incoming.id, incoming)
+          changed = true
+        }
+      }
+      if (!changed) return state
+      return rebuildDerivedState(state, [...byId.values()].sort((a, b) => a.startedAt - b.startedAt))
+    }
     case 'REPLACE':
       return normalizeState(action.state)
     case 'RESET':
@@ -445,6 +514,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.clearTimeout(mirrorTimer.current)
     mirrorTimer.current = window.setTimeout(() => void writeMirror(json), 1500)
   }, [state])
+
+  // Other tabs are independent writers. Merge stable session ids so saving in
+  // one PWA window cannot erase a session just saved in another.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY || !event.newValue) return
+      try {
+        const incoming = normalizeState(JSON.parse(event.newValue))
+        dispatch({ type: 'MERGE_EXTERNAL', sessions: incoming.sessions })
+      } catch {
+        /* ignore an incomplete/corrupt external write */
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   // If the primary copy was missing or corrupt at boot, restore silently
   // from the IndexedDB mirror (real data only — never overwrite fresh use).
@@ -494,8 +579,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [state.settings.theme])
 
   useEffect(() => {
-    configureAudio(state.settings.sound, state.settings.volume)
-  }, [state.settings.sound, state.settings.volume])
+    configureAudio(state.settings.sound, state.settings.voice, state.settings.volume)
+  }, [state.settings.sound, state.settings.voice, state.settings.volume])
 
   const value = useMemo(() => ({ state, dispatch }), [state])
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>

@@ -8,6 +8,7 @@ import { tipOfTheDay } from '../data/tips'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { sessionsInWeekOf, weekStreak, totalHoldSec, sessionHighlight, paceToUnlock } from '../lib/stats'
 import { buildPlan, STRATEGY_BY_ID, coachConfidence } from '../lib/coach'
+import { qualifyingProgress } from '../lib/progression'
 import { addDays, dayKey, fmtDate, fmtDuration, fmtHold, weekStart } from '../lib/time'
 import { exportData } from '../lib/exportImport'
 import { pushToast } from '../lib/toast'
@@ -49,7 +50,9 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
   const { state, dispatch } = useStore()
   const step = STEP_BY_ID[state.stepId]
   const keyEx = EXERCISE_BY_ID[step.keyExerciseId]
-  const best = state.prs[step.keyExerciseId]?.value ?? 0
+  const prBest = state.prs[step.keyExerciseId]?.value ?? 0
+  const qualified = qualifyingProgress(state, state.stepId)
+  const best = qualified.value
   const unlockPct = Math.min(1, best / step.unlockSec)
   const next = stepAfter(state.stepId)
 
@@ -117,13 +120,15 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
           <div className="flex flex-1 items-center justify-between gap-5 sm:justify-end">
             <div className="sm:text-right">
               <div className="text-[13px] text-ink2">
-                {keyEx.name} best{' '}
+                {keyEx.name} clean best{' '}
                 <span className="font-semibold text-ink tnum">{best ? fmtHold(best) : '—'}</span>
+                {prBest > best ? <span className="text-ink3"> · PR {fmtHold(prBest)}</span> : null}
               </div>
               <div className="text-[13px] text-ink2">
                 {next ? (
                   <>
-                    Hold <span className="font-semibold text-ink tnum">{step.unlockSec}s</span> to unlock{' '}
+                    Hold <span className="font-semibold text-ink tnum">{step.unlockSec}s</span>
+                    {keyEx.perSide ? ' on both sides' : ''} with clean form to unlock{' '}
                     <span className="font-semibold text-ink">{next.name}</span>
                   </>
                 ) : (

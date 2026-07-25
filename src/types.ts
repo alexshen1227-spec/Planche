@@ -67,6 +67,11 @@ export interface AutoForm {
 
 export interface FormCheck {
   rating: FormRating
+  /**
+   * False when the camera suggested this rating but the athlete has not
+   * confirmed it. Missing means confirmed for backward compatibility.
+   */
+  confirmed?: boolean
   issues?: FormIssue[]
   /** Key of the recorded clip in the clip store, when one was kept. */
   clipKey?: string

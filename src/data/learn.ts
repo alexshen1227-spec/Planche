@@ -34,7 +34,7 @@ export const GUIDES: Guide[] = [
           'Train 3 days a week with at least one rest day between sessions.',
           'Every session starts with the wrist warm-up. Non-negotiable — wrist pain is the #1 reason people quit.',
           'Finish each hold about 2 seconds before you would collapse. Grinding to failure teaches bad positions.',
-          'Film yourself from the side once a week. Your body lies about what it is doing; the camera does not.',
+          'Film yourself from the side once a week. Video can reveal what you cannot feel, but automated estimates can be wrong — confirm the position yourself.',
         ],
       },
       {
@@ -66,9 +66,9 @@ export const GUIDES: Guide[] = [
         body: 'Muscle burn and shaking are fine. Joint pain is not.',
         bullets: [
           'Sharp wrist pain: stop, switch to parallettes, reduce lean depth.',
-          'Inner-elbow ache: that is the biceps tendon. Cut lean intensity by about 30% for two weeks and add light curls for blood flow.',
-          'Front-of-shoulder pinching: usually too much lean with a collapsed scapula. Push harder into protraction and lean less.',
-          'Pain that persists more than two weeks deserves a physio, not another deload.',
+          'New or worsening joint pain: stop the movement that reproduces it rather than trying to diagnose the tissue from location alone.',
+          'Shoulder pinching or elbow/wrist pain: unload it, note what provokes it, and avoid coaching yourself through a painful range.',
+          'Severe, worsening or persistent pain deserves assessment by a qualified clinician rather than a fixed app protocol.',
         ],
       },
       {

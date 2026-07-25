@@ -25,3 +25,19 @@ export function readImportFile(file: File): Promise<unknown> {
     reader.readAsText(file)
   })
 }
+
+/** Reject unrelated JSON before any existing history or clips are touched. */
+export function validateImport(raw: unknown): asserts raw is AppState {
+  if (typeof raw !== 'object' || raw === null) throw new Error('That JSON is not a Planche Lab backup.')
+  const candidate = raw as Partial<AppState>
+  if (
+    ![1, 2, 3].includes(Number(candidate.version)) ||
+    typeof candidate.onboarded !== 'boolean' ||
+    !Array.isArray(candidate.sessions) ||
+    typeof candidate.settings !== 'object' ||
+    candidate.settings === null ||
+    typeof candidate.stepId !== 'string'
+  ) {
+    throw new Error('That JSON is not a complete Planche Lab backup.')
+  }
+}

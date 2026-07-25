@@ -9,6 +9,7 @@ import { pushToast } from '../lib/toast'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { Modal } from '../components/ui'
+import { qualifyingProgress } from '../lib/progression'
 
 export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
   const { state } = useStore()
@@ -39,7 +40,7 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
             const unlocked = state.unlocked.includes(step.id)
             const isCurrent = state.stepId === step.id
             const done = unlocked && step.order < currentOrder
-            const best = state.prs[step.keyExerciseId]?.value ?? 0
+            const best = qualifyingProgress(state, step.id).value
             const pct = Math.min(1, best / step.unlockSec)
             const keyEx = EXERCISE_BY_ID[step.keyExerciseId]
             return (
@@ -100,7 +101,8 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
                       />
                     </div>
                     <span className="shrink-0 text-[12.5px] text-ink3 tnum">
-                      {best ? fmtHold(best) : '0s'} / {step.unlockSec}s {keyEx.name.toLowerCase()}
+                      {best ? fmtHold(best) : '0s'} / {step.unlockSec}s clean
+                      {keyEx.perSide ? ' / both sides' : ''} {keyEx.name.toLowerCase()}
                     </span>
                   </div>
                 </div>

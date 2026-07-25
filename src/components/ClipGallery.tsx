@@ -23,7 +23,7 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
     try {
       const blob = await blobFromUrl(url)
       const res: PoseFormResult = blob
-        ? await analyseClip(blob, exerciseId)
+        ? await analyseClip(blob, exerciseId, undefined, clips?.find((c) => c.key === key)?.seconds)
         : emptyResult('That clip could not be loaded.')
       setAnalysis((a) => ({ ...a, [key]: friendlyResult(res) }))
     } finally {
@@ -78,7 +78,7 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
               src={urls[c.key]}
               controls
               playsInline
-              className="h-40 w-full rounded-lg bg-black object-cover"
+              className="h-40 w-full rounded-lg bg-black object-contain"
             />
           ) : (
             <div className="grid h-40 w-full place-items-center rounded-lg bg-black text-[12px] text-white/60">
@@ -89,7 +89,7 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
             <div className="mt-1.5 rounded-lg border border-line bg-raised p-2 text-[12px] leading-relaxed text-ink2">
               {analysis[c.key]!.ok
                 ? [...analysis[c.key]!.good.map((g) => `✓ ${g}.`), ...analysis[c.key]!.notes].join(' ') ||
-                  'Nothing to correct — that looked clean.'
+                  'No measured issue found — confirm scapular position and control yourself.'
                 : (analysis[c.key]!.reason ?? 'Could not analyse.')}
             </div>
           ) : null}
@@ -109,9 +109,13 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
               </button>
               <button
                 onClick={() =>
-                  void setPinned(c.key, !c.pinned).then(() => {
-                    load()
-                    pushToast(c.pinned ? 'Unpinned.' : 'Pinned as your reference clip.', 'success')
+                  void setPinned(c.key, !c.pinned).then((ok) => {
+                    if (ok) {
+                      load()
+                      pushToast(c.pinned ? 'Unpinned.' : 'Pinned as your reference clip.', 'success')
+                    } else {
+                      pushToast('That clip could not be updated.', 'danger')
+                    }
                   })
                 }
                 aria-label={c.pinned ? 'Unpin clip' : 'Pin as reference'}
@@ -123,7 +127,12 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
                 <Icon name="target" size={13} />
               </button>
               <button
-                onClick={() => void deleteClip(c.key).then(load)}
+                onClick={() =>
+                  void deleteClip(c.key).then((ok) => {
+                    if (ok) load()
+                    else pushToast('That clip could not be deleted.', 'danger')
+                  })
+                }
                 aria-label="Delete clip"
                 className="grid h-7 w-7 place-items-center rounded-lg border border-line bg-raised text-ink3 hover:text-danger"
               >

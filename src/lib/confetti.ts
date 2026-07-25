@@ -58,6 +58,7 @@ function loop() {
 
 /** Fire a celebratory burst. intensity 1 = PR, 2 = unlock-grade. */
 export function confetti(intensity = 1) {
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
   const ctx = ensureCanvas()
   if (!ctx || !canvas) return
   const count = 90 * intensity

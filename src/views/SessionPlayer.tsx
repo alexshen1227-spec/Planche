@@ -40,6 +40,7 @@ import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { ProgressRing, Modal } from '../components/ui'
+import { setNeedsFormConfirmation } from '../lib/progression'
 
 type Phase = 'intro' | 'ready' | 'lead' | 'hold' | 'reps' | 'rest' | 'summary' | 'celebrate'
 
@@ -67,23 +68,33 @@ export function SessionPlayer({
   onCheckInAnswered?: (c: CheckIn) => void
 }) {
   const { state, dispatch } = useStore()
-  const [phase, setPhase] = useState<Phase>(resumeFrom ? 'ready' : 'intro')
+  const [phase, setPhase] = useState<Phase>(
+    resumeFrom
+      ? resumeFrom.phase === 'summary'
+        ? 'summary'
+        : resumeFrom.phase === 'rest' && (resumeFrom.restEndsAt ?? 0) > Date.now()
+          ? 'rest'
+          : 'ready'
+      : 'intro',
+  )
   const [bi, setBi] = useState(resumeFrom?.blockIndex ?? 0)
   const [si, setSi] = useState(resumeFrom?.setIndex ?? 0)
   const [logs, setLogs] = useState<SetLog[]>(resumeFrom?.logs ?? [])
   const [now, setNow] = useState(() => Date.now())
   const [leadEnd, setLeadEnd] = useState(0)
   const [holdStart, setHoldStart] = useState(0)
-  const [restEnd, setRestEnd] = useState(0)
+  const [restEnd, setRestEnd] = useState(resumeFrom?.restEndsAt ?? 0)
   /** Duration the current rest was started with — the ring's denominator. */
-  const [restTotal, setRestTotal] = useState(0)
+  const [restTotal, setRestTotal] = useState(resumeFrom?.restTotal ?? 0)
   const [pendingReps, setPendingReps] = useState(0)
   const [rpe, setRpe] = useState<number | undefined>(resumeFrom?.rpe)
   const [notes, setNotes] = useState(resumeFrom?.notes ?? '')
   /** Seconds from a hold that was cut short by the page being discarded. */
   const [interrupted, setInterrupted] = useState<number | null>(
-    resumeFrom?.wasHolding && resumeFrom.holdElapsed > 1
-      ? Math.round(resumeFrom.holdElapsed * 10) / 10
+    resumeFrom?.interrupted !== undefined
+      ? resumeFrom.interrupted
+      : resumeFrom?.wasHolding && resumeFrom.holdElapsed > 1
+      ? Math.max(0, Math.round((resumeFrom.holdElapsed - state.settings.stopLatencySec) * 10) / 10)
       : null,
   )
   const [events, setEvents] = useState<SessionEvents | null>(null)
@@ -91,9 +102,11 @@ export function SessionPlayer({
   const [confirmExit, setConfirmExit] = useState(false)
   const [showDemo, setShowDemo] = useState(false)
   const [showRpeHelp, setShowRpeHelp] = useState(false)
-  const [checkIn, setCheckIn] = useState<CheckIn | null>(null)
+  const [checkIn, setCheckIn] = useState<CheckIn | null>(resumeFrom?.checkIn ?? null)
   const [cameraOn, setCameraOn] = useState(state.settings.recordForm)
-  const [pendingClip, setPendingClip] = useState<string | null>(null)
+  const [pendingClip, setPendingClip] = useState<{ key: string; logAt: number } | null>(null)
+  const [clipFinalizing, setClipFinalizing] = useState(false)
+  const [analysingSets, setAnalysingSets] = useState<Set<number>>(() => new Set())
   const recorder = useFormRecorder()
   const [showCheckIn, setShowCheckIn] = useState(askCheckIn && !resumeFrom)
   const [insight, setInsight] = useState<{ delta: number; label: string } | null>(null)
@@ -114,7 +127,7 @@ export function SessionPlayer({
    * reps of whatever came next.
    */
   const interruptedAt = useRef(
-    resumeFrom ? { bi: resumeFrom.blockIndex, si: resumeFrom.setIndex } : null,
+    resumeFrom?.interruptedAt ?? (resumeFrom ? { bi: resumeFrom.blockIndex, si: resumeFrom.setIndex } : null),
   )
 
   useWakeLock(phase !== 'summary' && phase !== 'celebrate')
@@ -193,6 +206,12 @@ export function SessionPlayer({
         wasHolding: phase === 'hold',
         holdElapsed: elapsed,
         restEndsAt: phase === 'rest' ? restEnd : null,
+        restTotal,
+        ...(checkIn ? { checkIn } : {}),
+        phase: phase === 'rest' || phase === 'summary' ? phase : 'ready',
+        ...(interrupted !== null && interruptedAt.current
+          ? { interrupted, interruptedAt: interruptedAt.current }
+          : {}),
         rpe,
         notes,
       })
@@ -200,7 +219,19 @@ export function SessionPlayer({
     snapshot()
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        if (phase === 'hold') frozenElapsedRef.current = Math.max(0, (Date.now() - holdStart) / 1000)
+        if (phase === 'hold') {
+          const raw = Math.max(0, (Date.now() - holdStart) / 1000)
+          frozenElapsedRef.current = raw
+          setInterrupted(Math.max(0, Math.round((raw - latency) * 10) / 10))
+          interruptedAt.current = { bi, si }
+          // Hidden time is unknowable. End the attempt now rather than letting
+          // a locked phone manufacture a PR; the athlete can log or redo it.
+          if (filming) {
+            setCameraOn(false)
+            void recorder.stop().finally(() => recorder.release())
+          }
+          setPhase('ready')
+        }
         snapshot()
       } else {
         frozenElapsedRef.current = null
@@ -227,7 +258,23 @@ export function SessionPlayer({
       window.removeEventListener('pagehide', onPageHide)
       if (iv) window.clearInterval(iv)
     }
-  }, [phase, bi, si, logs, holdStart, restEnd, rpe, notes, workout])
+  }, [
+    phase,
+    bi,
+    si,
+    logs,
+    holdStart,
+    restEnd,
+    restTotal,
+    rpe,
+    notes,
+    workout,
+    latency,
+    filming,
+    recorder,
+    interrupted,
+    checkIn,
+  ])
 
   useEffect(() => {
     if (resumeFrom) pushToast('Session restored — nothing was lost.', 'success', 4500)
@@ -349,7 +396,7 @@ export function SessionPlayer({
   )
 
   const logSet = useCallback(
-    (value: number, raw?: number) => {
+    (value: number, raw?: number, at = Date.now()) => {
       if (!block || !exercise) return
       setLogs((l) => [
         ...l,
@@ -361,7 +408,7 @@ export function SessionPlayer({
           ...(exercise.perSide ? { side } : {}),
           target: block.target.kind === 'hold' ? block.target.sec : block.target.reps,
           section: block.section,
-          at: Date.now(),
+          at,
         },
       ])
       advance(true)
@@ -376,18 +423,24 @@ export function SessionPlayer({
     const v = Math.max(0, Math.round((raw - latency) * 10) / 10)
     sfx.stop()
     if (bestBefore !== undefined && v > bestBefore) sfx.pr()
+    const loggedAt = Date.now()
     if (filming && exercise) {
       const exId = exercise.id
-      void recorder.stop().then(async (blob) => {
-        if (!blob) return
-        const key = await saveClip(exId, blob, v)
-        // Only offer it on the screen that rates that very set — otherwise it
-        // would surface under a later, unrelated exercise.
-        const ratable = phaseRef.current === 'rest' || phaseRef.current === 'summary'
-        setPendingClip(key && ratable ? key : null)
-      })
+      setClipFinalizing(true)
+      void recorder
+        .stop()
+        .then(async (blob) => {
+          if (!blob) return
+          const key = await saveClip(exId, blob, v)
+          // Only offer it on the screen that rates that very set — otherwise it
+          // would surface under a later, unrelated exercise.
+          const ratable = phaseRef.current === 'rest' || phaseRef.current === 'summary'
+          setPendingClip(key && ratable ? { key, logAt: loggedAt } : null)
+          if (!key) pushToast('The clip could not be saved. Your set is still logged.', 'danger', 5000)
+        })
+        .finally(() => setClipFinalizing(false))
     }
-    logSet(v, raw)
+    logSet(v, raw, loggedAt)
   }, [holdStart, logSet, bestBefore, latency, filming, exercise, recorder])
 
   const beginSet = useCallback(() => {
@@ -406,8 +459,13 @@ export function SessionPlayer({
   // trained on one side only.
   const skipSet = useCallback(() => {
     if (perSide && si % 2 === 0 && block && si + 1 < block.sets) {
-      setSi(si + 2)
-      setPhase('ready')
+      // Advance normally when this is the final pair; directly adding two
+      // would leave the index past the end of the same block.
+      if (si + 2 >= block.sets) advance(false)
+      else {
+        setSi(si + 2)
+        setPhase('ready')
+      }
       return
     }
     advance(false)
@@ -424,12 +482,17 @@ export function SessionPlayer({
     }
   }, [bi, workout])
 
-  /** Attach the self-assessed form to the set that was just logged. */
-  const setLastForm = useCallback((form: FormCheck) => {
-    setLogs((l) => {
-      if (l.length === 0) return l
-      const last = l[l.length - 1]
-      return [...l.slice(0, -1), { ...last, form }]
+  /** Attach form to the exact set that produced it, even after navigation. */
+  const setFormForLog = useCallback((at: number, form: FormCheck) => {
+    setLogs((current) => current.map((log) => (log.at === at ? { ...log, form } : log)))
+  }, [])
+
+  const setAnalysisBusy = useCallback((at: number, busy: boolean) => {
+    setAnalysingSets((current) => {
+      const next = new Set(current)
+      if (busy) next.add(at)
+      else next.delete(at)
+      return next
     })
   }, [])
 
@@ -735,17 +798,23 @@ export function SessionPlayer({
                     ref={recorder.videoRef}
                     muted
                     playsInline
-                    className="h-40 w-full object-cover"
+                    className="h-40 w-full object-contain"
                   />
-                  <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-accent/60" />
+                  <div className="pointer-events-none absolute inset-[8%] rounded-xl border border-dashed border-accent/70" />
+                  <div className="pointer-events-none absolute inset-x-[8%] top-1/2 h-px bg-accent/60" />
                   <div className="absolute inset-x-0 bottom-0 bg-black/55 px-3 py-1.5 text-[11.5px] text-white/85">
-                    Set the phone side-on. The line shows level — your shoulders and hips should sit on it.
+                    Side-on · whole body and both hands inside the box · phone level.
                   </div>
                 </div>
               ) : null}
               {recorder.status === 'denied' ? (
                 <p className="mt-1.5 text-[12.5px] text-danger">
                   Camera access was blocked. Allow it in your browser settings, or leave this off.
+                </p>
+              ) : null}
+              {recorder.status === 'unsupported' ? (
+                <p className="mt-1.5 text-[12.5px] text-danger">
+                  This browser could not start a compatible video recorder. Your sets still log normally.
                 </p>
               ) : null}
             </div>
@@ -825,9 +894,9 @@ export function SessionPlayer({
                 </div>
                 <div className="mt-1.5 text-[14px] font-semibold">
                   {isPr ? (
-                    <span className="text-ok">NEW PR — hold on!</span>
+                    <span className="text-ok">PR secured — exit under control</span>
                   ) : overTarget ? (
-                    <span className="text-ok">bonus seconds</span>
+                    <span className="text-ok">target reached — stop while clean</span>
                   ) : (
                     <span className="text-ink3 tnum">target {target}s</span>
                   )}
@@ -926,17 +995,20 @@ export function SessionPlayer({
               </span>
             </div>
           ) : null}
-          {lastLog?.kind === 'hold' && lastLog.section === 'main' ? (
+          {lastLog?.kind === 'hold' &&
+          lastLog.section === 'main' &&
+          (lastLog.exerciseId === STEP_BY_ID[state.stepId].keyExerciseId || isFilmable(lastLog.exerciseId)) ? (
             <FormCheckRow
               key={lastLog.at}
-              clipKey={pendingClip}
+              clipKey={pendingClip?.logAt === lastLog.at ? pendingClip.key : null}
               exerciseId={lastLog.exerciseId}
+              creditedHoldSec={lastLog.value}
               value={lastLog.form}
               autoRun={state.settings.autoAnalyze}
               onDone={(form) => {
-                setLastForm(form)
-                setPendingClip(null)
+                setFormForLog(lastLog.at, form)
               }}
+              onBusyChange={(busy) => setAnalysisBusy(lastLog.at, busy)}
             />
           ) : null}
 
@@ -987,21 +1059,33 @@ export function SessionPlayer({
           {(() => {
             // The last set of a session skips the rest screen entirely, so
             // without this its form would never get rated.
-            const lastMain = [...logs].reverse().find((l) => l.kind === 'hold' && l.section === 'main')
+            const lastMain = [...logs]
+              .reverse()
+              .find(
+                (l) =>
+                  l.kind === 'hold' &&
+                  l.section === 'main' &&
+                  (l.exerciseId === STEP_BY_ID[state.stepId].keyExerciseId || isFilmable(l.exerciseId)),
+              )
             if (!lastMain) return null
-            return (
+            const blocking = logs.filter((log) => setNeedsFormConfirmation(log, state))
+            const formLogs = [...blocking, lastMain].filter(
+              (log, index, all) => all.findIndex((candidate) => candidate.at === log.at) === index,
+            )
+            return formLogs.map((log) => (
               <FormCheckRow
-                key={lastMain.at}
-                clipKey={pendingClip}
-                exerciseId={lastMain.exerciseId}
-                value={lastMain.form}
+                key={log.at}
+                clipKey={pendingClip?.logAt === log.at ? pendingClip.key : null}
+                exerciseId={log.exerciseId}
+                creditedHoldSec={log.value}
+                value={log.form}
                 autoRun={state.settings.autoAnalyze}
                 onDone={(form) => {
-                  setLogs((l) => l.map((x) => (x === lastMain ? { ...x, form } : x)))
-                  setPendingClip(null)
+                  setFormForLog(log.at, form)
                 }}
+                onBusyChange={(busy) => setAnalysisBusy(log.at, busy)}
               />
-            )
+            ))
           })()}
 
           <div className="mt-5">
@@ -1038,9 +1122,24 @@ export function SessionPlayer({
             rows={2}
             className="mt-4 w-full resize-none rounded-2xl border border-line bg-surface p-4 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
           />
+          {logs.some((log) => setNeedsFormConfirmation(log, state)) ? (
+            <p className="mt-4 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-center text-[13px] text-ink">
+              An unrated unlock-level hold will still save as a PR, but it will not unlock a harder step. Confirm it
+              above if the position was clean.
+            </p>
+          ) : null}
+          {clipFinalizing || analysingSets.size > 0 ? (
+            <p className="mt-3 text-center text-[12.5px] text-ink3" role="status">
+              {clipFinalizing ? 'Finishing your clip…' : 'Finishing the form check…'}
+            </p>
+          ) : null}
           <button
             onClick={save}
-            disabled={logs.length === 0}
+            disabled={
+              logs.length === 0 ||
+              clipFinalizing ||
+              analysingSets.size > 0
+            }
             className="mt-4 w-full rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
             style={{ background: 'var(--t-btn-accent)' }}
           >
@@ -1258,6 +1357,7 @@ export const FORM_ISSUE_LABEL: Record<FormIssue, string> = {
 const COMMON_ISSUES: FormIssue[] = ['arms', 'scapula', 'shrug', 'pike', 'sag', 'lean', 'twist']
 /** Only offered where they mean something — a lean has no straddle to narrow. */
 const ISSUES_BY_EXERCISE: Record<string, FormIssue[]> = {
+  'frog-stand': [],
   'adv-tuck-planche': [...COMMON_ISSUES, 'closed'],
   'one-leg-planche': [...COMMON_ISSUES, 'closed', 'knees'],
   'straddle-planche': [...COMMON_ISSUES, 'closed', 'knees', 'narrow'],
@@ -1280,17 +1380,21 @@ const autoAnalysisInFlight = new Set<string>()
 function FormCheckRow({
   clipKey,
   exerciseId,
+  creditedHoldSec,
   value,
   autoRun,
   onDone,
+  onBusyChange,
 }: {
   clipKey: string | null
   exerciseId: string
+  creditedHoldSec: number
   /** Already-saved rating, so the panel reflects it instead of looking blank. */
   value?: FormCheck
   /** Kick the analysis off unprompted once the clip is ready. */
   autoRun?: boolean
   onDone: (f: FormCheck) => void
+  onBusyChange?: (busy: boolean) => void
 }) {
   const [rating, setRating] = useState<FormRating | null>(value?.rating ?? null)
   const [issues, setIssues] = useState<FormIssue[]>(value?.issues ?? [])
@@ -1306,11 +1410,12 @@ function FormCheckRow({
 
   const runAnalysis = async () => {
     if (!clipUrl) return
+    onBusyChange?.(true)
     setAnalysing(true)
     try {
       const blob = await blobFromUrl(clipUrl)
       const res: PoseFormResult = blob
-        ? await analyseClip(blob, exerciseId)
+        ? await analyseClip(blob, exerciseId, undefined, creditedHoldSec)
         : // Never leave the button looking like it did nothing.
           emptyResult('That clip could not be loaded.')
       setAnalysis(friendlyResult(res))
@@ -1330,6 +1435,7 @@ function FormCheckRow({
           // stands. File the camera's reading alongside it, don't overwrite.
           onDone({
             rating: ratingRef.current,
+            confirmed: true,
             ...(issuesRef.current.length ? { issues: issuesRef.current } : {}),
             ...(clipKey ? { clipKey } : {}),
             auto,
@@ -1346,6 +1452,7 @@ function FormCheckRow({
           setRating(r)
           onDone({
             rating: r,
+            confirmed: false,
             ...(res.issues.length ? { issues: res.issues } : {}),
             ...(clipKey ? { clipKey } : {}),
             auto,
@@ -1354,6 +1461,7 @@ function FormCheckRow({
       }
     } finally {
       setAnalysing(false)
+      onBusyChange?.(false)
     }
   }
 
@@ -1399,6 +1507,7 @@ function FormCheckRow({
   const commit = (r: FormRating, iss: FormIssue[]) =>
     onDone({
       rating: r,
+      confirmed: true,
       ...(iss.length ? { issues: iss } : {}),
       ...(clipKey ? { clipKey } : {}),
       // The camera's own reading rides along, so the coach has an objective
@@ -1416,7 +1525,9 @@ function FormCheckRow({
               wobble: analysis.wobble,
             },
           }
-        : {}),
+        : value?.auto
+          ? { auto: value.auto }
+          : {}),
     })
 
   const toggleIssue = (id: FormIssue) => {
@@ -1433,7 +1544,7 @@ function FormCheckRow({
           src={clipUrl}
           controls
           playsInline
-          className="mb-3 h-40 w-full rounded-xl border border-line bg-black object-cover"
+          className="mb-3 h-40 w-full rounded-xl border border-line bg-black object-contain"
         />
       ) : null}
       {clipUrl ? (
@@ -1470,7 +1581,9 @@ function FormCheckRow({
                       ))}
                     </div>
                   ) : (
-                    <div className="font-medium text-ok">Nothing to correct — that looked clean.</div>
+                    <div className="font-medium text-ok">
+                      No measured issue found — confirm scapular position and control yourself.
+                    </div>
                   )}
                   {analysis.good.length ? (
                     <div className="mt-2 flex flex-wrap gap-1">
@@ -1504,6 +1617,11 @@ function FormCheckRow({
         </div>
       ) : null}
       <div className="text-[13px] font-semibold text-ink">How did that set look?</div>
+      {value?.confirmed === false && rating ? (
+        <p className="mt-1 text-[11.5px] font-medium text-accent" role="status">
+          Camera suggestion only — tap your answer below to confirm or correct it.
+        </p>
+      ) : null}
       <div className="mt-2 flex gap-2">
         {(
           [

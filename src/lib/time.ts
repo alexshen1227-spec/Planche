@@ -13,7 +13,7 @@ export function fmtDuration(sec: number): string {
   const s = Math.max(0, Math.round(sec))
   if (s < 60) return `${s}s`
   const h = Math.floor(s / 3600)
-  const m = Math.round((s % 3600) / 60)
+  const m = Math.floor((s % 3600) / 60)
   if (h === 0) return `${m}m`
   return `${h}h ${m}m`
 }

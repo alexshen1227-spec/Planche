@@ -2,7 +2,7 @@
 
 A local-first web app for learning the planche — from your first planche lean to the full hold.
 Guided timer sessions, an 8-step progression road with automatic unlocks, adaptive programming, PRs, streaks, charts and achievements.
-All data stays in your browser (localStorage); nothing leaves your machine.
+All data and clips stay in browser storage; nothing leaves your machine.
 
 **Live app:** https://alexshen1227-spec.github.io/Planche/
 
@@ -18,7 +18,7 @@ npm run dev
 
 Then open http://localhost:5173.
 
-`npm run build` type-checks and produces a static build in `dist/` (serve it with anything, e.g. `npm run preview`).
+`npm run test` runs the safety/core regression suite. `npm run check` runs tests plus the production type-check/build.
 
 ## What's inside
 
@@ -29,14 +29,14 @@ Then open http://localhost:5173.
 - **Path** — the 8-step road (Foundations → Lean → Frog → Tuck → Advanced Tuck → One-Leg → Straddle → Full) with coaching notes, form checklists, common mistakes and unlock bars. Clear a bar and the next step opens automatically.
 - **Learn** — 27 exercises with how-to steps, cues, mistakes, your best marks and a demo-video panel (opens a live search, or plays a YouTube clip you pin yourself). Plus a **Basics** pane: five beginner guides (Start here, Staying injury-free, How progress works, Understanding RPE, Equipment) and a 16-term glossary.
 - **Coach** — an on-device optimizer aimed at one goal: reaching the next planche step as fast as safely possible.
-  - *Learns what works on you.* A UCB1 bandit over five session shapes (balanced, high volume, high intensity, short rests, technique), rewarded by how much your key hold actually moved by the next session.
+  - *Learns what works on you.* A current-step UCB1 bandit over five session shapes (balanced, high volume, high intensity, short rests, technique), evaluated from a robust pre-session baseline to the next comparable results. The strategy session's own target-shaped result is excluded to avoid regression-to-the-mean bias.
   - *Reads everything* (`src/lib/signals.ts`): real rest taken between sets (reconstructed from set timestamps), accessory pressing trends, warm-up adherence, RPE, rest days, max-test recency, deload age — and robust statistics (median/MAD) so noise cannot steer it.
-  - *Handles noise deliberately.* Targets anchor on the **median** of recent session bests, not your all-time max, so one mis-measured hold cannot inflate every future target (a stray 45s on a real 12s hold moves the prescription by ~1s instead of ~19s). Strategy averages are shrunk toward the overall mean until a strategy has real evidence behind it. Target nudges scale with how many sets support them. Swings above ~22% pause changes entirely, and single wild values are flagged rather than trusted.
-  - *Corrects reaction time.* You come out of a hold, then reach for the button — that gap is time you were not holding. It is subtracted from every timed hold (default 0.4s, calibratable with a built-in tap test), PR and target cues fire on the corrected value, and the adjustment is always shown rather than hidden.
+  - *Handles noise deliberately.* Targets anchor on the **median** of recent clean, athlete-confirmed session bests, not your all-time max, so poor-form or mis-measured holds cannot inflate future work. Strategy averages are shrunk toward the overall mean until a strategy has real evidence behind it. Target nudges scale with how many sets support them. Swings above ~22% pause changes entirely, and single wild values are flagged rather than trusted.
+  - *Corrects reaction time.* You come out of a hold, then reach for the button — that gap is time you were not holding. It is subtracted from every timed hold (default 2.3s for a propped-up phone, calibratable with a built-in tap test), PR and target cues fire on the corrected value, and the adjustment is always shown rather than hidden.
   - *Controls more than one dial:* strategy, working target, set count, smart rest (partly learned from the rest you actually take), warm-up length, accessory emphasis, unlock attempts, deload scheduling.
-  - *Asks.* A periodic pre-session check-in (joints, energy) that re-plans the current session immediately, plus a weekly bodyweight/height check.
-  - *Watches your form.* Main planche holds can be filmed and run through on-device pose detection (MoveNet, lazy-loaded), which measures elbow angle, shoulder–hip–ankle line and hip-vs-shoulder height and pre-fills the form rating. It is explicitly advisory: low tracking confidence returns "could not judge" rather than a guess, and the athlete confirms every result before it reaches the log.
-  - *Cannot go rogue.* Every output is clamped to hard limits; joint pain locks out intensity entirely; warm-up can never be removed; and every decision is written out in plain language on the dashboard.
+  - *Asks.* A periodic pre-session check-in (joints, energy) that reshapes every workout type immediately, plus weekly bodyweight context and infrequent height updates.
+  - *Watches your form.* Main planche holds can be filmed and run through on-device pose detection (MoveNet, lazy-loaded), which samples the credited hold, requires profile-specific landmark coverage, and checks sustained elbow/knee/hip geometry, line and lean. It is explicitly advisory: missing/low-confidence measurements return "could not judge," machine ratings stay unconfirmed, and the athlete confirms or corrects them.
+  - *Cannot go rogue.* Every output is clamped to hard limits; a pain report replaces loaded planche/pressing/wrist work with pain-free recovery options; safety-required warm-ups override the convenience toggle; and every decision is written out in plain language on the dashboard.
 - **Progress** — hold-trend chart with goal line, weekly volume chart, a GitHub-style consistency heatmap, PR board, 24 achievements with live progress bars, full session history (delete recalculates everything).
 - **Settings** — dark/light/system theme, sounds and countdown beeps, rest durations, weekly goal, session length, JSON export/import backup, sample-data mode, full reset.
 - **Crash-proof sessions** — the live workout is mirrored to storage on every set and again the moment the page is hidden, so a phone that sleeps or a tab the OS discards resumes exactly where it left off. A hold that was cut off mid-set is offered back at the time it had reached (frozen at lock, not left running).
