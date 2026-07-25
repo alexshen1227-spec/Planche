@@ -32,8 +32,20 @@ export interface Profile {
   birthYear?: number
 }
 
-/** What went wrong in a hold, when the athlete says it was not clean. */
-export type FormIssue = 'arms' | 'scapula' | 'hips' | 'level'
+/**
+ * What went wrong in a hold. `hips` and `level` are the original coarse
+ * values, kept so older logs stay readable; new ratings use the specific ones.
+ */
+export type FormIssue =
+  | 'arms'
+  | 'scapula'
+  | 'shrug'
+  | 'pike'
+  | 'sag'
+  | 'knees'
+  | 'lean'
+  | 'hips'
+  | 'level'
 
 export type FormRating = 'clean' | 'slipped' | 'broke'
 
@@ -169,7 +181,7 @@ export interface Settings {
 }
 
 export interface AppState {
-  version: 2
+  version: 3
   onboarded: boolean
   name: string
   startedAt: number
@@ -191,6 +203,8 @@ export interface AppState {
   profile: Profile
   /** Bodyweight / height log, oldest first. */
   measurements: Measurement[]
+  /** When the weekly check was last dismissed, so it stops re-asking. */
+  measureSnoozedAt?: number
   settings: Settings
 }
 

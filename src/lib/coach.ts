@@ -366,6 +366,11 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const FORM_LABEL: Record<string, string> = {
     arms: 'elbows bending',
     scapula: 'losing protraction',
+    shrug: 'shoulders shrugging up',
+    pike: 'hips riding too high',
+    sag: 'hips dropping',
+    knees: 'knees bending',
+    lean: 'not leaning far enough forward',
     hips: 'hips sagging',
     level: 'body not level',
   }
@@ -389,7 +394,9 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       text: `Your most common breakdown is ${label} (${sig.topFormIssue.count} sets). That is the cue to hold in your head today.`,
       kind: 'info',
     })
-    if (sig.topFormIssue.issue === 'scapula' || sig.topFormIssue.issue === 'arms') accessoryEmphasis = 'pressing'
+    // A bending arm or a collapsing shoulder blade is a strength problem;
+    // extra pressing volume is what actually fixes it.
+    if (['scapula', 'arms', 'shrug'].includes(sig.topFormIssue.issue)) accessoryEmphasis = 'pressing'
   }
 
   if (sig.lastWasOutlier) {

@@ -32,19 +32,23 @@ export const DEFAULT_SETTINGS: Settings = {
   warmup: true,
   beeps: true,
   sessionMinutes: 30,
-  // Coming out of a hold and then reaching the button is realistically about
-  // a second unless the phone is literally in your hand.
-  stopLatencySec: 1,
+  // Measured in real use with the phone set up to film: coming out of the
+  // position and getting to the button is a little over two seconds.
+  stopLatencySec: 2.3,
   units: 'metric',
   recordForm: true,
 }
 
-/** The stop-latency default before it was found to be optimistic. */
-const LEGACY_LATENCY = 0.4
+/**
+ * Stop-latency defaults that have since been superseded. Filming means the
+ * phone is propped up across the room, so getting out of the hold and back to
+ * the button takes considerably longer than the first estimates assumed.
+ */
+const LEGACY_LATENCIES = [0.4, 1]
 
 export function initialState(): AppState {
   return {
-    version: 2,
+    version: 3,
     onboarded: false,
     name: '',
     startedAt: Date.now(),
@@ -160,16 +164,17 @@ export function normalizeState(raw: unknown): AppState {
   // One-time migration: anyone still carrying the old optimistic default gets
   // the realistic one. Deliberate choices made after this are left alone.
   const priorVersion = typeof r.version === 'number' ? r.version : 1
-  if (priorVersion < 2 && settings.stopLatencySec === LEGACY_LATENCY) {
+  if (priorVersion < 3 && LEGACY_LATENCIES.includes(settings.stopLatencySec)) {
     settings.stopLatencySec = DEFAULT_SETTINGS.stopLatencySec
   }
 
   return {
-    version: 2,
+    version: 3,
     onboarded: Boolean(r.onboarded),
     name: typeof r.name === 'string' ? r.name : '',
     startedAt: typeof r.startedAt === 'number' ? r.startedAt : Date.now(),
     lastBackupAt: typeof r.lastBackupAt === 'number' ? r.lastBackupAt : undefined,
+    measureSnoozedAt: typeof r.measureSnoozedAt === 'number' ? r.measureSnoozedAt : undefined,
     stepId,
     // Older saves predate this field and their placement is unrecoverable, so
     // anchor at the current step: never demote someone who is already there.
@@ -265,6 +270,7 @@ export type Action =
     }
   | { type: 'SET_VIDEO'; exerciseId: string; url: string | null }
   | { type: 'LOG_MEASUREMENT'; weightKg?: number; heightCm?: number }
+  | { type: 'SNOOZE_MEASURE' }
   | { type: 'SET_PROFILE'; patch: Partial<Profile> }
   | { type: 'REPLACE'; state: AppState }
   | { type: 'RESET' }
@@ -320,6 +326,8 @@ function reducer(state: AppState, action: Action): AppState {
         profile: action.heightCm !== undefined ? { ...state.profile, heightCm: action.heightCm } : state.profile,
       }
     }
+    case 'SNOOZE_MEASURE':
+      return { ...state, measureSnoozedAt: Date.now() }
     case 'SET_PROFILE':
       return { ...state, profile: { ...state.profile, ...action.patch } }
     case 'REPLACE':

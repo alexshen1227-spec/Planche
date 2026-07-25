@@ -22,7 +22,7 @@ import { useWakeLock } from '../lib/wakeLock'
 import { clearDraft, saveDraft, type SessionDraft } from '../lib/draft'
 import { useFormRecorder } from '../lib/recorder'
 import { saveClip, getClipUrl } from '../lib/clips'
-import { analyseClip, blobFromUrl, type PoseFormResult } from '../lib/poseForm'
+import { analyseClip, blobFromUrl, isFilmable, type PoseFormResult } from '../lib/poseForm'
 import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
@@ -121,8 +121,9 @@ export function SessionPlayer({
     return Math.max(stored ?? 0, thisSession)
   }, [exercise, state.prs, logs])
   const latency = exercise?.type === 'hold' ? Math.max(0, state.settings.stopLatencySec) : 0
-  /** Form clips are only worth capturing on the sets that actually matter. */
-  const filmable = block?.section === 'main' && exercise?.type === 'hold' && exercise.category === 'planche'
+  // Filmable wherever the camera can actually judge the position — that now
+  // covers every key hold on the road, including the foundations plank.
+  const filmable = Boolean(block?.section === 'main' && exercise && isFilmable(exercise.id))
   const filming = Boolean(filmable && cameraOn && recorder.supported)
 
   // Shared 100ms clock (also keeps the header session-elapsed ticking).
@@ -526,11 +527,7 @@ export function SessionPlayer({
       // Say up front that filming happens — it only appears once the main
       // work starts, which is several sets in and easy to be surprised by.
       const willFilm =
-        cameraOn &&
-        recorder.supported &&
-        workout.blocks.some(
-          (b) => b.section === 'main' && EXERCISE_BY_ID[b.exerciseId]?.category === 'planche',
-        )
+        cameraOn && recorder.supported && workout.blocks.some((b) => b.section === 'main' && isFilmable(b.exerciseId))
       return (
         <div className="mx-auto w-full max-w-lg px-5 pb-10">
           <div className="mt-6 rounded-3xl border border-line bg-surface p-6 shadow-card">
@@ -876,6 +873,7 @@ export function SessionPlayer({
           {lastLog?.kind === 'hold' && lastLog.section === 'main' && !lastLog.form ? (
             <FormCheckRow
               clipKey={pendingClip}
+              exerciseId={lastLog.exerciseId}
               onDone={(form) => {
                 setLastForm(form)
                 setPendingClip(null)
@@ -928,6 +926,7 @@ export function SessionPlayer({
             return (
               <FormCheckRow
                 clipKey={pendingClip}
+                exerciseId={lastMain.exerciseId}
                 onDone={(form) => {
                   setLogs((l) => l.map((x) => (x === lastMain ? { ...x, form } : x)))
                   setPendingClip(null)
@@ -1153,19 +1152,37 @@ export function SessionPlayer({
   )
 }
 
-const FORM_ISSUES: { id: FormIssue; label: string }[] = [
-  { id: 'arms', label: 'Elbows bent' },
-  { id: 'scapula', label: 'Lost protraction' },
-  { id: 'hips', label: 'Hips sagged' },
-  { id: 'level', label: 'Not level' },
-]
+export const FORM_ISSUE_LABEL: Record<FormIssue, string> = {
+  arms: 'Elbows bent',
+  scapula: 'Lost protraction',
+  shrug: 'Shoulders shrugged',
+  pike: 'Hips too high',
+  sag: 'Hips too low',
+  knees: 'Knees bent',
+  lean: 'Not enough lean',
+  hips: 'Hips sagged',
+  level: 'Not level',
+}
+
+/** Offered for tapping; the two legacy values are readable but not selectable. */
+const FORM_ISSUES: { id: FormIssue; label: string }[] = (
+  ['arms', 'scapula', 'shrug', 'pike', 'sag', 'knees', 'lean'] as FormIssue[]
+).map((id) => ({ id, label: FORM_ISSUE_LABEL[id] }))
 
 /**
  * One tap for the common case, detail only when something went wrong. This is
  * the only signal the coach has about *quality* — without it, seconds earned
  * with bent arms look identical to clean ones.
  */
-function FormCheckRow({ clipKey, onDone }: { clipKey: string | null; onDone: (f: FormCheck) => void }) {
+function FormCheckRow({
+  clipKey,
+  exerciseId,
+  onDone,
+}: {
+  clipKey: string | null
+  exerciseId: string
+  onDone: (f: FormCheck) => void
+}) {
   const [rating, setRating] = useState<FormRating | null>(null)
   const [issues, setIssues] = useState<FormIssue[]>([])
   const [clipUrl, setClipUrl] = useState<string | null>(null)
@@ -1177,7 +1194,7 @@ function FormCheckRow({ clipKey, onDone }: { clipKey: string | null; onDone: (f:
     setAnalysing(true)
     try {
       const blob = await blobFromUrl(clipUrl)
-      const res = blob ? await analyseClip(blob) : null
+      const res = blob ? await analyseClip(blob, exerciseId) : null
       setAnalysis(res)
       if (res?.ok) {
         // Pre-fills the answer; the athlete still confirms it, because the
@@ -1242,12 +1259,22 @@ function FormCheckRow({ clipKey, onDone }: { clipKey: string | null; onDone: (f:
             >
               {analysis.ok ? (
                 <>
+                  {analysis.good.length ? (
+                    <div className="mb-1.5 flex flex-wrap gap-1">
+                      {analysis.good.map((g) => (
+                        <span key={g} className="rounded-full bg-ok-soft px-2 py-0.5 text-[11.5px] font-medium text-ok">
+                          ✓ {g}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   {analysis.notes.map((n) => (
                     <div key={n} className="flex gap-1.5">
                       <span className="mt-[6px] h-1 w-1 shrink-0 rounded-full bg-accent" />
                       <span>{n}</span>
                     </div>
                   ))}
+                  {analysis.notes.length === 0 ? <div className="text-ok">Nothing to correct — that looked clean.</div> : null}
                   <div className="mt-1.5 text-ink3">
                     Measured across {analysis.framesUsed} frames, {Math.round(analysis.confidence * 100)}% tracking
                     confidence. It is a guess from a side-on view — correct it below if it read you wrong.

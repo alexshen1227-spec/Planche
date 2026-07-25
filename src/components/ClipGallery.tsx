@@ -22,7 +22,7 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
     setBusy(key)
     try {
       const blob = await blobFromUrl(url)
-      const res = blob ? await analyseClip(blob) : null
+      const res = blob ? await analyseClip(blob, exerciseId) : null
       if (res) setAnalysis((a) => ({ ...a, [key]: res }))
     } finally {
       setBusy(null)
@@ -86,7 +86,8 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
           {analysis[c.key] ? (
             <div className="mt-1.5 rounded-lg border border-line bg-raised p-2 text-[12px] leading-relaxed text-ink2">
               {analysis[c.key]!.ok
-                ? analysis[c.key]!.notes.join(' ')
+                ? [...analysis[c.key]!.good.map((g) => `✓ ${g}.`), ...analysis[c.key]!.notes].join(' ') ||
+                  'Nothing to correct — that looked clean.'
                 : (analysis[c.key]!.reason ?? 'Could not analyse.')}
             </div>
           ) : null}

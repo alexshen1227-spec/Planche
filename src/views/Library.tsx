@@ -9,6 +9,7 @@ import { fmtHold, fmtDate } from '../lib/time'
 import { Icon } from '../components/Icon'
 import { Modal, Chip } from '../components/ui'
 import { ClipGallery } from '../components/ClipGallery'
+import { isFilmable } from '../lib/poseForm'
 
 const CATS: (Category | 'all')[] = ['all', 'planche', 'push', 'scapula', 'core', 'wrist', 'general', 'mobility']
 
@@ -274,7 +275,7 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
 
       <VideoPanel exercise={e} />
 
-      {e.category === 'planche' ? (
+      {isFilmable(e.id) ? (
         <div className="mt-4 rounded-2xl border border-line bg-raised p-4">
           <div className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
             <Icon name="monitor" size={14} className="text-accent" /> Your recorded sets

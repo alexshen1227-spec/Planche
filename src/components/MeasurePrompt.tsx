@@ -19,12 +19,18 @@ export function lastOf(state: AppState, field: 'weightKg' | 'heightCm'): { at: n
   return null
 }
 
+/** Dismissing the prompt holds it off for this long rather than forever. */
+const SNOOZE_DAYS = 3
+
 export function measurementDue(state: AppState, now = Date.now()): { weight: boolean; height: boolean } {
   if (!state.onboarded) return { weight: false, height: false }
   const w = lastOf(state, 'weightKg')
   const h = lastOf(state, 'heightCm')
+  // Without this, saying "not now" meant being asked again on every single
+  // refresh, because nothing about the state had actually changed.
+  const snoozed = state.measureSnoozedAt !== undefined && now - state.measureSnoozedAt < SNOOZE_DAYS * DAY
   return {
-    weight: !w || now - w.at >= WEIGHT_EVERY_DAYS * DAY,
+    weight: !snoozed && (!w || now - w.at >= WEIGHT_EVERY_DAYS * DAY),
     height: !h || now - h.at >= HEIGHT_EVERY_DAYS * DAY,
   }
 }
@@ -59,7 +65,7 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
       if (Number.isFinite(ft) && ft > 0) newHeight = (ft * 12 + inch) * CM_PER_IN
     }
     if (weightKg === undefined && newHeight === undefined) {
-      onClose()
+      dismiss()
       return
     }
     dispatch({ type: 'LOG_MEASUREMENT', weightKg, heightCm: newHeight })
@@ -67,8 +73,15 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
     onClose()
   }
 
+  // Any dismissal counts as "not now", including the close button and the
+  // backdrop — otherwise those routes still re-asked on every refresh.
+  const dismiss = () => {
+    dispatch({ type: 'SNOOZE_MEASURE' })
+    onClose()
+  }
+
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={dismiss}>
       <div className="p-6">
         <div className="pr-10">
           <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-accent">
@@ -140,8 +153,8 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
         >
           Save
         </button>
-        <button onClick={onClose} className="mt-2 w-full py-2 text-[13px] font-medium text-ink3 hover:text-ink">
-          Not now
+        <button onClick={dismiss} className="mt-2 w-full py-2 text-[13px] font-medium text-ink3 hover:text-ink">
+          Not now — ask me in a few days
         </button>
       </div>
     </Modal>
