@@ -216,7 +216,7 @@ export interface Settings {
 }
 
 export interface AppState {
-  version: 3
+  version: 4
   onboarded: boolean
   name: string
   startedAt: number
@@ -228,6 +228,11 @@ export interface AppState {
    * never below it — deleting a session must not undo your starting point.
    */
   baseStepId: StepId
+  /**
+   * Highest step earned before filmed evidence became mandatory. This keeps
+   * legacy progress from being revoked when history is replayed.
+   */
+  grandfatheredStepId?: StepId
   unlocked: StepId[]
   sessions: Session[]
   prs: Record<string, PR>

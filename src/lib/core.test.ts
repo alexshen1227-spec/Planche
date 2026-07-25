@@ -257,4 +257,20 @@ describe('backup validation and normalization', () => {
     expect(rebuilt.prs['ppp-hold']?.value).toBe(30)
     expect(rebuilt.stepId).toBe('lean')
   })
+
+  it('grandfathers pre-camera unlocks without changing the selected lower step', () => {
+    const legacy = {
+      ...state('lean'),
+      version: 3,
+      baseStepId: 'foundations',
+      unlocked: ['foundations', 'lean', 'frog'],
+      sessions: [],
+    }
+    const normalized = normalizeState(legacy)
+    expect(normalized.grandfatheredStepId).toBe('frog')
+
+    const rebuilt = rebuildDerivedState(normalized)
+    expect(rebuilt.unlocked).toEqual(['foundations', 'lean', 'frog'])
+    expect(rebuilt.stepId).toBe('lean')
+  })
 })

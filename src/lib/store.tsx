@@ -51,7 +51,7 @@ const LEGACY_LATENCIES = [0.4, 1]
 
 export function initialState(): AppState {
   return {
-    version: 3,
+    version: 4,
     onboarded: false,
     name: '',
     startedAt: Date.now(),
@@ -215,12 +215,23 @@ export function normalizeState(raw: unknown): AppState {
   const base = initialState()
   if (typeof raw !== 'object' || raw === null) return base
   const r = raw as Partial<AppState>
+  const priorVersion = typeof r.version === 'number' ? r.version : 1
   const stepId: StepId = r.stepId && STEP_BY_ID[r.stepId] ? r.stepId : 'foundations'
   const unlocked = Array.isArray(r.unlocked)
     ? (r.unlocked.filter((id): id is StepId => typeof id === 'string' && id in STEP_BY_ID) as StepId[])
     : []
   if (!unlocked.includes('foundations')) unlocked.unshift('foundations')
   if (!unlocked.includes(stepId)) unlocked.push(stepId)
+  const highestUnlocked = unlocked.reduce<StepId>(
+    (highest, id) => (STEP_BY_ID[id].order > STEP_BY_ID[highest].order ? id : highest),
+    'foundations',
+  )
+  const grandfatheredStepId =
+    priorVersion < 4
+      ? highestUnlocked
+      : r.grandfatheredStepId && STEP_BY_ID[r.grandfatheredStepId]
+        ? r.grandfatheredStepId
+        : undefined
 
   const rawSettings = (typeof r.settings === 'object' && r.settings !== null ? r.settings : {}) as Partial<Settings>
   const settings: Settings = {
@@ -247,13 +258,12 @@ export function normalizeState(raw: unknown): AppState {
   }
   // One-time migration: anyone still carrying the old optimistic default gets
   // the realistic one. Deliberate choices made after this are left alone.
-  const priorVersion = typeof r.version === 'number' ? r.version : 1
   if (priorVersion < 3 && LEGACY_LATENCIES.includes(settings.stopLatencySec)) {
     settings.stopLatencySec = DEFAULT_SETTINGS.stopLatencySec
   }
 
   return {
-    version: 3,
+    version: 4,
     onboarded: Boolean(r.onboarded),
     name: typeof r.name === 'string' ? r.name : '',
     startedAt: typeof r.startedAt === 'number' ? r.startedAt : Date.now(),
@@ -263,6 +273,7 @@ export function normalizeState(raw: unknown): AppState {
     // Older saves predate this field and their placement is unrecoverable, so
     // anchor at the current step: never demote someone who is already there.
     baseStepId: r.baseStepId && STEP_BY_ID[r.baseStepId] ? r.baseStepId : stepId,
+    ...(grandfatheredStepId ? { grandfatheredStepId } : {}),
     unlocked,
     sessions: sanitizeSessions(r.sessions),
     prs:
@@ -373,8 +384,18 @@ export function previousBackup(): { json: string; sessions: number } | null {
 
 /** Rebuild PRs / unlocks / achievements by replaying history (after deletes/imports). */
 export function rebuildDerivedState(state: AppState, sessions = state.sessions): AppState {
-  const base = STEP_BY_ID[state.baseStepId] ? state.baseStepId : 'foundations'
+  const startingCandidates = [state.baseStepId, state.grandfatheredStepId].filter(
+    (id): id is StepId => Boolean(id && STEP_BY_ID[id]),
+  )
+  const base = startingCandidates.reduce<StepId>(
+    (highest, id) => (STEP_BY_ID[id].order > STEP_BY_ID[highest].order ? id : highest),
+    'foundations',
+  )
   const baseOrder = STEP_BY_ID[base].order
+  const selectedStep = state.stepId
+  const selectedWasIntentionalLowerStep = state.unlocked.some(
+    (id) => STEP_BY_ID[id].order > STEP_BY_ID[selectedStep].order,
+  )
   let acc: AppState = {
     ...state,
     sessions: [],
@@ -386,7 +407,9 @@ export function rebuildDerivedState(state: AppState, sessions = state.sessions):
   for (const s of [...sessions].sort((a, b) => a.startedAt - b.startedAt)) {
     acc = applySession(acc, s).next
   }
-  return acc
+  return selectedWasIntentionalLowerStep && acc.unlocked.includes(selectedStep)
+    ? { ...acc, stepId: selectedStep }
+    : acc
 }
 
 export type Action =
