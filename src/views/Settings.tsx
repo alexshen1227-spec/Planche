@@ -227,6 +227,11 @@ export function Settings() {
   const onImport = async (file: File) => {
     try {
       const raw = await readImportFile(file)
+      // Clips belong to the history being replaced; keeping them would surface
+      // the previous data's videos under the imported sessions.
+      await clearAllClips()
+      setClipCount(0)
+      setClipBytes(0)
       dispatch({ type: 'REPLACE', state: normalizeState(raw) })
       pushToast('Data imported.', 'success')
     } catch (err) {
@@ -563,6 +568,12 @@ export function Settings() {
             </button>
             <button
               onClick={() => {
+                // Clips live in their own database — a reset that left the
+                // athlete's videos on the device would contradict the copy.
+                void clearAllClips().then(() => {
+                  setClipCount(0)
+                  setClipBytes(0)
+                })
                 dispatch({ type: 'RESET' })
                 setConfirmReset(false)
                 pushToast('Everything reset. Fresh start!', 'info')

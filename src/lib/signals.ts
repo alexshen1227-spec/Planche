@@ -102,6 +102,8 @@ export interface Signals {
 
   /** Share of recent main holds self-rated clean (null when never rated). */
   formCleanRate: number | null
+  /** How many rated sets that share is based on. */
+  formRatedCount: number
   /** The failure the athlete reports most often, if there is a clear one. */
   topFormIssue: { issue: string; count: number } | null
   /** Seconds are climbing while form ratings are getting worse. */
@@ -248,6 +250,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     accessoryTrend,
     pressingLags,
     formCleanRate,
+    formRatedCount: ratedSets.length,
     topFormIssue,
     formDegrading,
     weightKg,

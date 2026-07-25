@@ -1,5 +1,17 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react'
-import type { AppState, Measurement, Profile, Session, SetLog, Settings, StepId, Units } from '../types'
+import type {
+  AppState,
+  EquipmentId,
+  FormCheck,
+  FormIssue,
+  Measurement,
+  Profile,
+  Session,
+  SetLog,
+  Settings,
+  StepId,
+  Units,
+} from '../types'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
 import { applySession } from './engine'
 import { configureAudio } from './audio'
@@ -53,6 +65,25 @@ function clampNum(v: unknown, lo: number, hi: number, fallback: number): number 
   return typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
 }
 
+const FORM_RATINGS = new Set(['clean', 'slipped', 'broke'])
+const FORM_ISSUES = new Set(['arms', 'scapula', 'hips', 'level'])
+const EQUIPMENT_IDS = new Set(['floor', 'parallettes', 'band', 'pullup-bar', 'dip-bars'])
+
+/** A hand-edited `issues` string would otherwise be iterated per character. */
+function sanitizeForm(f: unknown): FormCheck | undefined {
+  if (typeof f !== 'object' || f === null) return undefined
+  const c = f as Partial<FormCheck>
+  if (typeof c.rating !== 'string' || !FORM_RATINGS.has(c.rating)) return undefined
+  const issues = Array.isArray(c.issues)
+    ? c.issues.filter((i): i is FormIssue => typeof i === 'string' && FORM_ISSUES.has(i))
+    : undefined
+  return {
+    rating: c.rating as FormCheck['rating'],
+    ...(issues && issues.length ? { issues } : {}),
+    ...(typeof c.clipKey === 'string' ? { clipKey: c.clipKey } : {}),
+  }
+}
+
 function clampOptional(v: unknown, lo: number, hi: number): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : undefined
 }
@@ -70,14 +101,16 @@ function sanitizeSessions(raw: unknown): Session[] {
     const c = s as Partial<Session>
     if (typeof c.startedAt !== 'number' || !Number.isFinite(c.startedAt)) continue
     const sets = Array.isArray(c.sets)
-      ? c.sets.filter(
-          (x): x is Session['sets'][number] =>
-            typeof x === 'object' &&
-            x !== null &&
-            typeof (x as SetLog).exerciseId === 'string' &&
-            typeof (x as SetLog).value === 'number' &&
-            Number.isFinite((x as SetLog).value),
-        )
+      ? c.sets
+          .filter(
+            (x): x is Session['sets'][number] =>
+              typeof x === 'object' &&
+              x !== null &&
+              typeof (x as SetLog).exerciseId === 'string' &&
+              typeof (x as SetLog).value === 'number' &&
+              Number.isFinite((x as SetLog).value),
+          )
+          .map((x) => ({ ...x, form: sanitizeForm(x.form) }))
       : []
     out.push({
       id: typeof c.id === 'string' && c.id ? c.id : crypto.randomUUID(),
@@ -120,6 +153,9 @@ export function normalizeState(raw: unknown): AppState {
     restAccessorySec: clampNum(rawSettings.restAccessorySec, 10, 600, DEFAULT_SETTINGS.restAccessorySec),
     stopLatencySec: clampNum(rawSettings.stopLatencySec, 0, 5, DEFAULT_SETTINGS.stopLatencySec),
     volume: clampNum(rawSettings.volume, 0, 1, DEFAULT_SETTINGS.volume),
+    // An unrecognised unit would silently make the whole app read imperial.
+    units: rawSettings.units === 'imperial' ? 'imperial' : 'metric',
+    recordForm: typeof rawSettings.recordForm === 'boolean' ? rawSettings.recordForm : DEFAULT_SETTINGS.recordForm,
   }
   // One-time migration: anyone still carrying the old optimistic default gets
   // the realistic one. Deliberate choices made after this are left alone.
@@ -150,10 +186,12 @@ export function normalizeState(raw: unknown): AppState {
         ? (r.videoLinks as AppState['videoLinks'])
         : {},
     profile: {
-      equipment:
-        Array.isArray(r.profile?.equipment) && r.profile.equipment.length > 0
-          ? r.profile.equipment
-          : ['floor'],
+      equipment: (() => {
+        const valid = Array.isArray(r.profile?.equipment)
+          ? r.profile.equipment.filter((e): e is EquipmentId => typeof e === 'string' && EQUIPMENT_IDS.has(e))
+          : []
+        return valid.length ? valid : (['floor'] as EquipmentId[])
+      })(),
       heightCm: clampOptional(r.profile?.heightCm, 100, 250),
       injuryNote: typeof r.profile?.injuryNote === 'string' ? r.profile.injuryNote : undefined,
       birthYear: clampOptional(r.profile?.birthYear, 1920, new Date().getFullYear()),

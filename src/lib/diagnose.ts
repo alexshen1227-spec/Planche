@@ -2,6 +2,7 @@ import type { AppState } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { readSignals } from './signals'
 import { bestSeries } from './stats'
+import { fmtWeight } from './units'
 
 /**
  * "Why am I stuck?" — answered from the athlete's own log rather than generic
@@ -43,7 +44,9 @@ export function diagnose(state: AppState, now = Date.now()): Diagnosis {
   const gainPerWeek = sig.trendPerWeek
   const plateaued = series.length >= 4 && (gainPerWeek === null || gainPerWeek <= 0.15) && weeksFlat >= 2
 
-  if (sig.formDegrading || (sig.formCleanRate !== null && sig.formCleanRate < 0.55)) {
+  // Gated on evidence: one honestly-rated set on day one should not greet a
+  // new athlete with a red high-severity warning.
+  if (sig.formRatedCount >= 4 && (sig.formDegrading || (sig.formCleanRate ?? 1) < 0.55)) {
     causes.push({
       id: 'form',
       title: 'Form is slipping',
@@ -87,10 +90,11 @@ export function diagnose(state: AppState, now = Date.now()): Diagnosis {
   }
 
   if (sig.weightTrendPerWeek !== null && sig.weightTrendPerWeek > 0.15 && sig.weightKg) {
+    const monthly = fmtWeight(sig.weightTrendPerWeek * 4, state.settings.units)
     causes.push({
       id: 'weight',
       title: 'Bodyweight is trending up',
-      detail: `Up roughly ${(sig.weightTrendPerWeek * 4).toFixed(1)}kg over the last month. Planche is strength-to-weight, so this shows up directly in your holds.`,
+      detail: `Up roughly ${monthly} over the last month. Planche is strength-to-weight, so this shows up directly in your holds.`,
       fix: 'Nothing to panic about — just be aware that holding steady while gaining weight is itself a strength gain. Judge the trend against it.',
       severity: 'medium',
     })
@@ -106,7 +110,7 @@ export function diagnose(state: AppState, now = Date.now()): Diagnosis {
     })
   }
 
-  if (sig.warmupRate < 0.7) {
+  if (sig.warmupRate < 0.7 && state.sessions.length >= 5) {
     causes.push({
       id: 'warmup',
       title: 'Warm-ups are getting skipped',

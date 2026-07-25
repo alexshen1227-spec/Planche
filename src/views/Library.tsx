@@ -8,6 +8,7 @@ import { pushToast } from '../lib/toast'
 import { fmtHold, fmtDate } from '../lib/time'
 import { Icon } from '../components/Icon'
 import { Modal, Chip } from '../components/ui'
+import { ClipGallery } from '../components/ClipGallery'
 
 const CATS: (Category | 'all')[] = ['all', 'planche', 'push', 'scapula', 'core', 'wrist', 'general', 'mobility']
 
@@ -272,6 +273,18 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
       </div>
 
       <VideoPanel exercise={e} />
+
+      {e.category === 'planche' ? (
+        <div className="mt-4 rounded-2xl border border-line bg-raised p-4">
+          <div className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+            <Icon name="monitor" size={14} className="text-accent" /> Your recorded sets
+          </div>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-ink3">
+            Compare your current position against an older one — pin a clip to keep it as your reference.
+          </p>
+          <ClipGallery exerciseId={e.id} />
+        </div>
+      ) : null}
 
       <div className="mt-4 rounded-2xl border border-line bg-raised p-4">
         <div className="mb-2 text-[13px] font-semibold text-ink">How to do it</div>

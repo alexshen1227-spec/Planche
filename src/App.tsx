@@ -138,12 +138,14 @@ export default function App() {
   // Asked once on open when it comes due, never mid-workout.
   const [showMeasure, setShowMeasure] = useState(false)
   useEffect(() => {
-    if (state.onboarded && !activeWorkout && measurementDue(state).weight) {
-      const t = window.setTimeout(() => setShowMeasure(true), 900)
-      return () => window.clearTimeout(t)
-    }
+    // Guarded on activeWorkout in the deps as well as the condition: the
+    // timer previously fired over a session started within the delay, which
+    // covered the player and blocked the key that stops a hold.
+    if (!state.onboarded || activeWorkout || !measurementDue(state).weight) return
+    const t = window.setTimeout(() => setShowMeasure(true), 900)
+    return () => window.clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.onboarded])
+  }, [state.onboarded, activeWorkout])
 
   const startWorkout = (w: Workout) => {
     setResuming(false)
@@ -247,7 +249,7 @@ export default function App() {
         </div>
       </nav>
 
-      <MeasurePrompt open={showMeasure} onClose={() => setShowMeasure(false)} />
+      <MeasurePrompt open={showMeasure && !activeWorkout} onClose={() => setShowMeasure(false)} />
       {activeWorkout ? (
         <SessionPlayer
           workout={activeWorkout}

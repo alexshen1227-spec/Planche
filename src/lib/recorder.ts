@@ -29,6 +29,10 @@ export function useFormRecorder() {
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  /** In-flight getUserMedia, so two callers never open two cameras. */
+  const openingRef = useRef<Promise<boolean> | null>(null)
+  /** In-flight stop, so teardown cannot destroy a clip mid-finalise. */
+  const stoppingRef = useRef<Promise<Blob | null> | null>(null)
 
   const supported =
     typeof navigator !== 'undefined' &&
@@ -41,29 +45,47 @@ export function useFormRecorder() {
   }, [])
 
   /** Open the camera and show a live preview, without recording yet. */
-  const prepare = useCallback(async (): Promise<boolean> => {
+  const prepare = useCallback((): Promise<boolean> => {
     if (!supported) {
       setStatus('unsupported')
-      return false
+      return Promise.resolve(false)
     }
-    if (streamRef.current) return true
+    if (streamRef.current) return Promise.resolve(true)
+    // getUserMedia can take seconds behind a permission sheet. Without this
+    // guard, tapping Start mid-request opens a second camera and orphans the
+    // first stream — leaving the camera indicator on for good.
+    if (openingRef.current) return openingRef.current
+
     setStatus('starting')
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+    const attempt = navigator.mediaDevices
+      .getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24 } },
         audio: false,
       })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        void videoRef.current.play().catch(() => {})
-      }
-      setStatus('idle')
-      return true
-    } catch {
-      setStatus('denied')
-      return false
-    }
+      .then((stream) => {
+        if (streamRef.current) {
+          // Lost a race with another caller — drop this one rather than leak.
+          stream.getTracks().forEach((t) => t.stop())
+          return true
+        }
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          void videoRef.current.play().catch(() => {})
+        }
+        setStatus('idle')
+        return true
+      })
+      .catch(() => {
+        setStatus('denied')
+        return false
+      })
+      .finally(() => {
+        openingRef.current = null
+      })
+
+    openingRef.current = attempt
+    return attempt
   }, [supported])
 
   const start = useCallback(async (): Promise<boolean> => {
@@ -96,7 +118,7 @@ export function useFormRecorder() {
       setStatus('idle')
       return Promise.resolve(null)
     }
-    return new Promise((resolve) => {
+    const finished = new Promise<Blob | null>((resolve) => {
       rec.onstop = () => {
         const type = rec.mimeType || 'video/webm'
         const blob = chunksRef.current.length ? new Blob(chunksRef.current, { type }) : null
@@ -111,12 +133,14 @@ export function useFormRecorder() {
         resolve(null)
       }
     })
+    stoppingRef.current = finished
+    void finished.finally(() => {
+      stoppingRef.current = null
+    })
+    return finished
   }, [])
 
-  const release = useCallback(() => {
-    // Idempotent on purpose: this is called from an effect, and setting state
-    // when there is nothing to release would re-render into a loop.
-    if (!recorderRef.current && !streamRef.current) return
+  const teardown = useCallback(() => {
     try {
       if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop()
     } catch {
@@ -128,8 +152,22 @@ export function useFormRecorder() {
     setStatus('idle')
   }, [stopStream])
 
-  // Never leave the camera light on.
-  useEffect(() => release, [release])
+  const release = useCallback(() => {
+    // Idempotent on purpose: this is called from an effect, and setting state
+    // when there is nothing to release would re-render into a loop.
+    if (!recorderRef.current && !streamRef.current) return
+    // A stop() is still finalising the clip. Tearing down now would clear the
+    // chunk buffer and kill the source tracks it depends on, silently losing
+    // the recording the athlete just made.
+    if (stoppingRef.current) {
+      void stoppingRef.current.finally(() => teardown())
+      return
+    }
+    teardown()
+  }, [teardown])
+
+  // Never leave the camera light on, even if a stop is still in flight.
+  useEffect(() => teardown, [teardown])
 
   // Stable identity — consumers use this in effect dependency lists.
   return useMemo(

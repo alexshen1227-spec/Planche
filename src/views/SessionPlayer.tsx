@@ -92,6 +92,9 @@ export function SessionPlayer({
   const prBuzzedRef = useRef(false)
   /** Hold elapsed frozen at the moment the page was hidden. */
   const frozenElapsedRef = useRef<number | null>(null)
+  /** Current phase, readable from async callbacks without going stale. */
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
   /**
    * The exact set the interrupted hold belongs to. Without this the recovery
    * card would follow you to later exercises and could log a planche hold as
@@ -201,6 +204,12 @@ export function SessionPlayer({
 
   // Open the camera while setting up so the shot can be framed, and close it
   // again as soon as filming is not imminent — no stray camera light.
+  // A clip belongs to the set that was just rated. Leaving the rest screen
+  // without rating discards it rather than carrying it to the next exercise.
+  useEffect(() => {
+    if (phase !== 'rest' && phase !== 'summary') setPendingClip(null)
+  }, [phase])
+
   const { prepare: prepareCamera, release: releaseCamera } = recorder
   useEffect(() => {
     if (phase === 'ready' && filming) void prepareCamera()
@@ -334,7 +343,10 @@ export function SessionPlayer({
       void recorder.stop().then(async (blob) => {
         if (!blob) return
         const key = await saveClip(exId, blob, v)
-        if (key) setPendingClip(key)
+        // Only offer it on the screen that rates that very set — otherwise it
+        // would surface under a later, unrelated exercise.
+        const ratable = phaseRef.current === 'rest' || phaseRef.current === 'summary'
+        setPendingClip(key && ratable ? key : null)
       })
     }
     logSet(v, raw)
@@ -887,6 +899,22 @@ export function SessionPlayer({
               </div>
             ))}
           </div>
+          {(() => {
+            // The last set of a session skips the rest screen entirely, so
+            // without this its form would never get rated.
+            const lastMain = [...logs].reverse().find((l) => l.kind === 'hold' && l.section === 'main')
+            if (!lastMain || lastMain.form) return null
+            return (
+              <FormCheckRow
+                clipKey={pendingClip}
+                onDone={(form) => {
+                  setLogs((l) => l.map((x) => (x === lastMain ? { ...x, form } : x)))
+                  setPendingClip(null)
+                }}
+              />
+            )
+          })()}
+
           <div className="mt-5">
             <div className="mb-2 flex items-center justify-center gap-2 text-[14px] font-medium text-ink">
               How hard was it? (RPE)
@@ -1122,14 +1150,22 @@ function FormCheckRow({ clipKey, onDone }: { clipKey: string | null; onDone: (f:
   const [clipUrl, setClipUrl] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     let url: string | null = null
     if (clipKey) {
       void getClipUrl(clipKey).then((u) => {
+        // Rating "Clean" is a single tap and can close this row before the
+        // read resolves — revoke rather than leaking the blob for the session.
+        if (cancelled) {
+          if (u) URL.revokeObjectURL(u)
+          return
+        }
         url = u
         setClipUrl(u)
       })
     }
     return () => {
+      cancelled = true
       if (url) URL.revokeObjectURL(url)
     }
   }, [clipKey])

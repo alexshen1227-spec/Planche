@@ -376,7 +376,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       text: 'Your holds are getting longer but your own form ratings are getting worse — that is a stall dressed up as progress. Backing the target off to rebuild the position.',
       kind: 'warn',
     })
-  } else if (sig.formCleanRate !== null && sig.formCleanRate < 0.5) {
+  } else if (sig.formCleanRate !== null && sig.formRatedCount >= 3 && sig.formCleanRate < 0.5) {
     targetFactor = Math.min(targetFactor, 0.9)
     decisions.push({
       text: `Only ${Math.round(sig.formCleanRate * 100)}% of your recent main sets were clean. Easier targets today so the position is the thing you practise.`,
@@ -406,7 +406,9 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       text: 'Your holds and your pressing numbers have both flattened — adding pressing volume, which usually unblocks the hold.',
       kind: 'info',
     })
-  } else if (sig.accessoryTrend === 'up' && (sig.trendPerWeek ?? 0) <= 0.1) {
+  } else if (sig.accessoryTrend === 'up' && (sig.trendPerWeek ?? 0) <= 0.1 && accessoryEmphasis === 'none') {
+    // Never override a form-driven emphasis — the plan text would then say
+    // one thing while the session did another.
     accessoryEmphasis = 'balance'
     decisions.push({
       text: 'Pressing strength is climbing but the hold is not — that points at balance and position, so skill work is up today.',
