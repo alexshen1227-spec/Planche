@@ -258,6 +258,11 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
               <span className="rounded-full bg-accent-soft px-3 py-1 text-[13px] font-semibold text-accent">
                 {STRATEGY_BY_ID[plan.strategy].name}
               </span>
+              {plan.limiter ? (
+                <span className="rounded-full border border-accent/30 bg-accent-soft px-3 py-1 text-[12.5px] font-semibold text-accent">
+                  Limiter: {plan.limiter.label}
+                </span>
+              ) : null}
               <span className="rounded-full border border-line bg-raised px-3 py-1 text-[12.5px] font-medium text-ink2">
                 {plan.warmup === 'extended' ? 'Full warm-up' : plan.warmup === 'short' ? 'Short warm-up' : 'Standard warm-up'}
               </span>
@@ -266,6 +271,11 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
               </span>
             </div>
             <p className="mt-2 max-w-xl text-[13.5px] leading-relaxed text-ink2">{plan.strategyReason}</p>
+            {plan.limiter ? (
+              <p className="mt-1 max-w-xl text-[12.5px] leading-relaxed text-ink3">
+                {plan.limiter.evidence} {plan.limiter.prescription}
+              </p>
+            ) : null}
             <ul className="mt-2 space-y-1.5">
               {plan.decisions.slice(0, 3).map((d) => (
                 <li key={d.text} className="flex gap-2 text-[13px] leading-relaxed">

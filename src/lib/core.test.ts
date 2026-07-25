@@ -9,6 +9,7 @@ import { painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
 import { validateImport } from './exportImport'
 import { buildSampleState } from '../data/sample'
 import { selectRecorderMime } from './recorder'
+import { readSignals } from './signals'
 
 const DAY = 86_400_000
 
@@ -28,11 +29,12 @@ function form(
   cameraIssues: FormIssue[] = [],
   confidence = 0.9,
   cleanSeconds?: number,
+  cleanRatio?: number,
 ): FormCheck {
   return {
     rating,
     confirmed,
-    auto: { issues: cameraIssues, confidence, cleanSeconds },
+    auto: { issues: cameraIssues, confidence, cleanSeconds, cleanRatio },
   }
 }
 
@@ -231,6 +233,56 @@ describe('camera evaluator primitives', () => {
 })
 
 describe('readiness rails', () => {
+  it('treats a timer target as missed when clean camera time fell short', () => {
+    const now = Date.now()
+    const logged = session(
+      'foundations',
+      [log('ppp-hold', 12, { target: 10, form: form('clean', true, [], 0.9, 8, 8 / 12) })],
+      { startedAt: now - 3 * DAY },
+    )
+    expect(readSignals({ ...state(), sessions: [logged] }, now).mainHitRate).toBe(0)
+  })
+
+  it('targets accessories at a recurring camera-detected limiter', () => {
+    const now = Date.now()
+    const pike = form('clean', true, ['pike'])
+    const history = session(
+      'advtuck',
+      [
+        log('adv-tuck-planche', 10, { form: pike }),
+        log('adv-tuck-planche', 9, { form: pike }),
+        log('adv-tuck-planche', 8, { form: pike }),
+      ],
+      { startedAt: now - 3 * DAY },
+    )
+    const athlete = { ...state('advtuck'), sessions: [history] }
+    const plan = buildPlan(athlete, now)
+    const workout = todaysSession(athlete, plan)
+
+    expect(plan.limiter?.label).toBe('Body-line strength')
+    expect(plan.accessoryEmphasis).toBe('core')
+    expect(workout.blocks.some((block) => block.exerciseId === 'arch-hold')).toBe(true)
+  })
+
+  it('switches to technique work when filmed holds repeatedly break down early', () => {
+    const now = Date.now()
+    const earlyBreak = form('clean', true, [], 0.9, 6, 0.6)
+    const history = session(
+      'tuck',
+      [
+        log('tuck-planche', 10, { form: earlyBreak }),
+        log('tuck-planche', 10, { form: earlyBreak }),
+        log('tuck-planche', 10, { form: earlyBreak }),
+      ],
+      { startedAt: now - 3 * DAY },
+    )
+    const plan = buildPlan({ ...state('tuck'), sessions: [history] }, now)
+
+    expect(plan.strategy).toBe('technique')
+    expect(plan.limiter?.label).toBe('Hold durability')
+    expect(plan.suggestMaxTest).toBe(false)
+  })
+
   it('removes loaded upper-body work after a pain check-in', () => {
     const checkIn: CheckIn = { joints: 'pain', energy: 'ok', at: Date.now() }
     const plan = buildPlan(state('tuck'), Date.now(), checkIn)

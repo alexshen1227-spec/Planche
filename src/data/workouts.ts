@@ -289,10 +289,10 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
       plan.strategy === 'technique'
         ? 'Easy targets today — perfect positions, zero grinding.'
         : plan.strategy === 'intensity'
-          ? 'Heavy holds. Rest fully between sets and keep the arms locked.'
+          ? 'Heavy clean holds. Rest fully and stop the instant elbow lock or body line goes.'
           : plan.strategy === 'density'
-            ? 'Short rests on purpose — expect the later sets to feel spicy.'
-            : 'Stop each set ~2s before failure. Quality over seconds.',
+            ? 'Short rests on purpose, but never chase the timer past the first loss of shape.'
+            : 'Stop each set ~2s before failure or at the first loss of shape. Quality over seconds.',
   })
 
   // One back-off block on the previous step keeps old positions honest.
@@ -319,6 +319,30 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
       section: 'strength',
       note: 'Balance practice — cheap on tendons, great for skill.',
     })
+  } else if (plan.accessoryEmphasis === 'scapula') {
+    blocks.push(
+      {
+        exerciseId: 'scap-pushup',
+        sets: scale(4),
+        target: reps(10),
+        restSec: rAcc,
+        section: 'strength',
+        note: 'Scapular control is the limiter — finish every rep by pushing the floor fully away.',
+      },
+      { exerciseId: 'pppu', sets: scale(2), target: reps(6), restSec: rAcc, section: 'strength' },
+    )
+  } else if (plan.accessoryEmphasis === 'core') {
+    blocks.push(
+      {
+        exerciseId: 'hollow-hold',
+        sets: scale(4),
+        target: hold(25),
+        restSec: 60,
+        section: 'core',
+        note: 'Body line is the limiter — lock ribs, pelvis and legs into one unit.',
+      },
+      { exerciseId: 'arch-hold', sets: scale(3), target: hold(20), restSec: 60, section: 'core' },
+    )
   } else if (plan.accessoryEmphasis === 'balance') {
     blocks.push(
       { exerciseId: 'frog-stand', sets: scale(3), target: hold(20), restSec: rAcc, section: 'strength', note: 'Balance is the limiter right now, not raw strength.' },
@@ -361,9 +385,11 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
     )
   }
 
-  blocks.push({ exerciseId: 'hollow-hold', sets: scale(2), target: hold(30), restSec: 45, section: 'core' })
-  if (step.order >= 3 && !easy) {
-    blocks.push({ exerciseId: 'l-sit', sets: 2, target: hold(12), restSec: 60, section: 'core' })
+  if (plan.accessoryEmphasis !== 'core') {
+    blocks.push({ exerciseId: 'hollow-hold', sets: scale(2), target: hold(30), restSec: 45, section: 'core' })
+    if (step.order >= 3 && !easy) {
+      blocks.push({ exerciseId: 'l-sit', sets: 2, target: hold(12), restSec: 60, section: 'core' })
+    }
   }
 
   // Cooldown: give back what the lean took.
@@ -383,7 +409,9 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
   return {
     id: `auto-${stepId}-${plan.dayType}-${plan.strategy}`,
     name: `${step.name} · ${DAY_LABEL[plan.dayType]}`,
-    focus: plan.dayReason,
+    focus: plan.limiter
+      ? `${plan.dayReason} Current limiter: ${plan.limiter.label}. ${plan.limiter.prescription}`
+      : plan.dayReason,
     minutes: estimateMinutes(fitted),
     kind: 'auto',
     blocks: fitted,

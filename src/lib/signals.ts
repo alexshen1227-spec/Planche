@@ -2,7 +2,7 @@ import type { AppState, CheckIn, Session, SetLog } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { dayKey } from './time'
-import { isQualifyingSet, qualifyingSessionValue } from './progression'
+import { progressionCredit, qualifyingSessionValue } from './progression'
 
 /**
  * Everything the coach can observe, derived from the log alone.
@@ -168,6 +168,8 @@ export interface Signals {
   formDegrading: boolean
   /** Average camera-measured shakiness across recent filmed sets. */
   meanWobble: number | null
+  /** Average share of the timer that survived the camera's clean envelope. */
+  meanCleanRatio: number | null
   /** How many sets the camera has measured recently. */
   cameraSetCount: number
 
@@ -277,8 +279,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   if (lastRelevant) {
     const mains = keySetsOf(lastRelevant, keyId, 'main')
     mainSetCount = mains.length
-    mainHitRate =
-      mains.filter((s) => isQualifyingSet(s, keyId) && s.value >= s.target).length / mains.length
+    mainHitRate = mains.filter((s) => progressionCredit(s, keyId) >= s.target).length / mains.length
   }
 
   // An outlier is a value far outside the robust range of the ones before it.
@@ -352,12 +353,15 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
       ),
     )
   for (const s of cameraSets) {
-    // Never count the same set twice. A confirmed athlete answer wins; until
-    // then the model remains weaker, advisory evidence.
-    if (s.form?.confirmed !== false) {
-      for (const i of s.form?.issues ?? []) bump(i, 1)
+    // Never count the same fault twice. Athlete-reported issues are strongest;
+    // otherwise recurring camera flags remain useful advisory evidence even
+    // when the athlete considered the whole set clean enough.
+    const athleteIssues = s.form?.issues ?? []
+    if (s.form?.confirmed !== false && athleteIssues.length) {
+      for (const i of athleteIssues) bump(i, 1)
     } else {
-      for (const i of s.form!.auto!.issues) bump(i, 0.5)
+      const weight = s.form?.confirmed === false ? 0.5 : 0.75
+      for (const i of s.form!.auto!.issues) bump(i, weight)
     }
   }
   for (const s of ratedSets.filter((s) => !s.form?.auto)) {
@@ -371,6 +375,11 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // high means the prescribed holds are sitting at the very limit.
   const wobbles = cameraSets.map((s) => s.form!.auto!.wobble).filter((w): w is number => w !== undefined)
   const meanWobble = wobbles.length >= 3 ? wobbles.reduce((a, b) => a + b, 0) / wobbles.length : null
+  const cleanRatios = cameraSets
+    .map((s) => s.form!.auto!.cleanRatio)
+    .filter((ratio): ratio is number => ratio !== undefined)
+  const meanCleanRatio =
+    cleanRatios.length >= 3 ? cleanRatios.reduce((a, b) => a + b, 0) / cleanRatios.length : null
   // Chasing seconds while positions fall apart is the classic way to stall.
   const half = Math.floor(ratedSets.length / 2)
   const cleanIn = (arr: typeof ratedSets) =>
@@ -445,6 +454,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     formRatedCount: ratedSets.length,
     topFormIssue,
     meanWobble,
+    meanCleanRatio,
     cameraSetCount: cameraSets.length,
     formDegrading,
     weightKg,

@@ -246,6 +246,12 @@ export interface CoachDecision {
   kind: 'info' | 'good' | 'warn'
 }
 
+export interface CoachLimiter {
+  label: string
+  evidence: string
+  prescription: string
+}
+
 export interface CoachPlan {
   dayType: DayType
   dayReason: string
@@ -258,7 +264,9 @@ export interface CoachPlan {
   warmup: WarmupLevel
   queueUnlockAttempt: boolean
   suggestMaxTest: boolean
-  accessoryEmphasis: 'pressing' | 'balance' | 'core' | 'none'
+  accessoryEmphasis: 'pressing' | 'scapula' | 'balance' | 'core' | 'none'
+  /** Best-supported current bottleneck, if enough history exists to name one. */
+  limiter: CoachLimiter | null
   volumeFactor: number
   /** Whether loaded upper-body planche work is appropriate today. */
   loadPermission: 'normal' | 'reduced' | 'none'
@@ -320,7 +328,9 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   let warmup: WarmupLevel = 'standard'
   let queueUnlockAttempt = false
   let accessoryEmphasis: CoachPlan['accessoryEmphasis'] = 'none'
+  let limiter: CoachLimiter | null = null
   let loadPermission: CoachPlan['loadPermission'] = 'normal'
+  let strategyOverrideReason: string | null = null
 
   // ——— Recovery state sets the day's character ———
   // Judged on training LOAD, not on whether any session existed: a ten-minute
@@ -398,29 +408,128 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     hips: 'hips sagging',
     level: 'body not level',
   }
+  const LIMITER_BY_ISSUE: Record<
+    string,
+    {
+      label: string
+      emphasis: CoachPlan['accessoryEmphasis']
+      prescription: string
+    }
+  > = {
+    arms: {
+      label: 'Straight-arm strength',
+      emphasis: 'pressing',
+      prescription: 'Straight-arm pressing strength gets the extra work; every main hold still ends before elbow lock goes.',
+    },
+    scapula: {
+      label: 'Scapular control',
+      emphasis: 'scapula',
+      prescription: 'Scapular push-ups and controlled leans reinforce pushing the floor away under load.',
+    },
+    shrug: {
+      label: 'Scapular control',
+      emphasis: 'scapula',
+      prescription: 'Scapular push-ups and controlled leans reinforce a strong, non-shrugged shoulder position.',
+    },
+    pike: {
+      label: 'Body-line strength',
+      emphasis: 'core',
+      prescription: 'Hollow-body and posterior-chain work target the line that is folding under fatigue.',
+    },
+    sag: {
+      label: 'Body-line strength',
+      emphasis: 'core',
+      prescription: 'Hollow-body and posterior-chain work target the line that is dropping under fatigue.',
+    },
+    closed: {
+      label: 'Hip opening / compression',
+      emphasis: 'core',
+      prescription: 'Compression and body-line work target the hip position that is closing under load.',
+    },
+    knees: {
+      label: 'Whole-body tension',
+      emphasis: 'core',
+      prescription: 'Body-line work reinforces active leg tension without adding more max-effort attempts.',
+    },
+    hips: {
+      label: 'Body-line strength',
+      emphasis: 'core',
+      prescription: 'Hollow-body and posterior-chain work target the line that is dropping under fatigue.',
+    },
+    level: {
+      label: 'Body-line control',
+      emphasis: 'core',
+      prescription: 'Body-line work reinforces a level hip and shoulder position.',
+    },
+    lean: {
+      label: 'Forward-lean control',
+      emphasis: 'balance',
+      prescription: 'Low-fatigue balance and lean practice build confidence over the hands before more load is added.',
+    },
+    twist: {
+      label: 'Symmetry',
+      emphasis: 'balance',
+      prescription: 'Controlled balance work and weak-side-first practice target the recurring rotation.',
+    },
+    narrow: {
+      label: 'Position control',
+      emphasis: 'balance',
+      prescription: 'Low-fatigue position practice gets priority over more grinding.',
+    },
+  }
+  let formRepairNeeded = false
   if (sig.formDegrading) {
     targetFactor = Math.min(targetFactor, 0.9)
     targetIntent = 'steady'
+    formRepairNeeded = true
     decisions.push({
       text: 'Your holds are getting longer but your own form ratings are getting worse — that is a stall dressed up as progress. Backing the target off to rebuild the position.',
       kind: 'warn',
     })
   } else if (sig.formCleanRate !== null && sig.formRatedCount >= 3 && sig.formCleanRate < 0.5) {
     targetFactor = Math.min(targetFactor, 0.9)
+    formRepairNeeded = true
     decisions.push({
       text: `Only ${Math.round(sig.formCleanRate * 100)}% of your recent main sets were clean. Easier targets today so the position is the thing you practise.`,
       kind: 'warn',
     })
   }
+  if (sig.meanCleanRatio !== null && sig.meanCleanRatio < 0.8) {
+    targetFactor = Math.min(targetFactor, 0.9)
+    targetIntent = 'steady'
+    formRepairNeeded = true
+    decisions.push({
+      text: `The camera verified only ${Math.round(sig.meanCleanRatio * 100)}% of your recent timed holds as clean. Today's main work stops earlier so good seconds replace survival seconds.`,
+      kind: 'warn',
+    })
+  }
   if (sig.topFormIssue) {
     const label = FORM_LABEL[sig.topFormIssue.issue] ?? sig.topFormIssue.issue
+    const guidance = LIMITER_BY_ISSUE[sig.topFormIssue.issue]
     decisions.push({
       text: `Your most common breakdown is ${label} (${sig.topFormIssue.count} sets). That is the cue to hold in your head today.`,
       kind: 'info',
     })
-    // A bending arm or a collapsing shoulder blade is a strength problem;
-    // extra pressing volume is what actually fixes it.
-    if (['scapula', 'arms', 'shrug'].includes(sig.topFormIssue.issue)) accessoryEmphasis = 'pressing'
+    if (guidance) {
+      accessoryEmphasis = guidance.emphasis
+      limiter = {
+        label: guidance.label,
+        evidence: `${label} repeated across ${sig.topFormIssue.count} recent set${sig.topFormIssue.count === 1 ? '' : 's'}.`,
+        prescription: guidance.prescription,
+      }
+    }
+  }
+  if (formRepairNeeded) {
+    strategy = 'technique'
+    strategyOverrideReason =
+      'recent form evidence says easier, repeatable positions will move you forward faster than another hard exposure.'
+    if (!limiter) {
+      limiter = {
+        label: 'Hold durability',
+        evidence: 'Recent filmed holds are losing their clean position before the timer stops.',
+        prescription: 'Shorter, repeatable main holds rebuild clean time before intensity returns.',
+      }
+    }
   }
 
   // Reported, not acted on: drift is measured between samples seconds apart,
@@ -444,6 +553,13 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // ——— Left/right balance on unilateral work ———
   if (sig.sideGap) {
     const g = sig.sideGap
+    if (!limiter) {
+      limiter = {
+        label: `${g.weakSide[0].toUpperCase()}${g.weakSide.slice(1)}-side strength`,
+        evidence: `${Math.round(g.gapPct * 100)}% gap between sides on recent unilateral work.`,
+        prescription: `Lead with the ${g.weakSide} side and cap both sides at the weaker side's dose.`,
+      }
+    }
     decisions.push({
       text: `Your ${g.weakSide} side is trailing on unilateral work (${Math.round(g.weakMean)}s vs ${Math.round(
         g.strongMean,
@@ -453,8 +569,13 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   }
 
   // ——— Accessory work informs the main work ———
-  if (sig.pressingLags) {
+  if (sig.pressingLags && accessoryEmphasis === 'none') {
     accessoryEmphasis = 'pressing'
+    limiter ??= {
+      label: 'Pressing strength',
+      evidence: 'The key hold and repeated pressing work have both flattened.',
+      prescription: 'Planche-specific pressing volume increases while max attempts stay controlled.',
+    }
     decisions.push({
       text: 'Your holds and your pressing numbers have both flattened — adding pressing volume, which usually unblocks the hold.',
       kind: 'info',
@@ -463,6 +584,11 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     // Never override a form-driven emphasis — the plan text would then say
     // one thing while the session did another.
     accessoryEmphasis = 'balance'
+    limiter ??= {
+      label: 'Skill transfer',
+      evidence: 'Pressing is improving while the key hold is flat.',
+      prescription: 'Low-fatigue balance and position practice gets the extra work.',
+    }
     decisions.push({
       text: 'Pressing strength is climbing but the hold is not — that points at balance and position, so skill work is up today.',
       kind: 'info',
@@ -485,7 +611,13 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
 
   // ——— Opportunities ———
   const best = qualifyingProgress(state, state.stepId).value
-  if (dayType === 'push' && best >= step.unlockSec * 0.85 && best < step.unlockSec && !sig.noisy) {
+  if (
+    dayType === 'push' &&
+    best >= step.unlockSec * 0.85 &&
+    best < step.unlockSec &&
+    !sig.noisy &&
+    !formRepairNeeded
+  ) {
     queueUnlockAttempt = true
     decisions.push({
       text: `You're within reach of the ${step.unlockSec}s bar — an unlock attempt is queued first, while you're freshest.`,
@@ -496,7 +628,8 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     (sig.daysSinceMaxTest === null ? sig.totalSessions >= 8 : sig.daysSinceMaxTest >= 21) &&
     sig.restDays >= 2 &&
     !sig.noisy &&
-    dayType !== 'deload'
+    dayType !== 'deload' &&
+    !formRepairNeeded
 
   // ——————————————— SAFETY RAILS — these always win ———————————————
   const joints = sig.lastCheckIn?.joints
@@ -570,8 +703,13 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
 
   // When a rail overrules the bandit, say so rather than quoting the bandit.
   const overridden = strategy !== pick.strategy
+  const performanceOverrideReason =
+    dayType === 'build' || dayType === 'push' ? strategyOverrideReason : null
   const strategyReason = overridden
-    ? `${STRATEGY_BY_ID[pick.strategy].name} was selected, but it is on hold today — ${dayReason.charAt(0).toLowerCase()}${dayReason.slice(1)}`
+    ? `${STRATEGY_BY_ID[pick.strategy].name} was selected, but it is on hold today — ${
+        performanceOverrideReason ??
+        `${dayReason.charAt(0).toLowerCase()}${dayReason.slice(1)}`
+      }`
     : pick.reason
   const finalSets = clampTo(shape.setsDelta, LIMITS.setsDelta)
   const restMainSec = smartRest(state, shape.restFactor, sig)
@@ -616,6 +754,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     queueUnlockAttempt,
     suggestMaxTest,
     accessoryEmphasis,
+    limiter,
     volumeFactor: clampTo(volumeFactor, LIMITS.volume),
     loadPermission,
     askCheckIn,
@@ -649,6 +788,16 @@ export function debriefSession(
       kind: 'warn',
     })
   }
+  const filmedRatios = rated
+    .map((set) => set.form?.auto?.cleanRatio)
+    .filter((ratio): ratio is number => ratio !== undefined)
+  const filmedCleanRatio = median(filmedRatios)
+  if (filmedRatios.length >= 2 && filmedCleanRatio !== null && filmedCleanRatio < 0.8) {
+    out.push({
+      text: `The camera verified about ${Math.round(filmedCleanRatio * 100)}% of your timed holds as clean today. The next session shortens the dose so every second reinforces the position.`,
+      kind: 'warn',
+    })
+  }
 
   // Unusually big day, judged against the athlete's own recent sessions.
   const thisStrain = strainOf(session)
@@ -675,13 +824,17 @@ export function debriefSession(
 
   // A max test that missed the bar: name the gap instead of leaving silence.
   if (session.workoutKind === 'test' && next.stepId === session.stepId) {
-    const best = session.sets.reduce(
+    const timerBest = session.sets.reduce(
       (b, x) => (x.exerciseId === step.keyExerciseId && x.value > b ? x.value : b),
       0,
     )
-    if (best > 0 && best < step.unlockSec) {
+    const verifiedBest = qualifyingSessionValue(session, session.stepId)
+    if (timerBest > 0 && verifiedBest < step.unlockSec) {
       out.push({
-        text: `Best attempt ${Math.round(best * 10) / 10}s against the ${step.unlockSec}s bar — ${Math.round((step.unlockSec - best) * 10) / 10}s to close. That is a gap training shrinks, not a verdict.`,
+        text:
+          verifiedBest > 0
+            ? `Camera-verified clean best ${Math.round(verifiedBest * 10) / 10}s against the ${step.unlockSec}s bar — ${Math.round((step.unlockSec - verifiedBest) * 10) / 10}s of clean time to close.`
+            : `Timer best ${Math.round(timerBest * 10) / 10}s, but no attempt had both athlete-confirmed Clean form and passing filmed evidence. It remains a PR, not an unlock.`,
         kind: 'info',
       })
     }
