@@ -373,7 +373,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     knees: 'knees bending',
     lean: 'not leaning far enough forward',
     twist: 'twisting — one side sitting higher',
-    narrow: 'leg position',
+    narrow: 'a straddle that is too narrow',
     hips: 'hips sagging',
     level: 'body not level',
   }
@@ -402,13 +402,13 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     if (['scapula', 'arms', 'shrug'].includes(sig.topFormIssue.issue)) accessoryEmphasis = 'pressing'
   }
 
-  // The camera can see something the athlete cannot: consistent shaking means
-  // the prescribed hold is sitting at the very edge, which buys fatigue rather
-  // than practice.
-  if (sig.meanWobble !== null && sig.meanWobble > 0.075 && sig.cameraSetCount >= 3) {
-    targetFactor = Math.min(targetFactor, 0.9)
+  // Reported, not acted on: drift is measured between samples seconds apart,
+  // which cannot separate "slipping under load" from a nudged phone. Cutting
+  // the target on it would also feed back on itself — shorter holds drift
+  // less, which would look like improvement.
+  if (sig.meanWobble !== null && sig.meanWobble > 0.05 && sig.cameraSetCount >= 3) {
     decisions.push({
-      text: 'Your filmed sets show a lot of shaking, which means those holds are right at your limit. Easing the target so you practise the position instead of surviving it.',
+      text: 'Your filmed sets show the position drifting as the hold goes on — the last few seconds are costing you shape rather than building it.',
       kind: 'info',
     })
   }

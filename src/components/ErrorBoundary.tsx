@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { previousBackup } from '../lib/store'
 
 /**
  * Last line of defence. Without this, one bad render (a corrupt import, an
@@ -31,8 +32,22 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
     }
   }
 
+  /** Roll back to the snapshot taken before the last version upgrade. */
+  private restorePrevious = () => {
+    const prev = previousBackup()
+    if (!prev) return
+    try {
+      localStorage.setItem('planchelab.v1', prev.json)
+      localStorage.removeItem('planchelab.draft')
+      window.location.reload()
+    } catch {
+      /* nothing further we can do from here */
+    }
+  }
+
   render() {
     if (!this.state.error) return this.props.children
+    const prev = previousBackup()
     return (
       <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-10">
         <h1 className="font-display text-[24px] font-bold text-ink">Something went wrong</h1>
@@ -56,6 +71,14 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
         >
           Reload the app
         </button>
+        {prev ? (
+          <button
+            onClick={this.restorePrevious}
+            className="mt-2 rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink"
+          >
+            Roll back to the pre-update save ({prev.sessions} session{prev.sessions === 1 ? '' : 's'})
+          </button>
+        ) : null}
         <button
           onClick={() => {
             try {

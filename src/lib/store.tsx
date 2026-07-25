@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react'
 import type {
   AppState,
+  AutoForm,
   EquipmentId,
   FormCheck,
   FormIssue,
@@ -89,20 +90,48 @@ const FORM_ISSUES = new Set<FormIssue>([
 ])
 const EQUIPMENT_IDS = new Set(['floor', 'parallettes', 'band', 'pullup-bar', 'dip-bars'])
 
-/** A hand-edited `issues` string would otherwise be iterated per character. */
+/**
+ * A hand-edited `issues` string would otherwise be iterated per character.
+ *
+ * Every validated field is assigned unconditionally. Spreading first and then
+ * overriding *conditionally* looks like it preserves unknown fields, but it
+ * silently re-admits exactly the malformed values this exists to reject.
+ */
 function sanitizeForm(f: unknown): FormCheck | undefined {
   if (typeof f !== 'object' || f === null) return undefined
   const c = f as Partial<FormCheck>
   if (typeof c.rating !== 'string' || !FORM_RATINGS.has(c.rating)) return undefined
+
   const issues = Array.isArray(c.issues)
     ? c.issues.filter((i): i is FormIssue => typeof i === 'string' && FORM_ISSUES.has(i as FormIssue))
-    : undefined
+    : []
+
+  const out: FormCheck = { rating: c.rating as FormCheck['rating'] }
+  if (issues.length) out.issues = issues
+  if (typeof c.clipKey === 'string') out.clipKey = c.clipKey
+
+  const auto = sanitizeAuto(c.auto)
+  if (auto) out.auto = auto
+  return out
+}
+
+/** `auto.issues` is iterated directly, so a missing array crashes every screen. */
+function sanitizeAuto(a: unknown): AutoForm | undefined {
+  if (typeof a !== 'object' || a === null) return undefined
+  const c = a as Partial<AutoForm>
+  const issues = Array.isArray(c.issues)
+    ? c.issues.filter((i): i is FormIssue => typeof i === 'string' && FORM_ISSUES.has(i as FormIssue))
+    : []
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
   return {
-    // Spread-preserve for the same reason as sessions: unknown fields survive.
-    ...c,
-    rating: c.rating as FormCheck['rating'],
-    ...(issues && issues.length ? { issues } : {}),
-    ...(typeof c.clipKey === 'string' ? { clipKey: c.clipKey } : {}),
+    issues,
+    confidence: num(c.confidence) ?? 0,
+    elbowDeg: num(c.elbowDeg),
+    kneeDeg: num(c.kneeDeg),
+    hipAngleDeg: num(c.hipAngleDeg),
+    hipOffset: num(c.hipOffset),
+    leanRatio: num(c.leanRatio),
+    wobble: num(c.wobble),
   }
 }
 

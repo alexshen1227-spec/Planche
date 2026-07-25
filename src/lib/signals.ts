@@ -197,19 +197,27 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // Counts both what the athlete reported and what the camera measured. The
   // camera's reading survives even when a set was never rated, so a recurring
   // fault is not invisible just because the rest screen was skipped.
-  const issueCounts = new Map<string, number>()
-  const cameraSets = sessions.slice(-8).flatMap((s) => s.sets.filter((x) => x.form?.auto && x.section === 'main'))
-  for (const s of ratedSets) for (const i of s.form?.issues ?? []) issueCounts.set(i, (issueCounts.get(i) ?? 0) + 1)
-  for (const s of cameraSets) {
-    for (const i of s.form!.auto!.issues) {
-      // Half-weight: an unconfirmed machine reading is weaker evidence than
-      // the athlete saying it themselves.
-      issueCounts.set(i, (issueCounts.get(i) ?? 0) + 0.5)
-    }
+  // Weight decides what surfaces; the count is what gets reported. Reporting
+  // the weight as a set count understates how often something actually
+  // happened — five camera-detected faults are five sets, not three.
+  const issueWeight = new Map<string, number>()
+  const issueSets = new Map<string, number>()
+  const bump = (i: string, w: number) => {
+    issueWeight.set(i, (issueWeight.get(i) ?? 0) + w)
+    issueSets.set(i, (issueSets.get(i) ?? 0) + 1)
   }
-  const topEntry = [...issueCounts.entries()].sort((a, b) => b[1] - a[1])[0]
+  const cameraSets = sessions
+    .slice(-8)
+    .flatMap((s) => s.sets.filter((x) => x.form?.auto && Array.isArray(x.form.auto.issues) && x.section === 'main'))
+  for (const s of ratedSets) for (const i of s.form?.issues ?? []) bump(i, 1)
+  for (const s of cameraSets) {
+    // Half weight: an unconfirmed machine reading is weaker evidence than the
+    // athlete saying it themselves.
+    for (const i of s.form!.auto!.issues) bump(i, 0.5)
+  }
+  const topEntry = [...issueWeight.entries()].sort((a, b) => b[1] - a[1])[0]
   const topFormIssue =
-    topEntry && topEntry[1] >= 2 ? { issue: topEntry[0], count: Math.round(topEntry[1]) } : null
+    topEntry && topEntry[1] >= 1.5 ? { issue: topEntry[0], count: issueSets.get(topEntry[0]) ?? 0 } : null
 
   // Shakiness the camera saw, averaged over recent filmed sets: consistently
   // high means the prescribed holds are sitting at the very limit.

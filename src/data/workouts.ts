@@ -32,6 +32,17 @@ export function describeBlock(b: Block): string {
   return `${rounds}×${target}${perSide ? ' / side' : ''}`
 }
 
+/**
+ * Rounds as the athlete counts them: a unilateral block stored as four rounds
+ * is two sets. Keeps the "N sets" badge consistent with the block list.
+ */
+export function countRounds(blocks: Block[]): number {
+  return blocks.reduce(
+    (n, b) => n + (EXERCISE_BY_ID[b.exerciseId]?.perSide ? Math.ceil(b.sets / 2) : b.sets),
+    0,
+  )
+}
+
 export function estimateMinutes(blocks: Block[]): number {
   let sec = 0
   for (const b of blocks) {
@@ -313,10 +324,14 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
 /** A short max-effort test on the current step's key hold. */
 export function maxTestWorkout(stepId: StepId): Workout {
   const step = STEP_BY_ID[stepId]
+  // Unilateral tests must be even, or one side gets an extra attempt and the
+  // unlock could be earned off the strong side alone.
+  const perSide = EXERCISE_BY_ID[step.keyExerciseId]?.perSide
+  const attempts = perSide ? 4 : 3
   return {
     id: `test-${stepId}`,
     name: `Max Test · ${step.name}`,
-    focus: `Three fresh max attempts at the ${EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. Hit ${step.unlockSec}s to unlock the next step.`,
+    focus: `${perSide ? 'Two fresh max attempts per side' : 'Three fresh max attempts'} at the ${EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. Hit ${step.unlockSec}s to unlock the next step.`,
     minutes: 15,
     kind: 'test',
     blocks: [
@@ -324,7 +339,7 @@ export function maxTestWorkout(stepId: StepId): Workout {
       { exerciseId: 'wrist-rocks', sets: 1, target: reps(8), restSec: 20, section: 'warmup' },
       {
         exerciseId: step.keyExerciseId,
-        sets: 3,
+        sets: attempts,
         target: hold(step.unlockSec),
         restSec: 180,
         section: 'main',

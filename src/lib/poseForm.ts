@@ -33,12 +33,10 @@ export interface PoseFormResult {
   leanRatio?: number
   /** Shoulder-to-ear gap over torso length; small means shrugged. */
   shrugRatio?: number
-  /** Mean keypoint movement between frames — high means the hold was shaky. */
+  /** Positional drift per second — high means the hold was slipping. */
   wobble?: number
   /** Left/right height difference at the shoulders, over torso length. */
   asymmetry?: number
-  /** Angle between the legs; the straddle's width. */
-  straddleDeg?: number
   issues: FormIssue[]
   notes: string[]
   /** Things that went well, so the feedback is not only negative. */
@@ -71,10 +69,6 @@ interface PoseProfile {
   /** Shoulders should travel at least this far past the wrists. */
   minLeanRatio?: number
   checkShrug: boolean
-  /** Legs should be spread at least this wide (straddle only). */
-  minStraddleDeg?: number
-  /** Legs should be together within this angle (full planche only). */
-  maxLegGapDeg?: number
 }
 
 export const POSE_PROFILES: Record<string, PoseProfile> = {
@@ -141,8 +135,6 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
     minHipAngleDeg: 150,
     minLeanRatio: 0.35,
     checkShrug: true,
-    // A narrow straddle is a longer lever — width is free strength here.
-    minStraddleDeg: 45,
   },
   'band-straddle-planche': {
     label: 'Band-assisted straddle',
@@ -160,7 +152,6 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
     minHipAngleDeg: 160,
     minLeanRatio: 0.4,
     checkShrug: true,
-    maxLegGapDeg: 12,
   },
 }
 
@@ -338,9 +329,8 @@ export async function analyseClip(
     const shrugs: number[] = []
     const confidences: number[] = []
     const asymmetries: number[] = []
-    const legGaps: number[] = []
     const drifts: number[] = []
-    let prevAnchor: { sx: number; sy: number; hx: number; hy: number; torso: number } | null = null
+    let prevAnchor: { sx: number; sy: number; hx: number; hy: number; torso: number; t: number } | null = null
 
     for (const t of times) {
       await seekTo(video, t)
@@ -394,33 +384,28 @@ export async function analyseClip(
       }
       if (ear) push(shrugs, Math.hypot(shoulder.x - ear.x, shoulder.y - ear.y) / torso)
 
-      // Twisting: one shoulder riding higher than the other means the hips are
-      // rotating, which is the usual reason a one-leg extension fails.
+      // Twisting is only visible when the camera can actually see both
+      // shoulders. Filmed dead side-on the far one is occluded and the model
+      // guesses at it, so a height difference there means nothing — only
+      // measure when the two are genuinely separated in frame.
       const ls = byName(kps, 'left_shoulder')
       const rs = byName(kps, 'right_shoulder')
-      if (ls && rs) push(asymmetries, Math.abs(ls.y - rs.y) / torso)
-
-      // Leg separation, for the straddle's width and the full planche's
-      // legs-together requirement.
-      const lk = byName(kps, 'left_knee') ?? byName(kps, 'left_ankle')
-      const rk = byName(kps, 'right_knee') ?? byName(kps, 'right_ankle')
-      const lh = byName(kps, 'left_hip')
-      const rh = byName(kps, 'right_hip')
-      if (lk && rk && lh && rh) {
-        const midHip = { x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2, score: 1 }
-        push(legGaps, angleDeg(lk, midHip, rk))
+      if (ls && rs && Math.abs(ls.x - rs.x) / torso > 0.4) {
+        push(asymmetries, Math.abs(ls.y - rs.y) / torso)
       }
 
-      // Frame-to-frame drift of the shoulder/hip anchors: a steady hold barely
-      // moves, a hold at the limit visibly shakes.
-      const anchor = { sx: shoulder.x, sy: shoulder.y, hx: hip.x, hy: hip.y, torso }
+      // How far the position travels per second. Samples are seconds apart, so
+      // this is positional drift, not tremor — dividing by the real gap keeps
+      // it comparable between a 10s hold and a 40s one.
+      const anchor = { sx: shoulder.x, sy: shoulder.y, hx: hip.x, hy: hip.y, torso, t }
       if (prevAnchor) {
-        const d =
+        const dt = Math.max(0.25, t - prevAnchor.t)
+        const moved =
           (Math.hypot(anchor.sx - prevAnchor.sx, anchor.sy - prevAnchor.sy) +
             Math.hypot(anchor.hx - prevAnchor.hx, anchor.hy - prevAnchor.hy)) /
           2 /
           torso
-        push(drifts, d)
+        push(drifts, moved / dt)
       }
       prevAnchor = anchor
     }
@@ -445,7 +430,6 @@ export async function analyseClip(
     const leanRatio = median(leans)
     const shrugRatio = median(shrugs)
     const asymmetry = median(asymmetries)
-    const legGapDeg = median(legGaps)
     const wobble = median(drifts)
 
     if (confidence < 0.35) {
@@ -519,34 +503,19 @@ export async function analyseClip(
 
     // ——— Faults that apply at every level, not just the headline geometry ———
 
+    // Only reported when the camera was actually placed to see it.
     if (asymmetry !== undefined) {
       if (asymmetry > 0.22) {
         issues.push('twist')
         notes.push('One shoulder sat noticeably higher than the other — the hips are rotating. Square them up.')
-      } else details.push('Shoulders were level side to side.')
-    }
-
-    if (profile.minStraddleDeg !== undefined && legGapDeg !== undefined) {
-      if (legGapDeg < profile.minStraddleDeg) {
-        issues.push('narrow')
-        notes.push(
-          `Your straddle was only about ${Math.round(legGapDeg)}° wide. Wider legs shorten the lever and make this hold cheaper — pancake work pays off here.`,
-        )
-      } else good.push(`Straddle wide (${Math.round(legGapDeg)}°)`)
-    }
-
-    if (profile.maxLegGapDeg !== undefined && legGapDeg !== undefined) {
-      if (legGapDeg > profile.maxLegGapDeg) {
-        issues.push('narrow')
-        notes.push(`Legs were about ${Math.round(legGapDeg)}° apart — a full planche wants them glued together.`)
-      } else good.push('Legs together')
+      } else details.push('Shoulders looked square.')
     }
 
     if (wobble !== undefined) {
-      if (wobble > 0.06) {
-        details.push('You were shaking a fair amount — that hold was at or past your limit.')
-      } else if (wobble < 0.02) {
-        details.push('Very steady hold.')
+      if (wobble > 0.05) {
+        details.push('Your position drifted a fair amount through the hold — it was slipping as you tired.')
+      } else if (wobble < 0.015) {
+        details.push('Position held very steady.')
       }
     }
 
@@ -562,7 +531,6 @@ export async function analyseClip(
       shrugRatio,
       wobble,
       asymmetry,
-      straddleDeg: legGapDeg,
       issues: [...new Set(issues)],
       notes,
       good,

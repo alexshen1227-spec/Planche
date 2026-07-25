@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { Section, Session, Workout } from '../types'
 import { useStore } from '../lib/store'
-import { todaysSession, maxTestWorkout, TEMPLATES, describeBlock } from '../data/workouts'
+import { todaysSession, maxTestWorkout, TEMPLATES, describeBlock, countRounds } from '../data/workouts'
 import { EXERCISES, EXERCISE_BY_ID, CATEGORY_LABEL } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { applySession } from '../lib/engine'
@@ -60,7 +60,7 @@ export function Train({ startWorkout }: { startWorkout: (w: Workout) => void }) 
             <div className="mt-4 flex flex-wrap items-center gap-2 text-[13px] text-ink2">
               <span className="rounded-full border border-line bg-raised px-3 py-1 tnum">~{today.minutes} min</span>
               <span className="rounded-full border border-line bg-raised px-3 py-1 tnum">
-                {today.blocks.reduce((n, b) => n + b.sets, 0)} sets
+                {countRounds(today.blocks)} sets
               </span>
               {[...new Set(today.blocks.map((b) => b.section))].map((s) => (
                 <span key={s} className="rounded-full border border-line bg-raised px-3 py-1">
@@ -113,7 +113,7 @@ export function Train({ startWorkout }: { startWorkout: (w: Workout) => void }) 
               <h2 className="font-display text-[22px] font-bold text-ink">{preview.name}</h2>
               <p className="mt-1 text-[14px] text-ink2">{preview.focus}</p>
               <div className="mt-2 text-[13px] text-ink3 tnum">
-                ~{preview.minutes} min · {preview.blocks.reduce((n, b) => n + b.sets, 0)} sets
+                ~{preview.minutes} min · {countRounds(preview.blocks)} sets
               </div>
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">

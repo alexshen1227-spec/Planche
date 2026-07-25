@@ -117,6 +117,7 @@ export function SessionPlayer({
 
   const block = workout.blocks[bi]
   const exercise = block ? EXERCISE_BY_ID[block.exerciseId] : undefined
+  /** Raw rounds, which is what the progress bar and the "n/N sets" counter track. */
   const totalSets = useMemo(() => workout.blocks.reduce((n, b) => n + b.sets, 0), [workout])
   const doneSets = logs.length
   /**
@@ -389,7 +390,16 @@ export function SessionPlayer({
     }
   }, [block, exercise, filming, recorder])
 
-  const skipSet = useCallback(() => advance(false), [advance])
+  // Skipping a unilateral round skips its partner too, so a set never ends up
+  // trained on one side only.
+  const skipSet = useCallback(() => {
+    if (perSide && si % 2 === 0 && block && si + 1 < block.sets) {
+      setSi(si + 2)
+      setPhase('ready')
+      return
+    }
+    advance(false)
+  }, [advance, perSide, si, block])
 
   const skipBlock = useCallback(() => {
     lastBeepRef.current = -1
@@ -900,10 +910,12 @@ export function SessionPlayer({
               </span>
             </div>
           ) : null}
-          {lastLog?.kind === 'hold' && lastLog.section === 'main' && !lastLog.form ? (
+          {lastLog?.kind === 'hold' && lastLog.section === 'main' ? (
             <FormCheckRow
+              key={lastLog.at}
               clipKey={pendingClip}
               exerciseId={lastLog.exerciseId}
+              value={lastLog.form}
               onDone={(form) => {
                 setLastForm(form)
                 setPendingClip(null)
@@ -959,11 +971,13 @@ export function SessionPlayer({
             // The last set of a session skips the rest screen entirely, so
             // without this its form would never get rated.
             const lastMain = [...logs].reverse().find((l) => l.kind === 'hold' && l.section === 'main')
-            if (!lastMain || lastMain.form) return null
+            if (!lastMain) return null
             return (
               <FormCheckRow
+                key={lastMain.at}
                 clipKey={pendingClip}
                 exerciseId={lastMain.exerciseId}
+                value={lastMain.form}
                 onDone={(form) => {
                   setLogs((l) => l.map((x) => (x === lastMain ? { ...x, form } : x)))
                   setPendingClip(null)
@@ -1199,15 +1213,24 @@ export const FORM_ISSUE_LABEL: Record<FormIssue, string> = {
   knees: 'Knees bent',
   lean: 'Not enough lean',
   twist: 'Twisted / uneven',
-  narrow: 'Legs not placed right',
+  narrow: 'Straddle too narrow',
   hips: 'Hips sagged',
   level: 'Not level',
 }
 
-/** Offered for tapping; the two legacy values are readable but not selectable. */
-const FORM_ISSUES: { id: FormIssue; label: string }[] = (
-  ['arms', 'scapula', 'shrug', 'pike', 'sag', 'closed', 'knees', 'lean', 'twist', 'narrow'] as FormIssue[]
-).map((id) => ({ id, label: FORM_ISSUE_LABEL[id] }))
+const COMMON_ISSUES: FormIssue[] = ['arms', 'scapula', 'shrug', 'pike', 'sag', 'lean', 'twist']
+/** Only offered where they mean something — a lean has no straddle to narrow. */
+const ISSUES_BY_EXERCISE: Record<string, FormIssue[]> = {
+  'adv-tuck-planche': [...COMMON_ISSUES, 'closed'],
+  'one-leg-planche': [...COMMON_ISSUES, 'closed', 'knees'],
+  'straddle-planche': [...COMMON_ISSUES, 'closed', 'knees', 'narrow'],
+  'band-straddle-planche': [...COMMON_ISSUES, 'closed', 'knees', 'narrow'],
+  'full-planche': [...COMMON_ISSUES, 'closed', 'knees'],
+}
+
+function issuesFor(exerciseId: string): { id: FormIssue; label: string }[] {
+  return (ISSUES_BY_EXERCISE[exerciseId] ?? COMMON_ISSUES).map((id) => ({ id, label: FORM_ISSUE_LABEL[id] }))
+}
 
 /**
  * One tap for the common case, detail only when something went wrong. This is
@@ -1217,14 +1240,17 @@ const FORM_ISSUES: { id: FormIssue; label: string }[] = (
 function FormCheckRow({
   clipKey,
   exerciseId,
+  value,
   onDone,
 }: {
   clipKey: string | null
   exerciseId: string
+  /** Already-saved rating, so the panel reflects it instead of looking blank. */
+  value?: FormCheck
   onDone: (f: FormCheck) => void
 }) {
-  const [rating, setRating] = useState<FormRating | null>(null)
-  const [issues, setIssues] = useState<FormIssue[]>([])
+  const [rating, setRating] = useState<FormRating | null>(value?.rating ?? null)
+  const [issues, setIssues] = useState<FormIssue[]>(value?.issues ?? [])
   const [clipUrl, setClipUrl] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<PoseFormResult | null>(null)
   const [analysing, setAnalysing] = useState(false)
@@ -1240,10 +1266,28 @@ function FormCheckRow({
           emptyResult('That clip could not be loaded.')
       setAnalysis(friendlyResult(res))
       if (res.ok) {
-        // Pre-fills the answer; the athlete still confirms it, because the
-        // model is guessing at a body position it was barely trained on.
+        // Pre-fills the answer and saves it immediately — it used to render as
+        // selected while storing nothing, so a rest timer expiring lost it.
+        // The athlete can still correct it; the model is guessing at a body
+        // position it was barely trained on.
+        const r: FormRating = res.issues.length === 0 ? 'clean' : res.issues.length > 1 ? 'broke' : 'slipped'
         setIssues(res.issues)
-        setRating(res.issues.length === 0 ? 'clean' : res.issues.length > 1 ? 'broke' : 'slipped')
+        setRating(r)
+        onDone({
+          rating: r,
+          ...(res.issues.length ? { issues: res.issues } : {}),
+          ...(clipKey ? { clipKey } : {}),
+          auto: {
+            issues: res.issues,
+            confidence: res.confidence,
+            elbowDeg: res.elbowDeg,
+            kneeDeg: res.kneeDeg,
+            hipAngleDeg: res.hipAngleDeg,
+            hipOffset: res.hipOffset,
+            leanRatio: res.leanRatio,
+            wobble: res.wobble,
+          },
+        })
       }
     } finally {
       setAnalysing(false)
@@ -1412,7 +1456,7 @@ function FormCheckRow({
             What gave out?{analysis?.ok && analysis.issues.length ? ' (pre-filled from the clip)' : ''}
           </div>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {FORM_ISSUES.map((f) => {
+            {issuesFor(exerciseId).map((f) => {
               const on = issues.includes(f.id)
               return (
                 <button
