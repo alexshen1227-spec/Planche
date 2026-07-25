@@ -23,10 +23,9 @@ import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
 import { clearDraft, saveDraft, type SessionDraft } from '../lib/draft'
 import { useFormRecorder } from '../lib/recorder'
-import { saveClip, getClipUrl } from '../lib/clips'
+import { saveClip, getClipBlob } from '../lib/clips'
 import {
   analyseClip,
-  blobFromUrl,
   emptyResult,
   friendlyResult,
   isFilmable,
@@ -39,6 +38,7 @@ import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { ProgressRing, Modal } from '../components/ui'
+import { ClipPlayer } from '../components/ClipPlayer'
 import {
   passesProgressionFormCheck,
   setNeedsProgressionFormEvidence,
@@ -1414,7 +1414,7 @@ function FormCheckRow({
 }) {
   const [rating, setRating] = useState<FormRating | null>(value?.rating ?? null)
   const [issues, setIssues] = useState<FormIssue[]>(value?.issues ?? [])
-  const [clipUrl, setClipUrl] = useState<string | null>(null)
+  const [clipAvailable, setClipAvailable] = useState(false)
   const [analysis, setAnalysis] = useState<PoseFormResult | null>(null)
   const [analysing, setAnalysing] = useState(false)
   const [visualReviewPassed, setVisualReviewPassed] = useState(value?.visualReviewPassed === true)
@@ -1426,13 +1426,14 @@ function FormCheckRow({
   const issuesRef = useRef<FormIssue[]>(value?.issues ?? [])
   const visualReviewRef = useRef(value?.visualReviewPassed === true)
   const needsManualReplayReview = exerciseId === 'frog-stand'
+  const handleClipAvailability = useCallback((available: boolean) => setClipAvailable(available), [])
 
   const runAnalysis = async () => {
-    if (!clipUrl) return
+    if (!clipKey) return
     onBusyChange?.(true)
     setAnalysing(true)
     try {
-      const blob = await blobFromUrl(clipUrl)
+      const blob = await getClipBlob(clipKey)
       const res: PoseFormResult = blob
         ? await analyseClip(blob, exerciseId, undefined, creditedHoldSec)
         : // Never leave the button looking like it did nothing.
@@ -1492,7 +1493,7 @@ function FormCheckRow({
   useEffect(() => {
     if (
       !autoRun ||
-      !clipUrl ||
+      !clipAvailable ||
       autoRanRef.current ||
       analysing ||
       analysis ||
@@ -1508,28 +1509,7 @@ function FormCheckRow({
       if (clipKey) autoAnalysisInFlight.delete(clipKey)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRun, clipUrl, analysing, analysis, value?.auto, needsManualReplayReview])
-
-  useEffect(() => {
-    let cancelled = false
-    let url: string | null = null
-    if (clipKey) {
-      void getClipUrl(clipKey).then((u) => {
-        // Rating "Clean" is a single tap and can close this row before the
-        // read resolves — revoke rather than leaking the blob for the session.
-        if (cancelled) {
-          if (u) URL.revokeObjectURL(u)
-          return
-        }
-        url = u
-        setClipUrl(u)
-      })
-    }
-    return () => {
-      cancelled = true
-      if (url) URL.revokeObjectURL(url)
-    }
-  }, [clipKey])
+  }, [autoRun, clipAvailable, analysing, analysis, value?.auto, needsManualReplayReview])
 
   // Committed on every tap rather than behind a Save button: the rest timer
   // can expire mid-selection and used to throw the whole rating away.
@@ -1571,20 +1551,20 @@ function FormCheckRow({
 
   return (
     <div className="mx-auto mt-5 w-full max-w-sm rounded-2xl border border-line bg-surface p-4">
-      {clipUrl ? (
-        <video
-          src={clipUrl}
-          controls
-          playsInline
-          className="mb-3 h-40 w-full rounded-xl border border-line bg-black object-contain"
+      {clipKey ? (
+        <ClipPlayer
+          clipKey={clipKey}
+          label={`${EXERCISE_BY_ID[exerciseId]?.name ?? 'Hold'} form check`}
+          className="mb-3 h-40 w-full rounded-xl border border-line"
+          onAvailabilityChange={handleClipAvailability}
         />
       ) : null}
-      {clipUrl ? (
+      {clipKey ? (
         <div className="mb-3">
           {!needsManualReplayReview ? (
             <button
               onClick={() => void runAnalysis()}
-              disabled={analysing}
+              disabled={analysing || !clipAvailable}
               aria-busy={analysing}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-raised py-2 text-[13px] font-semibold text-ink transition hover:border-line-strong disabled:opacity-60"
             >
@@ -1690,7 +1670,7 @@ function FormCheckRow({
           </button>
         ))}
       </div>
-      {needsManualReplayReview && clipUrl && rating === 'clean' ? (
+      {needsManualReplayReview && clipAvailable && rating === 'clean' ? (
         <div className="mt-3 rounded-xl border border-line bg-raised p-3">
           <p className="text-[12.5px] leading-relaxed text-ink2">
             Frog Stand has no fixed geometry the camera can grade honestly. Watch the replay and check that balance

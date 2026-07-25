@@ -8,6 +8,7 @@ import { buildPlan, rewardFor } from './coach'
 import { painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
 import { validateImport } from './exportImport'
 import { buildSampleState } from '../data/sample'
+import { selectRecorderMime } from './recorder'
 
 const DAY = 86_400_000
 
@@ -195,6 +196,11 @@ describe('progression safety', () => {
 describe('camera evaluator primitives', () => {
   it('uses the lower quartile so a few straight frames cannot hide a bent hold', () => {
     expect(sustainedMinimum([150, 150, 150, 150, 150, 150, 175, 175])).toBe(150)
+  })
+
+  it('prefers broadly compatible WebM before falling back to MP4', () => {
+    const supported = new Set(['video/webm', 'video/mp4'])
+    expect(selectRecorderMime((mime) => supported.has(mime))).toBe('video/webm')
   })
 })
 

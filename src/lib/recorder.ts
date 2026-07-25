@@ -12,15 +12,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 export type RecorderStatus = 'idle' | 'starting' | 'recording' | 'denied' | 'unsupported'
 
 const MIME_CANDIDATES = [
-  'video/mp4;codecs=avc1',
-  'video/webm;codecs=vp9',
+  // Chromium's WebM recorder is much more mature than its newer fragmented
+  // MP4 path. Safari falls through to MP4 because it rejects WebM here.
   'video/webm;codecs=vp8',
   'video/webm',
+  'video/mp4;codecs=avc1.42E01E',
+  'video/mp4',
 ]
 
-function pickMime(): string | undefined {
+export function selectRecorderMime(
+  isSupported: (mime: string) => boolean,
+): string | undefined {
+  return MIME_CANDIDATES.find(isSupported)
+}
+
+export function pickRecorderMime(): string | undefined {
   if (typeof MediaRecorder === 'undefined') return undefined
-  return MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m))
+  return selectRecorderMime((mime) => MediaRecorder.isTypeSupported(mime))
 }
 
 export function useFormRecorder() {
@@ -104,7 +112,7 @@ export function useFormRecorder() {
     const ready = streamRef.current ? true : await prepare()
     if (!ready || !streamRef.current) return false
     try {
-      const mimeType = pickMime()
+      const mimeType = pickRecorderMime()
       const rec = new MediaRecorder(streamRef.current, {
         ...(mimeType ? { mimeType } : {}),
         videoBitsPerSecond: 800_000,
@@ -152,6 +160,9 @@ export function useFormRecorder() {
       rec.onerror = () => finish(null)
       const timeout = window.setTimeout(() => finish(null), 5000)
       try {
+        // Some mobile recorders otherwise omit the final partial timeslice.
+        // requestData flushes it before stop emits the terminal chunk.
+        if (rec.state === 'recording') rec.requestData()
         rec.stop()
       } catch {
         finish(null)

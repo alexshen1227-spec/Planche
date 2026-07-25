@@ -703,13 +703,3 @@ export function friendlyResult(res: PoseFormResult): PoseFormResult {
       }
     : res
 }
-
-/** Fetch a stored clip's blob so it can be analysed. */
-export async function blobFromUrl(url: string): Promise<Blob | null> {
-  try {
-    const res = await fetch(url)
-    return await res.blob()
-  } catch {
-    return null
-  }
-}

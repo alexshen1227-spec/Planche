@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { listClips, getClipUrl, deleteClip, setPinned, type ClipMeta } from '../lib/clips'
-import { analyseClip, blobFromUrl, emptyResult, friendlyResult, type PoseFormResult } from '../lib/poseForm'
+import { listClips, getClipBlob, deleteClip, setPinned, type ClipMeta } from '../lib/clips'
+import { analyseClip, emptyResult, friendlyResult, type PoseFormResult } from '../lib/poseForm'
 import { fmtDate, fmtHold } from '../lib/time'
 import { pushToast } from '../lib/toast'
 import { Icon } from './Icon'
+import { ClipPlayer } from './ClipPlayer'
 
 /**
  * Playback for the clips recorded during sessions. Two at a time on purpose:
@@ -12,16 +13,13 @@ import { Icon } from './Icon'
  */
 export function ClipGallery({ exerciseId }: { exerciseId: string }) {
   const [clips, setClips] = useState<ClipMeta[] | null>(null)
-  const [urls, setUrls] = useState<Record<string, string>>({})
   const [analysis, setAnalysis] = useState<Record<string, PoseFormResult | undefined>>({})
   const [busy, setBusy] = useState<string | null>(null)
 
   const analyse = async (key: string) => {
-    const url = urls[key]
-    if (!url) return
     setBusy(key)
     try {
-      const blob = await blobFromUrl(url)
+      const blob = await getClipBlob(key)
       const res: PoseFormResult = blob
         ? await analyseClip(blob, exerciseId, undefined, clips?.find((c) => c.key === key)?.seconds)
         : emptyResult('That clip could not be loaded.')
@@ -36,30 +34,6 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
   }
   useEffect(load, [exerciseId])
 
-  // Resolve blob URLs for whatever is on screen, and always revoke them.
-  useEffect(() => {
-    if (!clips) return
-    let cancelled = false
-    const made: string[] = []
-    void Promise.all(
-      clips.map(async (c) => {
-        const u = await getClipUrl(c.key)
-        if (u) made.push(u)
-        return [c.key, u] as const
-      }),
-    ).then((pairs) => {
-      if (cancelled) {
-        made.forEach((u) => URL.revokeObjectURL(u))
-        return
-      }
-      setUrls(Object.fromEntries(pairs.filter((p): p is [string, string] => p[1] !== null)))
-    })
-    return () => {
-      cancelled = true
-      made.forEach((u) => URL.revokeObjectURL(u))
-    }
-  }, [clips])
-
   if (clips === null) return null
   if (clips.length === 0) {
     return (
@@ -73,18 +47,10 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
     <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
       {clips.map((c) => (
         <div key={c.key} className="rounded-xl border border-line bg-surface p-2">
-          {urls[c.key] ? (
-            <video
-              src={urls[c.key]}
-              controls
-              playsInline
-              className="h-40 w-full rounded-lg bg-black object-contain"
-            />
-          ) : (
-            <div className="grid h-40 w-full place-items-center rounded-lg bg-black text-[12px] text-white/60">
-              loading…
-            </div>
-          )}
+          <ClipPlayer
+            clipKey={c.key}
+            label={`${fmtDate(c.at)} ${fmtHold(c.seconds)} form check`}
+          />
           {analysis[c.key] ? (
             <div className="mt-1.5 rounded-lg border border-line bg-raised p-2 text-[12px] leading-relaxed text-ink2">
               {analysis[c.key]!.ok
@@ -100,7 +66,7 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
             <span className="flex items-center gap-1">
               <button
                 onClick={() => void analyse(c.key)}
-                disabled={busy === c.key || !urls[c.key]}
+                disabled={busy === c.key}
                 aria-label="Check form"
                 title="Check form automatically"
                 className="grid h-7 w-7 place-items-center rounded-lg border border-line bg-raised text-ink3 hover:text-accent disabled:opacity-40"

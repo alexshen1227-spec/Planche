@@ -109,12 +109,14 @@ export async function listClips(exerciseId?: string): Promise<ClipMeta[]> {
   }
 }
 
-export async function getClipUrl(key: string): Promise<string | null> {
+/** Read the stored bytes directly; avoids a second fetch through a blob URL. */
+export async function getClipBlob(key: string): Promise<Blob | null> {
   try {
-    const blob = await withTx([BLOBS], 'readonly', (tx) =>
-      reqAsPromise(tx.objectStore(BLOBS).get(key) as IDBRequest<Blob | undefined>),
+    return (
+      (await withTx([BLOBS], 'readonly', (tx) =>
+        reqAsPromise(tx.objectStore(BLOBS).get(key) as IDBRequest<Blob | undefined>),
+      )) ?? null
     )
-    return blob ? URL.createObjectURL(blob) : null
   } catch {
     return null
   }
