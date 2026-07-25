@@ -29,8 +29,10 @@ export function applySession(state: AppState, session: Session): { next: AppStat
 
   let next: AppState = { ...state, prs, sessions: [...state.sessions, session] }
 
-  // Advance only from a clean main-work hold. PRs remain an honest record of
-  // best effort, but a poor-form/accessory/one-sided number is not mastery.
+  // Advance only from a clean main-work hold backed by both an explicit
+  // athlete rating and a passing filmed form review. PRs remain an honest
+  // record of best effort, but a weak-evidence/accessory/one-sided number is
+  // not mastery.
   const unlocked = [...state.unlocked]
   let stepId: StepId = state.stepId
   let unlockedStep: StepId | undefined

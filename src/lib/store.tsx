@@ -112,6 +112,7 @@ function sanitizeForm(f: unknown): FormCheck | undefined {
 
   const out: FormCheck = { rating: c.rating as FormCheck['rating'] }
   if (typeof c.confirmed === 'boolean') out.confirmed = c.confirmed
+  if (typeof c.visualReviewPassed === 'boolean') out.visualReviewPassed = c.visualReviewPassed
   if (issues.length) out.issues = issues
   if (typeof c.clipKey === 'string') out.clipKey = c.clipKey
 
@@ -177,6 +178,7 @@ function sanitizeSessions(raw: unknown): Session[] {
           section: section as SetLog['section'],
           at: typeof x.at === 'number' && Number.isFinite(x.at) ? x.at : c.startedAt,
           ...(x.side === 'left' || x.side === 'right' ? { side: x.side } : {}),
+          ...(typeof x.clipKey === 'string' ? { clipKey: x.clipKey } : {}),
           ...(sanitizeForm(x.form) ? { form: sanitizeForm(x.form) } : {}),
         })
       }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AppState, CheckIn, FormCheck, Session, SetLog } from '../types'
+import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog } from '../types'
 import { initialState, normalizeState, rebuildDerivedState } from './store'
 import { applySession } from './engine'
 import { qualifyingProgress } from './progression'
@@ -7,6 +7,7 @@ import { sustainedMinimum } from './poseForm'
 import { buildPlan, rewardFor } from './coach'
 import { painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
 import { validateImport } from './exportImport'
+import { buildSampleState } from '../data/sample'
 
 const DAY = 86_400_000
 
@@ -20,8 +21,17 @@ function state(stepId: AppState['stepId'] = 'foundations'): AppState {
   }
 }
 
-function form(rating: FormCheck['rating'] = 'clean', confirmed = true): FormCheck {
-  return { rating, confirmed }
+function form(
+  rating: FormCheck['rating'] = 'clean',
+  confirmed = true,
+  cameraIssues: FormIssue[] = [],
+  confidence = 0.9,
+): FormCheck {
+  return {
+    rating,
+    confirmed,
+    auto: { issues: cameraIssues, confidence },
+  }
 }
 
 function log(
@@ -68,12 +78,70 @@ describe('progression safety', () => {
     expect(result.next.stepId).toBe('foundations')
   })
 
-  it('unlocks from an athlete-confirmed clean main hold', () => {
+  it('unlocks from an athlete-confirmed clean hold with a passing camera check', () => {
     const result = applySession(
       state(),
       session('foundations', [log('ppp-hold', 30, { form: form() })]),
     )
     expect(result.next.stepId).toBe('lean')
+  })
+
+  it('keeps an athlete-confirmed clean hold as a PR when no form check exists', () => {
+    const result = applySession(
+      state(),
+      session('foundations', [
+        log('ppp-hold', 30, { form: { rating: 'clean', confirmed: true } }),
+      ]),
+    )
+    expect(result.next.prs['ppp-hold']?.value).toBe(30)
+    expect(result.next.stepId).toBe('foundations')
+  })
+
+  it('accepts one isolated camera flag but rejects multiple flags', () => {
+    const minor = session('foundations', [
+      log('ppp-hold', 30, { form: form('clean', true, ['shrug']) }),
+    ])
+    expect(applySession(state(), minor).next.stepId).toBe('lean')
+
+    const multiple = session('foundations', [
+      log('ppp-hold', 35, { form: form('clean', true, ['arms', 'sag']) }),
+    ])
+    expect(applySession(state(), multiple).next.stepId).toBe('foundations')
+  })
+
+  it('rejects an unconfirmed or low-confidence form check', () => {
+    const suggested = session('foundations', [
+      log('ppp-hold', 30, { form: form('clean', false) }),
+    ])
+    expect(applySession(state(), suggested).next.stepId).toBe('foundations')
+
+    const uncertain = session('foundations', [
+      log('ppp-hold', 30, { form: form('clean', true, [], 0.34) }),
+    ])
+    expect(applySession(state(), uncertain).next.stepId).toBe('foundations')
+  })
+
+  it('requires a filmed replay review for Frog Stand', () => {
+    const unreviewed = session('frog', [
+      log('frog-stand', 30, {
+        clipKey: 'frog:1',
+        form: { rating: 'clean', confirmed: true, clipKey: 'frog:1' },
+      }),
+    ])
+    expect(applySession(state('frog'), unreviewed).next.stepId).toBe('frog')
+
+    const reviewed = session('frog', [
+      log('frog-stand', 30, {
+        clipKey: 'frog:2',
+        form: {
+          rating: 'clean',
+          confirmed: true,
+          clipKey: 'frog:2',
+          visualReviewPassed: true,
+        },
+      }),
+    ])
+    expect(applySession(state('frog'), reviewed).next.stepId).toBe('tuck')
   })
 
   it('does not unlock from Quick Log', () => {
@@ -115,6 +183,12 @@ describe('progression safety', () => {
     const both = session('oneleg', [log('one-leg-planche', 12, { side: 'right', form: form() })])
     const after = applySession(applySession(base, oneSide).next, both).next
     expect(after.stepId).toBe('straddle')
+  })
+
+  it('keeps sample history compatible with the same evidence contract', () => {
+    const sample = buildSampleState()
+    expect(sample.stepId).toBe('tuck')
+    expect(sample.sessions.length).toBeGreaterThan(20)
   })
 })
 

@@ -158,7 +158,7 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
   },
 }
 
-/** Positions the camera can meaningfully assess. */
+/** Positions worth filming for automated or replay-based form review. */
 export function isFilmable(exerciseId: string): boolean {
   return exerciseId in POSE_PROFILES
 }
@@ -217,15 +217,9 @@ async function getDetector() {
       await import('@tensorflow/tfjs-backend-webgl')
       await tf.setBackend('webgl')
       await tf.ready()
-      const detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
+      return poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
         modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
       })
-      try {
-        localStorage.setItem(POSE_READY_KEY, '1')
-      } catch {
-        /* private mode — warming just stays off */
-      }
-      return detector
     })().catch((e) => {
       detectorPromise = null // let a later attempt retry rather than fail forever
       throw e
@@ -234,25 +228,12 @@ async function getDetector() {
   return detectorPromise
 }
 
-const POSE_READY_KEY = 'planchelab.poseReady'
-
-/** True once the model has loaded successfully at least once on this device. */
-export function poseModelReady(): boolean {
-  try {
-    return localStorage.getItem(POSE_READY_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
 /**
- * Start loading the detector while the athlete is still setting up, so the
- * first analysis of the session does not sit through the model spin-up. Gated
- * on the ready flag: it never silently pulls megabytes on a fresh install —
- * the first ever load still happens on an explicit "Check my form" tap.
+ * Start loading the detector while the athlete is still setting up, so an
+ * enabled automatic form check does not sit through the model spin-up after
+ * the set. The setting is the athlete's opt-in to the initial model download.
  */
 export function warmDetector(): void {
-  if (!poseModelReady()) return
   void getDetector().catch(() => {
     /* offline — the explicit tap will surface the error */
   })

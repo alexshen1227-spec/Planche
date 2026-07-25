@@ -30,7 +30,6 @@ import {
   emptyResult,
   friendlyResult,
   isFilmable,
-  poseModelReady,
   warmDetector,
   type PoseFormResult,
 } from '../lib/poseForm'
@@ -40,7 +39,10 @@ import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { ProgressRing, Modal } from '../components/ui'
-import { setNeedsFormConfirmation } from '../lib/progression'
+import {
+  passesProgressionFormCheck,
+  setNeedsProgressionFormEvidence,
+} from '../lib/progression'
 
 type Phase = 'intro' | 'ready' | 'lead' | 'hold' | 'reps' | 'rest' | 'summary' | 'celebrate'
 
@@ -156,18 +158,17 @@ export function SessionPlayer({
     return Math.max(stored ?? 0, thisSession)
   }, [exercise, state.prs, logs])
   const latency = exercise?.type === 'hold' ? Math.max(0, state.settings.stopLatencySec) : 0
-  // Filmable wherever the camera can actually judge the position — that now
-  // covers every key hold on the road, including the foundations plank.
+  // Film every key hold on the road. Most use pose geometry; Frog Stand keeps
+  // the replay for an explicit checklist review instead.
   const filmable = Boolean(block?.section === 'main' && exercise && isFilmable(exercise.id))
   const filming = Boolean(filmable && cameraOn && recorder.supported)
 
   // Spin the pose model up while the athlete is still getting into position,
   // so an automatic check lands right after the clip instead of stalling on
-  // the model load. warmDetector is a no-op until the first manual run has
-  // proven the model downloads on this device.
+  // the model load.
   useEffect(() => {
-    if (filming && state.settings.autoAnalyze) warmDetector()
-  }, [filming, state.settings.autoAnalyze])
+    if (filming && state.settings.autoAnalyze && exercise?.id !== 'frog-stand') warmDetector()
+  }, [filming, state.settings.autoAnalyze, exercise?.id])
 
   // Shared 100ms clock (also keeps the header session-elapsed ticking).
   useEffect(() => {
@@ -432,6 +433,13 @@ export function SessionPlayer({
         .then(async (blob) => {
           if (!blob) return
           const key = await saveClip(exId, blob, v)
+          if (key) {
+            // Attach the clip immediately, even if the rest screen is skipped.
+            // Summary can still run the required review on this exact set.
+            setLogs((current) =>
+              current.map((log) => (log.at === loggedAt ? { ...log, clipKey: key } : log)),
+            )
+          }
           // Only offer it on the screen that rates that very set — otherwise it
           // would surface under a later, unrelated exercise.
           const ratable = phaseRef.current === 'rest' || phaseRef.current === 'summary'
@@ -1000,7 +1008,11 @@ export function SessionPlayer({
           (lastLog.exerciseId === STEP_BY_ID[state.stepId].keyExerciseId || isFilmable(lastLog.exerciseId)) ? (
             <FormCheckRow
               key={lastLog.at}
-              clipKey={pendingClip?.logAt === lastLog.at ? pendingClip.key : null}
+              clipKey={
+                pendingClip?.logAt === lastLog.at
+                  ? pendingClip.key
+                  : (lastLog.clipKey ?? lastLog.form?.clipKey ?? null)
+              }
               exerciseId={lastLog.exerciseId}
               creditedHoldSec={lastLog.value}
               value={lastLog.form}
@@ -1068,14 +1080,18 @@ export function SessionPlayer({
                   (l.exerciseId === STEP_BY_ID[state.stepId].keyExerciseId || isFilmable(l.exerciseId)),
               )
             if (!lastMain) return null
-            const blocking = logs.filter((log) => setNeedsFormConfirmation(log, state))
+            const blocking = logs.filter((log) => setNeedsProgressionFormEvidence(log, state))
             const formLogs = [...blocking, lastMain].filter(
               (log, index, all) => all.findIndex((candidate) => candidate.at === log.at) === index,
             )
             return formLogs.map((log) => (
               <FormCheckRow
                 key={log.at}
-                clipKey={pendingClip?.logAt === log.at ? pendingClip.key : null}
+                clipKey={
+                  pendingClip?.logAt === log.at
+                    ? pendingClip.key
+                    : (log.clipKey ?? log.form?.clipKey ?? null)
+                }
                 exerciseId={log.exerciseId}
                 creditedHoldSec={log.value}
                 value={log.form}
@@ -1122,10 +1138,10 @@ export function SessionPlayer({
             rows={2}
             className="mt-4 w-full resize-none rounded-2xl border border-line bg-surface p-4 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
           />
-          {logs.some((log) => setNeedsFormConfirmation(log, state)) ? (
+          {logs.some((log) => setNeedsProgressionFormEvidence(log, state)) ? (
             <p className="mt-4 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-center text-[13px] text-ink">
-              An unrated unlock-level hold will still save as a PR, but it will not unlock a harder step. Confirm it
-              above if the position was clean.
+              This unlock-level hold will still save as a PR, but mastery needs both your confirmed Clean rating and
+              a passing filmed form check. One isolated camera flag may pass; two or more flags do not.
             </p>
           ) : null}
           {clipFinalizing || analysingSets.size > 0 ? (
@@ -1401,12 +1417,15 @@ function FormCheckRow({
   const [clipUrl, setClipUrl] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<PoseFormResult | null>(null)
   const [analysing, setAnalysing] = useState(false)
+  const [visualReviewPassed, setVisualReviewPassed] = useState(value?.visualReviewPassed === true)
   const autoRanRef = useRef(false)
   // Mirrors of rating/issues that async code can read after its awaits — the
   // state the closure captured goes stale, and an analysis resolving after a
   // tap used to overwrite the athlete's own answer with the model's.
   const ratingRef = useRef<FormRating | null>(value?.rating ?? null)
   const issuesRef = useRef<FormIssue[]>(value?.issues ?? [])
+  const visualReviewRef = useRef(value?.visualReviewPassed === true)
+  const needsManualReplayReview = exerciseId === 'frog-stand'
 
   const runAnalysis = async () => {
     if (!clipUrl) return
@@ -1436,6 +1455,7 @@ function FormCheckRow({
           onDone({
             rating: ratingRef.current,
             confirmed: true,
+            ...(visualReviewRef.current ? { visualReviewPassed: true } : {}),
             ...(issuesRef.current.length ? { issues: issuesRef.current } : {}),
             ...(clipKey ? { clipKey } : {}),
             auto,
@@ -1465,13 +1485,22 @@ function FormCheckRow({
     }
   }
 
-  // Fires at most once per set when auto-check is on: only after the clip is
-  // readable, only if the model is already cached on this device, and never
-  // over a rating that has already been put down. The in-flight set covers
-  // the same clip mounting twice (rest screen row → skip rest → finish row).
+  // Fires at most once per set when auto-check is on. It may run after the
+  // athlete has already answered; runAnalysis preserves that answer and adds
+  // the camera evidence beside it. The in-flight set covers the same clip
+  // mounting twice (rest screen row → skip rest → finish row).
   useEffect(() => {
-    if (!autoRun || !clipUrl || autoRanRef.current || analysing || analysis || rating !== null) return
-    if (!poseModelReady()) return
+    if (
+      !autoRun ||
+      !clipUrl ||
+      autoRanRef.current ||
+      analysing ||
+      analysis ||
+      value?.auto ||
+      needsManualReplayReview
+    ) {
+      return
+    }
     if (clipKey && autoAnalysisInFlight.has(clipKey)) return
     autoRanRef.current = true
     if (clipKey) autoAnalysisInFlight.add(clipKey)
@@ -1479,7 +1508,7 @@ function FormCheckRow({
       if (clipKey) autoAnalysisInFlight.delete(clipKey)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRun, clipUrl, rating, analysing, analysis])
+  }, [autoRun, clipUrl, analysing, analysis, value?.auto, needsManualReplayReview])
 
   useEffect(() => {
     let cancelled = false
@@ -1504,10 +1533,11 @@ function FormCheckRow({
 
   // Committed on every tap rather than behind a Save button: the rest timer
   // can expire mid-selection and used to throw the whole rating away.
-  const commit = (r: FormRating, iss: FormIssue[]) =>
+  const commit = (r: FormRating, iss: FormIssue[], replayPassed = visualReviewRef.current) =>
     onDone({
       rating: r,
       confirmed: true,
+      ...(r === 'clean' && replayPassed ? { visualReviewPassed: true } : {}),
       ...(iss.length ? { issues: iss } : {}),
       ...(clipKey ? { clipKey } : {}),
       // The camera's own reading rides along, so the coach has an objective
@@ -1537,6 +1567,8 @@ function FormCheckRow({
     if (rating) commit(rating, next)
   }
 
+  const progressionFormPassed = passesProgressionFormCheck(value, exerciseId)
+
   return (
     <div className="mx-auto mt-5 w-full max-w-sm rounded-2xl border border-line bg-surface p-4">
       {clipUrl ? (
@@ -1549,15 +1581,17 @@ function FormCheckRow({
       ) : null}
       {clipUrl ? (
         <div className="mb-3">
-          <button
-            onClick={() => void runAnalysis()}
-            disabled={analysing}
-            aria-busy={analysing}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-raised py-2 text-[13px] font-semibold text-ink transition hover:border-line-strong disabled:opacity-60"
-          >
-            <Icon name="sparkle" size={14} className="text-accent" />
-            {analysing ? 'Checking your position…' : 'Check my form automatically'}
-          </button>
+          {!needsManualReplayReview ? (
+            <button
+              onClick={() => void runAnalysis()}
+              disabled={analysing}
+              aria-busy={analysing}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-raised py-2 text-[13px] font-semibold text-ink transition hover:border-line-strong disabled:opacity-60"
+            >
+              <Icon name="sparkle" size={14} className="text-accent" />
+              {analysing ? 'Checking your position…' : 'Check my form automatically'}
+            </button>
+          ) : null}
           {analysing ? (
             <p className="mt-1 text-center text-[11.5px] text-ink3" role="status">
               First run downloads the checker — it is quick after that.
@@ -1637,8 +1671,12 @@ function FormCheckRow({
               // later sees this tap and defers to it.
               ratingRef.current = id
               issuesRef.current = id === 'clean' ? [] : issues
+              if (id !== 'clean') {
+                visualReviewRef.current = false
+                setVisualReviewPassed(false)
+              }
               setRating(id)
-              commit(id, id === 'clean' ? [] : issues)
+              commit(id, id === 'clean' ? [] : issues, id === 'clean' && visualReviewRef.current)
               if (id === 'clean') setIssues([])
             }}
             aria-pressed={rating === id}
@@ -1652,6 +1690,45 @@ function FormCheckRow({
           </button>
         ))}
       </div>
+      {needsManualReplayReview && clipUrl && rating === 'clean' ? (
+        <div className="mt-3 rounded-xl border border-line bg-raised p-3">
+          <p className="text-[12.5px] leading-relaxed text-ink2">
+            Frog Stand has no fixed geometry the camera can grade honestly. Watch the replay and check that balance
+            stayed controlled, with no uncontrolled collapse.
+          </p>
+          <button
+            onClick={() => {
+              visualReviewRef.current = true
+              setVisualReviewPassed(true)
+              commit('clean', [], true)
+            }}
+            aria-pressed={visualReviewPassed}
+            className={`mt-2 w-full rounded-xl border px-3 py-2 text-[12.5px] font-semibold transition ${
+              visualReviewPassed
+                ? 'border-ok/40 bg-ok-soft text-ok'
+                : 'border-line-strong bg-surface text-ink hover:border-accent'
+            }`}
+          >
+            {visualReviewPassed ? 'Replay checked — form held' : 'I reviewed the replay — form held'}
+          </button>
+        </div>
+      ) : null}
+      {rating === 'clean' && value?.confirmed === true ? (
+        <p
+          className={`mt-2 text-[11.5px] font-medium ${progressionFormPassed ? 'text-ok' : 'text-accent'}`}
+          role="status"
+        >
+          {progressionFormPassed
+            ? value?.auto?.issues.length === 1
+              ? 'Progression evidence complete — your Clean rating plus one isolated camera flag.'
+              : 'Progression evidence complete — athlete and filmed form checks agree.'
+            : needsManualReplayReview
+              ? 'Your Clean rating is saved. Review the replay above for this hold to count toward progression.'
+              : value?.auto && value.auto.issues.length > 1
+                ? 'Saved as a PR, but the camera found multiple form flags, so this hold will not unlock.'
+                : 'Your Clean rating is saved. A successful camera check is still needed for progression.'}
+        </p>
+      ) : null}
       {rating && rating !== 'clean' ? (
         <div className="mt-3">
           <div className="text-[12.5px] text-ink2">

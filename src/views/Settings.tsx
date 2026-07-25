@@ -375,13 +375,13 @@ export function Settings() {
         </Row>
         <Row
           label="Film main holds"
-          hint="Records a short clip of planche holds from your camera so you can compare your position over time. Stays on this device, and you can switch it off for any individual set."
+          hint="Records a short clip of planche holds for form review. A filmed check is required for future progression unlocks; sets still save as PRs when filming is off. Clips stay on this device."
         >
           <Toggle label="Film main holds" on={s.recordForm} onChange={(v) => set({ recordForm: v })} />
         </Row>
         <Row
           label="Auto form check"
-          hint="Analyses each filmed hold on its own as soon as the clip is ready, instead of waiting for a tap. Skipped until the checker has been run once, so it never downloads the model without you asking."
+          hint="Analyses each supported filmed hold as soon as the clip is ready. When enabled, the first check may download the on-device pose model; later checks are faster."
         >
           <Toggle label="Auto form check" on={s.autoAnalyze} onChange={(v) => set({ autoAnalyze: v })} />
         </Row>

@@ -706,7 +706,10 @@ export function debriefSession(
 
   // If nothing needed saying, say the good thing rather than nothing.
   if (out.length === 0 && rated.length >= 2 && clean === rated.length) {
-    out.push({ text: 'Every rated set held clean. That is exactly how unlocks get built.', kind: 'good' })
+    out.push({
+      text: 'Every rated set held clean. Pair the unlock-level hold with a passing filmed check and that is mastery.',
+      kind: 'good',
+    })
   }
 
   return out.slice(0, 3)

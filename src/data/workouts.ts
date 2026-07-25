@@ -271,7 +271,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
       target: hold(step.unlockSec),
       restSec: 180,
       section: 'main',
-      note: `Unlock attempt — you're within reach. Hold ${step.unlockSec}s clean and the next step opens.`,
+      note: `Unlock attempt — you're within reach. Hold ${step.unlockSec}s clean, film it, and pass both form confirmations.`,
     })
   }
 
@@ -401,7 +401,7 @@ export function maxTestWorkout(stepId: StepId): Workout {
   return {
     id: `test-${stepId}`,
     name: `Max Test · ${step.name}`,
-    focus: `${perSide ? 'Two fresh max attempts per side' : 'Three fresh max attempts'} at the ${EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. Hit ${step.unlockSec}s to unlock the next step.`,
+    focus: `${perSide ? 'Two fresh max attempts per side' : 'Three fresh max attempts'} at the ${EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. Hit ${step.unlockSec}s with athlete + filmed form confirmation to unlock the next step.`,
     minutes: 15,
     kind: 'test',
     blocks: [
@@ -413,7 +413,7 @@ export function maxTestWorkout(stepId: StepId): Workout {
         target: hold(step.unlockSec),
         restSec: 180,
         section: 'main',
-        note: 'All-out but clean. The timer keeps running — hold as long as form survives.',
+        note: 'Film the attempt. Hold only while the shape stays clean, then confirm your rating and form check.',
       },
     ],
   }

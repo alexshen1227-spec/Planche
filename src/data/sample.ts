@@ -10,7 +10,34 @@ function sid() {
 }
 
 function holdSet(exerciseId: string, value: number, target: number, section: Section, at: number): SetLog {
-  return { exerciseId, kind: 'hold', value, target, section, at }
+  const progressionEvidence =
+    section === 'main' && exerciseId === 'frog-stand'
+      ? {
+          form: {
+            rating: 'clean' as const,
+            confirmed: true,
+            visualReviewPassed: true,
+          },
+        }
+      : section === 'main' &&
+          [
+            'ppp-hold',
+            'planche-lean',
+            'tuck-planche',
+            'adv-tuck-planche',
+            'one-leg-planche',
+            'straddle-planche',
+            'full-planche',
+          ].includes(exerciseId)
+        ? {
+            form: {
+              rating: 'clean' as const,
+              confirmed: true,
+              auto: { issues: [], confidence: 0.9 },
+            },
+          }
+        : {}
+  return { exerciseId, kind: 'hold', value, target, section, at, ...progressionEvidence }
 }
 function repSet(exerciseId: string, value: number, target: number, section: Section, at: number): SetLog {
   return { exerciseId, kind: 'reps', value, target, section, at }

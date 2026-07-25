@@ -79,8 +79,9 @@ export function Train({ startWorkout }: { startWorkout: (w: Workout) => void }) 
           </div>
           <div className="mt-1.5 font-display text-[22px] font-bold text-ink">Max Test</div>
           <p className="mt-1 text-[14px] leading-relaxed text-ink2">
-            Three fresh max attempts at the {EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. Hit{' '}
-            <span className="font-semibold text-ink tnum">{step.unlockSec}s</span> and the next step unlocks.
+            {EXERCISE_BY_ID[step.keyExerciseId].perSide ? 'Two fresh attempts per side' : 'Three fresh attempts'} at
+            the {EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. A verified{' '}
+            <span className="font-semibold text-ink tnum">{step.unlockSec}s</span> unlocks the next step.
           </p>
           <div className="mt-4 inline-flex items-center gap-1.5 text-[14px] font-medium text-accent">
             Test yourself <Icon name="arrowR" size={15} />

@@ -120,7 +120,7 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
           <div className="flex flex-1 items-center justify-between gap-5 sm:justify-end">
             <div className="sm:text-right">
               <div className="text-[13px] text-ink2">
-                {keyEx.name} clean best{' '}
+                {keyEx.name} verified best{' '}
                 <span className="font-semibold text-ink tnum">{best ? fmtHold(best) : '—'}</span>
                 {prBest > best ? <span className="text-ink3"> · PR {fmtHold(prBest)}</span> : null}
               </div>
@@ -128,12 +128,12 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
                 {next ? (
                   <>
                     Hold <span className="font-semibold text-ink tnum">{step.unlockSec}s</span>
-                    {keyEx.perSide ? ' on both sides' : ''} with clean form to unlock{' '}
+                    {keyEx.perSide ? ' on both sides' : ''} with athlete + filmed form confirmation to unlock{' '}
                     <span className="font-semibold text-ink">{next.name}</span>
                   </>
                 ) : (
                   <>
-                    Mastery bar: <span className="font-semibold text-ink tnum">{step.unlockSec}s</span> clean
+                    Mastery bar: <span className="font-semibold text-ink tnum">{step.unlockSec}s</span> verified
                   </>
                 )}
               </div>

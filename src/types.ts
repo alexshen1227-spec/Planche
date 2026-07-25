@@ -69,9 +69,15 @@ export interface FormCheck {
   rating: FormRating
   /**
    * False when the camera suggested this rating but the athlete has not
-   * confirmed it. Missing means confirmed for backward compatibility.
+   * confirmed it. Progression requires an explicit true value.
    */
   confirmed?: boolean
+  /**
+   * The athlete watched the recorded replay and checked it against the
+   * position checklist. Used only where pose geometry cannot grade the skill
+   * honestly (currently Frog Stand).
+   */
+  visualReviewPassed?: boolean
   issues?: FormIssue[]
   /** Key of the recorded clip in the clip store, when one was kept. */
   clipKey?: string
@@ -155,6 +161,8 @@ export interface SetLog {
   at: number
   /** Self-assessed quality of this set, when the coach asked. */
   form?: FormCheck
+  /** Recorded clip attached before the athlete or camera has rated the set. */
+  clipKey?: string
   /** Which side a unilateral movement was performed on. */
   side?: 'left' | 'right'
 }

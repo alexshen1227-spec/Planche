@@ -21,8 +21,8 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
     <div className="animate-rise">
       <h1 className="font-display text-[28px] font-bold text-ink">The Road to Planche</h1>
       <p className="mt-0.5 max-w-2xl text-[14px] leading-relaxed text-ink2">
-        Eight steps from first plank to full flight. Clear each unlock bar — a clean max hold on the step's key
-        exercise — and the next door opens. Tap any step for the full coaching notes.
+        Eight steps from first plank to full flight. Clear each unlock bar with a hold you rate Clean plus a passing
+        filmed form check, and the next door opens. Tap any step for the full coaching notes.
       </p>
 
       <div className="relative mt-7 pb-2">
@@ -101,7 +101,7 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
                       />
                     </div>
                     <span className="shrink-0 text-[12.5px] text-ink3 tnum">
-                      {best ? fmtHold(best) : '0s'} / {step.unlockSec}s clean
+                      {best ? fmtHold(best) : '0s'} / {step.unlockSec}s verified
                       {keyEx.perSide ? ' / both sides' : ''} {keyEx.name.toLowerCase()}
                     </span>
                   </div>

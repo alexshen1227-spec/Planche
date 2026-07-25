@@ -93,7 +93,7 @@ export const GUIDES: Guide[] = [
       },
       {
         heading: 'When to move up a step',
-        body: 'When you clear the unlock bar on the step key exercise with clean form. The app tracks this and advances you automatically. The bars are minimums, not targets — banking a few extra seconds before you move on makes the next step arrive faster, not slower.',
+        body: 'When you clear the unlock bar on the step key exercise with two signals: you explicitly rate the hold Clean, and its filmed form check passes with no more than one isolated flag. Frog Stand uses an explicit replay-and-checklist review because its balance shape is not honest for the pose model to grade. The bars are minimums, not targets — banking a few extra clean seconds before moving on makes the next step arrive faster, not slower.',
       },
       {
         heading: 'Consistency beats heroics',
