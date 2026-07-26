@@ -352,7 +352,9 @@ function median(xs: number[]): number | undefined {
 }
 
 let detectorPromise: Promise<{
-  estimatePoses: (img: HTMLVideoElement) => Promise<{ keypoints: Kp[] }[]>
+  // Canvas as well as video: frames are rotated through a canvas before
+  // detection so a horizontal athlete reaches the model closer to upright.
+  estimatePoses: (img: HTMLVideoElement | HTMLCanvasElement) => Promise<{ keypoints: Kp[] }[]>
 }> | null = null
 
 /**
@@ -427,6 +429,65 @@ function resolveDuration(video: HTMLVideoElement): Promise<number> {
     }
     window.setTimeout(finish, 3000)
   })
+}
+
+/**
+ * Pose models are trained overwhelmingly on people who are standing up, so a
+ * horizontal athlete is the single case they handle worst — and that is every
+ * planche ever filmed. Feeding the detector a rotated frame puts the body back
+ * near upright and recovers tracking that is otherwise simply lost.
+ *
+ * Keypoints come back in rotated space and are mapped straight back to the
+ * original frame, so every measurement downstream still uses real screen axes:
+ * angles are rotation-invariant anyway, but hip height and forward lean are
+ * emphatically not.
+ */
+export type Rotation = 0 | 90 | 270
+
+function drawRotated(video: HTMLVideoElement, canvas: HTMLCanvasElement, rotation: Rotation): boolean {
+  const w = video.videoWidth
+  const h = video.videoHeight
+  if (!w || !h) return false
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return false
+  canvas.width = rotation === 0 ? w : h
+  canvas.height = rotation === 0 ? h : w
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  if (rotation === 90) {
+    ctx.translate(h, 0)
+    ctx.rotate(Math.PI / 2)
+  } else if (rotation === 270) {
+    ctx.translate(0, w)
+    ctx.rotate(-Math.PI / 2)
+  }
+  ctx.drawImage(video, 0, 0, w, h)
+  return true
+}
+
+/** Map keypoints from rotated-canvas space back into original frame space. */
+export function unrotateKeypoints<T extends { x: number; y: number }>(
+  kps: T[],
+  rotation: Rotation,
+  srcWidth: number,
+  srcHeight: number,
+): T[] {
+  if (rotation === 0) return kps
+  return kps.map((k) =>
+    rotation === 90
+      ? { ...k, x: k.y, y: srcHeight - k.x }
+      : { ...k, x: srcWidth - k.y, y: k.x },
+  )
+}
+
+/** Mean confidence of the joints every measurement here depends on. */
+function trackingScore(kps: Kp[]): number {
+  const wanted = [
+    'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow',
+    'left_wrist', 'right_wrist', 'left_hip', 'right_hip', 'left_knee', 'right_knee',
+  ]
+  const scores = wanted.map((n) => kps.find((k) => k.name === n)?.score ?? 0)
+  return scores.reduce((a, b) => a + b, 0) / wanted.length
 }
 
 function seekTo(video: HTMLVideoElement, t: number): Promise<void> {
@@ -516,11 +577,61 @@ export async function analyseClip(
     let trackedSide: 'left' | 'right' | null = null
     let prevAnchor: { sx: number; sy: number; hx: number; hy: number; torso: number; t: number } | null = null
 
+    const srcW = video.videoWidth
+    const srcH = video.videoHeight
+    const canvas = document.createElement('canvas')
+
+    // Pick the orientation the detector reads best, from a couple of probe
+    // frames in the middle of the hold, then keep it for the whole clip.
+    let rotation: Rotation = 0
+    if (srcW && srcH) {
+      const probes = [times[Math.floor(times.length / 3)], times[Math.floor((2 * times.length) / 3)]].filter(
+        (t): t is number => t !== undefined,
+      )
+      // Seek once per probe frame and try all three orientations on it.
+      // Seeking is by far the expensive half, so this keeps the whole
+      // orientation search to two extra seeks rather than six.
+      const totals = new Map<Rotation, number>()
+      for (const t of probes) {
+        await seekTo(video, t)
+        for (const candidate of [0, 90, 270] as Rotation[]) {
+          if (!drawRotated(video, canvas, candidate)) continue
+          const probePoses = await detector.estimatePoses(canvas)
+          totals.set(candidate, (totals.get(candidate) ?? 0) + trackingScore(probePoses[0]?.keypoints ?? []))
+        }
+      }
+      let bestScore = -1
+      for (const [candidate, score] of totals) {
+        // Ties keep the unrotated frame: rotating is only worth it when it
+        // measurably helps.
+        if (score > bestScore + 1e-6) {
+          bestScore = score
+          rotation = candidate
+        }
+      }
+    }
+
+    /** Frames where a person was found at all, however partially. */
+    let posesSeen = 0
+    /** Which body regions the camera ever managed to see, for the error copy. */
+    const regionsSeen = new Set<string>()
+
     for (const t of times) {
       await seekTo(video, t)
-      const poses = await detector.estimatePoses(video)
-      const kps = poses[0]?.keypoints
+      let kps: Kp[] | undefined
+      if (srcW && srcH && drawRotated(video, canvas, rotation)) {
+        const poses = await detector.estimatePoses(canvas)
+        const raw = poses[0]?.keypoints
+        kps = raw ? unrotateKeypoints(raw, rotation, srcW, srcH) : undefined
+      } else {
+        kps = (await detector.estimatePoses(video))[0]?.keypoints
+      }
       if (!kps?.length) continue
+      if (trackingScore(kps) > 0.15) posesSeen++
+      if (byName(kps, 'left_shoulder') || byName(kps, 'right_shoulder')) regionsSeen.add('shoulders')
+      if (byName(kps, 'left_wrist') || byName(kps, 'right_wrist')) regionsSeen.add('hands')
+      if (byName(kps, 'left_hip') || byName(kps, 'right_hip')) regionsSeen.add('hips')
+      if (byName(kps, 'left_ankle') || byName(kps, 'right_ankle')) regionsSeen.add('feet')
       // Keep anatomical identity stable through the clip. Switching to
       // whichever side scores higher on each frame creates fake angle jumps.
       const side: 'left' | 'right' | null = trackedSide ?? pickSide(kps)
@@ -649,12 +760,16 @@ export async function analyseClip(
 
     const framesUsed = confidences.length
     if (framesUsed < MIN_FRAMES) {
-      return {
-        ...empty,
-        framesUsed,
-        reason:
-          'Could not track your body reliably. Film side-on, whole body in frame, with the light in front of you rather than behind.',
-      }
+      // Name what the camera actually found. "Could not track your body" gave
+      // no clue whether the fix was moving the phone, turning it, or the light.
+      const seen = [...regionsSeen]
+      const reason =
+        posesSeen === 0
+          ? 'No body was found in this clip at all. Move the phone back until your whole body — hands to feet — fits in the frame, and film from the side.'
+          : seen.length
+            ? `Only your ${listPhrase(seen)} stayed in frame. Move the phone further back and turn it on its side so the whole body fits end to end.`
+            : 'Could not track your body reliably. Film side-on, whole body in frame, with the light in front of you rather than behind.'
+      return { ...empty, framesUsed, reason }
     }
 
     if (frontalFrames / framesUsed > 0.5) {

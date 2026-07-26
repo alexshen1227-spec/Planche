@@ -801,12 +801,20 @@ export function SessionPlayer({
                 </button>
               </div>
               {cameraOn ? (
-                <div className="relative mt-2 aspect-video w-full overflow-hidden rounded-2xl border border-line bg-black">
+                // The box takes the camera's real shape rather than forcing
+                // 16:9. Letterboxing a portrait stream into a wide frame put
+                // the framing guide over black bars, so the one thing the
+                // preview exists for — seeing what will actually be in the
+                // clip — was the thing it got wrong.
+                <div
+                  className="relative mt-2 w-full overflow-hidden rounded-2xl border border-line bg-black"
+                  style={{ aspectRatio: recorder.frame ? recorder.frame.width / recorder.frame.height : 16 / 9 }}
+                >
                   <video
                     ref={recorder.previewRef}
                     muted
                     playsInline
-                    className="h-full w-full object-contain"
+                    className="h-full w-full object-cover"
                   />
                   <div className="pointer-events-none absolute inset-[8%] rounded-xl border border-dashed border-accent/70" />
                   <div className="pointer-events-none absolute inset-x-[8%] top-1/2 h-px bg-accent/60" />

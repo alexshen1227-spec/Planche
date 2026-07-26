@@ -108,12 +108,12 @@ export function useFormRecorder() {
       .getUserMedia({
         video: {
           facingMode: 'environment',
-          // A planche is a horizontal shape, so a wide frame is the one that
-          // fits it. Asked for as an ideal 16:9 rather than a hard constraint:
-          // a phone standing upright can only deliver what its sensor is
-          // rotated to, and failing outright would be worse than a tall frame
-          // the setup screen then asks you to turn.
-          aspectRatio: { ideal: 16 / 9 },
+          // Resolution only — deliberately no aspectRatio constraint. Asking a
+          // phone standing upright for 16:9 does not rotate it; the browser
+          // satisfies the ratio by cropping the sensor instead, which narrows
+          // the field of view exactly when you need all of it to fit a body.
+          // Orientation is a physical property of how the phone is propped, so
+          // it is handled by telling you to turn it, not by constraining here.
           width: { ideal: 1280 },
           height: { ideal: 720 },
           frameRate: { ideal: 24 },

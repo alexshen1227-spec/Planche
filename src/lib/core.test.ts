@@ -3,7 +3,13 @@ import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog } from '.
 import { initialState, normalizeState, rebuildDerivedState } from './store'
 import { applySession } from './engine'
 import { formEvidenceCoversArms, progressionCredit, qualifyingProgress } from './progression'
-import { POSE_PROFILES, gradeCoverage, sustainedCleanSeconds, sustainedMinimum } from './poseForm'
+import {
+  POSE_PROFILES,
+  gradeCoverage,
+  sustainedCleanSeconds,
+  sustainedMinimum,
+  unrotateKeypoints,
+} from './poseForm'
 import { buildPlan, rewardFor } from './coach'
 import { painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
 import { validateImport } from './exportImport'
@@ -263,6 +269,44 @@ describe('partial camera coverage', () => {
   it('treats pre-partial-grading records as fully covered', () => {
     expect(formEvidenceCoversArms({ issues: [], confidence: 0.9 })).toBe(true)
     expect(formEvidenceCoversArms(undefined)).toBe(true)
+  })
+})
+
+describe('rotation-robust tracking', () => {
+  // A 640x480 frame rotated 90° clockwise becomes 480x640 on the canvas.
+  // Un-rotating has to land keypoints back on the exact original pixel, or
+  // hip height and forward lean — the two measures defined in screen axes —
+  // silently invert.
+  const W = 640
+  const H = 480
+
+  it('maps a 90° keypoint back to its original position', () => {
+    // Source (100, 50) draws to canvas (H - 50, 100) = (430, 100).
+    const [back] = unrotateKeypoints([{ x: 430, y: 100 }], 90, W, H)
+    expect(back).toEqual({ x: 100, y: 50 })
+  })
+
+  it('maps a 270° keypoint back to its original position', () => {
+    // Source (100, 50) draws to canvas (50, W - 100) = (50, 540).
+    const [back] = unrotateKeypoints([{ x: 50, y: 540 }], 270, W, H)
+    expect(back).toEqual({ x: 100, y: 50 })
+  })
+
+  it('leaves unrotated frames untouched and preserves keypoint fields', () => {
+    const kps = [{ x: 12, y: 34, score: 0.8, name: 'left_hip' }]
+    expect(unrotateKeypoints(kps, 0, W, H)).toEqual(kps)
+    expect(unrotateKeypoints(kps, 90, W, H)[0].name).toBe('left_hip')
+  })
+
+  it('keeps a horizontal body horizontal after the round trip', () => {
+    // Shoulder and hip level in the original frame must stay level once a
+    // rotated detection is mapped back — this is what hip-offset reads.
+    const shoulder = { x: 300, y: 200 }
+    const hip = { x: 200, y: 200 }
+    const toCanvas = (p: { x: number; y: number }) => ({ x: H - p.y, y: p.x })
+    const [s, h] = unrotateKeypoints([toCanvas(shoulder), toCanvas(hip)], 90, W, H)
+    expect(s.y).toBe(h.y)
+    expect(s.x).toBeGreaterThan(h.x)
   })
 })
 
