@@ -861,16 +861,24 @@ export async function analyseClip(
     const heldKnees = pick('kneeDeg')
     const heldHipAngles = pick('hipAngleDeg')
 
-    const elbowPeak = heldElbows.length ? Math.max(...heldElbows) : undefined
-    const kneePeak = heldKnees.length ? Math.max(...heldKnees) : undefined
-    const hipAnglePeak = heldHipAngles.length ? Math.max(...heldHipAngles) : undefined
-    const elbowDeg = sustainedMinimum(heldElbows)
-    const kneeDeg = sustainedMinimum(heldKnees)
-    const hipAngleDeg = sustainedMinimum(heldHipAngles)
-    const hipOffset = median(pick('hipOffset'))
-    const leanRatio = median(pick('leanRatio'))
-    const shrugRatio = median(pick('shrugRatio'))
-    const asymmetry = median(pick('asymmetry'))
+    // Every metric falls back to the whole clip when the narrowed window has
+    // nothing for it. Coverage was judged over the full clip, so a criterion
+    // that is graded must produce a number: leaving it undefined here would
+    // drop its check silently and an all-undefined verdict reads as "clean".
+    const elbowPeak = heldElbows.length ? Math.max(...heldElbows) : elbows.length ? Math.max(...elbows) : undefined
+    const kneePeak = heldKnees.length ? Math.max(...heldKnees) : knees.length ? Math.max(...knees) : undefined
+    const hipAnglePeak = heldHipAngles.length
+      ? Math.max(...heldHipAngles)
+      : hipAngles.length
+        ? Math.max(...hipAngles)
+        : undefined
+    const elbowDeg = sustainedMinimum(heldElbows) ?? sustainedMinimum(elbows)
+    const kneeDeg = sustainedMinimum(heldKnees) ?? sustainedMinimum(knees)
+    const hipAngleDeg = sustainedMinimum(heldHipAngles) ?? sustainedMinimum(hipAngles)
+    const hipOffset = median(pick('hipOffset')) ?? median(hipOffsets)
+    const leanRatio = median(pick('leanRatio')) ?? median(leans)
+    const shrugRatio = median(pick('shrugRatio')) ?? median(shrugs)
+    const asymmetry = median(pick('asymmetry')) ?? median(asymmetries)
     const wobble = median(drifts)
 
     // Median of the first and final thirds of the sampled window, for the
@@ -1031,6 +1039,11 @@ export async function analyseClip(
       )
     }
     details.push('Scapular protraction is not measured by this camera check — confirm it yourself.')
+    details.push(
+      `Tracked with ${backend.id === 'blazepose' ? 'BlazePose' : 'MoveNet'}${
+        rotation === 0 ? '' : `, reading the frame rotated ${rotation}° so your body sat upright to the model`
+      }.`,
+    )
     if (unseen.length) {
       // Said plainly rather than buried: a verdict that quietly skipped a
       // criterion would read as a clean bill of health for it.

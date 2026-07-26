@@ -324,11 +324,14 @@ export function useFormRecorder() {
     (next: boolean) => {
       wideRef.current = next
       setWideState(next)
-      // Reopening is the only way to change device; do it only if already live.
-      if (streamRef.current) {
-        stopStream()
-        void prepare()
-      }
+      if (!streamRef.current && !openingRef.current) return
+      // Retire any open still in flight before reopening. Without this, a tap
+      // during the permission or camera-open delay would be handed back the
+      // *previous* lens's pending request, so the switch silently did nothing.
+      openGenerationRef.current++
+      openingRef.current = null
+      stopStream()
+      void prepare()
     },
     [prepare, stopStream],
   )

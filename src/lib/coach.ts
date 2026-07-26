@@ -865,5 +865,31 @@ export function debriefSession(
     })
   }
 
+  // The coach always has something to say about a finished session. Silence
+  // here reads as "that did not register", and the most common reason a
+  // session produces no bullets is the one worth explaining: nothing was
+  // rated, so none of it can count toward the next step.
+  if (out.length === 0) {
+    const round1 = (n: number) => Math.round(n * 10) / 10
+    const mainHolds = session.sets.filter((x) => x.section === 'main' && x.kind === 'hold' && x.value > 0)
+    const best = mainHolds.reduce((b, x) => Math.max(b, x.value), 0)
+    if (best > 0 && rated.length === 0) {
+      out.push({
+        text: `Best hold today ${round1(best)}s — logged as a PR, but nothing was rated, so it cannot count toward the ${step.unlockSec}s unlock. A filmed set you confirm as Clean is what moves the road.`,
+        kind: 'info',
+      })
+    } else if (best > 0) {
+      out.push({
+        text: `Best hold today ${round1(best)}s against a ${step.unlockSec}s bar. Keep stacking sessions like this one.`,
+        kind: 'good',
+      })
+    } else {
+      out.push({
+        text: 'Supporting work logged. It does not move the unlock bar directly, but the coach counts it as load and plans tomorrow around it.',
+        kind: 'info',
+      })
+    }
+  }
+
   return out.slice(0, 3)
 }

@@ -11,7 +11,7 @@ import {
   sustainedMinimum,
   unrotateKeypoints,
 } from './poseForm'
-import { buildPlan, rewardFor } from './coach'
+import { buildPlan, debriefSession, rewardFor } from './coach'
 import { painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
 import { validateImport } from './exportImport'
 import { buildSampleState } from '../data/sample'
@@ -270,6 +270,49 @@ describe('partial camera coverage', () => {
   it('treats pre-partial-grading records as fully covered', () => {
     expect(formEvidenceCoversArms({ issues: [], confidence: 0.9 })).toBe(true)
     expect(formEvidenceCoversArms(undefined)).toBe(true)
+  })
+})
+
+describe('session debrief', () => {
+  const base = state()
+  const run = (sets: SetLog[], overrides: Partial<Session> = {}) => {
+    const s = session('foundations', sets, overrides)
+    return debriefSession(base, applySession(base, s).next, s)
+  }
+
+  it('always says something about a finished session', () => {
+    // An ordinary session with nothing rated used to return no bullets at all,
+    // so the finish screen simply showed an empty space.
+    expect(run([log('ppp-hold', 18)], { workoutKind: 'auto' }).length).toBeGreaterThan(0)
+    expect(run([], { workoutKind: 'auto' }).length).toBeGreaterThan(0)
+  })
+
+  it('explains why an unrated hold cannot count toward the unlock', () => {
+    const [first] = run([log('ppp-hold', 18)], { workoutKind: 'auto' })
+    expect(first.text).toMatch(/nothing was rated/i)
+    expect(first.text).toMatch(/18/)
+  })
+
+  it('still names the gap after a missed max test', () => {
+    const [first] = run([log('ppp-hold', 18)], { workoutKind: 'test' })
+    expect(first.text).toMatch(/not an unlock/i)
+  })
+
+  it('describes accessory-only work as supporting load', () => {
+    const [first] = run([log('hollow-hold', 40, { section: 'core' })], { workoutKind: 'auto' })
+    expect(first.text).toMatch(/supporting work/i)
+  })
+
+  it('never returns more than three bullets', () => {
+    const many = run(
+      [
+        log('ppp-hold', 30, { form: form('broke'), side: 'left' }),
+        log('ppp-hold', 12, { form: form('broke'), side: 'right' }),
+        log('ppp-hold', 30, { form: form('broke') }),
+      ],
+      { workoutKind: 'test' },
+    )
+    expect(many.length).toBeLessThanOrEqual(3)
   })
 })
 
