@@ -1,4 +1,8 @@
-export type Tab = 'home' | 'train' | 'path' | 'library' | 'stats' | 'settings'
+/**
+ * `updates` has no bottom-nav entry of its own — it is a page reached from
+ * Settings, and keeps Settings lit while you are on it.
+ */
+export type Tab = 'home' | 'train' | 'path' | 'library' | 'stats' | 'settings' | 'updates'
 
 export type StepId =
   | 'foundations'

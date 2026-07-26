@@ -15,6 +15,7 @@ import { Path } from './views/Path'
 import { Library } from './views/Library'
 import { Stats } from './views/Stats'
 import { Settings } from './views/Settings'
+import { Updates } from './views/Updates'
 import { Onboarding } from './views/Onboarding'
 import { SessionPlayer } from './views/SessionPlayer'
 
@@ -137,6 +138,10 @@ export default function App() {
 
   const [askCheckIn, setAskCheckIn] = useState(false)
 
+  // Updates has no nav entry of its own; it lives under Settings, so Settings
+  // stays lit while you are reading it rather than nothing being selected.
+  const navTab: Tab = tab === 'updates' ? 'settings' : tab
+
   // Sweep expired footage once per launch, so storage does not creep up over
   // months even if a session never finishes.
   useEffect(() => {
@@ -209,12 +214,12 @@ export default function App() {
                 key={n.tab}
                 onClick={() => setTab(n.tab)}
                 className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-[14.5px] font-medium transition ${
-                  tab === n.tab
+                  navTab === n.tab
                     ? 'bg-surface text-ink shadow-card border border-line'
                     : 'border border-transparent text-ink2 hover:bg-surface/60 hover:text-ink'
                 }`}
               >
-                <Icon name={n.icon} size={18} className={tab === n.tab ? 'text-accent' : ''} />
+                <Icon name={n.icon} size={18} className={navTab === n.tab ? 'text-accent' : ''} />
                 {n.label}
               </button>
             ))}
@@ -243,7 +248,8 @@ export default function App() {
           {tab === 'path' ? <Path startWorkout={startWorkout} /> : null}
           {tab === 'library' ? <Library /> : null}
           {tab === 'stats' ? <Stats /> : null}
-          {tab === 'settings' ? <Settings /> : null}
+          {tab === 'settings' ? <Settings go={setTab} /> : null}
+          {tab === 'updates' ? <Updates go={setTab} /> : null}
         </main>
       </div>
 
@@ -255,7 +261,7 @@ export default function App() {
               key={n.tab}
               onClick={() => setTab(n.tab)}
               className={`flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-[10.5px] font-medium transition ${
-                tab === n.tab ? 'text-accent' : 'text-ink3 hover:text-ink2'
+                navTab === n.tab ? 'text-accent' : 'text-ink3 hover:text-ink2'
               }`}
             >
               <Icon name={n.icon} size={21} />

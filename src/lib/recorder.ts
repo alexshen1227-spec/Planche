@@ -32,6 +32,46 @@ export function pickRecorderMime(): string | undefined {
 }
 
 /**
+ * Push an open camera to the widest view it is capable of.
+ *
+ * Two separate things narrow a phone camera: a zoom setting above its minimum,
+ * and a capture mode that reads only part of the sensor. Both are negotiated
+ * here *after* the camera is open, because capabilities cannot be read until
+ * there is a live track to ask. Every step is best-effort — a camera that
+ * refuses simply keeps the view it already gave us.
+ */
+async function maximiseFieldOfView(track: MediaStreamTrack): Promise<void> {
+  const caps = track.getCapabilities?.() as
+    | { width?: { max?: number }; height?: { max?: number }; zoom?: { min?: number } }
+    | undefined
+  if (!caps) return
+
+  // Widest end of whatever zoom range this camera exposes. On phones that
+  // present the ultra-wide as a zoom level rather than a separate device,
+  // this is what actually gets you to 0.5x.
+  if (typeof caps.zoom?.min === 'number') {
+    await track
+      .applyConstraints({ advanced: [{ zoom: caps.zoom.min } as MediaTrackConstraintSet] })
+      .catch(() => {})
+  }
+
+  const maxW = caps.width?.max
+  const maxH = caps.height?.max
+  if (!maxW || !maxH) return
+  // Full sensor readout rather than a cropped preview mode, scaled down to a
+  // sane ceiling: the extra pixels beyond this buy no field of view, only
+  // bigger clips and slower analysis. Aspect is preserved so nothing is cut.
+  const CEILING = 1920
+  const scale = Math.min(1, CEILING / Math.max(maxW, maxH))
+  await track
+    .applyConstraints({
+      width: { ideal: Math.round(maxW * scale) },
+      height: { ideal: Math.round(maxH * scale) },
+    })
+    .catch(() => {})
+}
+
+/**
  * Find the widest back lens the device will admit to having.
  *
  * A planche is filmed from across the room and is wider than it is tall, so
@@ -137,16 +177,20 @@ export function useFormRecorder() {
     setStatus('starting')
     const generation = ++openGenerationRef.current
     const attempt = (async () => {
-      // Resolution only — deliberately no aspectRatio constraint. Asking a
-      // phone standing upright for 16:9 does not rotate it; the browser
-      // satisfies the ratio by cropping the sensor instead, which narrows the
-      // field of view exactly when you need all of it to fit a body.
-      // Orientation is a physical property of how the phone is propped, so it
-      // is handled by telling you to turn it, not by constraining here.
+      // No size and no aspect ratio asked for, on purpose.
+      //
+      // Every constraint here is a licence to crop. Asking an upright phone
+      // for 16:9 does not rotate it — the browser satisfies the ratio by
+      // cutting the sensor down. Even a plain 1280x720 request invites the
+      // same thing, because a phone sensor is natively 4:3 and 720p modes are
+      // frequently that sensor with its edges thrown away. Since the whole
+      // problem is fitting a wide body end to end, the widest possible frame
+      // is the requirement, and `resizeMode: 'none'` asks for the native
+      // frame rather than a cropped-and-rescaled one. The exact resolution is
+      // then negotiated upward from the camera's own capabilities below.
       const base: MediaTrackConstraints = {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
         frameRate: { ideal: 24 },
+        ...({ resizeMode: 'none' } as MediaTrackConstraints),
       }
       const wanted = wideRef.current ? await findUltraWideDeviceId() : null
       const open = (video: MediaTrackConstraints) => navigator.mediaDevices.getUserMedia({ video, audio: false })
@@ -175,19 +219,7 @@ export function useFormRecorder() {
         streamRef.current = stream
         attachPreview(videoRef.current)
         const track = stream.getVideoTracks()[0]
-        // Some Android builds expose the wider view as a zoom range on one
-        // camera instead of a second device. Where that exists, ask for the
-        // widest end of it.
-        if (wideRef.current && track) {
-          const caps = track.getCapabilities?.() as { zoom?: { min?: number } } | undefined
-          if (caps?.zoom && typeof caps.zoom.min === 'number') {
-            await track
-              .applyConstraints({ advanced: [{ zoom: caps.zoom.min } as MediaTrackConstraintSet] })
-              .catch(() => {
-                /* zoom is optional everywhere it exists */
-              })
-          }
-        }
+        if (wideRef.current && track) await maximiseFieldOfView(track)
         const settings = track?.getSettings()
         setFrame(
           settings?.width && settings?.height

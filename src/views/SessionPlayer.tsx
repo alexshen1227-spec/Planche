@@ -827,6 +827,7 @@ export function SessionPlayer({
                 <div className="mt-1.5 flex items-center justify-between gap-3">
                   <span className="text-[12.5px] text-ink3">
                     {recorder.onWideLens ? 'Ultra-wide (0.5×) lens' : 'Standard lens'}
+                    {recorder.frame ? ` · ${recorder.frame.width}×${recorder.frame.height}` : ''}
                   </span>
                   <button
                     onClick={() => recorder.setWide(!recorder.wide)}

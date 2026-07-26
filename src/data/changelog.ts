@@ -17,6 +17,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-07-26',
+    title: 'Widest possible frame, and this page',
+    area: 'camera',
+    notes: [
+      'The camera no longer asks for a specific resolution. Every size or shape you request is a licence for the browser to crop the sensor to match it — asking for 720p was quietly throwing away the edges of the frame.',
+      'It now opens with no size constraint, asks for the native uncropped frame, winds any zoom to its widest, then negotiates up to the full sensor readout. On a typical phone that is 4:3 at 1920×1440 instead of a cropped 16:9 at 1280×720 — noticeably more room to fit a body end to end.',
+      'The setup screen shows the lens and the exact resolution you are filming at, so you can see what you are getting.',
+      'The update log is its own page now, reached from Settings, instead of a popup.',
+    ],
+  },
+  {
+    date: '2026-07-26',
     title: 'The camera check gets a second model, and stops judging your dismount',
     area: 'camera',
     notes: [
