@@ -823,6 +823,21 @@ export function SessionPlayer({
                   </div>
                 </div>
               ) : null}
+              {cameraOn ? (
+                <div className="mt-1.5 flex items-center justify-between gap-3">
+                  <span className="text-[12.5px] text-ink3">
+                    {recorder.onWideLens ? 'Ultra-wide (0.5×) lens' : 'Standard lens'}
+                  </span>
+                  <button
+                    onClick={() => recorder.setWide(!recorder.wide)}
+                    className={`rounded-lg border px-2.5 py-1 text-[12px] font-semibold transition ${
+                      recorder.wide ? 'border-accent/40 bg-accent-soft text-accent' : 'border-line bg-raised text-ink2'
+                    }`}
+                  >
+                    {recorder.wide ? '0.5× on' : '0.5× off'}
+                  </button>
+                </div>
+              ) : null}
               {cameraOn && recorder.portrait ? (
                 <p className="mt-1.5 flex items-start gap-1.5 text-[12.5px] leading-relaxed text-accent">
                   <Icon name="rotate" size={14} className="mt-0.5 shrink-0" />

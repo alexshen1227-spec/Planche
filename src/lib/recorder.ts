@@ -31,10 +31,41 @@ export function pickRecorderMime(): string | undefined {
   return selectRecorderMime((mime) => MediaRecorder.isTypeSupported(mime))
 }
 
+/**
+ * Find the widest back lens the device will admit to having.
+ *
+ * A planche is filmed from across the room and is wider than it is tall, so
+ * the ultra-wide ("0.5x") lens is genuinely the right glass for it — it is the
+ * difference between fitting hands-to-feet and cropping the feet off. Phones
+ * expose it as a separate device rather than as a zoom level, and only after
+ * camera permission has been granted, so this runs *after* the first
+ * getUserMedia call rather than before it.
+ *
+ * Labels are vendor strings, not a spec, so this matches loosely and falls
+ * back to the default camera whenever nothing clearly says "ultra wide".
+ */
+export async function findUltraWideDeviceId(): Promise<string | null> {
+  if (!navigator.mediaDevices?.enumerateDevices) return null
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const cameras = devices.filter((d) => d.kind === 'videoinput')
+    const back = cameras.filter((d) => !/front|user|face/i.test(d.label))
+    const ultra = (back.length ? back : cameras).find((d) => /ultra.?wide|0\.5|wide.?angle/i.test(d.label))
+    return ultra?.deviceId ?? null
+  } catch {
+    return null
+  }
+}
+
 export function useFormRecorder() {
   const [status, setStatus] = useState<RecorderStatus>('idle')
   /** Frame shape actually granted, so the UI can ask for a better one. */
   const [frame, setFrame] = useState<{ width: number; height: number } | null>(null)
+  /** Label of the lens in use, so the UI can confirm the wide one took. */
+  const [lensLabel, setLensLabel] = useState<string | null>(null)
+  /** Prefer the ultra-wide lens. Held in a ref so reopening reads it live. */
+  const [wide, setWideState] = useState(true)
+  const wideRef = useRef(true)
   const streamRef = useRef<MediaStream | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
@@ -55,6 +86,7 @@ export function useFormRecorder() {
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
     setFrame(null)
+    setLensLabel(null)
   }, [])
 
   /**
@@ -104,23 +136,33 @@ export function useFormRecorder() {
 
     setStatus('starting')
     const generation = ++openGenerationRef.current
-    const attempt = navigator.mediaDevices
-      .getUserMedia({
-        video: {
-          facingMode: 'environment',
-          // Resolution only — deliberately no aspectRatio constraint. Asking a
-          // phone standing upright for 16:9 does not rotate it; the browser
-          // satisfies the ratio by cropping the sensor instead, which narrows
-          // the field of view exactly when you need all of it to fit a body.
-          // Orientation is a physical property of how the phone is propped, so
-          // it is handled by telling you to turn it, not by constraining here.
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 24 },
-        },
-        audio: false,
-      })
-      .then((stream) => {
+    const attempt = (async () => {
+      // Resolution only — deliberately no aspectRatio constraint. Asking a
+      // phone standing upright for 16:9 does not rotate it; the browser
+      // satisfies the ratio by cropping the sensor instead, which narrows the
+      // field of view exactly when you need all of it to fit a body.
+      // Orientation is a physical property of how the phone is propped, so it
+      // is handled by telling you to turn it, not by constraining here.
+      const base: MediaTrackConstraints = {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 24 },
+      }
+      const wanted = wideRef.current ? await findUltraWideDeviceId() : null
+      const open = (video: MediaTrackConstraints) => navigator.mediaDevices.getUserMedia({ video, audio: false })
+      try {
+        return await open(
+          wanted ? { ...base, deviceId: { exact: wanted } } : { ...base, facingMode: 'environment' },
+        )
+      } catch (err) {
+        // A specific lens can be busy or refused; the shot matters more than
+        // the glass, so fall back to the default back camera rather than
+        // failing the whole set.
+        if (!wanted) throw err
+        return open({ ...base, facingMode: 'environment' })
+      }
+    })()
+      .then(async (stream) => {
         if (generation !== openGenerationRef.current) {
           stream.getTracks().forEach((t) => t.stop())
           return false
@@ -132,12 +174,27 @@ export function useFormRecorder() {
         }
         streamRef.current = stream
         attachPreview(videoRef.current)
-        const settings = stream.getVideoTracks()[0]?.getSettings()
+        const track = stream.getVideoTracks()[0]
+        // Some Android builds expose the wider view as a zoom range on one
+        // camera instead of a second device. Where that exists, ask for the
+        // widest end of it.
+        if (wideRef.current && track) {
+          const caps = track.getCapabilities?.() as { zoom?: { min?: number } } | undefined
+          if (caps?.zoom && typeof caps.zoom.min === 'number') {
+            await track
+              .applyConstraints({ advanced: [{ zoom: caps.zoom.min } as MediaTrackConstraintSet] })
+              .catch(() => {
+                /* zoom is optional everywhere it exists */
+              })
+          }
+        }
+        const settings = track?.getSettings()
         setFrame(
           settings?.width && settings?.height
             ? { width: settings.width, height: settings.height }
             : null,
         )
+        setLensLabel(track?.label ?? null)
         setStatus('idle')
         return true
       })
@@ -259,10 +316,30 @@ export function useFormRecorder() {
   // A frame taller than it is wide means the phone is standing upright, which
   // crops a horizontal body down to whatever fits between the long edges.
   const portrait = frame !== null && frame.height > frame.width
+  /** True once we can see the wide lens actually took effect. */
+  const onWideLens = /ultra.?wide|0\.5|wide.?angle/i.test(lensLabel ?? '')
+
+  /** Switch lens preference and reopen the camera on the new one. */
+  const setWide = useCallback(
+    (next: boolean) => {
+      wideRef.current = next
+      setWideState(next)
+      // Reopening is the only way to change device; do it only if already live.
+      if (streamRef.current) {
+        stopStream()
+        void prepare()
+      }
+    },
+    [prepare, stopStream],
+  )
 
   // Stable identity — consumers use this in effect dependency lists.
   return useMemo(
-    () => ({ status, supported, videoRef, previewRef, frame, portrait, prepare, start, stop, release }),
-    [status, supported, previewRef, frame, portrait, prepare, start, stop, release],
+    () => ({
+      status, supported, videoRef, previewRef, frame, portrait,
+      wide, setWide, onWideLens, lensLabel,
+      prepare, start, stop, release,
+    }),
+    [status, supported, previewRef, frame, portrait, wide, setWide, onWideLens, lensLabel, prepare, start, stop, release],
   )
 }

@@ -9,6 +9,7 @@ import { fmtDate } from '../lib/time'
 import { fmtWeight } from '../lib/units'
 import { MeasurePrompt, lastOf } from '../components/MeasurePrompt'
 import { buildSampleState } from '../data/sample'
+import { CHANGELOG, AREA_LABEL, type ChangeEntry } from '../data/changelog'
 import { pushToast } from '../lib/toast'
 import { sfx } from '../lib/audio'
 import { Icon } from '../components/Icon'
@@ -201,6 +202,7 @@ export function Settings() {
   const s = state.settings
   const fileRef = useRef<HTMLInputElement | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [showChangelog, setShowChangelog] = useState(false)
   const [confirmSample, setConfirmSample] = useState(false)
   const [name, setName] = useState(state.name)
   const [injuryNote, setInjuryNote] = useState(state.profile.injuryNote ?? '')
@@ -480,6 +482,18 @@ export function Settings() {
         </Row>
       </div>
 
+      <SectionTitle>About</SectionTitle>
+      <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
+        <Row label="What's new" hint="Every update to the app, newest first.">
+          <button
+            onClick={() => setShowChangelog(true)}
+            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+          >
+            Update log
+          </button>
+        </Row>
+      </div>
+
       <SectionTitle>Data</SectionTitle>
       <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
         <Row
@@ -654,6 +668,57 @@ export function Settings() {
           </div>
         </div>
       </Modal>
+
+      <Modal open={showChangelog} onClose={() => setShowChangelog(false)} wide>
+        <ChangelogPanel />
+      </Modal>
+    </div>
+  )
+}
+
+const AREA_STYLE: Record<ChangeEntry['area'], string> = {
+  camera: 'border-accent/30 bg-accent-soft text-accent',
+  coach: 'border-ok/30 bg-ok-soft text-ok',
+  training: 'border-line bg-raised text-ink2',
+  app: 'border-line bg-raised text-ink3',
+}
+
+function ChangelogPanel() {
+  return (
+    <div className="p-6 sm:p-8">
+      <h2 className="font-display text-[24px] font-bold text-ink">Update log</h2>
+      <p className="mt-1 text-[14px] leading-relaxed text-ink2">
+        Everything that has changed in Planche Lab, newest first. Your training data carries across every one of
+        these.
+      </p>
+      <div className="mt-6 space-y-5">
+        {CHANGELOG.map((entry) => (
+          <div key={`${entry.date}-${entry.title}`} className="rounded-2xl border border-line bg-raised p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`rounded-full border px-2.5 py-0.5 text-[11.5px] font-semibold uppercase tracking-wide ${AREA_STYLE[entry.area]}`}
+              >
+                {AREA_LABEL[entry.area]}
+              </span>
+              {/* Parsed as local midnight. A bare "2026-07-26" is parsed as
+                  UTC, which renders today's entry as "Yesterday" for anyone
+                  west of Greenwich. */}
+              <span className="text-[12.5px] text-ink3 tnum">
+                {fmtDate(new Date(`${entry.date}T00:00:00`).getTime())}
+              </span>
+            </div>
+            <div className="mt-2 font-display text-[16px] font-semibold leading-snug text-ink">{entry.title}</div>
+            <ul className="mt-2 space-y-1.5">
+              {entry.notes.map((n) => (
+                <li key={n} className="flex gap-2 text-[13.5px] leading-relaxed text-ink2">
+                  <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-ink3" />
+                  <span>{n}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

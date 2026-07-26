@@ -93,17 +93,22 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
                     ) : null}
                   </div>
                   <div className="mt-0.5 truncate text-[13.5px] text-ink2">{step.tagline}</div>
-                  <div className="mt-2 flex items-center gap-3">
+                  {/* Bar over label, not beside it. Side by side, the label
+                      carried shrink-0 and an exercise name, so on a phone it
+                      pushed the row wider than the screen — which stretched
+                      the fixed bottom nav with it and shoved Settings off the
+                      edge. Stacking lets the label truncate instead. */}
+                  <div className="mt-2 space-y-1.5">
                     <div className="h-1.5 w-full max-w-[220px] overflow-hidden rounded-full bg-line">
                       <div
                         className={`h-full rounded-full ${done || pct >= 1 ? 'bg-ok' : 'bg-accent'}`}
                         style={{ width: `${pct * 100}%` }}
                       />
                     </div>
-                    <span className="shrink-0 text-[12.5px] text-ink3 tnum">
+                    <div className="truncate text-[12.5px] text-ink3 tnum">
                       {best ? fmtHold(best) : '0s'} / {step.unlockSec}s verified
-                      {keyEx.perSide ? ' / both sides' : ''} {keyEx.name.toLowerCase()}
-                    </span>
+                      {keyEx.perSide ? ' · both sides' : ''} · {keyEx.name.toLowerCase()}
+                    </div>
                   </div>
                 </div>
                 <Icon name="chevronR" size={17} className="shrink-0 text-ink3" />

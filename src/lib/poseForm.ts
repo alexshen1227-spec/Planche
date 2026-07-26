@@ -1,4 +1,7 @@
 import type { FormIssue } from '../types'
+import { getBackend, trackingScore, type Kp, type PoseBackend } from './poseBackend'
+
+export { poseModelReady, warmDetector } from './poseBackend'
 
 /**
  * Automatic form analysis from a recorded clip.
@@ -54,8 +57,6 @@ export interface PoseFormResult {
    */
   unseen: string[]
 }
-
-type Kp = { x: number; y: number; score?: number; name?: string }
 
 const MIN_KP_SCORE = 0.3
 const MIN_FRAMES = 3
@@ -334,6 +335,55 @@ function pickSide(kps: Kp[]): 'left' | 'right' | null {
   return l >= r ? 'left' : 'right'
 }
 
+/** Joints worth repairing across a dropout; the rest are never measured. */
+const BRIDGEABLE = [
+  'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow',
+  'left_wrist', 'right_wrist', 'left_hip', 'right_hip',
+  'left_knee', 'right_knee', 'left_ankle', 'right_ankle', 'left_ear', 'right_ear',
+]
+
+/**
+ * Fill single-frame keypoint dropouts by interpolating between the samples
+ * either side. During a hold the body is close to static between samples, so a
+ * joint that is tracked before and after but missing in between is a detector
+ * miss rather than movement. Only isolated gaps are bridged — two consecutive
+ * misses are treated as genuinely not visible, and the interpolated point
+ * carries a reduced score so it never props up the confidence average.
+ *
+ * Exported for tests: silently inventing keypoints would be a bad bug, so the
+ * boundaries of what this will and will not fabricate are pinned down.
+ */
+export function bridgeKeypointGaps(frames: { t: number; kps: Kp[] }[]): number {
+  let repaired = 0
+  const good = (kps: Kp[], name: string) => {
+    const k = kps.find((p) => p.name === name)
+    return k && (k.score ?? 0) >= MIN_KP_SCORE ? k : undefined
+  }
+  for (const name of BRIDGEABLE) {
+    for (let i = 1; i < frames.length - 1; i++) {
+      if (good(frames[i].kps, name)) continue
+      const before = good(frames[i - 1].kps, name)
+      const after = good(frames[i + 1].kps, name)
+      if (!before || !after) continue
+      const span = frames[i + 1].t - frames[i - 1].t
+      const w = span > 0 ? (frames[i].t - frames[i - 1].t) / span : 0.5
+      const score = Math.min(before.score ?? 0, after.score ?? 0) * 0.9
+      if (score < MIN_KP_SCORE) continue
+      const filled: Kp = {
+        name,
+        x: before.x + (after.x - before.x) * w,
+        y: before.y + (after.y - before.y) * w,
+        score,
+      }
+      const at = frames[i].kps.findIndex((p) => p.name === name)
+      if (at >= 0) frames[i].kps[at] = filled
+      else frames[i].kps.push(filled)
+      repaired++
+    }
+  }
+  return repaired
+}
+
 /** "elbows, knees and hips" — reads as a sentence rather than a CSV dump. */
 function listPhrase(items: string[]): string {
   if (items.length <= 1) return items[0] ?? ''
@@ -349,49 +399,6 @@ function median(xs: number[]): number | undefined {
   if (!xs.length) return undefined
   const s = [...xs].sort((a, b) => a - b)
   return s[Math.floor(s.length / 2)]
-}
-
-let detectorPromise: Promise<{
-  // Canvas as well as video: frames are rotated through a canvas before
-  // detection so a horizontal athlete reaches the model closer to upright.
-  estimatePoses: (img: HTMLVideoElement | HTMLCanvasElement) => Promise<{ keypoints: Kp[] }[]>
-}> | null = null
-
-/**
- * Loaded on demand, not at startup: it is several megabytes and most sessions
- * never ask for it. The first analysis needs a network connection; after that
- * the service worker serves it from cache.
- */
-async function getDetector() {
-  if (!detectorPromise) {
-    detectorPromise = (async () => {
-      const [tf, poseDetection] = await Promise.all([
-        import('@tensorflow/tfjs-core'),
-        import('@tensorflow-models/pose-detection'),
-      ])
-      await import('@tensorflow/tfjs-backend-webgl')
-      await tf.setBackend('webgl')
-      await tf.ready()
-      return poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
-        modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
-      })
-    })().catch((e) => {
-      detectorPromise = null // let a later attempt retry rather than fail forever
-      throw e
-    })
-  }
-  return detectorPromise
-}
-
-/**
- * Start loading the detector while the athlete is still setting up, so an
- * enabled automatic form check does not sit through the model spin-up after
- * the set. The setting is the athlete's opt-in to the initial model download.
- */
-export function warmDetector(): void {
-  void getDetector().catch(() => {
-    /* offline — the explicit tap will surface the error */
-  })
 }
 
 /**
@@ -480,16 +487,6 @@ export function unrotateKeypoints<T extends { x: number; y: number }>(
   )
 }
 
-/** Mean confidence of the joints every measurement here depends on. */
-function trackingScore(kps: Kp[]): number {
-  const wanted = [
-    'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow',
-    'left_wrist', 'right_wrist', 'left_hip', 'right_hip', 'left_knee', 'right_knee',
-  ]
-  const scores = wanted.map((n) => kps.find((k) => k.name === n)?.score ?? 0)
-  return scores.reduce((a, b) => a + b, 0) / wanted.length
-}
-
 function seekTo(video: HTMLVideoElement, t: number): Promise<void> {
   return new Promise((resolve) => {
     let done = false
@@ -539,7 +536,6 @@ export async function analyseClip(
       window.setTimeout(() => reject(new Error('That clip took too long to load.')), 10000)
     })
 
-    const detector = await getDetector()
     const duration = await resolveDuration(video)
     if (duration === 0) return { ...empty, reason: 'That clip has no readable duration.' }
 
@@ -581,57 +577,80 @@ export async function analyseClip(
     const srcH = video.videoHeight
     const canvas = document.createElement('canvas')
 
-    // Pick the orientation the detector reads best, from a couple of probe
-    // frames in the middle of the hold, then keep it for the whole clip.
-    let rotation: Rotation = 0
-    if (srcW && srcH) {
-      const probes = [times[Math.floor(times.length / 3)], times[Math.floor((2 * times.length) / 3)]].filter(
-        (t): t is number => t !== undefined,
-      )
-      // Seek once per probe frame and try all three orientations on it.
-      // Seeking is by far the expensive half, so this keeps the whole
-      // orientation search to two extra seeks rather than six.
+    // Choose the model *and* the orientation from the actual footage, on two
+    // probe frames from the middle of the hold. Neither choice can be made
+    // sensibly in the abstract: which model copes with a given body, lighting
+    // and camera angle is exactly what the probe measures.
+    const probes = [times[Math.floor(times.length / 3)], times[Math.floor((2 * times.length) / 3)]].filter(
+      (t): t is number => t !== undefined,
+    )
+    const detectAt = async (backend: PoseBackend, candidate: Rotation): Promise<Kp[]> => {
+      if (!srcW || !srcH || !drawRotated(video, canvas, candidate)) return backend.estimate(video)
+      const found = await backend.estimate(canvas)
+      return unrotateKeypoints(found, candidate, srcW, srcH)
+    }
+
+    const probeBackend = async (backend: PoseBackend) => {
       const totals = new Map<Rotation, number>()
       for (const t of probes) {
         await seekTo(video, t)
         for (const candidate of [0, 90, 270] as Rotation[]) {
-          if (!drawRotated(video, canvas, candidate)) continue
-          const probePoses = await detector.estimatePoses(canvas)
-          totals.set(candidate, (totals.get(candidate) ?? 0) + trackingScore(probePoses[0]?.keypoints ?? []))
+          totals.set(candidate, (totals.get(candidate) ?? 0) + trackingScore(await detectAt(backend, candidate)))
         }
       }
-      let bestScore = -1
-      for (const [candidate, score] of totals) {
+      let best: { rotation: Rotation; score: number } = { rotation: 0, score: -1 }
+      for (const [candidate, total] of totals) {
+        const score = total / Math.max(1, probes.length)
         // Ties keep the unrotated frame: rotating is only worth it when it
         // measurably helps.
-        if (score > bestScore + 1e-6) {
-          bestScore = score
-          rotation = candidate
+        if (score > best.score + 1e-6) best = { rotation: candidate, score }
+      }
+      return best
+    }
+
+    let backend = await getBackend('blazepose').catch(() => getBackend('movenet'))
+    let best = await probeBackend(backend)
+    // Only pay for the second model when the first one struggled — each is a
+    // multi-megabyte download, and on good footage the first is already right.
+    if (best.score < 0.55 && backend.id === 'blazepose') {
+      const alt = await getBackend('movenet').catch(() => null)
+      if (alt) {
+        const altBest = await probeBackend(alt)
+        if (altBest.score > best.score) {
+          backend = alt
+          best = altBest
         }
       }
     }
+    const rotation = best.rotation
 
     /** Frames where a person was found at all, however partially. */
     let posesSeen = 0
     /** Which body regions the camera ever managed to see, for the error copy. */
     const regionsSeen = new Set<string>()
 
+    // Pass one: capture what the model saw, frame by frame. Measuring comes
+    // afterwards so single-frame dropouts can be repaired first.
+    const tracked: { t: number; kps: Kp[] }[] = []
     for (const t of times) {
       await seekTo(video, t)
-      let kps: Kp[] | undefined
-      if (srcW && srcH && drawRotated(video, canvas, rotation)) {
-        const poses = await detector.estimatePoses(canvas)
-        const raw = poses[0]?.keypoints
-        kps = raw ? unrotateKeypoints(raw, rotation, srcW, srcH) : undefined
-      } else {
-        kps = (await detector.estimatePoses(video))[0]?.keypoints
-      }
-      if (!kps?.length) continue
+      const kps = await detectAt(backend, rotation)
+      if (!kps.length) continue
       if (trackingScore(kps) > 0.15) posesSeen++
       if (byName(kps, 'left_shoulder') || byName(kps, 'right_shoulder')) regionsSeen.add('shoulders')
       if (byName(kps, 'left_wrist') || byName(kps, 'right_wrist')) regionsSeen.add('hands')
       if (byName(kps, 'left_hip') || byName(kps, 'right_hip')) regionsSeen.add('hips')
       if (byName(kps, 'left_ankle') || byName(kps, 'right_ankle')) regionsSeen.add('feet')
+      tracked.push({ t, kps })
+    }
+
+    // Repair one-frame dropouts before measuring. A shoulder that vanishes for
+    // a single sample and returns in the next has not moved — the model simply
+    // lost it — and dropping the whole frame over it was throwing away good
+    // evidence and leaving verdicts resting on a handful of samples.
+    bridgeKeypointGaps(tracked)
+
+    for (const { t, kps } of tracked) {
       // Keep anatomical identity stable through the clip. Switching to
       // whichever side scores higher on each frame creates fake angle jumps.
       const side: 'left' | 'right' | null = trackedSide ?? pickSide(kps)
@@ -811,16 +830,47 @@ export async function analyseClip(
       }
     }
 
-    const elbowPeak = elbows.length ? Math.max(...elbows) : undefined
-    const kneePeak = knees.length ? Math.max(...knees) : undefined
-    const hipAnglePeak = hipAngles.length ? Math.max(...hipAngles) : undefined
-    const elbowDeg = sustainedMinimum(elbows)
-    const kneeDeg = sustainedMinimum(knees)
-    const hipAngleDeg = sustainedMinimum(hipAngles)
-    const hipOffset = median(hipOffsets)
-    const leanRatio = median(leans)
-    const shrugRatio = median(shrugs)
-    const asymmetry = median(asymmetries)
+    const creditedSeconds =
+      creditedHoldSec !== undefined && Number.isFinite(creditedHoldSec) && creditedHoldSec > 0
+        ? Math.min(duration, creditedHoldSec)
+        : duration
+    const envelopeSamples = frameReadings.flatMap((frame) => {
+      const outside = materiallyOutsideEnvelope(frame, profile, judged)
+      return outside === null ? [] : [{ t: frame.t, bad: outside }]
+    })
+    const cleanSeconds = sustainedCleanSeconds(envelopeSamples, creditedSeconds)
+    const cleanRatio = creditedSeconds > 0 ? Math.min(1, cleanSeconds / creditedSeconds) : 0
+
+    // Judge the hold, not the dismount.
+    //
+    // Coming out of a planche is a controlled collapse: the arms bend, the hips
+    // drop, the body folds. Those frames were being averaged into the verdict
+    // alongside the hold itself, so a set held perfectly for twelve seconds
+    // came back "elbows bent, hips sagging" — describing the exit, which is not
+    // a form fault at all. The verdict now covers the sustained-clean portion,
+    // and the breakdown is reported separately as the point where it ended.
+    const brokeDown = cleanSeconds + 0.05 < creditedSeconds
+    const cutoff = brokeDown ? cleanSeconds : creditedSeconds
+    const withinHold = frameReadings.filter((f) => f.t < cutoff)
+    const verdictFrames = withinHold.length >= MIN_FRAMES ? withinHold : frameReadings
+    const exitFramesDropped = frameReadings.length - verdictFrames.length
+
+    const pick = <K extends keyof FrameReading>(key: K): number[] =>
+      verdictFrames.map((f) => f[key]).filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+    const heldElbows = pick('elbowDeg')
+    const heldKnees = pick('kneeDeg')
+    const heldHipAngles = pick('hipAngleDeg')
+
+    const elbowPeak = heldElbows.length ? Math.max(...heldElbows) : undefined
+    const kneePeak = heldKnees.length ? Math.max(...heldKnees) : undefined
+    const hipAnglePeak = heldHipAngles.length ? Math.max(...heldHipAngles) : undefined
+    const elbowDeg = sustainedMinimum(heldElbows)
+    const kneeDeg = sustainedMinimum(heldKnees)
+    const hipAngleDeg = sustainedMinimum(heldHipAngles)
+    const hipOffset = median(pick('hipOffset'))
+    const leanRatio = median(pick('leanRatio'))
+    const shrugRatio = median(pick('shrugRatio'))
+    const asymmetry = median(pick('asymmetry'))
     const wobble = median(drifts)
 
     // Median of the first and final thirds of the sampled window, for the
@@ -851,17 +901,6 @@ export async function analyseClip(
         reason: 'Tracking confidence was too low to judge form from this clip.',
       }
     }
-
-    const creditedSeconds =
-      creditedHoldSec !== undefined && Number.isFinite(creditedHoldSec) && creditedHoldSec > 0
-        ? Math.min(duration, creditedHoldSec)
-        : duration
-    const envelopeSamples = frameReadings.flatMap((frame) => {
-      const outside = materiallyOutsideEnvelope(frame, profile, judged)
-      return outside === null ? [] : [{ t: frame.t, bad: outside }]
-    })
-    const cleanSeconds = sustainedCleanSeconds(envelopeSamples, creditedSeconds)
-    const cleanRatio = creditedSeconds > 0 ? Math.min(1, cleanSeconds / creditedSeconds) : 0
 
     const issues: FormIssue[] = []
     const notes: string[] = []
@@ -985,6 +1024,11 @@ export async function analyseClip(
       )
     } else {
       details.push('No sustained material breakdown was found across the credited hold.')
+    }
+    if (exitFramesDropped > 0) {
+      details.push(
+        `Graded on the ${verdictFrames.length} frames of the hold itself; the last ${exitFramesDropped} (coming out of the position) were left out.`,
+      )
     }
     details.push('Scapular protraction is not measured by this camera check — confirm it yourself.')
     if (unseen.length) {

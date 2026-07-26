@@ -21,25 +21,29 @@ function WeekStrip({ trainedDays }: { trainedDays: Set<string> }) {
   const today = dayKey(Date.now())
   const letters = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
   return (
-    <div className="flex items-center gap-1.5">
+    // A seven-column grid rather than fixed-size circles in a row: at 20px a
+    // piece the strip needed 176px inside a card that is 166px wide on a
+    // phone, so the weekend spilled out past the card edge. Square cells sized
+    // from the available width fit whatever the card gives them.
+    <div className="grid grid-cols-7 gap-1">
       {letters.map((l, i) => {
         const k = dayKey(addDays(start, i))
         const trained = trainedDays.has(k)
         const isToday = k === today
         return (
-          <div key={i} className="flex flex-col items-center gap-1">
-            <span
-              className={`grid h-5 w-5 place-items-center rounded-full text-[9.5px] font-bold ${
-                trained
-                  ? 'bg-accent text-on-accent'
-                  : isToday
-                    ? 'border-[1.5px] border-accent text-accent'
-                    : 'border border-line text-ink3'
-              }`}
-            >
-              {trained ? <Icon name="check" size={10} strokeWidth={3.5} /> : l}
-            </span>
-          </div>
+          <span
+            key={i}
+            title={fmtDate(addDays(start, i))}
+            className={`grid aspect-square w-full place-items-center rounded-full text-[9.5px] font-bold leading-none ${
+              trained
+                ? 'bg-accent text-on-accent'
+                : isToday
+                  ? 'border-[1.5px] border-accent text-accent'
+                  : 'border border-line text-ink3'
+            }`}
+          >
+            {trained ? <Icon name="check" size={10} strokeWidth={3.5} /> : l}
+          </span>
         )
       })}
     </div>
@@ -221,18 +225,22 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
 
       {/* Stats */}
       <div className="animate-rise mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4" style={{ animationDelay: '80ms' }}>
-        <div className="flex items-center justify-between rounded-2xl border border-line bg-surface p-4 shadow-card">
-          <div>
-            <div className="text-[13px] font-medium text-ink3">This week</div>
-            <div className="mt-1 font-display text-[26px] font-semibold leading-tight text-ink tnum">
-              {thisWeek}
-              <span className="text-[15px] text-ink3">/{goal}</span>
+        {/* Ring beside the count, strip across the full width beneath it —
+            sharing one row left the strip a sliver of the card to live in. */}
+        <div className="rounded-2xl border border-line bg-surface p-4 shadow-card">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[13px] font-medium text-ink3">This week</div>
+              <div className="mt-1 font-display text-[26px] font-semibold leading-tight text-ink tnum">
+                {thisWeek}
+                <span className="text-[15px] text-ink3">/{goal}</span>
+              </div>
             </div>
-            <div className="mt-2">
-              <WeekStrip trainedDays={trainedDays} />
-            </div>
+            <ProgressRing value={thisWeek / Math.max(1, goal)} size={52} stroke={6} />
           </div>
-          <ProgressRing value={thisWeek / Math.max(1, goal)} size={52} stroke={6} />
+          <div className="mt-3">
+            <WeekStrip trainedDays={trainedDays} />
+          </div>
         </div>
         <Stat
           label="Week streak"

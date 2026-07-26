@@ -5,6 +5,7 @@ import { applySession } from './engine'
 import { formEvidenceCoversArms, progressionCredit, qualifyingProgress } from './progression'
 import {
   POSE_PROFILES,
+  bridgeKeypointGaps,
   gradeCoverage,
   sustainedCleanSeconds,
   sustainedMinimum,
@@ -269,6 +270,45 @@ describe('partial camera coverage', () => {
   it('treats pre-partial-grading records as fully covered', () => {
     expect(formEvidenceCoversArms({ issues: [], confidence: 0.9 })).toBe(true)
     expect(formEvidenceCoversArms(undefined)).toBe(true)
+  })
+})
+
+describe('keypoint dropout repair', () => {
+  const kp = (name: string, x: number, y: number, score = 0.9) => ({ name, x, y, score })
+  const frames = (...scores: (number | null)[]) =>
+    scores.map((s, i) => ({
+      t: i,
+      kps: s === null ? [] : [kp('left_shoulder', 100 + i * 10, 200 + i * 10, s)],
+    }))
+
+  it('interpolates a single missing frame from its neighbours', () => {
+    const f = frames(0.9, null, 0.9)
+    expect(bridgeKeypointGaps(f)).toBe(1)
+    const filled = f[1].kps.find((k) => k.name === 'left_shoulder')!
+    expect(filled.x).toBe(110)
+    expect(filled.y).toBe(210)
+    // Reduced score so a bridged point cannot inflate tracking confidence.
+    expect(filled.score).toBeLessThan(0.9)
+  })
+
+  it('refuses to bridge two consecutive misses', () => {
+    const f = frames(0.9, null, null, 0.9)
+    expect(bridgeKeypointGaps(f)).toBe(0)
+    expect(f[1].kps).toHaveLength(0)
+    expect(f[2].kps).toHaveLength(0)
+  })
+
+  it('never invents a keypoint at the start or end of a clip', () => {
+    const f = frames(null, 0.9, 0.9, null)
+    expect(bridgeKeypointGaps(f)).toBe(0)
+    expect(f[0].kps).toHaveLength(0)
+    expect(f[3].kps).toHaveLength(0)
+  })
+
+  it('does not bridge from low-confidence neighbours', () => {
+    // 0.31 * 0.9 falls under the keypoint floor, so nothing is fabricated.
+    const f = frames(0.31, null, 0.31)
+    expect(bridgeKeypointGaps(f)).toBe(0)
   })
 })
 
