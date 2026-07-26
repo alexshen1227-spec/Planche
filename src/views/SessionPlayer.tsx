@@ -801,12 +801,12 @@ export function SessionPlayer({
                 </button>
               </div>
               {cameraOn ? (
-                <div className="relative mt-2 overflow-hidden rounded-2xl border border-line bg-black">
+                <div className="relative mt-2 aspect-video w-full overflow-hidden rounded-2xl border border-line bg-black">
                   <video
-                    ref={recorder.videoRef}
+                    ref={recorder.previewRef}
                     muted
                     playsInline
-                    className="h-40 w-full object-contain"
+                    className="h-full w-full object-contain"
                   />
                   <div className="pointer-events-none absolute inset-[8%] rounded-xl border border-dashed border-accent/70" />
                   <div className="pointer-events-none absolute inset-x-[8%] top-1/2 h-px bg-accent/60" />
@@ -814,6 +814,13 @@ export function SessionPlayer({
                     Side-on · whole body and both hands inside the box · phone level.
                   </div>
                 </div>
+              ) : null}
+              {cameraOn && recorder.portrait ? (
+                <p className="mt-1.5 flex items-start gap-1.5 text-[12.5px] leading-relaxed text-accent">
+                  <Icon name="rotate" size={14} className="mt-0.5 shrink-0" />
+                  Turn the phone on its side. A planche is a wide shape, and an upright frame cuts off your
+                  hands or your feet.
+                </p>
               ) : null}
               {recorder.status === 'denied' ? (
                 <p className="mt-1.5 text-[12.5px] text-danger">
@@ -1451,6 +1458,7 @@ function FormCheckRow({
           hipOffset: res.hipOffset,
           leanRatio: res.leanRatio,
           wobble: res.wobble,
+          ...(res.unseen.length ? { unseen: res.unseen } : {}),
         }
         if (ratingRef.current !== null) {
           // The athlete answered while the check was running — their word
@@ -1537,6 +1545,7 @@ function FormCheckRow({
               hipOffset: analysis.hipOffset,
               leanRatio: analysis.leanRatio,
               wobble: analysis.wobble,
+              ...(analysis.unseen.length ? { unseen: analysis.unseen } : {}),
             },
           }
         : value?.auto
@@ -1628,6 +1637,18 @@ function FormCheckRow({
                           ✓ {g}
                         </span>
                       ))}
+                    </div>
+                  ) : null}
+                  {/* Stated on the face of the panel, not folded into detail:
+                      everything above is a verdict on what the camera saw, and
+                      it must be obvious which parts it never looked at. */}
+                  {analysis.unseen.length ? (
+                    <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-raised px-2.5 py-1.5 text-[11.5px] text-ink3">
+                      <Icon name="monitor" size={13} className="mt-[1px] shrink-0" />
+                      <span>
+                        Could not see your {analysis.unseen.join(', ')} — not judged above. Move the phone back
+                        or turn it sideways to get {analysis.unseen.length === 1 ? 'it' : 'them'} in frame.
+                      </span>
                     </div>
                   ) : null}
                   {

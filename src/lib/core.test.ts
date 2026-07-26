@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog } from '../types'
 import { initialState, normalizeState, rebuildDerivedState } from './store'
 import { applySession } from './engine'
-import { progressionCredit, qualifyingProgress } from './progression'
-import { sustainedCleanSeconds, sustainedMinimum } from './poseForm'
+import { formEvidenceCoversArms, progressionCredit, qualifyingProgress } from './progression'
+import { POSE_PROFILES, gradeCoverage, sustainedCleanSeconds, sustainedMinimum } from './poseForm'
 import { buildPlan, rewardFor } from './coach'
 import { painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
 import { validateImport } from './exportImport'
@@ -202,6 +202,67 @@ describe('progression safety', () => {
     const sample = buildSampleState()
     expect(sample.stepId).toBe('tuck')
     expect(sample.sessions.length).toBeGreaterThan(20)
+  })
+})
+
+describe('partial camera coverage', () => {
+  const lean = POSE_PROFILES['planche-lean']
+  const full = { elbows: 10, knees: 10, hipAngles: 10, hipOffsets: 10, leans: 10 }
+
+  it('grades every criterion when the whole body was in shot', () => {
+    const { judged, unseen } = gradeCoverage(lean, full, 10)
+    expect(unseen).toEqual([])
+    expect(judged.elbow && judged.knee && judged.line && judged.lean).toBe(true)
+  })
+
+  it('drops only the criterion it could not see, keeping the rest', () => {
+    const { judged, unseen } = gradeCoverage(lean, { ...full, knees: 2 }, 10)
+    expect(unseen).toEqual(['knees'])
+    expect(judged.knee).toBe(false)
+    // The whole point: an unseen knee must not cost the other verdicts.
+    expect(judged.elbow).toBe(true)
+    expect(judged.line).toBe(true)
+    expect(judged.lean).toBe(true)
+  })
+
+  it('reports a total blackout so the caller can refuse', () => {
+    const { judged, unseen } = gradeCoverage(lean, { elbows: 0, knees: 0, hipAngles: 0, hipOffsets: 0, leans: 0 }, 10)
+    expect(Object.values(judged).some(Boolean)).toBe(false)
+    expect(unseen).toContain('elbows')
+  })
+
+  it('never lists a criterion the position does not even check', () => {
+    // Tuck planche deliberately has bent knees, so knees are not a criterion.
+    const { unseen } = gradeCoverage(POSE_PROFILES['tuck-planche'], { ...full, knees: 0 }, 10)
+    expect(unseen).not.toContain('knees')
+  })
+
+  const withUnseen = (unseen: string[]): FormCheck => ({
+    rating: 'clean',
+    confirmed: true,
+    auto: { issues: [], confidence: 0.9, unseen },
+  })
+
+  it('still unlocks when a secondary criterion was out of frame', () => {
+    const result = applySession(
+      state(),
+      session('foundations', [log('ppp-hold', 30, { form: withUnseen(['knees']) })]),
+    )
+    expect(result.next.stepId).toBe('lean')
+  })
+
+  it('refuses to unlock when the elbows themselves were never seen', () => {
+    const result = applySession(
+      state(),
+      session('foundations', [log('ppp-hold', 30, { form: withUnseen(['elbows']) })]),
+    )
+    expect(result.next.prs['ppp-hold']?.value).toBe(30)
+    expect(result.next.stepId).toBe('foundations')
+  })
+
+  it('treats pre-partial-grading records as fully covered', () => {
+    expect(formEvidenceCoversArms({ issues: [], confidence: 0.9 })).toBe(true)
+    expect(formEvidenceCoversArms(undefined)).toBe(true)
   })
 })
 

@@ -70,6 +70,11 @@ export interface AutoForm {
   leanRatio?: number
   /** Keypoint jitter across frames — high means the hold was shaky. */
   wobble?: number
+  /**
+   * Criteria the camera could not see well enough to grade. The rest of the
+   * verdict still stands; these were simply not checked.
+   */
+  unseen?: string[]
 }
 
 export interface FormCheck {

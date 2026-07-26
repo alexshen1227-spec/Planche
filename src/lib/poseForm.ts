@@ -47,6 +47,12 @@ export interface PoseFormResult {
   good: string[]
   /** Secondary observations — shown folded away to keep the panel readable. */
   details: string[]
+  /**
+   * Criteria this position cares about that the camera could not see well
+   * enough to grade. The rest of the result is still valid — these are simply
+   * not part of it.
+   */
+  unseen: string[]
 }
 
 type Kp = { x: number; y: number; score?: number; name?: string }
@@ -58,7 +64,7 @@ const MIN_FRAMES = 3
  * What "correct" means for each position. Only the checks listed run, which
  * is what stops the analyser flagging the deliberate shapes of a progression.
  */
-interface PoseProfile {
+export interface PoseProfile {
   label: string
   /** No geometric checks apply — say so rather than implying it looked good. */
   noChecks?: boolean
@@ -173,12 +179,70 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
   },
 }
 
+/** Which of a position's criteria the camera saw well enough to grade. */
+export interface JudgedCriteria {
+  elbow: boolean
+  knee: boolean
+  hipAngle: boolean
+  line: boolean
+  lean: boolean
+}
+
+/** How many frames carried each measurement. */
+export interface CoverageCounts {
+  elbows: number
+  knees: number
+  hipAngles: number
+  hipOffsets: number
+  leans: number
+}
+
+/**
+ * Decide which of a position's criteria this clip can actually grade.
+ *
+ * A criterion needs a measurement in a majority of tracked frames. Falling
+ * short costs that criterion its verdict and nothing else — the point of
+ * grading partially is that one limb wandering out of shot should not throw
+ * away everything the camera did see. Exported so the rule stays tested.
+ */
+export function gradeCoverage(
+  profile: PoseProfile,
+  counts: CoverageCounts,
+  framesUsed: number,
+): { judged: JudgedCriteria; unseen: string[] } {
+  const need = Math.max(MIN_FRAMES, Math.ceil(framesUsed * 0.55))
+  const applies = (threshold: number | undefined, seen: number) => threshold !== undefined && seen >= need
+  const judged: JudgedCriteria = {
+    elbow: applies(profile.minElbowDeg, counts.elbows),
+    knee: applies(profile.minKneeDeg, counts.knees),
+    hipAngle: applies(profile.minHipAngleDeg, counts.hipAngles),
+    line: applies(profile.levelTolerance, counts.hipOffsets),
+    lean: applies(profile.minLeanRatio, counts.leans),
+  }
+  const unseen: string[] = []
+  if (profile.minElbowDeg !== undefined && !judged.elbow) unseen.push('elbows')
+  if (profile.minKneeDeg !== undefined && !judged.knee) unseen.push('knees')
+  if (profile.minHipAngleDeg !== undefined && !judged.hipAngle) unseen.push('hips')
+  if (profile.levelTolerance !== undefined && !judged.line) unseen.push('body line')
+  if (profile.minLeanRatio !== undefined && !judged.lean) unseen.push('forward lean')
+  return { judged, unseen }
+}
+
 /**
  * A small tolerance outside the headline thresholds keeps one near-boundary
  * estimate from stealing time. These are deliberately still narrow enough to
  * catch a material loss of the position.
+ *
+ * `judged` scopes this to the criteria the clip could actually see. A criterion
+ * that was never visible is not evidence of anything and is left out entirely;
+ * one that is normally visible but missing from *this* frame still makes the
+ * frame unjudgeable, so a limb leaving the shot cannot buy clean seconds.
  */
-function materiallyOutsideEnvelope(frame: FrameReading, profile: PoseProfile): boolean | null {
+function materiallyOutsideEnvelope(
+  frame: FrameReading,
+  profile: PoseProfile,
+  judged: JudgedCriteria,
+): boolean | null {
   const required: (number | undefined)[] = []
   const failed: boolean[] = []
   const check = (value: number | undefined, didFail: (n: number) => boolean) => {
@@ -186,19 +250,19 @@ function materiallyOutsideEnvelope(frame: FrameReading, profile: PoseProfile): b
     if (value !== undefined) failed.push(didFail(value))
   }
 
-  if (profile.minElbowDeg !== undefined) {
+  if (profile.minElbowDeg !== undefined && judged.elbow) {
     check(frame.elbowDeg, (n) => n < profile.minElbowDeg! - 5)
   }
-  if (profile.minKneeDeg !== undefined) {
+  if (profile.minKneeDeg !== undefined && judged.knee) {
     check(frame.kneeDeg, (n) => n < profile.minKneeDeg! - 7)
   }
-  if (profile.minHipAngleDeg !== undefined) {
+  if (profile.minHipAngleDeg !== undefined && judged.hipAngle) {
     check(frame.hipAngleDeg, (n) => n < profile.minHipAngleDeg! - 8)
   }
-  if (profile.levelTolerance !== undefined) {
+  if (profile.levelTolerance !== undefined && judged.line) {
     check(frame.hipOffset, (n) => Math.abs(n) > profile.levelTolerance! + 0.08)
   }
-  if (profile.minLeanRatio !== undefined) {
+  if (profile.minLeanRatio !== undefined && judged.lean) {
     check(frame.leanRatio, (n) => n < profile.minLeanRatio! - 0.06)
   }
   // Ears are frequently occluded side-on, so shrug remains an advisory check
@@ -268,6 +332,12 @@ function pickSide(kps: Kp[]): 'left' | 'right' | null {
   const r = score('right')
   if (Math.max(l, r) === 0) return null
   return l >= r ? 'left' : 'right'
+}
+
+/** "elbows, knees and hips" — reads as a sentence rather than a CSV dump. */
+function listPhrase(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? ''
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 }
 
 /** Angles come back NaN when two keypoints coincide; never let that through. */
@@ -376,7 +446,7 @@ function seekTo(video: HTMLVideoElement, t: number): Promise<void> {
 
 /** A result that ran nothing, ready to carry a reason. */
 export function emptyResult(reason?: string): PoseFormResult {
-  return { ok: false, confidence: 0, framesUsed: 0, issues: [], notes: [], good: [], details: [], reason }
+  return { ok: false, confidence: 0, framesUsed: 0, issues: [], notes: [], good: [], details: [], unseen: [], reason }
 }
 
 export async function analyseClip(
@@ -597,22 +667,32 @@ export async function analyseClip(
     }
 
     const confidence = confidences.reduce((a, b) => a + b, 0) / framesUsed
-    // Every criterion which can change the verdict must be observable for a
-    // majority of tracked frames. Missing wrists/elbows/knees are "unknown",
-    // never a silent pass.
-    const requiredCoverage = Math.max(MIN_FRAMES, Math.ceil(framesUsed * 0.55))
-    const missing: string[] = []
-    if (profile.minElbowDeg !== undefined && elbows.length < requiredCoverage) missing.push('elbows')
-    if (profile.minKneeDeg !== undefined && knees.length < requiredCoverage) missing.push('knees')
-    if (profile.minHipAngleDeg !== undefined && hipAngles.length < requiredCoverage) missing.push('hips')
-    if (profile.levelTolerance !== undefined && hipOffsets.length < requiredCoverage) missing.push('body line')
-    if (profile.minLeanRatio !== undefined && leans.length < requiredCoverage) missing.push('forward lean')
-    if (missing.length) {
+    // A criterion is graded when it was observable for a majority of tracked
+    // frames. Anything short of that is reported as *unseen* rather than
+    // failing the whole clip: a knee out of frame should cost you the knee
+    // verdict, not the elbow, hip and lean verdicts alongside it. What stays
+    // non-negotiable is that thin coverage never reads as a silent pass.
+    const { judged, unseen } = gradeCoverage(
+      profile,
+      {
+        elbows: elbows.length,
+        knees: knees.length,
+        hipAngles: hipAngles.length,
+        hipOffsets: hipOffsets.length,
+        leans: leans.length,
+      },
+      framesUsed,
+    )
+
+    // Only a total blackout is unjudgeable. With nothing graded there is no
+    // verdict to give, so this stays a refusal rather than a hollow "clean".
+    if (!Object.values(judged).some(Boolean)) {
       return {
         ...empty,
         framesUsed,
         confidence,
-        reason: `Could not see enough of your ${missing.join(', ')} to judge this hold. Keep your whole body and both hands in frame, side-on.`,
+        unseen,
+        reason: `Could not see your ${listPhrase(unseen)} well enough to judge anything here. Keep your whole body and both hands in frame, side-on.`,
       }
     }
 
@@ -662,7 +742,7 @@ export async function analyseClip(
         ? Math.min(duration, creditedHoldSec)
         : duration
     const envelopeSamples = frameReadings.flatMap((frame) => {
-      const outside = materiallyOutsideEnvelope(frame, profile)
+      const outside = materiallyOutsideEnvelope(frame, profile, judged)
       return outside === null ? [] : [{ t: frame.t, bad: outside }]
     })
     const cleanSeconds = sustainedCleanSeconds(envelopeSamples, creditedSeconds)
@@ -673,7 +753,7 @@ export async function analyseClip(
     const good: string[] = []
     const details: string[] = []
 
-    if (profile.minElbowDeg !== undefined && elbowDeg !== undefined) {
+    if (judged.elbow && profile.minElbowDeg !== undefined && elbowDeg !== undefined) {
       if (elbowDeg < profile.minElbowDeg) {
         issues.push('arms')
         notes.push(
@@ -684,7 +764,7 @@ export async function analyseClip(
       } else good.push(`Elbows locked (${Math.round(elbowDeg)}°)`)
     }
 
-    if (profile.minKneeDeg !== undefined && kneeDeg !== undefined) {
+    if (judged.knee && profile.minKneeDeg !== undefined && kneeDeg !== undefined) {
       if (kneeDeg < profile.minKneeDeg) {
         issues.push('knees')
         notes.push(
@@ -695,7 +775,7 @@ export async function analyseClip(
       } else good.push(`Legs straight (${Math.round(kneeDeg)}°)`)
     }
 
-    if (profile.minHipAngleDeg !== undefined && hipAngleDeg !== undefined) {
+    if (judged.hipAngle && profile.minHipAngleDeg !== undefined && hipAngleDeg !== undefined) {
       if (hipAngleDeg < profile.minHipAngleDeg) {
         // Its own issue, not "hips too high": a closed hip angle means the
         // body is still folded, which is the opposite complaint.
@@ -708,7 +788,7 @@ export async function analyseClip(
       } else good.push(`Hips open (${Math.round(hipAngleDeg)}°)`)
     }
 
-    if (profile.levelTolerance !== undefined && hipOffset !== undefined) {
+    if (judged.line && profile.levelTolerance !== undefined && hipOffset !== undefined) {
       if (hipOffset > profile.levelTolerance) {
         issues.push('pike')
         notes.push('Hips sat above your shoulders — that reads as a pike rather than a flat line.')
@@ -718,7 +798,7 @@ export async function analyseClip(
       } else good.push('Hips and shoulders level')
     }
 
-    if (profile.minLeanRatio !== undefined && leanRatio !== undefined) {
+    if (judged.lean && profile.minLeanRatio !== undefined && leanRatio !== undefined) {
       if (leanRatio < profile.minLeanRatio) {
         issues.push('lean')
         notes.push('Your shoulders stayed close to your hands — more forward lean is what makes this position lighter.')
@@ -758,14 +838,14 @@ export async function analyseClip(
     const leanTrend = thirds(leanSeries)
     let fadeSeen = false
 
-    if (elbowTrend && elbowTrend.early - elbowTrend.late > 8 && !issues.includes('arms')) {
+    if (judged.elbow && elbowTrend && elbowTrend.early - elbowTrend.late > 8 && !issues.includes('arms')) {
       fadeSeen = true
       issues.push('arms')
       notes.push(
         `Elbows were straighter early (${Math.round(elbowTrend.early)}°) than late (${Math.round(elbowTrend.late)}°) — the lock gave out as you tired. End the set before that point.`,
       )
     }
-    if (lineTrend && !issues.includes('sag') && !issues.includes('pike')) {
+    if (judged.line && lineTrend && !issues.includes('sag') && !issues.includes('pike')) {
       if (lineTrend.early - lineTrend.late > 0.18) {
         fadeSeen = true
         issues.push('sag')
@@ -776,7 +856,7 @@ export async function analyseClip(
         notes.push('Your hips crept upward as the hold went on — fatigue was folding you toward a pike.')
       }
     }
-    if (leanTrend && leanTrend.early - leanTrend.late > 0.12 && !issues.includes('lean')) {
+    if (judged.lean && leanTrend && leanTrend.early - leanTrend.late > 0.12 && !issues.includes('lean')) {
       fadeSeen = true
       issues.push('lean')
       notes.push('Your lean pulled back over the hold — shoulders drifted toward your hands as you tired.')
@@ -792,6 +872,13 @@ export async function analyseClip(
       details.push('No sustained material breakdown was found across the credited hold.')
     }
     details.push('Scapular protraction is not measured by this camera check — confirm it yourself.')
+    if (unseen.length) {
+      // Said plainly rather than buried: a verdict that quietly skipped a
+      // criterion would read as a clean bill of health for it.
+      details.push(
+        `Your ${listPhrase(unseen)} stayed out of shot, so ${unseen.length === 1 ? 'it was' : 'they were'} not part of this verdict.`,
+      )
+    }
 
     return {
       ok: true,
@@ -811,6 +898,7 @@ export async function analyseClip(
       notes,
       good,
       details,
+      unseen,
     }
   } catch (err) {
     return { ...empty, reason: err instanceof Error ? err.message : 'Analysis failed.' }

@@ -33,6 +33,8 @@ export function pickRecorderMime(): string | undefined {
 
 export function useFormRecorder() {
   const [status, setStatus] = useState<RecorderStatus>('idle')
+  /** Frame shape actually granted, so the UI can ask for a better one. */
+  const [frame, setFrame] = useState<{ width: number; height: number } | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
@@ -52,7 +54,33 @@ export function useFormRecorder() {
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
+    setFrame(null)
   }, [])
+
+  /**
+   * Point the preview element at the live stream.
+   *
+   * Called from both the open path and the ref callback, because the two can
+   * happen in either order: the element mounts and unmounts with the ready
+   * screen while the stream outlives it, so a preview that only ever attached
+   * inside getUserMedia's callback rendered black on every set after the first.
+   */
+  const attachPreview = useCallback((el: HTMLVideoElement | null) => {
+    if (!el || !streamRef.current) return
+    if (el.srcObject !== streamRef.current) el.srcObject = streamRef.current
+    void el.play().catch(() => {
+      /* autoplay refused — the frame still updates once visible */
+    })
+  }, [])
+
+  /** Ref callback for the preview <video>; attaches the stream on mount. */
+  const previewRef = useCallback(
+    (el: HTMLVideoElement | null) => {
+      videoRef.current = el
+      attachPreview(el)
+    },
+    [attachPreview],
+  )
 
   /** Open the camera and show a live preview, without recording yet. */
   const prepare = useCallback((): Promise<boolean> => {
@@ -62,6 +90,9 @@ export function useFormRecorder() {
     }
     if (streamRef.current) {
       if (streamRef.current.getVideoTracks().some((track) => track.readyState === 'live')) {
+        // Re-point the preview: this early return is hit when the ready screen
+        // comes back with a fresh <video> over a stream that never closed.
+        attachPreview(videoRef.current)
         return Promise.resolve(true)
       }
       stopStream()
@@ -75,7 +106,18 @@ export function useFormRecorder() {
     const generation = ++openGenerationRef.current
     const attempt = navigator.mediaDevices
       .getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24 } },
+        video: {
+          facingMode: 'environment',
+          // A planche is a horizontal shape, so a wide frame is the one that
+          // fits it. Asked for as an ideal 16:9 rather than a hard constraint:
+          // a phone standing upright can only deliver what its sensor is
+          // rotated to, and failing outright would be worse than a tall frame
+          // the setup screen then asks you to turn.
+          aspectRatio: { ideal: 16 / 9 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 24 },
+        },
         audio: false,
       })
       .then((stream) => {
@@ -89,10 +131,13 @@ export function useFormRecorder() {
           return true
         }
         streamRef.current = stream
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          void videoRef.current.play().catch(() => {})
-        }
+        attachPreview(videoRef.current)
+        const settings = stream.getVideoTracks()[0]?.getSettings()
+        setFrame(
+          settings?.width && settings?.height
+            ? { width: settings.width, height: settings.height }
+            : null,
+        )
         setStatus('idle')
         return true
       })
@@ -211,9 +256,13 @@ export function useFormRecorder() {
     [teardown],
   )
 
+  // A frame taller than it is wide means the phone is standing upright, which
+  // crops a horizontal body down to whatever fits between the long edges.
+  const portrait = frame !== null && frame.height > frame.width
+
   // Stable identity — consumers use this in effect dependency lists.
   return useMemo(
-    () => ({ status, supported, videoRef, prepare, start, stop, release }),
-    [status, supported, prepare, start, stop, release],
+    () => ({ status, supported, videoRef, previewRef, frame, portrait, prepare, start, stop, release }),
+    [status, supported, previewRef, frame, portrait, prepare, start, stop, release],
   )
 }

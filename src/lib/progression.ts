@@ -14,6 +14,18 @@ export const MIN_PROGRESSION_FORM_CONFIDENCE = 0.35
 export const MAX_PROGRESSION_FORM_ISSUES = 1
 
 /**
+ * The camera now grades whatever it can see and reports the rest as unseen,
+ * so a knee out of shot no longer voids an otherwise good check. Locked arms
+ * are the exception: they are what makes a straight-arm skill that skill, so
+ * an unlock is never granted on a clip where the elbows were never visible.
+ * Records written before partial grading existed carry no `unseen` list and
+ * were fully covered by definition.
+ */
+export function formEvidenceCoversArms(auto: NonNullable<SetLog['form']>['auto']): boolean {
+  return !auto?.unseen?.includes('elbows')
+}
+
+/**
  * The second half of the mastery gate. Most skills need a successful camera
  * check with at most one isolated flag. Frog Stand intentionally has no
  * honest fixed geometry for the model to grade, so it needs a filmed replay
@@ -27,7 +39,8 @@ export function passesProgressionFormCheck(form: SetLog['form'], exerciseId: str
   return Boolean(
     form.auto &&
       form.auto.confidence >= MIN_PROGRESSION_FORM_CONFIDENCE &&
-      form.auto.issues.length <= MAX_PROGRESSION_FORM_ISSUES,
+      form.auto.issues.length <= MAX_PROGRESSION_FORM_ISSUES &&
+      formEvidenceCoversArms(form.auto),
   )
 }
 
