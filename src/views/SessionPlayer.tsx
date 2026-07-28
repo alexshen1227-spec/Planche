@@ -34,11 +34,13 @@ import {
 } from '../lib/poseForm'
 import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
+import { readSignals } from '../lib/signals'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { ProgressRing, Modal } from '../components/ui'
 import { ClipPlayer } from '../components/ClipPlayer'
+import { FramingCheck } from '../components/FramingCheck'
 import {
   passesProgressionFormCheck,
   setNeedsProgressionFormEvidence,
@@ -140,11 +142,16 @@ export function SessionPlayer({
   const totalSets = useMemo(() => workout.blocks.reduce((n, b) => n + b.sets, 0), [workout])
   const doneSets = logs.length
   /**
-   * Unilateral work runs twice per set — left then right — so both sides get
-   * the same dose. The set counter still shows the real number of rounds.
+   * Unilateral work runs twice per set so both sides get the same dose. The
+   * weaker side goes first while the athlete is freshest — the coach's
+   * "lead with the weak side" advice used to be contradicted right here by a
+   * hard-coded left-first order. The set counter still shows real rounds.
    */
   const perSide = Boolean(exercise?.perSide)
-  const side: 'left' | 'right' = si % 2 === 0 ? 'left' : 'right'
+  const sideGap = useMemo(() => readSignals(state).sideGap, [state])
+  const weakSideFirst = sideGap?.weakSide ?? 'left'
+  const side: 'left' | 'right' =
+    si % 2 === 0 ? weakSideFirst : weakSideFirst === 'left' ? 'right' : 'left'
   const roundsPerSet = perSide ? 2 : 1
   const displaySet = Math.floor(si / roundsPerSet) + 1
   const displayTotal = block ? Math.ceil(block.sets / roundsPerSet) : 0
@@ -715,7 +722,11 @@ export function SessionPlayer({
             <div className="mt-1.5 inline-flex items-center gap-2 rounded-full bg-accent-soft px-3.5 py-1 text-[14px] font-semibold text-accent">
               {side === 'left' ? 'Left side' : 'Right side'}
               <span className="text-[12px] font-normal text-ink2">
-                {side === 'left' ? 'then you’ll do the right' : 'second half of this set'}
+                {si % 2 === 0
+                  ? sideGap
+                    ? `weaker side first — then the ${side === 'left' ? 'right' : 'left'}`
+                    : 'then you’ll do the right'
+                  : 'second half of this set'}
               </span>
             </div>
           ) : null}
@@ -818,6 +829,13 @@ export function SessionPlayer({
                   />
                   <div className="pointer-events-none absolute inset-[8%] rounded-xl border border-dashed border-accent/70" />
                   <div className="pointer-events-none absolute inset-x-[8%] top-1/2 h-px bg-accent/60" />
+                  {/* Live "can the camera actually see you" check — placement
+                      problems get caught here, before the effort is spent,
+                      instead of by a refused verdict afterwards. */}
+                  <FramingCheck
+                    videoRef={recorder.videoRef}
+                    active={state.settings.autoAnalyze && recorder.status === 'idle'}
+                  />
                   <div className="absolute inset-x-0 bottom-0 bg-black/55 px-3 py-1.5 text-[11.5px] text-white/85">
                     Side-on · whole body and both hands inside the box · phone level.
                   </div>
@@ -1474,6 +1492,7 @@ function FormCheckRow({
         const auto = {
           issues: res.issues,
           confidence: res.confidence,
+          score: res.score,
           cleanSeconds: res.cleanSeconds,
           cleanRatio: res.cleanRatio,
           elbowDeg: res.elbowDeg,
@@ -1481,6 +1500,8 @@ function FormCheckRow({
           hipAngleDeg: res.hipAngleDeg,
           hipOffset: res.hipOffset,
           leanRatio: res.leanRatio,
+          shrugRatio: res.shrugRatio,
+          asymmetry: res.asymmetry,
           wobble: res.wobble,
           ...(res.unseen.length ? { unseen: res.unseen } : {}),
         }
@@ -1500,7 +1521,13 @@ function FormCheckRow({
           // as selected while storing nothing, so a rest timer expiring lost
           // it. The athlete can still correct it; the model is guessing at a
           // body position it was barely trained on.
-          const r: FormRating = res.issues.length === 0 ? 'clean' : res.issues.length > 1 ? 'broke' : 'slipped'
+          const cleanShare = res.cleanRatio ?? 1
+          const r: FormRating =
+            res.issues.length === 0 && cleanShare >= 0.8
+              ? 'clean'
+              : res.issues.length > 1 || cleanShare < 0.6
+                ? 'broke'
+                : 'slipped'
           ratingRef.current = r
           issuesRef.current = res.issues
           setIssues(res.issues)
@@ -1561,6 +1588,7 @@ function FormCheckRow({
             auto: {
               issues: analysis.issues,
               confidence: analysis.confidence,
+              score: analysis.score,
               cleanSeconds: analysis.cleanSeconds,
               cleanRatio: analysis.cleanRatio,
               elbowDeg: analysis.elbowDeg,
@@ -1568,6 +1596,8 @@ function FormCheckRow({
               hipAngleDeg: analysis.hipAngleDeg,
               hipOffset: analysis.hipOffset,
               leanRatio: analysis.leanRatio,
+              shrugRatio: analysis.shrugRatio,
+              asymmetry: analysis.asymmetry,
               wobble: analysis.wobble,
               ...(analysis.unseen.length ? { unseen: analysis.unseen } : {}),
             },
@@ -1594,6 +1624,8 @@ function FormCheckRow({
           label={`${EXERCISE_BY_ID[exerciseId]?.name ?? 'Hold'} form check`}
           className="mb-3 h-40 w-full rounded-xl border border-line"
           onAvailabilityChange={handleClipAvailability}
+          overlay={analysis?.track}
+          overlayIssues={analysis?.issues}
         />
       ) : null}
       {clipKey ? (
@@ -1611,7 +1643,7 @@ function FormCheckRow({
           ) : null}
           {analysing ? (
             <p className="mt-1 text-center text-[11.5px] text-ink3" role="status">
-              First run downloads the checker — it is quick after that.
+              First run downloads the checker. Longer holds sample more moments, so keep this screen open.
             </p>
           ) : null}
           {analysis ? (
@@ -1622,6 +1654,55 @@ function FormCheckRow({
             >
               {analysis.ok ? (
                 <>
+                  {analysis.score !== undefined ? (
+                    <div className="mb-2 flex items-center gap-3">
+                      <div
+                        className={`grid h-14 w-14 shrink-0 place-items-center rounded-full border-[3px] font-display text-[19px] font-bold tnum ${
+                          analysis.score >= 85
+                            ? 'border-ok/60 text-ok'
+                            : analysis.score >= 60
+                              ? 'border-accent/60 text-accent'
+                              : 'border-danger/60 text-danger'
+                        }`}
+                        aria-label={`Form score ${analysis.score} out of 100`}
+                      >
+                        {analysis.score}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12px] font-semibold uppercase tracking-wide text-ink3">
+                          Form score
+                        </div>
+                        {analysis.subscores?.length ? (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {analysis.subscores.map((s) => (
+                              <span
+                                key={s.key}
+                                className={`rounded-full px-2 py-0.5 text-[11px] font-medium tnum ${
+                                  s.score >= 85
+                                    ? 'bg-ok-soft text-ok'
+                                    : s.score >= 60
+                                      ? 'bg-accent-soft text-accent'
+                                      : 'bg-danger-soft text-danger'
+                                }`}
+                              >
+                                {s.label} {s.score}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  {analysis.fixFirst ? (
+                    <div className="mb-2 rounded-lg border border-accent/30 bg-accent-soft px-2.5 py-2">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-accent">
+                        Fix this first
+                      </div>
+                      <div className="mt-0.5 text-[12.5px] font-medium leading-snug text-ink">
+                        {analysis.fixFirst.cue}
+                      </div>
+                    </div>
+                  ) : null}
                   {analysis.cleanSeconds !== undefined ? (
                     <div
                       className={`mb-2 rounded-lg px-2.5 py-2 ${
@@ -1635,8 +1716,8 @@ function FormCheckRow({
                       </span>
                       <span className="text-[11.5px]">
                         {' '}
-                        of {creditedHoldSec.toFixed(1)}s. One noisy frame is ignored; a sustained material breakdown
-                        stops progression credit.
+                        of {creditedHoldSec.toFixed(1)}s. Isolated joint-tracking jumps are ignored; a material
+                        miss has to persist for roughly a second before it stops progression credit.
                       </span>
                     </div>
                   ) : null}
@@ -1683,8 +1764,9 @@ function FormCheckRow({
                           <div key={d}>{d}</div>
                         ))}
                         <div>
-                          {analysis.framesUsed} frames · {Math.round(analysis.confidence * 100)}% tracking confidence.
-                          A side-on estimate, not a verdict — correct it below if it read you wrong.
+                          {analysis.framesUsed} usable of {analysis.framesSampled ?? analysis.framesUsed} sampled
+                          moments · {Math.round(analysis.confidence * 100)}% tracking confidence. A side-on estimate,
+                          not a verdict — correct it below if it read you wrong.
                         </div>
                       </div>
                     </details>

@@ -16,7 +16,7 @@ const META = 'meta'
  * the device. Pinned clips are exempt from both — that is what pinning means.
  */
 export const CLIP_RETENTION_DAYS = 30
-export const CLIPS_PER_EXERCISE = 8
+export const CLIPS_PER_EXERCISE = 16
 
 export interface ClipMeta {
   key: string

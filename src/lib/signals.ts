@@ -22,6 +22,21 @@ export function median(xs: number[]): number | null {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
 }
 
+/**
+ * Camera output is strong enough to coach from only after the athlete reviewed
+ * the set and the two sources broadly agree. A disputed or unconfirmed model
+ * guess may still be shown beside the replay, but it must not quietly lower
+ * future targets.
+ */
+export function trustedCameraEvidence(set: SetLog): boolean {
+  const form = set.form
+  const auto = form?.auto
+  if (!form || form.confirmed !== true || !auto || auto.confidence < 0.5) return false
+  const athleteClean = form.rating === 'clean'
+  const cameraClean = auto.issues.length === 0 && (auto.cleanRatio ?? 1) >= 0.8
+  return athleteClean === cameraClean
+}
+
 /** Median absolute deviation — an outlier-proof spread measure. */
 export function mad(xs: number[]): number | null {
   const m = median(xs)
@@ -163,7 +178,7 @@ export interface Signals {
   /** How many rated sets that share is based on. */
   formRatedCount: number
   /** The failure the athlete reports most often, if there is a clear one. */
-  topFormIssue: { issue: string; count: number } | null
+  topFormIssue: { issue: string; count: number; of: number } | null
   /** Seconds are climbing while form ratings are getting worse. */
   formDegrading: boolean
   /** Average camera-measured shakiness across recent filmed sets. */
@@ -172,6 +187,15 @@ export interface Signals {
   meanCleanRatio: number | null
   /** How many sets the camera has measured recently. */
   cameraSetCount: number
+  /** Average camera form score (0–100) across recent filmed sets. */
+  meanFormScore: number | null
+  /** Form-score points gained per week — quality progress the timer can't see. */
+  formScoreTrend: number | null
+  /**
+   * A criterion the camera keeps failing to see. One blind clip is chance;
+   * the same limb missing from most filmed sets is a fixable tripod problem.
+   */
+  chronicUnseen: { criterion: string; count: number; of: number } | null
 
   weightKg: number | null
   /** Bodyweight change per week over the last ~8 weeks. */
@@ -352,34 +376,69 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
           x.exerciseId === keyId && x.form?.auto && Array.isArray(x.form.auto.issues) && x.section === 'main',
       ),
     )
+  const trustedCameraSets = cameraSets.filter(trustedCameraEvidence)
   for (const s of cameraSets) {
     // Never count the same fault twice. Athlete-reported issues are strongest;
-    // otherwise recurring camera flags remain useful advisory evidence even
-    // when the athlete considered the whole set clean enough.
+    // camera-only issues join coaching only after the athlete reviewed the set
+    // and broadly agreed. A disputed model guess stays visible in the replay,
+    // but never becomes a training prescription.
     const athleteIssues = s.form?.issues ?? []
     if (s.form?.confirmed !== false && athleteIssues.length) {
       for (const i of athleteIssues) bump(i, 1)
-    } else {
-      const weight = s.form?.confirmed === false ? 0.5 : 0.75
-      for (const i of s.form!.auto!.issues) bump(i, weight)
+    } else if (trustedCameraEvidence(s)) {
+      for (const i of s.form!.auto!.issues) bump(i, 0.75)
     }
   }
   for (const s of ratedSets.filter((s) => !s.form?.auto)) {
     for (const i of s.form?.issues ?? []) bump(i, 1)
   }
   const topEntry = [...issueWeight.entries()].sort((a, b) => b[1] - a[1])[0]
+  const reviewedEvidenceCount = new Set([...ratedSets, ...trustedCameraSets]).size
+  const topIssueCount = topEntry ? (issueSets.get(topEntry[0]) ?? 0) : 0
+  // More clips should create consensus, not more lottery tickets for a false
+  // warning. Once four or more reviewed sets exist, a camera limiter must
+  // recur in at least 40% of them before it can shape accessory work.
   const topFormIssue =
-    topEntry && topEntry[1] >= 1.5 ? { issue: topEntry[0], count: issueSets.get(topEntry[0]) ?? 0 } : null
+    topEntry &&
+    topEntry[1] >= 1.5 &&
+    topIssueCount >= 2 &&
+    (reviewedEvidenceCount < 4 || topIssueCount / reviewedEvidenceCount >= 0.4)
+      ? { issue: topEntry[0], count: topIssueCount, of: reviewedEvidenceCount }
+      : null
 
   // Shakiness the camera saw, averaged over recent filmed sets: consistently
   // high means the prescribed holds are sitting at the very limit.
-  const wobbles = cameraSets.map((s) => s.form!.auto!.wobble).filter((w): w is number => w !== undefined)
+  const wobbles = trustedCameraSets
+    .map((s) => s.form!.auto!.wobble)
+    .filter((w): w is number => w !== undefined)
   const meanWobble = wobbles.length >= 3 ? wobbles.reduce((a, b) => a + b, 0) / wobbles.length : null
-  const cleanRatios = cameraSets
+  const cleanRatios = trustedCameraSets
     .map((s) => s.form!.auto!.cleanRatio)
     .filter((ratio): ratio is number => ratio !== undefined)
   const meanCleanRatio =
     cleanRatios.length >= 3 ? cleanRatios.reduce((a, b) => a + b, 0) / cleanRatios.length : null
+
+  // Camera form scores over time: seconds can flatline while the position
+  // quietly improves (or rot while seconds climb) — this is the quality axis.
+  const scorePoints = trustedCameraSets
+    .map((s) => ({ at: s.at, value: s.form!.auto!.score }))
+    .filter((p): p is { at: number; value: number } => p.value !== undefined)
+  const meanFormScore =
+    scorePoints.length >= 3 ? scorePoints.reduce((t, p) => t + p.value, 0) / scorePoints.length : null
+  const formScoreTrend = slopePerWeek(scorePoints)
+
+  // The criterion the camera most often could not see. Majority-of-sets is the
+  // bar: below that it is framing luck, above it the phone placement itself is
+  // the thing to coach.
+  const unseenCounts = new Map<string, number>()
+  for (const s of cameraSets) {
+    for (const u of s.form!.auto!.unseen ?? []) unseenCounts.set(u, (unseenCounts.get(u) ?? 0) + 1)
+  }
+  const topUnseen = [...unseenCounts.entries()].sort((a, b) => b[1] - a[1])[0]
+  const chronicUnseen =
+    topUnseen && cameraSets.length >= 3 && topUnseen[1] / cameraSets.length >= 0.6
+      ? { criterion: topUnseen[0], count: topUnseen[1], of: cameraSets.length }
+      : null
   // Chasing seconds while positions fall apart is the classic way to stall.
   const half = Math.floor(ratedSets.length / 2)
   const cleanIn = (arr: typeof ratedSets) =>
@@ -455,7 +514,10 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     topFormIssue,
     meanWobble,
     meanCleanRatio,
-    cameraSetCount: cameraSets.length,
+    cameraSetCount: trustedCameraSets.length,
+    meanFormScore,
+    formScoreTrend,
+    chronicUnseen,
     formDegrading,
     weightKg,
     weightTrendPerWeek,

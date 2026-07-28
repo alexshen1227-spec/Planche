@@ -61,6 +61,11 @@ export interface AutoForm {
   issues: FormIssue[]
   confidence: number
   /**
+   * Overall camera form score, 0–100, over the criteria that were judged.
+   * Advisory — progression still runs on issues/cleanSeconds, not this.
+   */
+  score?: number
+  /**
    * Seconds that stayed inside the camera's tolerant form envelope before a
    * sustained breakdown. Progression credit is capped here when available.
    */
@@ -72,6 +77,10 @@ export interface AutoForm {
   hipAngleDeg?: number
   hipOffset?: number
   leanRatio?: number
+  /** Shoulder-to-ear gap over torso length; small means shrugged. */
+  shrugRatio?: number
+  /** Left/right shoulder height difference over torso; high means twisting. */
+  asymmetry?: number
   /** Keypoint jitter across frames — high means the hold was shaky. */
   wobble?: number
   /**

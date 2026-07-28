@@ -4,10 +4,12 @@
  * Two models are available and they fail in different ways, which is the whole
  * reason both are here:
  *
- * - **BlazePose** (the GHUM model, the same one MediaPipe ships) returns 33
+ * - **BlazePose GHUM** via MediaPipe Tasks (`PoseLandmarker`) returns 33
  *   landmarks with a real per-joint visibility score, so "I could not see the
  *   shoulder" is reported rather than guessed at. It is markedly better on
- *   bodies that are not standing up.
+ *   bodies that are not standing up, and the Tasks runtime is the maintained
+ *   successor to the frozen TFJS wrapper this app used to ship (same model
+ *   weights, faster WASM+GPU runtime, honest visibility values).
  * - **MoveNet Thunder** is a single-stage heatmap model. It has no person
  *   detector to fail first, so it sometimes holds on where BlazePose finds
  *   nobody at all.
@@ -17,18 +19,39 @@
  * a couple of frames from the actual clip and keeps whichever model tracked
  * that footage better.
  *
- * Both expose the same joint names for everything measured here
+ * Both are normalised to the same joint names for everything measured here
  * (`left_shoulder`, `right_hip`, …), so callers do not care which one ran.
  */
 
 export type Kp = { x: number; y: number; score?: number; name?: string }
 
-export type BackendId = 'blazepose' | 'movenet'
+export type BackendId = 'mediapipe' | 'movenet'
 
 export interface PoseBackend {
   id: BackendId
   estimate(img: HTMLCanvasElement | HTMLVideoElement): Promise<Kp[]>
 }
+
+/** Pinned with the npm package so the runtime and its WASM never drift apart. */
+const TASKS_VISION_VERSION = '1.0.0'
+const WASM_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TASKS_VISION_VERSION}/wasm`
+/**
+ * The full (9 MB) variant: the same GHUM weights the old TFJS path used.
+ * Heavy is markedly slower on phones for little gain on side-on footage,
+ * lite gives up accuracy exactly where a horizontal body needs it.
+ */
+const MODEL_URL =
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task'
+
+/** BlazePose's fixed landmark order, mapped to the names the geometry uses. */
+const BLAZEPOSE_NAMES = [
+  'nose', 'left_eye_inner', 'left_eye', 'left_eye_outer', 'right_eye_inner', 'right_eye',
+  'right_eye_outer', 'left_ear', 'right_ear', 'mouth_left', 'mouth_right',
+  'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow', 'left_wrist', 'right_wrist',
+  'left_pinky', 'right_pinky', 'left_index', 'right_index', 'left_thumb', 'right_thumb',
+  'left_hip', 'right_hip', 'left_knee', 'right_knee', 'left_ankle', 'right_ankle',
+  'left_heel', 'right_heel', 'left_foot_index', 'right_foot_index',
+]
 
 const READY_KEY = 'planchelab.poseReady'
 
@@ -51,7 +74,7 @@ function markReady() {
 
 let tfReady: Promise<void> | null = null
 
-/** WebGL backend init, shared by both models. */
+/** WebGL backend init for the MoveNet fallback. */
 async function initTf(): Promise<void> {
   if (!tfReady) {
     tfReady = (async () => {
@@ -69,35 +92,66 @@ async function initTf(): Promise<void> {
 
 const loaders: Partial<Record<BackendId, Promise<PoseBackend>>> = {}
 
+function sizeOf(img: HTMLCanvasElement | HTMLVideoElement): { w: number; h: number } {
+  return img instanceof HTMLVideoElement
+    ? { w: img.videoWidth, h: img.videoHeight }
+    : { w: img.width, h: img.height }
+}
+
+async function loadMediaPipe(): Promise<PoseBackend> {
+  const { FilesetResolver, PoseLandmarker } = await import('@mediapipe/tasks-vision')
+  const vision = await FilesetResolver.forVisionTasks(WASM_BASE)
+  const create = (delegate: 'GPU' | 'CPU') =>
+    PoseLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: MODEL_URL, delegate },
+      runningMode: 'IMAGE',
+      numPoses: 1,
+      // A horizontal, face-down body is the weakest case for the person
+      // detector, so it gets a lower bar than the upright-selfie default.
+      minPoseDetectionConfidence: 0.3,
+      minPosePresenceConfidence: 0.3,
+    })
+  // Some WebViews advertise a GPU they cannot actually deliver; the model is
+  // the same either way, CPU is merely slower.
+  const landmarker = await create('GPU').catch(() => create('CPU'))
+  markReady()
+  return {
+    id: 'mediapipe',
+    estimate: async (img) => {
+      const { w, h } = sizeOf(img)
+      if (!w || !h) return []
+      const found = landmarker.detect(img).landmarks[0]
+      if (!found) return []
+      return found.map((p, i) => ({
+        // Landmarks arrive normalised 0–1; the geometry works in pixels.
+        x: p.x * w,
+        y: p.y * h,
+        // Visibility is the model's own "was this joint actually seen" —
+        // absent (older runtime quirk) counts as unseen, never as trusted.
+        score: p.visibility ?? 0,
+        name: BLAZEPOSE_NAMES[i],
+      }))
+    },
+  }
+}
+
+async function loadMoveNet(): Promise<PoseBackend> {
+  await initTf()
+  const poseDetection = await import('@tensorflow-models/pose-detection')
+  const detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
+    modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
+  })
+  markReady()
+  return {
+    id: 'movenet',
+    estimate: async (img) => (await detector.estimatePoses(img))[0]?.keypoints ?? [],
+  }
+}
+
 function load(id: BackendId): Promise<PoseBackend> {
   const existing = loaders[id]
   if (existing) return existing
-  const started = (async (): Promise<PoseBackend> => {
-    await initTf()
-    const poseDetection = await import('@tensorflow-models/pose-detection')
-    if (id === 'blazepose') {
-      const detector = await poseDetection.createDetector(poseDetection.SupportedModels.BlazePose, {
-        runtime: 'tfjs',
-        modelType: 'full',
-        // Smoothing assumes a live stream of adjacent frames. These samples are
-        // seconds apart, so smoothing across them would blur real movement.
-        enableSmoothing: false,
-      })
-      markReady()
-      return {
-        id,
-        estimate: async (img) => (await detector.estimatePoses(img))[0]?.keypoints ?? [],
-      }
-    }
-    const detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
-      modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
-    })
-    markReady()
-    return {
-      id,
-      estimate: async (img) => (await detector.estimatePoses(img))[0]?.keypoints ?? [],
-    }
-  })().catch((e) => {
+  const started = (id === 'mediapipe' ? loadMediaPipe() : loadMoveNet()).catch((e) => {
     // Let a later attempt retry instead of failing forever.
     delete loaders[id]
     throw e
@@ -117,7 +171,7 @@ export function getBackend(id: BackendId): Promise<PoseBackend> {
  */
 export function warmDetector(): void {
   if (!poseModelReady()) return
-  void load('blazepose').catch(() => {
+  void load('mediapipe').catch(() => {
     /* offline — the explicit tap surfaces the error */
   })
 }

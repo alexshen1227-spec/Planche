@@ -16,6 +16,55 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-07-28',
+    title: 'Camera glitches stop becoming form faults',
+    area: 'camera',
+    notes: [
+      'Red form flags now use the same measurement-error buffer as the numeric score. A near-threshold elbow or hip can no longer score as clean and be called wrong at the same time.',
+      'Isolated joint jumps are removed before the hold is graded, and a clip whose skeleton keeps jumping is refused as unreliable instead of blaming the athlete.',
+      'The checker locks onto the best-observed side across the whole clip and no longer mixes a far-side hip with a near-side shoulder. Occluded limbs join the verdict only when they are clearly visible and separate.',
+      'A breakdown now needs multiple consecutive material misses sustained for roughly a second. Late movement is reported in the measurement detail without turning a brief detector wobble into several red flags.',
+      'Each hold now samples about three moments per second, up to 72 across a long clip, and shows usable moments against the full sample count. Breakdown tolerance is measured in real time, so the denser check is more informed rather than harsher.',
+      'Saved replay history doubled from 8 to 16 clips per exercise. The 30-day cleanup and pinned-clip protection still keep device storage under control.',
+    ],
+  },
+  {
+    date: '2026-07-28',
+    title: 'The coach listens when you correct the camera',
+    area: 'coach',
+    notes: [
+      'Unconfirmed camera guesses and checks that disagree with your reviewed rating stay visible beside the replay, but they no longer lower targets, pick a limiter, or teach the strategy coach the wrong lesson.',
+      'Automatic ratings now include the verified clean share, so a hold that clearly left the form envelope is not pre-filled as Clean just because no single correction was stable enough to name.',
+      'When you film several sets, an occasional camera flag is treated as an outlier. A limiter has to repeat across at least 40% of reviewed clips before the coach changes accessory work around it.',
+    ],
+  },
+  {
+    date: '2026-07-27',
+    title: 'A form score, one fix at a time, and the skeleton the camera saw',
+    area: 'camera',
+    notes: [
+      'Filmed holds now get a 0–100 form score, graded with the same deduction bands gymnastics judges use: nothing inside 5° of perfect, small errors to 20°, medium to 45°, and past that the position is not being counted as that skill. The score breaks down per criterion — straight arms, body line, lean, held-clean time — so you can see exactly where the points went.',
+      'When several things slipped, the check now leads with the one correction worth your attention next — bent arms before cosmetic faults — instead of a wall of notes. One cue at a time is how corrections actually stick.',
+      'Replays can now show the tracked skeleton drawn over your body, with the joints behind any fault highlighted. If the check reads you wrong, you will see exactly where it thought your elbow was — and if it tracked the curtains instead of you, that is visible too.',
+      'Before a filmed set, the preview now runs a live framing check and tells you if your feet or hands are out of shot — while you can still move the phone, not after the effort is spent.',
+      'Both arms are judged when both are clearly visible, so a locked near elbow can no longer hide the far one bending.',
+      'The pose engine moved to the actively maintained MediaPipe runtime (same BlazePose model family, faster and with honest per-joint visibility), with MoveNet still standing by as the fallback — every clip still goes to whichever tracks your footage better.',
+    ],
+  },
+  {
+    date: '2026-07-27',
+    title: 'The coach learns from quality, not just the stopwatch',
+    area: 'coach',
+    notes: [
+      'When the coach measures which training approach moves you fastest, seconds the camera watched decay now count for less than seconds held clean — and an approach that precedes a joint complaint loses credit. Grinding out sloppy time can no longer teach the coach the wrong lesson.',
+      'If the same body part keeps ending up out of the camera frame, the coach now says so and tells you how to place the phone — a chronically unseen knee is a tripod problem, not a form problem, and until it is fixed that check is silently skipped.',
+      'Your camera form score is tracked over time. Quality climbing while hold times sit flat is called out as the real progress it is — seconds usually follow the position.',
+      'Unilateral sets now start with your weaker side while you are freshest. The coach has always said to lead with the weak side; the session player used to start on the left regardless.',
+      'When you are fresh, steady and overdue, the coach now actually suggests the max test on the dashboard — it used to decide this quietly and tell no one.',
+      'After a session, the debrief celebrates verified clean-hold growth against your last filmed session — the realest number this app has.',
+    ],
+  },
+  {
     date: '2026-07-26',
     title: 'Widest possible frame, and this page',
     area: 'camera',

@@ -53,12 +53,23 @@ export default defineConfig({
             options: { cacheName: 'pose-lib', expiration: { maxEntries: 4 } },
           },
           {
-            // MoveNet weights, served from Google's model hosting.
+            // Model weights: the PoseLandmarker .task file and MoveNet's
+            // graph, both served from Google's model hosting.
             urlPattern: /^https:\/\/(storage\.googleapis\.com|www\.kaggle\.com|tfhub\.dev)\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'pose-model',
               expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 90 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // MediaPipe Tasks WASM runtime, pinned to the npm package version.
+            urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/@mediapipe\/tasks-vision.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'pose-wasm',
+              expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 180 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
@@ -75,7 +86,9 @@ export default defineConfig({
         // Predictable name so the service worker can treat the pose stack as
         // an on-demand download rather than part of the app shell.
         manualChunks: (id) =>
-          id.includes('@tensorflow') || id.includes('pose-detection') ? 'pose' : undefined,
+          id.includes('@tensorflow') || id.includes('pose-detection') || id.includes('@mediapipe')
+            ? 'pose'
+            : undefined,
       },
     },
   },

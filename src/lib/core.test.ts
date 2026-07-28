@@ -5,8 +5,14 @@ import { applySession } from './engine'
 import { formEvidenceCoversArms, progressionCredit, qualifyingProgress } from './progression'
 import {
   POSE_PROFILES,
+  bandedScore,
   bridgeKeypointGaps,
+  chooseSampleCount,
+  computeFormScore,
   gradeCoverage,
+  materialIssuesForReading,
+  pickFixFirst,
+  suppressIsolatedMetricSpikes,
   sustainedCleanSeconds,
   sustainedMinimum,
   unrotateKeypoints,
@@ -16,7 +22,7 @@ import { painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
 import { validateImport } from './exportImport'
 import { buildSampleState } from '../data/sample'
 import { selectRecorderMime } from './recorder'
-import { readSignals } from './signals'
+import { readSignals, trustedCameraEvidence } from './signals'
 
 const DAY = 86_400_000
 
@@ -394,6 +400,14 @@ describe('rotation-robust tracking', () => {
 })
 
 describe('camera evaluator primitives', () => {
+  it('samples short and long holds densely without growing without bound', () => {
+    expect(chooseSampleCount(5)).toBe(18)
+    expect(chooseSampleCount(10)).toBe(30)
+    expect(chooseSampleCount(20)).toBe(60)
+    expect(chooseSampleCount(40)).toBe(72)
+    expect(chooseSampleCount(40, 12)).toBe(12)
+  })
+
   it('uses the lower quartile so a few straight frames cannot hide a bent hold', () => {
     expect(sustainedMinimum([150, 150, 150, 150, 150, 150, 175, 175])).toBe(150)
   })
@@ -403,7 +417,7 @@ describe('camera evaluator primitives', () => {
     expect(selectRecorderMime((mime) => supported.has(mime))).toBe('video/webm')
   })
 
-  it('ignores one noisy frame but caps clean time at a sustained breakdown', () => {
+  it('ignores one or two noisy samples but caps clean time at a sustained breakdown', () => {
     expect(
       sustainedCleanSeconds(
         [
@@ -412,11 +426,165 @@ describe('camera evaluator primitives', () => {
           { t: 6, bad: false },
           { t: 8, bad: true },
           { t: 10, bad: true },
+          { t: 12, bad: true },
         ],
-        12,
+        14,
       ),
     ).toBe(8)
     expect(sustainedCleanSeconds([{ t: 6, bad: true }], 12)).toBe(12)
+    expect(
+      sustainedCleanSeconds(
+        [
+          { t: 6, bad: true },
+          { t: 8, bad: true },
+        ],
+        12,
+      ),
+    ).toBe(12)
+  })
+
+  it('keeps the breakdown tolerance stable when samples become denser', () => {
+    expect(
+      sustainedCleanSeconds(
+        [
+          { t: 2, bad: true },
+          { t: 2.25, bad: true },
+          { t: 2.5, bad: true },
+        ],
+        5,
+      ),
+    ).toBe(5)
+    expect(
+      sustainedCleanSeconds(
+        [
+          { t: 2, bad: true },
+          { t: 2.25, bad: true },
+          { t: 2.5, bad: true },
+          { t: 2.75, bad: true },
+        ],
+        5,
+      ),
+    ).toBe(2)
+  })
+
+  it('removes an isolated detector jump without flattening real movement', () => {
+    const readings = [
+      { t: 0, elbowDeg: 171, hipOffset: 0.02 },
+      { t: 1, elbowDeg: 170, hipOffset: 0.04 },
+      { t: 2, elbowDeg: 112, hipOffset: 0.06 },
+      { t: 3, elbowDeg: 169, hipOffset: 0.08 },
+      { t: 4, elbowDeg: 168, hipOffset: 0.1 },
+    ]
+    const ignored = suppressIsolatedMetricSpikes(readings)
+    expect(ignored).toEqual({ metricsIgnored: 1, framesTouched: 1 })
+    expect(readings[2].elbowDeg).toBeUndefined()
+    expect(readings[2].hipOffset).toBe(0.06)
+  })
+})
+
+describe('form scoring', () => {
+  it('gives no deduction inside the FIG 5° free band and none below zero', () => {
+    expect(bandedScore(0)).toBe(100)
+    expect(bandedScore(5)).toBe(100)
+    expect(bandedScore(20)).toBe(70)
+    expect(bandedScore(45)).toBe(30)
+    expect(bandedScore(200)).toBe(0)
+  })
+
+  const tuck = POSE_PROFILES['tuck-planche']
+  const allJudged = { elbow: true, knee: true, hipAngle: true, line: true, lean: true }
+
+  it('uses the same measurement deadband for red flags as the numeric score', () => {
+    const full = POSE_PROFILES['full-planche']
+    expect(
+      materialIssuesForReading(
+        {
+          t: 0,
+          elbowDeg: 168,
+          kneeDeg: 162,
+          hipAngleDeg: 153,
+          hipOffset: 0.27,
+          leanRatio: 0.35,
+          shrugRatio: 0.28,
+          asymmetry: 0.27,
+        },
+        full,
+        allJudged,
+      ),
+    ).toEqual([])
+    expect(
+      materialIssuesForReading(
+        {
+          t: 0,
+          elbowDeg: 160,
+          kneeDeg: 150,
+          hipAngleDeg: 140,
+          hipOffset: 0.4,
+          leanRatio: 0.2,
+          shrugRatio: 0.2,
+          asymmetry: 0.4,
+        },
+        full,
+        allJudged,
+      ),
+    ).toEqual(expect.arrayContaining(['arms', 'knees', 'closed', 'pike', 'lean', 'shrug', 'twist']))
+  })
+
+  it('scores a clean hold at 100 across every judged criterion', () => {
+    const scored = computeFormScore({
+      profile: tuck,
+      judged: allJudged,
+      elbowDeg: 178,
+      hipOffset: 0.05,
+      leanRatio: 0.4,
+      shrugRatio: 0.45,
+      wobble: 0.01,
+      cleanRatio: 1,
+    })
+    expect(scored?.score).toBe(100)
+    expect(scored?.subscores.every((s) => s.score === 100)).toBe(true)
+  })
+
+  it('drops the headline score when the elbows bend materially', () => {
+    const clean = computeFormScore({
+      profile: tuck,
+      judged: allJudged,
+      elbowDeg: 178,
+      cleanRatio: 1,
+    })!
+    const bent = computeFormScore({
+      profile: tuck,
+      judged: allJudged,
+      elbowDeg: 140,
+      cleanRatio: 1,
+    })!
+    expect(bent.score).toBeLessThan(clean.score)
+    expect(bent.subscores.find((s) => s.key === 'elbow')?.score).toBeLessThan(70)
+  })
+
+  it('excludes criteria the camera did not judge instead of guessing them', () => {
+    const scored = computeFormScore({
+      profile: tuck,
+      judged: { ...allJudged, elbow: false },
+      elbowDeg: 120,
+      hipOffset: 0,
+      cleanRatio: 1,
+    })!
+    expect(scored.subscores.some((s) => s.key === 'elbow')).toBe(false)
+  })
+
+  it('refuses to score when nothing was judged', () => {
+    expect(
+      computeFormScore({
+        profile: tuck,
+        judged: { elbow: false, knee: false, hipAngle: false, line: false, lean: false },
+      }),
+    ).toBeNull()
+  })
+
+  it('prioritises bent arms over every cosmetic fault in the fix-first cue', () => {
+    expect(pickFixFirst(['knees', 'twist', 'arms'])?.issue).toBe('arms')
+    expect(pickFixFirst([])).toBeNull()
   })
 })
 
@@ -433,7 +601,7 @@ describe('readiness rails', () => {
 
   it('targets accessories at a recurring camera-detected limiter', () => {
     const now = Date.now()
-    const pike = form('clean', true, ['pike'])
+    const pike = form('slipped', true, ['pike'])
     const history = session(
       'advtuck',
       [
@@ -452,9 +620,41 @@ describe('readiness rails', () => {
     expect(workout.blocks.some((block) => block.exerciseId === 'arch-hold')).toBe(true)
   })
 
+  it('uses many reviewed clips as consensus instead of extra chances for a false limiter', () => {
+    const now = Date.now()
+    const occasionalPike = [0, 1].map(() =>
+      log('adv-tuck-planche', 10, { form: form('slipped', true, ['pike']) }),
+    )
+    const clean = Array.from({ length: 6 }, () =>
+      log('adv-tuck-planche', 10, { form: form('clean', true, []) }),
+    )
+    const history = session('advtuck', [...occasionalPike, ...clean], {
+      startedAt: now - DAY,
+    })
+    expect(readSignals({ ...state('advtuck'), sessions: [history] }, now).topFormIssue).toBeNull()
+
+    const consensus = session(
+      'advtuck',
+      [
+        ...Array.from({ length: 4 }, () =>
+          log('adv-tuck-planche', 10, { form: form('slipped', true, ['pike']) }),
+        ),
+        ...Array.from({ length: 4 }, () =>
+          log('adv-tuck-planche', 10, { form: form('clean', true, []) }),
+        ),
+      ],
+      { startedAt: now - DAY },
+    )
+    expect(readSignals({ ...state('advtuck'), sessions: [consensus] }, now).topFormIssue).toEqual({
+      issue: 'pike',
+      count: 4,
+      of: 8,
+    })
+  })
+
   it('switches to technique work when filmed holds repeatedly break down early', () => {
     const now = Date.now()
-    const earlyBreak = form('clean', true, [], 0.9, 6, 0.6)
+    const earlyBreak = form('slipped', true, [], 0.9, 6, 0.6)
     const history = session(
       'tuck',
       [
@@ -506,6 +706,103 @@ describe('coach learning', () => {
     ]
     expect(rewardFor(history, history[2])).toBeGreaterThan(0)
   })
+
+  it('discounts seconds the camera watched decay, and pain that follows a strategy', () => {
+    const t = Date.now() - 5 * DAY
+    const build = (cleanRatio: number, checkIn?: CheckIn) => [
+      session('foundations', [log('ppp-hold', 10, { form: form() })], { startedAt: t }),
+      session('foundations', [log('ppp-hold', 11, { form: form() })], { startedAt: t + DAY }),
+      session(
+        'foundations',
+        [
+          log('ppp-hold', 20, {
+            form: form(
+              cleanRatio >= 0.8 ? 'clean' : 'slipped',
+              true,
+              cleanRatio >= 0.8 ? [] : ['arms'],
+              0.9,
+              20 * cleanRatio,
+              cleanRatio,
+            ),
+          }),
+          log('ppp-hold', 19, {
+            form: form(
+              cleanRatio >= 0.8 ? 'clean' : 'slipped',
+              true,
+              cleanRatio >= 0.8 ? [] : ['arms'],
+              0.9,
+              19 * cleanRatio,
+              cleanRatio,
+            ),
+          }),
+        ],
+        { startedAt: t + 2 * DAY, strategy: 'intensity' },
+      ),
+      session('foundations', [log('ppp-hold', 12, { form: form() })], {
+        startedAt: t + 4 * DAY,
+        ...(checkIn ? { checkIn } : {}),
+      }),
+    ]
+    const clean = build(1)
+    const sloppy = build(0.85)
+    const cleanReward = rewardFor(clean, clean[2])!
+    expect(rewardFor(sloppy, sloppy[2])!).toBeLessThan(cleanReward)
+
+    const pained = build(1, { joints: 'pain', energy: 'ok', at: t + 4 * DAY })
+    expect(rewardFor(pained, pained[2])!).toBeLessThan(cleanReward)
+  })
+
+  it('never lets unconfirmed or athlete-disputed camera guesses change coaching', () => {
+    const disputed = log('ppp-hold', 12, {
+      form: form('clean', true, ['arms', 'lean'], 0.9, 4, 0.33),
+    })
+    const unconfirmed = log('ppp-hold', 12, {
+      form: form('broke', false, ['arms', 'lean'], 0.9, 4, 0.33),
+    })
+    expect(trustedCameraEvidence(disputed)).toBe(false)
+    expect(trustedCameraEvidence(unconfirmed)).toBe(false)
+
+    const athlete = {
+      ...state(),
+      sessions: [
+        session('foundations', [disputed, unconfirmed, disputed], {
+          startedAt: Date.now() - DAY,
+        }),
+      ],
+    }
+    const signals = readSignals(athlete)
+    expect(signals.cameraSetCount).toBe(0)
+    expect(signals.meanCleanRatio).toBeNull()
+    expect(signals.topFormIssue).toBeNull()
+    expect(buildPlan(athlete).decisions.some((d) => d.text.includes('camera verified only'))).toBe(false)
+  })
+
+  it('flags a chronically unseen criterion as a placement problem, not a form fault', () => {
+    const now = Date.now()
+    const unseenForm = (): FormCheck => ({
+      rating: 'clean',
+      confirmed: true,
+      auto: { issues: [], confidence: 0.8, unseen: ['forward lean'] },
+    })
+    const history = session(
+      'foundations',
+      [
+        log('ppp-hold', 10, { form: unseenForm() }),
+        log('ppp-hold', 10, { form: unseenForm() }),
+        log('ppp-hold', 10, { form: unseenForm() }),
+      ],
+      { startedAt: now - 2 * DAY },
+    )
+    const athlete = { ...state(), sessions: [history] }
+    expect(readSignals(athlete, now).chronicUnseen).toEqual({
+      criterion: 'forward lean',
+      count: 3,
+      of: 3,
+    })
+    expect(
+      buildPlan(athlete, now).decisions.some((d) => d.text.includes('missed your forward lean')),
+    ).toBe(true)
+  })
 })
 
 describe('backup validation and normalization', () => {
@@ -528,6 +825,35 @@ describe('backup validation and normalization', () => {
     const rebuilt = rebuildDerivedState(normalized)
     expect(rebuilt.prs['ppp-hold']?.value).toBe(30)
     expect(rebuilt.stepId).toBe('lean')
+  })
+
+  it('round-trips camera score, shrug, asymmetry and unseen evidence through import', () => {
+    const raw = {
+      ...state(),
+      sessions: [
+        session('foundations', [
+          log('ppp-hold', 12, {
+            form: {
+              rating: 'clean' as const,
+              confirmed: true,
+              auto: {
+                issues: [],
+                confidence: 0.8,
+                score: 77,
+                shrugRatio: 0.3,
+                asymmetry: 0.1,
+                unseen: ['knees'],
+              },
+            },
+          }),
+        ]),
+      ],
+    }
+    const auto = normalizeState(raw).sessions[0].sets[0].form?.auto
+    expect(auto?.score).toBe(77)
+    expect(auto?.shrugRatio).toBeCloseTo(0.3)
+    expect(auto?.asymmetry).toBeCloseTo(0.1)
+    expect(auto?.unseen).toEqual(['knees'])
   })
 
   it('grandfathers pre-camera unlocks without changing the selected lower step', () => {

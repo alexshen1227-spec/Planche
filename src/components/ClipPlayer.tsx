@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { getClipBlob } from '../lib/clips'
+import type { PoseTrack } from '../lib/poseForm'
+import type { FormIssue } from '../types'
 import { Icon } from './Icon'
 
 type LoadState =
@@ -14,6 +16,136 @@ interface ClipPlayerProps {
   className?: string
   label?: string
   onAvailabilityChange?: (available: boolean) => void
+  /** Sampled poses from the analysis, drawn over the replay when present. */
+  overlay?: PoseTrack | null
+  /** Faults found — the joints involved are drawn in the warning colour. */
+  overlayIssues?: FormIssue[]
+}
+
+/** Limb connections drawn between tracked joints. */
+const BONES: [string, string][] = [
+  ['left_ear', 'left_shoulder'],
+  ['right_ear', 'right_shoulder'],
+  ['left_shoulder', 'right_shoulder'],
+  ['left_shoulder', 'left_elbow'],
+  ['left_elbow', 'left_wrist'],
+  ['right_shoulder', 'right_elbow'],
+  ['right_elbow', 'right_wrist'],
+  ['left_shoulder', 'left_hip'],
+  ['right_shoulder', 'right_hip'],
+  ['left_hip', 'right_hip'],
+  ['left_hip', 'left_knee'],
+  ['left_knee', 'left_ankle'],
+  ['right_hip', 'right_knee'],
+  ['right_knee', 'right_ankle'],
+]
+
+/** Which joints each fault implicates, for colouring the skeleton. */
+const ISSUE_JOINTS: Partial<Record<FormIssue, string[]>> = {
+  arms: ['left_elbow', 'right_elbow', 'left_wrist', 'right_wrist'],
+  shrug: ['left_shoulder', 'right_shoulder', 'left_ear', 'right_ear'],
+  sag: ['left_hip', 'right_hip'],
+  pike: ['left_hip', 'right_hip'],
+  hips: ['left_hip', 'right_hip'],
+  level: ['left_hip', 'right_hip'],
+  closed: ['left_hip', 'right_hip', 'left_knee', 'right_knee'],
+  knees: ['left_knee', 'right_knee'],
+  lean: ['left_shoulder', 'right_shoulder', 'left_wrist', 'right_wrist'],
+  twist: ['left_shoulder', 'right_shoulder'],
+}
+
+/**
+ * Draws what the pose model saw over the replay, synced to playback time.
+ *
+ * The point is trust: a verdict like "elbows sat at 152°" is easy to argue
+ * with until you can see exactly where the model thought your elbow was. It
+ * also self-diagnoses bad tracking — dots on the curtains instead of the
+ * athlete explain a refused verdict faster than any copy.
+ */
+function PoseOverlay({
+  videoRef,
+  track,
+  issues,
+}: {
+  videoRef: RefObject<HTMLVideoElement | null>
+  track: PoseTrack
+  issues: FormIssue[]
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  useEffect(() => {
+    let raf = 0
+    const bad = new Set(issues.flatMap((i) => ISSUE_JOINTS[i] ?? []))
+    const draw = () => {
+      raf = requestAnimationFrame(draw)
+      const canvas = canvasRef.current
+      const video = videoRef.current
+      if (!canvas || !video) return
+      const box = canvas.getBoundingClientRect()
+      if (!box.width || !box.height) return
+      const dpr = window.devicePixelRatio || 1
+      const cw = Math.round(box.width * dpr)
+      const ch = Math.round(box.height * dpr)
+      if (canvas.width !== cw || canvas.height !== ch) {
+        canvas.width = cw
+        canvas.height = ch
+      }
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.clearRect(0, 0, cw, ch)
+
+      // Nearest sampled pose to the playhead. Samples are sparse, so anything
+      // further than ~0.7s is a gap, not a match — draw nothing rather than a
+      // skeleton from the wrong moment.
+      let frame: PoseTrack['frames'][number] | null = null
+      let gap = 0.7
+      for (const f of track.frames) {
+        const d = Math.abs(f.t - video.currentTime)
+        if (d < gap) {
+          gap = d
+          frame = f
+        }
+      }
+      if (!frame) return
+
+      // The <video> renders object-contain: work out where the letterboxed
+      // content actually sits so keypoints land on the body, not the bars.
+      const scale = Math.min(box.width / track.width, box.height / track.height) * dpr
+      const ox = (cw - track.width * scale) / 2
+      const oy = (ch - track.height * scale) / 2
+      const at = (name: string) => {
+        const k = frame!.kps.find((p) => p.name === name)
+        return k ? { x: ox + k.x * scale, y: oy + k.y * scale } : null
+      }
+
+      ctx.lineCap = 'round'
+      for (const [a, b] of BONES) {
+        const pa = at(a)
+        const pb = at(b)
+        if (!pa || !pb) continue
+        const flagged = bad.has(a) || bad.has(b)
+        ctx.strokeStyle = flagged ? 'rgba(248,113,113,0.95)' : 'rgba(34,211,238,0.85)'
+        ctx.lineWidth = (flagged ? 3 : 2) * dpr
+        ctx.beginPath()
+        ctx.moveTo(pa.x, pa.y)
+        ctx.lineTo(pb.x, pb.y)
+        ctx.stroke()
+      }
+      for (const k of frame.kps) {
+        if (!k.name) continue
+        const p = at(k.name)
+        if (!p) continue
+        ctx.fillStyle = bad.has(k.name) ? 'rgb(248,113,113)' : 'rgb(224,242,254)'
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, (bad.has(k.name) ? 3.5 : 2.5) * dpr, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+    raf = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(raf)
+  }, [videoRef, track, issues])
+
+  return <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
 }
 
 /**
@@ -26,11 +158,15 @@ export function ClipPlayer({
   className = 'h-40 w-full rounded-lg',
   label = 'Form-check clip',
   onAvailabilityChange,
+  overlay,
+  overlayIssues,
 }: ClipPlayerProps) {
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [expanded, setExpanded] = useState(false)
+  const [showSkeleton, setShowSkeleton] = useState(true)
   const inlineRef = useRef<HTMLVideoElement | null>(null)
+  const hasOverlay = Boolean(overlay && overlay.frames.length)
 
   useEffect(() => {
     let cancelled = false
@@ -93,6 +229,9 @@ export function ClipPlayer({
           onError={() => setState({ kind: 'playback-error', blob: state.blob, url: state.url })}
           className="h-full w-full object-contain"
         />
+        {hasOverlay && showSkeleton ? (
+          <PoseOverlay videoRef={inlineRef} track={overlay!} issues={overlayIssues ?? []} />
+        ) : null}
         <button
           onClick={() => setExpanded(true)}
           aria-label="Review clip fullscreen"
@@ -101,6 +240,21 @@ export function ClipPlayer({
         >
           <Icon name="monitor" size={13} /> Review
         </button>
+        {hasOverlay ? (
+          <button
+            onClick={() => setShowSkeleton((s) => !s)}
+            aria-pressed={showSkeleton}
+            aria-label="Toggle tracked skeleton"
+            title="What the form checker saw"
+            className={`absolute left-2 top-2 flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11.5px] font-semibold shadow-lg backdrop-blur ${
+              showSkeleton
+                ? 'border-accent/50 bg-black/75 text-accent'
+                : 'border-white/20 bg-black/75 text-white hover:bg-black/90'
+            }`}
+          >
+            <Icon name="sparkle" size={13} /> Skeleton
+          </button>
+        ) : null}
         {playbackFailed ? (
           <div className="absolute inset-x-2 bottom-10 rounded-lg bg-black/85 p-2.5 text-center text-[11.5px] text-white/80">
             <p>This browser could not play the saved format.</p>
@@ -128,6 +282,8 @@ export function ClipPlayer({
               url={state.url}
               label={label}
               initialTime={inlineRef.current?.currentTime ?? 0}
+              overlay={hasOverlay && showSkeleton ? overlay! : null}
+              overlayIssues={overlayIssues ?? []}
               onClose={() => setExpanded(false)}
             />,
             document.body,
@@ -141,11 +297,15 @@ function ClipReviewOverlay({
   url,
   label,
   initialTime,
+  overlay,
+  overlayIssues,
   onClose,
 }: {
   url: string
   label: string
   initialTime: number
+  overlay?: PoseTrack | null
+  overlayIssues?: FormIssue[]
   onClose: () => void
 }) {
   const shellRef = useRef<HTMLDivElement | null>(null)
@@ -217,7 +377,7 @@ function ClipReviewOverlay({
           </button>
         </div>
       </div>
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
         <video
           ref={videoRef}
           src={url}
@@ -232,6 +392,9 @@ function ClipReviewOverlay({
           }}
           className="h-full w-full object-contain"
         />
+        {overlay && overlay.frames.length ? (
+          <PoseOverlay videoRef={videoRef} track={overlay} issues={overlayIssues ?? []} />
+        ) : null}
       </div>
       <div className="flex shrink-0 items-center justify-center gap-2 border-t border-white/10 px-3 py-2 text-white">
         <button

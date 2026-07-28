@@ -1,6 +1,14 @@
 import type { AppState, CheckIn, Session, StrategyId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
-import { readSignals, observedRestSec, median, strainOf, LOADED_STRAIN, type Signals } from './signals'
+import {
+  readSignals,
+  observedRestSec,
+  median,
+  strainOf,
+  trustedCameraEvidence,
+  LOADED_STRAIN,
+  type Signals,
+} from './signals'
 import { qualifyingProgress, qualifyingSessionValue } from './progression'
 
 /**
@@ -137,6 +145,24 @@ export function rewardFor(sessions: Session[], session: Session): number | null 
   if (before < step.unlockSec && after >= step.unlockSec) reward += 0.15
   // Grinding at RPE 9+ and going nowhere is a cost, not a neutral outcome.
   if ((session.rpe ?? 0) >= 9 && after <= before) reward -= 0.03
+
+  // Seconds gained while the camera watched the position decay are borrowed,
+  // not earned. Positive rewards are scaled by the filmed clean share of the
+  // strategy session itself; unfilmed sessions keep full credit — a missing
+  // camera is not evidence of bad form.
+  const filmedRatios = session.sets
+    .filter((x) => x.section === 'main' && trustedCameraEvidence(x))
+    .map((x) => x.form?.auto?.cleanRatio)
+    .filter((r): r is number => r !== undefined)
+  const filmedClean = median(filmedRatios)
+  if (reward > 0 && filmedClean !== null && filmedRatios.length >= 2) {
+    reward *= 0.6 + 0.4 * Math.min(1, filmedClean)
+  }
+
+  // A strategy that precedes joint complaints is expensive whatever the
+  // stopwatch says — the next check-in in the window gets a vote.
+  const echo = follow.find((s) => s.checkIn && s.checkIn.joints !== 'good')?.checkIn
+  if (echo) reward -= echo.joints === 'pain' ? 0.1 : 0.04
 
   return Math.max(-0.2, Math.min(0.6, reward))
 }
@@ -507,14 +533,14 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     const label = FORM_LABEL[sig.topFormIssue.issue] ?? sig.topFormIssue.issue
     const guidance = LIMITER_BY_ISSUE[sig.topFormIssue.issue]
     decisions.push({
-      text: `Your most common breakdown is ${label} (${sig.topFormIssue.count} sets). That is the cue to hold in your head today.`,
+      text: `Your most common breakdown is ${label} (${sig.topFormIssue.count} of ${sig.topFormIssue.of} reviewed sets). That is the one cue to hold in your head today.`,
       kind: 'info',
     })
     if (guidance) {
       accessoryEmphasis = guidance.emphasis
       limiter = {
         label: guidance.label,
-        evidence: `${label} repeated across ${sig.topFormIssue.count} recent set${sig.topFormIssue.count === 1 ? '' : 's'}.`,
+        evidence: `${label} repeated across ${sig.topFormIssue.count} of ${sig.topFormIssue.of} recent reviewed sets.`,
         prescription: guidance.prescription,
       }
     }
@@ -539,6 +565,33 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   if (sig.meanWobble !== null && sig.meanWobble > 0.05 && sig.cameraSetCount >= 3) {
     decisions.push({
       text: 'Your filmed sets show the position drifting as the hold goes on — the last few seconds are costing you shape rather than building it.',
+      kind: 'info',
+    })
+  }
+
+  // The quality axis the stopwatch cannot see. Report-only — the clean-ratio
+  // caps above already do any acting, so this must never double-punish.
+  if (sig.meanFormScore !== null && sig.formScoreTrend !== null && sig.cameraSetCount >= 4) {
+    if (sig.formScoreTrend >= 2.5 && (sig.trendPerWeek ?? 0) <= 0.2) {
+      decisions.push({
+        text: `Your camera form score is climbing (~+${Math.round(sig.formScoreTrend)} points/week, now around ${Math.round(sig.meanFormScore)}) while hold times sit flat — the position is consolidating, and seconds usually follow it.`,
+        kind: 'good',
+      })
+    } else if (sig.formScoreTrend <= -2.5) {
+      decisions.push({
+        text: `Your camera form score has been slipping (~${Math.round(sig.formScoreTrend)} points/week). Give the "fix first" cue on today's filmed sets priority over the stopwatch.`,
+        kind: 'warn',
+      })
+    }
+  }
+
+  // Placement coaching: a criterion the camera chronically cannot see says
+  // nothing about the athlete — it is a tripod problem with a thirty-second
+  // fix, and until it is fixed that check silently stays out of every verdict.
+  if (sig.chronicUnseen) {
+    const u = sig.chronicUnseen
+    decisions.push({
+      text: `The camera missed your ${u.criterion} in ${u.count} of your last ${u.of} filmed sets, so that check keeps being skipped. Move the phone further back — or turn it sideways — until everything from hands to feet stays in frame.`,
       kind: 'info',
     })
   }
@@ -737,6 +790,18 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   }
 
+  // Said out loud, not just returned: this flag used to be computed and then
+  // shown nowhere, so the one day it fired the athlete never heard about it.
+  if (suggestMaxTest) {
+    decisions.push({
+      text:
+        sig.daysSinceMaxTest === null
+          ? 'You are fresh and your numbers are steady — a first max test today would calibrate every target the coach sets.'
+          : `It has been ${sig.daysSinceMaxTest} days since your last max test and you are fresh today — a re-test would recalibrate your targets.`,
+      kind: 'info',
+    })
+  }
+
   if (decisions.length === 0) {
     decisions.push({ text: 'Everything looks steady — running your best-performing setup unchanged.', kind: 'good' })
   }
@@ -780,7 +845,7 @@ export function debriefSession(
   const step = STEP_BY_ID[session.stepId]
 
   // Form slipped in this specific session — the highest-priority thing to say.
-  const rated = session.sets.filter((x) => x.form && x.section === 'main')
+  const rated = session.sets.filter((x) => x.form?.confirmed !== false && x.form && x.section === 'main')
   const clean = rated.filter((x) => x.form!.rating === 'clean').length
   if (rated.length >= 2 && clean / rated.length < 0.5) {
     out.push({
@@ -789,6 +854,7 @@ export function debriefSession(
     })
   }
   const filmedRatios = rated
+    .filter(trustedCameraEvidence)
     .map((set) => set.form?.auto?.cleanRatio)
     .filter((ratio): ratio is number => ratio !== undefined)
   const filmedCleanRatio = median(filmedRatios)
@@ -796,6 +862,29 @@ export function debriefSession(
     out.push({
       text: `The camera verified about ${Math.round(filmedCleanRatio * 100)}% of your timed holds as clean today. The next session shortens the dose so every second reinforces the position.`,
       kind: 'warn',
+    })
+  }
+
+  // Verified clean-hold growth against the last filmed session — the realest
+  // progress number this app has, said when it moves.
+  const round1 = (n: number) => Math.round(n * 10) / 10
+  const cleanBest = (s: Session) =>
+    s.sets.reduce(
+      (b, x) =>
+        x.exerciseId === step.keyExerciseId &&
+        x.section === 'main' &&
+        trustedCameraEvidence(x) &&
+        x.form?.auto?.cleanSeconds !== undefined
+          ? Math.max(b, x.form.auto.cleanSeconds)
+          : b,
+      0,
+    )
+  const thisClean = cleanBest(session)
+  const prevFilmed = [...prev.sessions].reverse().find((s) => cleanBest(s) > 0)
+  if (thisClean > 0 && prevFilmed && thisClean >= cleanBest(prevFilmed) + 1) {
+    out.push({
+      text: `Camera-verified clean hold grew ${round1(cleanBest(prevFilmed))}s → ${round1(thisClean)}s — position-held progress, not just stopwatch growth.`,
+      kind: 'good',
     })
   }
 
@@ -870,7 +959,6 @@ export function debriefSession(
   // session produces no bullets is the one worth explaining: nothing was
   // rated, so none of it can count toward the next step.
   if (out.length === 0) {
-    const round1 = (n: number) => Math.round(n * 10) / 10
     const mainHolds = session.sets.filter((x) => x.section === 'main' && x.kind === 'hold' && x.value > 0)
     const best = mainHolds.reduce((b, x) => Math.max(b, x.value), 0)
     if (best > 0 && rated.length === 0) {

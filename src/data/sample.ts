@@ -33,7 +33,15 @@ function holdSet(exerciseId: string, value: number, target: number, section: Sec
             form: {
               rating: 'clean' as const,
               confirmed: true,
-              auto: { issues: [], confidence: 0.9 },
+              // Plausible camera evidence so the demo exercises the same
+              // score/clean-window paths a really filmed set would.
+              auto: {
+                issues: [],
+                confidence: 0.9,
+                score: 84 + (Math.round(value) % 9),
+                cleanSeconds: value,
+                cleanRatio: 1,
+              },
             },
           }
         : {}

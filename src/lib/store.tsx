@@ -129,9 +129,16 @@ function sanitizeAuto(a: unknown): AutoForm | undefined {
     ? c.issues.filter((i): i is FormIssue => typeof i === 'string' && FORM_ISSUES.has(i as FormIssue))
     : []
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
+  // `unseen` must round-trip: losing it on import would quietly re-arm unlock
+  // evidence whose elbows the camera never actually saw.
+  const unseen = Array.isArray(c.unseen)
+    ? c.unseen.filter((u): u is string => typeof u === 'string').slice(0, 8)
+    : []
   return {
     issues,
+    ...(unseen.length ? { unseen } : {}),
     confidence: num(c.confidence) ?? 0,
+    score: clampOptional(c.score, 0, 100),
     cleanSeconds: clampOptional(c.cleanSeconds, 0, 3600),
     cleanRatio: clampOptional(c.cleanRatio, 0, 1),
     elbowDeg: num(c.elbowDeg),
@@ -139,6 +146,8 @@ function sanitizeAuto(a: unknown): AutoForm | undefined {
     hipAngleDeg: num(c.hipAngleDeg),
     hipOffset: num(c.hipOffset),
     leanRatio: num(c.leanRatio),
+    shrugRatio: num(c.shrugRatio),
+    asymmetry: num(c.asymmetry),
     wobble: num(c.wobble),
   }
 }

@@ -72,6 +72,14 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
   const pace = paceToUnlock(state)
   const plan = useMemo(() => buildPlan(state), [state])
   const confidence = useMemo(() => coachConfidence(state), [state])
+  // Only three decisions fit the card. Warnings are picked first — a safety
+  // rail's "joint pain reported" must never be squeezed out by an FYI that
+  // happened to be pushed earlier in the plan.
+  const topDecisions = useMemo(() => {
+    const warns = plan.decisions.filter((d) => d.kind === 'warn')
+    const rest = plan.decisions.filter((d) => d.kind !== 'warn')
+    return [...warns, ...rest].slice(0, 3)
+  }, [plan])
 
   const recent = useMemo(() => [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).slice(0, 3), [state.sessions])
   const trainedDays = useMemo(() => new Set(state.sessions.map((s) => dayKey(s.startedAt))), [state.sessions])
@@ -285,7 +293,7 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
               </p>
             ) : null}
             <ul className="mt-2 space-y-1.5">
-              {plan.decisions.slice(0, 3).map((d) => (
+              {topDecisions.map((d) => (
                 <li key={d.text} className="flex gap-2 text-[13px] leading-relaxed">
                   <span
                     className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${

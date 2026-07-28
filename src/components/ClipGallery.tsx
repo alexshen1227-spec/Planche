@@ -50,12 +50,19 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
           <ClipPlayer
             clipKey={c.key}
             label={`${fmtDate(c.at)} ${fmtHold(c.seconds)} form check`}
+            overlay={analysis[c.key]?.track}
+            overlayIssues={analysis[c.key]?.issues}
           />
           {analysis[c.key] ? (
             <div className="mt-1.5 rounded-lg border border-line bg-raised p-2 text-[12px] leading-relaxed text-ink2">
               {analysis[c.key]!.ok
-                ? [...analysis[c.key]!.good.map((g) => `✓ ${g}.`), ...analysis[c.key]!.notes].join(' ') ||
-                  'No measured issue found — confirm scapular position and control yourself.'
+                ? [
+                    ...(analysis[c.key]!.score !== undefined
+                      ? [`Form score ${analysis[c.key]!.score}/100.`]
+                      : []),
+                    ...analysis[c.key]!.good.map((g) => `✓ ${g}.`),
+                    ...analysis[c.key]!.notes,
+                  ].join(' ') || 'No measured issue found — confirm scapular position and control yourself.'
                 : (analysis[c.key]!.reason ?? 'Could not analyse.')}
             </div>
           ) : null}
