@@ -12,9 +12,12 @@ import {
   gradeCoverage,
   materialIssuesForReading,
   pickFixFirst,
+  reliableJointAngle,
+  suppressBilateralCollisions,
   suppressIsolatedMetricSpikes,
   sustainedCleanSeconds,
   sustainedMinimum,
+  sustainedTypical,
   unrotateKeypoints,
 } from './poseForm'
 import { buildPlan, debriefSession, rewardFor } from './coach'
@@ -410,6 +413,37 @@ describe('camera evaluator primitives', () => {
 
   it('uses the lower quartile so a few straight frames cannot hide a bent hold', () => {
     expect(sustainedMinimum([150, 150, 150, 150, 150, 150, 175, 175])).toBe(150)
+  })
+
+  it('uses the typical angle for the verdict so a minority of bad elbow detections cannot win', () => {
+    expect(sustainedTypical([120, 125, 170, 171, 172, 173, 174, 175])).toBe(171.5)
+  })
+
+  it('rejects elbow angles built from impossible segment proportions', () => {
+    const point = (x: number, y: number) => ({ x, y, score: 0.9 })
+    expect(reliableJointAngle(point(0, 0), point(50, 0), point(100, 0), 100)).toBe(180)
+    expect(reliableJointAngle(point(0, 0), point(50, 0), point(50, 50), 100)).toBe(90)
+    expect(reliableJointAngle(point(0, 0), point(5, 0), point(100, 0), 100)).toBeUndefined()
+  })
+
+  it('removes a far wrist stacked on the visible hand but keeps genuinely separate hands', () => {
+    const point = (name: string, x: number, y: number) => ({ name, x, y, score: 0.9 })
+    const base = [
+      point('left_shoulder', 0, 0),
+      point('left_hip', 0, 100),
+      point('left_wrist', 80, 50),
+    ]
+    const stacked = [{ kps: [...base, point('right_wrist', 83, 52)] }]
+    expect(suppressBilateralCollisions(stacked, 'left')).toEqual({
+      jointsIgnored: 1,
+      framesTouched: 1,
+    })
+    expect(stacked[0].kps.some((k) => k.name === 'right_wrist')).toBe(false)
+    expect(stacked[0].kps.some((k) => k.name === 'left_wrist')).toBe(true)
+
+    const separate = [{ kps: [...base, point('right_wrist', 110, 50)] }]
+    expect(suppressBilateralCollisions(separate, 'left').jointsIgnored).toBe(0)
+    expect(separate[0].kps.some((k) => k.name === 'right_wrist')).toBe(true)
   })
 
   it('prefers broadly compatible WebM before falling back to MP4', () => {

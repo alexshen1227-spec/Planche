@@ -26,6 +26,8 @@ export const CHANGELOG: ChangeEntry[] = [
       'A breakdown now needs multiple consecutive material misses sustained for roughly a second. Late movement is reported in the measurement detail without turning a brief detector wobble into several red flags.',
       'Each hold now samples about three moments per second, up to 72 across a long clip, and shows usable moments against the full sample count. Breakdown tolerance is measured in real time, so the denser check is more informed rather than harsher.',
       'Saved replay history doubled from 8 to 16 clips per exercise. The 30-day cleanup and pinned-clip protection still keep device storage under control.',
+      'When the pose model stacks both wrist or ankle labels onto one visible limb, the duplicate far-side point is now removed from both the skeleton and the verdict. Impossible arm proportions are discarded instead of becoming a bent-elbow warning.',
+      'The headline elbow angle now reflects the typical held position. A minority of low detector misses cannot outweigh a consistently straight arm; a real sustained bend still shortens the verified clean window.',
     ],
   },
   {

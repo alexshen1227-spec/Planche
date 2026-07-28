@@ -450,6 +450,30 @@ function angleDeg(a: Kp, b: Kp, c: Kp): number {
   return (Math.acos(Math.max(-1, Math.min(1, (abx * cbx + aby * cby) / mag))) * 180) / Math.PI
 }
 
+/**
+ * Reject an angle built from anatomically implausible segment lengths. Pose
+ * models can put an elbow almost on the shoulder while leaving a high
+ * confidence score; the resulting angle is numerically valid but is not a
+ * credible arm measurement.
+ */
+export function reliableJointAngle(a: Kp, b: Kp, c: Kp, bodyScale: number): number | undefined {
+  if (!Number.isFinite(bodyScale) || bodyScale <= 0) return undefined
+  const first = Math.hypot(a.x - b.x, a.y - b.y)
+  const second = Math.hypot(c.x - b.x, c.y - b.y)
+  const shorter = Math.min(first, second)
+  const longer = Math.max(first, second)
+  if (
+    shorter < bodyScale * 0.18 ||
+    longer > bodyScale * 1.35 ||
+    longer / shorter > 2.2 ||
+    first + second > bodyScale * 2.2
+  ) {
+    return undefined
+  }
+  const angle = angleDeg(a, b, c)
+  return Number.isFinite(angle) ? angle : undefined
+}
+
 function byName(kps: Kp[], name: string, minScore = MIN_KP_SCORE): Kp | undefined {
   const k = kps.find((p) => p.name === name)
   return k && (k.score ?? 0) >= minScore ? k : undefined
@@ -501,6 +525,52 @@ function sidesAreVisiblySeparate(
     if (near && far) distances.push(Math.hypot(near.x - far.x, near.y - far.y) / torso)
   }
   return distances.length >= 2 && distances.reduce((a, b) => a + b, 0) / distances.length >= 0.14
+}
+
+const BILATERAL_COLLISION_LIMITS = {
+  elbow: 0.1,
+  wrist: 0.12,
+  knee: 0.1,
+  ankle: 0.12,
+} as const
+
+/**
+ * Side-on footage often makes the detector place both left/right endpoints on
+ * the same visible hand or foot. That is one observation, not evidence from
+ * two limbs. Keep the stable primary side and remove the duplicate far point
+ * before building the overlay or measuring angles.
+ */
+export function suppressBilateralCollisions(
+  frames: { kps: Kp[] }[],
+  primarySide: 'left' | 'right',
+): { jointsIgnored: number; framesTouched: number } {
+  const secondarySide = primarySide === 'left' ? 'right' : 'left'
+  const touched = new Set<number>()
+  let jointsIgnored = 0
+  for (const [frameIndex, frame] of frames.entries()) {
+    const primaryShoulder = byName(frame.kps, `${primarySide}_shoulder`)
+    const primaryHip = byName(frame.kps, `${primarySide}_hip`)
+    const secondaryShoulder = byName(frame.kps, `${secondarySide}_shoulder`)
+    const secondaryHip = byName(frame.kps, `${secondarySide}_hip`)
+    const shoulder = primaryShoulder ?? secondaryShoulder
+    const hip = primaryHip ?? secondaryHip
+    if (!shoulder || !hip) continue
+    const torso = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y)
+    if (torso < 1) continue
+
+    for (const [part, limit] of Object.entries(BILATERAL_COLLISION_LIMITS)) {
+      const primary = byName(frame.kps, `${primarySide}_${part}`)
+      const secondary = byName(frame.kps, `${secondarySide}_${part}`)
+      if (!primary || !secondary) continue
+      if (Math.hypot(primary.x - secondary.x, primary.y - secondary.y) / torso >= limit) continue
+      const at = frame.kps.findIndex((k) => k.name === `${secondarySide}_${part}`)
+      if (at < 0) continue
+      frame.kps.splice(at, 1)
+      touched.add(frameIndex)
+      jointsIgnored++
+    }
+  }
+  return { jointsIgnored, framesTouched: touched.size }
 }
 
 /** Joints worth repairing across a dropout; the rest are never measured. */
@@ -832,6 +902,9 @@ export async function analyseClip(
     // evidence and leaving verdicts resting on a handful of samples.
     bridgeKeypointGaps(tracked)
     trackedSide = pickStableSide(tracked)
+    const collisionStats = trackedSide
+      ? suppressBilateralCollisions(tracked, trackedSide)
+      : { jointsIgnored: 0, framesTouched: 0 }
 
     // What the model saw, kept for drawing over the replay — including on
     // refusals, where seeing the three tracked dots on your shoulder is the
@@ -881,7 +954,10 @@ export async function analyseClip(
       // of the two stops one locked elbow hiding the other one bending.
       const farSide = side === 'left' ? 'right' : 'left'
       const frameElbows: number[] = []
-      if (elbow && wrist) push(frameElbows, angleDeg(shoulder, elbow, wrist))
+      if (elbow && wrist) {
+        const angle = reliableJointAngle(shoulder, elbow, wrist, torso)
+        if (angle !== undefined) push(frameElbows, angle)
+      }
       const farShoulder = byName(kps, `${farSide}_shoulder`, 0.55)
       const farElbow = byName(kps, `${farSide}_elbow`, 0.55)
       const farWrist = byName(kps, `${farSide}_wrist`, 0.55)
@@ -893,7 +969,8 @@ export async function analyseClip(
           !wrist ||
           sidesAreVisiblySeparate(kps, side, farSide, ['shoulder', 'elbow', 'wrist'], torso))
       ) {
-        push(frameElbows, angleDeg(farShoulder, farElbow, farWrist))
+        const angle = reliableJointAngle(farShoulder, farElbow, farWrist, torso)
+        if (angle !== undefined) push(frameElbows, angle)
       }
       let frameElbowDeg: number | undefined
       if (frameElbows.length) {
@@ -1149,9 +1226,12 @@ export async function analyseClip(
       : hipAngles.length
         ? Math.max(...hipAngles)
         : undefined
-    const elbowDeg = sustainedMinimum(heldElbows) ?? sustainedMinimum(elbows)
-    const kneeDeg = sustainedMinimum(heldKnees) ?? sustainedMinimum(knees)
-    const hipAngleDeg = sustainedMinimum(heldHipAngles) ?? sustainedMinimum(hipAngles)
+    // Headline angles describe the typical held shape. Sustained bad runs
+    // already cap clean time above; using the old lower quartile here let a
+    // minority of plausible-looking detector errors create a red form flag.
+    const elbowDeg = sustainedTypical(heldElbows) ?? sustainedTypical(elbows)
+    const kneeDeg = sustainedTypical(heldKnees) ?? sustainedTypical(knees)
+    const hipAngleDeg = sustainedTypical(heldHipAngles) ?? sustainedTypical(hipAngles)
     const hipOffset = median(pick('hipOffset')) ?? median(hipOffsets)
     const leanRatio = median(pick('leanRatio')) ?? median(leans)
     const shrugRatio = median(pick('shrugRatio')) ?? median(shrugs)
@@ -1375,6 +1455,11 @@ export async function analyseClip(
         `Ignored ${glitchStats.metricsIgnored} isolated tracking ${glitchStats.metricsIgnored === 1 ? 'jump' : 'jumps'} that disagreed with the frames around them.`,
       )
     }
+    if (collisionStats.jointsIgnored > 0) {
+      details.push(
+        `Ignored ${collisionStats.jointsIgnored} duplicated far-side joint ${collisionStats.jointsIgnored === 1 ? 'point' : 'points'} that the tracker stacked onto the visible limb.`,
+      )
+    }
     if (exitFramesDropped > 0) {
       details.push(
         `Graded on the ${verdictFrames.length} frames of the hold itself; the last ${exitFramesDropped} (coming out of the position) were left out.`,
@@ -1446,6 +1531,14 @@ export function sustainedMinimum(xs: number[]): number | undefined {
   if (!xs.length) return undefined
   const sorted = [...xs].sort((a, b) => a - b)
   return sorted[Math.max(0, Math.ceil(sorted.length * 0.25) - 1)]
+}
+
+/** Typical held angle, robust to a minority of low or high detector misses. */
+export function sustainedTypical(xs: number[]): number | undefined {
+  if (!xs.length) return undefined
+  const sorted = [...xs].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
 }
 
 /**
