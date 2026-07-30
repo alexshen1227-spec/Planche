@@ -772,6 +772,83 @@ describe('readiness rails', () => {
   })
 })
 
+describe('stage-specific planche lean programming', () => {
+  function generatedWorkout(
+    stepId: AppState['stepId'],
+    dayType: 'build' | 'technique' = 'build',
+    sessionMinutes = 60,
+  ) {
+    const athlete = {
+      ...state(stepId),
+      settings: { ...state(stepId).settings, sessionMinutes },
+    }
+    const plan = {
+      ...buildPlan(athlete, Date.now()),
+      dayType,
+      loadPermission: 'normal' as const,
+      warmup: 'standard' as const,
+      volumeFactor: 1,
+      queueUnlockAttempt: false,
+    }
+    return todaysSession(athlete, plan)
+  }
+
+  it('keeps a primer plus meaningful lean strength work at Tuck', () => {
+    const leans = generatedWorkout('tuck').blocks.filter(
+      (block) => block.exerciseId === 'planche-lean',
+    )
+
+    expect(leans).toEqual([
+      expect.objectContaining({ section: 'warmup', sets: 1, target: { kind: 'hold', sec: 8 } }),
+      expect.objectContaining({ section: 'strength', sets: 3, target: { kind: 'hold', sec: 12 } }),
+    ])
+  })
+
+  it('prioritises the Tuck lean over generic accessories in a standard session', () => {
+    const leans = generatedWorkout('tuck', 'build', 30).blocks.filter(
+      (block) => block.exerciseId === 'planche-lean',
+    )
+
+    expect(leans.some((block) => block.section === 'strength')).toBe(true)
+  })
+
+  it('tapers lean strength work to maintenance at Advanced Tuck', () => {
+    const leans = generatedWorkout('advtuck').blocks.filter(
+      (block) => block.exerciseId === 'planche-lean',
+    )
+
+    expect(leans).toEqual([
+      expect.objectContaining({ section: 'warmup', sets: 1, target: { kind: 'hold', sec: 8 } }),
+      expect.objectContaining({ section: 'strength', sets: 2, target: { kind: 'hold', sec: 10 } }),
+    ])
+  })
+
+  it.each(['oneleg', 'straddle', 'full'] as const)(
+    'keeps leans as a primer only at %s',
+    (stepId) => {
+      const leans = generatedWorkout(stepId).blocks.filter(
+        (block) => block.exerciseId === 'planche-lean',
+      )
+
+      expect(leans).toHaveLength(1)
+      expect(leans[0]).toEqual(
+        expect.objectContaining({ section: 'warmup', sets: 1, target: { kind: 'hold', sec: 8 } }),
+      )
+      expect(leans[0].note).toContain('Primer only')
+    },
+  )
+
+  it('does not add loaded lean volume to a Tuck technique day', () => {
+    const leans = generatedWorkout('tuck', 'technique').blocks.filter(
+      (block) => block.exerciseId === 'planche-lean',
+    )
+
+    expect(leans).toEqual([
+      expect.objectContaining({ section: 'warmup', sets: 1, target: { kind: 'hold', sec: 8 } }),
+    ])
+  })
+})
+
 describe('coach learning', () => {
   it('compares follow-up performance with a prior baseline, not the arm session peak', () => {
     const t = Date.now() - 5 * DAY

@@ -17,6 +17,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-07-29',
+    title: 'Planche leans grow with your progression',
+    area: 'training',
+    notes: [
+      'Tuck sessions now keep planche leans as real straight-arm strength work after the main holds instead of shrinking them to only a warm-up.',
+      'Advanced Tuck tapers leans to maintenance volume, while One-Leg, Straddle and Full keep an easy technique primer without draining the longer-lever work.',
+      'Lean targets now cue farther shoulder travel with locked elbows rather than rewarding extra seconds in the same position.',
+    ],
+  },
+  {
+    date: '2026-07-29',
     title: 'Jump to the progression you already train',
     area: 'training',
     notes: [

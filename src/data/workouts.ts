@@ -91,7 +91,7 @@ export function adaptiveTarget(state: AppState, stepId: StepId): number {
  * work first: accessory sets → whole accessory blocks → a main back-off set.
  * Warm-up, the key main work and the cooldown are never cut below minimums.
  */
-function fitToBudget(blocks: Block[], budgetMin: number): Block[] {
+function fitToBudget(blocks: Block[], budgetMin: number, preserveCorePair = false): Block[] {
   const out = blocks.map((b) => ({ ...b }))
   for (let guard = 0; guard < 40 && estimateMinutes(out) > budgetMin; guard++) {
     let changed = false
@@ -111,6 +111,17 @@ function fitToBudget(blocks: Block[], budgetMin: number): Block[] {
     const strengthIdx = out.map((b, i) => (b.section === 'strength' ? i : -1)).filter((i) => i >= 0)
     if (strengthIdx.length > 1) {
       out.splice(strengthIdx[strengthIdx.length - 1], 1)
+      continue
+    }
+    // A stage lean is supporting work, not more important than two separate
+    // core blocks the coach chose for a measured body-line limiter.
+    const loneLeanIdx =
+      strengthIdx.length === 1 && out[strengthIdx[0]].exerciseId === 'planche-lean'
+        ? strengthIdx[0]
+        : -1
+    const coreCount = out.filter((b) => b.section === 'core').length
+    if (preserveCorePair && loneLeanIdx >= 0 && coreCount > 1) {
+      out.splice(loneLeanIdx, 1)
       continue
     }
     // 3. Drop a core block while more than one remains.
@@ -171,7 +182,10 @@ function warmupFor(stepId: StepId, level: WarmupLevel): Block[] {
       target: hold(8),
       restSec: 40,
       section: 'warmup',
-      note: 'Easy primer lean — grease the pattern, save the juice.',
+      note:
+        step.order >= 5
+          ? 'Primer only — keep the straight-arm lean pattern without stealing energy from longer-lever work.'
+          : 'Easy primer lean — grease the pattern, save the juice.',
     })
   } else {
     blocks.push({ exerciseId: 'plank', sets: 1, target: hold(20), restSec: 40, section: 'warmup' })
@@ -308,8 +322,33 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
     })
   }
 
-  // Accessories: the coach decides what is actually limiting you.
   const easy = plan.dayType === 'technique' || plan.dayType === 'deload'
+
+  // Leans remain strength work when an athlete first earns Tuck, then taper
+  // to maintenance at Advanced Tuck. Longer-lever steps keep only the warm-up
+  // primer above so their best energy still goes to the specific progression.
+  const leanStrength: Block | null =
+    !easy && (stepId === 'tuck' || stepId === 'advtuck')
+      ? {
+          exerciseId: 'planche-lean',
+          sets: stepId === 'tuck' ? clamp(scale(3), 3, 4) : 2,
+          target: hold(stepId === 'tuck' ? 12 : 10),
+          restSec: rAcc,
+          section: 'strength',
+          note:
+            stepId === 'tuck'
+              ? 'Straight-arm strength work — lean farther with locked elbows instead of chasing a longer stopwatch.'
+              : 'Maintenance volume — keep the lean sharp, but save your best strength for Advanced Tuck.',
+        }
+      : null
+
+  // With no measured limiter, this is the first accessory and survives before
+  // generic pressing work when a short time budget needs trimming.
+  if (leanStrength && plan.accessoryEmphasis === 'none') {
+    blocks.push(leanStrength)
+  }
+
+  // Accessories: the coach decides what is actually limiting you.
   if (easy) {
     blocks.push({
       exerciseId: 'frog-stand',
@@ -385,6 +424,12 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
     )
   }
 
+  // A personalized limiter takes priority in a tight session, so its blocks
+  // are inserted first and the supporting lean becomes the first thing cut.
+  if (leanStrength && plan.accessoryEmphasis !== 'none') {
+    blocks.push(leanStrength)
+  }
+
   if (plan.accessoryEmphasis !== 'core') {
     blocks.push({ exerciseId: 'hollow-hold', sets: scale(2), target: hold(30), restSec: 45, section: 'core' })
     if (step.order >= 3 && !easy) {
@@ -404,7 +449,11 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
   const budget = easy ? Math.min(22, state.settings.sessionMinutes) : state.settings.sessionMinutes
   // Sides are expanded before trimming, so the budget accounts for the fact
   // that unilateral work costs twice as long.
-  const fitted = fitToBudget(withSides(blocks), budget)
+  const fitted = fitToBudget(
+    withSides(blocks),
+    budget,
+    plan.accessoryEmphasis === 'core',
+  )
 
   return {
     id: `auto-${stepId}-${plan.dayType}-${plan.strategy}`,
