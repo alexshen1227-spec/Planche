@@ -10,6 +10,7 @@ import {
   chooseSampleCount,
   computeFormScore,
   gradeCoverage,
+  hasVerifiableHoldDuration,
   materialIssuesForReading,
   pickFixFirst,
   reliableJointAngle,
@@ -17,6 +18,7 @@ import {
   suppressIsolatedMetricSpikes,
   sustainedCleanSeconds,
   sustainedMinimum,
+  sustainedObservableCleanSeconds,
   sustainedTypical,
   unrotateKeypoints,
 } from './poseForm'
@@ -583,6 +585,40 @@ describe('camera evaluator primitives', () => {
           { t: 2.75, bad: true },
         ],
         5,
+      ),
+    ).toBe(2)
+  })
+
+  it('refuses a touch-and-drop and ends clean time after sustained missing evidence', () => {
+    expect(hasVerifiableHoldDuration(0)).toBe(false)
+    expect(hasVerifiableHoldDuration(0.9)).toBe(false)
+    expect(hasVerifiableHoldDuration(1)).toBe(true)
+
+    expect(
+      sustainedObservableCleanSeconds(
+        [
+          { t: 0, bad: false },
+          { t: 0.25, bad: false },
+          { t: 0.5, bad: null },
+          { t: 0.75, bad: null },
+          { t: 1, bad: null },
+          { t: 1.25, bad: null },
+        ],
+        2,
+      ),
+    ).toBe(0.5)
+  })
+
+  it('still forgives an isolated unobservable camera sample', () => {
+    expect(
+      sustainedObservableCleanSeconds(
+        [
+          { t: 0, bad: false },
+          { t: 0.5, bad: null },
+          { t: 1, bad: false },
+          { t: 1.5, bad: false },
+        ],
+        2,
       ),
     ).toBe(2)
   })

@@ -77,6 +77,7 @@ export interface PoseFormResult {
 
 const MIN_KP_SCORE = 0.3
 const MIN_FRAMES = 3
+export const MIN_VERIFIABLE_HOLD_SEC = 1
 
 /** Tracked poses mapped back to source-frame pixels, for replay overlays. */
 export interface PoseTrack {
@@ -435,6 +436,25 @@ export function sustainedCleanSeconds(
   return Math.round(hold * 10) / 10
 }
 
+/**
+ * A sampled moment with incomplete pose evidence cannot prove the athlete was
+ * still holding. One brief miss remains harmless because sustainedCleanSeconds
+ * requires a real run; a fast drop or leaving the frame ends the clean window.
+ */
+export function sustainedObservableCleanSeconds(
+  samples: { t: number; bad: boolean | null }[],
+  creditedHoldSec: number,
+): number {
+  return sustainedCleanSeconds(
+    samples.map((sample) => ({ t: sample.t, bad: sample.bad !== false })),
+    creditedHoldSec,
+  )
+}
+
+export function hasVerifiableHoldDuration(creditedHoldSec: number): boolean {
+  return Number.isFinite(creditedHoldSec) && creditedHoldSec >= MIN_VERIFIABLE_HOLD_SEC
+}
+
 /** Positions worth filming for automated or replay-based form review. */
 export function isFilmable(exerciseId: string): boolean {
   return exerciseId in POSE_PROFILES
@@ -771,6 +791,13 @@ export async function analyseClip(
     return {
       ...empty,
       reason: `A ${profile.label.toLowerCase()} is about balance rather than a fixed shape, so there is nothing here the camera can judge for you. Rate it yourself.`,
+    }
+  }
+  if (creditedHoldSec !== undefined && !hasVerifiableHoldDuration(creditedHoldSec)) {
+    return {
+      ...empty,
+      reason:
+        'That attempt was too brief for the camera to verify a held position. Stay in the hold for at least 1 second — a quick touch-and-drop cannot be graded clean.',
     }
   }
 
@@ -1188,11 +1215,15 @@ export async function analyseClip(
       creditedHoldSec !== undefined && Number.isFinite(creditedHoldSec) && creditedHoldSec > 0
         ? Math.min(duration, creditedHoldSec)
         : duration
-    const envelopeSamples = frameReadings.flatMap((frame) => {
-      const outside = materiallyOutsideEnvelope(frame, profile, judged)
-      return outside === null ? [] : [{ t: frame.t, bad: outside }]
+    const readingAt = new Map(frameReadings.map((frame) => [frame.t, frame]))
+    const envelopeSamples = times.map((t) => {
+      const frame = readingAt.get(t)
+      return {
+        t,
+        bad: frame ? materiallyOutsideEnvelope(frame, profile, judged) : null,
+      }
     })
-    const cleanSeconds = sustainedCleanSeconds(envelopeSamples, creditedSeconds)
+    const cleanSeconds = sustainedObservableCleanSeconds(envelopeSamples, creditedSeconds)
     const cleanRatio = creditedSeconds > 0 ? Math.min(1, cleanSeconds / creditedSeconds) : 0
 
     // Judge the hold, not the dismount.
@@ -1443,8 +1474,13 @@ export async function analyseClip(
         `The clean window ended near ${cleanSeconds.toFixed(1)}s after the position stayed outside the tolerant form envelope for roughly a second.`,
       )
       if (notes.length === 0) {
+        const incompleteAfterCutoff = envelopeSamples.some(
+          (sample) => sample.t >= cleanSeconds && sample.bad === null,
+        )
         notes.push(
-          `The position left the tolerant envelope near ${cleanSeconds.toFixed(1)}s, but no single correction was stable enough for the camera to name confidently.`,
+          incompleteAfterCutoff
+            ? `The camera stopped seeing a complete held position near ${cleanSeconds.toFixed(1)}s. A quick drop or leaving the frame ends verified time even when no single joint fault can be named.`
+            : `The position left the tolerant envelope near ${cleanSeconds.toFixed(1)}s, but no single correction was stable enough for the camera to name confidently.`,
         )
       }
     } else {

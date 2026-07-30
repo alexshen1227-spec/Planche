@@ -17,6 +17,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-07-30',
+    title: 'A quick drop cannot look like a clean hold',
+    area: 'camera',
+    notes: [
+      'Touching the position for less than a second is now refused as too brief to judge instead of letting the camera grade the post-drop clip.',
+      'If the body or a required joint disappears for a sustained run, the verified clean window now ends there; one isolated tracking miss is still ignored.',
+      'A fast exit can shorten clean time without inventing an elbow, hip or body-line fault the camera did not actually observe.',
+    ],
+  },
+  {
+    date: '2026-07-30',
     title: 'More time to get on and off the hold',
     area: 'training',
     notes: [
