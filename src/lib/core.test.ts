@@ -25,7 +25,8 @@ import { painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
 import { validateImport } from './exportImport'
 import { buildSampleState } from '../data/sample'
 import { selectRecorderMime } from './recorder'
-import { readSignals, trustedCameraEvidence } from './signals'
+import { observedRestSec, readSignals, trustedCameraEvidence } from './signals'
+import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
 
 const DAY = 86_400_000
 
@@ -87,6 +88,45 @@ function session(
     ...overrides,
   }
 }
+
+describe('progression hold timing', () => {
+  const mainHolds = [
+    'ppp-hold',
+    'frog-stand',
+    'tuck-planche',
+    'adv-tuck-planche',
+    'one-leg-planche',
+    'straddle-planche',
+    'full-planche',
+  ]
+
+  it.each(mainHolds)('uses the longer setup and stop allowance for %s', (exerciseId) => {
+    expect(leadInSecondsFor(exerciseId)).toBe(8)
+    expect(stopLatencySecondsFor(exerciseId, 2.3)).toBe(5)
+  })
+
+  it('keeps Planche Lean and non-progression holds on calibrated timing', () => {
+    expect(leadInSecondsFor('planche-lean')).toBe(5)
+    expect(stopLatencySecondsFor('planche-lean', 2.3)).toBe(2.3)
+    expect(leadInSecondsFor('one-leg-lean')).toBe(5)
+    expect(stopLatencySecondsFor('one-leg-lean', 2.3)).toBe(2.3)
+  })
+
+  it('reconstructs coach-observed rest with the matching lead-in', () => {
+    const at = Date.now()
+    const tuck = session('tuck', [
+      log('tuck-planche', 10, { at }),
+      log('tuck-planche', 10, { at: at + 118_000 }),
+    ])
+    const lean = session('lean', [
+      log('planche-lean', 10, { at }),
+      log('planche-lean', 10, { at: at + 115_000 }),
+    ])
+
+    expect(observedRestSec(tuck, 'tuck-planche')).toBe(100)
+    expect(observedRestSec(lean, 'planche-lean')).toBe(100)
+  })
+})
 
 describe('progression safety', () => {
   it('records a poor-form PR without unlocking a harder step', () => {

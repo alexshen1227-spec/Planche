@@ -423,7 +423,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </Row>
         <Row
           label="Stop reaction delay"
-          hint="The gap between coming out of a hold and actually hitting stop. Subtracted from every timed hold so your seconds mean what they say."
+          hint="Your calibrated delay for regular holds, including Planche Lean. Main Path holds use 5.0s because you need longer to come down and reach the phone."
         >
           <button
             onClick={() => setCalibrating(true)}
@@ -435,8 +435,8 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             value={Math.round(s.stopLatencySec * 10)}
             onChange={(v) => set({ stopLatencySec: v / 10 })}
             min={0}
-            // Must sit above the default (2.3s); a lower ceiling silently
-            // clamped the shipped value downward on the first tap.
+            // Main Path holds use their own 5s timing. This still needs room
+            // for a deliberately calibrated regular-hold delay up to 5s.
             max={50}
             step={1}
             format={(v) => `${(v / 10).toFixed(1)}s`}

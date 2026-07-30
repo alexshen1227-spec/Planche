@@ -16,6 +16,16 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-07-30',
+    title: 'More time to get on and off the hold',
+    area: 'training',
+    notes: [
+      'Every main Path hold except Planche Lean now gives you an 8-second setup countdown instead of 5 seconds.',
+      'Those progression holds remove 5 seconds between coming down and reaching the phone, so the saved result better matches the time you were actually in position.',
+      'Planche Lean keeps its quicker 5-second lead-in and your existing calibrated stop delay.',
+    ],
+  },
+  {
     date: '2026-07-29',
     title: 'Planche leans grow with your progression',
     area: 'training',

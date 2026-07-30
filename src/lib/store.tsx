@@ -34,8 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   warmup: true,
   beeps: true,
   sessionMinutes: 30,
-  // Measured in real use with the phone set up to film: coming out of the
-  // position and getting to the button is a little over two seconds.
+  // Regular-hold calibration. Main Path holds use their longer fixed allowance.
   stopLatencySec: 2.3,
   units: 'metric',
   recordForm: true,

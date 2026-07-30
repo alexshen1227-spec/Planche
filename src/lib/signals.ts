@@ -3,6 +3,7 @@ import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { dayKey } from './time'
 import { progressionCredit, qualifyingSessionValue } from './progression'
+import { leadInSecondsFor } from './sessionTiming'
 
 /**
  * Everything the coach can observe, derived from the log alone.
@@ -64,7 +65,7 @@ export function observedRestSec(session: Session, exerciseId: string): number | 
   for (let i = 1; i < sets.length; i++) {
     const gap = (sets[i].at - sets[i - 1].at) / 1000
     const work = sets[i].kind === 'hold' ? sets[i].value : sets[i].value * 3
-    const rest = gap - work - 5 // 5s lead-in
+    const rest = gap - work - leadInSecondsFor(exerciseId)
     if (rest > 15 && rest < 600) rests.push(rest)
   }
   return median(rests)

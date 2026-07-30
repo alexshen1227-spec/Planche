@@ -257,9 +257,8 @@ export function Stats() {
             Noise is handled deliberately: averages are pulled toward the overall mean until a strategy has real
             evidence behind it, targets anchor on your typical hold rather than your single best, and swings above ~22%
             pause changes instead of driving them.
-            {state.settings.stopLatencySec > 0 ? (
-              <> Timed holds have your {state.settings.stopLatencySec.toFixed(1)}s stop reaction removed.</>
-            ) : null}
+            {' '}Main Path holds remove a 5.0s stop reaction; Planche Lean and other timed holds remove your{' '}
+            {state.settings.stopLatencySec.toFixed(1)}s calibrated delay.
           </p>
         </div>
       </div>

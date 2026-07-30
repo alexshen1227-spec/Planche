@@ -35,6 +35,7 @@ import {
 import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
 import { readSignals } from '../lib/signals'
+import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
@@ -56,8 +57,6 @@ const SECTION_LABEL: Record<Section, string> = {
   cooldown: 'Cooldown',
 }
 
-const LEAD_SEC = 5
-
 export function SessionPlayer({
   workout,
   onExit,
@@ -72,6 +71,13 @@ export function SessionPlayer({
   onCheckInAnswered?: (c: CheckIn) => void
 }) {
   const { state, dispatch } = useStore()
+  const resumeExerciseId = resumeFrom
+    ? workout.blocks[resumeFrom.blockIndex]?.exerciseId
+    : undefined
+  const resumeLatency = stopLatencySecondsFor(
+    resumeExerciseId,
+    state.settings.stopLatencySec,
+  )
   const [phase, setPhase] = useState<Phase>(
     resumeFrom
       ? resumeFrom.phase === 'summary'
@@ -98,7 +104,7 @@ export function SessionPlayer({
     resumeFrom?.interrupted !== undefined
       ? resumeFrom.interrupted
       : resumeFrom?.wasHolding && resumeFrom.holdElapsed > 1
-      ? Math.max(0, Math.round((resumeFrom.holdElapsed - state.settings.stopLatencySec) * 10) / 10)
+      ? Math.max(0, Math.round((resumeFrom.holdElapsed - resumeLatency) * 10) / 10)
       : null,
   )
   const [events, setEvents] = useState<SessionEvents | null>(null)
@@ -164,7 +170,11 @@ export function SessionPlayer({
     if (stored === undefined && thisSession === 0) return undefined
     return Math.max(stored ?? 0, thisSession)
   }, [exercise, state.prs, logs])
-  const latency = exercise?.type === 'hold' ? Math.max(0, state.settings.stopLatencySec) : 0
+  const leadSec = leadInSecondsFor(exercise?.id)
+  const latency =
+    exercise?.type === 'hold'
+      ? stopLatencySecondsFor(exercise.id, state.settings.stopLatencySec)
+      : 0
   // Film every key hold on the road. Most use pose geometry; Frog Stand keeps
   // the replay for an explicit checklist review instead.
   const filmable = Boolean(block?.section === 'main' && exercise && isFilmable(exercise.id))
@@ -462,13 +472,13 @@ export function SessionPlayer({
     if (!block || !exercise) return
     lastBeepRef.current = -1
     if (exercise.type === 'hold') {
-      setLeadEnd(Date.now() + LEAD_SEC * 1000)
+      setLeadEnd(Date.now() + leadSec * 1000)
       setPhase('lead')
     } else {
       setPendingReps(block.target.kind === 'reps' ? block.target.reps : 0)
       setPhase('reps')
     }
-  }, [block, exercise, filming, recorder])
+  }, [block, exercise, leadSec])
 
   // Skipping a unilateral round skips its partner too, so a set never ends up
   // trained on one side only.
@@ -882,7 +892,7 @@ export function SessionPlayer({
             style={{ background: 'var(--t-btn-accent)' }}
           >
             <Icon name="play" size={18} />
-            {isHold ? `Start · ${LEAD_SEC}s lead-in` : 'Begin set'}
+            {isHold ? `Start · ${leadSec}s lead-in` : 'Begin set'}
           </button>
           <div className="mt-3 flex flex-wrap justify-center gap-5 text-[13px]">
             <button onClick={() => setShowDemo(true)} className="text-accent underline-offset-2 hover:underline">

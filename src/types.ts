@@ -235,7 +235,8 @@ export interface Settings {
   autoAnalyze: boolean
   /**
    * Seconds between actually coming out of a hold and the stop button being
-   * pressed. Subtracted from timed holds so the numbers mean what they say.
+   * pressed. Used for regular timed holds; main Path holds have a dedicated
+   * longer allowance.
    */
   stopLatencySec: number
 }
