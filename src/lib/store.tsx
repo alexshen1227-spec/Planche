@@ -423,11 +423,28 @@ export function rebuildDerivedState(state: AppState, sessions = state.sessions):
     : acc
 }
 
+/**
+ * Deliberately place the athlete at a later step without pretending the road
+ * was verified. Earlier steps become selectable, while PRs, achievements and
+ * filmed evidence remain untouched. Raising the base step makes the choice
+ * survive history rebuilds; moving back later never lowers that floor.
+ */
+export function skipToStep(state: AppState, stepId: StepId): AppState {
+  const target = STEP_BY_ID[stepId]
+  const currentBase = STEP_BY_ID[state.baseStepId] ?? STEP_BY_ID.foundations
+  const baseStepId = target.order > currentBase.order ? target.id : currentBase.id
+  const unlocked = STEPS.filter((step) => state.unlocked.includes(step.id) || step.order <= target.order).map(
+    (step) => step.id,
+  )
+  return { ...state, stepId: target.id, baseStepId, unlocked }
+}
+
 export type Action =
   | { type: 'SAVE_SESSION'; session: Session }
   | { type: 'DELETE_SESSION'; id: string }
   | { type: 'SET_SETTINGS'; patch: Partial<Settings> }
   | { type: 'SET_STEP'; stepId: StepId }
+  | { type: 'SKIP_TO_STEP'; stepId: StepId }
   | {
       type: 'COMPLETE_ONBOARDING'
       name: string
@@ -461,6 +478,8 @@ function reducer(state: AppState, action: Action): AppState {
       if (!state.unlocked.includes(action.stepId)) return state
       return { ...state, stepId: action.stepId }
     }
+    case 'SKIP_TO_STEP':
+      return skipToStep(state, action.stepId)
     case 'COMPLETE_ONBOARDING': {
       const target = STEP_BY_ID[action.stepId]
       const unlocked = STEPS.filter((s) => s.order <= target.order).map((s) => s.id)

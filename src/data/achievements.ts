@@ -1,7 +1,8 @@
 import type { AppState, Session } from '../types'
 import { totalHoldSec, weekStreak } from '../lib/stats'
 import { EXERCISE_BY_ID } from './exercises'
-import { isQualifyingSet } from '../lib/progression'
+import { STEP_BY_ID } from './progressions'
+import { isQualifyingSet, qualifyingProgress } from '../lib/progression'
 
 export interface AchievementDef {
   id: string
@@ -22,6 +23,8 @@ const cleanBest = (state: AppState, exerciseId: string) =>
     .reduce((best, set) => Math.max(best, set.value), 0)
 
 const prAtLeast = (state: AppState, exerciseId: string, sec: number) => cleanBest(state, exerciseId) >= sec
+const stepMastered = (state: AppState, stepId: 'tuck' | 'oneleg' | 'straddle') =>
+  qualifyingProgress(state, stepId).value >= STEP_BY_ID[stepId].unlockSec
 
 const prProgress =
   (exerciseId: string, target: number) =>
@@ -45,9 +48,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'frog-30', name: 'Zen Frog', desc: 'Verified 30-second frog stand.', icon: '🐸', check: (s) => prAtLeast(s, 'frog-stand', 30), progress: prProgress('frog-stand', 30) },
   { id: 'tuck-10', name: 'Liftoff', desc: 'Verified 10-second tuck planche.', icon: '🛫', check: (s) => prAtLeast(s, 'tuck-planche', 10), progress: prProgress('tuck-planche', 10) },
   { id: 'tuck-20', name: 'Cleared for Takeoff', desc: 'Verified 20-second tuck planche.', icon: '🚀', check: (s) => prAtLeast(s, 'tuck-planche', 20), progress: prProgress('tuck-planche', 20) },
-  { id: 'unlock-advtuck', name: 'Flat Back Society', desc: 'Unlock the Advanced Tuck.', icon: '📐', check: (s) => s.unlocked.includes('advtuck') },
-  { id: 'unlock-straddle', name: 'Wings Out', desc: 'Unlock the Straddle Planche.', icon: '🦅', check: (s) => s.unlocked.includes('straddle') },
-  { id: 'unlock-full', name: 'The Summit', desc: 'Unlock the Full Planche.', icon: '🏔️', check: (s) => s.unlocked.includes('full') },
+  { id: 'unlock-advtuck', name: 'Flat Back Society', desc: 'Verify the Advanced Tuck unlock.', icon: '📐', check: (s) => stepMastered(s, 'tuck') },
+  { id: 'unlock-straddle', name: 'Wings Out', desc: 'Verify the Straddle Planche unlock.', icon: '🦅', check: (s) => stepMastered(s, 'oneleg') },
+  { id: 'unlock-full', name: 'The Summit', desc: 'Verify the Full Planche unlock.', icon: '🏔️', check: (s) => stepMastered(s, 'straddle') },
   { id: 'full-5', name: 'Gravity Is a Suggestion', desc: 'Verified 5-second full planche.', icon: '👑', check: (s) => prAtLeast(s, 'full-planche', 5), progress: prProgress('full-planche', 5) },
   { id: 'early-bird', name: 'Early Bird', desc: 'Train before 7am.', icon: '🌅', check: (_s, last) => new Date(last.startedAt).getHours() < 7 },
   { id: 'night-owl', name: 'Night Owl', desc: 'Train after 10pm.', icon: '🦉', check: (_s, last) => new Date(last.startedAt).getHours() >= 22 },

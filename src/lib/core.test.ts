@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog } from '../types'
-import { initialState, normalizeState, rebuildDerivedState } from './store'
+import { initialState, normalizeState, rebuildDerivedState, skipToStep } from './store'
 import { applySession } from './engine'
 import { formEvidenceCoversArms, progressionCredit, qualifyingProgress } from './progression'
 import {
@@ -218,6 +218,52 @@ describe('progression safety', () => {
     const sample = buildSampleState()
     expect(sample.stepId).toBe('tuck')
     expect(sample.sessions.length).toBeGreaterThan(20)
+  })
+})
+
+describe('manual progression placement', () => {
+  it('makes every earlier step available without inventing evidence', () => {
+    const original = state()
+    const skipped = skipToStep(original, 'tuck')
+
+    expect(skipped.stepId).toBe('tuck')
+    expect(skipped.baseStepId).toBe('tuck')
+    expect(skipped.unlocked).toEqual(['foundations', 'lean', 'frog', 'tuck'])
+    expect(skipped.prs).toEqual(original.prs)
+    expect(skipped.achievements).toEqual(original.achievements)
+    expect(qualifyingProgress(skipped, 'foundations').value).toBe(0)
+  })
+
+  it('survives a history rebuild and preserves an intentionally selected lower step', () => {
+    const skipped = skipToStep(state(), 'straddle')
+    const lower = { ...skipped, stepId: 'tuck' as const }
+    const rebuilt = rebuildDerivedState(lower)
+
+    expect(rebuilt.baseStepId).toBe('straddle')
+    expect(rebuilt.stepId).toBe('tuck')
+    expect(rebuilt.unlocked).toEqual(['foundations', 'lean', 'frog', 'tuck', 'advtuck', 'oneleg', 'straddle'])
+  })
+
+  it('does not award verified-unlock badges after an unrelated post-skip session', () => {
+    const skipped = skipToStep(state(), 'full')
+    const wristWork = session('full', [log('wrist-stretch', 30, { section: 'cooldown' })], {
+      workoutName: 'Wrist Armor',
+      workoutKind: 'template',
+    })
+    const result = applySession(skipped, wristWork)
+
+    expect(result.next.achievements['unlock-advtuck']).toBeUndefined()
+    expect(result.next.achievements['unlock-straddle']).toBeUndefined()
+    expect(result.next.achievements['unlock-full']).toBeUndefined()
+  })
+
+  it('still awards the badge once the corresponding unlock is actually verified', () => {
+    const skipped = skipToStep(state(), 'tuck')
+    const verified = session('tuck', [log('tuck-planche', 20, { form: form() })])
+    const result = applySession(skipped, verified)
+
+    expect(result.next.achievements['unlock-advtuck']).toBe(verified.endedAt)
+    expect(result.events.achievements).toContain('unlock-advtuck')
   })
 })
 

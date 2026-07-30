@@ -16,6 +16,16 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-07-29',
+    title: 'Jump to the progression you already train',
+    area: 'training',
+    notes: [
+      'Any locked step on the Path can now be chosen through a three-part safety check, so experienced athletes are not forced to replay skills they already own.',
+      'Skipping changes the active coach and workout plan without inventing PRs, filmed passes, verified mastery or achievement badges.',
+      'Every earlier step becomes available to revisit, while steps without qualifying evidence say available instead of cleared.',
+    ],
+  },
+  {
     date: '2026-07-28',
     title: 'Camera glitches stop becoming form faults',
     area: 'camera',

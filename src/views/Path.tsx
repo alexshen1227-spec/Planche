@@ -22,7 +22,8 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
       <h1 className="font-display text-[28px] font-bold text-ink">The Road to Planche</h1>
       <p className="mt-0.5 max-w-2xl text-[14px] leading-relaxed text-ink2">
         Eight steps from first plank to full flight. Clear each unlock bar with a hold you rate Clean plus a passing
-        filmed form check, and the next door opens. Tap any step for the full coaching notes.
+        filmed form check, and the next door opens. Tap any step for the full coaching notes. Already training farther
+        along? Open a locked step to place yourself there after a three-part safety check.
       </p>
 
       <div className="relative mt-7 pb-2">
@@ -39,8 +40,9 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
           {STEPS.map((step) => {
             const unlocked = state.unlocked.includes(step.id)
             const isCurrent = state.stepId === step.id
-            const done = unlocked && step.order < currentOrder
             const best = qualifyingProgress(state, step.id).value
+            const done = unlocked && step.order < currentOrder && best >= step.unlockSec
+            const available = unlocked && step.order < currentOrder && !done
             const pct = Math.min(1, best / step.unlockSec)
             const keyEx = EXERCISE_BY_ID[step.keyExerciseId]
             return (
@@ -90,6 +92,8 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
                       </span>
                     ) : done ? (
                       <span className="text-[12px] font-medium text-ok">cleared</span>
+                    ) : available ? (
+                      <span className="text-[12px] font-medium text-ink3">available</span>
                     ) : null}
                   </div>
                   <div className="mt-0.5 truncate text-[13.5px] text-ink2">{step.tagline}</div>
@@ -140,6 +144,29 @@ function StepDetail({
   const isCurrent = state.stepId === step.id
   const pr = state.prs[step.keyExerciseId]
   const keyEx = EXERCISE_BY_ID[step.keyExerciseId]
+  const [skipStage, setSkipStage] = useState<0 | 1 | 2 | 3>(0)
+  const [skipAcknowledged, setSkipAcknowledged] = useState(false)
+
+  if (skipStage > 0) {
+    return (
+      <SkipStepFlow
+        step={step}
+        stage={skipStage as 1 | 2 | 3}
+        acknowledged={skipAcknowledged}
+        setAcknowledged={setSkipAcknowledged}
+        setStage={setSkipStage}
+        onCancel={() => {
+          setSkipAcknowledged(false)
+          setSkipStage(0)
+        }}
+        onConfirm={() => {
+          dispatch({ type: 'SKIP_TO_STEP', stepId: step.id })
+          pushToast(`Moved to ${step.name}. Verified progress was left unchanged.`, 'success', 5000)
+          onClose()
+        }}
+      />
+    )
+  }
 
   return (
     <div className="p-6 sm:p-8">
@@ -231,21 +258,161 @@ function StepDetail({
             <Icon name="check" size={16} /> Make this my current step
           </button>
         ) : (
-          <div className="flex items-center gap-2 rounded-xl border border-line bg-raised px-4 py-3 text-[13.5px] text-ink2">
-            <Icon name="lock" size={15} className="text-ink3" />
-            Unlocks automatically at{' '}
-            {(() => {
-              const prev = STEPS.find((s) => s.order === step.order - 1)
-              return prev ? (
-                <span>
-                  <span className="font-semibold text-ink tnum">{prev.unlockSec}s</span>{' '}
-                  {EXERCISE_BY_ID[prev.keyExerciseId].name.toLowerCase()}
-                </span>
-              ) : null
-            })()}
+          <div className="w-full space-y-2.5">
+            <div className="flex items-center gap-2 rounded-xl border border-line bg-raised px-4 py-3 text-[13.5px] text-ink2">
+              <Icon name="lock" size={15} className="text-ink3" />
+              Unlocks automatically at{' '}
+              {(() => {
+                const prev = STEPS.find((s) => s.order === step.order - 1)
+                return prev ? (
+                  <span>
+                    <span className="font-semibold text-ink tnum">{prev.unlockSec}s</span>{' '}
+                    {EXERCISE_BY_ID[prev.keyExerciseId].name.toLowerCase()}
+                  </span>
+                ) : null
+              })()}
+            </div>
+            <button
+              onClick={() => setSkipStage(1)}
+              className="inline-flex items-center gap-2 rounded-xl border border-accent/35 bg-accent-soft px-5 py-3 font-display text-[14.5px] font-semibold text-accent transition hover:border-accent/60"
+            >
+              <Icon name="skip" size={16} /> Skip ahead to {step.name}
+            </button>
+            <p className="text-[12.5px] leading-relaxed text-ink3">
+              For athletes who already train this progression. Three confirmations appear before anything changes.
+            </p>
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function SkipStepFlow({
+  step,
+  stage,
+  acknowledged,
+  setAcknowledged,
+  setStage,
+  onCancel,
+  onConfirm,
+}: {
+  step: StepDef
+  stage: 1 | 2 | 3
+  acknowledged: boolean
+  setAcknowledged: (value: boolean) => void
+  setStage: (stage: 0 | 1 | 2 | 3) => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="p-6 sm:p-8">
+      <div className="pr-10 text-[12.5px] font-semibold uppercase tracking-wider text-accent">
+        Safety check {stage} of 3
+      </div>
+      <div className="mt-4 flex items-center gap-4">
+        <Figure step={step.id} className="h-20 w-24 shrink-0 text-ink" />
+        <div>
+          <div className="text-[13px] text-ink3">Jumping to</div>
+          <h2 className="font-display text-[24px] font-bold text-ink">{step.name}</h2>
+          <div className="text-[13.5px] text-ink2">{step.tagline}</div>
+        </div>
+      </div>
+
+      {stage === 1 ? (
+        <>
+          <div className="mt-5 rounded-2xl border border-line bg-raised p-5">
+            <h3 className="font-display text-[18px] font-semibold text-ink">This changes the plan, not your proof</h3>
+            <p className="mt-2 text-[14px] leading-relaxed text-ink2">
+              The app will make {step.name} your current training step and make every earlier step selectable. It will
+              not invent PRs, camera passes, verified unlock bars or achievement badges.
+            </p>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-ink3">
+              Earlier skills without qualifying filmed holds will say available, not cleared.
+            </p>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-2.5">
+            <button
+              onClick={onCancel}
+              className="rounded-xl border border-line bg-surface px-4 py-3 text-[14px] font-medium text-ink2"
+            >
+              Back to step details
+            </button>
+            <button
+              onClick={() => setStage(2)}
+              className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 font-display text-[14.5px] font-semibold text-on-accent"
+            >
+              I understand <Icon name="arrowR" size={15} />
+            </button>
+          </div>
+        </>
+      ) : null}
+
+      {stage === 2 ? (
+        <>
+          <div className="mt-5 rounded-2xl border border-danger/30 bg-danger-soft p-5">
+            <h3 className="font-display text-[18px] font-semibold text-ink">The loading jump is real</h3>
+            <p className="mt-2 text-[14px] leading-relaxed text-ink2">
+              Later planche shapes increase leverage and straight-arm stress quickly. Choose this only if you can
+              already enter the position deliberately, control the shape, and train it without joint pain. Otherwise,
+              use the closest easier step.
+            </p>
+          </div>
+          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-line bg-raised p-4">
+            <input
+              type="checkbox"
+              checked={acknowledged}
+              onChange={(event) => setAcknowledged(event.target.checked)}
+              className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--t-accent)]"
+            />
+            <span className="text-[13.5px] leading-relaxed text-ink2">
+              I understand this does not certify my form, and I will move back if the position causes wrist, elbow or
+              shoulder pain.
+            </span>
+          </label>
+          <div className="mt-5 flex flex-wrap gap-2.5">
+            <button
+              onClick={() => setStage(1)}
+              className="rounded-xl border border-line bg-surface px-4 py-3 text-[14px] font-medium text-ink2"
+            >
+              Back
+            </button>
+            <button
+              onClick={() => setStage(3)}
+              disabled={!acknowledged}
+              className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 font-display text-[14.5px] font-semibold text-on-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Continue <Icon name="arrowR" size={15} />
+            </button>
+          </div>
+        </>
+      ) : null}
+
+      {stage === 3 ? (
+        <>
+          <div className="mt-5 rounded-2xl border border-accent/30 bg-accent-soft p-5">
+            <h3 className="font-display text-[18px] font-semibold text-ink">Make {step.name} current?</h3>
+            <p className="mt-2 text-[14px] leading-relaxed text-ink2">
+              Generated sessions and the coach will switch immediately. Your existing history stays untouched, and
+              you can return to any earlier step whenever you want.
+            </p>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-2.5">
+            <button
+              onClick={() => setStage(2)}
+              className="rounded-xl border border-line bg-surface px-4 py-3 text-[14px] font-medium text-ink2"
+            >
+              Back
+            </button>
+            <button
+              onClick={onConfirm}
+              className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 font-display text-[14.5px] font-semibold text-on-accent shadow-card"
+            >
+              <Icon name="check" size={16} /> Yes — move me to {step.name}
+            </button>
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }

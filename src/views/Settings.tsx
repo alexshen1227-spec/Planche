@@ -280,7 +280,10 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             Save
           </button>
         </Row>
-        <Row label="Current step" hint="Change it from the Path tab — any unlocked step can be made current.">
+        <Row
+          label="Current step"
+          hint="Change it from the Path tab. Pick any available step, or open a locked one to skip ahead after the safety check."
+        >
           <span className="rounded-full border border-line bg-raised px-3.5 py-1.5 text-[13.5px] font-medium text-ink">
             {STEP_BY_ID[state.stepId].name}
           </span>
