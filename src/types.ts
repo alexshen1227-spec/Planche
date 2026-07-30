@@ -19,6 +19,9 @@ export type Category = 'planche' | 'push' | 'scapula' | 'core' | 'wrist' | 'mobi
 export type Units = 'metric' | 'imperial'
 
 export type EquipmentId = 'floor' | 'parallettes' | 'band' | 'pullup-bar' | 'dip-bars'
+export type TrainingSurface = 'floor' | 'parallettes'
+
+export const CURRENT_STATE_VERSION = 5 as const
 
 export interface Measurement {
   at: number
@@ -30,9 +33,13 @@ export interface Profile {
   /** Latest known height; also mirrored into the measurement log. */
   heightCm?: number
   equipment: EquipmentId[]
+  /** Default hand support for new planche sets; each logged set keeps its own. */
+  preferredSurface?: TrainingSurface
+  /** Long-term destination used to keep the coach and dashboard goal-aware. */
+  goalStepId?: StepId
   /** Free-text note about anything currently sore or previously injured. */
   injuryNote?: string
-  /** Optional — only used to soften recovery expectations. */
+  /** Optional local context; it never changes an earned progression result. */
   birthYear?: number
 }
 
@@ -103,6 +110,11 @@ export interface FormCheck {
    * honestly (currently Frog Stand).
    */
   visualReviewPassed?: boolean
+  /**
+   * The athlete confirmed that a true flight skill stayed unsupported for the
+   * verified window. A side-on 2D pose cannot reliably infer floor contact.
+   */
+  flightConfirmed?: boolean
   issues?: FormIssue[]
   /** Key of the recorded clip in the clip store, when one was kept. */
   clipKey?: string
@@ -190,6 +202,10 @@ export interface SetLog {
   clipKey?: string
   /** Which side a unilateral movement was performed on. */
   side?: 'left' | 'right'
+  /** Hand support used for this planche set. Older records remain unspecified. */
+  surface?: TrainingSurface
+  /** Actual setup countdown used, so learned rest is not distorted if skipped. */
+  leadInSec?: number
 }
 
 export type StrategyId = 'balanced' | 'volume' | 'intensity' | 'density' | 'technique'
@@ -210,9 +226,14 @@ export interface Session {
   checkIn?: CheckIn
 }
 
-export interface PR {
+export interface PRMark {
   value: number
   at: number
+}
+
+export interface PR extends PRMark {
+  /** Separate honest records; the top-level value remains the overall best. */
+  bySurface?: Partial<Record<TrainingSurface, PRMark>>
 }
 
 export interface Settings {
@@ -242,7 +263,7 @@ export interface Settings {
 }
 
 export interface AppState {
-  version: 4
+  version: typeof CURRENT_STATE_VERSION
   onboarded: boolean
   name: string
   startedAt: number
@@ -276,7 +297,7 @@ export interface AppState {
 
 /** Everything noteworthy that a saved session produced. */
 export interface SessionEvents {
-  prs: { exerciseId: string; value: number; previous?: number }[]
+  prs: { exerciseId: string; value: number; previous?: number; surface?: TrainingSurface }[]
   achievements: string[]
   unlockedStep?: StepId
 }

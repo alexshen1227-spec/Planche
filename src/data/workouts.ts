@@ -4,6 +4,7 @@ import { STEP_BY_ID, stepBefore } from './progressions'
 import { buildPlan, type CoachPlan, type WarmupLevel } from '../lib/coach'
 import { median } from '../lib/signals'
 import { qualifyingProgress, qualifyingSessionValue } from '../lib/progression'
+import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
 
 const hold = (sec: number): BlockTarget => ({ kind: 'hold', sec })
 const reps = (n: number): BlockTarget => ({ kind: 'reps', reps: n })
@@ -44,11 +45,21 @@ export function countRounds(blocks: Block[]): number {
   )
 }
 
-export function estimateMinutes(blocks: Block[]): number {
+export function estimateMinutes(blocks: Block[], calibratedStopLatencySec = 2.3): number {
   let sec = 0
+  let remaining = blocks.reduce((total, block) => total + block.sets, 0)
   for (const b of blocks) {
     const work = b.target.kind === 'hold' ? b.target.sec : b.target.reps * 3
-    sec += b.sets * (work + b.restSec)
+    const setup =
+      b.target.kind === 'hold'
+        ? leadInSecondsFor(b.exerciseId) + stopLatencySecondsFor(b.exerciseId, calibratedStopLatencySec)
+        : 0
+    for (let set = 0; set < b.sets; set++) {
+      sec += work + setup
+      remaining -= 1
+      // The player rests between blocks too, but never after the final set.
+      if (remaining > 0) sec += b.restSec
+    }
   }
   return Math.max(5, Math.round(sec / 60))
 }
@@ -70,7 +81,14 @@ export function estimateMinutes(blocks: Block[]): number {
 export function adaptiveTarget(state: AppState, stepId: StepId): number {
   const step = STEP_BY_ID[stepId]
   const best = qualifyingProgress(state, stepId).value
-  if (!best) return step.startSec
+  if (!best) {
+    // Unverified time must never raise a target or unlock a step, but it is
+    // still useful as a safety ceiling. A beginner with a real 3s tuck should
+    // not receive the generic 5s working sets merely because the clip failed.
+    const timerBest = state.prs[step.keyExerciseId]?.value ?? 0
+    if (timerBest > 0) return clamp(Math.round(timerBest * 0.6), 1, step.startSec)
+    return step.startSec
+  }
 
   const recentBests = [...state.sessions]
     .sort((a, b) => a.startedAt - b.startedAt)
@@ -82,7 +100,7 @@ export function adaptiveTarget(state: AppState, stepId: StepId): number {
   // Blend: mostly what you can repeat, with a nod to your peak.
   const anchor = typical === null ? best : typical * 0.75 + Math.min(best, typical * 1.5) * 0.25
   const t = anchor * 0.6
-  return clamp(Math.round(t), 3, step.unlockSec)
+  return clamp(Math.round(t), 1, step.unlockSec)
 }
 
 
@@ -91,9 +109,18 @@ export function adaptiveTarget(state: AppState, stepId: StepId): number {
  * work first: accessory sets → whole accessory blocks → a main back-off set.
  * Warm-up, the key main work and the cooldown are never cut below minimums.
  */
-function fitToBudget(blocks: Block[], budgetMin: number, preserveCorePair = false): Block[] {
+function fitToBudget(
+  blocks: Block[],
+  budgetMin: number,
+  preserveCorePair = false,
+  calibratedStopLatencySec = 2.3,
+): Block[] {
   const out = blocks.map((b) => ({ ...b }))
-  for (let guard = 0; guard < 40 && estimateMinutes(out) > budgetMin; guard++) {
+  for (
+    let guard = 0;
+    guard < 40 && estimateMinutes(out, calibratedStopLatencySec) > budgetMin;
+    guard++
+  ) {
     let changed = false
     // 1. Shave sets off strength/core blocks (from the back), floor 2.
     //    Unilateral blocks come off in pairs so a side never goes untrained.
@@ -113,16 +140,30 @@ function fitToBudget(blocks: Block[], budgetMin: number, preserveCorePair = fals
       out.splice(strengthIdx[strengthIdx.length - 1], 1)
       continue
     }
-    // A stage lean is supporting work, not more important than two separate
-    // core blocks the coach chose for a measured body-line limiter.
-    const loneLeanIdx =
-      strengthIdx.length === 1 && out[strengthIdx[0]].exerciseId === 'planche-lean'
-        ? strengthIdx[0]
-        : -1
+    // A remaining generic strength block is supporting work, not more
+    // important than the two separate core blocks the coach explicitly chose
+    // for a measured body-line limiter.
     const coreCount = out.filter((b) => b.section === 'core').length
-    if (preserveCorePair && loneLeanIdx >= 0 && coreCount > 1) {
-      out.splice(loneLeanIdx, 1)
+    if (preserveCorePair && strengthIdx.length === 1 && coreCount > 1) {
+      out.splice(strengthIdx[0], 1)
       continue
+    }
+    if (preserveCorePair && coreCount > 1) {
+      const main = out.find((b) => {
+        const stepSize = EXERCISE_BY_ID[b.exerciseId]?.perSide ? 2 : 1
+        return b.section === 'main' && b.sets - stepSize >= 3
+      })
+      if (main) {
+        main.sets -= EXERCISE_BY_ID[main.exerciseId]?.perSide ? 2 : 1
+        continue
+      }
+      const optionalGoalMobility = out.findIndex(
+        (b) => b.exerciseId === 'pancake-stretch' && b.note?.includes('goal'),
+      )
+      if (optionalGoalMobility >= 0) {
+        out.splice(optionalGoalMobility, 1)
+        continue
+      }
     }
     // 3. Drop a core block while more than one remains.
     const coreIdx = out.map((b, i) => (b.section === 'core' ? i : -1)).filter((i) => i >= 0)
@@ -442,8 +483,19 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
     { exerciseId: 'wrist-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
     { exerciseId: 'shoulder-extension-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
   )
-  if (step.order >= 5) {
-    blocks.push({ exerciseId: 'pancake-stretch', sets: 1, target: hold(40), restSec: 10, section: 'cooldown' })
+  const goal = STEP_BY_ID[state.profile.goalStepId ?? 'straddle']
+  if (goal.order >= STEP_BY_ID.straddle.order && step.order >= STEP_BY_ID.tuck.order) {
+    blocks.push({
+      exerciseId: 'pancake-stretch',
+      sets: 1,
+      target: hold(step.order >= 5 ? 40 : 30),
+      restSec: 10,
+      section: 'cooldown',
+      note:
+        step.order < 5
+          ? `${goal.name} goal — build the hip range now so the later lever is cheaper.`
+          : undefined,
+    })
   }
 
   const budget = easy ? Math.min(22, state.settings.sessionMinutes) : state.settings.sessionMinutes
@@ -453,6 +505,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
     withSides(blocks),
     budget,
     plan.accessoryEmphasis === 'core',
+    state.settings.stopLatencySec,
   )
 
   return {
@@ -461,7 +514,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
     focus: plan.limiter
       ? `${plan.dayReason} Current limiter: ${plan.limiter.label}. ${plan.limiter.prescription}`
       : plan.dayReason,
-    minutes: estimateMinutes(fitted),
+    minutes: estimateMinutes(fitted, state.settings.stopLatencySec),
     kind: 'auto',
     blocks: fitted,
     strategy: plan.strategy,

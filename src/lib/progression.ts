@@ -12,6 +12,18 @@ export interface Qualification {
 export const MIN_PROGRESSION_FORM_CONFIDENCE = 0.35
 /** One isolated camera flag is tolerated; two means the shape is not mastered. */
 export const MAX_PROGRESSION_FORM_ISSUES = 1
+const TRUE_FLIGHT_EXERCISES = new Set([
+  'tuck-planche',
+  'adv-tuck-planche',
+  'one-leg-planche',
+  'straddle-planche',
+  'full-planche',
+])
+
+/** Ground contact is not observable enough in a side-on 2D pose to infer. */
+export function requiresFlightConfirmation(exerciseId: string): boolean {
+  return TRUE_FLIGHT_EXERCISES.has(exerciseId)
+}
 
 /**
  * The camera now grades whatever it can see and reports the rest as unseen,
@@ -36,6 +48,7 @@ export function passesProgressionFormCheck(form: SetLog['form'], exerciseId: str
   if (exerciseId === 'frog-stand') {
     return form.visualReviewPassed === true
   }
+  if (requiresFlightConfirmation(exerciseId) && form.flightConfirmed !== true) return false
   return Boolean(
     form.auto &&
       form.auto.confidence >= MIN_PROGRESSION_FORM_CONFIDENCE &&

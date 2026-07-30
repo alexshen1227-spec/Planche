@@ -9,6 +9,7 @@ import type {
   Session,
   SessionEvents,
   SetLog,
+  TrainingSurface,
   Workout,
 } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
@@ -36,6 +37,8 @@ import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
 import { readSignals } from '../lib/signals'
 import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
+import { defaultSurface, surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
+import { recordForSurface } from '../lib/records'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
@@ -44,6 +47,7 @@ import { ClipPlayer } from '../components/ClipPlayer'
 import { FramingCheck } from '../components/FramingCheck'
 import {
   passesProgressionFormCheck,
+  requiresFlightConfirmation,
   setNeedsProgressionFormEvidence,
 } from '../lib/progression'
 
@@ -93,6 +97,10 @@ export function SessionPlayer({
   const [now, setNow] = useState(() => Date.now())
   const [leadEnd, setLeadEnd] = useState(0)
   const [holdStart, setHoldStart] = useState(0)
+  const [surface, setSurface] = useState<TrainingSurface>(() => {
+    const resumedSurface = [...(resumeFrom?.logs ?? [])].reverse().find((log) => log.surface)?.surface
+    return resumedSurface ?? defaultSurface(state.profile.equipment, state.profile.preferredSurface)
+  })
   const [restEnd, setRestEnd] = useState(resumeFrom?.restEndsAt ?? 0)
   /** Duration the current rest was started with — the ring's denominator. */
   const [restTotal, setRestTotal] = useState(resumeFrom?.restTotal ?? 0)
@@ -126,6 +134,8 @@ export function SessionPlayer({
   const targetHitRef = useRef(false)
   const lastCountRef = useRef(-1)
   const prBuzzedRef = useRef(false)
+  const leadStartedAtRef = useRef(0)
+  const leadUsedRef = useRef(0)
   /** Hold elapsed frozen at the moment the page was hidden. */
   const frozenElapsedRef = useRef<number | null>(null)
   /** Current phase, readable from async callbacks without going stale. */
@@ -165,11 +175,22 @@ export function SessionPlayer({
   // otherwise a second, weaker set would celebrate as a PR too.
   const bestBefore = useMemo(() => {
     if (!exercise) return undefined
-    const stored = state.prs[exercise.id]?.value
-    const thisSession = logs.reduce((b, l) => (l.exerciseId === exercise.id && l.value > b ? l.value : b), 0)
+    const surfaceAware = exercise.category === 'planche'
+    const stored = surfaceAware
+      ? recordForSurface(state.prs[exercise.id], surface)?.value
+      : state.prs[exercise.id]?.value
+    const thisSession = logs.reduce(
+      (best, log) =>
+        log.exerciseId === exercise.id &&
+        (!surfaceAware || log.surface === surface) &&
+        log.value > best
+          ? log.value
+          : best,
+      0,
+    )
     if (stored === undefined && thisSession === 0) return undefined
     return Math.max(stored ?? 0, thisSession)
-  }, [exercise, state.prs, logs])
+  }, [exercise, state.prs, logs, surface])
   const leadSec = leadInSecondsFor(exercise?.id)
   const latency =
     exercise?.type === 'hold'
@@ -337,6 +358,7 @@ export function SessionPlayer({
       targetHitRef.current = false
       lastCountRef.current = -1
       prBuzzedRef.current = false
+      leadUsedRef.current = Math.max(0, (Date.now() - leadStartedAtRef.current) / 1000)
       setHoldStart(Date.now())
       setPhase('hold')
     }
@@ -414,7 +436,7 @@ export function SessionPlayer({
   )
 
   const logSet = useCallback(
-    (value: number, raw?: number, at = Date.now()) => {
+    (value: number, raw?: number, at = Date.now(), usedLeadInSec: number | null = leadUsedRef.current) => {
       if (!block || !exercise) return
       setLogs((l) => [
         ...l,
@@ -424,6 +446,10 @@ export function SessionPlayer({
           value,
           ...(raw !== undefined && Math.abs(raw - value) > 0.05 ? { raw } : {}),
           ...(exercise.perSide ? { side } : {}),
+          ...(exercise.category === 'planche' ? { surface } : {}),
+          ...(exercise.type === 'hold' && usedLeadInSec !== null
+            ? { leadInSec: Math.round(usedLeadInSec * 10) / 10 }
+            : {}),
           target: block.target.kind === 'hold' ? block.target.sec : block.target.reps,
           section: block.section,
           at,
@@ -431,7 +457,7 @@ export function SessionPlayer({
       ])
       advance(true)
     },
-    [block, exercise, advance, side],
+    [block, exercise, advance, side, surface],
   )
 
   const stopHold = useCallback(() => {
@@ -472,7 +498,10 @@ export function SessionPlayer({
     if (!block || !exercise) return
     lastBeepRef.current = -1
     if (exercise.type === 'hold') {
-      setLeadEnd(Date.now() + leadSec * 1000)
+      const started = Date.now()
+      leadStartedAtRef.current = started
+      leadUsedRef.current = 0
+      setLeadEnd(started + leadSec * 1000)
       setPhase('lead')
     } else {
       setPendingReps(block.target.kind === 'reps' ? block.target.reps : 0)
@@ -743,8 +772,28 @@ export function SessionPlayer({
           <div className="mt-1 text-[15px] text-ink2 tnum">
             Target {target}
             {perSide ? ' this side' : ''}
-            {bestBefore ? ` · Best ${exercise.type === 'hold' ? fmtHold(bestBefore) : `${bestBefore} reps`}` : ''}
+            {bestBefore
+              ? ` · ${exercise.category === 'planche' ? surfaceLabel(surface) + ' ' : ''}best ${
+                  exercise.type === 'hold' ? fmtHold(bestBefore) : `${bestBefore} reps`
+                }`
+              : ''}
           </div>
+          {exercise.category === 'planche' && state.profile.equipment.includes('parallettes') ? (
+            <div className="mt-2 inline-flex overflow-hidden rounded-xl border border-line" aria-label="Training surface">
+              {TRAINING_SURFACES.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setSurface(item.id)}
+                  aria-pressed={surface === item.id}
+                  className={`px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
+                    surface === item.id ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {exercise.category === 'planche' ? (
             <Figure step={figureFor(exercise.id)} className="mx-auto mt-2 h-36 w-44 text-ink" />
           ) : (
@@ -764,7 +813,10 @@ export function SessionPlayer({
                   onClick={() => {
                     // No button was pressed to end this one, so there is no
                     // reaction delay to subtract.
-                    logSet(interrupted)
+                    // The page was restored after this attempt, so its exact
+                    // setup countdown is unknowable. Leave it unspecified and
+                    // let rest reconstruction use the normal fallback.
+                    logSet(interrupted, undefined, Date.now(), null)
                     setInterrupted(null)
                     interruptedAt.current = null
                   }}
@@ -1088,7 +1140,7 @@ export function SessionPlayer({
             {nx.perSide ? (
               <>
                 {' '}
-                · <span className="font-medium text-ink">{si % 2 === 0 ? 'left' : 'right'} side</span>
+                · <span className="font-medium text-ink">{side} side</span>
               </>
             ) : null}{' '}
             · set {Math.floor(si / (nx.perSide ? 2 : 1)) + 1}/{Math.ceil(nb.sets / (nx.perSide ? 2 : 1))}
@@ -1140,7 +1192,17 @@ export function SessionPlayer({
               )
             if (!lastMain) return null
             const blocking = logs.filter((log) => setNeedsProgressionFormEvidence(log, state))
-            const formLogs = [...blocking, lastMain].filter(
+            const unreviewedFilmed = logs.filter((log) => {
+              const hasClip = Boolean(log.clipKey ?? log.form?.clipKey)
+              if (!hasClip || log.kind !== 'hold' || log.section !== 'main' || !isFilmable(log.exerciseId)) {
+                return false
+              }
+              if (log.form?.confirmed !== true) return true
+              if (log.exerciseId === 'frog-stand') return log.form.visualReviewPassed !== true
+              if (!log.form.auto) return true
+              return requiresFlightConfirmation(log.exerciseId) && log.form.flightConfirmed !== true
+            })
+            const formLogs = [...unreviewedFilmed, ...blocking, lastMain].filter(
               (log, index, all) => all.findIndex((candidate) => candidate.at === log.at) === index,
             )
             return formLogs.map((log) => (
@@ -1200,7 +1262,8 @@ export function SessionPlayer({
           {logs.some((log) => setNeedsProgressionFormEvidence(log, state)) ? (
             <p className="mt-4 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-center text-[13px] text-ink">
               This unlock-level hold will still save as a PR, but mastery needs both your confirmed Clean rating and
-              a passing filmed form check. One isolated camera flag may pass; two or more flags do not.
+              a passing filmed form check. True flight skills also need your no-foot-support confirmation. One isolated
+              camera flag may pass; two or more flags do not.
             </p>
           ) : null}
           {clipFinalizing || analysingSets.size > 0 ? (
@@ -1282,8 +1345,14 @@ export function SessionPlayer({
               {events.prs.map((p) => {
                 const ex = EXERCISE_BY_ID[p.exerciseId]
                 return (
-                  <div key={p.exerciseId} className="flex items-baseline justify-between py-1 text-[14.5px]">
-                    <span className="text-ink">{ex?.name ?? p.exerciseId}</span>
+                  <div
+                    key={`${p.exerciseId}-${p.surface ?? 'overall'}`}
+                    className="flex items-baseline justify-between py-1 text-[14.5px]"
+                  >
+                    <span className="text-ink">
+                      {ex?.name ?? p.exerciseId}
+                      {p.surface ? <span className="ml-1 text-[12px] text-ink3">· {surfaceLabel(p.surface)}</span> : null}
+                    </span>
                     <span className="font-semibold text-accent tnum">
                       {ex?.type === 'hold' ? fmtHold(p.value) : `${p.value} reps`}
                       {p.previous !== undefined ? (
@@ -1477,6 +1546,7 @@ function FormCheckRow({
   const [analysis, setAnalysis] = useState<PoseFormResult | null>(null)
   const [analysing, setAnalysing] = useState(false)
   const [visualReviewPassed, setVisualReviewPassed] = useState(value?.visualReviewPassed === true)
+  const [flightConfirmed, setFlightConfirmed] = useState(value?.flightConfirmed === true)
   const autoRanRef = useRef(false)
   // Mirrors of rating/issues that async code can read after its awaits — the
   // state the closure captured goes stale, and an analysis resolving after a
@@ -1484,7 +1554,9 @@ function FormCheckRow({
   const ratingRef = useRef<FormRating | null>(value?.rating ?? null)
   const issuesRef = useRef<FormIssue[]>(value?.issues ?? [])
   const visualReviewRef = useRef(value?.visualReviewPassed === true)
+  const flightConfirmedRef = useRef(value?.flightConfirmed === true)
   const needsManualReplayReview = exerciseId === 'frog-stand'
+  const needsFlightConfirmation = requiresFlightConfirmation(exerciseId)
   const handleClipAvailability = useCallback((available: boolean) => setClipAvailable(available), [])
 
   const runAnalysis = async () => {
@@ -1522,6 +1594,7 @@ function FormCheckRow({
             rating: ratingRef.current,
             confirmed: true,
             ...(visualReviewRef.current ? { visualReviewPassed: true } : {}),
+            ...(flightConfirmedRef.current ? { flightConfirmed: true } : {}),
             ...(issuesRef.current.length ? { issues: issuesRef.current } : {}),
             ...(clipKey ? { clipKey } : {}),
             auto,
@@ -1584,11 +1657,17 @@ function FormCheckRow({
 
   // Committed on every tap rather than behind a Save button: the rest timer
   // can expire mid-selection and used to throw the whole rating away.
-  const commit = (r: FormRating, iss: FormIssue[], replayPassed = visualReviewRef.current) =>
+  const commit = (
+    r: FormRating,
+    iss: FormIssue[],
+    replayPassed = visualReviewRef.current,
+    flightPassed = flightConfirmedRef.current,
+  ) =>
     onDone({
       rating: r,
       confirmed: true,
       ...(r === 'clean' && replayPassed ? { visualReviewPassed: true } : {}),
+      ...(r === 'clean' && flightPassed ? { flightConfirmed: true } : {}),
       ...(iss.length ? { issues: iss } : {}),
       ...(clipKey ? { clipKey } : {}),
       // The camera's own reading rides along, so the coach has an objective
@@ -1813,6 +1892,8 @@ function FormCheckRow({
               if (id !== 'clean') {
                 visualReviewRef.current = false
                 setVisualReviewPassed(false)
+                flightConfirmedRef.current = false
+                setFlightConfirmed(false)
               }
               setRating(id)
               commit(id, id === 'clean' ? [] : issues, id === 'clean' && visualReviewRef.current)
@@ -1852,6 +1933,29 @@ function FormCheckRow({
           </button>
         </div>
       ) : null}
+      {needsFlightConfirmation && rating === 'clean' ? (
+        <div className="mt-3 rounded-xl border border-line bg-raised p-3">
+          <p className="text-[12.5px] leading-relaxed text-ink2">
+            The camera can judge your shape, but it cannot reliably tell whether a toe was helping. Confirm that both
+            feet stayed fully off the floor for the camera-verified window.
+          </p>
+          <button
+            onClick={() => {
+              flightConfirmedRef.current = true
+              setFlightConfirmed(true)
+              commit('clean', [], visualReviewRef.current, true)
+            }}
+            aria-pressed={flightConfirmed}
+            className={`mt-2 w-full rounded-xl border px-3 py-2 text-[12.5px] font-semibold transition ${
+              flightConfirmed
+                ? 'border-ok/40 bg-ok-soft text-ok'
+                : 'border-line-strong bg-surface text-ink hover:border-accent'
+            }`}
+          >
+            {flightConfirmed ? 'Flight confirmed — no foot support' : 'Both feet stayed completely off the floor'}
+          </button>
+        </div>
+      ) : null}
       {rating === 'clean' && value?.confirmed === true ? (
         <p
           className={`mt-2 text-[11.5px] font-medium ${progressionFormPassed ? 'text-ok' : 'text-accent'}`}
@@ -1866,6 +1970,8 @@ function FormCheckRow({
               : 'Progression evidence complete — athlete and filmed form checks agree.'
             : needsManualReplayReview
               ? 'Your Clean rating is saved. Review the replay above for this hold to count toward progression.'
+              : needsFlightConfirmation && value?.flightConfirmed !== true
+                ? 'Your Clean rating is saved. Confirm that both feet stayed off the floor for this hold to count.'
               : value?.auto && value.auto.issues.length > 1
                 ? 'Saved as a PR, but the camera found multiple form flags, so this hold will not unlock.'
                 : 'Your Clean rating is saved. A successful camera check is still needed for progression.'}

@@ -59,6 +59,7 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
   const best = qualified.value
   const unlockPct = Math.min(1, best / step.unlockSec)
   const next = stepAfter(state.stepId)
+  const goalStep = STEP_BY_ID[state.profile.goalStepId ?? 'straddle']
 
   const hour = new Date().getHours()
   const greeting = hour < 5 ? 'Burning the midnight oil' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
@@ -124,6 +125,7 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
             <div>
               <div className="text-[12.5px] font-semibold uppercase tracking-wider text-accent">
                 Step {step.order + 1} of 8 · current
+                {goalStep.order > step.order ? ` · goal ${goalStep.name}` : ' · goal reached'}
               </div>
               <div className="font-display text-[24px] font-bold leading-tight text-ink">{step.name}</div>
               <div className="mt-0.5 text-[14px] text-ink2">{step.tagline}</div>

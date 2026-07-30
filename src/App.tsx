@@ -57,7 +57,7 @@ function useVersionJsonCheck(enabled: boolean): boolean {
 
 const HAS_SW = 'serviceWorker' in navigator
 
-function UpdateBanner() {
+function UpdateBanner({ defer = false }: { defer?: boolean }) {
   const regRef = useRef<ServiceWorkerRegistration | null>(null)
   // Primary path: the service worker precaches the app (works offline) and
   // reports when a newer build is waiting. The banner activates it on accept.
@@ -88,7 +88,9 @@ function UpdateBanner() {
   const staleFallback = useVersionJsonCheck(!HAS_SW)
   const [dismissed, setDismissed] = useState(false)
 
-  const show = (needRefresh || staleFallback) && !dismissed
+  // Never invite a reload over a live workout. The update remains waiting and
+  // appears as soon as the player closes.
+  const show = (needRefresh || staleFallback) && !dismissed && !defer
   if (!show) return null
   const refresh = () => {
     if (needRefresh) void updateServiceWorker(true)
@@ -302,7 +304,7 @@ export default function App() {
           }}
         />
       ) : null}
-      <UpdateBanner />
+      <UpdateBanner defer={Boolean(activeWorkout)} />
       <Toasts />
     </div>
   )

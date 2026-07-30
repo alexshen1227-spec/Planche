@@ -1,4 +1,4 @@
-import type { AppState, Session, SessionEvents, StepId } from '../types'
+import type { AppState, PR, Session, SessionEvents, StepId, TrainingSurface } from '../types'
 import { ACHIEVEMENTS } from '../data/achievements'
 import { STEP_BY_ID, stepAfter } from '../data/progressions'
 import { isQualifyingSet, qualifyingProgress } from './progression'
@@ -12,18 +12,44 @@ export function applySession(state: AppState, session: Session): { next: AppStat
   const events: SessionEvents = { prs: [], achievements: [] }
 
   const prs = { ...state.prs }
-  const bestInSession: Record<string, number> = {}
+  const bestInSession: Record<
+    string,
+    { overall: number; bySurface: Partial<Record<TrainingSurface, number>> }
+  > = {}
   for (const set of session.sets) {
     if (set.value <= 0) continue
-    if (!bestInSession[set.exerciseId] || set.value > bestInSession[set.exerciseId]) {
-      bestInSession[set.exerciseId] = set.value
+    const best = (bestInSession[set.exerciseId] ??= { overall: 0, bySurface: {} })
+    if (set.value > best.overall) best.overall = set.value
+    if (set.surface && set.value > (best.bySurface[set.surface] ?? 0)) {
+      best.bySurface[set.surface] = set.value
     }
   }
-  for (const [exId, v] of Object.entries(bestInSession)) {
-    const prev = prs[exId]?.value
-    if (prev === undefined || v > prev) {
-      prs[exId] = { value: v, at: session.endedAt }
-      events.prs.push({ exerciseId: exId, value: v, previous: prev })
+  for (const [exId, best] of Object.entries(bestInSession)) {
+    const current = prs[exId]
+    const nextPr: PR =
+      current && current.value >= best.overall
+        ? { ...current, bySurface: { ...current.bySurface } }
+        : { value: best.overall, at: session.endedAt, bySurface: { ...current?.bySurface } }
+    const overallImproved = current === undefined || best.overall > current.value
+    let surfacedEvent = false
+
+    for (const surface of ['floor', 'parallettes'] as const) {
+      const value = best.bySurface[surface]
+      if (value === undefined) continue
+      const previous = current?.bySurface?.[surface]?.value
+      if (previous === undefined || value > previous) {
+        nextPr.bySurface![surface] = { value, at: session.endedAt }
+        events.prs.push({ exerciseId: exId, value, previous, surface })
+        surfacedEvent = true
+      }
+    }
+    if (nextPr.bySurface && Object.keys(nextPr.bySurface).length === 0) delete nextPr.bySurface
+    prs[exId] = nextPr
+    // Old logs and non-planche exercises have no surface. Preserve the
+    // existing event behavior for them; surface-tagged records get one clear
+    // floor/parallettes celebration instead of a duplicate overall one.
+    if (overallImproved && !surfacedEvent) {
+      events.prs.push({ exerciseId: exId, value: best.overall, previous: current?.value })
     }
   }
 

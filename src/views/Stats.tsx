@@ -13,14 +13,21 @@ import { HoldLineChart, VolumeBarChart, TrainingHeatmap } from '../components/ch
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle, Stat } from '../components/ui'
 import { pushToast } from '../lib/toast'
+import type { TrainingSurface } from '../types'
+import { surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 
 export function Stats() {
   const { state, dispatch } = useStore()
   const [chartEx, setChartEx] = useState(() => STEP_BY_ID[state.stepId].keyExerciseId)
+  const [chartSurface, setChartSurface] = useState<TrainingSurface | 'all'>('all')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
-  const series = useMemo(() => bestSeries(state, chartEx), [state, chartEx])
+  const chartIsPlanche = EXERCISE_BY_ID[chartEx]?.category === 'planche'
+  const series = useMemo(
+    () => bestSeries(state, chartEx, chartIsPlanche && chartSurface !== 'all' ? chartSurface : undefined),
+    [state, chartEx, chartIsPlanche, chartSurface],
+  )
   const arms = useMemo(() => armStats(state), [state])
   const coachPick = useMemo(() => buildPlan(state), [state])
   const bestArm = useMemo(() => [...arms].filter((a) => a.n > 0).sort((a, b) => b.mean - a.mean)[0], [arms])
@@ -68,8 +75,13 @@ export function Stats() {
       <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-card">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="font-display text-[16px] font-semibold text-ink">Best hold per session</div>
-            <div className="text-[13px] text-ink2">{EXERCISE_BY_ID[chartEx]?.name}</div>
+            <div className="font-display text-[16px] font-semibold text-ink">
+              {chartIsPlanche ? 'Form-qualified best per session' : 'Best hold per session'}
+            </div>
+            <div className="text-[13px] text-ink2">
+              {EXERCISE_BY_ID[chartEx]?.name}
+              {chartIsPlanche && chartSurface !== 'all' ? ` · ${surfaceLabel(chartSurface)}` : ''}
+            </div>
           </div>
           <select
             value={chartEx}
@@ -83,6 +95,32 @@ export function Stats() {
             ))}
           </select>
         </div>
+        {chartIsPlanche ? (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setChartSurface('all')}
+              className={`rounded-full border px-3 py-1 text-[12px] font-medium ${
+                chartSurface === 'all' ? 'border-transparent bg-accent text-on-accent' : 'border-line text-ink2'
+              }`}
+            >
+              All surfaces
+            </button>
+            {TRAINING_SURFACES.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setChartSurface(item.id)}
+                disabled={item.id === 'parallettes' && !state.profile.equipment.includes('parallettes')}
+                className={`rounded-full border px-3 py-1 text-[12px] font-medium disabled:opacity-35 ${
+                  chartSurface === item.id
+                    ? 'border-transparent bg-accent text-on-accent'
+                    : 'border-line text-ink2'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="mt-3">
           <HoldLineChart points={series} goal={chartStep?.unlockSec} />
         </div>
@@ -288,6 +326,23 @@ export function Stats() {
                 {ex.type === 'reps' ? <span className="text-[13px] font-normal text-ink3"> reps</span> : null}
               </div>
               <div className="text-[12px] text-ink3">{fmtDate(pr.at)}</div>
+              {pr.bySurface ? (
+                <div className="mt-2 space-y-1 border-t border-line pt-2">
+                  {TRAINING_SURFACES.flatMap((item) => {
+                    const mark = pr.bySurface?.[item.id]
+                    return mark
+                      ? [
+                          <div key={item.id} className="flex items-center justify-between gap-2 text-[11.5px]">
+                            <span className="text-ink3">{item.label}</span>
+                            <span className="font-medium text-ink2 tnum">
+                              {ex.type === 'hold' ? fmtHold(mark.value) : `${mark.value}`}
+                            </span>
+                          </div>,
+                        ]
+                      : []
+                  })}
+                </div>
+              ) : null}
             </div>
           ))}
         </div>

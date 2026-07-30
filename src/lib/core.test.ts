@@ -23,7 +23,7 @@ import {
   unrotateKeypoints,
 } from './poseForm'
 import { buildPlan, debriefSession, rewardFor } from './coach'
-import { painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
+import { adaptiveTarget, estimateMinutes, painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
 import { validateImport } from './exportImport'
 import { buildSampleState } from '../data/sample'
 import { selectRecorderMime } from './recorder'
@@ -53,6 +53,7 @@ function form(
   return {
     rating,
     confirmed,
+    flightConfirmed: true,
     auto: { issues: cameraIssues, confidence, cleanSeconds, cleanRatio },
   }
 }
@@ -118,15 +119,38 @@ describe('progression hold timing', () => {
     const at = Date.now()
     const tuck = session('tuck', [
       log('tuck-planche', 10, { at }),
-      log('tuck-planche', 10, { at: at + 118_000 }),
+      log('tuck-planche', 10, { at: at + 123_000 }),
     ])
     const lean = session('lean', [
       log('planche-lean', 10, { at }),
-      log('planche-lean', 10, { at: at + 115_000 }),
+      log('planche-lean', 10, { at: at + 117_300 }),
     ])
 
     expect(observedRestSec(tuck, 'tuck-planche')).toBe(100)
     expect(observedRestSec(lean, 'planche-lean')).toBe(100)
+  })
+
+  it('uses the actual raw hold and skipped countdown when learning rest', () => {
+    const at = Date.now()
+    const skippedLead = session('tuck', [
+      log('tuck-planche', 7, { at }),
+      log('tuck-planche', 7, { at: at + 112_000, raw: 12, leadInSec: 0 }),
+    ])
+    expect(observedRestSec(skippedLead, 'tuck-planche')).toBe(100)
+  })
+
+  it('includes setup, phone reach and no final rest in session estimates', () => {
+    expect(
+      estimateMinutes([
+        {
+          exerciseId: 'tuck-planche',
+          sets: 3,
+          target: { kind: 'hold', sec: 5 },
+          restSec: 150,
+          section: 'main',
+        },
+      ]),
+    ).toBe(6)
   })
 })
 
@@ -157,6 +181,69 @@ describe('progression safety', () => {
     )
     expect(result.next.prs['ppp-hold']?.value).toBe(30)
     expect(result.next.stepId).toBe('foundations')
+  })
+
+  it('requires the athlete to confirm true flight because 2D pose cannot see support', () => {
+    const cameraAndAthlete = form()
+    delete cameraAndAthlete.flightConfirmed
+    const unsupportedUnknown = applySession(
+      state('tuck'),
+      session('tuck', [log('tuck-planche', 20, { form: cameraAndAthlete })]),
+    )
+    expect(unsupportedUnknown.next.prs['tuck-planche']?.value).toBe(20)
+    expect(unsupportedUnknown.next.stepId).toBe('tuck')
+
+    const confirmedFlight = applySession(
+      state('tuck'),
+      session('tuck', [log('tuck-planche', 20, { form: form() })]),
+    )
+    expect(confirmedFlight.next.stepId).toBe('advtuck')
+  })
+
+  it('keeps separate floor and parallettes records without losing the overall PR', () => {
+    const first = applySession(
+      state('tuck'),
+      session('tuck', [
+        log('tuck-planche', 4, { surface: 'floor' }),
+        log('tuck-planche', 3, { surface: 'parallettes' }),
+      ]),
+    )
+    expect(first.next.prs['tuck-planche']).toMatchObject({
+      value: 4,
+      bySurface: {
+        floor: { value: 4 },
+        parallettes: { value: 3 },
+      },
+    })
+
+    const second = applySession(
+      first.next,
+      session('tuck', [log('tuck-planche', 5, { surface: 'parallettes' })]),
+    )
+    expect(second.next.prs['tuck-planche']).toMatchObject({
+      value: 5,
+      bySurface: {
+        floor: { value: 4 },
+        parallettes: { value: 5 },
+      },
+    })
+    expect(second.events.prs).toContainEqual(
+      expect.objectContaining({ exerciseId: 'tuck-planche', surface: 'parallettes', previous: 3, value: 5 }),
+    )
+  })
+
+  it('uses an unverified timer PR only to lower an unsafe first target', () => {
+    const novice = {
+      ...state('tuck'),
+      prs: { 'tuck-planche': { value: 3, at: Date.now() } },
+    }
+    expect(adaptiveTarget(novice, 'tuck')).toBe(2)
+    expect(
+      adaptiveTarget(
+        { ...novice, prs: { 'tuck-planche': { value: 20, at: Date.now() } } },
+        'tuck',
+      ),
+    ).toBe(5)
   })
 
   it('accepts one isolated camera flag but rejects multiple flags', () => {
@@ -1043,6 +1130,10 @@ describe('backup validation and normalization', () => {
     expect(() => validateImport({})).toThrow(/Planche Lab backup/)
   })
 
+  it('accepts a backup created by the current app version', () => {
+    expect(() => validateImport(initialState())).not.toThrow()
+  })
+
   it('sanitizes behavior settings and rebuilds derived progress', () => {
     const raw = {
       ...state(),
@@ -1060,15 +1151,25 @@ describe('backup validation and normalization', () => {
     expect(rebuilt.stepId).toBe('lean')
   })
 
-  it('round-trips camera score, shrug, asymmetry and unseen evidence through import', () => {
+  it('round-trips camera, flight, surface and surface-PR evidence through import', () => {
     const raw = {
       ...state(),
+      prs: {
+        'tuck-planche': {
+          value: 5,
+          at: Date.now(),
+          bySurface: { parallettes: { value: 5, at: Date.now() } },
+        },
+      },
       sessions: [
         session('foundations', [
           log('ppp-hold', 12, {
+            surface: 'parallettes',
+            leadInSec: 2.5,
             form: {
               rating: 'clean' as const,
               confirmed: true,
+              flightConfirmed: true,
               auto: {
                 issues: [],
                 confidence: 0.8,
@@ -1087,6 +1188,12 @@ describe('backup validation and normalization', () => {
     expect(auto?.shrugRatio).toBeCloseTo(0.3)
     expect(auto?.asymmetry).toBeCloseTo(0.1)
     expect(auto?.unseen).toEqual(['knees'])
+    expect(normalizeState(raw).sessions[0].sets[0]).toMatchObject({
+      surface: 'parallettes',
+      leadInSec: 2.5,
+      form: { flightConfirmed: true },
+    })
+    expect(normalizeState(raw).prs['tuck-planche']?.bySurface?.parallettes?.value).toBe(5)
   })
 
   it('grandfathers pre-camera unlocks without changing the selected lower step', () => {

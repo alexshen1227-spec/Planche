@@ -323,7 +323,7 @@ function smartRest(state: AppState, restFactor: number, sig: Signals): number {
 
   const observed = median(
     state.sessions
-      .map((s) => observedRestSec(s, step.keyExerciseId))
+      .map((s) => observedRestSec(s, step.keyExerciseId, state.settings.stopLatencySec))
       .filter((r): r is number => r !== null)
       .slice(-6),
   )
@@ -774,11 +774,18 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const injuryCheckDue = Boolean(
     state.profile.injuryNote?.trim() && (checkInAge === null || checkInAge >= 2),
   )
+  const profileAge = state.profile.birthYear
+    ? new Date(now).getFullYear() - state.profile.birthYear
+    : null
+  // Younger athletes recover well, but joint feedback matters while they are
+  // growing. Ask the same two quick questions a little more often; do not
+  // lower earned performance or progression credit based on age.
+  const routineCheckInterval = profileAge !== null && profileAge < 16 ? 2 : 3
   const askCheckIn =
     injuryCheckDue ||
     (sig.totalSessions >= 1 &&
       (checkInAge === null ||
-        checkInAge >= 3 ||
+        checkInAge >= routineCheckInterval ||
         (sig.lastRpe ?? 0) >= 9 ||
         sig.restDays >= 5 ||
         (checkInFresh && joints !== 'good' && checkInAge >= 2)))

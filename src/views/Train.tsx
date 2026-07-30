@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { Section, Session, Workout } from '../types'
+import type { Section, Session, TrainingSurface, Workout } from '../types'
 import { useStore } from '../lib/store'
 import { todaysSession, maxTestWorkout, TEMPLATES, describeBlock, countRounds } from '../data/workouts'
 import { EXERCISES, EXERCISE_BY_ID, CATEGORY_LABEL } from '../data/exercises'
@@ -11,6 +11,8 @@ import { sfx } from '../lib/audio'
 import { fmtHold } from '../lib/time'
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle } from '../components/ui'
+import { defaultSurface, surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
+import { recordForSurface } from '../lib/records'
 
 const SECTION_LABEL: Record<Section, string> = {
   warmup: 'Warm-up',
@@ -167,7 +169,14 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
   const { state, dispatch } = useStore()
   const [exerciseId, setExerciseId] = useState('planche-lean')
   const [value, setValue] = useState(10)
+  const [surface, setSurface] = useState<TrainingSurface>(() =>
+    defaultSurface(state.profile.equipment, state.profile.preferredSurface),
+  )
   const ex = EXERCISE_BY_ID[exerciseId]
+  const surfaceAware = ex.category === 'planche'
+  const currentBest = surfaceAware
+    ? recordForSurface(state.prs[exerciseId], surface)?.value
+    : state.prs[exerciseId]?.value
 
   const save = () => {
     const now = Date.now()
@@ -184,18 +193,28 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
           kind: ex.type,
           value,
           target: value,
-          section: 'main',
-          at: now,
+           section: 'main',
+           at: now,
+           ...(surfaceAware ? { surface } : {}),
         },
       ],
     }
     const { events } = applySession(state, session)
     dispatch({ type: 'SAVE_SESSION', session })
-    const pr = events.prs.find((p) => p.exerciseId === exerciseId && p.previous !== undefined)
+    const pr = events.prs.find(
+      (record) =>
+        record.exerciseId === exerciseId &&
+        (record.previous !== undefined || EXERCISE_BY_ID[record.exerciseId]?.category === 'planche'),
+    )
     if (pr) {
       sfx.pr()
       confetti(1)
-      pushToast(`New PR — ${ex.name} ${ex.type === 'hold' ? fmtHold(value) : `${value} reps`}!`, 'pr')
+      pushToast(
+        `New PR — ${ex.name} ${ex.type === 'hold' ? fmtHold(value) : `${value} reps`}${
+          surfaceAware ? ` on ${surfaceLabel(surface).toLowerCase()}` : ''
+        }!`,
+        'pr',
+      )
     } else {
       pushToast('Set logged.', 'success')
     }
@@ -232,6 +251,28 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
             ))}
           </select>
         </label>
+        {surfaceAware ? (
+          <div className="mt-4">
+            <div className="text-[13px] font-medium text-ink2">Surface</div>
+            <div className="mt-1.5 flex overflow-hidden rounded-xl border border-line">
+              {TRAINING_SURFACES.map((item) => {
+                const disabled = item.id === 'parallettes' && !state.profile.equipment.includes('parallettes')
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setSurface(item.id)}
+                    disabled={disabled}
+                    className={`flex-1 px-3 py-2.5 text-[13.5px] font-medium transition disabled:opacity-35 ${
+                      surface === item.id ? 'bg-accent text-on-accent' : 'bg-raised text-ink2'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ) : null}
         <div className="mt-4">
           <div className="text-[13px] font-medium text-ink2">{ex.type === 'hold' ? 'Hold (seconds)' : 'Reps'}</div>
           <div className="mt-2 flex items-center justify-center gap-4">
@@ -251,9 +292,10 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
               <Icon name="plus" size={18} />
             </button>
           </div>
-          {state.prs[exerciseId] ? (
+          {currentBest !== undefined ? (
             <div className="mt-1 text-center text-[13px] text-ink3 tnum">
-              current best {ex.type === 'hold' ? fmtHold(state.prs[exerciseId].value) : state.prs[exerciseId].value}
+              {surfaceAware ? `${surfaceLabel(surface)} best` : 'current best'}{' '}
+              {ex.type === 'hold' ? fmtHold(currentBest) : currentBest}
             </div>
           ) : null}
         </div>

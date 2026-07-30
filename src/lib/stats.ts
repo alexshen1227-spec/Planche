@@ -1,4 +1,4 @@
-import type { AppState, Session } from '../types'
+import type { AppState, Session, TrainingSurface } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { addDays, weekStart } from './time'
@@ -39,7 +39,11 @@ export function weekStreak(state: AppState, now = Date.now()): { weeks: number; 
 }
 
 /** Max value logged for one exercise per session, oldest first. */
-export function bestSeries(state: AppState, exerciseId: string): { at: number; value: number }[] {
+export function bestSeries(
+  state: AppState,
+  exerciseId: string,
+  surface?: TrainingSurface,
+): { at: number; value: number }[] {
   const out: { at: number; value: number }[] = []
   for (const s of [...state.sessions].sort((a, b) => a.startedAt - b.startedAt)) {
     let best = 0
@@ -48,6 +52,7 @@ export function bestSeries(state: AppState, exerciseId: string): { at: number; v
     for (const set of s.sets) {
       if (
         set.exerciseId === exerciseId &&
+        (!surface || set.surface === surface) &&
         set.value > best &&
         (!progressionExercise || isQualifyingSet(set, exerciseId))
       ) {

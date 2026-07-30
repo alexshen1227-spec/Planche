@@ -3,7 +3,7 @@ import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { dayKey } from './time'
 import { progressionCredit, qualifyingSessionValue } from './progression'
-import { leadInSecondsFor } from './sessionTiming'
+import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
 
 /**
  * Everything the coach can observe, derived from the log alone.
@@ -58,14 +58,22 @@ function bestIn(session: Session, exerciseId: string): number {
  * The gap between two logged sets is rest plus the second set's work and
  * lead-in, so those are subtracted back out.
  */
-export function observedRestSec(session: Session, exerciseId: string): number | null {
+export function observedRestSec(
+  session: Session,
+  exerciseId: string,
+  calibratedStopLatencySec = 2.3,
+): number | null {
   const sets = keySetsOf(session, exerciseId, 'main').sort((a, b) => a.at - b.at)
   if (sets.length < 2) return null
   const rests: number[] = []
   for (let i = 1; i < sets.length; i++) {
     const gap = (sets[i].at - sets[i - 1].at) / 1000
-    const work = sets[i].kind === 'hold' ? sets[i].value : sets[i].value * 3
-    const rest = gap - work - leadInSecondsFor(exerciseId)
+    const work =
+      sets[i].kind === 'hold'
+        ? (sets[i].raw ?? sets[i].value + stopLatencySecondsFor(exerciseId, calibratedStopLatencySec))
+        : sets[i].value * 3
+    const lead = sets[i].kind === 'hold' ? (sets[i].leadInSec ?? leadInSecondsFor(exerciseId)) : 0
+    const rest = gap - work - lead
     if (rest > 15 && rest < 600) rests.push(rest)
   }
   return median(rests)

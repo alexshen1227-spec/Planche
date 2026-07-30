@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Settings as SettingsShape, Tab } from '../types'
+import type { EquipmentId, Settings as SettingsShape, Tab, TrainingSurface } from '../types'
 import { useStore, normalizeState, rebuildDerivedState } from '../lib/store'
-import { STEP_BY_ID } from '../data/progressions'
+import { STEPS, STEP_BY_ID } from '../data/progressions'
+import { defaultSurface, EQUIPMENT_OPTIONS, TRAINING_SURFACES } from '../data/equipment'
 import { exportData, readImportFile, validateImport } from '../lib/exportImport'
 import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
 import { listClips, clearAllClips, CLIP_RETENTION_DAYS } from '../lib/clips'
@@ -205,6 +206,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   const [confirmSample, setConfirmSample] = useState(false)
   const [name, setName] = useState(state.name)
   const [injuryNote, setInjuryNote] = useState(state.profile.injuryNote ?? '')
+  const [birthYear, setBirthYear] = useState(state.profile.birthYear?.toString() ?? '')
   const [storage, setStorage] = useState<StorageInfo | null>(null)
   const [calibrating, setCalibrating] = useState(false)
   const [loggingWeight, setLoggingWeight] = useState(false)
@@ -228,9 +230,22 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   useEffect(() => {
     setName(state.name)
     setInjuryNote(state.profile.injuryNote ?? '')
-  }, [state.name, state.profile.injuryNote])
+    setBirthYear(state.profile.birthYear?.toString() ?? '')
+  }, [state.name, state.profile.injuryNote, state.profile.birthYear])
 
   const set = (patch: Partial<SettingsShape>) => dispatch({ type: 'SET_SETTINGS', patch })
+  const toggleEquipment = (id: EquipmentId) => {
+    const selected = state.profile.equipment.includes(id)
+    const changed = selected ? state.profile.equipment.filter((item) => item !== id) : [...state.profile.equipment, id]
+    const equipment: EquipmentId[] = changed.length ? changed : ['floor']
+    dispatch({
+      type: 'SET_PROFILE',
+      patch: {
+        equipment,
+        preferredSurface: defaultSurface(equipment, state.profile.preferredSurface),
+      },
+    })
+  }
 
   const onImport = async (file: File) => {
     try {
@@ -288,8 +303,95 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             {STEP_BY_ID[state.stepId].name}
           </span>
         </Row>
+        <Row label="Goal skill" hint="Keeps the app focused on where you actually want the progression to lead.">
+          <select
+            value={state.profile.goalStepId ?? 'straddle'}
+            onChange={(event) =>
+              dispatch({ type: 'SET_PROFILE', patch: { goalStepId: event.target.value as typeof state.stepId } })
+            }
+            className="rounded-xl border border-line bg-raised px-3 py-2 text-[13.5px] text-ink outline-none focus:border-accent"
+          >
+            {STEPS.filter((step) => step.order >= 3).map((step) => (
+              <option key={step.id} value={step.id}>
+                {step.name}
+              </option>
+            ))}
+          </select>
+        </Row>
         <Row label="Weekly session goal" hint="Drives the streak. 3–4 is the sweet spot for planche work.">
           <Stepper value={s.weeklyGoal} onChange={(v) => set({ weeklyGoal: v })} min={1} max={7} />
+        </Row>
+        <Row label="Equipment" hint="Update this whenever your setup changes; it affects later exercise choices.">
+          <div className="flex max-w-sm flex-wrap justify-end gap-1.5">
+            {EQUIPMENT_OPTIONS.map((item) => {
+              const selected = state.profile.equipment.includes(item.id)
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => toggleEquipment(item.id)}
+                  title={item.hint}
+                  aria-pressed={selected}
+                  className={`rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition ${
+                    selected
+                      ? 'border-transparent bg-accent text-on-accent'
+                      : 'border-line bg-raised text-ink2 hover:text-ink'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              )
+            })}
+          </div>
+        </Row>
+        <Row
+          label="Default planche surface"
+          hint="New planche sets and records are tagged separately; you can still switch it during a session."
+        >
+          <div className="flex overflow-hidden rounded-xl border border-line">
+            {TRAINING_SURFACES.map((item) => {
+              const disabled = item.id === 'parallettes' && !state.profile.equipment.includes('parallettes')
+              const selected = defaultSurface(state.profile.equipment, state.profile.preferredSurface) === item.id
+              return (
+                <button
+                  key={item.id}
+                  onClick={() =>
+                    dispatch({ type: 'SET_PROFILE', patch: { preferredSurface: item.id as TrainingSurface } })
+                  }
+                  disabled={disabled}
+                  className={`px-3.5 py-2 text-[13px] font-medium transition disabled:cursor-not-allowed disabled:opacity-35 ${
+                    selected ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              )
+            })}
+          </div>
+        </Row>
+        <Row label="Birth year" hint="Optional, on-device context. It never changes an earned hold or unlock.">
+          <input
+            value={birthYear}
+            onChange={(event) => setBirthYear(event.target.value.replace(/\D/g, '').slice(0, 4))}
+            inputMode="numeric"
+            placeholder="Optional"
+            aria-label="Birth year"
+            className="w-24 rounded-xl border border-line bg-raised px-3 py-2 text-center text-[14px] text-ink outline-none focus:border-accent"
+          />
+          <button
+            onClick={() => {
+              const parsed = Number(birthYear)
+              const current = new Date().getFullYear()
+              if (birthYear && (!Number.isInteger(parsed) || parsed < 1920 || parsed > current)) {
+                pushToast(`Enter a year from 1920 to ${current}.`, 'danger')
+                return
+              }
+              dispatch({ type: 'SET_PROFILE', patch: { birthYear: birthYear ? parsed : undefined } })
+              pushToast('Athlete profile saved.', 'success')
+            }}
+            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+          >
+            Save
+          </button>
         </Row>
         <Row label="Joint / injury note" hint="The coach uses this to require a fresh readiness check before loading.">
           <div className="flex min-w-0 flex-1 flex-wrap justify-end gap-2">

@@ -778,7 +778,7 @@ export function chooseSampleCount(holdWindowSec: number, requested?: number): nu
   return Math.round(Math.min(72, Math.max(18, seconds * 3)))
 }
 
-export async function analyseClip(
+async function analyseClipNow(
   blob: Blob,
   exerciseId: string,
   sampleCount?: number,
@@ -1560,6 +1560,26 @@ export async function analyseClip(
     URL.revokeObjectURL(url)
     video.src = ''
   }
+}
+
+// Multiple skipped-rest clips can arrive together on the summary screen.
+// MediaPipe and WebGL inference are not reliably re-entrant on Android
+// WebViews, so run checks one at a time instead of letting several clips fight
+// over the same detector and GPU context.
+let analysisQueue: Promise<void> = Promise.resolve()
+
+export function analyseClip(
+  blob: Blob,
+  exerciseId: string,
+  sampleCount?: number,
+  creditedHoldSec?: number,
+): Promise<PoseFormResult> {
+  const result = analysisQueue.then(() => analyseClipNow(blob, exerciseId, sampleCount, creditedHoldSec))
+  analysisQueue = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  return result
 }
 
 /** A robust "kept through the hold" minimum that forgives a few bad detections. */

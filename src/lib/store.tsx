@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react'
+import { CURRENT_STATE_VERSION } from '../types'
 import type {
   AppState,
   AutoForm,
@@ -11,6 +12,7 @@ import type {
   SetLog,
   Settings,
   StepId,
+  TrainingSurface,
   Units,
 } from '../types'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
@@ -50,7 +52,7 @@ const LEGACY_LATENCIES = [0.4, 1]
 
 export function initialState(): AppState {
   return {
-    version: 4,
+    version: CURRENT_STATE_VERSION,
     onboarded: false,
     name: '',
     startedAt: Date.now(),
@@ -61,7 +63,7 @@ export function initialState(): AppState {
     prs: {},
     achievements: {},
     videoLinks: {},
-    profile: { equipment: ['floor'] },
+    profile: { equipment: ['floor'], preferredSurface: 'floor', goalStepId: 'straddle' },
     measurements: [],
     settings: { ...DEFAULT_SETTINGS },
   }
@@ -90,6 +92,7 @@ const FORM_ISSUES = new Set<FormIssue>([
   'level',
 ])
 const EQUIPMENT_IDS = new Set(['floor', 'parallettes', 'band', 'pullup-bar', 'dip-bars'])
+const TRAINING_SURFACES = new Set<TrainingSurface>(['floor', 'parallettes'])
 const SECTIONS = new Set(['warmup', 'main', 'strength', 'core', 'cooldown'])
 const STRATEGIES = new Set(['balanced', 'volume', 'intensity', 'density', 'technique'])
 
@@ -112,6 +115,7 @@ function sanitizeForm(f: unknown): FormCheck | undefined {
   const out: FormCheck = { rating: c.rating as FormCheck['rating'] }
   if (typeof c.confirmed === 'boolean') out.confirmed = c.confirmed
   if (typeof c.visualReviewPassed === 'boolean') out.visualReviewPassed = c.visualReviewPassed
+  if (typeof c.flightConfirmed === 'boolean') out.flightConfirmed = c.flightConfirmed
   if (issues.length) out.issues = issues
   if (typeof c.clipKey === 'string') out.clipKey = c.clipKey
 
@@ -188,6 +192,12 @@ function sanitizeSessions(raw: unknown): Session[] {
           section: section as SetLog['section'],
           at: typeof x.at === 'number' && Number.isFinite(x.at) ? x.at : c.startedAt,
           ...(x.side === 'left' || x.side === 'right' ? { side: x.side } : {}),
+          ...(typeof x.surface === 'string' && TRAINING_SURFACES.has(x.surface as TrainingSurface)
+            ? { surface: x.surface as TrainingSurface }
+            : {}),
+          ...(typeof x.leadInSec === 'number' && Number.isFinite(x.leadInSec)
+            ? { leadInSec: clampNum(x.leadInSec, 0, 60, 0) }
+            : {}),
           ...(typeof x.clipKey === 'string' ? { clipKey: x.clipKey } : {}),
           ...(sanitizeForm(x.form) ? { form: sanitizeForm(x.form) } : {}),
         })
@@ -237,7 +247,10 @@ export function normalizeState(raw: unknown): AppState {
     'foundations',
   )
   const grandfatheredStepId =
-    priorVersion < 4
+    // v4 could not store the human "feet stayed unsupported" confirmation.
+    // Preserve every already-earned step when v5 adds that stricter evidence;
+    // only future unlocks are held to the new gate.
+    priorVersion < CURRENT_STATE_VERSION
       ? highestUnlocked
       : r.grandfatheredStepId && STEP_BY_ID[r.grandfatheredStepId]
         ? r.grandfatheredStepId
@@ -273,7 +286,7 @@ export function normalizeState(raw: unknown): AppState {
   }
 
   return {
-    version: 4,
+    version: CURRENT_STATE_VERSION,
     onboarded: Boolean(r.onboarded),
     name: typeof r.name === 'string' ? r.name : '',
     startedAt: typeof r.startedAt === 'number' ? r.startedAt : Date.now(),
@@ -289,16 +302,35 @@ export function normalizeState(raw: unknown): AppState {
     prs:
       typeof r.prs === 'object' && r.prs !== null
         ? Object.fromEntries(
-            Object.entries(r.prs).filter(
-              ([id, pr]) =>
-                Boolean(EXERCISE_BY_ID[id]) &&
-                typeof pr === 'object' &&
-                pr !== null &&
-                typeof pr.value === 'number' &&
-                Number.isFinite(pr.value) &&
-                typeof pr.at === 'number' &&
-                Number.isFinite(pr.at),
-            ),
+            Object.entries(r.prs).flatMap(([id, rawPr]) => {
+              if (
+                !EXERCISE_BY_ID[id] ||
+                typeof rawPr !== 'object' ||
+                rawPr === null ||
+                typeof rawPr.value !== 'number' ||
+                !Number.isFinite(rawPr.value) ||
+                typeof rawPr.at !== 'number' ||
+                !Number.isFinite(rawPr.at)
+              ) {
+                return []
+              }
+              const bySurface =
+                typeof rawPr.bySurface === 'object' && rawPr.bySurface !== null
+                  ? Object.fromEntries(
+                      Object.entries(rawPr.bySurface).filter(
+                        ([surface, mark]) =>
+                          TRAINING_SURFACES.has(surface as TrainingSurface) &&
+                          typeof mark === 'object' &&
+                          mark !== null &&
+                          typeof mark.value === 'number' &&
+                          Number.isFinite(mark.value) &&
+                          typeof mark.at === 'number' &&
+                          Number.isFinite(mark.at),
+                      ),
+                    )
+                  : {}
+              return [[id, { value: rawPr.value, at: rawPr.at, ...(Object.keys(bySurface).length ? { bySurface } : {}) }]]
+            }),
           )
         : {},
     achievements:
@@ -325,6 +357,18 @@ export function normalizeState(raw: unknown): AppState {
       heightCm: clampOptional(r.profile?.heightCm, 100, 250),
       injuryNote: typeof r.profile?.injuryNote === 'string' ? r.profile.injuryNote : undefined,
       birthYear: clampOptional(r.profile?.birthYear, 1920, new Date().getFullYear()),
+      preferredSurface:
+        typeof r.profile?.preferredSurface === 'string' &&
+        TRAINING_SURFACES.has(r.profile.preferredSurface as TrainingSurface) &&
+        (r.profile.preferredSurface !== 'parallettes' || r.profile?.equipment?.includes('parallettes'))
+          ? (r.profile.preferredSurface as TrainingSurface)
+          : r.profile?.equipment?.includes('parallettes') && !r.profile?.equipment?.includes('floor')
+            ? 'parallettes'
+            : 'floor',
+      goalStepId:
+        typeof r.profile?.goalStepId === 'string' && STEP_BY_ID[r.profile.goalStepId as StepId]
+          ? (r.profile.goalStepId as StepId)
+          : 'straddle',
     },
     measurements: Array.isArray(r.measurements)
       ? r.measurements

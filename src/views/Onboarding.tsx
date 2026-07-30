@@ -2,17 +2,10 @@ import { useState } from 'react'
 import type { EquipmentId, StepId, Units } from '../types'
 import { useStore } from '../lib/store'
 import { STEP_BY_ID } from '../data/progressions'
+import { EQUIPMENT_OPTIONS } from '../data/equipment'
 import { displayToKg, CM_PER_IN } from '../lib/units'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
-
-const EQUIPMENT: { id: EquipmentId; label: string; hint: string }[] = [
-  { id: 'floor', label: 'Just the floor', hint: 'Everything early works with nothing at all' },
-  { id: 'parallettes', label: 'Parallettes', hint: 'Kinder on the wrists — the best thing to own' },
-  { id: 'band', label: 'Resistance band', hint: 'Assisted straddle work later on' },
-  { id: 'pullup-bar', label: 'Pull-up bar', hint: 'To hang a band from' },
-  { id: 'dip-bars', label: 'Dip bars', hint: 'Extra pressing volume' },
-]
 
 const PLACEMENTS: { stepId: StepId; label: string; desc: string }[] = [
   {
@@ -105,6 +98,8 @@ export function Onboarding() {
       heightCm: parsedHeight,
       profile: {
         equipment: equipment.length ? equipment : ['floor'],
+        preferredSurface: equipment.includes('parallettes') ? 'parallettes' : 'floor',
+        goalStepId: 'straddle',
         injuryNote: injuryNote.trim() || undefined,
         heightCm: parsedHeight,
       },
@@ -280,7 +275,7 @@ export function Onboarding() {
             <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
               <div className="text-[13px] font-medium text-ink2">What do you have to train with?</div>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {EQUIPMENT.map((eq) => {
+                {EQUIPMENT_OPTIONS.map((eq) => {
                   const on = equipment.includes(eq.id)
                   return (
                     <button

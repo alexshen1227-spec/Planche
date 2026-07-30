@@ -17,6 +17,47 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-07-30',
+    title: 'Floor and parallettes finally count as different records',
+    area: 'training',
+    notes: [
+      'Equipment can now be changed in Settings, with a default surface you can override from the workout screen.',
+      'Planche sets remember whether they were done on the floor or parallettes. Progress charts and PR cards can show either surface without pretending an old untagged hold belonged to one.',
+      'Your goal skill, birth year and equipment live in one editable athlete profile. A Straddle goal starts useful pancake mobility earlier, while age context only makes readiness check-ins a little more attentive — it never changes earned progress.',
+    ],
+  },
+  {
+    date: '2026-07-30',
+    title: 'A supported shape cannot unlock true flight',
+    area: 'camera',
+    notes: [
+      'Tuck through Full Planche now asks you to confirm that both feet stayed completely off the floor. A side-on 2D camera can judge shape, but it cannot reliably infer toe support.',
+      'Existing unlocks stay earned; the stricter flight confirmation applies only to future progression evidence.',
+      'Filmed sets that missed their rest-screen review are brought back at the session summary, and multiple queued camera checks run one at a time to avoid fighting over the phone GPU.',
+    ],
+  },
+  {
+    date: '2026-07-30',
+    title: 'The coach now learns the time you actually rested',
+    area: 'coach',
+    notes: [
+      'Learned rest now removes the raw hold, the real countdown you used and the phone-reach delay. Skipping a lead-in no longer quietly distorts the next recommendation.',
+      'Workout estimates include setup and phone timing and no longer count a rest after the final set, so the stated session length is much closer to the real one.',
+      'An unverified PR can safely lower an overambitious first target, but it can never raise the target or unlock a step.',
+      'The session trimmer now preserves both exercises chosen for a measured limiter before generic accessory work.',
+    ],
+  },
+  {
+    date: '2026-07-30',
+    title: 'Small glitches that mattered',
+    area: 'app',
+    notes: [
+      'Fresh backups from the current app can be imported again; the importer was accidentally one version behind the exporter.',
+      'The rest screen now names the real next side when the coach starts unilateral work on your weaker side.',
+      'Update prompts wait until a live workout is closed instead of offering a reload over the timer.',
+    ],
+  },
+  {
+    date: '2026-07-30',
     title: 'A quick drop cannot look like a clean hold',
     area: 'camera',
     notes: [

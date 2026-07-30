@@ -1,4 +1,4 @@
-import type { AppState } from '../types'
+import { CURRENT_STATE_VERSION, type AppState } from '../types'
 import { dayKey } from './time'
 
 export function exportData(state: AppState) {
@@ -31,7 +31,9 @@ export function validateImport(raw: unknown): asserts raw is AppState {
   if (typeof raw !== 'object' || raw === null) throw new Error('That JSON is not a Planche Lab backup.')
   const candidate = raw as Partial<AppState>
   if (
-    ![1, 2, 3].includes(Number(candidate.version)) ||
+    !Number.isInteger(Number(candidate.version)) ||
+    Number(candidate.version) < 1 ||
+    Number(candidate.version) > CURRENT_STATE_VERSION ||
     typeof candidate.onboarded !== 'boolean' ||
     !Array.isArray(candidate.sessions) ||
     typeof candidate.settings !== 'object' ||
