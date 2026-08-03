@@ -129,6 +129,21 @@ function slopePerWeek(points: { at: number; value: number }[]): number | null {
   return (num / den) * 7 * DAY
 }
 
+/** Median pairwise slope: camera scores occasionally contain one plausible
+ * but wrong frame. Unlike least squares, one such score cannot flip the trend. */
+export function robustSlopePerWeek(points: { at: number; value: number }[]): number | null {
+  if (points.length < 3) return null
+  const slopes: number[] = []
+  for (let i = 0; i < points.length - 1; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      const elapsed = points[j].at - points[i].at
+      if (elapsed <= 0) continue
+      slopes.push(((points[j].value - points[i].value) / elapsed) * 7 * DAY)
+    }
+  }
+  return median(slopes)
+}
+
 export interface SideGap {
   exerciseId: string
   weakSide: 'left' | 'right'
@@ -190,13 +205,17 @@ export interface Signals {
   topFormIssue: { issue: string; count: number; of: number } | null
   /** Seconds are climbing while form ratings are getting worse. */
   formDegrading: boolean
-  /** Average camera-measured shakiness across recent filmed sets. */
+  /** Robust centre of camera-measured drift across recent filmed sets. */
   meanWobble: number | null
-  /** Average share of the timer that survived the camera's clean envelope. */
+  /** Typical share of the timer that survived the camera's clean envelope. */
   meanCleanRatio: number | null
   /** How many sets the camera has measured recently. */
   cameraSetCount: number
-  /** Average camera form score (0–100) across recent filmed sets. */
+  /** Confirmed filmed sets, including ones where athlete and camera disagreed. */
+  cameraReviewedCount: number
+  /** Share of reviewed clips safe enough for the coach to learn from. */
+  cameraAgreementRate: number | null
+  /** Typical camera form score (0–100) across recent filmed sets. */
   meanFormScore: number | null
   /** Form-score points gained per week — quality progress the timer can't see. */
   formScoreTrend: number | null
@@ -386,6 +405,11 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
       ),
     )
   const trustedCameraSets = cameraSets.filter(trustedCameraEvidence)
+  const reviewedCameraSets = cameraSets.filter((set) => set.form?.confirmed === true)
+  const cameraAgreementRate =
+    reviewedCameraSets.length >= 3
+      ? reviewedCameraSets.filter(trustedCameraEvidence).length / reviewedCameraSets.length
+      : null
   for (const s of cameraSets) {
     // Never count the same fault twice. Athlete-reported issues are strongest;
     // camera-only issues join coaching only after the athlete reviewed the set
@@ -420,21 +444,19 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const wobbles = trustedCameraSets
     .map((s) => s.form!.auto!.wobble)
     .filter((w): w is number => w !== undefined)
-  const meanWobble = wobbles.length >= 3 ? wobbles.reduce((a, b) => a + b, 0) / wobbles.length : null
+  const meanWobble = wobbles.length >= 3 ? median(wobbles) : null
   const cleanRatios = trustedCameraSets
     .map((s) => s.form!.auto!.cleanRatio)
     .filter((ratio): ratio is number => ratio !== undefined)
-  const meanCleanRatio =
-    cleanRatios.length >= 3 ? cleanRatios.reduce((a, b) => a + b, 0) / cleanRatios.length : null
+  const meanCleanRatio = cleanRatios.length >= 3 ? median(cleanRatios) : null
 
   // Camera form scores over time: seconds can flatline while the position
   // quietly improves (or rot while seconds climb) — this is the quality axis.
   const scorePoints = trustedCameraSets
     .map((s) => ({ at: s.at, value: s.form!.auto!.score }))
     .filter((p): p is { at: number; value: number } => p.value !== undefined)
-  const meanFormScore =
-    scorePoints.length >= 3 ? scorePoints.reduce((t, p) => t + p.value, 0) / scorePoints.length : null
-  const formScoreTrend = slopePerWeek(scorePoints)
+  const meanFormScore = scorePoints.length >= 3 ? median(scorePoints.map((point) => point.value)) : null
+  const formScoreTrend = robustSlopePerWeek(scorePoints)
 
   // The criterion the camera most often could not see. Majority-of-sets is the
   // bar: below that it is framing luck, above it the phone placement itself is
@@ -524,6 +546,8 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     meanWobble,
     meanCleanRatio,
     cameraSetCount: trustedCameraSets.length,
+    cameraReviewedCount: reviewedCameraSets.length,
+    cameraAgreementRate,
     meanFormScore,
     formScoreTrend,
     chronicUnseen,

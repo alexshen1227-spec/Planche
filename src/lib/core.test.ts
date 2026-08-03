@@ -14,9 +14,13 @@ import {
   materialIssuesForReading,
   plancheArmAngle,
   pickFixFirst,
+  poseKeypointsAtTime,
   reliableJointAngle,
+  shoulderHipLineMismatch,
+  shoulderHipLevelOffset,
   suppressBilateralCollisions,
   suppressIsolatedMetricSpikes,
+  stabilizeKeypointSpikes,
   sustainedCleanSeconds,
   sustainedMinimum,
   sustainedMaterialIssues,
@@ -30,7 +34,7 @@ import { validateImport } from './exportImport'
 import { buildSampleState } from '../data/sample'
 import { ACHIEVEMENTS, ACHIEVEMENT_VERSION } from '../data/achievements'
 import { selectRecorderMime } from './recorder'
-import { observedRestSec, readSignals, trustedCameraEvidence } from './signals'
+import { observedRestSec, readSignals, robustSlopePerWeek, trustedCameraEvidence } from './signals'
 import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
 
 const DAY = 86_400_000
@@ -618,6 +622,39 @@ describe('keypoint dropout repair', () => {
   })
 })
 
+describe('skeleton stabilization', () => {
+  const pose = (t: number, offset: number) => ({
+    t,
+    kps: [
+      { name: 'left_shoulder', x: offset, y: 0, score: 0.9 },
+      { name: 'left_elbow', x: offset + 35, y: 25, score: 0.9 },
+      { name: 'left_wrist', x: offset + 70, y: 50, score: 0.9 },
+      { name: 'left_hip', x: offset, y: 100, score: 0.9 },
+    ],
+  })
+
+  it('repairs a one-frame skeleton teleport before form is measured', () => {
+    const frames = [pose(0, 0), pose(0.3, 300), pose(0.6, 0)]
+    expect(stabilizeKeypointSpikes(frames)).toEqual({ jointsRepaired: 4, framesTouched: 1 })
+    expect(frames[1].kps.map((point) => point.x)).toEqual([0, 35, 70, 0])
+    expect(frames[1].kps.every((point) => point.score! < 0.9)).toBe(true)
+  })
+
+  it('does not flatten real movement that continues into the next sample', () => {
+    const frames = [pose(0, 0), pose(0.3, 0), pose(0.6, 80), pose(0.9, 80)]
+    expect(stabilizeKeypointSpikes(frames)).toEqual({ jointsRepaired: 0, framesTouched: 0 })
+    expect(frames[2].kps[0].x).toBe(80)
+  })
+
+  it('interpolates nearby replay samples but leaves detector gaps blank', () => {
+    const short = { width: 200, height: 100, frames: [pose(0, 0), pose(1, 100)] }
+    expect(poseKeypointsAtTime(short, 0.5, 1.1)[0].x).toBe(50)
+
+    const gap = { width: 200, height: 100, frames: [pose(0, 0), pose(2, 100)] }
+    expect(poseKeypointsAtTime(gap, 1)).toEqual([])
+  })
+})
+
 describe('rotation-robust tracking', () => {
   // A 640x480 frame rotated 90° clockwise becomes 480x640 on the canvas.
   // Un-rotating has to land keypoints back on the exact original pixel, or
@@ -673,9 +710,42 @@ describe('camera evaluator primitives', () => {
 
     const elbowOnly = { elbow: true, knee: false, hipAngle: false, line: false, lean: false }
     for (const [, profile] of graded) {
-      expect(materialIssuesForReading({ t: 0, elbowDeg: 176 }, profile, elbowOnly)).not.toContain('arms')
-      expect(materialIssuesForReading({ t: 0, elbowDeg: 174 }, profile, elbowOnly)).toContain('arms')
+      expect(materialIssuesForReading({ t: 0, elbowDeg: 178 }, profile, elbowOnly)).not.toContain('arms')
+      expect(materialIssuesForReading({ t: 0, elbowDeg: 176 }, profile, elbowOnly)).toContain('arms')
     }
+  })
+
+  it('compares shoulder and hip rotation without depending on line width or camera roll', () => {
+    const point = (x: number, y: number) => ({ x, y, score: 0.9 })
+    const aligned = shoulderHipLineMismatch(
+      point(0, 0),
+      point(100, 20),
+      point(10, 60),
+      point(60, 70),
+    )
+    const twisted = shoulderHipLineMismatch(
+      point(0, 0),
+      point(100, 20),
+      point(10, 60),
+      point(60, 60),
+    )
+
+    expect(aligned).toBeCloseTo(0, 8)
+    expect(twisted).toBeGreaterThan(0.15)
+  })
+
+  it('averages both visible sides to steady the shoulder-to-hip level call', () => {
+    const point = (x: number, y: number) => ({ x, y, score: 0.9 })
+    const nearOnly = shoulderHipLevelOffset(point(0, 0), point(100, 20))!
+    const bilateral = shoulderHipLevelOffset(
+      point(0, 0),
+      point(100, 20),
+      point(0, 20),
+      point(100, 0),
+    )!
+
+    expect(Math.abs(nearOnly)).toBeGreaterThan(0.15)
+    expect(bilateral).toBe(0)
   })
 
   it('tightens level and hip-opening standards as the lever lengthens', () => {
@@ -895,7 +965,7 @@ describe('form scoring', () => {
       materialIssuesForReading(
         {
           t: 0,
-          elbowDeg: 175.1,
+          elbowDeg: 177.1,
           kneeDeg: 173.1,
           hipAngleDeg: 170.1,
           hipOffset: 0.159,
@@ -1173,6 +1243,19 @@ describe('stage-specific planche lean programming', () => {
 })
 
 describe('coach learning', () => {
+  it('keeps a single bad camera score from reversing the quality trend', () => {
+    const start = Date.now() - 5 * DAY
+    expect(
+      robustSlopePerWeek([
+        { at: start, value: 70 },
+        { at: start + DAY, value: 71 },
+        { at: start + 2 * DAY, value: 10 },
+        { at: start + 3 * DAY, value: 73 },
+        { at: start + 4 * DAY, value: 74 },
+      ]),
+    ).toBeCloseTo(7)
+  })
+
   it('compares follow-up performance with a prior baseline, not the arm session peak', () => {
     const t = Date.now() - 5 * DAY
     const history = [
@@ -1255,6 +1338,26 @@ describe('coach learning', () => {
     expect(signals.meanCleanRatio).toBeNull()
     expect(signals.topFormIssue).toBeNull()
     expect(buildPlan(athlete).decisions.some((d) => d.text.includes('camera verified only'))).toBe(false)
+  })
+
+  it('explains repeated camera disagreement and excludes its trends from the prescription', () => {
+    const now = Date.now()
+    const disagreed = Array.from({ length: 3 }, () =>
+      log('ppp-hold', 12, {
+        form: form('clean', true, ['arms'], 0.9, 3, 0.25),
+      }),
+    )
+    const athlete = {
+      ...state(),
+      sessions: [session('foundations', disagreed, { startedAt: now - DAY })],
+    }
+    const signals = readSignals(athlete, now)
+    const plan = buildPlan(athlete, now)
+
+    expect(signals.cameraReviewedCount).toBe(3)
+    expect(signals.cameraAgreementRate).toBe(0)
+    expect(signals.meanCleanRatio).toBeNull()
+    expect(plan.decisions.some((decision) => decision.text.includes('leaving those camera trends out'))).toBe(true)
   })
 
   it('flags a chronically unseen criterion as a placement problem, not a form fault', () => {

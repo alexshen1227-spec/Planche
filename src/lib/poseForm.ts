@@ -89,6 +89,51 @@ export interface PoseTrack {
   frames: { t: number; kps: Kp[] }[]
 }
 
+/**
+ * Pose to draw at an arbitrary replay time.
+ *
+ * Analysis samples are intentionally much slower than video playback. Drawing
+ * the nearest sample made the skeleton pop from one frozen location to the
+ * next. Interpolate only across a short, genuinely observed gap; a longer hole
+ * stays blank so the overlay never pretends the detector saw what it missed.
+ */
+export function poseKeypointsAtTime(
+  track: PoseTrack,
+  time: number,
+  maxSpanSec = 0.9,
+): Kp[] {
+  if (!track.frames.length || !Number.isFinite(time)) return []
+  let afterIndex = track.frames.findIndex((frame) => frame.t >= time)
+  if (afterIndex < 0) afterIndex = track.frames.length
+  const before = afterIndex > 0 ? track.frames[afterIndex - 1] : undefined
+  const after = afterIndex < track.frames.length ? track.frames[afterIndex] : undefined
+
+  if (before && after) {
+    const span = after.t - before.t
+    if (span >= 0 && span <= maxSpanSec) {
+      if (span === 0) return before.kps
+      const weight = Math.max(0, Math.min(1, (time - before.t) / span))
+      const afterByName = new Map(after.kps.filter((kp) => kp.name).map((kp) => [kp.name!, kp]))
+      return before.kps.flatMap((point) => {
+        if (!point.name) return []
+        const next = afterByName.get(point.name)
+        if (!next) return []
+        return [{
+          name: point.name,
+          x: point.x + (next.x - point.x) * weight,
+          y: point.y + (next.y - point.y) * weight,
+          score: Math.min(point.score ?? 1, next.score ?? 1),
+        }]
+      })
+    }
+  }
+
+  const nearest = [before, after]
+    .filter((frame): frame is PoseTrack['frames'][number] => Boolean(frame))
+    .sort((a, b) => Math.abs(a.t - time) - Math.abs(b.t - time))[0]
+  return nearest && Math.abs(nearest.t - time) <= maxSpanSec / 2 ? nearest.kps : []
+}
+
 export interface FormSubscore {
   key: 'elbow' | 'knee' | 'hipAngle' | 'line' | 'lean' | 'shrug' | 'steadiness' | 'cleanTime'
   label: string
@@ -136,7 +181,10 @@ export interface FrameReading {
  * contradict one another.
  */
 const MATERIAL_TOLERANCE = {
-  elbowDeg: 5,
+  // Tight enough to catch a visible soft elbow without turning sub-pixel
+  // landmark jitter into a fault. The bend still has to persist across
+  // several samples before it reaches the verdict.
+  elbowDeg: 3,
   kneeDeg: 7,
   hipAngleDeg: 8,
   lineRatio: 0.06,
@@ -517,6 +565,48 @@ function angleDeg(a: Kp, b: Kp, c: Kp): number {
 }
 
 /**
+ * Rotation-invariant mismatch between the shoulder and hip lines, 0â€“1.
+ * Comparing their raw vertical offsets made a wider shoulder line look more
+ * twisted and a narrower one look straighter. The sine of the angle between
+ * the two unoriented lines measures the rotation itself and cancels phone roll.
+ */
+export function shoulderHipLineMismatch(
+  leftShoulder: Kp,
+  rightShoulder: Kp,
+  leftHip: Kp,
+  rightHip: Kp,
+): number | undefined {
+  const shoulderX = rightShoulder.x - leftShoulder.x
+  const shoulderY = rightShoulder.y - leftShoulder.y
+  const hipX = rightHip.x - leftHip.x
+  const hipY = rightHip.y - leftHip.y
+  const scale = Math.hypot(shoulderX, shoulderY) * Math.hypot(hipX, hipY)
+  if (scale < 1) return undefined
+  return Math.abs(shoulderX * hipY - shoulderY * hipX) / scale
+}
+
+/** Hip height against the shoulder line. A clearly observed second side is
+ * averaged to cancel mild three-quarter-view perspective; side-on footage
+ * keeps the visible side and never relies on an occluded landmark guess. */
+export function shoulderHipLevelOffset(
+  shoulder: Kp,
+  hip: Kp,
+  farShoulder?: Kp,
+  farHip?: Kp,
+): number | undefined {
+  const hasFarSide = Boolean(farShoulder && farHip)
+  const shoulderPoint = hasFarSide
+    ? { x: (shoulder.x + farShoulder!.x) / 2, y: (shoulder.y + farShoulder!.y) / 2 }
+    : shoulder
+  const hipPoint = hasFarSide
+    ? { x: (hip.x + farHip!.x) / 2, y: (hip.y + farHip!.y) / 2 }
+    : hip
+  const torso = Math.hypot(shoulderPoint.x - hipPoint.x, shoulderPoint.y - hipPoint.y)
+  if (torso < 1) return undefined
+  return (shoulderPoint.y - hipPoint.y) / torso
+}
+
+/**
  * Reject an angle built from anatomically implausible segment lengths. Pose
  * models can put an elbow almost on the shoulder while leaving a high
  * confidence score; the resulting angle is numerically valid but is not a
@@ -727,6 +817,86 @@ export function bridgeKeypointGaps(frames: { t: number; kps: Kp[] }[]): number {
     }
   }
   return repaired
+}
+
+function torsoScale(kps: Kp[]): number | undefined {
+  const lengths = (['left', 'right'] as const).flatMap((side) => {
+    const shoulder = byName(kps, `${side}_shoulder`)
+    const hip = byName(kps, `${side}_hip`)
+    if (!shoulder || !hip) return []
+    const length = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y)
+    return length >= 1 ? [length] : []
+  })
+  return median(lengths)
+}
+
+/**
+ * Repair an impossible one-sample landmark teleport.
+ *
+ * This deliberately has a much larger threshold than the form checks. A real
+ * elbow bend, hip shift, or controlled exit survives; a wrist/body point that
+ * leaps more than half a torso away and immediately returns does not. Reading
+ * from a frozen copy prevents one repaired joint influencing the next one.
+ */
+export function stabilizeKeypointSpikes(
+  frames: { t: number; kps: Kp[] }[],
+): { jointsRepaired: number; framesTouched: number } {
+  const source = frames.map((frame) => ({
+    t: frame.t,
+    kps: frame.kps.map((point) => ({ ...point })),
+  }))
+  const touched = new Set<number>()
+  let jointsRepaired = 0
+  const good = (kps: Kp[], name: string) => {
+    const point = kps.find((candidate) => candidate.name === name)
+    return point && (point.score ?? 0) >= MIN_KP_SCORE ? point : undefined
+  }
+
+  for (let i = 1; i < source.length - 1; i++) {
+    const beforeFrame = source[i - 1]
+    const frame = source[i]
+    const afterFrame = source[i + 1]
+    // Never infer smooth motion across sparse diagnostic sampling or a long
+    // detector blackout.
+    if (afterFrame.t - beforeFrame.t > 1.25) continue
+    const scale = median([torsoScale(beforeFrame.kps), torsoScale(afterFrame.kps)].filter(
+      (value): value is number => value !== undefined,
+    ))
+    if (scale === undefined || scale < 1) continue
+    const span = afterFrame.t - beforeFrame.t
+    const weight = span > 0 ? (frame.t - beforeFrame.t) / span : 0.5
+
+    for (const name of BRIDGEABLE) {
+      const before = good(beforeFrame.kps, name)
+      const point = good(frame.kps, name)
+      const after = good(afterFrame.kps, name)
+      if (!before || !point || !after) continue
+      const expectedX = before.x + (after.x - before.x) * weight
+      const expectedY = before.y + (after.y - before.y) * weight
+      const neighbourTravel = Math.hypot(after.x - before.x, after.y - before.y) / scale
+      const residual = Math.hypot(point.x - expectedX, point.y - expectedY) / scale
+      // Neighbours must agree first. The adaptive term prevents a fast but
+      // smooth real movement being flattened just because its midpoint is not
+      // perfectly linear.
+      if (
+        neighbourTravel > 0.32 ||
+        residual <= Math.max(0.52, neighbourTravel * 2.5 + 0.16)
+      ) continue
+
+      const replacement: Kp = {
+        ...point,
+        x: expectedX,
+        y: expectedY,
+        score: Math.min(point.score ?? 0, before.score ?? 0, after.score ?? 0) * 0.9,
+      }
+      const at = frames[i].kps.findIndex((candidate) => candidate.name === name)
+      if (at >= 0) frames[i].kps[at] = replacement
+      touched.add(i)
+      jointsRepaired++
+    }
+  }
+
+  return { jointsRepaired, framesTouched: touched.size }
 }
 
 /** "elbows, knees and hips" — reads as a sentence rather than a CSV dump. */
@@ -1015,6 +1185,7 @@ async function analyseClipNow(
     // lost it — and dropping the whole frame over it was throwing away good
     // evidence and leaving verdicts resting on a handful of samples.
     bridgeKeypointGaps(tracked)
+    const keypointStats = stabilizeKeypointSpikes(tracked)
     trackedSide = pickStableSide(tracked)
     const collisionStats = trackedSide
       ? suppressBilateralCollisions(tracked, trackedSide)
@@ -1032,7 +1203,7 @@ async function analyseClipNow(
               t,
               kps: kps
                 .filter((k) => k.name && BRIDGEABLE.includes(k.name) && (k.score ?? 0) >= MIN_KP_SCORE)
-                .map((k) => ({ name: k.name, x: Math.round(k.x), y: Math.round(k.y) })),
+                .map((k) => ({ name: k.name, x: k.x, y: k.y, score: k.score })),
             })),
           }
         : undefined
@@ -1141,8 +1312,21 @@ async function analyseClipNow(
       // Screen y grows downward, so a hip above the shoulders is negative dy.
       // Shoulder and hip both pass the precision gate: a barely-visible hip
       // must not make a confident level-line call.
+      const useBilateralLine =
+        preciseShoulder &&
+        preciseHip &&
+        farShoulder &&
+        farHip &&
+        sidesAreVisiblySeparate(kps, side, farSide, ['shoulder', 'hip'], torso)
       const frameHipOffset =
-        preciseShoulder && preciseHip ? (preciseShoulder.y - preciseHip.y) / torso : undefined
+        preciseShoulder && preciseHip
+          ? shoulderHipLevelOffset(
+              preciseShoulder,
+              preciseHip,
+              useBilateralLine ? farShoulder : undefined,
+              useBilateralLine ? farHip : undefined,
+            )
+          : undefined
       if (frameHipOffset !== undefined) {
         hipOffsets.push(frameHipOffset)
         lineSeries.push({ t, v: frameHipOffset })
@@ -1188,8 +1372,8 @@ async function analyseClipNow(
         // Compare the shoulder and hip lines to each other. Their raw slopes
         // both change with camera roll; the mismatch between them is the more
         // reliable sign that the torso itself is twisting.
-        frameAsymmetry = Math.abs((ls.y - rs.y) - (lh.y - rh.y)) / torso
-        push(asymmetries, frameAsymmetry)
+        frameAsymmetry = shoulderHipLineMismatch(ls, rs, lh, rh)
+        if (frameAsymmetry !== undefined) push(asymmetries, frameAsymmetry)
         // Wider still means the camera is closer to head-on than side-on, and
         // every angle this analyser measures is projected garbage from there.
         if (Math.max(Math.abs(ls.x - rs.x), Math.abs(lh.x - rh.x)) / torso > 0.55) frontalFrames++
@@ -1281,9 +1465,11 @@ async function analyseClipNow(
     }
 
     const confidence = confidences.reduce((a, b) => a + b, 0) / framesUsed
-    if (
-      glitchStats.framesTouched >= Math.max(3, Math.ceil(frameReadings.length * 0.3))
-    ) {
+    // The two cleaners operate at different layers (landmarks and derived
+    // metrics), so use the conservative upper bound rather than adding them
+    // and double-counting the same bad sample.
+    const instabilityCount = Math.max(keypointStats.framesTouched, glitchStats.framesTouched)
+    if (instabilityCount >= Math.max(3, Math.ceil(frameReadings.length * 0.3))) {
       return {
         ...empty,
         framesUsed,
@@ -1658,6 +1844,11 @@ async function analyseClipNow(
         `Ignored ${collisionStats.jointsIgnored} duplicated far-side joint ${collisionStats.jointsIgnored === 1 ? 'point' : 'points'} that the tracker stacked onto the visible limb.`,
       )
     }
+    if (keypointStats.jointsRepaired > 0) {
+      details.push(
+        `Stabilized ${keypointStats.jointsRepaired} isolated skeleton ${keypointStats.jointsRepaired === 1 ? 'jump' : 'jumps'} that immediately returned to the athlete.`,
+      )
+    }
     if (exitFramesDropped > 0) {
       details.push(
         `Graded on the ${verdictFrames.length} frames of the hold itself; the last ${exitFramesDropped} (coming out of the position) were left out.`,
@@ -1832,7 +2023,7 @@ export function computeFormScore(parts: {
     subscores.push({ key, label: SUBSCORE_LABELS[key], score: Math.round(score) })
 
   if (judged.elbow && profile.minElbowDeg !== undefined && parts.elbowDeg !== undefined) {
-    // Once a persistent bend clears the five-degree camera deadband it should
+    // Once a persistent bend clears the tight camera deadband it should
     // matter visibly in the score: bent-arm planche is a different skill, not
     // merely a cosmetic line deduction.
     add('elbow', bandedScore((profile.minElbowDeg - parts.elbowDeg) * 2))

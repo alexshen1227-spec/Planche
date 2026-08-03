@@ -586,7 +586,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </Row>
       </div>
 
-      <SectionTitle>About</SectionTitle>
+      <SectionTitle>Updates</SectionTitle>
       <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
         <Row label="What's new" hint={`Every update to the app, newest first — ${CHANGELOG.length} so far.`}>
           <button

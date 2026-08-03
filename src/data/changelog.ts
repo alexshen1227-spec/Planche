@@ -17,6 +17,27 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'The skeleton stays on you',
+    area: 'camera',
+    notes: [
+      'A landmark that teleports away for one sample and immediately returns is now repaired before the replay or form verdict uses it. If that happens repeatedly, the clip is refused instead of guessing.',
+      'Skeleton replay now moves smoothly between nearby analysed moments instead of snapping from one frozen sample to the next. Real tracking gaps stay blank rather than showing a pose from the wrong moment.',
+      'Shoulder-to-hip rotation is now measured as the true angle between those body lines, so camera roll, body size and shoulder width no longer distort the twist check. When both sides are clearly visible, their midpoints also steady the hip-height call.',
+      'The straight-arm check now catches a persistent 4° soft elbow while retaining a small camera-error band and the multi-frame evidence requirement that prevents one jittery landmark becoming a fault.',
+    ],
+  },
+  {
+    date: '2026-08-03',
+    title: 'A more skeptical camera coach',
+    area: 'coach',
+    notes: [
+      'Camera clean time, form score and skeleton drift now use robust centres, and camera-score trends use an outlier-resistant slope. One strange clip can no longer swing the next plan.',
+      'When reviewed clips repeatedly disagree with your rating or lack enough confidence, the coach says so and leaves those camera trends out of the prescription.',
+      'Large skeleton movement is no longer described as your body definitely slipping. The coach asks you to check whether the dots followed you or drifted away, and never changes a target from that signal alone.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'A bigger trophy cabinet and a smoother app',
     area: 'app',
     notes: [

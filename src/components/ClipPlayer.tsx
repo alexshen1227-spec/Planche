@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { getClipBlob } from '../lib/clips'
-import type { PoseTrack } from '../lib/poseForm'
+import { poseKeypointsAtTime, type PoseTrack } from '../lib/poseForm'
 import type { FormIssue } from '../types'
 import { Icon } from './Icon'
 
@@ -94,19 +94,10 @@ function PoseOverlay({
       if (!ctx) return
       ctx.clearRect(0, 0, cw, ch)
 
-      // Nearest sampled pose to the playhead. Samples are sparse, so anything
-      // further than ~0.7s is a gap, not a match — draw nothing rather than a
-      // skeleton from the wrong moment.
-      let frame: PoseTrack['frames'][number] | null = null
-      let gap = 0.7
-      for (const f of track.frames) {
-        const d = Math.abs(f.t - video.currentTime)
-        if (d < gap) {
-          gap = d
-          frame = f
-        }
-      }
-      if (!frame) return
+      // Blend adjacent analysed moments so the replay follows the athlete
+      // instead of snapping between frozen samples. Real gaps stay blank.
+      const keypoints = poseKeypointsAtTime(track, video.currentTime)
+      if (!keypoints.length) return
 
       // The <video> renders object-contain: work out where the letterboxed
       // content actually sits so keypoints land on the body, not the bars.
@@ -114,7 +105,7 @@ function PoseOverlay({
       const ox = (cw - track.width * scale) / 2
       const oy = (ch - track.height * scale) / 2
       const at = (name: string) => {
-        const k = frame!.kps.find((p) => p.name === name)
+        const k = keypoints.find((p) => p.name === name)
         return k ? { x: ox + k.x * scale, y: oy + k.y * scale } : null
       }
 
@@ -131,7 +122,7 @@ function PoseOverlay({
         ctx.lineTo(pb.x, pb.y)
         ctx.stroke()
       }
-      for (const k of frame.kps) {
+      for (const k of keypoints) {
         if (!k.name) continue
         const p = at(k.name)
         if (!p) continue

@@ -523,7 +523,8 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       kind: 'warn',
     })
   }
-  if (sig.meanCleanRatio !== null && sig.meanCleanRatio < 0.8) {
+  const cameraConsensusReliable = sig.cameraAgreementRate === null || sig.cameraAgreementRate >= 0.6
+  if (cameraConsensusReliable && sig.meanCleanRatio !== null && sig.meanCleanRatio < 0.8) {
     targetFactor = Math.min(targetFactor, 0.9)
     targetIntent = 'steady'
     formRepairNeeded = true
@@ -561,20 +562,41 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     }
   }
 
-  // Reported, not acted on: drift is measured between samples seconds apart,
-  // which cannot separate "slipping under load" from a nudged phone. Cutting
-  // the target on it would also feed back on itself — shorter holds drift
-  // less, which would look like improvement.
-  if (sig.meanWobble !== null && sig.meanWobble > 0.05 && sig.cameraSetCount >= 3) {
+  // Reported, not acted on: drift cannot separate an athlete slipping from a
+  // moving phone or a tracker that stayed on the wrong feature. Say exactly
+  // that so a camera artefact never becomes a coaching accusation.
+  if (
+    cameraConsensusReliable &&
+    sig.meanWobble !== null &&
+    sig.meanWobble > 0.05 &&
+    sig.cameraSetCount >= 3
+  ) {
     decisions.push({
-      text: 'Your filmed sets show the position drifting as the hold goes on — the last few seconds are costing you shape rather than building it.',
+      text: 'The skeleton moved a lot across your recent clips. Scrub the replay: if the dots move with your body, stop the set before the position slides; if they drift off you, secure the phone and improve the lighting. This signal is not changing today\'s target by itself.',
+      kind: 'info',
+    })
+  }
+
+  if (
+    sig.cameraAgreementRate !== null &&
+    sig.cameraAgreementRate < 0.6 &&
+    sig.cameraReviewedCount >= 3
+  ) {
+    const usable = Math.round(sig.cameraAgreementRate * sig.cameraReviewedCount)
+    decisions.push({
+      text: `Only ${usable} of ${sig.cameraReviewedCount} reviewed clips were confident and consistent with your rating. The coach is leaving those camera trends out of today's prescription; use the skeleton replay to improve the side view and lighting first.`,
       kind: 'info',
     })
   }
 
   // The quality axis the stopwatch cannot see. Report-only — the clean-ratio
   // caps above already do any acting, so this must never double-punish.
-  if (sig.meanFormScore !== null && sig.formScoreTrend !== null && sig.cameraSetCount >= 4) {
+  if (
+    cameraConsensusReliable &&
+    sig.meanFormScore !== null &&
+    sig.formScoreTrend !== null &&
+    sig.cameraSetCount >= 4
+  ) {
     if (sig.formScoreTrend >= 2.5 && (sig.trendPerWeek ?? 0) <= 0.2) {
       decisions.push({
         text: `Your camera form score is climbing (~+${Math.round(sig.formScoreTrend)} points/week, now around ${Math.round(sig.meanFormScore)}) while hold times sit flat — the position is consolidating, and seconds usually follow it.`,
