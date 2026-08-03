@@ -17,6 +17,19 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'The form check stops calling locked arms bent',
+    area: 'camera',
+    notes: [
+      'A locked-out arm was being reported as a bent one on a large share of clips — and because a bent-arm flag blocks a progression unlock outright and cuts credited clean time, that quietly cost real holds. The camera measured the elbow without knowing which way it was bent: six degrees of hyperextension, which is what a good lockout looks like, was indistinguishable from six degrees of softening. It now reads the direction as well as the size, so lockout counts as lockout and a genuine bend still gets named.',
+      'Every accusation threshold has been re-set from measurement rather than judgement, by running holds of known angle through the whole checker. Bends smaller than the camera can honestly resolve now cost score without being called a fault, and anything actually visible on video is still caught every time.',
+      'A straddle or full planche is no longer told its knees are bent. Seen from the side those legs are edge-on and foreshortened, which made the knee angle far noisier than the old tolerance allowed for.',
+      'A pseudo planche plank held as an ordinary plank is now told the lean is missing, instead of quietly passing. The lean floor was low enough that the easier movement counted.',
+      'Hip height and forward lean have a wider margin before they are called faults, because both are measured relative to gravity and a phone propped a few degrees off level shifts them more than the old margin allowed.',
+      'A shrug is only called when the shoulder-to-ear gap is smaller than looking down can explain — filmed side-on, head position moves that measurement far more than shrugging does.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'Less friction before the first set',
     area: 'app',
     notes: [

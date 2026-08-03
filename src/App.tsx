@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import type { Tab, Workout } from './types'
 import { useStore } from './lib/store'
@@ -18,6 +18,25 @@ import { Settings } from './views/Settings'
 import { Updates } from './views/Updates'
 import { Onboarding } from './views/Onboarding'
 import { SessionPlayer } from './views/SessionPlayer'
+
+/**
+ * A bench for the camera form judge, reached at #devlab.
+ *
+ * Code-split deliberately: it pulls in the synthetic pose generator and a pile
+ * of controls that no workout ever needs, and none of that should sit in the
+ * bundle an athlete downloads on a phone at the gym.
+ */
+const DevLab = lazy(() => import('./views/DevLab'))
+
+function useDevLabRoute(): boolean {
+  const [open, setOpen] = useState(() => window.location.hash === '#devlab')
+  useEffect(() => {
+    const sync = () => setOpen(window.location.hash === '#devlab')
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [])
+  return open
+}
 
 /**
  * Fallback updater for browsers without service workers: poll the deployed
@@ -132,6 +151,7 @@ const NAV: { tab: Tab; label: string; icon: IconName }[] = [
 export default function App() {
   const { state } = useStore()
   const [tab, setTab] = useState<Tab>('home')
+  const devLab = useDevLabRoute()
   // An interrupted session (phone slept, tab discarded) is picked back up
   // automatically on the next load instead of being silently lost.
   const [resumeDraft] = useState(() => loadDraft())
@@ -183,6 +203,20 @@ export default function App() {
     // sessions get reshaped by the answer.
     setAskCheckIn(w.kind === 'test' || plan.askCheckIn)
     setActiveWorkout(nextWorkout)
+  }
+
+  // Ahead of both branches so the bench is reachable from a fresh install as
+  // well as mid-training, and so it never has to fight the session player for
+  // the screen.
+  if (devLab) {
+    return (
+      <div className="app-ambient grain min-h-screen">
+        <Suspense fallback={<div className="p-6 text-[13px] text-ink3">Loading the bench…</div>}>
+          <DevLab onClose={() => { window.location.hash = '' }} />
+        </Suspense>
+        <Toasts />
+      </div>
+    )
   }
 
   // Rendered once, outside the onboarding branch: mounting it in both places

@@ -720,6 +720,18 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           Not medical advice. Straight-arm work is demanding on wrists, elbows and shoulders — train smart, rest hard,
           and see a professional about persistent pain.
         </p>
+        {/* Deliberately understated and last: the bench is a diagnostic, not a
+            feature. It is worth surfacing at all because the form check is the
+            one part of the app whose answer you cannot sanity-check by reading
+            it — here you can hand it a position with known angles, or your own
+            footage, and watch what it makes of them. */}
+        <p className="mt-3 border-t border-line pt-3 text-[12.5px] text-ink3">
+          Curious how the camera form check decides?{' '}
+          <a href="#devlab" className="font-medium text-accent underline-offset-2 hover:underline">
+            Open the form judge bench
+          </a>{' '}
+          to run it against known positions or your own clip.
+        </p>
       </div>
 
       <MeasurePrompt open={loggingWeight} onClose={() => setLoggingWeight(false)} />

@@ -4,6 +4,7 @@ import { initialState, normalizeState, rebuildDerivedState, reconcileAchievement
 import { applySession } from './engine'
 import { formEvidenceCoversArms, passesProgressionFormCheck, progressionCredit, qualifyingProgress } from './progression'
 import {
+  MATERIAL_TOLERANCE,
   POSE_PROFILES,
   bandedScore,
   bridgeKeypointGaps,
@@ -13,6 +14,7 @@ import {
   hasVerifiableHoldDuration,
   materialIssuesForReading,
   plancheArmAngle,
+  signedElbowBend,
   pickFixFirst,
   poseKeypointsAtTime,
   reliableJointAngle,
@@ -745,10 +747,34 @@ describe('camera evaluator primitives', () => {
     )
     expect(graded.every(([, profile]) => profile.minElbowDeg === 180)).toBe(true)
 
+    // The accusation threshold is set from measured estimator error, not from
+    // how tidy the number looks: a bend this side of it is inside what a
+    // monocular side view can resolve, so naming it would be inventing a fault.
     const elbowOnly = { elbow: true, knee: false, hipAngle: false, line: false, lean: false }
     for (const [, profile] of graded) {
-      expect(materialIssuesForReading({ t: 0, elbowDeg: 178 }, profile, elbowOnly)).not.toContain('arms')
-      expect(materialIssuesForReading({ t: 0, elbowDeg: 176 }, profile, elbowOnly)).toContain('arms')
+      expect(materialIssuesForReading({ t: 0, elbowDeg: 173 }, profile, elbowOnly)).not.toContain('arms')
+      expect(materialIssuesForReading({ t: 0, elbowDeg: 171 }, profile, elbowOnly)).toContain('arms')
+    }
+  })
+
+  it('reads a hyperextended lockout as locked, not as an equal-sized bend', () => {
+    // The failure this pins down was symmetric and it cost credit both ways: an
+    // unsigned angle cannot tell 6° of flexion from 6° of hyperextension, so a
+    // locked-out arm was accused of softening whenever landmark noise fell on
+    // the wrong side, and a genuinely soft arm was excused whenever it fell on
+    // the other. Sign it and both disappear.
+    const point = (x: number, y: number) => ({ x, y, score: 0.9 })
+    const shoulder = point(0, 0)
+    const wrist = point(0, 100)
+    const hip = point(100, 0)
+
+    for (const offset of [1, 2, 4, 8, 14]) {
+      const flexed = plancheArmAngle(shoulder, point(offset, 50), wrist, hip, 100)!
+      const locked = plancheArmAngle(shoulder, point(-offset, 50), wrist, hip, 100)!
+      expect(signedElbowBend(shoulder, point(offset, 50), wrist, hip, 100)).toBeGreaterThan(0)
+      expect(signedElbowBend(shoulder, point(-offset, 50), wrist, hip, 100)).toBeLessThan(0)
+      expect(locked).toBe(180)
+      expect(flexed).toBeLessThan(180)
     }
   })
 
@@ -792,12 +818,23 @@ describe('camera evaluator primitives', () => {
     expect(full.minHipAngleDeg).toBeGreaterThan(straddle.minHipAngleDeg!)
     expect(oneLeg.minKneeDeg).toBe(180)
 
+    // The standard tightens with the lever, but the *accusation* keeps a fixed
+    // margin on top of it for the camera's own blind spot — see
+    // MATERIAL_TOLERANCE.lineRatio for why hip height, alone among these
+    // criteria, cannot be measured better than the phone was propped.
     const lineOnly = { elbow: false, knee: false, hipAngle: false, line: true, lean: false }
+    const margin = MATERIAL_TOLERANCE.lineRatio
     for (const profile of [tuck, advanced, oneLeg, straddle, full]) {
       const tolerance = profile.levelTolerance!
-      expect(materialIssuesForReading({ t: 0, hipOffset: tolerance + 0.05 }, profile, lineOnly)).not.toContain('pike')
-      expect(materialIssuesForReading({ t: 0, hipOffset: tolerance + 0.07 }, profile, lineOnly)).toContain('pike')
-      expect(materialIssuesForReading({ t: 0, hipOffset: -tolerance - 0.07 }, profile, lineOnly)).toContain('sag')
+      expect(
+        materialIssuesForReading({ t: 0, hipOffset: tolerance + margin - 0.01 }, profile, lineOnly),
+      ).not.toContain('pike')
+      expect(
+        materialIssuesForReading({ t: 0, hipOffset: tolerance + margin + 0.01 }, profile, lineOnly),
+      ).toContain('pike')
+      expect(
+        materialIssuesForReading({ t: 0, hipOffset: -tolerance - margin - 0.01 }, profile, lineOnly),
+      ).toContain('sag')
     }
   })
 
