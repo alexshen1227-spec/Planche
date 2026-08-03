@@ -21,6 +21,7 @@ export const CHANGELOG: ChangeEntry[] = [
     area: 'app',
     notes: [
       'Fourteen new achievements now cover early momentum, long streaks, time under tension, every major planche shape, camera reviews, high form scores, exercise variety and total set volume — 38 trophies in all.',
+      'When the app updates, saved session history is now checked against new achievement rules automatically. Anything you had already earned unlocks immediately with its original first-qualifying session date.',
       'Progress now has quick section links plus a real trophy cabinet with completion progress, closest unlocks and Next up, Earned, Locked and All views. Locked badges show useful progress even from zero.',
       'The Path is much easier to scan on a phone: unlock rules are tucked behind a short explainer, cards no longer squeeze or truncate their useful text, and the active mobile tab has a clear touch target.',
       'Learn search now looks through coaching steps, cues, common mistakes and muscles — not only exercise titles — and shows a live result count with one-tap clearing.',

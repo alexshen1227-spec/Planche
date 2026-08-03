@@ -283,6 +283,8 @@ export interface AppState {
   unlocked: StepId[]
   sessions: Session[]
   prs: Record<string, PR>
+  /** Catalog revision last reconciled against saved session history. */
+  achievementVersion: number
   /** Achievement id -> unlock timestamp. */
   achievements: Record<string, number>
   /** Exercise id -> a demo video URL the user pinned themselves. */

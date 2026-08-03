@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog } from '../types'
-import { initialState, normalizeState, rebuildDerivedState, skipToStep } from './store'
+import { initialState, normalizeState, rebuildDerivedState, reconcileAchievements, skipToStep } from './store'
 import { applySession } from './engine'
 import { formEvidenceCoversArms, passesProgressionFormCheck, progressionCredit, qualifyingProgress } from './progression'
 import {
@@ -28,7 +28,7 @@ import { buildPlan, debriefSession, rewardFor } from './coach'
 import { adaptiveTarget, estimateMinutes, painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
 import { validateImport } from './exportImport'
 import { buildSampleState } from '../data/sample'
-import { ACHIEVEMENTS } from '../data/achievements'
+import { ACHIEVEMENTS, ACHIEVEMENT_VERSION } from '../data/achievements'
 import { selectRecorderMime } from './recorder'
 import { observedRestSec, readSignals, trustedCameraEvidence } from './signals'
 import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
@@ -437,6 +437,27 @@ describe('expanded achievements', () => {
     const result = applySession({ ...state('oneleg'), sessions: [left] }, right)
 
     expect(result.events.achievements).toContain('oneleg-5')
+  })
+
+  it('retroactively unlocks new badges from saved history after an update', () => {
+    const first = session('foundations', [log('wrist-rocks', 8)], { startedAt: 1_000, endedAt: 2_000 })
+    const second = session('foundations', [log('scap-pushup', 8)], { startedAt: 3_000, endedAt: 4_000 })
+    const third = session('foundations', [log('hollow-hold', 10)], { startedAt: 5_000, endedAt: 6_000 })
+    const reconciled = reconcileAchievements({
+      ...state(),
+      achievementVersion: ACHIEVEMENT_VERSION - 1,
+      sessions: [first, second, third],
+      achievements: { 'first-session': 2_000 },
+    })
+
+    expect(reconciled.achievementVersion).toBe(ACHIEVEMENT_VERSION)
+    expect(reconciled.achievements['first-session']).toBe(2_000)
+    expect(reconciled.achievements['sessions-3']).toBe(6_000)
+  })
+
+  it('does not replay history again after the current catalog was reconciled', () => {
+    const current = state()
+    expect(reconcileAchievements(current)).toBe(current)
   })
 })
 

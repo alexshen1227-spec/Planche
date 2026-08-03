@@ -17,6 +17,7 @@ import type {
 } from '../types'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
+import { ACHIEVEMENT_VERSION } from '../data/achievements'
 import { applySession } from './engine'
 import { configureAudio } from './audio'
 import { readMirror, requestPersistence, writeMirror } from './persist'
@@ -61,6 +62,7 @@ export function initialState(): AppState {
     unlocked: ['foundations'],
     sessions: [],
     prs: {},
+    achievementVersion: ACHIEVEMENT_VERSION,
     achievements: {},
     videoLinks: {},
     profile: { equipment: ['floor'], preferredSurface: 'floor', goalStepId: 'straddle' },
@@ -333,6 +335,10 @@ export function normalizeState(raw: unknown): AppState {
             }),
           )
         : {},
+    achievementVersion:
+      typeof r.achievementVersion === 'number' && Number.isFinite(r.achievementVersion)
+        ? Math.min(ACHIEVEMENT_VERSION, Math.max(0, Math.floor(r.achievementVersion)))
+        : 0,
     achievements:
       typeof r.achievements === 'object' && r.achievements !== null
         ? Object.fromEntries(
@@ -401,7 +407,7 @@ function loadState(): AppState {
       return initialState()
     }
     const parsed = JSON.parse(raw)
-    const next = normalizeState(parsed)
+    const next = reconcileAchievements(normalizeState(parsed))
 
     // Upgrades are the moment data is most at risk. Snapshot what was on disk
     // before this version rewrites it, and shout if the rewrite lost sessions.
@@ -454,6 +460,7 @@ export function rebuildDerivedState(state: AppState, sessions = state.sessions):
     ...state,
     sessions: [],
     prs: {},
+    achievementVersion: ACHIEVEMENT_VERSION,
     achievements: {},
     stepId: base,
     unlocked: STEPS.filter((s) => s.order <= baseOrder).map((s) => s.id),
@@ -464,6 +471,23 @@ export function rebuildDerivedState(state: AppState, sessions = state.sessions):
   return selectedWasIntentionalLowerStep && acc.unlocked.includes(selectedStep)
     ? { ...acc, stepId: selectedStep }
     : acc
+}
+
+/**
+ * Recheck saved history once when the achievement catalog changes. Existing
+ * timestamps win; newly introduced badges use the first historical session
+ * at which their rule became true instead of waiting for another workout.
+ */
+export function reconcileAchievements(state: AppState): AppState {
+  if (state.achievementVersion >= ACHIEVEMENT_VERSION) return state
+  if (state.sessions.length === 0) return { ...state, achievementVersion: ACHIEVEMENT_VERSION }
+
+  const replayed = rebuildDerivedState({ ...state, achievementVersion: ACHIEVEMENT_VERSION })
+  return {
+    ...state,
+    achievementVersion: ACHIEVEMENT_VERSION,
+    achievements: { ...replayed.achievements, ...state.achievements },
+  }
 }
 
 /**
@@ -581,7 +605,7 @@ function reducer(state: AppState, action: Action): AppState {
       return rebuildDerivedState(state, [...byId.values()].sort((a, b) => a.startedAt - b.startedAt))
     }
     case 'REPLACE':
-      return normalizeState(action.state)
+      return reconcileAchievements(normalizeState(action.state))
     case 'RESET':
       return { ...initialState(), settings: { ...state.settings } }
   }

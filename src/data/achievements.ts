@@ -4,6 +4,9 @@ import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID } from './progressions'
 import { isQualifyingSet, qualifyingProgress } from '../lib/progression'
 
+/** Bump whenever existing history should be rechecked against the catalog. */
+export const ACHIEVEMENT_VERSION = 2
+
 export interface AchievementProgress {
   current: number
   target: number
