@@ -1,5 +1,12 @@
 import type { FormIssue } from '../types'
-import { getBackend, trackingScore, type Kp, type PoseBackend } from './poseBackend'
+import {
+  apparentBodyWidthRatio,
+  getBackend,
+  MAX_SIDE_VIEW_RATIO,
+  trackingScore,
+  type Kp,
+  type PoseBackend,
+} from './poseBackend'
 
 export { poseModelReady, warmDetector } from './poseBackend'
 
@@ -59,8 +66,6 @@ export interface PoseFormResult {
   shrugRatio?: number
   /** Positional drift per second — high means the hold was slipping. */
   wobble?: number
-  /** Shoulder-line vs hip-line mismatch, over torso length. */
-  asymmetry?: number
   issues: FormIssue[]
   notes: string[]
   /** Things that went well, so the feedback is not only negative. */
@@ -171,7 +176,29 @@ export interface FrameReading {
   hipOffset?: number
   leanRatio?: number
   shrugRatio?: number
-  asymmetry?: number
+}
+
+export interface SideViewLegReading {
+  knee?: number
+  hipAngle?: number
+  /** Hip-to-ankle distance divided by torso length. */
+  extension?: number
+}
+
+/**
+ * Pick the leg the side-view camera is actually entitled to grade.
+ * Normal two-leg shapes use the stable visible side. One-leg work uses the
+ * longest visibly extended leg and returns nothing when the detector saw only
+ * the tucked leg, avoiding a false bent-knee/closed-hip accusation.
+ */
+export function selectSideViewLeg(
+  readings: SideViewLegReading[],
+  oneLeg = false,
+): SideViewLegReading | undefined {
+  if (!oneLeg) return readings[0]
+  return [...readings]
+    .filter((reading) => (reading.extension ?? 0) >= 0.5)
+    .sort((a, b) => (b.extension ?? 0) - (a.extension ?? 0))[0]
 }
 
 /**
@@ -190,7 +217,6 @@ const MATERIAL_TOLERANCE = {
   lineRatio: 0.06,
   leanRatio: 0.06,
   shrugRatio: 0.05,
-  asymmetryRatio: 0.05,
 } as const
 
 export const POSE_PROFILES: Record<string, PoseProfile> = {
@@ -391,12 +417,6 @@ export function materialIssuesForReading(
   ) {
     issues.push('shrug')
   }
-  if (
-    frame.asymmetry !== undefined &&
-    frame.asymmetry > 0.18 + MATERIAL_TOLERANCE.asymmetryRatio
-  ) {
-    issues.push('twist')
-  }
   return issues
 }
 
@@ -471,7 +491,6 @@ export function suppressIsolatedMetricSpikes(
     hipOffset: 0.32,
     leanRatio: 0.32,
     shrugRatio: 0.2,
-    asymmetry: 0.24,
   }
   const source = frames.map((frame) => ({ ...frame }))
   const touched = new Set<number>()
@@ -562,48 +581,6 @@ function angleDeg(a: Kp, b: Kp, c: Kp): number {
   const mag = Math.hypot(abx, aby) * Math.hypot(cbx, cby)
   if (mag === 0) return NaN
   return (Math.acos(Math.max(-1, Math.min(1, (abx * cbx + aby * cby) / mag))) * 180) / Math.PI
-}
-
-/**
- * Rotation-invariant mismatch between the shoulder and hip lines, 0â€“1.
- * Comparing their raw vertical offsets made a wider shoulder line look more
- * twisted and a narrower one look straighter. The sine of the angle between
- * the two unoriented lines measures the rotation itself and cancels phone roll.
- */
-export function shoulderHipLineMismatch(
-  leftShoulder: Kp,
-  rightShoulder: Kp,
-  leftHip: Kp,
-  rightHip: Kp,
-): number | undefined {
-  const shoulderX = rightShoulder.x - leftShoulder.x
-  const shoulderY = rightShoulder.y - leftShoulder.y
-  const hipX = rightHip.x - leftHip.x
-  const hipY = rightHip.y - leftHip.y
-  const scale = Math.hypot(shoulderX, shoulderY) * Math.hypot(hipX, hipY)
-  if (scale < 1) return undefined
-  return Math.abs(shoulderX * hipY - shoulderY * hipX) / scale
-}
-
-/** Hip height against the shoulder line. A clearly observed second side is
- * averaged to cancel mild three-quarter-view perspective; side-on footage
- * keeps the visible side and never relies on an occluded landmark guess. */
-export function shoulderHipLevelOffset(
-  shoulder: Kp,
-  hip: Kp,
-  farShoulder?: Kp,
-  farHip?: Kp,
-): number | undefined {
-  const hasFarSide = Boolean(farShoulder && farHip)
-  const shoulderPoint = hasFarSide
-    ? { x: (shoulder.x + farShoulder!.x) / 2, y: (shoulder.y + farShoulder!.y) / 2 }
-    : shoulder
-  const hipPoint = hasFarSide
-    ? { x: (hip.x + farHip!.x) / 2, y: (hip.y + farHip!.y) / 2 }
-    : hip
-  const torso = Math.hypot(shoulderPoint.x - hipPoint.x, shoulderPoint.y - hipPoint.y)
-  if (torso < 1) return undefined
-  return (shoulderPoint.y - hipPoint.y) / torso
 }
 
 /**
@@ -1097,7 +1074,6 @@ async function analyseClipNow(
     const leans: number[] = []
     const shrugs: number[] = []
     const confidences: number[] = []
-    const asymmetries: number[] = []
     const drifts: number[] = []
     const frameReadings: FrameReading[] = []
     // Timestamped copies of the metrics that fatigue visibly, so the hold can
@@ -1105,7 +1081,8 @@ async function analyseClipNow(
     const elbowSeries: { t: number; v: number }[] = []
     const lineSeries: { t: number; v: number }[] = []
     const leanSeries: { t: number; v: number }[] = []
-    let frontalFrames = 0
+    let orientationFrames = 0
+    let nonSideFrames = 0
     let trackedSide: 'left' | 'right' | null = null
     let prevAnchor: { sx: number; sy: number; hx: number; hy: number; torso: number; t: number } | null = null
 
@@ -1209,6 +1186,11 @@ async function analyseClipNow(
         : undefined
 
     for (const { t, kps } of tracked) {
+      const bodyWidth = apparentBodyWidthRatio(kps, MIN_PRECISE_KP_SCORE)
+      if (bodyWidth !== undefined) {
+        orientationFrames++
+        if (bodyWidth > MAX_SIDE_VIEW_RATIO) nonSideFrames++
+      }
       // Keep anatomical identity stable through the clip. Switching to
       // whichever side scores higher on each frame creates fake angle jumps.
       const side: 'left' | 'right' | null = trackedSide ?? pickSide(kps)
@@ -1238,94 +1220,53 @@ async function analyseClipNow(
       const found = [shoulder, elbow, wrist, hip].filter(Boolean) as Kp[]
       confidences.push(found.reduce((t2, k) => t2 + (k.score ?? 0), 0) / found.length)
 
-      // The near arm always counts; the far arm joins the verdict only when
-      // clearly tracked — occluded far-side joints are what pose models most
-      // like to hallucinate, so it faces a stricter gate. Judging the weaker
-      // of the two stops one locked elbow hiding the other one bending.
+      // Side-view contract: grade the stable visible arm only. The rear arm is
+      // normally occluded or stacked onto the same pixels; treating its model
+      // guess as a second observation created confident false bend warnings.
       const farSide = side === 'left' ? 'right' : 'left'
-      const frameElbows: number[] = []
+      let frameElbowDeg: number | undefined
       if (preciseShoulder && preciseElbow && preciseWrist && preciseHip) {
         const angle = plancheArmAngle(preciseShoulder, preciseElbow, preciseWrist, preciseHip, torso)
-        if (angle !== undefined) push(frameElbows, angle)
-      }
-      const farShoulder = byName(kps, `${farSide}_shoulder`, MIN_FAR_KP_SCORE)
-      const farElbow = byName(kps, `${farSide}_elbow`, MIN_FAR_KP_SCORE)
-      const farWrist = byName(kps, `${farSide}_wrist`, MIN_FAR_KP_SCORE)
-      const farHip = byName(kps, `${farSide}_hip`, MIN_FAR_KP_SCORE)
-      if (
-        farShoulder &&
-        farElbow &&
-        farWrist &&
-        farHip &&
-        (!preciseElbow ||
-          !preciseWrist ||
-          sidesAreVisiblySeparate(kps, side, farSide, ['shoulder', 'elbow', 'wrist'], torso))
-      ) {
-        const angle = plancheArmAngle(farShoulder, farElbow, farWrist, farHip, torso)
-        if (angle !== undefined) push(frameElbows, angle)
-      }
-      let frameElbowDeg: number | undefined
-      if (frameElbows.length) {
-        const e = Math.min(...frameElbows)
-        push(elbows, e)
-        frameElbowDeg = e
-        elbowSeries.push({ t, v: e })
+        if (angle !== undefined) {
+          push(elbows, angle)
+          frameElbowDeg = angle
+          elbowSeries.push({ t, v: angle })
+        }
       }
 
-      // Keep the two legs separate within a frame. One-leg work judges the
-      // extended (straighter) leg; full/straddle work judges the weaker leg so
-      // one locked knee cannot hide the other bending.
-      const frameKnees: number[] = []
-      const frameHips: number[] = []
-      const legSides = [side, farSide] as const
+      // In a true side view, full/straddle footage can honestly grade only the
+      // stable visible leg. One-leg work is the exception: the deliberately
+      // extended leg may carry the opposite label, so identify it by visible
+      // hip-to-ankle reach instead of assuming whichever leg looks straighter.
+      const legReadings: SideViewLegReading[] = []
+      const legSides = profile.oneLeg ? ([side, farSide] as const) : ([side] as const)
       for (const [index, s] of legSides.entries()) {
         const minScore = index === 0 ? MIN_PRECISE_KP_SCORE : MIN_FAR_KP_SCORE
         const h = byName(kps, `${s}_hip`, minScore)
         const k = byName(kps, `${s}_knee`, minScore)
         const a = byName(kps, `${s}_ankle`, minScore)
         const sh = byName(kps, `${s}_shoulder`, minScore)
-        const useFarLeg =
-          index === 0 ||
-          frameKnees.length === 0 ||
-          profile.oneLeg ||
-          sidesAreVisiblySeparate(kps, side, farSide, ['hip', 'knee', 'ankle'], torso)
-        if (!useFarLeg) continue
-        if (h && k && a) push(frameKnees, angleDeg(h, k, a))
-        // Never mix a far-side hip with the near-side shoulder. That
-        // cross-body angle looks valid numerically and was a major source of
-        // simultaneous "closed hips" and "bent knees" false flags.
-        if (sh && h && k) push(frameHips, angleDeg(sh, h, k))
+        if (
+          index > 0 &&
+          !sidesAreVisiblySeparate(kps, side, farSide, ['hip', 'knee', 'ankle'], torso)
+        ) continue
+        const knee = h && k && a ? reliableJointAngle(h, k, a, torso) : undefined
+        const hipAngle = sh && h && k ? reliableJointAngle(sh, h, k, torso) : undefined
+        const extension = h && a ? Math.hypot(h.x - a.x, h.y - a.y) / torso : undefined
+        if (knee !== undefined || hipAngle !== undefined) legReadings.push({ knee, hipAngle, extension })
       }
-      const frameKneeDeg = frameKnees.length
-        ? profile.oneLeg
-          ? Math.max(...frameKnees)
-          : Math.min(...frameKnees)
-        : undefined
-      const frameHipAngleDeg = frameHips.length
-        ? profile.oneLeg
-          ? Math.max(...frameHips)
-          : Math.min(...frameHips)
-        : undefined
+      const selectedLeg = selectSideViewLeg(legReadings, profile.oneLeg)
+      const frameKneeDeg = selectedLeg?.knee
+      const frameHipAngleDeg = selectedLeg?.hipAngle
       if (frameKneeDeg !== undefined) push(knees, frameKneeDeg)
       if (frameHipAngleDeg !== undefined) push(hipAngles, frameHipAngleDeg)
 
       // Screen y grows downward, so a hip above the shoulders is negative dy.
       // Shoulder and hip both pass the precision gate: a barely-visible hip
       // must not make a confident level-line call.
-      const useBilateralLine =
-        preciseShoulder &&
-        preciseHip &&
-        farShoulder &&
-        farHip &&
-        sidesAreVisiblySeparate(kps, side, farSide, ['shoulder', 'hip'], torso)
       const frameHipOffset =
         preciseShoulder && preciseHip
-          ? shoulderHipLevelOffset(
-              preciseShoulder,
-              preciseHip,
-              useBilateralLine ? farShoulder : undefined,
-              useBilateralLine ? farHip : undefined,
-            )
+          ? (preciseShoulder.y - preciseHip.y) / torso
           : undefined
       if (frameHipOffset !== undefined) {
         hipOffsets.push(frameHipOffset)
@@ -1352,33 +1293,6 @@ async function analyseClipNow(
         : undefined
       if (frameShrugRatio !== undefined) push(shrugs, frameShrugRatio)
 
-      // Twisting is only visible when the camera can actually see both
-      // shoulders. Filmed dead side-on the far one is occluded and the model
-      // guesses at it, so a height difference there means nothing — only
-      // measure when the two are genuinely separated in frame.
-      const ls = byName(kps, 'left_shoulder', MIN_PRECISE_KP_SCORE)
-      const rs = byName(kps, 'right_shoulder', MIN_PRECISE_KP_SCORE)
-      const lh = byName(kps, 'left_hip', MIN_PRECISE_KP_SCORE)
-      const rh = byName(kps, 'right_hip', MIN_PRECISE_KP_SCORE)
-      let frameAsymmetry: number | undefined
-      if (
-        ls &&
-        rs &&
-        lh &&
-        rh &&
-        Math.abs(ls.x - rs.x) / torso > 0.28 &&
-        Math.abs(lh.x - rh.x) / torso > 0.2
-      ) {
-        // Compare the shoulder and hip lines to each other. Their raw slopes
-        // both change with camera roll; the mismatch between them is the more
-        // reliable sign that the torso itself is twisting.
-        frameAsymmetry = shoulderHipLineMismatch(ls, rs, lh, rh)
-        if (frameAsymmetry !== undefined) push(asymmetries, frameAsymmetry)
-        // Wider still means the camera is closer to head-on than side-on, and
-        // every angle this analyser measures is projected garbage from there.
-        if (Math.max(Math.abs(ls.x - rs.x), Math.abs(lh.x - rh.x)) / torso > 0.55) frontalFrames++
-      }
-
       frameReadings.push({
         t,
         elbowDeg: frameElbowDeg,
@@ -1387,7 +1301,6 @@ async function analyseClipNow(
         hipOffset: frameHipOffset,
         leanRatio: frameLeanRatio,
         shrugRatio: frameShrugRatio,
-        asymmetry: frameAsymmetry,
       })
 
       // How far the position travels per second. Samples are seconds apart, so
@@ -1416,7 +1329,6 @@ async function analyseClipNow(
     hipOffsets.length = 0
     leans.length = 0
     shrugs.length = 0
-    asymmetries.length = 0
     elbowSeries.length = 0
     lineSeries.length = 0
     leanSeries.length = 0
@@ -1436,7 +1348,6 @@ async function analyseClipNow(
         leanSeries.push({ t: frame.t, v: frame.leanRatio })
       }
       if (frame.shrugRatio !== undefined) push(shrugs, frame.shrugRatio)
-      if (frame.asymmetry !== undefined) push(asymmetries, frame.asymmetry)
     }
 
     const framesUsed = confidences.length
@@ -1453,14 +1364,17 @@ async function analyseClipNow(
       return { ...empty, framesUsed, framesSampled: n, reason, track }
     }
 
-    if (frontalFrames / framesUsed > 0.5) {
+    if (
+      orientationFrames >= MIN_FRAMES &&
+      nonSideFrames / orientationFrames > 0.5
+    ) {
       return {
         ...empty,
         framesUsed,
         framesSampled: n,
         track,
         reason:
-          'This looks filmed head-on. Elbow, hip and lean angles cannot be judged from the front — set the phone off to your side instead.',
+          'This clip is not fully side-on. Elbow, hip and lean angles are foreshortened from the front or a strong three-quarter view — put the phone directly beside you and retry.',
       }
     }
 
@@ -1578,7 +1492,6 @@ async function analyseClipNow(
     const hipOffset = median(pick('hipOffset')) ?? median(hipOffsets)
     const leanRatio = median(pick('leanRatio')) ?? median(leans)
     const shrugRatio = median(pick('shrugRatio')) ?? median(shrugs)
-    const asymmetry = median(pick('asymmetry')) ?? median(asymmetries)
     const wobble = median(drifts)
 
     // Median of the first and final thirds of the sampled window, for the
@@ -1618,7 +1531,7 @@ async function analyseClipNow(
     const details: string[] = []
     const aggregateFaults = new Set(
       materialIssuesForReading(
-        { t: 0, elbowDeg, kneeDeg, hipAngleDeg, hipOffset, leanRatio, shrugRatio, asymmetry },
+        { t: 0, elbowDeg, kneeDeg, hipAngleDeg, hipOffset, leanRatio, shrugRatio },
         profile,
         judged,
       ),
@@ -1650,9 +1563,6 @@ async function analyseClipNow(
     const reportedShrugRatio = namedFaults.has('shrug')
       ? faultMetric('shrug', 'shrugRatio') ?? shrugRatio
       : shrugRatio
-    const reportedAsymmetry = namedFaults.has('twist')
-      ? faultMetric('twist', 'asymmetry') ?? asymmetry
-      : asymmetry
 
     if (judged.elbow && profile.minElbowDeg !== undefined && reportedElbowDeg !== undefined) {
       if (namedFaults.has('arms')) {
@@ -1747,15 +1657,11 @@ async function analyseClipNow(
       }
     }
 
-    // ——— Faults that apply at every level, not just the headline geometry ———
-
-    // Only reported when the camera was actually placed to see it.
-    if (reportedAsymmetry !== undefined) {
-      if (namedFaults.has('twist')) {
-        issues.push('twist')
-        notes.push('Your shoulder and hip lines did not stay square to each other — press evenly and resist torso rotation.')
-      } else details.push('Shoulder and hip lines stayed square to each other.')
-    }
+    details.push(
+      profile.oneLeg
+        ? 'Side-view mode graded the stable visible-side arm and only treated a leg as extended when its full reach was visible.'
+        : 'Side-view mode graded the stable visible-side arm, leg and body line; overlapped rear-side landmarks were not treated as separate evidence.',
+    )
 
     if (wobble !== undefined) {
       if (wobble > 0.05) {
@@ -1900,7 +1806,6 @@ async function analyseClipNow(
       leanRatio: reportedLeanRatio,
       shrugRatio: reportedShrugRatio,
       wobble,
-      asymmetry: reportedAsymmetry,
       issues: uniqueIssues,
       notes,
       good,

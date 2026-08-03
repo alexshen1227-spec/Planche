@@ -182,9 +182,42 @@ const CORE_JOINTS = [
   'left_wrist', 'right_wrist', 'left_hip', 'right_hip', 'left_knee', 'right_knee',
 ]
 
+/** Above this, bilateral depth is too visible for an honest side-view grade. */
+export const MAX_SIDE_VIEW_RATIO = 0.42
+
 /** Mean confidence across the joints that matter, 0–1. */
 export function trackingScore(kps: Kp[]): number {
   if (!kps.length) return 0
   const total = CORE_JOINTS.reduce((sum, n) => sum + (kps.find((k) => k.name === n)?.score ?? 0), 0)
   return total / CORE_JOINTS.length
+}
+
+/**
+ * Apparent shoulder/hip depth relative to torso length.
+ *
+ * In the required side view, left/right landmarks collapse onto nearly the
+ * same image location. A large bilateral span means the athlete is filmed
+ * front-on or at a strong three-quarter angle, where sagittal elbow, hip and
+ * lean measurements are foreshortened and must not be graded.
+ */
+export function apparentBodyWidthRatio(kps: Kp[], minScore = 0.42): number | undefined {
+  const point = (name: string) => {
+    const found = kps.find((candidate) => candidate.name === name)
+    return found && (found.score ?? 0) >= minScore ? found : undefined
+  }
+  const ls = point('left_shoulder')
+  const rs = point('right_shoulder')
+  const lh = point('left_hip')
+  const rh = point('right_hip')
+  const torsos = [
+    ls && lh ? Math.hypot(ls.x - lh.x, ls.y - lh.y) : 0,
+    rs && rh ? Math.hypot(rs.x - rh.x, rs.y - rh.y) : 0,
+  ].filter((length) => length >= 1)
+  const widths = [
+    ls && rs ? Math.hypot(ls.x - rs.x, ls.y - rs.y) : 0,
+    lh && rh ? Math.hypot(lh.x - rh.x, lh.y - rh.y) : 0,
+  ].filter((length) => length >= 1)
+  if (!torsos.length || !widths.length) return undefined
+  const torso = torsos.reduce((total, length) => total + length, 0) / torsos.length
+  return Math.max(...widths) / torso
 }

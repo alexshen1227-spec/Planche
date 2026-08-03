@@ -16,8 +16,7 @@ import {
   pickFixFirst,
   poseKeypointsAtTime,
   reliableJointAngle,
-  shoulderHipLineMismatch,
-  shoulderHipLevelOffset,
+  selectSideViewLeg,
   suppressBilateralCollisions,
   suppressIsolatedMetricSpikes,
   stabilizeKeypointSpikes,
@@ -28,6 +27,7 @@ import {
   sustainedTypical,
   unrotateKeypoints,
 } from './poseForm'
+import { apparentBodyWidthRatio, MAX_SIDE_VIEW_RATIO } from './poseBackend'
 import { buildPlan, debriefSession, rewardFor } from './coach'
 import {
   adaptiveTarget,
@@ -752,37 +752,28 @@ describe('camera evaluator primitives', () => {
     }
   })
 
-  it('compares shoulder and hip rotation without depending on line width or camera roll', () => {
-    const point = (x: number, y: number) => ({ x, y, score: 0.9 })
-    const aligned = shoulderHipLineMismatch(
-      point(0, 0),
-      point(100, 20),
-      point(10, 60),
-      point(60, 70),
-    )
-    const twisted = shoulderHipLineMismatch(
-      point(0, 0),
-      point(100, 20),
-      point(10, 60),
-      point(60, 60),
-    )
+  it('distinguishes the required side view from a front or strong three-quarter view', () => {
+    const point = (name: string, x: number, y: number) => ({ name, x, y, score: 0.9 })
+    const pose = (width: number, roll = 0) => [
+      point('left_shoulder', 0, 0),
+      point('right_shoulder', width, roll),
+      point('left_hip', 100, 0),
+      point('right_hip', 100 + width, roll),
+    ]
 
-    expect(aligned).toBeCloseTo(0, 8)
-    expect(twisted).toBeGreaterThan(0.15)
+    expect(apparentBodyWidthRatio(pose(12))).toBeLessThan(MAX_SIDE_VIEW_RATIO)
+    expect(apparentBodyWidthRatio(pose(55))).toBeGreaterThan(MAX_SIDE_VIEW_RATIO)
+    // Euclidean bilateral width keeps the gate useful when the phone is rolled.
+    expect(apparentBodyWidthRatio(pose(40, 40))).toBeGreaterThan(MAX_SIDE_VIEW_RATIO)
   })
 
-  it('averages both visible sides to steady the shoulder-to-hip level call', () => {
-    const point = (x: number, y: number) => ({ x, y, score: 0.9 })
-    const nearOnly = shoulderHipLevelOffset(point(0, 0), point(100, 20))!
-    const bilateral = shoulderHipLevelOffset(
-      point(0, 0),
-      point(100, 20),
-      point(0, 20),
-      point(100, 0),
-    )!
+  it('grades the visibly extended leg in one-leg work and never mistakes a lone tuck for it', () => {
+    const tucked = { knee: 80, hipAngle: 70, extension: 0.3 }
+    const extended = { knee: 174, hipAngle: 171, extension: 1.1 }
 
-    expect(Math.abs(nearOnly)).toBeGreaterThan(0.15)
-    expect(bilateral).toBe(0)
+    expect(selectSideViewLeg([tucked, extended], true)).toBe(extended)
+    expect(selectSideViewLeg([tucked], true)).toBeUndefined()
+    expect(selectSideViewLeg([tucked, extended], false)).toBe(tucked)
   })
 
   it('tightens level and hip-opening standards as the lever lengthens', () => {
@@ -1008,7 +999,6 @@ describe('form scoring', () => {
           hipOffset: 0.159,
           leanRatio: 0.391,
           shrugRatio: 0.271,
-          asymmetry: 0.229,
         },
         full,
         allJudged,
@@ -1024,12 +1014,11 @@ describe('form scoring', () => {
           hipOffset: 0.4,
           leanRatio: 0.2,
           shrugRatio: 0.2,
-          asymmetry: 0.4,
         },
         full,
         allJudged,
       ),
-    ).toEqual(expect.arrayContaining(['arms', 'knees', 'closed', 'pike', 'lean', 'shrug', 'twist']))
+    ).toEqual(expect.arrayContaining(['arms', 'knees', 'closed', 'pike', 'lean', 'shrug']))
   })
 
   it('scores a clean hold at 100 across every judged criterion', () => {

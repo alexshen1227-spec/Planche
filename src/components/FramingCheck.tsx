@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { getBackend, poseModelReady, trackingScore, type Kp } from '../lib/poseBackend'
+import {
+  apparentBodyWidthRatio,
+  getBackend,
+  MAX_SIDE_VIEW_RATIO,
+  poseModelReady,
+  trackingScore,
+  type Kp,
+} from '../lib/poseBackend'
 import { Icon } from './Icon'
 
 /**
@@ -40,24 +47,11 @@ interface Reading {
   height: number
   person: boolean
   missing: string[]
-  frontal: boolean
+  notSideOn: boolean
 }
 
-function looksFrontal(kps: Kp[]): boolean {
-  const point = (name: string) => {
-    const kp = kps.find((candidate) => candidate.name === name)
-    return kp && (kp.score ?? 0) >= 0.42 ? kp : undefined
-  }
-  const ls = point('left_shoulder')
-  const rs = point('right_shoulder')
-  const lh = point('left_hip')
-  const rh = point('right_hip')
-  if (!ls || !rs || !lh || !rh) return false
-  const leftTorso = Math.hypot(ls.x - lh.x, ls.y - lh.y)
-  const rightTorso = Math.hypot(rs.x - rh.x, rs.y - rh.y)
-  const torso = (leftTorso + rightTorso) / 2
-  if (torso < 1) return false
-  return Math.max(Math.abs(ls.x - rs.x), Math.abs(lh.x - rh.x)) / torso > 0.55
+function isNotSideOn(kps: Kp[]): boolean {
+  return (apparentBodyWidthRatio(kps) ?? 0) > MAX_SIDE_VIEW_RATIO
 }
 
 export function FramingCheck({
@@ -97,7 +91,7 @@ export function FramingCheck({
           height: video.videoHeight,
           person: trackingScore(kps) > 0.15,
           missing: REGIONS.filter((r) => !seen(r.joints)).map((r) => r.label),
-          frontal: looksFrontal(kps),
+          notSideOn: isNotSideOn(kps),
         })
       } catch {
         // Offline or model failure: the check just stays quiet.
@@ -141,7 +135,7 @@ export function FramingCheck({
 
   if (!active || !available || !reading) return null
 
-  const good = reading.person && reading.missing.length === 0 && !reading.frontal
+  const good = reading.person && reading.missing.length === 0 && !reading.notSideOn
   return (
     <>
       <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
@@ -153,10 +147,10 @@ export function FramingCheck({
       >
         <Icon name={good ? 'check' : 'monitor'} size={13} />
         {good
-          ? 'Whole body in frame'
+          ? 'Side view · whole body ready'
           : reading.person
-            ? reading.frontal
-              ? 'Turn side-on to the camera'
+            ? reading.notSideOn
+              ? 'Turn fully side-on to the camera'
               : `Out of shot: ${reading.missing.join(', ')}`
             : 'Step back until your whole body fits'}
       </div>

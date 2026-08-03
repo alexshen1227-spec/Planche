@@ -1609,7 +1609,6 @@ function FormCheckRow({
           hipOffset: res.hipOffset,
           leanRatio: res.leanRatio,
           shrugRatio: res.shrugRatio,
-          asymmetry: res.asymmetry,
           wobble: res.wobble,
           ...(res.unseen.length ? { unseen: res.unseen } : {}),
         }
@@ -1712,7 +1711,6 @@ function FormCheckRow({
               hipOffset: analysis.hipOffset,
               leanRatio: analysis.leanRatio,
               shrugRatio: analysis.shrugRatio,
-              asymmetry: analysis.asymmetry,
               wobble: analysis.wobble,
               ...(analysis.unseen.length ? { unseen: analysis.unseen } : {}),
             },

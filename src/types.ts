@@ -86,7 +86,7 @@ export interface AutoForm {
   leanRatio?: number
   /** Shoulder-to-ear gap over torso length; small means shrugged. */
   shrugRatio?: number
-  /** Shoulder-line vs hip-line mismatch over torso; high means twisting. */
+  /** Legacy pre-side-view camera field, kept so older logs still import. */
   asymmetry?: number
   /** Keypoint jitter across frames — high means the hold was shaky. */
   wobble?: number

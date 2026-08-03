@@ -17,6 +17,18 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'Built specifically for the side view',
+    area: 'camera',
+    notes: [
+      'The form judge now treats side-on footage as a hard contract. Clips that are confidently front-on or at a strong three-quarter angle are refused because projected elbow, hip and lean angles would be misleading.',
+      'Straight arms, body line and leg shape are graded from the stable visible side. The model’s guessed rear arm can no longer overrule the arm the camera actually saw.',
+      'Automatic twist judging has been retired: shoulder depth collapses in a true side view, so rotation remains an athlete-reviewed issue instead of a camera accusation.',
+      'One-leg work now identifies the extended leg by visible hip-to-ankle reach. If the camera found only the tucked leg, that criterion is left unseen rather than reported as a bent knee or closed hip.',
+      'The live setup check now uses shoulder/hip depth independent of phone roll and explicitly confirms when the side view and whole-body framing are ready.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'The target stays in sight',
     area: 'app',
     notes: [
@@ -31,7 +43,7 @@ export const CHANGELOG: ChangeEntry[] = [
     notes: [
       'A landmark that teleports away for one sample and immediately returns is now repaired before the replay or form verdict uses it. If that happens repeatedly, the clip is refused instead of guessing.',
       'Skeleton replay now moves smoothly between nearby analysed moments instead of snapping from one frozen sample to the next. Real tracking gaps stay blank rather than showing a pose from the wrong moment.',
-      'Shoulder-to-hip rotation is now measured as the true angle between those body lines, so camera roll, body size and shoulder width no longer distort the twist check. When both sides are clearly visible, their midpoints also steady the hip-height call.',
+      'Hip-height calls now stay on one stable, visible shoulder and hip instead of averaging guessed rear-side landmarks into the result.',
       'The straight-arm check now catches a persistent 4° soft elbow while retaining a small camera-error band and the multi-frame evidence requirement that prevents one jittery landmark becoming a fault.',
     ],
   },
@@ -66,7 +78,7 @@ export const CHANGELOG: ChangeEntry[] = [
       'Every graded planche level now targets a true 180° elbow lockout. A small bend must persist and clear the camera-error band before it is flagged, while natural hyperextension is recognized as lockout instead of mistaken for flexion.',
       'Tuck through Full now use progressively tighter shoulder-to-hip level standards, and the one-leg check finally grades the extended knee and the extended hip line instead of only the tucked shape.',
       'Fine elbow, hip and lean measurements now require stronger landmark confidence. A late sustained form loss is named in the verdict instead of silently shortening clean time, while isolated tracking jumps remain ignored.',
-      'Shoulder rotation now compares the shoulder line with the hip line, which cancels camera tilt better than judging one shoulder pair alone. The setup preview also warns about missing elbows and a head-on camera angle before the set starts.',
+      'Hip and shoulder-height checks now require strong, stable side-view landmarks. The setup preview also warns about missing elbows and a head-on camera angle before the set starts.',
       'A detected bent-arm hold can no longer count as progression-quality evidence, even when it is the only camera flag.',
     ],
   },
@@ -185,7 +197,7 @@ export const CHANGELOG: ChangeEntry[] = [
       'When several things slipped, the check now leads with the one correction worth your attention next — bent arms before cosmetic faults — instead of a wall of notes. One cue at a time is how corrections actually stick.',
       'Replays can now show the tracked skeleton drawn over your body, with the joints behind any fault highlighted. If the check reads you wrong, you will see exactly where it thought your elbow was — and if it tracked the curtains instead of you, that is visible too.',
       'Before a filmed set, the preview now runs a live framing check and tells you if your feet or hands are out of shot — while you can still move the phone, not after the effort is spent.',
-      'Both arms are judged when both are clearly visible, so a locked near elbow can no longer hide the far one bending.',
+      'The best-observed arm is locked for the whole clip, so left/right labels cannot swap midway through the hold and manufacture a bend.',
       'The pose engine moved to the actively maintained MediaPipe runtime (same BlazePose model family, faster and with honest per-joint visibility), with MoveNet still standing by as the fallback — every clip still goes to whichever tracks your footage better.',
     ],
   },
