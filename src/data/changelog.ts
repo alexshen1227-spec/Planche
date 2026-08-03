@@ -16,6 +16,30 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-08-03',
+    title: 'A bigger trophy cabinet and a smoother app',
+    area: 'app',
+    notes: [
+      'Fourteen new achievements now cover early momentum, long streaks, time under tension, every major planche shape, camera reviews, high form scores, exercise variety and total set volume — 38 trophies in all.',
+      'Progress now has quick section links plus a real trophy cabinet with completion progress, closest unlocks and Next up, Earned, Locked and All views. Locked badges show useful progress even from zero.',
+      'The Path is much easier to scan on a phone: unlock rules are tucked behind a short explainer, cards no longer squeeze or truncate their useful text, and the active mobile tab has a clear touch target.',
+      'Learn search now looks through coaching steps, cues, common mistakes and muscles — not only exercise titles — and shows a live result count with one-tap clearing.',
+      'Switching tabs now returns to the top instead of carrying over the scroll position from a long page, and a first-time athlete gets an honest baseline-session explanation instead of “99 rest days banked.”',
+    ],
+  },
+  {
+    date: '2026-08-03',
+    title: 'Stricter straight arms and cleaner body-line calls',
+    area: 'camera',
+    notes: [
+      'Every graded planche level now targets a true 180° elbow lockout. A small bend must persist and clear the camera-error band before it is flagged, while natural hyperextension is recognized as lockout instead of mistaken for flexion.',
+      'Tuck through Full now use progressively tighter shoulder-to-hip level standards, and the one-leg check finally grades the extended knee and the extended hip line instead of only the tucked shape.',
+      'Fine elbow, hip and lean measurements now require stronger landmark confidence. A late sustained form loss is named in the verdict instead of silently shortening clean time, while isolated tracking jumps remain ignored.',
+      'Shoulder rotation now compares the shoulder line with the hip line, which cancels camera tilt better than judging one shoulder pair alone. The setup preview also warns about missing elbows and a head-on camera angle before the set starts.',
+      'A detected bent-arm hold can no longer count as progression-quality evidence, even when it is the only camera flag.',
+    ],
+  },
+  {
     date: '2026-07-30',
     title: 'Floor and parallettes finally count as different records',
     area: 'training',

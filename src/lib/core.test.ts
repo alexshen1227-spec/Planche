@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog } from '../types'
 import { initialState, normalizeState, rebuildDerivedState, skipToStep } from './store'
 import { applySession } from './engine'
-import { formEvidenceCoversArms, progressionCredit, qualifyingProgress } from './progression'
+import { formEvidenceCoversArms, passesProgressionFormCheck, progressionCredit, qualifyingProgress } from './progression'
 import {
   POSE_PROFILES,
   bandedScore,
@@ -12,12 +12,14 @@ import {
   gradeCoverage,
   hasVerifiableHoldDuration,
   materialIssuesForReading,
+  plancheArmAngle,
   pickFixFirst,
   reliableJointAngle,
   suppressBilateralCollisions,
   suppressIsolatedMetricSpikes,
   sustainedCleanSeconds,
   sustainedMinimum,
+  sustainedMaterialIssues,
   sustainedObservableCleanSeconds,
   sustainedTypical,
   unrotateKeypoints,
@@ -26,6 +28,7 @@ import { buildPlan, debriefSession, rewardFor } from './coach'
 import { adaptiveTarget, estimateMinutes, painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
 import { validateImport } from './exportImport'
 import { buildSampleState } from '../data/sample'
+import { ACHIEVEMENTS } from '../data/achievements'
 import { selectRecorderMime } from './recorder'
 import { observedRestSec, readSignals, trustedCameraEvidence } from './signals'
 import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
@@ -396,6 +399,47 @@ describe('manual progression placement', () => {
   })
 })
 
+describe('expanded achievements', () => {
+  it('keeps every achievement id unique', () => {
+    expect(new Set(ACHIEVEMENTS.map((achievement) => achievement.id)).size).toBe(ACHIEVEMENTS.length)
+  })
+
+  it('awards the new early consistency milestone on the third session', () => {
+    const first = session('foundations', [log('wrist-rocks', 8)])
+    const second = session('foundations', [log('scap-pushup', 8)])
+    const third = session('foundations', [log('hollow-hold', 10)])
+    const athlete = { ...state(), sessions: [first, second] }
+    const result = applySession(athlete, third)
+
+    expect(result.events.achievements).toContain('sessions-3')
+    expect(result.next.achievements['sessions-3']).toBe(third.endedAt)
+  })
+
+  it('requires a confirmed camera result for the precision badge', () => {
+    const highScore = (confirmed: boolean) =>
+      session('lean', [
+        log('planche-lean', 20, {
+          form: {
+            rating: 'clean',
+            confirmed,
+            auto: { issues: [], confidence: 0.92, score: 94 },
+          },
+        }),
+      ])
+
+    expect(applySession(state('lean'), highScore(false)).events.achievements).not.toContain('precision-pass')
+    expect(applySession(state('lean'), highScore(true)).events.achievements).toContain('precision-pass')
+  })
+
+  it('counts one-leg progress only after both sides have verified time', () => {
+    const left = session('oneleg', [log('one-leg-planche', 6, { side: 'left', form: form() })])
+    const right = session('oneleg', [log('one-leg-planche', 5, { side: 'right', form: form() })])
+    const result = applySession({ ...state('oneleg'), sessions: [left] }, right)
+
+    expect(result.events.achievements).toContain('oneleg-5')
+  })
+})
+
 describe('partial camera coverage', () => {
   const lean = POSE_PROFILES['planche-lean']
   const full = { elbows: 10, knees: 10, hipAngles: 10, hipOffsets: 10, leans: 10 }
@@ -449,6 +493,20 @@ describe('partial camera coverage', () => {
     )
     expect(result.next.prs['ppp-hold']?.value).toBe(30)
     expect(result.next.stepId).toBe('foundations')
+  })
+
+  it('never treats a detected bent-arm planche as progression-quality evidence', () => {
+    expect(
+      passesProgressionFormCheck(
+        {
+          rating: 'clean',
+          confirmed: true,
+          flightConfirmed: true,
+          auto: { issues: ['arms'], confidence: 0.9 },
+        },
+        'tuck-planche',
+      ),
+    ).toBe(false)
   })
 
   it('treats pre-partial-grading records as fully covered', () => {
@@ -578,6 +636,52 @@ describe('rotation-robust tracking', () => {
 })
 
 describe('camera evaluator primitives', () => {
+  it('uses a true lockout target at every straight-arm planche level', () => {
+    const graded = Object.entries(POSE_PROFILES).filter(([, profile]) => !profile.noChecks)
+    expect(graded.map(([id]) => id)).toEqual(
+      expect.arrayContaining([
+        'planche-lean',
+        'tuck-planche',
+        'adv-tuck-planche',
+        'one-leg-planche',
+        'straddle-planche',
+        'full-planche',
+      ]),
+    )
+    expect(graded.every(([, profile]) => profile.minElbowDeg === 180)).toBe(true)
+
+    const elbowOnly = { elbow: true, knee: false, hipAngle: false, line: false, lean: false }
+    for (const [, profile] of graded) {
+      expect(materialIssuesForReading({ t: 0, elbowDeg: 176 }, profile, elbowOnly)).not.toContain('arms')
+      expect(materialIssuesForReading({ t: 0, elbowDeg: 174 }, profile, elbowOnly)).toContain('arms')
+    }
+  })
+
+  it('tightens level and hip-opening standards as the lever lengthens', () => {
+    const tuck = POSE_PROFILES['tuck-planche']
+    const advanced = POSE_PROFILES['adv-tuck-planche']
+    const oneLeg = POSE_PROFILES['one-leg-planche']
+    const straddle = POSE_PROFILES['straddle-planche']
+    const full = POSE_PROFILES['full-planche']
+
+    expect(tuck.levelTolerance).toBeGreaterThan(advanced.levelTolerance!)
+    expect(advanced.levelTolerance).toBeGreaterThan(oneLeg.levelTolerance!)
+    expect(oneLeg.levelTolerance).toBeGreaterThan(straddle.levelTolerance!)
+    expect(straddle.levelTolerance).toBeGreaterThan(full.levelTolerance!)
+    expect(advanced.minHipAngleDeg).toBe(82)
+    expect(oneLeg.minHipAngleDeg).toBeGreaterThan(advanced.minHipAngleDeg!)
+    expect(full.minHipAngleDeg).toBeGreaterThan(straddle.minHipAngleDeg!)
+    expect(oneLeg.minKneeDeg).toBe(180)
+
+    const lineOnly = { elbow: false, knee: false, hipAngle: false, line: true, lean: false }
+    for (const profile of [tuck, advanced, oneLeg, straddle, full]) {
+      const tolerance = profile.levelTolerance!
+      expect(materialIssuesForReading({ t: 0, hipOffset: tolerance + 0.05 }, profile, lineOnly)).not.toContain('pike')
+      expect(materialIssuesForReading({ t: 0, hipOffset: tolerance + 0.07 }, profile, lineOnly)).toContain('pike')
+      expect(materialIssuesForReading({ t: 0, hipOffset: -tolerance - 0.07 }, profile, lineOnly)).toContain('sag')
+    }
+  })
+
   it('samples short and long holds densely without growing without bound', () => {
     expect(chooseSampleCount(5)).toBe(18)
     expect(chooseSampleCount(10)).toBe(30)
@@ -599,6 +703,33 @@ describe('camera evaluator primitives', () => {
     expect(reliableJointAngle(point(0, 0), point(50, 0), point(100, 0), 100)).toBe(180)
     expect(reliableJointAngle(point(0, 0), point(50, 0), point(50, 50), 100)).toBe(90)
     expect(reliableJointAngle(point(0, 0), point(5, 0), point(100, 0), 100)).toBeUndefined()
+  })
+
+  it('distinguishes a small elbow bend from lockout hyperextension', () => {
+    const point = (x: number, y: number) => ({ x, y, score: 0.9 })
+    const shoulder = point(0, 0)
+    const wrist = point(0, 100)
+    const hip = point(100, 0)
+    const bent = plancheArmAngle(shoulder, point(3, 50), wrist, hip, 100)!
+    const hyperextended = plancheArmAngle(shoulder, point(-3, 50), wrist, hip, 100)
+
+    expect(bent).toBeGreaterThan(170)
+    expect(bent).toBeLessThan(175)
+    expect(hyperextended).toBe(180)
+  })
+
+  it('names only faults that persist across enough samples and real time', () => {
+    expect(
+      sustainedMaterialIssues([
+        { t: 0, issues: ['arms'] },
+        { t: 0.3, issues: [] },
+        { t: 0.6, issues: ['knees'] },
+        { t: 1, issues: ['arms'] },
+        { t: 1.3, issues: ['arms'] },
+        { t: 1.6, issues: ['arms'] },
+        { t: 1.9, issues: ['arms'] },
+      ]),
+    ).toEqual(['arms'])
   })
 
   it('removes a far wrist stacked on the visible hand but keeps genuinely separate hands', () => {
@@ -743,13 +874,13 @@ describe('form scoring', () => {
       materialIssuesForReading(
         {
           t: 0,
-          elbowDeg: 168,
-          kneeDeg: 162,
-          hipAngleDeg: 153,
-          hipOffset: 0.27,
-          leanRatio: 0.35,
-          shrugRatio: 0.28,
-          asymmetry: 0.27,
+          elbowDeg: 175.1,
+          kneeDeg: 173.1,
+          hipAngleDeg: 170.1,
+          hipOffset: 0.159,
+          leanRatio: 0.391,
+          shrugRatio: 0.271,
+          asymmetry: 0.229,
         },
         full,
         allJudged,
@@ -832,6 +963,14 @@ describe('form scoring', () => {
 })
 
 describe('readiness rails', () => {
+  it('starts a new athlete with a baseline instead of claiming 99 rest days', () => {
+    const plan = buildPlan(state(), Date.now())
+
+    expect(plan.dayType).toBe('build')
+    expect(plan.dayReason).toContain('Baseline session')
+    expect(plan.dayReason).not.toContain('99')
+  })
+
   it('treats a timer target as missed when clean camera time fell short', () => {
     const now = Date.now()
     const logged = session(

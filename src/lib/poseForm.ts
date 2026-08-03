@@ -44,11 +44,11 @@ export interface PoseFormResult {
   cleanSeconds?: number
   /** Clean seconds divided by the timer's credited hold. */
   cleanRatio?: number
-  /** Sustained elbow angle, degrees (lower quartile of frames; 180 = locked). */
+  /** Representative sustained elbow angle, degrees (180 = locked). */
   elbowDeg?: number
-  /** Shoulder→hip→knee angle: how open the hips are (lower quartile). */
+  /** Shoulder→hip→knee angle: how open the hips are. */
   hipAngleDeg?: number
-  /** Sustained knee angle (lower quartile of frames). */
+  /** Representative sustained knee angle. */
   kneeDeg?: number
   /** Hip height relative to shoulders, as a fraction of torso length.
    * Positive = hips above shoulders. */
@@ -59,7 +59,7 @@ export interface PoseFormResult {
   shrugRatio?: number
   /** Positional drift per second — high means the hold was slipping. */
   wobble?: number
-  /** Left/right height difference at the shoulders, over torso length. */
+  /** Shoulder-line vs hip-line mismatch, over torso length. */
   asymmetry?: number
   issues: FormIssue[]
   notes: string[]
@@ -76,6 +76,9 @@ export interface PoseFormResult {
 }
 
 const MIN_KP_SCORE = 0.3
+/** Fine angle/line judgements need more than the minimum "joint exists" score. */
+const MIN_PRECISE_KP_SCORE = 0.42
+const MIN_FAR_KP_SCORE = 0.6
 const MIN_FRAMES = 3
 export const MIN_VERIFIABLE_HOLD_SEC = 1
 
@@ -100,7 +103,7 @@ export interface PoseProfile {
   label: string
   /** No geometric checks apply — say so rather than implying it looked good. */
   noChecks?: boolean
-  /** Elbow angle below this counts as bent. Undefined = do not check. */
+  /** Straight-arm target (180 degrees). Undefined = do not check. */
   minElbowDeg?: number
   /** Knee angle below this counts as bent. Undefined = legs are meant to bend. */
   minKneeDeg?: number
@@ -136,26 +139,28 @@ const MATERIAL_TOLERANCE = {
   elbowDeg: 5,
   kneeDeg: 7,
   hipAngleDeg: 8,
-  lineRatio: 0.08,
+  lineRatio: 0.06,
   leanRatio: 0.06,
   shrugRatio: 0.05,
-  asymmetryRatio: 0.06,
+  asymmetryRatio: 0.05,
 } as const
 
 export const POSE_PROFILES: Record<string, PoseProfile> = {
   'ppp-hold': {
     label: 'Pseudo planche plank',
-    minElbowDeg: 165,
-    minKneeDeg: 160,
+    minElbowDeg: 180,
+    minKneeDeg: 180,
     levelTolerance: 0.45,
+    minHipAngleDeg: 170,
     minLeanRatio: 0.15,
     checkShrug: true,
   },
   'planche-lean': {
     label: 'Planche lean',
-    minElbowDeg: 168,
-    minKneeDeg: 160,
+    minElbowDeg: 180,
+    minKneeDeg: 180,
     levelTolerance: 0.4,
+    minHipAngleDeg: 170,
     minLeanRatio: 0.3,
     checkShrug: true,
   },
@@ -170,59 +175,62 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
   'tuck-planche': {
     // Knees are meant to be at the chest, so knee and hip angles are not faults.
     label: 'Tuck planche',
-    minElbowDeg: 165,
-    levelTolerance: 0.5,
-    minLeanRatio: 0.2,
+    minElbowDeg: 180,
+    levelTolerance: 0.22,
+    minLeanRatio: 0.25,
     checkShrug: true,
   },
   'adv-tuck-planche': {
     label: 'Advanced tuck planche',
-    minElbowDeg: 168,
-    levelTolerance: 0.35,
-    minHipAngleDeg: 70,
-    minLeanRatio: 0.28,
+    minElbowDeg: 180,
+    levelTolerance: 0.16,
+    minHipAngleDeg: 82,
+    minLeanRatio: 0.32,
     checkShrug: true,
   },
   'one-leg-lean': {
     label: 'One-leg planche lean',
-    minElbowDeg: 168,
+    minElbowDeg: 180,
     levelTolerance: 0.4,
+    minHipAngleDeg: 165,
     minLeanRatio: 0.3,
     checkShrug: true,
   },
   'one-leg-planche': {
     label: 'One-leg extension',
-    minElbowDeg: 168,
-    levelTolerance: 0.3,
-    minHipAngleDeg: 120,
-    minLeanRatio: 0.3,
+    minElbowDeg: 180,
+    minKneeDeg: 180,
+    levelTolerance: 0.14,
+    minHipAngleDeg: 175,
+    minLeanRatio: 0.36,
     oneLeg: true,
     checkShrug: true,
   },
   'straddle-planche': {
     label: 'Straddle planche',
-    minElbowDeg: 170,
-    minKneeDeg: 165,
-    levelTolerance: 0.25,
-    minHipAngleDeg: 150,
-    minLeanRatio: 0.35,
+    minElbowDeg: 180,
+    minKneeDeg: 180,
+    levelTolerance: 0.12,
+    minHipAngleDeg: 175,
+    minLeanRatio: 0.4,
     checkShrug: true,
   },
   'band-straddle-planche': {
     label: 'Band-assisted straddle',
-    minElbowDeg: 168,
-    minKneeDeg: 160,
-    levelTolerance: 0.3,
-    minHipAngleDeg: 145,
+    minElbowDeg: 180,
+    minKneeDeg: 180,
+    levelTolerance: 0.14,
+    minHipAngleDeg: 172,
+    minLeanRatio: 0.32,
     checkShrug: true,
   },
   'full-planche': {
     label: 'Full planche',
-    minElbowDeg: 172,
-    minKneeDeg: 168,
-    levelTolerance: 0.2,
-    minHipAngleDeg: 160,
-    minLeanRatio: 0.4,
+    minElbowDeg: 180,
+    minKneeDeg: 180,
+    levelTolerance: 0.1,
+    minHipAngleDeg: 178,
+    minLeanRatio: 0.45,
     checkShrug: true,
   },
 }
@@ -337,11 +345,49 @@ export function materialIssuesForReading(
   }
   if (
     frame.asymmetry !== undefined &&
-    frame.asymmetry > 0.22 + MATERIAL_TOLERANCE.asymmetryRatio
+    frame.asymmetry > 0.18 + MATERIAL_TOLERANCE.asymmetryRatio
   ) {
     issues.push('twist')
   }
   return issues
+}
+
+/**
+ * Name faults that really persisted, even when they began late in the hold.
+ *
+ * The clean-window code deliberately grades the shape before a breakdown, but
+ * that used to erase the cause from the final issue list: a locked arm that
+ * softened for the final two seconds shortened clean time while still being
+ * reported as "no measured issue". This mirrors the same sample-count and
+ * elapsed-time gate used for clean time, per issue, so one noisy frame still
+ * cannot accuse the athlete of a fault.
+ */
+export function sustainedMaterialIssues(
+  samples: { t: number; issues: FormIssue[] }[],
+  minimumBadSamples = 3,
+  minimumBadDurationSec = 0.75,
+): FormIssue[] {
+  const sorted = [...samples].sort((a, b) => a.t - b.t)
+  const candidates = [...new Set(sorted.flatMap((sample) => sample.issues))]
+  return candidates.filter((issue) => {
+    let run = 0
+    let startedAt = 0
+    for (const sample of sorted) {
+      if (!sample.issues.includes(issue)) {
+        run = 0
+        continue
+      }
+      if (run === 0) startedAt = sample.t
+      run += 1
+      if (
+        run >= Math.max(1, minimumBadSamples) &&
+        sample.t - startedAt >= Math.max(0, minimumBadDurationSec)
+      ) {
+        return true
+      }
+    }
+    return false
+  })
 }
 
 function materiallyOutsideEnvelope(
@@ -492,6 +538,47 @@ export function reliableJointAngle(a: Kp, b: Kp, c: Kp, bodyScale: number): numb
   }
   const angle = angleDeg(a, b, c)
   return Number.isFinite(angle) ? angle : undefined
+}
+
+/**
+ * Elbow angle with planche-specific hyperextension handling.
+ *
+ * An unsigned three-point angle reads 174 degrees for both a six-degree bend
+ * and a six-degree hyperextension. Those are opposites in straight-arm work.
+ * From a side view, flexion moves the elbow toward the hips while lockout or
+ * hyperextension moves it away. Treat only the latter as locked; ambiguous
+ * points keep their ordinary angle. The projection gate also rejects elbows
+ * that the model placed beyond either end of the upper-arm/forearm chord.
+ */
+export function plancheArmAngle(
+  shoulder: Kp,
+  elbow: Kp,
+  wrist: Kp,
+  hip: Kp,
+  bodyScale: number,
+): number | undefined {
+  const angle = reliableJointAngle(shoulder, elbow, wrist, bodyScale)
+  if (angle === undefined) return undefined
+
+  const chordX = wrist.x - shoulder.x
+  const chordY = wrist.y - shoulder.y
+  const chordSq = chordX * chordX + chordY * chordY
+  if (chordSq < bodyScale * bodyScale * 0.08) return undefined
+  const projection = ((elbow.x - shoulder.x) * chordX + (elbow.y - shoulder.y) * chordY) / chordSq
+  if (projection < 0.08 || projection > 0.92) return undefined
+
+  const onLineX = shoulder.x + chordX * projection
+  const onLineY = shoulder.y + chordY * projection
+  const torsoX = hip.x - shoulder.x
+  const torsoY = hip.y - shoulder.y
+  const torsoMag = Math.hypot(torsoX, torsoY)
+  if (torsoMag < 1) return undefined
+  const towardHips =
+    ((elbow.x - onLineX) * torsoX + (elbow.y - onLineY) * torsoY) / torsoMag / bodyScale
+
+  // Require a visible directional displacement. Tiny signs around zero are
+  // normal landmark jitter and must not convert an uncertain 174 into 180.
+  return 180 - angle >= 3 && towardHips < -0.018 ? 180 : angle
 }
 
 function byName(kps: Kp[], name: string, minScore = MIN_KP_SCORE): Kp | undefined {
@@ -960,14 +1047,19 @@ async function analyseClipNow(
       const elbow = byName(kps, `${side}_elbow`)
       const wrist = byName(kps, `${side}_wrist`)
       const hip = byName(kps, `${side}_hip`)
-      // Ear only — the nose sits much further from the shoulder, so falling
-      // back to it against the same threshold always reads as "not shrugged".
-      const ear = byName(kps, `${side}_ear`)
       if (!shoulder || !hip) continue
       trackedSide = side
 
       const torso = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y)
       if (torso < 1) continue
+
+      // A 0.30 landmark is enough to say that a body region exists, but it is
+      // not enough evidence for a five-degree elbow call. Fine geometry uses a
+      // stricter gate and becomes "unseen" when the model is uncertain.
+      const preciseShoulder = byName(kps, `${side}_shoulder`, MIN_PRECISE_KP_SCORE)
+      const preciseElbow = byName(kps, `${side}_elbow`, MIN_PRECISE_KP_SCORE)
+      const preciseWrist = byName(kps, `${side}_wrist`, MIN_PRECISE_KP_SCORE)
+      const preciseHip = byName(kps, `${side}_hip`, MIN_PRECISE_KP_SCORE)
 
       // Averaged over the points actually found. Dividing by a fixed four
       // penalised clips where a wrist was hidden behind a parallette, which
@@ -981,22 +1073,24 @@ async function analyseClipNow(
       // of the two stops one locked elbow hiding the other one bending.
       const farSide = side === 'left' ? 'right' : 'left'
       const frameElbows: number[] = []
-      if (elbow && wrist) {
-        const angle = reliableJointAngle(shoulder, elbow, wrist, torso)
+      if (preciseShoulder && preciseElbow && preciseWrist && preciseHip) {
+        const angle = plancheArmAngle(preciseShoulder, preciseElbow, preciseWrist, preciseHip, torso)
         if (angle !== undefined) push(frameElbows, angle)
       }
-      const farShoulder = byName(kps, `${farSide}_shoulder`, 0.55)
-      const farElbow = byName(kps, `${farSide}_elbow`, 0.55)
-      const farWrist = byName(kps, `${farSide}_wrist`, 0.55)
+      const farShoulder = byName(kps, `${farSide}_shoulder`, MIN_FAR_KP_SCORE)
+      const farElbow = byName(kps, `${farSide}_elbow`, MIN_FAR_KP_SCORE)
+      const farWrist = byName(kps, `${farSide}_wrist`, MIN_FAR_KP_SCORE)
+      const farHip = byName(kps, `${farSide}_hip`, MIN_FAR_KP_SCORE)
       if (
         farShoulder &&
         farElbow &&
         farWrist &&
-        (!elbow ||
-          !wrist ||
+        farHip &&
+        (!preciseElbow ||
+          !preciseWrist ||
           sidesAreVisiblySeparate(kps, side, farSide, ['shoulder', 'elbow', 'wrist'], torso))
       ) {
-        const angle = reliableJointAngle(farShoulder, farElbow, farWrist, torso)
+        const angle = plancheArmAngle(farShoulder, farElbow, farWrist, farHip, torso)
         if (angle !== undefined) push(frameElbows, angle)
       }
       let frameElbowDeg: number | undefined
@@ -1014,7 +1108,7 @@ async function analyseClipNow(
       const frameHips: number[] = []
       const legSides = [side, farSide] as const
       for (const [index, s] of legSides.entries()) {
-        const minScore = index === 0 ? MIN_KP_SCORE : 0.55
+        const minScore = index === 0 ? MIN_PRECISE_KP_SCORE : MIN_FAR_KP_SCORE
         const h = byName(kps, `${s}_hip`, minScore)
         const k = byName(kps, `${s}_knee`, minScore)
         const a = byName(kps, `${s}_ankle`, minScore)
@@ -1045,24 +1139,32 @@ async function analyseClipNow(
       if (frameHipAngleDeg !== undefined) push(hipAngles, frameHipAngleDeg)
 
       // Screen y grows downward, so a hip above the shoulders is negative dy.
-      const frameHipOffset = (shoulder.y - hip.y) / torso
-      hipOffsets.push(frameHipOffset)
-      lineSeries.push({ t, v: frameHipOffset })
+      // Shoulder and hip both pass the precision gate: a barely-visible hip
+      // must not make a confident level-line call.
+      const frameHipOffset =
+        preciseShoulder && preciseHip ? (preciseShoulder.y - preciseHip.y) / torso : undefined
+      if (frameHipOffset !== undefined) {
+        hipOffsets.push(frameHipOffset)
+        lineSeries.push({ t, v: frameHipOffset })
+      }
 
       let frameLeanRatio: number | undefined
-      if (wrist) {
+      if (preciseShoulder && preciseWrist && preciseHip) {
         // Lean is signed by which way the body points, so it reads the same
         // whichever way round the phone was set up.
-        const facing = Math.sign(shoulder.x - hip.x) || 1
-        const lean = ((shoulder.x - wrist.x) * facing) / torso
+        const facing = Math.sign(preciseShoulder.x - preciseHip.x) || 1
+        const lean = ((preciseShoulder.x - preciseWrist.x) * facing) / torso
         push(leans, lean)
         if (Number.isFinite(lean)) {
           frameLeanRatio = lean
           leanSeries.push({ t, v: lean })
         }
       }
-      const frameShrugRatio = ear
-        ? Math.hypot(shoulder.x - ear.x, shoulder.y - ear.y) / torso
+      // Ear only — the nose sits much further from the shoulder, so falling
+      // back to it against the same threshold always reads as "not shrugged".
+      const preciseEar = byName(kps, `${side}_ear`, MIN_PRECISE_KP_SCORE)
+      const frameShrugRatio = preciseEar && preciseShoulder
+        ? Math.hypot(preciseShoulder.x - preciseEar.x, preciseShoulder.y - preciseEar.y) / torso
         : undefined
       if (frameShrugRatio !== undefined) push(shrugs, frameShrugRatio)
 
@@ -1070,15 +1172,27 @@ async function analyseClipNow(
       // shoulders. Filmed dead side-on the far one is occluded and the model
       // guesses at it, so a height difference there means nothing — only
       // measure when the two are genuinely separated in frame.
-      const ls = byName(kps, 'left_shoulder')
-      const rs = byName(kps, 'right_shoulder')
+      const ls = byName(kps, 'left_shoulder', MIN_PRECISE_KP_SCORE)
+      const rs = byName(kps, 'right_shoulder', MIN_PRECISE_KP_SCORE)
+      const lh = byName(kps, 'left_hip', MIN_PRECISE_KP_SCORE)
+      const rh = byName(kps, 'right_hip', MIN_PRECISE_KP_SCORE)
       let frameAsymmetry: number | undefined
-      if (ls && rs && Math.abs(ls.x - rs.x) / torso > 0.4) {
-        frameAsymmetry = Math.abs(ls.y - rs.y) / torso
+      if (
+        ls &&
+        rs &&
+        lh &&
+        rh &&
+        Math.abs(ls.x - rs.x) / torso > 0.28 &&
+        Math.abs(lh.x - rh.x) / torso > 0.2
+      ) {
+        // Compare the shoulder and hip lines to each other. Their raw slopes
+        // both change with camera roll; the mismatch between them is the more
+        // reliable sign that the torso itself is twisting.
+        frameAsymmetry = Math.abs((ls.y - rs.y) - (lh.y - rh.y)) / torso
         push(asymmetries, frameAsymmetry)
         // Wider still means the camera is closer to head-on than side-on, and
         // every angle this analyser measures is projected garbage from there.
-        if (Math.abs(ls.x - rs.x) / torso > 0.62) frontalFrames++
+        if (Math.max(Math.abs(ls.x - rs.x), Math.abs(lh.x - rh.x)) / torso > 0.55) frontalFrames++
       }
 
       frameReadings.push({
@@ -1225,6 +1339,18 @@ async function analyseClipNow(
     })
     const cleanSeconds = sustainedObservableCleanSeconds(envelopeSamples, creditedSeconds)
     const cleanRatio = creditedSeconds > 0 ? Math.min(1, cleanSeconds / creditedSeconds) : 0
+    const sustainedFaults = new Set(
+      sustainedMaterialIssues(
+        times
+          .filter((t) => t <= creditedSeconds + 0.05)
+          .map((t) => ({
+            t,
+            issues: readingAt.has(t)
+              ? materialIssuesForReading(readingAt.get(t)!, profile, judged)
+              : [],
+          })),
+      ),
+    )
 
     // Judge the hold, not the dismount.
     //
@@ -1311,102 +1437,138 @@ async function analyseClipNow(
         judged,
       ),
     )
+    const namedFaults = new Set([...aggregateFaults, ...sustainedFaults])
+    const creditedReadings = frameReadings.filter((frame) => frame.t <= creditedSeconds + 0.05)
+    const faultMetric = (issue: FormIssue, key: Exclude<keyof FrameReading, 't'>): number | undefined => {
+      const values = creditedReadings
+        .filter((frame) => materialIssuesForReading(frame, profile, judged).includes(issue))
+        .map((frame) => frame[key])
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+      return key.endsWith('Deg') ? sustainedTypical(values) : median(values)
+    }
 
-    if (judged.elbow && profile.minElbowDeg !== undefined && elbowDeg !== undefined) {
-      if (aggregateFaults.has('arms')) {
+    // When a fault appeared after an initially clean position, expose the
+    // sustained faulty measurement rather than returning a pristine pre-fault
+    // median next to a red issue label.
+    const reportedElbowDeg = namedFaults.has('arms') ? faultMetric('arms', 'elbowDeg') ?? elbowDeg : elbowDeg
+    const reportedKneeDeg = namedFaults.has('knees') ? faultMetric('knees', 'kneeDeg') ?? kneeDeg : kneeDeg
+    const reportedHipAngleDeg = namedFaults.has('closed')
+      ? faultMetric('closed', 'hipAngleDeg') ?? hipAngleDeg
+      : hipAngleDeg
+    const reportedHipOffset = namedFaults.has('pike')
+      ? faultMetric('pike', 'hipOffset') ?? hipOffset
+      : namedFaults.has('sag')
+        ? faultMetric('sag', 'hipOffset') ?? hipOffset
+        : hipOffset
+    const reportedLeanRatio = namedFaults.has('lean') ? faultMetric('lean', 'leanRatio') ?? leanRatio : leanRatio
+    const reportedShrugRatio = namedFaults.has('shrug')
+      ? faultMetric('shrug', 'shrugRatio') ?? shrugRatio
+      : shrugRatio
+    const reportedAsymmetry = namedFaults.has('twist')
+      ? faultMetric('twist', 'asymmetry') ?? asymmetry
+      : asymmetry
+
+    if (judged.elbow && profile.minElbowDeg !== undefined && reportedElbowDeg !== undefined) {
+      if (namedFaults.has('arms')) {
         issues.push('arms')
         notes.push(
-          elbowPeak !== undefined && elbowPeak >= profile.minElbowDeg
-            ? `Elbows locked at their best (${Math.round(elbowPeak)}°) but sat nearer ${Math.round(elbowDeg)}° for much of the hold — keep the lock the whole way.`
-            : `Elbows reached about ${Math.round(elbowPeak ?? elbowDeg)}° at their straightest — locked reads near 180°.`,
+          sustainedFaults.has('arms') && !aggregateFaults.has('arms')
+            ? `Elbows softened to about ${Math.round(reportedElbowDeg)}° for a sustained part of the hold — even a small bend changes this from straight-arm work.`
+            : elbowPeak !== undefined && elbowPeak >= profile.minElbowDeg - MATERIAL_TOLERANCE.elbowDeg
+              ? `Elbows locked at their best (${Math.round(elbowPeak)}°) but sat nearer ${Math.round(reportedElbowDeg)}° for much of the hold — keep the lock the whole way.`
+              : `Elbows reached about ${Math.round(elbowPeak ?? reportedElbowDeg)}° at their straightest — locked reads near 180°.`,
         )
       } else {
         good.push(
-          elbowDeg >= profile.minElbowDeg
-            ? `Elbows locked (${Math.round(elbowDeg)}°)`
-            : `Elbows within camera tolerance (${Math.round(elbowDeg)}°)`,
+          reportedElbowDeg >= profile.minElbowDeg - 2
+            ? `Elbows locked (${Math.round(reportedElbowDeg)}°)`
+            : `No reliable elbow bend detected (${Math.round(reportedElbowDeg)}°)`,
         )
       }
     }
 
-    if (judged.knee && profile.minKneeDeg !== undefined && kneeDeg !== undefined) {
-      if (aggregateFaults.has('knees')) {
+    if (judged.knee && profile.minKneeDeg !== undefined && reportedKneeDeg !== undefined) {
+      if (namedFaults.has('knees')) {
         issues.push('knees')
         notes.push(
-          kneePeak !== undefined && kneePeak >= profile.minKneeDeg
-            ? `Legs straightened fully at some point (${Math.round(kneePeak)}°) but bent for much of the hold — squeeze them straight and keep them there.`
-            : `Knees measured about ${Math.round(kneePeak ?? kneeDeg)}° — straight legs read near 180°.`,
+          sustainedFaults.has('knees') && !aggregateFaults.has('knees')
+            ? `Knee extension softened to about ${Math.round(reportedKneeDeg)}° for a sustained part of the hold.`
+            : kneePeak !== undefined && kneePeak >= profile.minKneeDeg
+              ? `Legs straightened fully at some point (${Math.round(kneePeak)}°) but bent for much of the hold — squeeze them straight and keep them there.`
+              : `Knees measured about ${Math.round(kneePeak ?? reportedKneeDeg)}° — straight legs read near 180°.`,
         )
       } else {
         good.push(
-          kneeDeg >= profile.minKneeDeg
-            ? `Legs straight (${Math.round(kneeDeg)}°)`
-            : `Legs within camera tolerance (${Math.round(kneeDeg)}°)`,
+          reportedKneeDeg >= profile.minKneeDeg
+            ? `Legs straight (${Math.round(reportedKneeDeg)}°)`
+            : `Legs within camera tolerance (${Math.round(reportedKneeDeg)}°)`,
         )
       }
     }
 
-    if (judged.hipAngle && profile.minHipAngleDeg !== undefined && hipAngleDeg !== undefined) {
-      if (aggregateFaults.has('closed')) {
+    if (judged.hipAngle && profile.minHipAngleDeg !== undefined && reportedHipAngleDeg !== undefined) {
+      if (namedFaults.has('closed')) {
         // Its own issue, not "hips too high": a closed hip angle means the
         // body is still folded, which is the opposite complaint.
         issues.push('closed')
         notes.push(
-          hipAnglePeak !== undefined && hipAnglePeak >= profile.minHipAngleDeg
-            ? `Hips opened to ${Math.round(hipAnglePeak)}° at their best but closed back down for much of the hold — this position wants ${profile.minHipAngleDeg}°+ held, not visited.`
-            : `Hips were only about ${Math.round(hipAngleDeg)}° open — this position wants closer to ${profile.minHipAngleDeg}°.`,
+          sustainedFaults.has('closed') && !aggregateFaults.has('closed')
+            ? `The hip angle closed to about ${Math.round(reportedHipAngleDeg)}° for a sustained part of the hold.`
+            : hipAnglePeak !== undefined && hipAnglePeak >= profile.minHipAngleDeg
+              ? `Hips opened to ${Math.round(hipAnglePeak)}° at their best but closed back down for much of the hold — this position wants ${profile.minHipAngleDeg}°+ held, not visited.`
+              : `Hips were only about ${Math.round(reportedHipAngleDeg)}° open — this position wants closer to ${profile.minHipAngleDeg}°.`,
         )
       } else {
         good.push(
-          hipAngleDeg >= profile.minHipAngleDeg
-            ? `Hips open (${Math.round(hipAngleDeg)}°)`
-            : `Hip angle within camera tolerance (${Math.round(hipAngleDeg)}°)`,
+          reportedHipAngleDeg >= profile.minHipAngleDeg
+            ? `Hips open (${Math.round(reportedHipAngleDeg)}°)`
+            : `Hip angle within camera tolerance (${Math.round(reportedHipAngleDeg)}°)`,
         )
       }
     }
 
-    if (judged.line && profile.levelTolerance !== undefined && hipOffset !== undefined) {
-      if (aggregateFaults.has('pike')) {
+    if (judged.line && profile.levelTolerance !== undefined && reportedHipOffset !== undefined) {
+      if (namedFaults.has('pike')) {
         issues.push('pike')
         notes.push('Hips sat above your shoulders — that reads as a pike rather than a flat line.')
-      } else if (aggregateFaults.has('sag')) {
+      } else if (namedFaults.has('sag')) {
         issues.push('sag')
         notes.push('Hips dropped below your shoulders — the line was sagging.')
       } else {
         good.push(
-          Math.abs(hipOffset) <= profile.levelTolerance
+          Math.abs(reportedHipOffset) <= profile.levelTolerance
             ? 'Hips and shoulders level'
             : 'Body line within camera tolerance',
         )
       }
     }
 
-    if (judged.lean && profile.minLeanRatio !== undefined && leanRatio !== undefined) {
-      if (aggregateFaults.has('lean')) {
+    if (judged.lean && profile.minLeanRatio !== undefined && reportedLeanRatio !== undefined) {
+      if (namedFaults.has('lean')) {
         issues.push('lean')
         notes.push('Your shoulders stayed close to your hands — more forward lean is what makes this position lighter.')
       } else {
-        good.push(leanRatio >= profile.minLeanRatio ? 'Good forward lean' : 'Lean within camera tolerance')
+        good.push(reportedLeanRatio >= profile.minLeanRatio ? 'Good forward lean' : 'Lean within camera tolerance')
       }
     }
 
-    if (profile.checkShrug && shrugRatio !== undefined) {
-      if (aggregateFaults.has('shrug')) {
+    if (profile.checkShrug && reportedShrugRatio !== undefined) {
+      if (namedFaults.has('shrug')) {
         issues.push('shrug')
         notes.push('Your shoulders looked shrugged up toward your ears — push the floor away and keep them down.')
       } else {
-        good.push(shrugRatio >= 0.32 ? 'Shoulders down, not shrugged' : 'No clear shrug detected')
+        good.push(reportedShrugRatio >= 0.32 ? 'Shoulders down, not shrugged' : 'No clear shrug detected')
       }
     }
 
     // ——— Faults that apply at every level, not just the headline geometry ———
 
     // Only reported when the camera was actually placed to see it.
-    if (asymmetry !== undefined) {
-      if (aggregateFaults.has('twist')) {
+    if (reportedAsymmetry !== undefined) {
+      if (namedFaults.has('twist')) {
         issues.push('twist')
-        notes.push('One shoulder sat noticeably higher than the other — the hips are rotating. Square them up.')
-      } else details.push('Shoulders looked square.')
+        notes.push('Your shoulder and hip lines did not stay square to each other — press evenly and resist torso rotation.')
+      } else details.push('Shoulder and hip lines stayed square to each other.')
     }
 
     if (wobble !== undefined) {
@@ -1520,12 +1682,12 @@ async function analyseClipNow(
     const scored = computeFormScore({
       profile,
       judged,
-      elbowDeg,
-      kneeDeg,
-      hipAngleDeg,
-      hipOffset,
-      leanRatio,
-      shrugRatio,
+      elbowDeg: reportedElbowDeg,
+      kneeDeg: reportedKneeDeg,
+      hipAngleDeg: reportedHipAngleDeg,
+      hipOffset: reportedHipOffset,
+      leanRatio: reportedLeanRatio,
+      shrugRatio: reportedShrugRatio,
       wobble,
       cleanRatio,
     })
@@ -1540,14 +1702,14 @@ async function analyseClipNow(
       track,
       cleanSeconds,
       cleanRatio,
-      elbowDeg,
-      kneeDeg,
-      hipAngleDeg,
-      hipOffset,
-      leanRatio,
-      shrugRatio,
+      elbowDeg: reportedElbowDeg,
+      kneeDeg: reportedKneeDeg,
+      hipAngleDeg: reportedHipAngleDeg,
+      hipOffset: reportedHipOffset,
+      leanRatio: reportedLeanRatio,
+      shrugRatio: reportedShrugRatio,
       wobble,
-      asymmetry,
+      asymmetry: reportedAsymmetry,
       issues: uniqueIssues,
       notes,
       good,
@@ -1616,11 +1778,9 @@ export function bandedScore(deviationDeg: number): number {
 /**
  * Ratio-based criteria (body line, lean, shrug) are converted to a
  * degree-equivalent so one deduction table grades everything. Each factor is
- * chosen so the criterion's existing "materially broken" envelope threshold
- * lands at the edge of the 5° free band — the score starts falling exactly
- * where the clean-time judgement starts counting a breakdown.
+ * chosen so the criterion's measurement deadband is about the 5° free band.
  */
-const RATIO_TO_DEG = { line: 60, lean: 60, shrug: 100 } as const
+const RATIO_TO_DEG = { line: 80, lean: 60, shrug: 100 } as const
 
 /**
  * Relative weight of each criterion in the headline score, renormalised over
@@ -1628,7 +1788,7 @@ const RATIO_TO_DEG = { line: 60, lean: 60, shrug: 100 } as const
  * bent-arm planche is a different (easier) skill, not a style fault.
  */
 const SCORE_WEIGHTS: Record<FormSubscore['key'], number> = {
-  elbow: 22,
+  elbow: 28,
   line: 18,
   cleanTime: 15,
   lean: 14,
@@ -1672,7 +1832,10 @@ export function computeFormScore(parts: {
     subscores.push({ key, label: SUBSCORE_LABELS[key], score: Math.round(score) })
 
   if (judged.elbow && profile.minElbowDeg !== undefined && parts.elbowDeg !== undefined) {
-    add('elbow', bandedScore(profile.minElbowDeg - parts.elbowDeg))
+    // Once a persistent bend clears the five-degree camera deadband it should
+    // matter visibly in the score: bent-arm planche is a different skill, not
+    // merely a cosmetic line deduction.
+    add('elbow', bandedScore((profile.minElbowDeg - parts.elbowDeg) * 2))
   }
   if (judged.knee && profile.minKneeDeg !== undefined && parts.kneeDeg !== undefined) {
     add('knee', bandedScore(profile.minKneeDeg - parts.kneeDeg))

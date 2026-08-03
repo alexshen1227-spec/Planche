@@ -21,10 +21,25 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
     <div className="animate-rise">
       <h1 className="font-display text-[28px] font-bold text-ink">The Road to Planche</h1>
       <p className="mt-0.5 max-w-2xl text-[14px] leading-relaxed text-ink2">
-        Eight steps from first plank to full flight. Clear each unlock bar with a hold you rate Clean plus a passing
-        filmed form check, and the next door opens. Tap any step for the full coaching notes. Already training farther
-        along? Open a locked step to place yourself there after a three-part safety check.
+        Eight steps from first plank to full flight. Tap any step for coaching, form cues and a max test.
       </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px]">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-ok/25 bg-ok-soft px-3 py-1.5 font-medium text-ok">
+          <Icon name="check" size={13} /> Clean hold
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent-soft px-3 py-1.5 font-medium text-accent">
+          <Icon name="monitor" size={13} /> Camera pass
+        </span>
+        <details className="group">
+          <summary className="cursor-pointer list-none rounded-full border border-line bg-surface px-3 py-1.5 font-medium text-ink2 transition hover:text-ink">
+            How unlocks work <span className="ml-1 inline-block transition group-open:rotate-180">⌄</span>
+          </summary>
+          <p className="mt-2 max-w-2xl rounded-2xl border border-line bg-surface p-3.5 leading-relaxed text-ink2 shadow-card">
+            Reach the bar with a hold you rate Clean and a passing filmed form check. Already training farther along?
+            Open a locked step to place yourself there after the three-part safety check.
+          </p>
+        </details>
+      </div>
 
       <div className="relative mt-7 pb-2">
         {/* Spine, with a gradient fill up to the current step */}
@@ -49,7 +64,7 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
               <button
                 key={step.id}
                 onClick={() => setDetail(step)}
-                className={`card-int relative flex w-full items-center gap-4 rounded-2xl border p-4 pl-3 text-left sm:gap-5 sm:p-5 sm:pl-4 ${
+                className={`card-int relative flex w-full items-center gap-2.5 rounded-2xl border p-3 text-left min-[480px]:gap-4 sm:gap-5 sm:p-5 sm:pl-4 ${
                   isCurrent
                     ? 'card-sheen border-accent/40 bg-surface shadow-card'
                     : unlocked
@@ -80,7 +95,10 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
                     <Icon name="lock" size={14} />
                   )}
                 </div>
-                <Figure step={step.id} className={`h-16 w-20 shrink-0 ${unlocked ? 'text-ink' : 'text-ink3'}`} />
+                <Figure
+                  step={step.id}
+                  className={`hidden h-14 w-16 shrink-0 min-[480px]:block sm:h-16 sm:w-20 ${unlocked ? 'text-ink' : 'text-ink3'}`}
+                />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline gap-x-2.5">
                     <span className={`font-display text-[17px] font-semibold ${unlocked ? 'text-ink' : 'text-ink2'}`}>
@@ -96,12 +114,7 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
                       <span className="text-[12px] font-medium text-ink3">available</span>
                     ) : null}
                   </div>
-                  <div className="mt-0.5 truncate text-[13.5px] text-ink2">{step.tagline}</div>
-                  {/* Bar over label, not beside it. Side by side, the label
-                      carried shrink-0 and an exercise name, so on a phone it
-                      pushed the row wider than the screen — which stretched
-                      the fixed bottom nav with it and shoved Settings off the
-                      edge. Stacking lets the label truncate instead. */}
+                  <div className="mt-0.5 line-clamp-2 text-[13.5px] leading-snug text-ink2">{step.tagline}</div>
                   <div className="mt-2 space-y-1.5">
                     <div className="h-1.5 w-full max-w-[220px] overflow-hidden rounded-full bg-line">
                       <div
@@ -109,9 +122,10 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
                         style={{ width: `${pct * 100}%` }}
                       />
                     </div>
-                    <div className="truncate text-[12.5px] text-ink3 tnum">
+                    <div className="flex flex-wrap gap-x-1.5 text-[12px] leading-snug text-ink3 tnum">
                       {best ? fmtHold(best) : '0s'} / {step.unlockSec}s verified
-                      {keyEx.perSide ? ' · both sides' : ''} · {keyEx.name.toLowerCase()}
+                      {keyEx.perSide ? <span>· both sides</span> : null}
+                      <span className="hidden sm:inline">· {keyEx.name.toLowerCase()}</span>
                     </div>
                   </div>
                 </div>

@@ -19,13 +19,14 @@ import { Icon } from './Icon'
  */
 
 interface Region {
-  key: 'shoulders' | 'hands' | 'hips' | 'feet'
+  key: 'shoulders' | 'elbows' | 'hands' | 'hips' | 'feet'
   label: string
   joints: [string, string]
 }
 
 const REGIONS: Region[] = [
   { key: 'shoulders', label: 'shoulders', joints: ['left_shoulder', 'right_shoulder'] },
+  { key: 'elbows', label: 'elbows', joints: ['left_elbow', 'right_elbow'] },
   { key: 'hands', label: 'hands', joints: ['left_wrist', 'right_wrist'] },
   { key: 'hips', label: 'hips', joints: ['left_hip', 'right_hip'] },
   { key: 'feet', label: 'feet', joints: ['left_ankle', 'right_ankle'] },
@@ -39,6 +40,24 @@ interface Reading {
   height: number
   person: boolean
   missing: string[]
+  frontal: boolean
+}
+
+function looksFrontal(kps: Kp[]): boolean {
+  const point = (name: string) => {
+    const kp = kps.find((candidate) => candidate.name === name)
+    return kp && (kp.score ?? 0) >= 0.42 ? kp : undefined
+  }
+  const ls = point('left_shoulder')
+  const rs = point('right_shoulder')
+  const lh = point('left_hip')
+  const rh = point('right_hip')
+  if (!ls || !rs || !lh || !rh) return false
+  const leftTorso = Math.hypot(ls.x - lh.x, ls.y - lh.y)
+  const rightTorso = Math.hypot(rs.x - rh.x, rs.y - rh.y)
+  const torso = (leftTorso + rightTorso) / 2
+  if (torso < 1) return false
+  return Math.max(Math.abs(ls.x - rs.x), Math.abs(lh.x - rh.x)) / torso > 0.55
 }
 
 export function FramingCheck({
@@ -78,6 +97,7 @@ export function FramingCheck({
           height: video.videoHeight,
           person: trackingScore(kps) > 0.15,
           missing: REGIONS.filter((r) => !seen(r.joints)).map((r) => r.label),
+          frontal: looksFrontal(kps),
         })
       } catch {
         // Offline or model failure: the check just stays quiet.
@@ -121,7 +141,7 @@ export function FramingCheck({
 
   if (!active || !available || !reading) return null
 
-  const good = reading.person && reading.missing.length === 0
+  const good = reading.person && reading.missing.length === 0 && !reading.frontal
   return (
     <>
       <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
@@ -135,7 +155,9 @@ export function FramingCheck({
         {good
           ? 'Whole body in frame'
           : reading.person
-            ? `Out of shot: ${reading.missing.join(', ')}`
+            ? reading.frontal
+              ? 'Turn side-on to the camera'
+              : `Out of shot: ${reading.missing.join(', ')}`
             : 'Step back until your whole body fits'}
       </div>
     </>

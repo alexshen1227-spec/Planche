@@ -177,6 +177,7 @@ export function Chip({
   return (
     <button
       onClick={onClick}
+      aria-pressed={typeof active === 'boolean' ? active : undefined}
       className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition ${
         active
           ? 'border-transparent bg-accent text-on-accent'

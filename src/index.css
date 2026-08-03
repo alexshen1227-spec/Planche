@@ -178,6 +178,10 @@ body {
   height: 100%;
 }
 
+html {
+  scroll-padding-bottom: 6rem;
+}
+
 body {
   background: var(--t-bg);
   color: var(--t-ink);
@@ -278,6 +282,11 @@ body {
 
 button {
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+  cursor: not-allowed;
 }
 
 input[type='range'] {

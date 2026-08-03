@@ -362,7 +362,10 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // Judged on training LOAD, not on whether any session existed: a ten-minute
   // wrist routine yesterday neither blocks a push day nor grants one, and a
   // heavy template session counts even though the bandit never shaped it.
-  if (sig.daysSinceLoaded === 0 && sig.totalSessions > 0) {
+  if (sig.totalSessions === 0) {
+    dayType = 'build'
+    dayReason = 'Baseline session — start controlled so the coach can learn your current capacity.'
+  } else if (sig.daysSinceLoaded === 0) {
     dayType = 'technique'
     dayReason = 'Second loaded session today — skill work only, tendons keep score.'
   } else if (sig.readinessLoad !== null && sig.readinessLoad > 1.5) {

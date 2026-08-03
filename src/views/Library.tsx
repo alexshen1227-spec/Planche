@@ -32,6 +32,7 @@ export function Library() {
             <button
               key={p}
               onClick={() => setPane(p)}
+              aria-pressed={pane === p}
               className={`px-4 py-2 text-[13.5px] font-medium capitalize transition ${
                 pane === p ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
               }`}
@@ -58,7 +59,11 @@ function ExercisePane() {
     return EXERCISES.filter(
       (e) =>
         (cat === 'all' || e.category === cat) &&
-        (!q || e.name.toLowerCase().includes(q) || e.blurb.toLowerCase().includes(q)),
+        (!q ||
+          [e.name, e.blurb, ...e.howTo, ...e.cues, ...e.mistakes, ...e.muscles]
+            .join(' ')
+            .toLowerCase()
+            .includes(q)),
     )
   }, [cat, query])
 
@@ -70,12 +75,27 @@ function ExercisePane() {
             {c === 'all' ? 'All' : CATEGORY_LABEL[c]}
           </Chip>
         ))}
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search…"
-          className="ml-auto w-full max-w-[180px] rounded-full border border-line bg-surface px-4 py-1.5 text-[13.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent sm:w-auto"
-        />
+        <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
+          <span className="shrink-0 text-[12.5px] text-ink3 tnum">{list.length} moves</span>
+          <div className="relative min-w-0 flex-1 sm:w-[210px]">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search exercises"
+              placeholder="Search cues, muscles…"
+              className="w-full rounded-full border border-line bg-surface py-1.5 pl-4 pr-9 text-[13.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+            />
+            {query ? (
+              <button
+                onClick={() => setQuery('')}
+                aria-label="Clear exercise search"
+                className="absolute right-1 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full text-ink3 transition hover:bg-raised hover:text-ink"
+              >
+                <Icon name="x" size={13} />
+              </button>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       <div className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">

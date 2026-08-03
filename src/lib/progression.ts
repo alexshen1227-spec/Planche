@@ -10,7 +10,7 @@ export interface Qualification {
 
 /** A successful pose result is already coverage- and confidence-gated. */
 export const MIN_PROGRESSION_FORM_CONFIDENCE = 0.35
-/** One isolated camera flag is tolerated; two means the shape is not mastered. */
+/** One isolated secondary flag is tolerated; two means the shape is not mastered. */
 export const MAX_PROGRESSION_FORM_ISSUES = 1
 const TRUE_FLIGHT_EXERCISES = new Set([
   'tuck-planche',
@@ -39,7 +39,9 @@ export function formEvidenceCoversArms(auto: NonNullable<SetLog['form']>['auto']
 
 /**
  * The second half of the mastery gate. Most skills need a successful camera
- * check with at most one isolated flag. Frog Stand intentionally has no
+ * check with at most one isolated secondary flag. A bent-arm flag is never
+ * tolerated because straight arms define every graded planche progression.
+ * Frog Stand intentionally has no
  * honest fixed geometry for the model to grade, so it needs a filmed replay
  * that the athlete explicitly reviewed against the checklist instead.
  */
@@ -53,6 +55,7 @@ export function passesProgressionFormCheck(form: SetLog['form'], exerciseId: str
     form.auto &&
       form.auto.confidence >= MIN_PROGRESSION_FORM_CONFIDENCE &&
       form.auto.issues.length <= MAX_PROGRESSION_FORM_ISSUES &&
+      !form.auto.issues.includes('arms') &&
       formEvidenceCoversArms(form.auto),
   )
 }
@@ -61,7 +64,8 @@ export function passesProgressionFormCheck(form: SetLog['form'], exerciseId: str
  * A progression set is stricter than a PR:
  * - it must be the step's main hold, not a warm-up/accessory/quick-log number;
  * - it must have an athlete-confirmed clean rating;
- * - its filmed form check must be clean or show at most one isolated flag;
+ * - its filmed form check must show no bent-arm fault and at most one isolated
+ *   secondary flag;
  * - unilateral steps are limited by the weaker side.
  *
  * Old/unrated numbers remain honest PRs but cannot unlock a harder skill

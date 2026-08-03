@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useStore } from '../lib/store'
 import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID, STEPS } from '../data/progressions'
-import { ACHIEVEMENTS } from '../data/achievements'
+import { ACHIEVEMENTS, type AchievementProgress } from '../data/achievements'
 import { bestSeries, weeklyVolume, totalHoldSec, totalSets, sessionHoldSec } from '../lib/stats'
 import { armStats, STRATEGY_BY_ID, formatRate, buildPlan } from '../lib/coach'
 import { diagnose, weakLinks } from '../lib/diagnose'
@@ -16,12 +16,20 @@ import { pushToast } from '../lib/toast'
 import type { TrainingSurface } from '../types'
 import { surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 
+function achievementProgressText(progress: AchievementProgress): string {
+  if (progress.unit === 'duration') return `${fmtDuration(progress.current)} / ${fmtDuration(progress.target)}`
+  if (progress.unit === 'seconds') return `${fmtHold(progress.current)} / ${fmtHold(progress.target)}`
+  if (progress.unit === 'score') return `${progress.current} / ${progress.target} score`
+  return `${progress.current} / ${progress.target}`
+}
+
 export function Stats() {
   const { state, dispatch } = useStore()
   const [chartEx, setChartEx] = useState(() => STEP_BY_ID[state.stepId].keyExerciseId)
   const [chartSurface, setChartSurface] = useState<TrainingSurface | 'all'>('all')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [achievementFilter, setAchievementFilter] = useState<'all' | 'earned' | 'next' | 'locked'>('next')
 
   const chartIsPlanche = EXERCISE_BY_ID[chartEx]?.category === 'planche'
   const series = useMemo(
@@ -49,7 +57,46 @@ export function Stats() {
     [state.prs],
   )
 
-  const unlockedCount = Object.keys(state.achievements).length
+  const achievementCards = useMemo(
+    () =>
+      ACHIEVEMENTS.map((achievement, order) => {
+        const at = state.achievements[achievement.id]
+        const progress = !at && achievement.progress ? achievement.progress(state) : null
+        return {
+          achievement,
+          order,
+          at,
+          progress,
+          ratio: progress ? Math.min(1, progress.current / Math.max(1, progress.target)) : 0,
+        }
+      }),
+    [state],
+  )
+  const unlockedCount = achievementCards.filter((card) => card.at).length
+  const lockedCount = ACHIEVEMENTS.length - unlockedCount
+  const nextAchievementCards = useMemo(
+    () =>
+      achievementCards
+        .filter((card) => !card.at && card.progress)
+        .sort((a, b) => b.ratio - a.ratio || a.order - b.order),
+    [achievementCards],
+  )
+  const visibleAchievementCards = useMemo(() => {
+    if (achievementFilter === 'earned') {
+      return achievementCards.filter((card) => card.at).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))
+    }
+    if (achievementFilter === 'next') return nextAchievementCards.slice(0, 8)
+    if (achievementFilter === 'locked') {
+      return achievementCards
+        .filter((card) => !card.at)
+        .sort((a, b) => b.ratio - a.ratio || a.order - b.order)
+    }
+    return [...achievementCards].sort((a, b) => {
+      if (Boolean(a.at) !== Boolean(b.at)) return a.at ? -1 : 1
+      if (a.at && b.at) return b.at - a.at
+      return b.ratio - a.ratio || a.order - b.order
+    })
+  }, [achievementCards, achievementFilter, nextAchievementCards])
 
   return (
     <div className="animate-rise">
@@ -71,8 +118,29 @@ export function Stats() {
         />
       </div>
 
+      <nav
+        aria-label="Progress sections"
+        className="mt-3 flex gap-1.5 overflow-x-auto rounded-2xl border border-line bg-surface/70 p-1.5 shadow-card"
+      >
+        {[
+          ['trends', 'Trends'],
+          ['insights', 'Coach insights'],
+          ['records', 'Records'],
+          ['achievements', 'Achievements'],
+          ['history', 'History'],
+        ].map(([id, label]) => (
+          <a
+            key={id}
+            href={`#${id}`}
+            className="shrink-0 rounded-xl px-3 py-2 text-[12.5px] font-medium text-ink2 transition hover:bg-raised hover:text-ink"
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
+
       {/* Hold trend */}
-      <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-card">
+      <div id="trends" className="mt-4 scroll-mt-5 rounded-3xl border border-line bg-surface p-5 shadow-card">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="font-display text-[16px] font-semibold text-ink">
@@ -127,7 +195,7 @@ export function Stats() {
       </div>
 
       {/* Weekly volume */}
-      <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-card">
+      <div id="insights" className="mt-4 scroll-mt-5 rounded-3xl border border-line bg-surface p-5 shadow-card">
         <div className="font-display text-[16px] font-semibold text-ink">Weekly hold volume</div>
         <div className="text-[13px] text-ink2">Seconds accumulated in holds, last 12 weeks</div>
         <div className="mt-3">
@@ -311,6 +379,7 @@ export function Stats() {
       </div>
 
       {/* PR board */}
+      <section id="records" className="scroll-mt-5">
       <SectionTitle>Personal records</SectionTitle>
       {trackedPrs.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line-strong p-6 text-center text-[14px] text-ink3">
@@ -347,17 +416,88 @@ export function Stats() {
           ))}
         </div>
       )}
+      </section>
 
       {/* Achievements */}
-      <SectionTitle>Achievements</SectionTitle>
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
-        {ACHIEVEMENTS.map((a) => {
-          const at = state.achievements[a.id]
-          const prog = !at && a.progress ? a.progress(state) : null
+      <section id="achievements" className="scroll-mt-5">
+      <SectionTitle
+        right={<span className="text-[12.5px] text-ink3 tnum">{lockedCount} still to earn</span>}
+      >
+        Achievements
+      </SectionTitle>
+      <div className="overflow-hidden rounded-3xl border border-line bg-surface shadow-card">
+        <div className="card-sheen bg-gradient-to-br from-accent-soft to-transparent p-5">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <div className="text-[12px] font-semibold uppercase tracking-wider text-accent">Trophy cabinet</div>
+              <div className="mt-1 font-display text-[25px] font-semibold text-ink tnum">
+                {unlockedCount} <span className="text-[14px] font-normal text-ink3">of {ACHIEVEMENTS.length} earned</span>
+              </div>
+            </div>
+            <div className="text-[28px]" aria-hidden="true">🏆</div>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-line">
+            <div
+              className="h-full rounded-full bg-accent transition-[width] duration-500"
+              style={{ width: `${(unlockedCount / ACHIEVEMENTS.length) * 100}%` }}
+            />
+          </div>
+          {nextAchievementCards.length > 0 ? (
+            <div className="mt-4">
+              <div className="mb-2 text-[12px] font-medium text-ink3">Closest unlocks</div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {nextAchievementCards.slice(0, 3).map(({ achievement, progress, ratio }) => (
+                  <button
+                    key={achievement.id}
+                    onClick={() => setAchievementFilter('next')}
+                    className="flex items-center gap-2.5 rounded-xl border border-line bg-surface/75 p-2.5 text-left transition hover:border-line-strong"
+                  >
+                    <span className="text-[20px] grayscale-[35%]">{achievement.icon}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] font-semibold text-ink">{achievement.name}</span>
+                      <span className="mt-1 block h-1 overflow-hidden rounded-full bg-line">
+                        <span className="block h-full rounded-full bg-accent" style={{ width: `${ratio * 100}%` }} />
+                      </span>
+                      {progress ? (
+                        <span className="mt-1 block text-[10.5px] text-ink3 tnum">
+                          {achievementProgressText(progress)}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="flex gap-1 overflow-x-auto border-t border-line p-2">
+          {([
+            ['next', 'Next up', nextAchievementCards.length],
+            ['earned', 'Earned', unlockedCount],
+            ['locked', 'Locked', lockedCount],
+            ['all', 'All', ACHIEVEMENTS.length],
+          ] as const).map(([filter, label, count]) => (
+            <button
+              key={filter}
+              onClick={() => setAchievementFilter(filter)}
+              aria-pressed={achievementFilter === filter}
+              className={`shrink-0 rounded-xl px-3 py-2 text-[12.5px] font-medium transition ${
+                achievementFilter === filter ? 'bg-accent text-on-accent' : 'text-ink2 hover:bg-raised hover:text-ink'
+              }`}
+            >
+              {label} <span className="ml-0.5 opacity-70 tnum">{count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {visibleAchievementCards.length > 0 ? (
+      <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+        {visibleAchievementCards.map(({ achievement: a, at, progress: prog }) => {
           return (
             <div
               key={a.id}
-              className={`rounded-2xl border p-4 ${
+              className={`flex min-h-[150px] flex-col rounded-2xl border p-4 ${
                 at ? 'card-sheen border-accent/30 bg-surface shadow-card' : 'border-line bg-surface/40'
               }`}
             >
@@ -365,9 +505,9 @@ export function Stats() {
               <div className={`mt-1.5 text-[13.5px] font-semibold ${at ? 'text-ink' : 'text-ink3'}`}>{a.name}</div>
               <div className="mt-0.5 text-[12px] leading-snug text-ink3">{a.desc}</div>
               {at ? (
-                <div className="mt-1.5 text-[11.5px] font-medium text-accent">{fmtDate(at)}</div>
-              ) : prog && prog.current > 0 ? (
-                <div className="mt-2">
+                <div className="mt-auto pt-2 text-[11.5px] font-medium text-accent">Earned {fmtDate(at)}</div>
+              ) : prog ? (
+                <div className="mt-auto pt-3">
                   <div className="h-1 overflow-hidden rounded-full bg-line">
                     <div
                       className="h-full rounded-full bg-accent/60"
@@ -375,7 +515,7 @@ export function Stats() {
                     />
                   </div>
                   <div className="mt-1 text-[11px] text-ink3 tnum">
-                    {prog.current}/{prog.target}
+                    {achievementProgressText(prog)}
                   </div>
                 </div>
               ) : null}
@@ -383,8 +523,15 @@ export function Stats() {
           )
         })}
       </div>
+      ) : (
+        <div className="mt-3 rounded-2xl border border-dashed border-line-strong p-6 text-center text-[13.5px] text-ink3">
+          Nothing in this view yet — keep training and it will fill up.
+        </div>
+      )}
+      </section>
 
       {/* History */}
+      <section id="history" className="scroll-mt-5">
       <SectionTitle>History</SectionTitle>
       {sessions.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line-strong p-6 text-center text-[14px] text-ink3">
@@ -443,6 +590,7 @@ export function Stats() {
           })}
         </div>
       )}
+      </section>
 
       <Modal open={confirmDelete !== null} onClose={() => setConfirmDelete(null)}>
         <div className="p-6">

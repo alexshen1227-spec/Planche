@@ -144,6 +144,14 @@ export default function App() {
   // stays lit while you are reading it rather than nothing being selected.
   const navTab: Tab = tab === 'updates' ? 'settings' : tab
 
+  // Each tab is a page, even though the app does not navigate to a new URL.
+  // Resetting scroll prevents a long Progress/Settings page from opening the
+  // next tab halfway down its content.
+  useEffect(() => {
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+  }, [tab])
+
   // Sweep expired footage once per launch, so storage does not creep up over
   // months even if a session never finishes.
   useEffect(() => {
@@ -215,6 +223,7 @@ export default function App() {
               <button
                 key={n.tab}
                 onClick={() => setTab(n.tab)}
+                aria-current={navTab === n.tab ? 'page' : undefined}
                 className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-[14.5px] font-medium transition ${
                   navTab === n.tab
                     ? 'bg-surface text-ink shadow-card border border-line'
@@ -262,12 +271,15 @@ export default function App() {
             <button
               key={n.tab}
               onClick={() => setTab(n.tab)}
-              className={`flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-[10.5px] font-medium transition ${
-                navTab === n.tab ? 'text-accent' : 'text-ink3 hover:text-ink2'
+              aria-current={navTab === n.tab ? 'page' : undefined}
+              className={`relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[10.5px] font-medium transition ${
+                navTab === n.tab
+                  ? 'bg-accent-soft text-accent shadow-[inset_0_0_0_1px_var(--t-line)]'
+                  : 'text-ink3 hover:bg-raised hover:text-ink2'
               }`}
             >
               <Icon name={n.icon} size={21} />
-              {n.label}
+              <span className="w-full truncate text-center">{n.label}</span>
             </button>
           ))}
         </div>
