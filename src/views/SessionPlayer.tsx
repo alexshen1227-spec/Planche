@@ -14,7 +14,7 @@ import type {
 } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
-import { describeBlock, adaptiveTarget } from '../data/workouts'
+import { describeBlock, describeTarget, primaryTargetBlock, adaptiveTarget } from '../data/workouts'
 import { debriefSession, type CoachDecision } from '../lib/coach'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { useStore } from '../lib/store'
@@ -689,6 +689,8 @@ export function SessionPlayer({
   function body() {
     if (phase === 'intro') {
       const sections = [...new Set(workout.blocks.map((b) => b.section))]
+      const primaryTarget = primaryTargetBlock(workout)
+      const primaryExercise = primaryTarget ? EXERCISE_BY_ID[primaryTarget.exerciseId] : undefined
       // Say up front that filming happens — it only appears once the main
       // work starts, which is several sets in and easy to be surprised by.
       const willFilm =
@@ -699,6 +701,21 @@ export function SessionPlayer({
             <div className="text-[13px] font-medium uppercase tracking-wide text-ink3">Up next</div>
             <h1 className="mt-1 font-display text-[26px] font-bold text-ink">{workout.name}</h1>
             <p className="mt-1.5 text-[14px] leading-relaxed text-ink2">{workout.focus}</p>
+            {primaryTarget && primaryExercise ? (
+              <div className="mt-4 flex items-center gap-3 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-on-accent">
+                  <Icon name="target" size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent">Main target</div>
+                  <div className="truncate text-[14px] font-semibold text-ink">{primaryExercise.name}</div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-[15px] font-bold text-ink tnum">{describeTarget(primaryTarget)}</div>
+                  <div className="text-[11.5px] text-ink3 tnum">{describeBlock(primaryTarget)}</div>
+                </div>
+              </div>
+            ) : null}
             <div className="mt-4 space-y-4">
               {sections.map((sec) => (
                 <div key={sec}>
@@ -769,15 +786,19 @@ export function SessionPlayer({
               </span>
             </div>
           ) : null}
-          <div className="mt-1 text-[15px] text-ink2 tnum">
-            Target {target}
-            {perSide ? ' this side' : ''}
-            {bestBefore
-              ? ` · ${exercise.category === 'planche' ? surfaceLabel(surface) + ' ' : ''}best ${
-                  exercise.type === 'hold' ? fmtHold(bestBefore) : `${bestBefore} reps`
-                }`
-              : ''}
+          <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accent-soft px-4 py-2 text-accent">
+            <Icon name="target" size={16} />
+            <span className="text-[11px] font-bold uppercase tracking-wider">Target</span>
+            <span className="text-[18px] font-bold text-ink tnum">
+              {target}{perSide ? ' this side' : ''}
+            </span>
           </div>
+          {bestBefore ? (
+            <div className="mt-1.5 text-[12.5px] text-ink3 tnum">
+              {exercise.category === 'planche' ? `${surfaceLabel(surface)} ` : ''}best{' '}
+              {exercise.type === 'hold' ? fmtHold(bestBefore) : `${bestBefore} reps`}
+            </div>
+          ) : null}
           {exercise.category === 'planche' && state.profile.equipment.includes('parallettes') ? (
             <div className="mt-2 inline-flex overflow-hidden rounded-xl border border-line" aria-label="Training surface">
               {TRAINING_SURFACES.map((item) => (
@@ -963,6 +984,7 @@ export function SessionPlayer({
 
     if (phase === 'lead') {
       const n = Math.ceil(leadRemaining)
+      const target = block.target.kind === 'hold' ? `${block.target.sec}s` : `${block.target.reps} reps`
       return (
         <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
           <div className="mt-6 text-[14px] font-medium uppercase tracking-wide text-ink2">Get into position</div>
@@ -973,6 +995,10 @@ export function SessionPlayer({
             </div>
           </div>
           <div className="text-[15px] font-medium text-ink2">{exercise.name}</div>
+          <div className="mt-2 inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accent-soft px-3.5 py-2 text-[14px] font-semibold text-ink">
+            <Icon name="target" size={15} className="text-accent" /> Target {target}
+            {perSide ? ` · ${side === 'left' ? 'left' : 'right'} side` : ''}
+          </div>
           <button
             onClick={() => setLeadEnd(Date.now())}
             className="mt-8 rounded-xl border border-line bg-surface px-5 py-2.5 text-[14px] font-medium text-ink2 hover:text-ink"

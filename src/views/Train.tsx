@@ -1,7 +1,15 @@
 import { useMemo, useState } from 'react'
 import type { Section, Session, TrainingSurface, Workout } from '../types'
 import { useStore } from '../lib/store'
-import { todaysSession, maxTestWorkout, TEMPLATES, describeBlock, countRounds } from '../data/workouts'
+import {
+  todaysSession,
+  maxTestWorkout,
+  TEMPLATES,
+  describeBlock,
+  describeTarget,
+  primaryTargetBlock,
+  countRounds,
+} from '../data/workouts'
 import { EXERCISES, EXERCISE_BY_ID, CATEGORY_LABEL } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { applySession } from '../lib/engine'
@@ -20,6 +28,27 @@ const SECTION_LABEL: Record<Section, string> = {
   strength: 'Strength',
   core: 'Core',
   cooldown: 'Cooldown',
+}
+
+function WorkoutTarget({ workout }: { workout: Workout }) {
+  const target = primaryTargetBlock(workout)
+  if (!target) return null
+  const exercise = EXERCISE_BY_ID[target.exerciseId]
+  return (
+    <div className="mt-4 flex items-center gap-3 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-on-accent">
+        <Icon name="target" size={18} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent">Main target</div>
+        <div className="truncate text-[14px] font-semibold text-ink">{exercise.name}</div>
+      </div>
+      <div className="shrink-0 text-right">
+        <div className="text-[15px] font-bold text-ink tnum">{describeTarget(target)}</div>
+        <div className="text-[11.5px] text-ink3 tnum">{describeBlock(target)}</div>
+      </div>
+    </div>
+  )
 }
 
 export function Train({ startWorkout }: { startWorkout: (w: Workout) => void }) {
@@ -119,6 +148,7 @@ export function Train({ startWorkout }: { startWorkout: (w: Workout) => void }) 
                 ~{preview.minutes} min · {countRounds(preview.blocks)} sets
               </div>
             </div>
+            <WorkoutTarget workout={preview} />
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               {[...new Set(preview.blocks.map((b) => b.section))].map((sec) => (
                 <div key={sec} className="rounded-2xl border border-line bg-raised p-4">

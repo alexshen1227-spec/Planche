@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog } from '../types'
+import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog, Workout } from '../types'
 import { initialState, normalizeState, rebuildDerivedState, reconcileAchievements, skipToStep } from './store'
 import { applySession } from './engine'
 import { formEvidenceCoversArms, passesProgressionFormCheck, progressionCredit, qualifyingProgress } from './progression'
@@ -29,7 +29,14 @@ import {
   unrotateKeypoints,
 } from './poseForm'
 import { buildPlan, debriefSession, rewardFor } from './coach'
-import { adaptiveTarget, estimateMinutes, painSafeRecoveryWorkout, todaysSession } from '../data/workouts'
+import {
+  adaptiveTarget,
+  describeTarget,
+  estimateMinutes,
+  painSafeRecoveryWorkout,
+  primaryTargetBlock,
+  todaysSession,
+} from '../data/workouts'
 import { validateImport } from './exportImport'
 import { buildSampleState } from '../data/sample'
 import { ACHIEVEMENTS, ACHIEVEMENT_VERSION } from '../data/achievements'
@@ -158,6 +165,36 @@ describe('progression hold timing', () => {
         },
       ]),
     ).toBe(6)
+  })
+
+  it('surfaces the main work target before warm-up details', () => {
+    const workout: Workout = {
+      id: 'target-preview',
+      name: 'Target preview',
+      focus: 'Test',
+      minutes: 10,
+      kind: 'auto',
+      blocks: [
+        {
+          exerciseId: 'wrist-rocks',
+          sets: 1,
+          target: { kind: 'reps', reps: 10 },
+          restSec: 0,
+          section: 'warmup',
+        },
+        {
+          exerciseId: 'one-leg-planche',
+          sets: 4,
+          target: { kind: 'hold', sec: 8 },
+          restSec: 150,
+          section: 'main',
+        },
+      ],
+    }
+
+    const target = primaryTargetBlock(workout)!
+    expect(target.exerciseId).toBe('one-leg-planche')
+    expect(describeTarget(target)).toBe('8s hold each side')
   })
 })
 

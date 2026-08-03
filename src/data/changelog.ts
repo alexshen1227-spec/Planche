@@ -17,6 +17,15 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'The target stays in sight',
+    area: 'app',
+    notes: [
+      'Opening a workout now shows one clear Main target above the full block list, including the exercise, target per set or side, and prescribed set count.',
+      'The next-set screen gives the target its own high-contrast badge, and the setup countdown keeps it visible while you move into position.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'The skeleton stays on you',
     area: 'camera',
     notes: [

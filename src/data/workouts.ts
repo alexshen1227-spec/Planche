@@ -34,6 +34,23 @@ export function describeBlock(b: Block): string {
   return `${rounds}×${target}${perSide ? ' / side' : ''}`
 }
 
+/** The single work target worth surfacing before a session starts. */
+export function primaryTargetBlock(workout: Workout): Block | undefined {
+  return (
+    workout.blocks.find((block) => block.section === 'main') ??
+    workout.blocks.find((block) => block.section === 'strength') ??
+    workout.blocks.find((block) => block.section !== 'warmup' && block.section !== 'cooldown') ??
+    workout.blocks[0]
+  )
+}
+
+/** Human-readable target for the preview and setup screens. */
+export function describeTarget(block: Block): string {
+  const perSide = EXERCISE_BY_ID[block.exerciseId]?.perSide
+  const target = block.target.kind === 'hold' ? `${block.target.sec}s hold` : `${block.target.reps} reps`
+  return `${target}${perSide ? ' each side' : ' each set'}`
+}
+
 /**
  * Rounds as the athlete counts them: a unilateral block stored as four rounds
  * is two sets. Keeps the "N sets" badge consistent with the block list.
