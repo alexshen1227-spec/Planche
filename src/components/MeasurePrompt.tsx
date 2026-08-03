@@ -107,7 +107,7 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
   }
 
   return (
-    <Modal open={open} onClose={dismiss}>
+    <Modal open={open} onClose={dismiss} label="Weekly bodyweight check">
       <div className="p-6">
         <div className="pr-10">
           <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-accent">

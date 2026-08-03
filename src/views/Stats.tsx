@@ -154,6 +154,7 @@ export function Stats() {
           <select
             value={chartEx}
             onChange={(e) => setChartEx(e.target.value)}
+            aria-label="Exercise shown in hold trend"
             className="rounded-xl border border-line bg-raised px-3 py-2 text-[13.5px] text-ink outline-none focus:border-accent"
           >
             {holdExercises.map((e) => (
@@ -167,6 +168,7 @@ export function Stats() {
           <div className="mt-3 flex flex-wrap gap-1.5">
             <button
               onClick={() => setChartSurface('all')}
+              aria-pressed={chartSurface === 'all'}
               className={`rounded-full border px-3 py-1 text-[12px] font-medium ${
                 chartSurface === 'all' ? 'border-transparent bg-accent text-on-accent' : 'border-line text-ink2'
               }`}
@@ -178,6 +180,7 @@ export function Stats() {
                 key={item.id}
                 onClick={() => setChartSurface(item.id)}
                 disabled={item.id === 'parallettes' && !state.profile.equipment.includes('parallettes')}
+                aria-pressed={chartSurface === item.id}
                 className={`rounded-full border px-3 py-1 text-[12px] font-medium disabled:opacity-35 ${
                   chartSurface === item.id
                     ? 'border-transparent bg-accent text-on-accent'
@@ -592,7 +595,7 @@ export function Stats() {
       )}
       </section>
 
-      <Modal open={confirmDelete !== null} onClose={() => setConfirmDelete(null)}>
+      <Modal open={confirmDelete !== null} onClose={() => setConfirmDelete(null)} label="Delete session">
         <div className="p-6">
           <h2 className="font-display text-[19px] font-semibold text-ink">Delete this session?</h2>
           <p className="mt-1.5 text-[14px] text-ink2">

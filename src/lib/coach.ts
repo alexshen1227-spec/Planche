@@ -680,7 +680,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       text: 'Warm-ups have been getting skipped. Today includes the full one so wrists, elbows and shoulders are prepared before loading.',
       kind: 'warn',
     })
-  } else if (sig.restDays >= 4) {
+  } else if (sig.totalSessions > 0 && sig.restDays >= 4) {
     warmup = 'extended'
     decisions.push({ text: 'A few days off means cold tissue — longer warm-up before anything heavy.', kind: 'info' })
   } else if (dayType === 'technique' && sig.lastCheckIn?.joints === 'good') {

@@ -138,7 +138,12 @@ export function Train({ startWorkout }: { startWorkout: (w: Workout) => void }) 
       </div>
 
       {/* Workout preview */}
-      <Modal open={preview !== null} onClose={() => setPreview(null)} wide>
+      <Modal
+        open={preview !== null}
+        onClose={() => setPreview(null)}
+        label={preview ? `${preview.name} workout preview` : 'Workout preview'}
+        wide
+      >
         {preview ? (
           <div className="p-6 sm:p-7">
             <div className="pr-10">
@@ -256,7 +261,7 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
   }
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} label="Quick log a set">
       <div className="p-6">
         <h2 className="font-display text-[20px] font-bold text-ink">Quick log</h2>
         <p className="mt-1 text-[13.5px] text-ink2">Trained outside the app? Log a single best set here.</p>

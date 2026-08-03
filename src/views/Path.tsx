@@ -137,7 +137,12 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
       </div>
 
       {/* Detail modal */}
-      <Modal open={detail !== null} onClose={() => setDetail(null)} wide>
+      <Modal
+        open={detail !== null}
+        onClose={() => setDetail(null)}
+        label={detail ? `${detail.name} progression details` : 'Progression details'}
+        wide
+      >
         {detail ? <StepDetail step={detail} onClose={() => setDetail(null)} startWorkout={startWorkout} /> : null}
       </Modal>
     </div>

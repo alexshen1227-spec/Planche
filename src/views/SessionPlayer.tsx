@@ -129,6 +129,7 @@ export function SessionPlayer({
   const [showCheckIn, setShowCheckIn] = useState(askCheckIn && !resumeFrom)
   const [insight, setInsight] = useState<{ delta: number; label: string } | null>(null)
   const [debrief, setDebrief] = useState<CoachDecision[]>([])
+  const sessionRef = useRef<HTMLDivElement | null>(null)
   const startedAtRef = useRef(resumeFrom?.startedAt ?? Date.now())
   const lastBeepRef = useRef(-1)
   const targetHitRef = useRef(false)
@@ -151,6 +152,10 @@ export function SessionPlayer({
   )
 
   useWakeLock(phase !== 'summary' && phase !== 'celebrate')
+
+  useEffect(() => {
+    sessionRef.current?.focus()
+  }, [])
 
   const block = workout.blocks[bi]
   const exercise = block ? EXERCISE_BY_ID[block.exerciseId] : undefined
@@ -624,9 +629,9 @@ export function SessionPlayer({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      // A dialog is on top: let it own the keyboard, or Escape would also open
-      // the exit prompt and Space would start the set behind the overlay.
-      if (document.querySelector('[role="dialog"]')) return
+      // A child dialog is on top: let it own the keyboard, or Escape would
+      // also open the exit prompt and Space would start behind the overlay.
+      if (showCheckIn || showDemo || showRpeHelp || confirmExit) return
       if (e.code === 'Space') {
         e.preventDefault()
         if (phase === 'intro') setPhase('ready')
@@ -641,7 +646,7 @@ export function SessionPlayer({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [phase, beginSet, stopHold, logSet, pendingReps])
+  }, [phase, beginSet, stopHold, logSet, pendingReps, showCheckIn, showDemo, showRpeHelp, confirmExit])
 
   const sessionElapsed = Math.max(0, (now - startedAtRef.current) / 1000)
   const lastLog = logs[logs.length - 1]
@@ -716,7 +721,29 @@ export function SessionPlayer({
                 </div>
               </div>
             ) : null}
-            <div className="mt-4 space-y-4">
+            {willFilm ? (
+              <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-line bg-raised px-4 py-3 text-left">
+                <Icon name="monitor" size={16} className="mt-0.5 shrink-0 text-accent" />
+                <div>
+                  <div className="text-[13.5px] font-medium text-ink">Side-view camera check on main sets</div>
+                  <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink2">
+                    Put the phone directly beside you. The live guide confirms your whole body is ready before each
+                    filmed set.
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            <button
+              onClick={() => setPhase('ready')}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99]"
+              style={{ background: 'var(--t-btn-accent)' }}
+            >
+              <Icon name="play" size={18} /> Begin session
+            </button>
+            <div className="mt-2 text-center text-[12.5px] text-ink3">
+              Space = start / stop · S = skip rest · Esc = exit
+            </div>
+            <div className="mt-5 space-y-4 border-t border-line pt-5">
               {sections.map((sec) => (
                 <div key={sec}>
                   <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-ink3">
@@ -739,26 +766,6 @@ export function SessionPlayer({
               ))}
             </div>
           </div>
-          {willFilm ? (
-            <div className="mt-4 flex items-start gap-2.5 rounded-2xl border border-line bg-surface px-4 py-3 text-left">
-              <Icon name="monitor" size={16} className="mt-0.5 shrink-0 text-accent" />
-              <div>
-                <div className="text-[13.5px] font-medium text-ink">Your main sets will be filmed</div>
-                <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink2">
-                  Stand your phone side-on when you reach the main work — a preview and a level guide appear before
-                  each set, and you can switch the camera off there or in Settings.
-                </p>
-              </div>
-            </div>
-          ) : null}
-          <button
-            onClick={() => setPhase('ready')}
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99]"
-            style={{ background: 'var(--t-btn-accent)' }}
-          >
-            <Icon name="play" size={18} /> Begin session
-          </button>
-          <div className="mt-3 text-center text-[12.5px] text-ink3">Space = start / stop · S = skip rest · Esc = exit</div>
         </div>
       )
     }
@@ -1425,13 +1432,22 @@ export function SessionPlayer({
   }
 
   return (
-    <div className="fixed inset-0 z-40 overflow-y-auto bg-bg">
+    <div
+      ref={sessionRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${workout.name} training session`}
+      aria-hidden={showCheckIn || showDemo || showRpeHelp || confirmExit ? true : undefined}
+      inert={showCheckIn || showDemo || showRpeHelp || confirmExit ? true : undefined}
+      tabIndex={-1}
+      className="fixed inset-0 z-40 overflow-y-auto bg-bg outline-none"
+    >
       <div className="app-ambient min-h-full pb-8">
         {header}
         {phase !== 'celebrate' ? progressBar : null}
         {body()}
       </div>
-      <Modal open={showCheckIn} onClose={() => setShowCheckIn(false)}>
+      <Modal open={showCheckIn} onClose={() => setShowCheckIn(false)} label="Readiness check-in">
         <CheckInForm
           onDone={(c) => {
             setCheckIn(c)
@@ -1450,11 +1466,16 @@ export function SessionPlayer({
         />
       </Modal>
 
-      <Modal open={showDemo} onClose={() => setShowDemo(false)} wide>
+      <Modal
+        open={showDemo}
+        onClose={() => setShowDemo(false)}
+        label={exercise ? `${exercise.name} exercise guide` : 'Exercise guide'}
+        wide
+      >
         {exercise ? <DemoHelp exercise={exercise} pinnedUrl={state.videoLinks[exercise.id]} /> : null}
       </Modal>
 
-      <Modal open={showRpeHelp} onClose={() => setShowRpeHelp(false)}>
+      <Modal open={showRpeHelp} onClose={() => setShowRpeHelp(false)} label="Rate of perceived exertion help">
         <div className="p-6">
           <h2 className="font-display text-[19px] font-semibold text-ink">What is RPE?</h2>
           <p className="mt-1.5 text-[14px] leading-relaxed text-ink2">
@@ -1478,7 +1499,7 @@ export function SessionPlayer({
         </div>
       </Modal>
 
-      <Modal open={confirmExit} onClose={() => setConfirmExit(false)}>
+      <Modal open={confirmExit} onClose={() => setConfirmExit(false)} label="Leave training session">
         <div className="p-6">
           <h2 className="font-display text-[19px] font-semibold text-ink">Leave this session?</h2>
           <p className="mt-1.5 text-[14px] text-ink2">

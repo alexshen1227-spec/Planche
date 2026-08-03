@@ -7,11 +7,14 @@ export function Modal({
   onClose,
   children,
   wide = false,
+  label = 'Dialog',
 }: {
   open: boolean
   onClose: () => void
   children: ReactNode
   wide?: boolean
+  /** Concise accessible name announced when focus enters the modal. */
+  label?: string
 }) {
   const dialogRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
@@ -68,7 +71,7 @@ export function Modal({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Dialog"
+        aria-label={label}
         tabIndex={-1}
         className={`relative max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border border-line bg-surface shadow-pop animate-pop sm:rounded-3xl ${
           wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'

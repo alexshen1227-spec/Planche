@@ -17,6 +17,24 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'Less friction before the first set',
+    area: 'app',
+    notes: [
+      'The session opener now keeps the Main target, side-view camera setup and Begin session button together near the top. You no longer have to scroll past the entire workout just to start it.',
+      'A live session now behaves like a true full-screen dialog: the app behind it is hidden from keyboard and screen-reader navigation until the session closes.',
+      'Dialogs announce what they contain instead of calling everything “Dialog”, and Settings controls now name the exact value they change. Steppers also disable honestly at their minimum and maximum.',
+    ],
+  },
+  {
+    date: '2026-08-03',
+    title: 'The coach knows when it has no history',
+    area: 'coach',
+    notes: [
+      'A brand-new athlete now gets a neutral baseline plan without the coach inventing “days off” or cold tissue from an empty training log. Return-from-break advice only appears after a real prior session exists.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'Built specifically for the side view',
     area: 'camera',
     notes: [

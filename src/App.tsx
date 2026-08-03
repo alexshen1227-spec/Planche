@@ -198,7 +198,11 @@ export default function App() {
 
   return (
     <div className="app-ambient grain min-h-screen">
-      <div className="mx-auto flex w-full max-w-6xl gap-6 px-4 pb-24 pt-5 sm:px-6 lg:pb-10 lg:pt-8">
+      <div
+        aria-hidden={activeWorkout ? true : undefined}
+        inert={activeWorkout ? true : undefined}
+        className="mx-auto flex w-full max-w-6xl gap-6 px-4 pb-24 pt-5 sm:px-6 lg:pb-10 lg:pt-8"
+      >
         {/* Sidebar (desktop) */}
         <aside className="sticky top-8 hidden h-fit w-52 shrink-0 lg:block">
           <div className="mb-8 flex items-center gap-2.5 px-2">
@@ -265,7 +269,11 @@ export default function App() {
       </div>
 
       {/* Bottom tab bar (mobile) */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 backdrop-blur-lg lg:hidden">
+      <nav
+        aria-hidden={activeWorkout ? true : undefined}
+        inert={activeWorkout ? true : undefined}
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 backdrop-blur-lg lg:hidden"
+      >
         <div className="mx-auto flex max-w-lg items-stretch justify-around px-2 pb-[max(env(safe-area-inset-bottom),6px)] pt-1.5">
           {NAV.map((n) => (
             <button

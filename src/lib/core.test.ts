@@ -1086,6 +1086,24 @@ describe('readiness rails', () => {
     expect(plan.dayType).toBe('build')
     expect(plan.dayReason).toContain('Baseline session')
     expect(plan.dayReason).not.toContain('99')
+    expect(plan.warmup).toBe('standard')
+    expect(plan.decisions.map((decision) => decision.text).join(' ')).not.toContain('days off')
+  })
+
+  it('keeps return-from-break warm-up advice when a real prior session exists', () => {
+    const now = Date.now()
+    const previous = session(
+      'foundations',
+      [
+        log('wrist-rocks', 8, { kind: 'reps', section: 'warmup' }),
+        log('ppp-hold', 12),
+      ],
+      { startedAt: now - 5 * DAY },
+    )
+    const plan = buildPlan({ ...state(), sessions: [previous] }, now)
+
+    expect(plan.warmup).toBe('extended')
+    expect(plan.decisions.map((decision) => decision.text).join(' ')).toContain('days off')
   })
 
   it('treats a timer target as missed when clean camera time fell short', () => {

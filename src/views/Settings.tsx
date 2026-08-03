@@ -45,6 +45,7 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
 }
 
 function Stepper({
+  label,
   value,
   onChange,
   min,
@@ -52,6 +53,7 @@ function Stepper({
   step = 1,
   format,
 }: {
+  label: string
   value: number
   onChange: (v: number) => void
   min: number
@@ -63,16 +65,18 @@ function Stepper({
     <div className="flex items-center gap-1">
       <button
         onClick={() => onChange(Math.max(min, value - step))}
-        aria-label="Decrease"
-        className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-raised text-ink2 hover:text-ink"
+        aria-label={`Decrease ${label}`}
+        disabled={value <= min}
+        className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-raised text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
       >
         <Icon name="minus" size={14} />
       </button>
       <div className="w-16 text-center text-[14px] font-semibold text-ink tnum">{format ? format(value) : value}</div>
       <button
         onClick={() => onChange(Math.min(max, value + step))}
-        aria-label="Increase"
-        className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-raised text-ink2 hover:text-ink"
+        aria-label={`Increase ${label}`}
+        disabled={value >= max}
+        className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-raised text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
       >
         <Icon name="plus" size={14} />
       </button>
@@ -283,6 +287,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Athlete"
+            aria-label="Athlete name"
             className="w-40 rounded-xl border border-line bg-raised px-3 py-2 text-[14px] text-ink outline-none focus:border-accent"
           />
           <button
@@ -290,6 +295,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               dispatch({ type: 'REPLACE', state: { ...state, name: name.trim() } })
               pushToast('Saved.', 'success')
             }}
+            aria-label="Save athlete name"
             className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
           >
             Save
@@ -306,6 +312,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         <Row label="Goal skill" hint="Keeps the app focused on where you actually want the progression to lead.">
           <select
             value={state.profile.goalStepId ?? 'straddle'}
+            aria-label="Goal skill"
             onChange={(event) =>
               dispatch({ type: 'SET_PROFILE', patch: { goalStepId: event.target.value as typeof state.stepId } })
             }
@@ -319,7 +326,13 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           </select>
         </Row>
         <Row label="Weekly session goal" hint="Drives the streak. 3–4 is the sweet spot for planche work.">
-          <Stepper value={s.weeklyGoal} onChange={(v) => set({ weeklyGoal: v })} min={1} max={7} />
+          <Stepper
+            label="weekly session goal"
+            value={s.weeklyGoal}
+            onChange={(v) => set({ weeklyGoal: v })}
+            min={1}
+            max={7}
+          />
         </Row>
         <Row label="Equipment" hint="Update this whenever your setup changes; it affects later exercise choices.">
           <div className="flex max-w-sm flex-wrap justify-end gap-1.5">
@@ -358,6 +371,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                     dispatch({ type: 'SET_PROFILE', patch: { preferredSurface: item.id as TrainingSurface } })
                   }
                   disabled={disabled}
+                  aria-pressed={selected}
                   className={`px-3.5 py-2 text-[13px] font-medium transition disabled:cursor-not-allowed disabled:opacity-35 ${
                     selected ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                   }`}
@@ -388,6 +402,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               dispatch({ type: 'SET_PROFILE', patch: { birthYear: birthYear ? parsed : undefined } })
               pushToast('Athlete profile saved.', 'success')
             }}
+            aria-label="Save birth year"
             className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
           >
             Save
@@ -399,6 +414,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               value={injuryNote}
               onChange={(e) => setInjuryNote(e.target.value)}
               placeholder="e.g. left wrist feels irritated"
+              aria-label="Joint or injury note"
               className="min-w-52 flex-1 rounded-xl border border-line bg-raised px-3 py-2 text-[14px] text-ink outline-none focus:border-accent"
             />
             <button
@@ -406,6 +422,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 dispatch({ type: 'SET_PROFILE', patch: { injuryNote: injuryNote.trim() || undefined } })
                 pushToast('Joint note saved.', 'success')
               }}
+              aria-label="Save joint or injury note"
               className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
             >
               Save
@@ -429,6 +446,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </Row>
         <Row label="Session length" hint="Generated sessions trim themselves to fit this budget.">
           <Stepper
+            label="session length"
             value={s.sessionMinutes}
             onChange={(v) => set({ sessionMinutes: v })}
             min={15}
@@ -447,6 +465,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               <button
                 key={u}
                 onClick={() => set({ units: u })}
+                aria-pressed={s.units === u}
                 className={`px-3.5 py-2 text-[13.5px] font-medium transition ${
                   s.units === u ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                 }`}
@@ -462,6 +481,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               <button
                 key={t}
                 onClick={() => set({ theme: t })}
+                aria-pressed={s.theme === t}
                 className={`flex items-center gap-1.5 px-3.5 py-2 text-[13.5px] font-medium capitalize transition ${
                   s.theme === t ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                 }`}
@@ -515,6 +535,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </Row>
         <Row label="Rest after main work" hint="Hard isometrics want 2–3 minutes.">
           <Stepper
+            label="rest after main work"
             value={s.restMainSec}
             onChange={(v) => set({ restMainSec: v })}
             min={30}
@@ -534,6 +555,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             Calibrate
           </button>
           <Stepper
+            label="stop reaction delay"
             value={Math.round(s.stopLatencySec * 10)}
             onChange={(v) => set({ stopLatencySec: v / 10 })}
             min={0}
@@ -546,6 +568,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </Row>
         <Row label="Rest after accessories">
           <Stepper
+            label="rest after accessories"
             value={s.restAccessorySec}
             onChange={(v) => set({ restAccessorySec: v })}
             min={15}
@@ -575,6 +598,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             step={0.05}
             value={s.volume}
             onChange={(e) => set({ volume: Number(e.target.value) })}
+            aria-label="Sound volume"
             className="w-32"
           />
           <button
@@ -700,7 +724,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
 
       <MeasurePrompt open={loggingWeight} onClose={() => setLoggingWeight(false)} />
 
-      <Modal open={calibrating} onClose={() => setCalibrating(false)}>
+      <Modal open={calibrating} onClose={() => setCalibrating(false)} label="Calibrate reaction delay">
         <LatencyCalibrator
           onDone={(sec) => {
             set({ stopLatencySec: sec })
@@ -710,7 +734,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         />
       </Modal>
 
-      <Modal open={confirmSample} onClose={() => setConfirmSample(false)}>
+      <Modal open={confirmSample} onClose={() => setConfirmSample(false)} label="Load sample data">
         <div className="p-6">
           <h2 className="font-display text-[19px] font-semibold text-ink">Load sample data?</h2>
           <p className="mt-1.5 text-[14px] text-ink2">
@@ -739,7 +763,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </div>
       </Modal>
 
-      <Modal open={confirmReset} onClose={() => setConfirmReset(false)}>
+      <Modal open={confirmReset} onClose={() => setConfirmReset(false)} label="Reset all data">
         <div className="p-6">
           <h2 className="font-display text-[19px] font-semibold text-ink">Reset all data?</h2>
           <p className="mt-1.5 text-[14px] text-ink2">

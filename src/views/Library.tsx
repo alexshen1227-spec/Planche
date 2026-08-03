@@ -146,7 +146,12 @@ function ExercisePane() {
         </div>
       ) : null}
 
-      <Modal open={detail !== null} onClose={() => setDetail(null)} wide>
+      <Modal
+        open={detail !== null}
+        onClose={() => setDetail(null)}
+        label={detail ? `${detail.name} exercise guide` : 'Exercise guide'}
+        wide
+      >
         {detail ? <ExerciseDetail exercise={detail} /> : null}
       </Modal>
     </>
@@ -413,7 +418,12 @@ function BasicsPane() {
         </div>
       ) : null}
 
-      <Modal open={guide !== null} onClose={() => setGuide(null)} wide>
+      <Modal
+        open={guide !== null}
+        onClose={() => setGuide(null)}
+        label={guide?.title ?? 'Training basics guide'}
+        wide
+      >
         {guide ? (
           <div className="p-6 sm:p-8">
             <div className="pr-10">
