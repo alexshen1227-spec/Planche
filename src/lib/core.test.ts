@@ -160,6 +160,28 @@ describe('progression hold timing', () => {
     expect(credited(4, stopLatencySecondsFor('tuck-planche', 0.4, false))).toBe(0)
   })
 
+  it('re-credits a logged hold from the untouched stopwatch, so the tap never drifts', () => {
+    // The rest screen offers a one-tap correction between the two allowances.
+    // It recomputes from `raw` rather than nudging the credited value, so
+    // tapping back and forth has to land on exactly the same two numbers
+    // however many times it is pressed.
+    const raw = 8.6
+    const recredit = (didWalk: boolean) =>
+      Math.max(0, Math.round((raw - stopLatencySecondsFor('adv-tuck-planche', 2.3, !didWalk)) * 10) / 10)
+
+    expect(recredit(true)).toBe(3.6)
+    expect(recredit(false)).toBe(6.3)
+    // Idempotent: the same answer always gives the same number.
+    expect([recredit(true), recredit(false), recredit(true), recredit(false)]).toEqual([3.6, 6.3, 3.6, 6.3])
+    // A hold shorter than the walk-back allowance survives the correction
+    // instead of staying pinned at zero.
+    const brief = 3.2
+    expect(Math.max(0, brief - stopLatencySecondsFor('adv-tuck-planche', 2.3, false))).toBe(0)
+    expect(
+      Math.round((brief - stopLatencySecondsFor('adv-tuck-planche', 2.3, true)) * 10) / 10,
+    ).toBe(0.9)
+  })
+
   it('never credits reaction time it has no basis for, whichever way the setting is', () => {
     // The floor is the reaction delay that applies either way: saying the
     // phone is far away must never *reduce* the deduction below the athlete's

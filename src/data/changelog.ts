@@ -17,6 +17,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'One tap fixes a hold the stopwatch got wrong',
+    area: 'training',
+    notes: [
+      'Whether you had to climb out of the position and walk to the phone is not a fixed fact about you — you film some sets and stop others from arm’s reach — so the app no longer guesses it once and applies it forever. The rest screen now shows the correction right next to the number it changes: “Stopped it without getting up? +2.7s”. One tap, and the hold is re-credited.',
+      'It recomputes from the original stopwatch reading rather than nudging the total, so tapping back and forth always lands on exactly the same two numbers. Your answer carries to the following sets, so it only ever costs a tap on the sets where it is actually wrong.',
+      'The Settings switch is still there — it is now just the opening answer for each session rather than the whole story.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'Stop losing five seconds you never spent walking',
     area: 'training',
     notes: [

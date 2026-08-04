@@ -36,7 +36,7 @@ import {
 import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
 import { readSignals } from '../lib/signals'
-import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
+import { isMainProgressionHold, leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
 import { defaultSurface, surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 import { recordForSurface } from '../lib/records'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
@@ -123,6 +123,17 @@ export function SessionPlayer({
   const [showRpeHelp, setShowRpeHelp] = useState(false)
   const [checkIn, setCheckIn] = useState<CheckIn | null>(resumeFrom?.checkIn ?? null)
   const [cameraOn, setCameraOn] = useState(state.settings.recordForm)
+  /**
+   * Whether the athlete had to climb out of the position and walk to the phone
+   * to stop the last hold.
+   *
+   * A per-set fact rather than a profile one: the same athlete films some sets
+   * and stops others from arm's reach, and a single global answer is wrong
+   * half the time. Settings supplies the opening guess, the rest screen offers
+   * a one-tap correction, and the corrected answer carries to the next set so
+   * it only ever costs a tap when it is actually wrong.
+   */
+  const [walkedBack, setWalkedBack] = useState(!state.settings.phoneWithinReach)
   const [pendingClip, setPendingClip] = useState<{ key: string; logAt: number } | null>(null)
   const [clipFinalizing, setClipFinalizing] = useState(false)
   const [analysingSets, setAnalysingSets] = useState<Set<number>>(() => new Set())
@@ -209,7 +220,7 @@ export function SessionPlayer({
   const leadSec = leadInSecondsFor(exercise?.id)
   const latency =
     exercise?.type === 'hold'
-      ? stopLatencySecondsFor(exercise.id, state.settings.stopLatencySec, state.settings.phoneWithinReach)
+      ? stopLatencySecondsFor(exercise.id, state.settings.stopLatencySec, !walkedBack)
       : 0
   // Film every key hold on the road. Most use pose geometry; Frog Stand keeps
   // the replay for an explicit checklist review instead.
@@ -587,6 +598,32 @@ export function SessionPlayer({
       return [...l.slice(0, -1), { ...rest, value }]
     })
   }, [])
+
+  /**
+   * Re-credit the hold just logged against the other stop-allowance.
+   *
+   * Recomputed from the untouched stopwatch reading rather than nudged, so
+   * tapping back and forth always lands on exactly the same two numbers and
+   * cannot drift. `raw` is deliberately kept even when it now equals the
+   * credited value, because it is what makes the tap reversible.
+   */
+  const setLastWalkedBack = useCallback(
+    (didWalk: boolean) => {
+      setWalkedBack(didWalk)
+      setLogs((l) => {
+        const last = l[l.length - 1]
+        if (!last || last.kind !== 'hold' || last.raw === undefined) return l
+        const nextLatency = stopLatencySecondsFor(
+          last.exerciseId,
+          state.settings.stopLatencySec,
+          !didWalk,
+        )
+        const value = Math.max(0, Math.round((last.raw - nextLatency) * 10) / 10)
+        return [...l.slice(0, -1), { ...last, value }]
+      })
+    },
+    [state.settings.stopLatencySec],
+  )
 
   const save = useCallback(() => {
     const session: Session = {
@@ -1146,9 +1183,9 @@ export function SessionPlayer({
           {lastLog ? (
             <div className="mt-5 flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-2xl border border-line bg-surface px-4 py-2 text-[13.5px] text-ink2">
               Logged {lastLog.kind === 'hold' ? fmtHold(lastLog.value) : `${lastLog.value} reps`}
-              {lastLog.raw !== undefined ? (
+              {lastLog.raw !== undefined && lastLog.raw - lastLog.value > 0.05 ? (
                 <span className="text-[12px] text-ink3 tnum">
-                  ({lastLog.raw.toFixed(1)}s − {(lastLog.raw - lastLog.value).toFixed(1)}s reaction)
+                  ({lastLog.raw.toFixed(1)}s − {(lastLog.raw - lastLog.value).toFixed(1)}s to stop it)
                 </span>
               ) : null}
               <span className="flex gap-1">
@@ -1168,6 +1205,30 @@ export function SessionPlayer({
                 </button>
               </span>
             </div>
+          ) : null}
+          {/* The one question the stopwatch cannot answer for itself. Asked
+              where the number it changes is already on screen, phrased as what
+              the tap does, and only when the two answers actually differ. */}
+          {lastLog?.kind === 'hold' &&
+          lastLog.raw !== undefined &&
+          isMainProgressionHold(lastLog.exerciseId) ? (
+            (() => {
+              const walkedLatency = stopLatencySecondsFor(lastLog.exerciseId, state.settings.stopLatencySec, false)
+              const reachLatency = stopLatencySecondsFor(lastLog.exerciseId, state.settings.stopLatencySec, true)
+              const delta = Math.round((walkedLatency - reachLatency) * 10) / 10
+              if (delta <= 0.05) return null
+              return (
+                <button
+                  onClick={() => setLastWalkedBack(!walkedBack)}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-[12.5px] font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
+                >
+                  <Icon name="rotate" size={13} className="text-accent" />
+                  {walkedBack
+                    ? `Stopped it without getting up? +${delta.toFixed(1)}s`
+                    : `Had to walk back to the phone? −${delta.toFixed(1)}s`}
+                </button>
+              )
+            })()
           ) : null}
           {lastLog?.kind === 'hold' &&
           lastLog.section === 'main' &&

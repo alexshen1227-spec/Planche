@@ -621,8 +621,8 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           label="Phone within reach on Path holds"
           hint={
             s.phoneWithinReach
-              ? 'On — main Path holds use your calibrated delay below, because you stop the timer without getting up.'
-              : 'Off — main Path holds allow 5.0s for climbing out of the position and walking back to the phone. Turn this on only if you can genuinely stop the timer without getting up; it is what your seconds are measured against.'
+              ? 'Starting answer: within reach, so main Path holds use your calibrated delay below. Each set can still be corrected with one tap on the rest screen.'
+              : 'Starting answer: across the room, so main Path holds allow 5.0s for climbing out and walking back. Each set can be corrected with one tap on the rest screen, so set this to whichever is usual for you.'
           }
         >
           <Toggle
