@@ -446,6 +446,14 @@ function BasicsPane() {
                       ))}
                     </ul>
                   ) : null}
+                  {s.link ? (
+                    <a
+                      href={s.link.href}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-accent/30 bg-accent-soft px-4 py-2 text-[13.5px] font-semibold text-accent transition hover:brightness-105"
+                    >
+                      {s.link.label} <Icon name="chevronR" size={14} />
+                    </a>
+                  ) : null}
                 </div>
               ))}
             </div>

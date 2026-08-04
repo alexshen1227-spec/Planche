@@ -17,6 +17,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'See for yourself how the camera judge works',
+    area: 'app',
+    notes: [
+      'A new Learn guide — “How the camera judge works” — explains in plain language what the form check measures, how strictly it scores versus how carefully it accuses, and what it refuses to guess at. No trust required: it links straight to the judge’s bench.',
+      'The bench (also in Settings → About) now opens with a one-tap self-test: the judge’s promises — clean reps pass, every fault family is caught, tucks are never accused of being tucked, front-on clips are refused — verified on your own device, including against real photographs it must keep getting right.',
+      'Everything on the bench stays on your device, like the rest of the app. For the technically curious, the whole judge is scriptable from the browser console.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'Two honesty fixes in the side-view judge',
     area: 'camera',
     notes: [

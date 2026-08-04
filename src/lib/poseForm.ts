@@ -79,6 +79,32 @@ export interface PoseFormResult {
    * not part of it.
    */
   unseen: string[]
+  /**
+   * The working the verdict was built from, present only when explicitly
+   * requested. A headline like "arms" is either right or wrong about a body
+   * that is no longer in the room — this is the per-moment evidence trail that
+   * lets a person (or an automated reviewer) check *which* frames convicted
+   * it. Transient like `track`; never persisted.
+   */
+  explain?: JudgeExplanation
+}
+
+/** Per-moment working behind a verdict, for the bench and automated review. */
+export interface JudgeExplanation {
+  /** Which criteria had the coverage to be judged at all. */
+  judged: JudgedCriteria
+  /** Cleaned per-frame measurements the aggregates were built from. */
+  frames: FrameReading[]
+  /**
+   * One entry per sampled moment: what the clean-window envelope saw there.
+   * `bad: null` means the moment carried too little evidence to prove the
+   * position was still held — which also ends verified time.
+   */
+  envelope: { t: number; bad: boolean | null; issues: FormIssue[] }[]
+  /** Faults visible in the whole-hold aggregate reading. */
+  aggregateFaults: FormIssue[]
+  /** Faults that persisted long enough to be named on their own. */
+  sustainedFaults: FormIssue[]
 }
 
 const MIN_KP_SCORE = 0.3
@@ -1155,8 +1181,15 @@ export interface JudgeInput {
  * reasoning, which is where form judgements are actually right or wrong. Split
  * this way the judge can be driven from recorded fixtures and from synthetic
  * poses whose true angles are known exactly.
+ *
+ * `options.explain` attaches the per-moment working (`explain`) to a graded
+ * verdict. Refusals carry no explanation — there is no verdict to explain.
  */
-export function judgeTrackedFrames(input: JudgeInput, exerciseId: string): PoseFormResult {
+export function judgeTrackedFrames(
+  input: JudgeInput,
+  exerciseId: string,
+  options: { explain?: boolean } = {},
+): PoseFormResult {
   const empty = emptyResult()
   const profile = POSE_PROFILES[exerciseId]
   if (!profile) return { ...empty, reason: 'This movement is not one the camera can assess.' }
@@ -1898,6 +1931,23 @@ export function judgeTrackedFrames(input: JudgeInput, exerciseId: string): PoseF
     framesSampled: n,
     ...(scored ? { score: scored.score, subscores: scored.subscores } : {}),
     ...(fix ? { fixFirst: fix } : {}),
+    ...(options.explain
+      ? {
+          explain: {
+            judged,
+            frames: frameReadings.map((frame) => ({ ...frame })),
+            envelope: envelopeSamples.map(({ t, bad }) => ({
+              t,
+              bad,
+              issues: readingAt.has(t)
+                ? materialIssuesForReading(readingAt.get(t)!, profile, judged)
+                : [],
+            })),
+            aggregateFaults: [...aggregateFaults],
+            sustainedFaults: [...sustainedFaults],
+          },
+        }
+      : {}),
     track,
     cleanSeconds,
     cleanRatio,

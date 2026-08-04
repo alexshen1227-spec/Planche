@@ -2,6 +2,8 @@ export interface GuideSection {
   heading: string
   body: string
   bullets?: string[]
+  /** An optional call-to-action rendered after the section. */
+  link?: { href: string; label: string }
 }
 
 export interface Guide {
@@ -125,6 +127,46 @@ export const GUIDES: Guide[] = [
       {
         heading: 'Be honest, not tough',
         body: 'Reporting an 8 when it was really a 10 does not make you stronger; it just feeds the app bad data and slows you down.',
+      },
+    ],
+  },
+  {
+    id: 'camera-judge',
+    icon: '🎥',
+    title: 'How the camera judge works',
+    summary:
+      'What the form check actually measures, what it deliberately refuses to guess at, and how you can test it yourself.',
+    sections: [
+      {
+        heading: 'What happens when you film a set',
+        body: 'Everything runs on your device. The clip is sampled a few times per second, a pose model estimates where your joints are in each sampled frame, and plain geometry turns those points into angles: how straight the elbows were, where the hips sat relative to the shoulders, how far the shoulders travelled past the hands. No footage, landmarks or results ever leave your phone — there is no server to send them to.',
+      },
+      {
+        heading: 'Each position is judged by its own rules',
+        body: 'A tuck planche is supposed to have bent knees and closed hips, so those are never faults there. Each step on the road has a profile saying which checks apply and how strict they are — the standards tighten as the lever gets longer, exactly like a judge scoring harder skills.',
+      },
+      {
+        heading: 'Measuring strictly, accusing carefully',
+        body: 'The 0–100 score starts deducting for small deviations, the way a gymnastics judge deducts inside deduction bands. But a red fault flag is a stronger claim, so it has a higher bar: the measurement must be clearly beyond what camera error can explain, and it must persist for around a second. One noisy frame can never convict you.',
+        bullets: [
+          'Every tolerance was set by measurement, not taste: synthetic holds of known angle were swept through the checker to find where real faults are always caught and clean holds are never accused.',
+          'Verified clean time ends when the position breaks down and stays broken — or when the camera simply loses the evidence. A quick drop cannot bank extra seconds.',
+          'When the camera and your own rating disagree, your word stands. The camera files its reading alongside, and the coach only learns from clips where you both broadly agree.',
+        ],
+      },
+      {
+        heading: 'What it refuses to guess at',
+        body: 'One camera sees a flat picture, and this app would rather admit that than bluff. Anything it cannot measure honestly is said out loud rather than silently skipped.',
+        bullets: [
+          'Front-on or strongly angled clips are refused outright — elbow, hip and lean angles are foreshortened and would be misleading.',
+          'A body part without enough clear frames is reported as “unseen”, not guessed. An unseen elbow blocks progression credit; an unseen knee only costs the knee verdict.',
+          'Scapular protraction, true depth, and elbows flared toward the camera are physically invisible from the side — which is why a Clean rating and true-flight confirmation stay yours to give.',
+        ],
+      },
+      {
+        heading: 'Check it yourself',
+        body: 'The judge is tested against skeletons built from known angles and against real photographs the thresholds were calibrated on — including photos it must refuse. The same bench ships inside this app: build a pose with angles you choose, watch what the judge says, run the full self-test on your own phone, or feed it your own clip.',
+        link: { href: '#devlab', label: 'Open the judge’s bench' },
       },
     ],
   },

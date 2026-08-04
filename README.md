@@ -42,6 +42,17 @@ Then open http://localhost:5173.
 - **Crash-proof sessions** — the live workout is mirrored to storage on every set and again the moment the page is hidden, so a phone that sleeps or a tab the OS discards resumes exactly where it left off. A hold that was cut off mid-set is offered back at the time it had reached (frozen at lock, not left running).
 - **Safe on device** — the app is a full PWA: a service worker precaches everything so it opens with no signal; `navigator.storage.persist()` asks the browser to protect the data from cleanup; every change is mirrored to a second on-device copy in IndexedDB and silently restored if localStorage is ever wiped or corrupted; and the dashboard nudges you to export a backup file once real history accumulates.
 
+## Transparency: the judge's bench
+
+The camera form judge is the one feature whose output can't be checked by reading it, so the app ships its own test bench at `#devlab` (linked from Settings → About and from the Learn guide *"How the camera judge works"*):
+
+- Build a synthetic pose whose **true** angles you choose and read the verdict beside the ground truth.
+- Run the **self-test** — the judge's promises verified on your own device, including against real photographs it must keep refusing or passing.
+- Feed it your own clip or a photo URL through the exact pipeline a workout uses.
+- Script all of it from the console via `window.__planche` (start with `.help`) — this is also how automated reviews drive the app. Verdicts can carry their per-moment working via `judgeTrackedFrames(..., { explain: true })`.
+
+Thresholds are set by measurement, not judgement — `CLAUDE.md` documents the invariants and the calibration story for anyone (human or AI) working on the judge.
+
 ## Stack
 
 Vite · React 19 · TypeScript · Tailwind CSS v4. No backend, no router, no state library — one reducer + localStorage.

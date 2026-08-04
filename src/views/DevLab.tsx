@@ -4,7 +4,11 @@ import {
   analyseClipDetailed,
   drawRotated,
   judgeTrackedFrames,
+  MATERIAL_TOLERANCE,
+  MIN_EXTENDED_LEG_REACH,
+  MIN_VERIFIABLE_HOLD_SEC,
   POSE_PROFILES,
+  SHRUG_MIN_RATIO,
   unrotateKeypoints,
   type JudgeInput,
   type PoseFormResult,
@@ -12,6 +16,7 @@ import {
 } from '../lib/poseForm'
 import { getBackend, trackingScore, type Kp } from '../lib/poseBackend'
 import { buildTruePose, IDEAL, synthesizeClip, type SynthParams } from '../lib/poseSynth'
+import { fixtureFromPoses, selfTestJudge, type SelfTestReport } from '../lib/benchTools'
 import { Icon } from '../components/Icon'
 
 /**
@@ -223,7 +228,16 @@ export function DevLab({ onClose }: { onClose: () => void }) {
   const [clipHold, setClipHold] = useState(10)
   const [busy, setBusy] = useState('')
   const [real, setReal] = useState<{ result: PoseFormResult; poses?: JudgeInput; label: string } | null>(null)
+  const [selfTest, setSelfTest] = useState<SelfTestReport | null>(null)
+  const [showAllChecks, setShowAllChecks] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const runSelfTest = useCallback(() => {
+    // Synchronous and fast — a few hundred synthetic judgements plus the
+    // frozen photographs, no model download involved.
+    setSelfTest(selfTestJudge())
+    setShowAllChecks(false)
+  }, [])
 
   const params: SynthParams = useMemo(
     () => ({ ...IDEAL[exerciseId], ...overrides }),
@@ -278,6 +292,32 @@ export function DevLab({ onClose }: { onClose: () => void }) {
   // whole judge without touching a single control.
   useEffect(() => {
     const api = {
+      /** Start here: what this API can do, one line per call. */
+      help: [
+        'judge(id, extra?) — synthesize a hold with known true angles and judge it',
+        'trace(id, extra?) — the same, plus per-moment working (explain) on the verdict',
+        'judgeFixture(poses, id) — replay saved detections through the verdict path',
+        'traceFixture(poses, id) — fixture replay with per-moment working attached',
+        'selfTest(seeds?) — prove the shipped judge is intact, on this device',
+        'analyseUrl(url, id, holdSec?) — full pipeline on a real clip (CORS direct link)',
+        'analyseImage(url, id) — full pipeline on a still photograph',
+        'probeImage(url, id) — what each candidate rotation makes of one frame',
+        'captureFixture(url, id, truth) — freeze a photo as a REAL_POSES entry + code',
+        'matrix(extra?, seeds?) — every position × a scenario, rates and issues',
+        'about — build id, measured thresholds, judged positions',
+        'profiles / ideal / positions — the per-position rules and textbook reps',
+      ],
+      /** What is running, and the measured numbers it judges by. */
+      about: {
+        build: __BUILD_ID__,
+        thresholds: {
+          material: MATERIAL_TOLERANCE,
+          shrugMinRatio: SHRUG_MIN_RATIO,
+          minExtendedLegReach: MIN_EXTENDED_LEG_REACH,
+          minVerifiableHoldSec: MIN_VERIFIABLE_HOLD_SEC,
+        },
+        positions: GRADED,
+      },
       profiles: POSE_PROFILES,
       ideal: IDEAL,
       positions: GRADED,
@@ -286,9 +326,25 @@ export function DevLab({ onClose }: { onClose: () => void }) {
         const input = synthesizeClip({ ...IDEAL[id], ...extra })
         return { truth: buildTruePose({ ...IDEAL[id], ...extra }, 0).truth, verdict: judgeTrackedFrames(input, id) }
       },
+      /** Judge with the per-moment working attached — which frames convicted. */
+      trace(id: string, extra: SynthParams = {}) {
+        const input = synthesizeClip({ ...IDEAL[id], ...extra })
+        return {
+          truth: buildTruePose({ ...IDEAL[id], ...extra }, 0).truth,
+          verdict: judgeTrackedFrames(input, id, { explain: true }),
+        }
+      },
       /** Re-judge saved poses — the fixture replay path. */
       judgeFixture(poses: JudgeInput, id: string) {
         return judgeTrackedFrames(poses, id)
+      },
+      /** Fixture replay with the per-moment working attached. */
+      traceFixture(poses: JudgeInput, id: string) {
+        return judgeTrackedFrames(poses, id, { explain: true })
+      },
+      /** The shipped judge's promises, verified on this device right now. */
+      selfTest(seeds = 3) {
+        return selfTestJudge(seeds)
       },
       /** Decode, detect and judge a real clip; returns the poses for saving. */
       async analyseUrl(url: string, id: string, creditedHoldSec?: number) {
@@ -359,6 +415,21 @@ export function DevLab({ onClose }: { onClose: () => void }) {
           result: judgeTrackedFrames(poses, id),
           poses,
         }
+      },
+      /**
+       * Freeze a photograph as a regression fixture.
+       *
+       * The truth string is yours to write, and it is the whole point: it must
+       * describe what the photo actually shows, established by looking at it —
+       * the model's opinion is the thing under test, not the ground truth.
+       */
+      async captureFixture(url: string, id: string, truth: string) {
+        const analysed = await this.analyseImage(url, id)
+        const name = (url.split('/').pop() ?? 'capture')
+          .replace(/\.[a-z0-9]+$/i, '')
+          .replace(/[^a-zA-Z0-9]+(.)/g, (_, c: string) => c.toUpperCase())
+          .replace(/^[A-Z]/, (c) => c.toLowerCase())
+        return { ...fixtureFromPoses(name || 'capture', truth, analysed.poses), verdict: analysed.result }
       },
       /**
        * What each candidate orientation makes of the same frame.
@@ -442,10 +513,11 @@ export function DevLab({ onClose }: { onClose: () => void }) {
     <div className="animate-rise mx-auto w-full max-w-5xl px-4 pb-24 pt-4">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <h1 className="font-display text-[20px] font-bold text-ink">Form judge bench</h1>
+          <h1 className="font-display text-[20px] font-bold text-ink">The judge’s bench</h1>
           <p className="text-[12px] text-ink3">
-            Synthetic poses with known angles, and the real pipeline on real footage. Also on{' '}
-            <code className="rounded bg-raised px-1">window.__planche</code>.
+            The camera form judge, opened up so you can check it. Scriptable on{' '}
+            <code className="rounded bg-raised px-1">window.__planche</code> — start with{' '}
+            <code className="rounded bg-raised px-1">.help</code>.
           </p>
         </div>
         <button
@@ -454,6 +526,66 @@ export function DevLab({ onClose }: { onClose: () => void }) {
         >
           Close
         </button>
+      </div>
+
+      {/* The transparency pitch: an athlete who lands here from the Learn
+          guide should understand the page and get value from one tap, without
+          ever touching a slider. */}
+      <div className="mb-3 rounded-2xl border border-line bg-surface p-4 shadow-card">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+              <Icon name="sparkle" size={14} className="text-accent" /> What is this page?
+            </div>
+            <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-ink2">
+              This is the test bench the form judge is built against — the same one used to set every
+              threshold from measurement. Build a pose whose true angles you choose and read the verdict
+              beside it, or run the self-test: the judge’s promises, checked on your device, including
+              against real photographs it must keep getting right. Everything runs locally; nothing leaves
+              this browser.
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-col items-stretch gap-1.5">
+            <button
+              onClick={runSelfTest}
+              className="rounded-xl border border-accent/30 bg-accent-soft px-4 py-2 text-[13px] font-semibold text-accent transition hover:brightness-105"
+            >
+              Run the self-test
+            </button>
+            {selfTest ? (
+              <div
+                className={`rounded-xl px-3 py-1.5 text-center text-[12.5px] font-semibold ${
+                  selfTest.pass ? 'bg-ok-soft text-ok' : 'bg-danger-soft text-danger'
+                }`}
+                role="status"
+              >
+                {selfTest.checks.filter((c) => c.pass).length}/{selfTest.checks.length} checks pass
+              </div>
+            ) : null}
+          </div>
+        </div>
+        {selfTest ? (
+          <div className="mt-3 space-y-1">
+            {(showAllChecks ? selfTest.checks : selfTest.checks.filter((c) => !c.pass)).map((check) => (
+              <div key={check.name} className="flex items-start gap-2 text-[12px]">
+                <Icon
+                  name={check.pass ? 'check' : 'x'}
+                  size={13}
+                  className={`mt-0.5 shrink-0 ${check.pass ? 'text-ok' : 'text-danger'}`}
+                />
+                <span className={check.pass ? 'text-ink2' : 'font-medium text-danger'}>
+                  {check.name}
+                  {check.detail ? <span className="text-ink3"> — {check.detail}</span> : null}
+                </span>
+              </div>
+            ))}
+            {selfTest.pass && !showAllChecks ? (
+              <button onClick={() => setShowAllChecks(true)} className="text-[12px] font-medium text-accent">
+                Every check passed — show the full list
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="mb-3 flex flex-wrap gap-1.5">
