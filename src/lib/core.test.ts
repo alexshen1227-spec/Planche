@@ -1766,6 +1766,26 @@ describe('backup validation and normalization', () => {
     expect(() => validateImport({})).toThrow(/Planche Lab backup/)
   })
 
+  it('carries the new session settings through a normalize round-trip', () => {
+    // Settings added later must survive export/import, or an athlete restoring
+    // a backup silently reverts to the conservative defaults.
+    const saved = {
+      ...state(),
+      settings: { ...state().settings, phoneWithinReach: true, stopLatencySec: 0.6 },
+    }
+    const restored = normalizeState(JSON.parse(JSON.stringify(saved)))
+    expect(restored.settings.phoneWithinReach).toBe(true)
+    expect(restored.settings.stopLatencySec).toBeCloseTo(0.6)
+    // An absent field falls back to the safe default rather than undefined.
+    const legacy = JSON.parse(JSON.stringify(saved))
+    delete legacy.settings.phoneWithinReach
+    expect(normalizeState(legacy).settings.phoneWithinReach).toBe(false)
+    // And a junk value cannot make the walk-back allowance disappear.
+    const junk = JSON.parse(JSON.stringify(saved))
+    junk.settings.phoneWithinReach = 'yes please'
+    expect(normalizeState(junk).settings.phoneWithinReach).toBe(false)
+  })
+
   it('accepts a backup created by the current app version', () => {
     expect(() => validateImport(initialState())).not.toThrow()
   })

@@ -167,9 +167,18 @@ export function SessionPlayer({
   const leadUsedRef = useRef(0)
   /** Hold elapsed frozen at the moment the page was hidden. */
   const frozenElapsedRef = useRef<number | null>(null)
+  /** Claimed synchronously so one hold cannot be logged twice. */
+  const stoppingHoldRef = useRef(false)
+  /** The phase whose Space action has already been claimed this render. */
+  const spaceClaimRef = useRef<Phase | null>(null)
   /** Current phase, readable from async callbacks without going stale. */
   const phaseRef = useRef(phase)
   phaseRef.current = phase
+  // A new phase re-arms the keyboard: the claim only exists to collapse the
+  // burst of events that arrives before this render.
+  useEffect(() => {
+    spaceClaimRef.current = null
+  }, [phase])
   /**
    * The exact set the interrupted hold belongs to. Without this the recovery
    * card would follow you to later exercises and could log a planche hold as
@@ -402,6 +411,7 @@ export function SessionPlayer({
       lastCountRef.current = -1
       prBuzzedRef.current = false
       leadUsedRef.current = Math.max(0, (Date.now() - leadStartedAtRef.current) / 1000)
+      stoppingHoldRef.current = false
       setHoldStart(Date.now())
       setPhase('hold')
     }
@@ -514,6 +524,17 @@ export function SessionPlayer({
   )
 
   const stopHold = useCallback(() => {
+    // A hold can only be stopped once.
+    //
+    // `phase` is read from a closure, and several events can fire before React
+    // re-renders: holding the space bar auto-repeats, and an impatient double
+    // tap on Stop is ordinary behaviour mid-workout. Every one of them used to
+    // reach this function while the phase still read 'hold', logging its own
+    // set — five taps wrote five sets, four of them phantom 0s holds that then
+    // counted toward set totals, session volume and the coach's history. The
+    // ref is claimed synchronously, so the duplicates have nothing left to do.
+    if (stoppingHoldRef.current) return
+    stoppingHoldRef.current = true
     const raw = Math.round(((Date.now() - holdStart) / 1000) * 10) / 10
     // You come out of the hold, then reach for the button. That gap is time
     // you were not actually holding, so it comes back off.
@@ -731,6 +752,13 @@ export function SessionPlayer({
       if (showCheckIn || showDemo || showRpeHelp || confirmExit) return
       if (e.code === 'Space') {
         e.preventDefault()
+        // Every Space action is a one-shot phase transition, so at most one may
+        // run per phase. Holding the bar auto-repeats and a double tap fires
+        // twice before React re-renders; each event read the same stale phase
+        // and ran the transition again, which logged duplicate sets. The claim
+        // is taken synchronously and cleared when the phase actually changes.
+        if (e.repeat || spaceClaimRef.current === phase) return
+        spaceClaimRef.current = phase
         if (phase === 'intro') startSession()
         else if (phase === 'ready') beginSet()
         else if (phase === 'hold') stopHold()

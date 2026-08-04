@@ -634,10 +634,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let json: string
     try {
       json = JSON.stringify(state)
+    } catch {
+      // Nothing serialisable to save; neither store can help.
+      return
+    }
+    try {
       localStorage.setItem(STORAGE_KEY, json)
     } catch {
-      // Storage full or unavailable — the app still works for this session.
-      return
+      // Storage full, evicted, or private mode. Deliberately keep going: the
+      // IndexedDB mirror is the recovery copy for exactly this failure, and
+      // bailing out here abandoned it at the one moment it was needed —
+      // leaving the session with no durable copy at all. IndexedDB has its own
+      // quota, so it can still succeed when localStorage cannot.
     }
     window.clearTimeout(mirrorTimer.current)
     mirrorTimer.current = window.setTimeout(() => void writeMirror(json), 1500)

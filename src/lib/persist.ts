@@ -24,17 +24,36 @@ function openDb(): Promise<IDBDatabase> {
   })
 }
 
+/**
+ * Close on every outcome, not just the happy one.
+ *
+ * A connection left open by a failed write is not merely untidy: an open
+ * handle blocks a later `onupgradeneeded`, so a future schema change would
+ * hang instead of running. Quota failures are exactly when writes reject and
+ * exactly when the leak would accumulate.
+ */
+async function withMirrorDb<T>(fn: (db: IDBDatabase) => Promise<T>): Promise<T> {
+  const db = await openDb()
+  try {
+    return await fn(db)
+  } finally {
+    db.close()
+  }
+}
+
 /** Write the serialized state to the IndexedDB mirror. Never throws. */
 export async function writeMirror(json: string): Promise<void> {
   try {
-    const db = await openDb()
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite')
-      tx.objectStore(STORE).put(json, KEY)
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error ?? new Error('mirror write failed'))
-    })
-    db.close()
+    await withMirrorDb(
+      (db) =>
+        new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(STORE, 'readwrite')
+          tx.objectStore(STORE).put(json, KEY)
+          tx.oncomplete = () => resolve()
+          tx.onabort = () => reject(tx.error ?? new Error('mirror write aborted'))
+          tx.onerror = () => reject(tx.error ?? new Error('mirror write failed'))
+        }),
+    )
   } catch {
     /* mirror is best-effort */
   }
@@ -43,15 +62,15 @@ export async function writeMirror(json: string): Promise<void> {
 /** Read the serialized state from the IndexedDB mirror, or null. */
 export async function readMirror(): Promise<string | null> {
   try {
-    const db = await openDb()
-    const value = await new Promise<string | null>((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readonly')
-      const req = tx.objectStore(STORE).get(KEY)
-      req.onsuccess = () => resolve(typeof req.result === 'string' ? req.result : null)
-      req.onerror = () => reject(req.error ?? new Error('mirror read failed'))
-    })
-    db.close()
-    return value
+    return await withMirrorDb(
+      (db) =>
+        new Promise<string | null>((resolve, reject) => {
+          const tx = db.transaction(STORE, 'readonly')
+          const req = tx.objectStore(STORE).get(KEY)
+          req.onsuccess = () => resolve(typeof req.result === 'string' ? req.result : null)
+          req.onerror = () => reject(req.error ?? new Error('mirror read failed'))
+        }),
+    )
   } catch {
     return null
   }

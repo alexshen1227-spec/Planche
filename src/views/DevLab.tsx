@@ -734,11 +734,18 @@ export function DevLab({ onClose }: { onClose: () => void }) {
                       const blob = new Blob([JSON.stringify({ exerciseId, poses: real.poses })], {
                         type: 'application/json',
                       })
+                      // Same download contract as the backup export: attached,
+                      // and the URL released on a later turn so WebKit does not
+                      // race the click and save nothing.
+                      const url = URL.createObjectURL(blob)
                       const a = document.createElement('a')
-                      a.href = URL.createObjectURL(blob)
+                      a.href = url
                       a.download = `${exerciseId}-poses.json`
+                      a.style.display = 'none'
+                      document.body.appendChild(a)
                       a.click()
-                      URL.revokeObjectURL(a.href)
+                      a.remove()
+                      setTimeout(() => URL.revokeObjectURL(url), 30_000)
                     }}
                     className="w-full rounded-xl border border-line bg-raised py-2 text-[12.5px] font-semibold text-ink"
                   >

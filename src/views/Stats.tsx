@@ -36,6 +36,29 @@ export function Stats() {
     () => bestSeries(state, chartEx, chartIsPlanche && chartSurface !== 'all' ? chartSurface : undefined),
     [state, chartEx, chartIsPlanche, chartSurface],
   )
+  /**
+   * Why the trend is empty, when it is not simply "you have not trained it".
+   *
+   * A planche series only plots form-qualified sets, so an athlete who logs
+   * this hold every week but does not film it sees nothing — and the default
+   * prompt tells them to log sessions they have already logged, which reads
+   * as a broken app rather than a missing camera check.
+   */
+  const chartEmptyHint = useMemo(() => {
+    if (series.length >= 2) return undefined
+    const logged = state.sessions.reduce(
+      (n, session) =>
+        n + session.sets.filter((set) => set.exerciseId === chartEx && set.value > 0).length,
+      0,
+    )
+    if (logged === 0) return undefined
+    if (!chartIsPlanche) return undefined
+    if (chartSurface !== 'all' && series.length === 0) {
+      return `No form-qualified ${surfaceLabel(chartSurface).toLowerCase()} sets yet. Try “All surfaces”, or film a set on this surface.`
+    }
+    return `${logged} set${logged === 1 ? '' : 's'} of this hold logged, but none is form-qualified yet. This chart plots sets you rated Clean that also passed a filmed check — your records and totals still count everything.`
+  }, [series.length, state.sessions, chartEx, chartIsPlanche, chartSurface])
+
   const arms = useMemo(() => armStats(state), [state])
   const coachPick = useMemo(() => buildPlan(state), [state])
   const bestArm = useMemo(() => [...arms].filter((a) => a.n > 0).sort((a, b) => b.mean - a.mean)[0], [arms])
@@ -193,7 +216,7 @@ export function Stats() {
           </div>
         ) : null}
         <div className="mt-3">
-          <HoldLineChart points={series} goal={chartStep?.unlockSec} />
+          <HoldLineChart points={series} goal={chartStep?.unlockSec} emptyHint={chartEmptyHint} />
         </div>
       </div>
 

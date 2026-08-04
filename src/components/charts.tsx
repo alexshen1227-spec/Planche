@@ -54,10 +54,17 @@ export function HoldLineChart({
   points,
   goal,
   height = 200,
+  emptyHint,
 }: {
   points: { at: number; value: number }[]
   goal?: number
   height?: number
+  /**
+   * Replaces the "log more sessions" prompt when the series is empty for a
+   * reason other than not having trained. Telling an athlete with twenty
+   * logged sessions to log some sessions reads as the app being broken.
+   */
+  emptyHint?: string
 }) {
   const { ref, width } = useWidth<HTMLDivElement>()
   const [tip, setTip] = useState<TipState | null>(null)
@@ -65,12 +72,16 @@ export function HoldLineChart({
 
   if (points.length < 2) {
     return (
-      <div ref={ref} className="grid h-[200px] place-items-center text-center text-[13px] text-ink3">
+      <div ref={ref} className="grid h-[200px] place-items-center px-6 text-center text-[13px] leading-relaxed text-ink3">
         <div>
           <div className="mb-1 text-2xl">📈</div>
-          Log two or more sessions with this hold
-          <br />
-          and the trend appears here.
+          {emptyHint ?? (
+            <>
+              Log two or more sessions with this hold
+              <br />
+              and the trend appears here.
+            </>
+          )}
         </div>
       </div>
     )
