@@ -72,6 +72,22 @@ describe('synthetic pose fidelity', () => {
       expect(`${id}: ${verdict.reason ?? 'ok'}`).toBe(`${id}: ok`)
     }
   })
+
+  it('lays out a far arm with exactly the requested bend, sharing the planted wrist', () => {
+    const pose = buildTruePose({ elbowBendDeg: -2, secondArm: { elbowBendDeg: 25 } })
+    expect(pose.truth.secondElbowDeg).toBeCloseTo(155, 1)
+    expect(pose.secondWrist).toEqual(pose.wrist)
+  })
+
+  it('projects a fully flared elbow onto the chord, where it reads straight', () => {
+    // The geometry of the blind spot itself: with the hands planted, a 90°
+    // flare puts the projected elbow on the shoulder–wrist line — identical
+    // to a locked arm, with the arm span unchanged. No monocular signal.
+    const flared = buildTruePose({ elbowBendDeg: 25, armYawDeg: 90 })
+    expect(flared.truth.elbowDeg).toBeGreaterThan(179)
+    const sagittal = buildTruePose({ elbowBendDeg: 25 })
+    expect(sagittal.truth.elbowDeg).toBeCloseTo(155, 1)
+  })
 })
 
 /** Run one scenario and report the parts an athlete would actually read. */
@@ -410,6 +426,62 @@ describe('form judge — the shrug metric is grounded in real proportions', () =
   })
 })
 
+describe('form judge — arms that differ between sides', () => {
+  // A slightly deeper (still side-on) body keeps the far arm clearly resolved
+  // as its own limb: at the default depth the far wrist hovers right at the
+  // bilateral-collision limit and noise makes the far arm come and go, which
+  // would test the collision filter rather than the averaging under test here.
+  const farArmResolved = { farScore: 0.85, bodyWidth: 0.24 } as const
+
+  it('names a one-sided bend once the far arm is genuinely visible', () => {
+    // The near and far arm are averaged when both are resolved (a mean halves
+    // landmark error), so a bend on either side must still surface — at half
+    // sensitivity, which a 25° single-arm bend clears with margin.
+    for (const arrangement of [
+      { elbowBendDeg: -2, secondArm: { elbowBendDeg: 25 } },
+      { elbowBendDeg: 25, secondArm: { elbowBendDeg: -2 } },
+    ]) {
+      const runs = across('tuck-planche', { ...arrangement, ...farArmResolved })
+      expect(rate(runs, (r) => r.issues.includes('arms'))).toBe(1)
+    }
+  })
+
+  it('documents the averaging tradeoff: a small one-arm reading is not accused', () => {
+    // (10° + lockout) / 2 sits inside the measurement deadband. This is the
+    // deliberate cost of averaging: single-arm bends need to be roughly twice
+    // the tolerance before they are named. Worst-of was tried and rejected —
+    // it manufactured false bent-arm calls from far-side landmark error.
+    const runs = across('tuck-planche', {
+      elbowBendDeg: -2,
+      secondArm: { elbowBendDeg: 10 },
+      ...farArmResolved,
+    })
+    expect(rate(runs, (r) => r.issues.includes('arms'))).toBe(0)
+    expect(rate(runs, (r) => r.ok)).toBe(1)
+  })
+})
+
+describe('form judge — planted-hand elbow flare, the monocular blind spot', () => {
+  it('reads a strongly flared bend as locked, and never turns it into a false accusation', () => {
+    // With both hands planted, an elbow can only leave the sagittal plane by
+    // rotating about the shoulder–wrist chord. Its projection then sits on or
+    // near the chord with the arm span unchanged — geometrically identical to
+    // a straight arm. This is a physical limit of one camera, not a bug: the
+    // judge must stay calm about it (no phantom faults from the odd
+    // projection) and the honest cost is that the flare goes unnamed.
+    const flared = across('full-planche', { elbowBendDeg: 25, armYawDeg: 85 })
+    for (const run of flared) {
+      expect(run.ok).toBe(true)
+      expect(run.issues).not.toContain('arms')
+      expect(run.elbowDeg!).toBeGreaterThanOrEqual(172)
+    }
+    // Control: the identical bend held in the sagittal plane is named on
+    // every seed — the blind spot is the flare, not the bend.
+    const sagittal = across('full-planche', { elbowBendDeg: 25 })
+    expect(rate(sagittal, (r) => r.issues.includes('arms'))).toBe(1)
+  })
+})
+
 describe('real photographs, real pose model', () => {
   it('passes a genuinely good planche lean without a single complaint', () => {
     const verdict = judgeTrackedFrames(realClip('plancheLean'), 'planche-lean')
@@ -487,6 +559,34 @@ describe('real photographs, real pose model', () => {
     const verdict = judgeTrackedFrames(realClip('plancheLean'), 'planche-lean')
     expect(verdict.shrugRatio!).toBeGreaterThan(SHRUG_MIN_RATIO - MATERIAL_TOLERANCE.shrugRatio)
     expect(verdict.issues).not.toContain('shrug')
+  })
+})
+
+describe('real photographs that are not a side-on planche', () => {
+  it('refuses a human flag rather than grading a vertical support', () => {
+    const verdict = judgeTrackedFrames(realClip('flagVertical'), 'full-planche')
+    expect(verdict.ok).toBe(false)
+    expect(verdict.reason).toMatch(/not fully side-on/)
+  })
+
+  it('refuses an upright weighted pull-up', () => {
+    const verdict = judgeTrackedFrames(realClip('weightedPullup'), 'tuck-planche')
+    expect(verdict.ok).toBe(false)
+    expect(verdict.reason).toMatch(/not fully side-on/)
+  })
+
+  it('never cleanly passes the hallucinated cropped-head L-sit', () => {
+    // The one adversarial case that gets past every geometric gate: the model
+    // invents a small, internally consistent skeleton on the hand and bar,
+    // in-frame and at visibility 1.0. Nothing downstream can prove those
+    // landmarks wrong, so the contract here is deliberately the weakest that
+    // still matters: whatever the judge says, it must not be a clean,
+    // high-scoring pass that could hand out progression credit. Asserting the
+    // specific faults it names today would pin hallucination internals that
+    // shift with any model update.
+    const verdict = judgeTrackedFrames(realClip('lsitCroppedHead'), 'tuck-planche')
+    const cleanPass = verdict.ok && verdict.issues.length === 0 && (verdict.score ?? 0) >= 85
+    expect(cleanPass).toBe(false)
   })
 })
 

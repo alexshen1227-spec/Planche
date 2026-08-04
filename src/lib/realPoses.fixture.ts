@@ -22,6 +22,14 @@ import type { JudgeInput } from './poseForm'
  *  - plancheLean:  "Planche.jpg"
  *  - plank:        "Girl doing push-ups from the side.jpg"
  *  - straddleOffAxis: "Straddle planche 2 doigts.jpg"
+ *  - flagVertical: "Competición de Tensión.jpg"
+ *  - weightedPullup: "Competición de Fuerza.jpg"
+ *  - lsitCroppedHead: "Figura L-Sit na paraletkach.jpg"
+ *
+ * The last three are deliberate negative controls — none of them is a side-on
+ * planche, and each was inspected by eye before being trusted as ground truth.
+ * They exist to prove the judge refuses or at least never cleanly passes what
+ * it cannot honestly grade, on photographs nobody tuned a threshold against.
  */
 
 interface RealPose {
@@ -79,6 +87,75 @@ export const REAL_POSES: Record<string, RealPose> = {
       ['right_knee', 401.1, 458, 0.981],
       ['left_ankle', 564, 473.9, 0.48],
       ['right_ankle', 124.3, 494.4, 0.978],
+    ],
+  },
+  flagVertical: {
+    truth:
+      'A human flag on a vertical ladder: body horizontal but supported sideways, chest square to the camera. Not a planche and not a side view — it must be refused, not graded.',
+    width: 640,
+    height: 960,
+    rotation: 270,
+    points: [
+      ['left_ear', 487.2, 562.9, 1],
+      ['right_ear', 493.9, 626, 1],
+      ['left_shoulder', 424.5, 500.8, 0.999],
+      ['right_shoulder', 438, 680.7, 0.999],
+      ['left_elbow', 491.8, 361.6, 1],
+      ['right_elbow', 522, 790.7, 0.995],
+      ['left_wrist', 567.7, 234.5, 0.999],
+      ['right_wrist', 617, 881.8, 0.954],
+      ['left_hip', 247.8, 574.8, 0.998],
+      ['right_hip', 258.2, 653.5, 0.997],
+      ['left_knee', 194.8, 586.1, 0.417],
+      ['right_knee', 198, 645, 0.175],
+      ['left_ankle', 125.4, 596.7, 0.729],
+      ['right_ankle', 152.9, 638, 0.352],
+    ],
+  },
+  weightedPullup: {
+    truth:
+      'An upright weighted pull-up at a bar, filmed from the front-quarter. An upright body with visible bilateral depth — nothing here is a side-on planche.',
+    width: 640,
+    height: 960,
+    rotation: 0,
+    points: [
+      ['left_ear', 408.4, 487.5, 1],
+      ['right_ear', 385, 489, 1],
+      ['left_shoulder', 430.8, 516.7, 1],
+      ['right_shoulder', 368.4, 537.8, 0.998],
+      ['left_elbow', 475.3, 524.2, 0.993],
+      ['right_elbow', 345.5, 563, 0.784],
+      ['left_wrist', 448.8, 475.7, 0.965],
+      ['right_wrist', 328.6, 508, 0.907],
+      ['left_hip', 428.2, 635.8, 1],
+      ['right_hip', 391, 646.5, 0.999],
+      ['left_knee', 428.3, 735.8, 0.967],
+      ['right_knee', 394.7, 741.9, 0.603],
+      ['left_ankle', 436.3, 844.4, 0.938],
+      ['right_ankle', 414.7, 846.7, 0.736],
+    ],
+  },
+  lsitCroppedHead: {
+    truth:
+      'An L-sit on low parallettes with the head and shoulders cropped out of the top of the frame. BlazePose hallucinates a coherent skeleton on the hand and bar — ears and "shoulders" at visibility 1.0 on the fist — so every landmark is confidently wrong. The one thing the judge must never do with this is return a clean, high-scoring planche verdict.',
+    width: 760,
+    height: 784,
+    rotation: 0,
+    points: [
+      ['left_ear', 255.8, 571.5, 0.997],
+      ['right_ear', 250.6, 571.3, 0.998],
+      ['left_shoulder', 289, 573.4, 0.994],
+      ['right_shoulder', 288.5, 579.2, 1],
+      ['left_elbow', 333.4, 562.2, 0.368],
+      ['right_elbow', 365.1, 572.3, 0.827],
+      ['left_wrist', 387.9, 561.7, 0.369],
+      ['right_wrist', 416.8, 566.5, 0.914],
+      ['left_hip', 315.3, 464.8, 1],
+      ['right_hip', 312.3, 465.2, 1],
+      ['left_knee', 252.2, 474.2, 0.081],
+      ['right_knee', 241, 459.4, 0.904],
+      ['left_ankle', 268.7, 428, 0.272],
+      ['right_ankle', 252.5, 397.9, 0.809],
     ],
   },
   straddleOffAxis: {

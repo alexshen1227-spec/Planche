@@ -68,6 +68,11 @@ export interface SynthLeg {
   foreshorten?: Track
 }
 
+export interface SynthArm {
+  /** Degrees away from a locked elbow, signed like the main parameter. */
+  elbowBendDeg?: Track
+}
+
 export interface SynthParams {
   /** Torso length in pixels — everything else scales from it. */
   torso?: number
@@ -81,6 +86,17 @@ export interface SynthParams {
    * three-point angle cannot tell them apart.
    */
   elbowBendDeg?: Track
+  /**
+   * Out-of-plane elbow flare, degrees. With both hands planted the elbow can
+   * only leave the sagittal plane by rotating about the shoulder–wrist chord,
+   * and the camera sees that rotation as the elbow sliding toward the chord
+   * (cos of the flare). At 90° the projection lands exactly on the chord —
+   * indistinguishable from a straight arm, which is precisely the monocular
+   * blind spot this knob exists to demonstrate.
+   */
+  armYawDeg?: Track
+  /** The far-side arm, for asymmetric bends. Omitted = both arms match. */
+  secondArm?: SynthArm
   /** Shoulder–hip–knee, degrees. */
   hipAngleDeg?: Track
   /** Degrees away from a locked knee. */
@@ -167,6 +183,8 @@ export interface TruePose {
   ear: Vec
   secondKnee?: Vec
   secondAnkle?: Vec
+  secondElbow?: Vec
+  secondWrist?: Vec
   torso: number
   /** What the geometry actually came out as, for round-trip assertions. */
   truth: {
@@ -176,6 +194,7 @@ export interface TruePose {
     hipOffset: number
     leanRatio: number
     shrugRatio: number
+    secondElbowDeg?: number
   }
 }
 
@@ -239,10 +258,30 @@ export function buildTruePose(params: SynthParams, progress = 0): TruePose {
   const sign = nA.x * towardHip.x + nA.y * towardHip.y >= 0 ? 1 : -1
   // bend > 0 flexes toward the hips; bend < 0 is the away-side hyperextension.
   const n = sign * (bend >= 0 ? 1 : -1)
+  // A flare rotates the elbow about the chord; the projection keeps only
+  // cos(yaw) of its off-chord displacement, reaching the chord itself at 90°.
+  const flare = Math.cos((at(params.armYawDeg, progress, 0) * Math.PI) / 180)
   const elbow: Vec = {
-    x: shoulder.x + u.x * along + nA.x * perp * n,
-    y: shoulder.y + u.y * along + nA.y * perp * n,
+    x: shoulder.x + u.x * along + nA.x * perp * n * flare,
+    y: shoulder.y + u.y * along + nA.y * perp * n * flare,
   }
+
+  // The far arm shares the planted wrist and therefore the chord; its own
+  // bend only chooses how far its elbow sits off that chord. Placed to make
+  // the three-point angle exact for this chord — the implied segment lengths
+  // stay inside the judge's plausibility gates for any bend the eval uses.
+  const secondArm = (() => {
+    if (!params.secondArm) return undefined
+    const bend2 = at(params.secondArm.elbowBendDeg, progress, 0)
+    const angle2 = 180 - Math.abs(bend2)
+    const mid: Vec = { x: (shoulder.x + wrist.x) / 2, y: (shoulder.y + wrist.y) / 2 }
+    const off = angle2 >= 179.5 ? 0 : chord / 2 / Math.tan((angle2 * Math.PI) / 360)
+    const n2 = sign * (bend2 >= 0 ? 1 : -1)
+    return {
+      elbow: { x: mid.x + nA.x * off * n2, y: mid.y + nA.y * off * n2 },
+      wrist: { ...wrist },
+    }
+  })()
 
   const leg = (spec: SynthLeg) => {
     const hipAngle = at(spec.hipAngleDeg, progress, 180)
@@ -289,6 +328,8 @@ export function buildTruePose(params: SynthParams, progress = 0): TruePose {
     ear,
     secondKnee: second?.knee,
     secondAnkle: second?.ankle,
+    secondElbow: secondArm?.elbow,
+    secondWrist: secondArm?.wrist,
     torso,
     truth: {
       elbowDeg: angleAt(shoulder, elbow, wrist),
@@ -297,6 +338,7 @@ export function buildTruePose(params: SynthParams, progress = 0): TruePose {
       hipOffset: (shoulder.y - hip.y) / torso,
       leanRatio: ((shoulder.x - wrist.x) * (Math.sign(shoulder.x - hip.x) || 1)) / torso,
       shrugRatio: Math.hypot(shoulder.x - ear.x, shoulder.y - ear.y) / torso,
+      ...(secondArm ? { secondElbowDeg: angleAt(shoulder, secondArm.elbow, wrist) } : {}),
     },
   }
 }
@@ -381,8 +423,10 @@ export function synthesizeClip(params: SynthParams = {}): JudgeInput & { truth: 
     place('ear', pose.ear, 'near')
 
     place('shoulder', pose.shoulder, 'far')
-    place('elbow', pose.elbow, 'far')
-    place('wrist', pose.wrist, 'far')
+    // A second arm shape only exists in asymmetric-arm scenarios; otherwise
+    // the far arm is stacked on the near one exactly as a side view sees it.
+    place('elbow', pose.secondElbow ?? pose.elbow, 'far')
+    place('wrist', pose.secondWrist ?? pose.wrist, 'far')
     place('hip', pose.hip, 'far')
     place('ear', pose.ear, 'far')
     // A second leg shape only exists in one-leg work; otherwise the far leg is
