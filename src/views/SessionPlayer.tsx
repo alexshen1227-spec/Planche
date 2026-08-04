@@ -36,7 +36,13 @@ import {
 import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
 import { readSignals } from '../lib/signals'
-import { isMainProgressionHold, leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
+import {
+  creditedHoldSeconds,
+  isMainProgressionHold,
+  leadInSecondsFor,
+  stopLatencySecondsFor,
+  stopSetupCredits,
+} from '../lib/sessionTiming'
 import { defaultSurface, surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 import { recordForSurface } from '../lib/records'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
@@ -607,23 +613,44 @@ export function SessionPlayer({
    * cannot drift. `raw` is deliberately kept even when it now equals the
    * credited value, because it is what makes the tap reversible.
    */
-  const setLastWalkedBack = useCallback(
-    (didWalk: boolean) => {
+  const setWalkedBackForLog = useCallback(
+    (at: number, didWalk: boolean) => {
       setWalkedBack(didWalk)
       setLogs((l) => {
-        const last = l[l.length - 1]
-        if (!last || last.kind !== 'hold' || last.raw === undefined) return l
-        const nextLatency = stopLatencySecondsFor(
-          last.exerciseId,
+        const target = l.find((log) => log.at === at)
+        if (!target || target.kind !== 'hold' || target.raw === undefined) return l
+        const value = creditedHoldSeconds(
+          target.raw,
+          target.exerciseId,
           state.settings.stopLatencySec,
           !didWalk,
         )
-        const value = Math.max(0, Math.round((last.raw - nextLatency) * 10) / 10)
-        return [...l.slice(0, -1), { ...last, value }]
+        // Target by timestamp so the summary can correct its final Path hold
+        // even when a cooldown set was logged after it.
+        return l.map((log) => (log.at === at ? { ...log, value } : log))
       })
     },
     [state.settings.stopLatencySec],
   )
+
+  /** The stopwatch correction shared by rest and the final summary screen. */
+  const stopAllowanceCorrection = (log: SetLog) => {
+    if (log.kind !== 'hold' || log.raw === undefined || !isMainProgressionHold(log.exerciseId)) return null
+    const credits = stopSetupCredits(log.raw, log.exerciseId, state.settings.stopLatencySec)
+    if (credits.delta <= 0.05) return null
+    const didWalk = Math.abs(log.value - credits.walkedBack) <= Math.abs(log.value - credits.withinReach)
+    return (
+      <button
+        onClick={() => setWalkedBackForLog(log.at, !didWalk)}
+        className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-[12.5px] font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
+      >
+        <Icon name="rotate" size={13} className="text-accent" />
+        {didWalk
+          ? `Stopped it without getting up? +${credits.delta.toFixed(1)}s`
+          : `Had to walk back to the phone? −${credits.delta.toFixed(1)}s`}
+      </button>
+    )
+  }
 
   const save = useCallback(() => {
     const session: Session = {
@@ -1209,27 +1236,7 @@ export function SessionPlayer({
           {/* The one question the stopwatch cannot answer for itself. Asked
               where the number it changes is already on screen, phrased as what
               the tap does, and only when the two answers actually differ. */}
-          {lastLog?.kind === 'hold' &&
-          lastLog.raw !== undefined &&
-          isMainProgressionHold(lastLog.exerciseId) ? (
-            (() => {
-              const walkedLatency = stopLatencySecondsFor(lastLog.exerciseId, state.settings.stopLatencySec, false)
-              const reachLatency = stopLatencySecondsFor(lastLog.exerciseId, state.settings.stopLatencySec, true)
-              const delta = Math.round((walkedLatency - reachLatency) * 10) / 10
-              if (delta <= 0.05) return null
-              return (
-                <button
-                  onClick={() => setLastWalkedBack(!walkedBack)}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-[12.5px] font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
-                >
-                  <Icon name="rotate" size={13} className="text-accent" />
-                  {walkedBack
-                    ? `Stopped it without getting up? +${delta.toFixed(1)}s`
-                    : `Had to walk back to the phone? −${delta.toFixed(1)}s`}
-                </button>
-              )
-            })()
-          ) : null}
+          {lastLog ? stopAllowanceCorrection(lastLog) : null}
           {lastLog?.kind === 'hold' &&
           lastLog.section === 'main' &&
           (lastLog.exerciseId === STEP_BY_ID[state.stepId].keyExerciseId || isFilmable(lastLog.exerciseId)) ? (
@@ -1295,6 +1302,28 @@ export function SessionPlayer({
               </div>
             ))}
           </div>
+          {(() => {
+            // The final set bypasses the rest screen. Keep the per-set stop
+            // question reachable here or that hold is permanently stuck with
+            // the opening guess from Settings.
+            const finalPathHold = [...logs]
+              .reverse()
+              .find(
+                (log) =>
+                  log.kind === 'hold' &&
+                  log.raw !== undefined &&
+                  isMainProgressionHold(log.exerciseId),
+              )
+            if (!finalPathHold) return null
+            return (
+              <div className="mt-3 text-center">
+                <div className="text-[12px] text-ink3">
+                  Final Path hold: {fmtHold(finalPathHold.value)} credited
+                </div>
+                {stopAllowanceCorrection(finalPathHold)}
+              </div>
+            )
+          })()}
           {(() => {
             // The last set of a session skips the rest screen entirely, so
             // without this its form would never get rated.

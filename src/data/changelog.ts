@@ -17,6 +17,14 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'The stop correction reaches the final set',
+    area: 'training',
+    notes: [
+      'A session that ended on a main Path hold went straight to the summary and skipped the only screen where you could correct whether you walked back to the phone. The same one-tap correction now appears on the summary, and its label says the seconds it will really add — including short attempts that bottom out at zero.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'One tap fixes a hold the stopwatch got wrong',
     area: 'training',
     notes: [

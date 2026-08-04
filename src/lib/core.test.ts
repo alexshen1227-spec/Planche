@@ -58,7 +58,12 @@ import { buildSampleState } from '../data/sample'
 import { ACHIEVEMENTS, ACHIEVEMENT_VERSION } from '../data/achievements'
 import { selectRecorderMime } from './recorder'
 import { observedRestSec, readSignals, robustSlopePerWeek, trustedCameraEvidence } from './signals'
-import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
+import {
+  creditedHoldSeconds,
+  leadInSecondsFor,
+  stopLatencySecondsFor,
+  stopSetupCredits,
+} from './sessionTiming'
 
 const DAY = 86_400_000
 
@@ -180,6 +185,22 @@ describe('progression hold timing', () => {
     expect(
       Math.round((brief - stopLatencySecondsFor('adv-tuck-planche', 2.3, true)) * 10) / 10,
     ).toBe(0.9)
+  })
+
+  it('describes the seconds the stop correction will actually add', () => {
+    // Below the five-second walk allowance, clipping at zero means the visible
+    // change is smaller than the 2.7s difference between the two allowances.
+    expect(stopSetupCredits(3.2, 'adv-tuck-planche', 2.3)).toEqual({
+      walkedBack: 0,
+      withinReach: 0.9,
+      delta: 0.9,
+    })
+    expect(stopSetupCredits(8.6, 'adv-tuck-planche', 2.3)).toEqual({
+      walkedBack: 3.6,
+      withinReach: 6.3,
+      delta: 2.7,
+    })
+    expect(creditedHoldSeconds(8.6, 'adv-tuck-planche', 2.3, true)).toBe(6.3)
   })
 
   it('never credits reaction time it has no basis for, whichever way the setting is', () => {

@@ -55,3 +55,41 @@ export function stopLatencySecondsFor(
   // Never charge less than the reaction time that applies either way.
   return phoneWithinReach ? calibrated : Math.max(PROGRESSION_STOP_LATENCY_SEC, calibrated)
 }
+
+/** Credit a stopwatch reading against one concrete stop setup. */
+export function creditedHoldSeconds(
+  rawSeconds: number,
+  exerciseId: string | undefined,
+  calibratedLatencySec: number,
+  phoneWithinReach = false,
+): number {
+  return Math.max(
+    0,
+    Math.round(
+      (rawSeconds - stopLatencySecondsFor(exerciseId, calibratedLatencySec, phoneWithinReach)) * 10,
+    ) / 10,
+  )
+}
+
+/**
+ * The two values a Path hold can land on when the athlete corrects whether
+ * they walked back to the phone.
+ *
+ * `delta` is derived from the credited values, not from the two latency
+ * constants. That distinction matters for short attempts: a 3.2s stopwatch
+ * reading changes from 0.0s to 0.9s, so promising "+2.7s" would contradict
+ * the number the tap actually produces.
+ */
+export function stopSetupCredits(
+  rawSeconds: number,
+  exerciseId: string | undefined,
+  calibratedLatencySec: number,
+): { walkedBack: number; withinReach: number; delta: number } {
+  const walkedBack = creditedHoldSeconds(rawSeconds, exerciseId, calibratedLatencySec, false)
+  const withinReach = creditedHoldSeconds(rawSeconds, exerciseId, calibratedLatencySec, true)
+  return {
+    walkedBack,
+    withinReach,
+    delta: Math.round(Math.abs(withinReach - walkedBack) * 10) / 10,
+  }
+}
