@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import type { Tab, Workout } from './types'
 import { useStore } from './lib/store'
@@ -139,6 +139,27 @@ function UpdateBanner({ defer = false }: { defer?: boolean }) {
   )
 }
 
+/**
+ * Everything that must exist no matter which screen is showing.
+ *
+ * `UpdateBanner` is not only a banner: mounting it is what registers the
+ * service worker, so a branch that renders without it has no offline shell and
+ * no update checks at all. It used to sit inside the main branch only, which
+ * meant a fresh install had no service worker for the whole of onboarding —
+ * exactly the moment a new PWA is being added to a home screen. Mounting it
+ * here keeps that single instance (duplicate mounts once left two update
+ * timers running) while guaranteeing every branch has it.
+ */
+function AppShell({ children, deferUpdate = false }: { children: ReactNode; deferUpdate?: boolean }) {
+  return (
+    <>
+      {children}
+      <UpdateBanner defer={deferUpdate} />
+      <Toasts />
+    </>
+  )
+}
+
 const NAV: { tab: Tab; label: string; icon: IconName }[] = [
   { tab: 'home', label: 'Home', icon: 'home' },
   { tab: 'train', label: 'Train', icon: 'bolt' },
@@ -210,27 +231,26 @@ export default function App() {
   // the screen.
   if (devLab) {
     return (
-      <div className="app-ambient grain min-h-screen">
-        <Suspense fallback={<div className="p-6 text-[13px] text-ink3">Loading the bench…</div>}>
-          <DevLab onClose={() => { window.location.hash = '' }} />
-        </Suspense>
-        <Toasts />
-      </div>
+      <AppShell>
+        <div className="app-ambient grain min-h-screen">
+          <Suspense fallback={<div className="p-6 text-[13px] text-ink3">Loading the bench…</div>}>
+            <DevLab onClose={() => { window.location.hash = '' }} />
+          </Suspense>
+        </div>
+      </AppShell>
     )
   }
 
-  // Rendered once, outside the onboarding branch: mounting it in both places
-  // left the first instance's update timer and listeners running forever.
   if (!state.onboarded) {
     return (
-      <>
+      <AppShell>
         <Onboarding />
-        <Toasts />
-      </>
+      </AppShell>
     )
   }
 
   return (
+    <AppShell deferUpdate={Boolean(activeWorkout)}>
     <div className="app-ambient grain min-h-screen">
       <div
         aria-hidden={activeWorkout ? true : undefined}
@@ -358,8 +378,7 @@ export default function App() {
           }}
         />
       ) : null}
-      <UpdateBanner defer={Boolean(activeWorkout)} />
-      <Toasts />
     </div>
+    </AppShell>
   )
 }
