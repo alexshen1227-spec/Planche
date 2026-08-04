@@ -40,6 +40,14 @@ export default defineConfig({
         globIgnores: [
           // version.json must always come from the network — it is the update signal.
           '**/version.json',
+          // Font subsets this app will never render. @font-face declares a
+          // unicode-range for each, so a browser only requests the Cyrillic,
+          // Greek or Vietnamese file when such a glyph actually appears — which
+          // in an English-only interface is never. Precaching them made every
+          // install pay ~90 KB for files it would not fetch on its own. They
+          // stay on the server and are still fetched on demand if some day a
+          // name typed into the profile needs one.
+          '**/*-{cyrillic,cyrillic-ext,greek,greek-ext,vietnamese}-wght-normal-*.woff2',
           // The pose model is several megabytes and only some sessions ask for
           // it, so it is fetched on demand and cached after first use rather
           // than forced onto every install.

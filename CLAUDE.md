@@ -67,6 +67,18 @@ block for `position: fixed`).
    measuring lean along the torso axis — made accuracy worse. The reasons are
    documented inline; re-measure before resurrecting either.
 
+## Camera lifecycle
+
+`src/lib/recorder.test.tsx` drives `useFormRecorder` against a simulated
+device (`// @vitest-environment jsdom`, fake `getUserMedia`/`MediaRecorder`).
+It exists because the real thing needs hardware and every earlier audit could
+only *read* it. The assertions are about tracks, not pixels: every stream this
+app opens must be stopped on every exit path (release, unmount, lens change,
+denial) and a retired request must never strand or overwrite a live one —
+those are the failures that leave the camera indicator burning. Verified to
+have teeth by mutation: deleting `stopStream()` from `teardown` fails four of
+them. Real-hardware behaviour is still unproven.
+
 ## Testing tools
 
 - `#devlab` (linked from Settings → About and the Learn guide "How the camera
