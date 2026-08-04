@@ -62,14 +62,19 @@ export function countRounds(blocks: Block[]): number {
   )
 }
 
-export function estimateMinutes(blocks: Block[], calibratedStopLatencySec = 2.3): number {
+export function estimateMinutes(
+  blocks: Block[],
+  calibratedStopLatencySec = 2.3,
+  phoneWithinReach = false,
+): number {
   let sec = 0
   let remaining = blocks.reduce((total, block) => total + block.sets, 0)
   for (const b of blocks) {
     const work = b.target.kind === 'hold' ? b.target.sec : b.target.reps * 3
     const setup =
       b.target.kind === 'hold'
-        ? leadInSecondsFor(b.exerciseId) + stopLatencySecondsFor(b.exerciseId, calibratedStopLatencySec)
+        ? leadInSecondsFor(b.exerciseId) +
+          stopLatencySecondsFor(b.exerciseId, calibratedStopLatencySec, phoneWithinReach)
         : 0
     for (let set = 0; set < b.sets; set++) {
       sec += work + setup
@@ -131,11 +136,12 @@ function fitToBudget(
   budgetMin: number,
   preserveCorePair = false,
   calibratedStopLatencySec = 2.3,
+  phoneWithinReach = false,
 ): Block[] {
   const out = blocks.map((b) => ({ ...b }))
   for (
     let guard = 0;
-    guard < 40 && estimateMinutes(out, calibratedStopLatencySec) > budgetMin;
+    guard < 40 && estimateMinutes(out, calibratedStopLatencySec, phoneWithinReach) > budgetMin;
     guard++
   ) {
     let changed = false
@@ -523,6 +529,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
     budget,
     plan.accessoryEmphasis === 'core',
     state.settings.stopLatencySec,
+    state.settings.phoneWithinReach,
   )
 
   return {
@@ -531,7 +538,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
     focus: plan.limiter
       ? `${plan.dayReason} Current limiter: ${plan.limiter.label}. ${plan.limiter.prescription}`
       : plan.dayReason,
-    minutes: estimateMinutes(fitted, state.settings.stopLatencySec),
+    minutes: estimateMinutes(fitted, state.settings.stopLatencySec, state.settings.phoneWithinReach),
     kind: 'auto',
     blocks: fitted,
     strategy: plan.strategy,

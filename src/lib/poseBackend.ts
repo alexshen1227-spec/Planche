@@ -176,6 +176,19 @@ export function warmDetector(): void {
   })
 }
 
+/**
+ * Fetch the model on purpose, right now.
+ *
+ * Until this existed the several-megabyte download could only be triggered by
+ * tapping "check my form" — which happens mid-workout, between sets, on
+ * whatever connection the gym has. This lets it be done deliberately at home
+ * instead; afterwards the service worker serves it from cache and the check
+ * works offline.
+ */
+export async function downloadPoseModel(): Promise<void> {
+  await load('mediapipe')
+}
+
 /** Joints every measurement depends on, used to score how well a model tracked. */
 const CORE_JOINTS = [
   'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow',

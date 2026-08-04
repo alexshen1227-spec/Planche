@@ -6,6 +6,7 @@ import { defaultSurface, EQUIPMENT_OPTIONS, TRAINING_SURFACES } from '../data/eq
 import { exportData, readImportFile, validateImport } from '../lib/exportImport'
 import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
 import { listClips, clearAllClips, CLIP_RETENTION_DAYS } from '../lib/clips'
+import { downloadPoseModel, poseModelReady } from '../lib/poseBackend'
 import { fmtDate } from '../lib/time'
 import { fmtWeight } from '../lib/units'
 import { MeasurePrompt, lastOf } from '../components/MeasurePrompt'
@@ -243,6 +244,9 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   const lastWeight = lastOf(state, 'weightKg')
   const [clipCount, setClipCount] = useState(0)
   const [clipBytes, setClipBytes] = useState(0)
+  const [modelState, setModelState] = useState<'idle' | 'loading' | 'ready' | 'error'>(() =>
+    poseModelReady() ? 'ready' : 'idle',
+  )
 
   useEffect(() => {
     void listClips().then((c) => {
@@ -546,6 +550,41 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           <Toggle label="Auto form check" on={s.autoAnalyze} onChange={(v) => set({ autoAnalyze: v })} />
         </Row>
         <Row
+          label="Camera checker download"
+          hint={
+            modelState === 'ready'
+              ? 'Downloaded and cached on this device — form checks now work offline.'
+              : 'The form checker is a one-off multi-megabyte download. Fetch it here on a connection you trust instead of mid-workout on gym wi-fi; afterwards it works offline.'
+          }
+        >
+          <button
+            onClick={() => {
+              setModelState('loading')
+              void downloadPoseModel().then(
+                () => {
+                  setModelState('ready')
+                  pushToast('Camera checker ready — it now works offline.', 'success')
+                },
+                () => {
+                  setModelState('error')
+                  pushToast('Could not download it. Check your connection and try again.', 'danger')
+                },
+              )
+            }}
+            disabled={modelState === 'loading' || modelState === 'ready'}
+            aria-busy={modelState === 'loading'}
+            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {modelState === 'ready'
+              ? 'Downloaded'
+              : modelState === 'loading'
+                ? 'Downloading…'
+                : modelState === 'error'
+                  ? 'Retry download'
+                  : 'Download now'}
+          </button>
+        </Row>
+        <Row
           label="Saved form clips"
           hint={`${clipCount} clip${clipCount === 1 ? '' : 's'} · ${(clipBytes / 1048576).toFixed(1)} MB. Kept for ${CLIP_RETENTION_DAYS} days then deleted automatically — pinned clips are kept for good.`}
         >
@@ -579,8 +618,26 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           />
         </Row>
         <Row
+          label="Phone within reach on Path holds"
+          hint={
+            s.phoneWithinReach
+              ? 'On — main Path holds use your calibrated delay below, because you stop the timer without getting up.'
+              : 'Off — main Path holds allow 5.0s for climbing out of the position and walking back to the phone. Turn this on only if you can genuinely stop the timer without getting up; it is what your seconds are measured against.'
+          }
+        >
+          <Toggle
+            on={s.phoneWithinReach}
+            onChange={(v) => set({ phoneWithinReach: v })}
+            label="Phone within reach on Path holds"
+          />
+        </Row>
+        <Row
           label="Stop reaction delay"
-          hint="Your calibrated delay for regular holds, including Planche Lean. Main Path holds use 5.0s because you need longer to come down and reach the phone."
+          hint={
+            s.phoneWithinReach
+              ? 'Your calibrated delay, now used for every timed hold including main Path holds.'
+              : 'Your calibrated delay for regular holds, including Planche Lean. Main Path holds use 5.0s instead — see the setting above.'
+          }
         >
           <button
             onClick={() => setCalibrating(true)}

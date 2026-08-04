@@ -164,6 +164,15 @@ export const GUIDES: Guide[] = [
         ],
       },
       {
+        heading: 'If you cannot film',
+        body: 'Unlocks ask for a filmed check because "verified" has to mean something, and a 2D side view is the only evidence the app can actually inspect. But training somewhere you will not set up a phone is a normal situation, not a failure — so it is not a dead end.',
+        bullets: [
+          'Your holds still count as real PRs, and the coach still learns which session shapes work on you from them. Only the unlock bar wants footage.',
+          'When you are genuinely training a step, open it from the Path and place yourself there after the three-part safety check. That is the intended route, not a cheat — it simply records the step as chosen rather than camera-verified.',
+          'If you can film but the judge keeps refusing your clips, that is a framing problem worth solving once: side-on, whole body hands-to-feet in frame, light in front of you rather than behind.',
+        ],
+      },
+      {
         heading: 'Check it yourself',
         body: 'The judge is tested against skeletons built from known angles and against real photographs the thresholds were calibrated on — including photos it must refuse. The same bench ships inside this app: build a pose with angles you choose, watch what the judge says, run the full self-test on your own phone, or feed it your own clip.',
         link: { href: '#devlab', label: 'Open the judge’s bench' },

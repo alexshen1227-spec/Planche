@@ -81,6 +81,7 @@ export function SessionPlayer({
   const resumeLatency = stopLatencySecondsFor(
     resumeExerciseId,
     state.settings.stopLatencySec,
+    state.settings.phoneWithinReach,
   )
   const [phase, setPhase] = useState<Phase>(
     resumeFrom
@@ -208,7 +209,7 @@ export function SessionPlayer({
   const leadSec = leadInSecondsFor(exercise?.id)
   const latency =
     exercise?.type === 'hold'
-      ? stopLatencySecondsFor(exercise.id, state.settings.stopLatencySec)
+      ? stopLatencySecondsFor(exercise.id, state.settings.stopLatencySec, state.settings.phoneWithinReach)
       : 0
   // Film every key hold on the road. Most use pose geometry; Frog Stand keeps
   // the replay for an explicit checklist review instead.

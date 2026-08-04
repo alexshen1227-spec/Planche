@@ -223,7 +223,7 @@ export function equipmentAdvice(state: AppState, joints?: CheckIn['joints']): Co
 }
 
 /** Per-strategy performance, derived fresh from history. */
-export function armStats(state: AppState): ArmStats[] {
+export function armStats(state: AppState, forStep: StepId = state.stepId): ArmStats[] {
   const sessions = [...state.sessions].sort((a, b) => a.startedAt - b.startedAt)
   const acc: Record<StrategyId, { attempts: number; n: number; total: number }> = {
     balanced: { attempts: 0, n: 0, total: 0 },
@@ -233,15 +233,15 @@ export function armStats(state: AppState): ArmStats[] {
     technique: { attempts: 0, n: 0, total: 0 },
   }
   for (const s of sessions) {
-    if (!s.strategy || !acc[s.strategy] || s.stepId !== state.stepId) continue
-    if (sessionLearningValue(s, state.stepId) <= 0) continue
+    if (!s.strategy || !acc[s.strategy] || s.stepId !== forStep) continue
+    if (sessionLearningValue(s, forStep) <= 0) continue
     acc[s.strategy].attempts += 1
     const r = rewardFor(sessions, s)
     if (r === null) continue
     acc[s.strategy].n += 1
     acc[s.strategy].total += r
   }
-  const unlockSec = STEP_BY_ID[state.stepId]?.unlockSec ?? 20
+  const unlockSec = STEP_BY_ID[forStep]?.unlockSec ?? 20
 
   // Isometric results are noisy, so a strategy with one lucky session must not
   // outrank one with five solid ones. Each arm's average is pulled toward the
@@ -259,22 +259,54 @@ export function armStats(state: AppState): ArmStats[] {
   })
 }
 
+/** The most recent step, before this one, the athlete logged strategy work at. */
+export function previousTrainedStep(state: AppState): StepId | null {
+  const earlier = [...state.sessions]
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .find((s) => s.strategy && s.stepId !== state.stepId && sessionLearningValue(s, s.stepId) > 0)
+  return earlier?.stepId ?? null
+}
+
 /**
- * UCB1 selection: untested strategies are tried first (in listed order),
- * then the arm with the best optimistic estimate wins.
+ * UCB1 selection: untested strategies are tried first, then the arm with the
+ * best optimistic estimate wins.
+ *
+ * Which untested arm goes first is where the previous step gets a say. Every
+ * unlock resets all five arms to zero evidence, so the coach spent its first
+ * sessions at a new step re-discovering things it had just finished learning —
+ * at exactly the moment the athlete is most motivated. The previous step's
+ * ranking is carried over as an *ordering* only: it decides what to try first,
+ * never what to claim. The measured rates still start empty, because a tuck
+ * planche is not an advanced tuck and pretending otherwise would be inventing
+ * evidence.
  */
 export function pickStrategy(state: AppState): CoachPick {
   const stats = armStats(state)
   const totalN = stats.reduce((t, s) => t + s.attempts, 0)
 
-  const untested = stats.find((s) => s.attempts === 0)
-  if (untested) {
+  const untested = stats.filter((s) => s.attempts === 0)
+  if (untested.length) {
+    const priorStep = previousTrainedStep(state)
+    const priorRanking = priorStep
+      ? armStats(state, priorStep)
+          .filter((arm) => arm.n > 0)
+          .sort((a, b) => b.mean - a.mean)
+          .map((arm) => arm.id)
+      : []
+    const rank = (id: StrategyId) => {
+      const at = priorRanking.indexOf(id)
+      return at < 0 ? Number.MAX_SAFE_INTEGER : at
+    }
+    const next = [...untested].sort((a, b) => rank(a.id) - rank(b.id))[0]
+    const carried = priorRanking[0] === next.id && priorStep !== null
     return {
-      strategy: untested.id,
+      strategy: next.id,
       reason:
-        totalN === 0
-          ? 'Starting with a baseline so it can measure everything else against it.'
-          : `Trying ${STRATEGY_BY_ID[untested.id].name.toLowerCase()} — it hasn't been tested on you yet.`,
+        totalN === 0 && carried
+          ? `Starting with ${STRATEGY_BY_ID[next.id].name.toLowerCase()}, which produced your fastest gains at ${STEP_BY_ID[priorStep!].name} — this step has to prove it again from scratch.`
+          : totalN === 0
+            ? 'Starting with a baseline so it can measure everything else against it.'
+            : `Trying ${STRATEGY_BY_ID[next.id].name.toLowerCase()} — it hasn't been tested on you yet.`,
       exploring: true,
     }
   }
@@ -670,8 +702,15 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // fix, and until it is fixed that check silently stays out of every verdict.
   if (sig.chronicUnseen) {
     const u = sig.chronicUnseen
+    // The fix depends on what went missing. Telling someone to move the phone
+    // back when the problem is a hood over their ears is advice that cannot
+    // work, and they will follow it for weeks before giving up on the check.
+    const remedy =
+      u.criterion === 'shoulder-to-ear line'
+        ? 'That one is usually the head rather than the framing: a hood, long hair or a chin tucked hard into the chest hides the ear the measurement needs. Clear the ear and it comes back.'
+        : 'Move the phone further back — or turn it sideways — until everything from hands to feet stays in frame.'
     decisions.push({
-      text: `The camera missed your ${u.criterion} in ${u.count} of your last ${u.of} filmed sets, so that check keeps being skipped. Move the phone further back — or turn it sideways — until everything from hands to feet stays in frame.`,
+      text: `The camera missed your ${u.criterion} in ${u.count} of your last ${u.of} filmed sets, so that check keeps being skipped. ${remedy}`,
       kind: 'info',
     })
   }

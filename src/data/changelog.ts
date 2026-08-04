@@ -17,6 +17,25 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'Stop losing five seconds you never spent walking',
+    area: 'training',
+    notes: [
+      'Main Path holds deduct 5 seconds for climbing out of the position and walking back to the phone. If your phone is actually within reach that walk never happens, and you were losing a quarter of the tuck planche’s 20-second bar to it — worse, any attempt under five seconds logged as a flat zero. Settings now asks the one question that decides it: “Phone within reach on Path holds?”. Off by default, because under-crediting is the safe mistake.',
+      'It is a question about your setup, not a dial for your records: answer it honestly and your seconds are right, and it can never deduct less than your own measured reaction time.',
+      'The camera checker can now be downloaded on purpose from Settings. It used to arrive on first use — which meant a multi-megabyte download mid-workout on gym wi-fi. Fetch it at home and form checks work offline afterwards.',
+    ],
+  },
+  {
+    date: '2026-08-03',
+    title: 'The coach remembers the step you came from',
+    area: 'coach',
+    notes: [
+      'Unlocking a new step used to wipe everything the coach had learned about which session shapes work on you, so it spent its first sessions at a harder skill rediscovering all of it. It now tries your best approach from the previous step first, and says so. The measured rates still start empty — a tuck planche is not an advanced tuck, and claiming otherwise would be inventing evidence — but the order it explores in is no longer arbitrary.',
+      'When the camera keeps missing your shoulder-to-ear line, the advice now says what actually fixes it (a hood, long hair, or a chin buried in your chest) instead of telling you to move the phone back, which could never have worked.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'The coach finally shows what it has learned',
     area: 'coach',
     notes: [

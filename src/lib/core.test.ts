@@ -36,7 +36,15 @@ import {
   unrotateKeypoints,
 } from './poseForm'
 import { apparentBodyWidthRatio, MAX_SIDE_VIEW_RATIO } from './poseBackend'
-import { armStats, buildPlan, debriefSession, equipmentAdvice, rewardFor } from './coach'
+import {
+  armStats,
+  buildPlan,
+  debriefSession,
+  equipmentAdvice,
+  pickStrategy,
+  previousTrainedStep,
+  rewardFor,
+} from './coach'
 import {
   adaptiveTarget,
   describeTarget,
@@ -135,6 +143,33 @@ describe('progression hold timing', () => {
     expect(stopLatencySecondsFor('planche-lean', 2.3)).toBe(2.3)
     expect(leadInSecondsFor('one-leg-lean')).toBe(5)
     expect(stopLatencySecondsFor('one-leg-lean', 2.3)).toBe(2.3)
+  })
+
+  it('drops the walk-back allowance only when the athlete says they do not walk', () => {
+    // The 5s exists to model climbing out of the position and crossing the
+    // room. An athlete whose phone is within reach never takes that walk, and
+    // was losing a quarter of the tuck planche's 20s bar to it — plus any
+    // attempt under five seconds silently logging as zero.
+    for (const exerciseId of mainHolds) {
+      expect(stopLatencySecondsFor(exerciseId, 0.4, true)).toBe(0.4)
+      expect(stopLatencySecondsFor(exerciseId, 0.4, false)).toBe(5)
+    }
+    // A 4s hold survives instead of vanishing.
+    const credited = (raw: number, latency: number) => Math.max(0, Math.round((raw - latency) * 10) / 10)
+    expect(credited(4, stopLatencySecondsFor('tuck-planche', 0.4, true))).toBe(3.6)
+    expect(credited(4, stopLatencySecondsFor('tuck-planche', 0.4, false))).toBe(0)
+  })
+
+  it('never credits reaction time it has no basis for, whichever way the setting is', () => {
+    // The floor is the reaction delay that applies either way: saying the
+    // phone is far away must never *reduce* the deduction below the athlete's
+    // own measured reflex time.
+    expect(stopLatencySecondsFor('tuck-planche', 6, false)).toBe(6)
+    // And the setting is a statement about walking, not a licence to zero it.
+    expect(stopLatencySecondsFor('tuck-planche', 0, true)).toBe(0)
+    expect(stopLatencySecondsFor('tuck-planche', -3, true)).toBe(0)
+    // Default is the conservative reading for callers that do not pass it.
+    expect(stopLatencySecondsFor('tuck-planche', 2.3)).toBe(5)
   })
 
   it('reconstructs coach-observed rest with the matching lead-in', () => {
@@ -1419,6 +1454,45 @@ describe('coach learning', () => {
       { workoutName: 'Training Day' },
     )
     expect(sessionLearningValue(warmup, 'tuck')).toBe(0)
+  })
+
+  it('carries the previous step\'s ranking into a fresh step as an order, not a claim', () => {
+    // Unlocking resets every arm to zero evidence. Without this the coach
+    // re-explored in listed order, spending its first sessions at a new step
+    // rediscovering what it had just learned at the old one.
+    const t = Date.now() - 30 * DAY
+    const at = (day: number) => t + day * DAY
+    const leanSession = (value: number, day: number, strategy?: Session['strategy']) =>
+      session('lean', [log('planche-lean', value, { form: { rating: 'clean', confirmed: true } })], {
+        startedAt: at(day),
+        workoutName: 'Training Day',
+        ...(strategy ? { strategy } : {}),
+      })
+    // At the previous step, density clearly outperformed technique.
+    const sessions = [
+      leanSession(10, 0),
+      leanSession(10, 2),
+      leanSession(11, 4, 'technique'),
+      leanSession(11, 6),
+      leanSession(12, 8),
+      leanSession(13, 10, 'density'),
+      leanSession(22, 12),
+      leanSession(24, 14),
+    ]
+    const atNewStep: AppState = { ...state('tuck'), sessions, unlocked: ['foundations', 'lean', 'tuck'] }
+
+    expect(previousTrainedStep(atNewStep)).toBe('lean')
+    // Nothing is claimed about the new step: all arms still read untested.
+    expect(armStats(atNewStep).every((arm) => arm.attempts === 0 && arm.n === 0)).toBe(true)
+    // But the best prior arm is what gets tried first, and it says why.
+    const pick = pickStrategy(atNewStep)
+    expect(pick.strategy).toBe('density')
+    expect(pick.exploring).toBe(true)
+    expect(pick.reason).toContain('Planche Lean')
+
+    // With no prior history at all, the original baseline wording stands.
+    const brandNew = pickStrategy(state('foundations'))
+    expect(brandNew.reason).toContain('Starting with a baseline')
   })
 
   it('surfaces measured strategy rates from the sample history', () => {

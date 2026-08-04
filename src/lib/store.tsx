@@ -37,8 +37,10 @@ export const DEFAULT_SETTINGS: Settings = {
   warmup: true,
   beeps: true,
   sessionMinutes: 30,
-  // Regular-hold calibration. Main Path holds use their longer fixed allowance.
+  // Regular-hold calibration. Main Path holds use their longer fixed allowance
+  // unless the athlete says the phone is within reach.
   stopLatencySec: 2.3,
+  phoneWithinReach: false,
   units: 'metric',
   recordForm: true,
   autoAnalyze: true,
@@ -280,6 +282,10 @@ export function normalizeState(raw: unknown): AppState {
     beeps: typeof rawSettings.beeps === 'boolean' ? rawSettings.beeps : DEFAULT_SETTINGS.beeps,
     recordForm: typeof rawSettings.recordForm === 'boolean' ? rawSettings.recordForm : DEFAULT_SETTINGS.recordForm,
     autoAnalyze: typeof rawSettings.autoAnalyze === 'boolean' ? rawSettings.autoAnalyze : DEFAULT_SETTINGS.autoAnalyze,
+    phoneWithinReach:
+      typeof rawSettings.phoneWithinReach === 'boolean'
+        ? rawSettings.phoneWithinReach
+        : DEFAULT_SETTINGS.phoneWithinReach,
   }
   // One-time migration: anyone still carrying the old optimistic default gets
   // the realistic one. Deliberate choices made after this are left alone.

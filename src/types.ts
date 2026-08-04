@@ -257,9 +257,20 @@ export interface Settings {
   /**
    * Seconds between actually coming out of a hold and the stop button being
    * pressed. Used for regular timed holds; main Path holds have a dedicated
-   * longer allowance.
+   * longer allowance unless `phoneWithinReach` says otherwise.
    */
   stopLatencySec: number
+  /**
+   * Whether the phone is close enough to stop a filmed main hold without
+   * getting up and walking to it.
+   *
+   * A statement of fact about the setup, not a preference: the longer Path
+   * allowance exists only to model that walk, so an athlete who never walks
+   * was having seconds deducted for something they did not do. Defaults to
+   * false — the conservative reading, which under-credits rather than
+   * inventing hold time.
+   */
+  phoneWithinReach: boolean
 }
 
 export interface AppState {
