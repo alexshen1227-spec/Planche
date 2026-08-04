@@ -1,4 +1,4 @@
-import type { CheckIn, SetLog, Workout } from '../types'
+import type { CheckIn, SetLog, Settings, Workout } from '../types'
 
 /**
  * Crash-proof live-session storage.
@@ -33,11 +33,32 @@ export interface SessionDraft {
   interruptedAt?: { bi: number; si: number }
   restTotal?: number
   checkIn?: CheckIn
+  /** Per-set stop setup carried to the next hold. */
+  walkedBack?: boolean
+  /** Session camera choice; may differ from the profile default. */
+  cameraOn?: boolean
   rpe?: number
   notes?: string
 }
 
 export type DraftInput = Omit<SessionDraft, 'v' | 'savedAt'>
+
+/**
+ * Restore choices made inside the session before falling back to Settings.
+ *
+ * These are session state, not profile state: an athlete can correct the stop
+ * setup after one set and can turn filming off for this workout. Losing either
+ * on reload changes recorded seconds or unexpectedly reopens the camera.
+ */
+export function restoredSessionSetup(
+  draft: Pick<SessionDraft, 'walkedBack' | 'cameraOn'> | null | undefined,
+  settings: Pick<Settings, 'phoneWithinReach' | 'recordForm'>,
+): { walkedBack: boolean; cameraOn: boolean } {
+  return {
+    walkedBack: draft?.walkedBack ?? !settings.phoneWithinReach,
+    cameraOn: draft?.cameraOn ?? settings.recordForm,
+  }
+}
 
 export function saveDraft(input: DraftInput): void {
   try {

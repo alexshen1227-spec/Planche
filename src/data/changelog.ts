@@ -17,6 +17,14 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'Restored sessions keep your setup',
+    area: 'training',
+    notes: [
+      'If a tab reloaded after you corrected a Path hold to “phone within reach,” the next interrupted hold silently went back to the longer walk deduction. A session you had switched to Camera off could also reopen with filming on. Crash recovery now restores both choices exactly as they were.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'The stop correction reaches the final set',
     area: 'training',
     notes: [

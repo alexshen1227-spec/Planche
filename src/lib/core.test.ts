@@ -54,6 +54,7 @@ import {
   todaysSession,
 } from '../data/workouts'
 import { validateImport } from './exportImport'
+import { restoredSessionSetup } from './draft'
 import { buildSampleState } from '../data/sample'
 import { ACHIEVEMENTS, ACHIEVEMENT_VERSION } from '../data/achievements'
 import { selectRecorderMime } from './recorder'
@@ -281,6 +282,24 @@ describe('progression hold timing', () => {
     const target = primaryTargetBlock(workout)!
     expect(target.exerciseId).toBe('one-leg-planche')
     expect(describeTarget(target)).toBe('8s hold each side')
+  })
+})
+
+describe('restored session setup', () => {
+  const defaults = { phoneWithinReach: false, recordForm: true }
+
+  it('keeps per-session stop and camera choices across a reload', () => {
+    expect(restoredSessionSetup({ walkedBack: false, cameraOn: false }, defaults)).toEqual({
+      walkedBack: false,
+      cameraOn: false,
+    })
+  })
+
+  it('uses profile defaults for older drafts that predate these fields', () => {
+    expect(restoredSessionSetup({}, defaults)).toEqual({ walkedBack: true, cameraOn: true })
+    expect(
+      restoredSessionSetup({}, { phoneWithinReach: true, recordForm: false }),
+    ).toEqual({ walkedBack: false, cameraOn: false })
   })
 })
 

@@ -22,7 +22,7 @@ import { applySession } from '../lib/engine'
 import { sfx, speak, buzz } from '../lib/audio'
 import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
-import { clearDraft, saveDraft, type SessionDraft } from '../lib/draft'
+import { clearDraft, restoredSessionSetup, saveDraft, type SessionDraft } from '../lib/draft'
 import { useFormRecorder } from '../lib/recorder'
 import { saveClip, getClipBlob } from '../lib/clips'
 import {
@@ -81,13 +81,14 @@ export function SessionPlayer({
   onCheckInAnswered?: (c: CheckIn) => void
 }) {
   const { state, dispatch } = useStore()
+  const restoredSetup = restoredSessionSetup(resumeFrom, state.settings)
   const resumeExerciseId = resumeFrom
     ? workout.blocks[resumeFrom.blockIndex]?.exerciseId
     : undefined
   const resumeLatency = stopLatencySecondsFor(
     resumeExerciseId,
     state.settings.stopLatencySec,
-    state.settings.phoneWithinReach,
+    !restoredSetup.walkedBack,
   )
   const [phase, setPhase] = useState<Phase>(
     resumeFrom
@@ -128,7 +129,7 @@ export function SessionPlayer({
   const [showDemo, setShowDemo] = useState(false)
   const [showRpeHelp, setShowRpeHelp] = useState(false)
   const [checkIn, setCheckIn] = useState<CheckIn | null>(resumeFrom?.checkIn ?? null)
-  const [cameraOn, setCameraOn] = useState(state.settings.recordForm)
+  const [cameraOn, setCameraOn] = useState(restoredSetup.cameraOn)
   /**
    * Whether the athlete had to climb out of the position and walk to the phone
    * to stop the last hold.
@@ -139,7 +140,7 @@ export function SessionPlayer({
    * a one-tap correction, and the corrected answer carries to the next set so
    * it only ever costs a tap when it is actually wrong.
    */
-  const [walkedBack, setWalkedBack] = useState(!state.settings.phoneWithinReach)
+  const [walkedBack, setWalkedBack] = useState(restoredSetup.walkedBack)
   const [pendingClip, setPendingClip] = useState<{ key: string; logAt: number } | null>(null)
   const [clipFinalizing, setClipFinalizing] = useState(false)
   const [analysingSets, setAnalysingSets] = useState<Set<number>>(() => new Set())
@@ -262,7 +263,7 @@ export function SessionPlayer({
   // the OS without warning, and this is what makes that survivable.
   useEffect(() => {
     if (phase === 'celebrate') return
-    const snapshot = () => {
+    const snapshot = (override?: { cameraOn?: boolean }) => {
       // Once the screen is off the athlete is no longer holding, so the
       // elapsed value is frozen at the moment the page was hidden rather
       // than left to climb while the tab is torn down.
@@ -279,6 +280,11 @@ export function SessionPlayer({
         restEndsAt: phase === 'rest' ? restEnd : null,
         restTotal,
         ...(checkIn ? { checkIn } : {}),
+        // These are live session choices. Falling back to Settings after a
+        // crash can change the next hold's seconds or reopen a camera the
+        // athlete explicitly switched off.
+        walkedBack,
+        cameraOn: override?.cameraOn ?? cameraOn,
         phase: phase === 'rest' || phase === 'summary' ? phase : 'ready',
         ...(interrupted !== null && interruptedAt.current
           ? { interrupted, interruptedAt: interruptedAt.current }
@@ -303,7 +309,10 @@ export function SessionPlayer({
           }
           setPhase('ready')
         }
-        snapshot()
+        // React state may not flush before a hidden tab is discarded. Persist
+        // the forced-off camera synchronously instead of relying on a later
+        // render that the browser is free never to run.
+        snapshot(filming ? { cameraOn: false } : undefined)
       } else {
         frozenElapsedRef.current = null
       }
@@ -345,6 +354,8 @@ export function SessionPlayer({
     recorder,
     interrupted,
     checkIn,
+    walkedBack,
+    cameraOn,
   ])
 
   useEffect(() => {
