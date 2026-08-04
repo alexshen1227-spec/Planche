@@ -16,6 +16,16 @@ import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
 
 const DAY = 86_400_000
 
+/**
+ * "Has not happened" for a day-count signal.
+ *
+ * Deliberately huge so every `>= n days ago` comparison resolves the way it
+ * should without a null check — and deliberately named, because it was once a
+ * bare 99 that reached an athlete as "No hard training in 99 days" two days
+ * after they trained.
+ */
+export const NEVER_DAYS = 99
+
 export function median(xs: number[]): number | null {
   if (xs.length === 0) return null
   const s = [...xs].sort((a, b) => a - b)
@@ -157,8 +167,18 @@ export interface Signals {
   /** Days since the last logged session of any kind. */
   restDays: number
   lastRpe?: number
-  /** Days since the last session with meaningful training load. */
+  /**
+   * Days since the last session with meaningful training load, or
+   * `NEVER_DAYS` when no session has ever reached that bar.
+   *
+   * The sentinel keeps every "long enough ago" comparison working without a
+   * null check, which is why it is a large number rather than null — but it is
+   * not a day count and must never be shown to an athlete. Read
+   * `hasLoadedSession` before putting it in a sentence.
+   */
   daysSinceLoaded: number
+  /** False when nothing logged has reached a hard-training load yet. */
+  hasLoadedSession: boolean
   /** RPE of that loaded session — a light prehab day can't mask it. */
   lastLoadedRpe?: number
   /**
@@ -250,13 +270,13 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
 
   const restDays = last
     ? Math.max(0, Math.round((new Date(dayKey(now)).getTime() - new Date(dayKey(last.startedAt)).getTime()) / DAY))
-    : 99
+    : NEVER_DAYS
 
   // ——— Training load: what recovery actually depends on ———
   const lastLoaded = [...sessions].reverse().find((s) => strainOf(s) >= LOADED_STRAIN)
   const daysSinceLoaded = lastLoaded
     ? Math.max(0, Math.round((new Date(dayKey(now)).getTime() - new Date(dayKey(lastLoaded.startedAt)).getTime()) / DAY))
-    : 99
+    : NEVER_DAYS
   const lastLoadedRpe = lastLoaded?.rpe
 
   const monthAgo = now - 28 * DAY
@@ -525,6 +545,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     restDays,
     lastRpe: last?.rpe,
     daysSinceLoaded,
+    hasLoadedSession: lastLoaded !== undefined,
     lastLoadedRpe,
     readinessLoad,
     chronicDailyStrain,

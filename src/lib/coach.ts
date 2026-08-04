@@ -464,8 +464,11 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     dayReason = 'Your last hard session hit RPE 9+ — today turns that into strength instead of fatigue.'
   } else if (sig.daysSinceLoaded >= 2) {
     dayType = 'push'
-    dayReason =
-      sig.restDays < sig.daysSinceLoaded
+    dayReason = !sig.hasLoadedSession
+      ? // daysSinceLoaded is a sentinel here, not a count. It once reached
+        // athletes as "No hard training in 99 days" two days after they trained.
+        'Nothing logged so far has reached a hard-training load — today pushes, so the coach can see where your limit actually sits.'
+      : sig.restDays < sig.daysSinceLoaded
         ? `No hard training in ${sig.daysSinceLoaded} days (light work doesn't count against you) — you're fresh, so today pushes.`
         : `${sig.daysSinceLoaded} rest day${sig.daysSinceLoaded > 1 ? 's' : ''} banked — you're fresh, so today pushes.`
   } else if (sig.readinessLoad !== null && sig.readinessLoad < 0.6 && sig.daysSinceLoaded >= 1) {

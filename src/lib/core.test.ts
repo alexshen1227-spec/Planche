@@ -1272,6 +1272,40 @@ describe('readiness rails', () => {
     expect(plan.decisions.map((decision) => decision.text).join(' ')).not.toContain('days off')
   })
 
+  it('never shows the never-trained sentinel as a day count', () => {
+    // An athlete who trains only light sessions has real history but has never
+    // hit the loaded-strain bar, so daysSinceLoaded stays at its sentinel. It
+    // used to be printed verbatim: "No hard training in 99 days" two days
+    // after they last trained.
+    const now = Date.now()
+    const light = (daysAgo: number) =>
+      session('foundations', [log('wrist-circles', 10, { kind: 'reps', section: 'warmup' })], {
+        startedAt: now - daysAgo * DAY,
+        workoutName: 'Training Day',
+      })
+    const sessions = [light(8), light(6), light(4), light(2)]
+    const sig = readSignals({ ...state(), sessions }, now)
+    expect(sig.hasLoadedSession).toBe(false)
+    expect(sig.restDays).toBe(2)
+
+    const plan = buildPlan({ ...state(), sessions }, now)
+    const everything = [plan.dayReason, ...plan.decisions.map((d) => d.text)].join(' ')
+    expect(everything).not.toContain('99')
+    expect(plan.dayReason).toContain('hard-training load')
+
+    // A genuinely loaded history still reports real numbers.
+    const loaded = [
+      session(
+        'foundations',
+        Array.from({ length: 5 }, () => log('ppp-hold', 30, { form: form() })),
+        { startedAt: now - 3 * DAY, workoutName: 'Training Day', rpe: 8 },
+      ),
+    ]
+    const loadedSig = readSignals({ ...state(), sessions: loaded }, now)
+    expect(loadedSig.hasLoadedSession).toBe(true)
+    expect(loadedSig.daysSinceLoaded).toBe(3)
+  })
+
   it('keeps return-from-break warm-up advice when a real prior session exists', () => {
     const now = Date.now()
     const previous = session(
