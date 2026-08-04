@@ -16,6 +16,18 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-08-04',
+    title: 'Sets you never did, and other things that were not true',
+    area: 'app',
+    notes: [
+      'Holding the space bar or double-tapping Stop logged a set per press — five taps wrote five sets, four of them phantom zero-second holds that then counted in your totals and your history. A hold is now stopped once, however many times you hit the button.',
+      'The app works offline from the moment you install it. The service worker was only being set up after you finished onboarding, so a fresh install had nothing cached — now verified by pulling the network entirely and reloading.',
+      'The coach no longer claims “no hard training in 99 days” to someone who trained two days ago. That number was a placeholder meaning “never”, and it was being printed as though it were real.',
+      'The hold trend chart used to tell you to log sessions you had already logged. It only plots form-qualified sets, so it now says that plainly instead of looking broken.',
+      'Backups download reliably on iPhone and Firefox, the mid-workout buttons are big enough to actually hit, and your saved data now survives a full storage drive.',
+    ],
+  },
+  {
     date: '2026-08-03',
     title: 'The camera recovers from a quick toggle',
     area: 'camera',

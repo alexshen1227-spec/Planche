@@ -137,6 +137,9 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
             inputMode="decimal"
             autoFocus
             placeholder={weightUnitLabel(units)}
+            // Without this the accessible name is just the placeholder — a
+            // screen reader announced "kg" with no clue what it was asking.
+            aria-label={`Bodyweight in ${units === 'metric' ? 'kilograms' : 'pounds'}`}
             aria-invalid={error !== null}
             className={`mt-1.5 w-full rounded-xl border bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent ${
               error ? 'border-danger' : 'border-line'
