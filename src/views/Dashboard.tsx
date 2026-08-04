@@ -343,7 +343,7 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
             <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-ink3">
               <Icon name="trophy" size={15} /> Latest achievements
             </div>
-            <button onClick={() => go('stats')} className="text-[13px] font-medium text-ink3 hover:text-ink">
+            <button onClick={() => go('stats')} className="-my-2 px-1 py-2 text-[13px] font-medium text-ink3 hover:text-ink">
               All →
             </button>
           </div>

@@ -1071,14 +1071,17 @@ export function SessionPlayer({
             <Icon name="play" size={18} />
             {isHold ? `Start · ${leadSec}s lead-in` : 'Begin set'}
           </button>
-          <div className="mt-3 flex flex-wrap justify-center gap-5 text-[13px]">
-            <button onClick={() => setShowDemo(true)} className="text-accent underline-offset-2 hover:underline">
+          {/* Bare text buttons measured 20px tall, under the 24px minimum, on
+              the one screen where taps are one-handed and mid-workout. The
+              padding buys a real target without changing how the row looks. */}
+          <div className="mt-2 flex flex-wrap justify-center gap-x-4 text-[13px]">
+            <button onClick={() => setShowDemo(true)} className="px-1 py-2 text-accent underline-offset-2 hover:underline">
               How do I do this?
             </button>
-            <button onClick={skipSet} className="text-ink3 underline-offset-2 hover:text-ink hover:underline">
+            <button onClick={skipSet} className="px-1 py-2 text-ink3 underline-offset-2 hover:text-ink hover:underline">
               Skip set
             </button>
-            <button onClick={skipBlock} className="text-ink3 underline-offset-2 hover:text-ink hover:underline">
+            <button onClick={skipBlock} className="px-1 py-2 text-ink3 underline-offset-2 hover:text-ink hover:underline">
               Skip exercise
             </button>
           </div>
@@ -1230,14 +1233,14 @@ export function SessionPlayer({
                 <button
                   onClick={() => adjustLastLog(-1)}
                   aria-label="Decrease logged value"
-                  className="grid h-7 w-7 place-items-center rounded-full border border-line bg-raised text-ink2 hover:text-ink"
+                  className="grid h-9 w-9 place-items-center rounded-full border border-line bg-raised text-ink2 hover:text-ink"
                 >
                   <Icon name="minus" size={13} />
                 </button>
                 <button
                   onClick={() => adjustLastLog(1)}
                   aria-label="Increase logged value"
-                  className="grid h-7 w-7 place-items-center rounded-full border border-line bg-raised text-ink2 hover:text-ink"
+                  className="grid h-9 w-9 place-items-center rounded-full border border-line bg-raised text-ink2 hover:text-ink"
                 >
                   <Icon name="plus" size={13} />
                 </button>
