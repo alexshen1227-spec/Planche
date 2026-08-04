@@ -16,14 +16,40 @@ import { sfx } from '../lib/audio'
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle } from '../components/ui'
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+/**
+ * One setting: a label (with optional hint) and its control.
+ *
+ * `stack` puts the control on its own full-width line under the label instead
+ * of beside it. Controls that are genuinely wide — a wrapping set of chips, an
+ * input next to a button — could not fit alongside a hint at any realistic
+ * width, so the flex row wrapped them into a ragged, right-aligned block that
+ * read as a layout bug (the equipment row alone was more than twice the height
+ * of its neighbours). Stacking makes the same content deliberate and legible.
+ */
+function Row({
+  label,
+  hint,
+  children,
+  stack,
+}: {
+  label: string
+  hint?: string
+  children: React.ReactNode
+  stack?: boolean
+}) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line py-4 last:border-b-0">
-      <div className="min-w-0">
-        <div className="text-[14.5px] font-medium text-ink">{label}</div>
-        {hint ? <div className="mt-0.5 max-w-md text-[13px] text-ink2">{hint}</div> : null}
+    <div className="border-b border-line py-4 last:border-b-0">
+      <div className={stack ? undefined : 'flex flex-wrap items-center justify-between gap-3'}>
+        {/* flex-1 lets the hint reflow instead of shoving the control onto its
+            own ragged line: controls then stay in one right-hand column down
+            the whole page, which is what makes the list read as a list. */}
+        <div className={stack ? 'min-w-0' : 'min-w-0 flex-1 basis-56'}>
+          <div className="text-[14.5px] font-medium text-ink">{label}</div>
+          {hint ? <div className="mt-0.5 max-w-md text-[13px] text-ink2">{hint}</div> : null}
+        </div>
+        {stack ? null : <div className="flex shrink-0 items-center gap-2">{children}</div>}
       </div>
-      <div className="flex shrink-0 items-center gap-2">{children}</div>
+      {stack ? <div className="mt-2.5 flex flex-wrap items-center gap-2">{children}</div> : null}
     </div>
   )
 }
@@ -334,8 +360,12 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             max={7}
           />
         </Row>
-        <Row label="Equipment" hint="Update this whenever your setup changes; it affects later exercise choices.">
-          <div className="flex max-w-sm flex-wrap justify-end gap-1.5">
+        <Row
+          label="Equipment"
+          hint="Update this whenever your setup changes; it affects exercise choices and the coach's advice."
+          stack
+        >
+          <div className="flex flex-wrap gap-1.5">
             {EQUIPMENT_OPTIONS.map((item) => {
               const selected = state.profile.equipment.includes(item.id)
               return (
@@ -408,8 +438,12 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             Save
           </button>
         </Row>
-        <Row label="Joint / injury note" hint="The coach uses this to require a fresh readiness check before loading.">
-          <div className="flex min-w-0 flex-1 flex-wrap justify-end gap-2">
+        <Row
+          label="Joint / injury note"
+          hint="The coach uses this to require a fresh readiness check before loading."
+          stack
+        >
+          <div className="flex min-w-0 flex-1 flex-wrap gap-2">
             <input
               value={injuryNote}
               onChange={(e) => setInjuryNote(e.target.value)}

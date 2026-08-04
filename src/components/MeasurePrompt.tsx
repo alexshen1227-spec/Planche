@@ -8,9 +8,15 @@ import { Modal } from './ui'
 
 const DAY = 86_400_000
 const WEIGHT_EVERY_DAYS = 7
-/** Asked alongside weight — leaving it blank keeps the previous value. */
-// Adult height changes slowly; weekly prompts add friction without improving
-// programming. Keep the value editable, but only re-ask twice a year.
+/**
+ * How long before height is *prompted for* rather than merely offered.
+ *
+ * The field itself is always present — it is one optional box that keeps its
+ * current value when left blank, and hiding it entirely meant an athlete who
+ * had grown, mistyped it once, or simply wanted to check what the app thought
+ * had no way to correct it short of hunting through Settings. Past this age it
+ * is highlighted as worth a moment.
+ */
 const HEIGHT_EVERY_DAYS = 180
 
 export function lastOf(state: AppState, field: 'weightKg' | 'heightCm'): { at: number; value: number } | null {
@@ -107,7 +113,7 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
   }
 
   return (
-    <Modal open={open} onClose={dismiss} label="Weekly bodyweight check">
+    <Modal open={open} onClose={dismiss} label="Weekly bodyweight and height check">
       <div className="p-6">
         <div className="pr-10">
           <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-accent">
@@ -144,42 +150,53 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
           ) : null}
         </label>
 
-        {due.height ? (
-          <div className="mt-4">
-            <span className="text-[13px] font-medium text-ink2">
-              Height {lastH ? <span className="text-ink3">(currently {fmtHeight(lastH.value, units)})</span> : null}
-            </span>
-            {units === 'metric' ? (
-              <input
-                value={heightCm}
-                onChange={(e) => setHeightCm(e.target.value)}
-                inputMode="decimal"
-                placeholder="cm"
-                className="mt-1.5 w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
-              />
+        <div className="mt-4">
+          <span className="text-[13px] font-medium text-ink2">
+            Height{' '}
+            {lastH ? (
+              <span className="text-ink3">(currently {fmtHeight(lastH.value, units)})</span>
             ) : (
-              <div className="mt-1.5 flex gap-2">
-                <input
-                  value={heightFt}
-                  onChange={(e) => setHeightFt(e.target.value)}
-                  inputMode="numeric"
-                  placeholder="ft"
-                  className="w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
-                />
-                <input
-                  value={heightIn}
-                  onChange={(e) => setHeightIn(e.target.value)}
-                  inputMode="numeric"
-                  placeholder="in"
-                  className="w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
-                />
-              </div>
+              <span className="text-ink3">(optional)</span>
             )}
-            <span className="mt-1 block text-[12px] text-ink3">
-              {lastH ? `Leave blank to keep ${fmtHeight(lastH.value, units)}.` : 'Optional.'}
-            </span>
-          </div>
-        ) : null}
+            {due.height && lastH ? (
+              <span className="ml-1.5 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">
+                worth a check
+              </span>
+            ) : null}
+          </span>
+          {units === 'metric' ? (
+            <input
+              value={heightCm}
+              onChange={(e) => setHeightCm(e.target.value)}
+              inputMode="decimal"
+              placeholder={lastH ? String(Math.round(lastH.value)) : 'cm'}
+              aria-label="Height in centimetres"
+              className="mt-1.5 w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+            />
+          ) : (
+            <div className="mt-1.5 flex gap-2">
+              <input
+                value={heightFt}
+                onChange={(e) => setHeightFt(e.target.value)}
+                inputMode="numeric"
+                placeholder="ft"
+                aria-label="Height, feet"
+                className="w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+              />
+              <input
+                value={heightIn}
+                onChange={(e) => setHeightIn(e.target.value)}
+                inputMode="numeric"
+                placeholder="in"
+                aria-label="Height, inches"
+                className="w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+              />
+            </div>
+          )}
+          <span className="mt-1 block text-[12px] text-ink3">
+            {lastH ? `Leave blank to keep ${fmtHeight(lastH.value, units)}.` : 'Optional.'}
+          </span>
+        </div>
 
         <button
           onClick={save}

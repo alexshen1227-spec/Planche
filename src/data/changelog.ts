@@ -17,6 +17,26 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'The coach finally shows what it has learned',
+    area: 'coach',
+    notes: [
+      'Every training approach used to read “not tested yet” forever, no matter how many sessions you logged. The coach was only willing to learn from sessions carrying the full unlock evidence chain — an athlete who trains honestly but does not film and confirm every single set taught it nothing. Learning now measures your best main-set hold on the step\'s key exercise, minus anything you rated as broken down or the camera watched decay. The unlock bar itself has not moved a millimetre: that still needs your Clean rating, a passing camera check and confirmed flight.',
+      'Because the rates are real now, the coach can also explain itself properly — today\'s approach is named with the gains it actually produced for you, and the dashboard shows how many sessions it has measured.',
+      'The coach now knows what you train with. If your wrists are complaining on the floor at tuck level or beyond, it names parallettes as the fix — and if you already own them, it points at the surface setting instead of the shop. Straddle-step sessions say plainly when a band or a bar is what is missing.',
+    ],
+  },
+  {
+    date: '2026-08-03',
+    title: 'The session clock starts when you do',
+    area: 'training',
+    notes: [
+      'Opening a workout used to start the session timer immediately, so reading the plan for two minutes before pressing Begin session added two minutes to the session duration saved in your history. The clock now starts on Begin session, where you actually start training.',
+      'Settings rows no longer scatter their controls: equipment chips and the joint note sit on their own full-width line, and every other control lines up in one column down the page.',
+      'The weekly check-in asks for height alongside bodyweight again, pre-filled with what the app currently has — leave it blank to keep it.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'See for yourself how the camera judge works',
     area: 'app',
     notes: [

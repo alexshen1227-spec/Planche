@@ -130,7 +130,16 @@ export function SessionPlayer({
   const [insight, setInsight] = useState<{ delta: number; label: string } | null>(null)
   const [debrief, setDebrief] = useState<CoachDecision[]>([])
   const sessionRef = useRef<HTMLDivElement | null>(null)
-  const startedAtRef = useRef(resumeFrom?.startedAt ?? Date.now())
+  /**
+   * When training actually started — stamped on "Begin session", not on mount.
+   *
+   * Opening a workout is not training: the intro screen is a plan you might
+   * read for a minute, walk away from, or back out of entirely. Starting the
+   * clock there inflated every session's duration by however long you spent
+   * deciding, and that number is saved on the session and shown in the summary.
+   * 0 means "not started yet".
+   */
+  const startedAtRef = useRef(resumeFrom?.startedAt ?? 0)
   const lastBeepRef = useRef(-1)
   const targetHitRef = useRef(false)
   const lastCountRef = useRef(-1)
@@ -411,6 +420,16 @@ export function SessionPlayer({
     }
   }, [phase, holdCredited, bestBefore])
 
+  /**
+   * Leave the intro and start the clock. Both the button and the Space key
+   * come through here so the two can never disagree about when a session
+   * began, and a resumed session keeps its original start time.
+   */
+  const startSession = useCallback(() => {
+    if (!startedAtRef.current) startedAtRef.current = Date.now()
+    setPhase('ready')
+  }, [])
+
   const advance = useCallback(
     (withRest: boolean) => {
       lastBeepRef.current = -1
@@ -571,7 +590,9 @@ export function SessionPlayer({
   const save = useCallback(() => {
     const session: Session = {
       id: crypto.randomUUID(),
-      startedAt: startedAtRef.current,
+      // Never 0 in practice — a session cannot reach the summary without
+      // leaving the intro — but a real timestamp beats an epoch date if it is.
+      startedAt: startedAtRef.current || Date.now(),
       endedAt: Date.now(),
       workoutName: workout.name,
       workoutKind: workout.kind,
@@ -634,7 +655,7 @@ export function SessionPlayer({
       if (showCheckIn || showDemo || showRpeHelp || confirmExit) return
       if (e.code === 'Space') {
         e.preventDefault()
-        if (phase === 'intro') setPhase('ready')
+        if (phase === 'intro') startSession()
         else if (phase === 'ready') beginSet()
         else if (phase === 'hold') stopHold()
         else if (phase === 'reps') logSet(pendingReps)
@@ -648,7 +669,7 @@ export function SessionPlayer({
     return () => window.removeEventListener('keydown', onKey)
   }, [phase, beginSet, stopHold, logSet, pendingReps, showCheckIn, showDemo, showRpeHelp, confirmExit])
 
-  const sessionElapsed = Math.max(0, (now - startedAtRef.current) / 1000)
+  const sessionElapsed = startedAtRef.current ? Math.max(0, (now - startedAtRef.current) / 1000) : 0
   const lastLog = logs[logs.length - 1]
 
   const holdSecTotal = Math.round(logs.filter((l) => l.kind === 'hold').reduce((t, l) => t + l.value, 0))
@@ -734,7 +755,7 @@ export function SessionPlayer({
               </div>
             ) : null}
             <button
-              onClick={() => setPhase('ready')}
+              onClick={startSession}
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99]"
               style={{ background: 'var(--t-btn-accent)' }}
             >

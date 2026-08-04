@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog, Workout } from '../types'
 import { initialState, normalizeState, rebuildDerivedState, reconcileAchievements, skipToStep } from './store'
 import { applySession } from './engine'
-import { formEvidenceCoversArms, passesProgressionFormCheck, progressionCredit, qualifyingProgress } from './progression'
+import {
+  formEvidenceCoversArms,
+  passesProgressionFormCheck,
+  progressionCredit,
+  qualifyingProgress,
+  sessionLearningValue,
+} from './progression'
 import {
   MATERIAL_TOLERANCE,
   POSE_PROFILES,
@@ -30,7 +36,7 @@ import {
   unrotateKeypoints,
 } from './poseForm'
 import { apparentBodyWidthRatio, MAX_SIDE_VIEW_RATIO } from './poseBackend'
-import { buildPlan, debriefSession, rewardFor } from './coach'
+import { armStats, buildPlan, debriefSession, equipmentAdvice, rewardFor } from './coach'
 import {
   adaptiveTarget,
   describeTarget,
@@ -1355,6 +1361,114 @@ describe('stage-specific planche lean programming', () => {
 })
 
 describe('coach learning', () => {
+  it('learns from an athlete who never films, without weakening the unlock bar', () => {
+    // The bug this pins: learning used the *unlock* evidence chain, so an
+    // athlete who trains honestly but does not film and flight-confirm every
+    // set produced no evidence at all and every strategy read "not tested
+    // yet" forever, however long they trained.
+    const t = Date.now() - 20 * DAY
+    const unfilmed = (value: number, day: number, strategy?: Session['strategy']) =>
+      session('tuck', [log('tuck-planche', value, { form: { rating: 'clean', confirmed: true } })], {
+        startedAt: t + day * DAY,
+        workoutName: 'Training Day',
+        ...(strategy ? { strategy } : {}),
+      })
+    const sessions = [
+      unfilmed(8, 0),
+      unfilmed(8, 2),
+      unfilmed(9, 4, 'volume'),
+      unfilmed(12, 6),
+      unfilmed(13, 8),
+    ]
+    const learned = armStats({ ...state('tuck'), sessions })
+    const volume = learned.find((arm) => arm.id === 'volume')!
+    expect(volume.attempts).toBe(1)
+    expect(volume.n).toBe(1)
+    expect(volume.rawMean).toBeGreaterThan(0)
+
+    // The unlock bar is untouched: none of those sets carries camera evidence
+    // or flight confirmation, so none of them may unlock anything.
+    expect(qualifyingProgress({ sessions }, 'tuck').value).toBe(0)
+  })
+
+  it('will not learn from a hold the athlete said fell apart, or from Quick Log', () => {
+    const broke = session(
+      'tuck',
+      [log('tuck-planche', 30, { form: { rating: 'broke', confirmed: true } })],
+      { workoutName: 'Training Day' },
+    )
+    expect(sessionLearningValue(broke, 'tuck')).toBe(0)
+
+    const quick = session('tuck', [log('tuck-planche', 30, { form: form() })], {
+      workoutName: 'Quick Log',
+    })
+    expect(sessionLearningValue(quick, 'tuck')).toBe(0)
+  })
+
+  it('credits the camera-verified window rather than the stopwatch when filmed', () => {
+    const filmed = session(
+      'tuck',
+      [log('tuck-planche', 20, { form: form('clean', true, [], 0.9, 12, 0.6) })],
+      { workoutName: 'Training Day' },
+    )
+    expect(sessionLearningValue(filmed, 'tuck')).toBe(12)
+    // Warm-ups and accessories are not the key hold, whatever their length.
+    const warmup = session(
+      'tuck',
+      [log('tuck-planche', 30, { section: 'warmup', form: form() })],
+      { workoutName: 'Training Day' },
+    )
+    expect(sessionLearningValue(warmup, 'tuck')).toBe(0)
+  })
+
+  it('surfaces measured strategy rates from the sample history', () => {
+    // The demo history rotates all five strategies over 27 sessions; if the
+    // panel shows "not tested yet" for every one of them, learning is broken.
+    const stats = armStats(buildSampleState())
+    expect(stats.filter((arm) => arm.attempts > 0).length).toBe(5)
+    expect(stats.some((arm) => arm.n > 0 && arm.secPerWeek > 0)).toBe(true)
+  })
+
+  it('offers kit advice only when it would change something today', () => {
+    const floorAthlete = (patch: Partial<AppState['profile']> = {}): AppState => ({
+      ...state('tuck'),
+      profile: { ...state('tuck').profile, equipment: ['floor'], ...patch },
+    })
+
+    // Silent by default: a standing advert every session is noise.
+    expect(equipmentAdvice(floorAthlete())).toEqual([])
+    // ...but the moment wrists are the complaint, the fix is named.
+    expect(equipmentAdvice(floorAthlete(), 'niggle')[0]?.text).toContain('Parallettes')
+    expect(equipmentAdvice(floorAthlete({ injuryNote: 'left wrist sore' }))[0]?.text).toContain('Parallettes')
+    // Early steps are floor-friendly, so it stays quiet there.
+    expect(
+      equipmentAdvice({ ...floorAthlete(), stepId: 'foundations', unlocked: ['foundations'] }, 'niggle'),
+    ).toEqual([])
+
+    // Owns them but is still on the floor: point at the setting, not the shop.
+    const owner = equipmentAdvice(
+      {
+        ...state('tuck'),
+        profile: { ...state('tuck').profile, equipment: ['floor', 'parallettes'], preferredSurface: 'floor' },
+      },
+      'niggle',
+    )
+    expect(owner[0]?.text).toContain('parallettes but your main holds are set to the floor')
+
+    // Straddle work without a band explains what the session is missing.
+    const straddle = equipmentAdvice({
+      ...state('straddle'),
+      profile: { ...state('straddle').profile, equipment: ['floor', 'parallettes'] },
+    })
+    expect(straddle[0]?.text).toContain('resistance band')
+    expect(
+      equipmentAdvice({
+        ...state('straddle'),
+        profile: { ...state('straddle').profile, equipment: ['floor', 'band', 'pullup-bar'] },
+      }),
+    ).toEqual([])
+  })
+
   it('keeps a single bad camera score from reversing the quality trend', () => {
     const start = Date.now() - 5 * DAY
     expect(

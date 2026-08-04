@@ -33,6 +33,13 @@ function holdSet(exerciseId: string, value: number, target: number, section: Sec
             form: {
               rating: 'clean' as const,
               confirmed: true,
+              // True-flight skills need the athlete to confirm both feet were
+              // genuinely off the floor — 2D pose cannot see ground contact.
+              ...(['tuck-planche', 'adv-tuck-planche', 'one-leg-planche', 'straddle-planche', 'full-planche'].includes(
+                exerciseId,
+              )
+                ? { flightConfirmed: true }
+                : {}),
               // Plausible camera evidence so the demo exercises the same
               // score/clean-window paths a really filmed set would.
               auto: {
@@ -134,7 +141,12 @@ export function buildSampleState(): AppState {
         endedAt: clock,
         workoutName: 'Training Day',
         workoutKind: 'auto',
-        stepId: 'foundations',
+        // The step this session was actually trained at, tracking the story
+        // above. A real session stamps the athlete's current step, and the
+        // coach only learns from sessions matching the step it is planning
+        // for — so hard-coding "foundations" here left every strategy reading
+        // "not tested yet" no matter how much sample history existed.
+        stepId: week === 0 ? 'foundations' : week <= 3 ? 'lean' : week <= 5 ? 'frog' : 'tuck',
         sets,
         rpe: 7 + Math.round(Math.random()),
         strategy,

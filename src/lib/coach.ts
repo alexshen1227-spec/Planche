@@ -1,5 +1,6 @@
-import type { AppState, CheckIn, Session, StrategyId } from '../types'
+import type { AppState, CheckIn, EquipmentId, Session, StepId, StrategyId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
+import { defaultSurface } from '../data/equipment'
 import {
   readSignals,
   observedRestSec,
@@ -9,7 +10,7 @@ import {
   LOADED_STRAIN,
   type Signals,
 } from './signals'
-import { qualifyingProgress, qualifyingSessionValue } from './progression'
+import { qualifyingProgress, qualifyingSessionValue, sessionLearningValue } from './progression'
 
 /**
  * The coach is an on-device optimizer, not a chatbot.
@@ -120,7 +121,8 @@ export interface CoachPick {
 export function rewardFor(sessions: Session[], session: Session): number | null {
   const step = STEP_BY_ID[session.stepId]
   if (!step) return null
-  const qualifyingBest = (candidate: Session) => qualifyingSessionValue(candidate, session.stepId)
+  // Measured on learning value, not unlock credit — see sessionLearningValue.
+  const qualifyingBest = (candidate: Session) => sessionLearningValue(candidate, session.stepId)
   if (qualifyingBest(session) <= 0) return null
   const prior = sessions
     .filter((s) => s.startedAt < session.startedAt && qualifyingBest(s) > 0)
@@ -167,6 +169,59 @@ export function rewardFor(sessions: Session[], session: Session): number | null 
   return Math.max(-0.2, Math.min(0.6, reward))
 }
 
+/** Steps where the wrist position of the main hold starts to matter a lot. */
+const WRIST_SENSITIVE_STEPS = new Set<StepId>(['tuck', 'advtuck', 'oneleg', 'straddle', 'full'])
+
+/**
+ * Coaching that comes from the kit in the athlete's profile.
+ *
+ * The generated session already substitutes exercises for missing equipment,
+ * but it did so silently — an athlete on the floor never learned that the
+ * pressing block they were given was the fallback, or that the one purchase
+ * that reliably buys seconds on a tuck planche is a pair of parallettes.
+ *
+ * Deliberately evidence-gated rather than a standing advert: kit advice only
+ * appears when it would change today, so it cannot become the line that gets
+ * scrolled past every session. Exported for tests — advice that fires at the
+ * wrong moment is worse than none.
+ */
+export function equipmentAdvice(state: AppState, joints?: CheckIn['joints']): CoachDecision[] {
+  const out: CoachDecision[] = []
+  const has = (id: EquipmentId) => state.profile.equipment.includes(id)
+  const wristSensitive = WRIST_SENSITIVE_STEPS.has(state.stepId)
+  const wristNote = /wrist/i.test(state.profile.injuryNote ?? '')
+  const jointsUnhappy = joints === 'niggle' || joints === 'pain'
+
+  if (!has('parallettes') && wristSensitive && (wristNote || jointsUnhappy)) {
+    out.push({
+      text: 'Floor holds put your wrists in deep extension, which is the usual source of this complaint at this stage. Parallettes are the single highest-value purchase on the road — a neutral grip usually removes the pain and adds seconds the same week. Until then, work on your fists or push-up handles and keep the lean shallower.',
+      kind: 'warn',
+    })
+  } else if (
+    has('parallettes') &&
+    wristSensitive &&
+    defaultSurface(state.profile.equipment, state.profile.preferredSurface) === 'floor' &&
+    (wristNote || jointsUnhappy)
+  ) {
+    out.push({
+      text: 'You own parallettes but your main holds are set to the floor. Switch today\'s surface in the set screen — the neutral wrist angle is the fastest fix for this, and parallette records are tracked separately so nothing you have earned on the floor is disturbed.',
+      kind: 'info',
+    })
+  }
+
+  // Band work is what makes the straddle rehearsable before it is holdable.
+  if (state.stepId === 'straddle' && !(has('band') && has('pullup-bar'))) {
+    out.push({
+      text: has('band')
+        ? 'Band-assisted straddle work needs somewhere overhead to anchor the band — add a pull-up bar to your equipment and the plan will start using it.'
+        : 'At this step a resistance band looped under the hips (never the knees) lets you rehearse the real straddle shape long before you can hold it. Your sessions are running unassisted until one is in your equipment profile.',
+      kind: 'info',
+    })
+  }
+
+  return out
+}
+
 /** Per-strategy performance, derived fresh from history. */
 export function armStats(state: AppState): ArmStats[] {
   const sessions = [...state.sessions].sort((a, b) => a.startedAt - b.startedAt)
@@ -179,7 +234,7 @@ export function armStats(state: AppState): ArmStats[] {
   }
   for (const s of sessions) {
     if (!s.strategy || !acc[s.strategy] || s.stepId !== state.stepId) continue
-    if (qualifyingSessionValue(s, state.stepId) <= 0) continue
+    if (sessionLearningValue(s, state.stepId) <= 0) continue
     acc[s.strategy].attempts += 1
     const r = rewardFor(sessions, s)
     if (r === null) continue
@@ -821,6 +876,8 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       kind: 'warn',
     })
   }
+
+  decisions.push(...equipmentAdvice(state, joints))
 
   // Said out loud, not just returned: this flag used to be computed and then
   // shown nowhere, so the one day it fired the athlete never heard about it.

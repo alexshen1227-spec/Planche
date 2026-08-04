@@ -126,6 +126,45 @@ export function qualifyingSessionValue(session: Session, stepId: StepId): number
   return qualifyingProgress(state, stepId).value
 }
 
+/**
+ * What the coach measures a session against when learning which session shape
+ * works — deliberately a lower bar than progression credit.
+ *
+ * Unlocking a harder skill demands the whole evidence chain (athlete-confirmed
+ * Clean, a passing camera check, confirmed flight) because handing out a skill
+ * nobody earned is the expensive mistake. "Did this session shape move my
+ * hold?" is a different question, and holding it to the unlock bar meant an
+ * athlete who does not film and confirm every single set taught the coach
+ * nothing at all: every strategy sat at "not tested yet" forever, however long
+ * they trained.
+ *
+ * So this asks only what it needs to — the best main-set hold of the step's
+ * key exercise — minus the parts the athlete or the camera said were not real:
+ * a set rated as broken down is not evidence a strategy worked, and where a
+ * filmed set measured a clean window, that window is the number rather than
+ * the stopwatch. Quick Log is excluded like everywhere else: it is a number
+ * typed in afterwards, not a session the coach shaped.
+ */
+export function sessionLearningValue(session: Session, stepId: StepId): number {
+  const step = STEP_BY_ID[stepId]
+  if (!step || session.workoutName === 'Quick Log') return 0
+  return session.sets.reduce((best, set) => {
+    if (
+      set.exerciseId !== step.keyExerciseId ||
+      set.kind !== 'hold' ||
+      set.section !== 'main' ||
+      set.value <= 0 ||
+      set.form?.rating === 'broke'
+    ) {
+      return best
+    }
+    const cleanSeconds = set.form?.auto?.cleanSeconds
+    const value =
+      cleanSeconds !== undefined ? Math.min(set.value, Math.max(0, cleanSeconds)) : set.value
+    return Math.max(best, value)
+  }, 0)
+}
+
 export function setNeedsProgressionFormEvidence(set: SetLog, state: Pick<AppState, 'stepId'>): boolean {
   const step = STEP_BY_ID[state.stepId]
   return (
