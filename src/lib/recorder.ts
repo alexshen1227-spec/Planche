@@ -31,6 +31,16 @@ export function pickRecorderMime(): string | undefined {
   return selectRecorderMime((mime) => MediaRecorder.isTypeSupported(mime))
 }
 
+/** Only the newest, non-retired camera request may publish state or clean up. */
+export function ownsCameraAttempt(
+  attempt: Promise<boolean>,
+  pending: Promise<boolean> | null,
+  generation: number,
+  currentGeneration: number,
+): boolean {
+  return attempt === pending && generation === currentGeneration
+}
+
 /**
  * Push an open camera to the widest view it is capable of.
  *
@@ -176,7 +186,8 @@ export function useFormRecorder() {
 
     setStatus('starting')
     const generation = ++openGenerationRef.current
-    const attempt = (async () => {
+    let attempt!: Promise<boolean>
+    attempt = (async () => {
       // No size and no aspect ratio asked for, on purpose.
       //
       // Every constraint here is a licence to crop. Asking an upright phone
@@ -207,7 +218,7 @@ export function useFormRecorder() {
       }
     })()
       .then(async (stream) => {
-        if (generation !== openGenerationRef.current) {
+        if (!ownsCameraAttempt(attempt, openingRef.current, generation, openGenerationRef.current)) {
           stream.getTracks().forEach((t) => t.stop())
           return false
         }
@@ -220,6 +231,17 @@ export function useFormRecorder() {
         attachPreview(videoRef.current)
         const track = stream.getVideoTracks()[0]
         if (wideRef.current && track) await maximiseFieldOfView(track)
+        // `applyConstraints` can keep this continuation suspended while the
+        // athlete switches lenses or filming off. Do not let the retired
+        // request overwrite the replacement stream's frame/status afterwards.
+        if (
+          !ownsCameraAttempt(attempt, openingRef.current, generation, openGenerationRef.current) ||
+          streamRef.current !== stream
+        ) {
+          if (streamRef.current === stream) streamRef.current = null
+          stream.getTracks().forEach((t) => t.stop())
+          return false
+        }
         const settings = track?.getSettings()
         setFrame(
           settings?.width && settings?.height
@@ -231,11 +253,16 @@ export function useFormRecorder() {
         return true
       })
       .catch(() => {
+        // A retired request can reject after a replacement has already opened.
+        // Its error must not turn the working camera into a denial screen.
+        if (!ownsCameraAttempt(attempt, openingRef.current, generation, openGenerationRef.current)) return false
         setStatus('denied')
         return false
       })
       .finally(() => {
-        openingRef.current = null
+        // An older request finishing after a replacement must not clear the
+        // replacement's in-flight guard.
+        if (openingRef.current === attempt) openingRef.current = null
       })
 
     openingRef.current = attempt
@@ -323,9 +350,16 @@ export function useFormRecorder() {
 
   const release = useCallback(() => {
     openGenerationRef.current++
+    const wasOpening = openingRef.current !== null
+    // Retire it immediately. Re-enabling filming should open a fresh camera,
+    // not await a request whose generation release() just invalidated.
+    openingRef.current = null
     // Idempotent on purpose: this is called from an effect, and setting state
     // when there is nothing to release would re-render into a loop.
-    if (!recorderRef.current && !streamRef.current) return
+    if (!recorderRef.current && !streamRef.current) {
+      if (wasOpening) setStatus('idle')
+      return
+    }
     // A stop() is still finalising the clip. Tearing down now would clear the
     // chunk buffer and kill the source tracks it depends on, silently losing
     // the recording the athlete just made.

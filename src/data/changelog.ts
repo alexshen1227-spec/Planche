@@ -17,6 +17,14 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'The camera recovers from a quick toggle',
+    area: 'camera',
+    notes: [
+      'Turning filming off and straight back on while the browser was still opening the camera could leave that set stuck on “Starting camera” with no preview. Retired camera requests can no longer overwrite or cancel the replacement request.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'Restored sessions keep your setup',
     area: 'training',
     notes: [

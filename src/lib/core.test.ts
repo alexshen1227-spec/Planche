@@ -57,7 +57,7 @@ import { validateImport } from './exportImport'
 import { restoredSessionSetup } from './draft'
 import { buildSampleState } from '../data/sample'
 import { ACHIEVEMENTS, ACHIEVEMENT_VERSION } from '../data/achievements'
-import { selectRecorderMime } from './recorder'
+import { ownsCameraAttempt, selectRecorderMime } from './recorder'
 import { observedRestSec, readSignals, robustSlopePerWeek, trustedCameraEvidence } from './signals'
 import {
   creditedHoldSeconds,
@@ -300,6 +300,17 @@ describe('restored session setup', () => {
     expect(
       restoredSessionSetup({}, { phoneWithinReach: true, recordForm: false }),
     ).toEqual({ walkedBack: false, cameraOn: false })
+  })
+})
+
+describe('camera request ownership', () => {
+  it('prevents a retired request from publishing over its replacement', () => {
+    const retired = Promise.resolve(false)
+    const replacement = Promise.resolve(true)
+
+    expect(ownsCameraAttempt(retired, retired, 1, 1)).toBe(true)
+    expect(ownsCameraAttempt(retired, replacement, 1, 2)).toBe(false)
+    expect(ownsCameraAttempt(replacement, replacement, 2, 2)).toBe(true)
   })
 })
 
