@@ -92,5 +92,8 @@ export default defineConfig({
       },
     },
   },
-  server: { port: 5173, strictPort: true },
+  // PORT comes from tooling that assigns a free port (e.g. a second dev
+  // session on the same checkout); the fixed defaults remain for plain use.
+  server: { port: Number(process.env.PORT) || 5173, strictPort: true },
+  preview: { port: Number(process.env.PORT) || 4173, strictPort: true },
 })
