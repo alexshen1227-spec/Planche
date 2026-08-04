@@ -187,10 +187,26 @@ export interface SideViewLegReading {
 }
 
 /**
+ * Hip-to-ankle reach, over torso, above which a side-view leg cannot be the
+ * deliberately tucked one.
+ *
+ * Derived from the measured segment proportions rather than chosen: with the
+ * model's thigh (0.82) and shank (0.81), a straight leg reaches 1.63 torsos
+ * and a knee folded to 90° or tighter — any deliberate tuck — reaches at most
+ * √(0.82² + 0.81²) ≈ 1.15. The margin on top covers landmark noise. An earlier
+ * gate of 0.5 sat *below* every tuck the model can produce (a loose 70° tuck
+ * reaches 0.93, a tight 40° one 0.56), so when the extended leg was the poorly
+ * tracked far one, the tucked leg passed the gate and was confidently accused
+ * of bent knees and closed hips.
+ */
+export const MIN_EXTENDED_LEG_REACH = 1.2
+
+/**
  * Pick the leg the side-view camera is actually entitled to grade.
  * Normal two-leg shapes use the stable visible side. One-leg work uses the
- * longest visibly extended leg and returns nothing when the detector saw only
- * the tucked leg, avoiding a false bent-knee/closed-hip accusation.
+ * longest leg whose reach proves it is the extended one, and returns nothing
+ * when the detector saw only the tucked leg — reporting the criterion unseen
+ * instead of accusing the tuck of a bent knee or closed hip.
  */
 export function selectSideViewLeg(
   readings: SideViewLegReading[],
@@ -198,7 +214,7 @@ export function selectSideViewLeg(
 ): SideViewLegReading | undefined {
   if (!oneLeg) return readings[0]
   return [...readings]
-    .filter((reading) => (reading.extension ?? 0) >= 0.5)
+    .filter((reading) => (reading.extension ?? 0) >= MIN_EXTENDED_LEG_REACH)
     .sort((a, b) => (b.extension ?? 0) - (a.extension ?? 0))[0]
 }
 
@@ -369,6 +385,7 @@ export interface JudgedCriteria {
   hipAngle: boolean
   line: boolean
   lean: boolean
+  shrug: boolean
 }
 
 /** How many frames carried each measurement. */
@@ -378,6 +395,7 @@ export interface CoverageCounts {
   hipAngles: number
   hipOffsets: number
   leans: number
+  shrugs: number
 }
 
 /**
@@ -401,6 +419,10 @@ export function gradeCoverage(
     hipAngle: applies(profile.minHipAngleDeg, counts.hipAngles),
     line: applies(profile.levelTolerance, counts.hipOffsets),
     lean: applies(profile.minLeanRatio, counts.leans),
+    // Same bar as every other criterion. An ear glimpsed in a handful of
+    // frames used to be enough for a confident shrug accusation while the
+    // identical elbow evidence was correctly refused.
+    shrug: profile.checkShrug && counts.shrugs >= need,
   }
   const unseen: string[] = []
   if (profile.minElbowDeg !== undefined && !judged.elbow) unseen.push('elbows')
@@ -408,6 +430,7 @@ export function gradeCoverage(
   if (profile.minHipAngleDeg !== undefined && !judged.hipAngle) unseen.push('hips')
   if (profile.levelTolerance !== undefined && !judged.line) unseen.push('body line')
   if (profile.minLeanRatio !== undefined && !judged.lean) unseen.push('forward lean')
+  if (profile.checkShrug && !judged.shrug) unseen.push('shoulder-to-ear line')
   return { judged, unseen }
 }
 
@@ -464,6 +487,7 @@ export function materialIssuesForReading(
     issues.push('lean')
   }
   if (
+    judged.shrug &&
     profile.checkShrug &&
     frame.shrugRatio !== undefined &&
     frame.shrugRatio < SHRUG_MIN_RATIO - MATERIAL_TOLERANCE.shrugRatio
@@ -1478,6 +1502,7 @@ export function judgeTrackedFrames(input: JudgeInput, exerciseId: string): PoseF
       hipAngles: hipAngles.length,
       hipOffsets: hipOffsets.length,
       leans: leans.length,
+      shrugs: shrugs.length,
     },
     framesUsed,
   )
@@ -1723,7 +1748,7 @@ export function judgeTrackedFrames(input: JudgeInput, exerciseId: string): PoseF
     }
   }
 
-  if (profile.checkShrug && reportedShrugRatio !== undefined) {
+  if (judged.shrug && profile.checkShrug && reportedShrugRatio !== undefined) {
     if (namedFaults.has('shrug')) {
       issues.push('shrug')
       notes.push('Your shoulders looked shrugged up toward your ears — push the floor away and keep them down.')
@@ -2187,7 +2212,7 @@ export function computeFormScore(parts: {
   if (judged.lean && profile.minLeanRatio !== undefined && parts.leanRatio !== undefined) {
     add('lean', bandedScore((profile.minLeanRatio - parts.leanRatio) * RATIO_TO_DEG.lean))
   }
-  if (profile.checkShrug && parts.shrugRatio !== undefined) {
+  if (judged.shrug && profile.checkShrug && parts.shrugRatio !== undefined) {
     add('shrug', bandedScore((SHRUG_MIN_RATIO - parts.shrugRatio) * RATIO_TO_DEG.shrug))
   }
   if (parts.wobble !== undefined) {

@@ -506,7 +506,7 @@ describe('expanded achievements', () => {
 
 describe('partial camera coverage', () => {
   const lean = POSE_PROFILES['planche-lean']
-  const full = { elbows: 10, knees: 10, hipAngles: 10, hipOffsets: 10, leans: 10 }
+  const full = { elbows: 10, knees: 10, hipAngles: 10, hipOffsets: 10, leans: 10, shrugs: 10 }
 
   it('grades every criterion when the whole body was in shot', () => {
     const { judged, unseen } = gradeCoverage(lean, full, 10)
@@ -525,9 +525,29 @@ describe('partial camera coverage', () => {
   })
 
   it('reports a total blackout so the caller can refuse', () => {
-    const { judged, unseen } = gradeCoverage(lean, { elbows: 0, knees: 0, hipAngles: 0, hipOffsets: 0, leans: 0 }, 10)
+    const { judged, unseen } = gradeCoverage(
+      lean,
+      { elbows: 0, knees: 0, hipAngles: 0, hipOffsets: 0, leans: 0, shrugs: 0 },
+      10,
+    )
     expect(Object.values(judged).some(Boolean)).toBe(false)
     expect(unseen).toContain('elbows')
+  })
+
+  it('holds the shrug check to the same coverage bar as every other criterion', () => {
+    // An ear glimpsed in 2 of 10 frames is not evidence of a shrug.
+    const { judged, unseen } = gradeCoverage(lean, { ...full, shrugs: 2 }, 10)
+    expect(judged.shrug).toBe(false)
+    expect(unseen).toContain('shoulder-to-ear line')
+    // The accusation gate follows the coverage verdict.
+    expect(
+      materialIssuesForReading({ t: 0, shrugRatio: 0.1 }, lean, judged),
+    ).not.toContain('shrug')
+    const seen = gradeCoverage(lean, full, 10)
+    expect(seen.judged.shrug).toBe(true)
+    expect(
+      materialIssuesForReading({ t: 0, shrugRatio: 0.1 }, lean, seen.judged),
+    ).toContain('shrug')
   })
 
   it('never lists a criterion the position does not even check', () => {
@@ -750,7 +770,7 @@ describe('camera evaluator primitives', () => {
     // The accusation threshold is set from measured estimator error, not from
     // how tidy the number looks: a bend this side of it is inside what a
     // monocular side view can resolve, so naming it would be inventing a fault.
-    const elbowOnly = { elbow: true, knee: false, hipAngle: false, line: false, lean: false }
+    const elbowOnly = { elbow: true, knee: false, hipAngle: false, line: false, lean: false, shrug: false }
     for (const [, profile] of graded) {
       expect(materialIssuesForReading({ t: 0, elbowDeg: 173 }, profile, elbowOnly)).not.toContain('arms')
       expect(materialIssuesForReading({ t: 0, elbowDeg: 171 }, profile, elbowOnly)).toContain('arms')
@@ -794,12 +814,23 @@ describe('camera evaluator primitives', () => {
   })
 
   it('grades the visibly extended leg in one-leg work and never mistakes a lone tuck for it', () => {
-    const tucked = { knee: 80, hipAngle: 70, extension: 0.3 }
-    const extended = { knee: 174, hipAngle: 171, extension: 1.1 }
+    // Reaches from the measured segment proportions (thigh 0.82, shank 0.81),
+    // not flattering ones: a loose 70° tuck really reads 0.93 of a torso and a
+    // tight 40° one 0.56 — an earlier fixture used 0.3, which is a reach no
+    // tucked leg the pose model reports can produce, and it hid a gate that
+    // let every real tuck through to be accused of bent knees.
+    const looseTuck = { knee: 70, hipAngle: 80, extension: 0.93 }
+    const tightTuck = { knee: 40, hipAngle: 70, extension: 0.56 }
+    const extended = { knee: 174, hipAngle: 171, extension: 1.6 }
+    const bentButExtended = { knee: 150, hipAngle: 171, extension: 1.5 }
 
-    expect(selectSideViewLeg([tucked, extended], true)).toBe(extended)
-    expect(selectSideViewLeg([tucked], true)).toBeUndefined()
-    expect(selectSideViewLeg([tucked, extended], false)).toBe(tucked)
+    expect(selectSideViewLeg([looseTuck, extended], true)).toBe(extended)
+    expect(selectSideViewLeg([looseTuck], true)).toBeUndefined()
+    expect(selectSideViewLeg([tightTuck], true)).toBeUndefined()
+    // A leg bent enough to flag still reads far longer than any tuck, so the
+    // gate never hides the fault it exists to catch.
+    expect(selectSideViewLeg([looseTuck, bentButExtended], true)).toBe(bentButExtended)
+    expect(selectSideViewLeg([looseTuck, extended], false)).toBe(looseTuck)
   })
 
   it('tightens level and hip-opening standards as the lever lengthens', () => {
@@ -822,7 +853,7 @@ describe('camera evaluator primitives', () => {
     // margin on top of it for the camera's own blind spot — see
     // MATERIAL_TOLERANCE.lineRatio for why hip height, alone among these
     // criteria, cannot be measured better than the phone was propped.
-    const lineOnly = { elbow: false, knee: false, hipAngle: false, line: true, lean: false }
+    const lineOnly = { elbow: false, knee: false, hipAngle: false, line: true, lean: false, shrug: false }
     const margin = MATERIAL_TOLERANCE.lineRatio
     for (const profile of [tuck, advanced, oneLeg, straddle, full]) {
       const tolerance = profile.levelTolerance!
@@ -1022,7 +1053,7 @@ describe('form scoring', () => {
   })
 
   const tuck = POSE_PROFILES['tuck-planche']
-  const allJudged = { elbow: true, knee: true, hipAngle: true, line: true, lean: true }
+  const allJudged = { elbow: true, knee: true, hipAngle: true, line: true, lean: true, shrug: true }
 
   it('uses the same measurement deadband for red flags as the numeric score', () => {
     const full = POSE_PROFILES['full-planche']
@@ -1105,7 +1136,7 @@ describe('form scoring', () => {
     expect(
       computeFormScore({
         profile: tuck,
-        judged: { elbow: false, knee: false, hipAngle: false, line: false, lean: false },
+        judged: { elbow: false, knee: false, hipAngle: false, line: false, lean: false, shrug: false },
       }),
     ).toBeNull()
   })

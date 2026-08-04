@@ -203,6 +203,48 @@ describe('form judge accuracy — the shape of a progression is not a fault', ()
     expect(rate(runs, (r) => r.ok && r.issues.length === 0)).toBe(1)
   })
 
+  it('never grades the tucked leg when the athlete extended the far-side leg', () => {
+    // The camera-side leg is the tucked one; the extended leg is the far one.
+    // With the far side poorly resolved — its default state in a side view —
+    // the only honest verdict for knees and hips is "unseen". This exact shape
+    // was previously accused of bent knees and a closed hip on every seed,
+    // which also carried two flags and so blocked the progression outright.
+    const farLegHidden = across('one-leg-planche', {
+      hipAngleDeg: 80,
+      kneeBendDeg: 110,
+      secondLeg: { hipAngleDeg: 178, kneeBendDeg: 1 },
+    })
+    for (const run of farLegHidden) {
+      expect(run.ok).toBe(true)
+      expect(run.issues).not.toContain('knees')
+      expect(run.issues).not.toContain('closed')
+      expect(run.unseen).toEqual(expect.arrayContaining(['knees', 'hips']))
+    }
+    // When the far extended leg is genuinely resolved, it is graded as before.
+    const farLegSeen = across('one-leg-planche', {
+      hipAngleDeg: 80,
+      kneeBendDeg: 110,
+      secondLeg: { hipAngleDeg: 178, kneeBendDeg: 1 },
+      farScore: 0.8,
+    })
+    expect(rate(farLegSeen, (r) => r.ok && r.issues.length === 0 && r.unseen.length === 0)).toBe(1)
+  })
+
+  it('still names a genuinely bent extended leg, whichever side it is on', () => {
+    // Near-side extended leg bent well past tolerance: the reach gate must not
+    // hide the very fault the knee check exists to catch.
+    const bentNear = across('one-leg-planche', { kneeBendDeg: 30 })
+    expect(rate(bentNear, (r) => r.issues.includes('knees'))).toBe(1)
+    // Far-side extended leg equally bent, far side well tracked.
+    const bentFar = across('one-leg-planche', {
+      hipAngleDeg: 80,
+      kneeBendDeg: 110,
+      secondLeg: { hipAngleDeg: 178, kneeBendDeg: 30 },
+      farScore: 0.8,
+    })
+    expect(rate(bentFar, (r) => r.issues.includes('knees'))).toBe(1)
+  })
+
   it('reads a straddle through its foreshortened side-view legs', () => {
     const runs = across('straddle-planche', { foreshorten: 0.6 })
     expect(rate(runs, (r) => r.ok && r.issues.length === 0 && r.unseen.length === 0)).toBe(1)
@@ -349,6 +391,22 @@ describe('form judge — the shrug metric is grounded in real proportions', () =
     expect(buildTruePose({}).truth.shrugRatio).toBeCloseTo(PROPORTIONS.earGap, 3)
     const runs = across('full-planche', { shrugGap: PROPORTIONS.earGap })
     expect(rate(runs, (r) => r.issues.includes('shrug'))).toBe(0)
+  })
+
+  it('holds the shrug to the same coverage bar as the elbows', () => {
+    // An ear resolved in a scattering of frames is not evidence, exactly as a
+    // briefly-seen elbow is not: the same clip used to refuse the elbow verdict
+    // while confidently accusing a shrug from identical coverage.
+    const briefEar = { jointScores: { ear: (p: number) => (p < 0.12 ? 0.9 : 0.1) } }
+    const shruggedButBarelySeen = across('full-planche', { shrugGap: 0.18, ...briefEar })
+    for (const run of shruggedButBarelySeen) {
+      expect(run.ok).toBe(true)
+      expect(run.issues).not.toContain('shrug')
+      expect(run.unseen).toContain('shoulder-to-ear line')
+    }
+    // With the ear tracked normally, a genuine shrug is still named every time.
+    const shrugged = across('full-planche', { shrugGap: 0.18 })
+    expect(rate(shrugged, (r) => r.issues.includes('shrug'))).toBe(1)
   })
 })
 

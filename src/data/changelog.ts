@@ -17,6 +17,15 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-03',
+    title: 'Two honesty fixes in the side-view judge',
+    area: 'camera',
+    notes: [
+      'One-leg planche: extending the leg on the far side of the camera no longer risks a false “bent knees / hips closed” verdict. The judge only grades a leg as the extended one when its hip-to-ankle reach proves it cannot be the tucked leg; if the camera resolved only the tuck, knees and hips are reported as unseen instead of accused. The earlier reach bar sat below every tuck a body can produce, so the promise that a lone tucked leg would be left unseen did not actually hold.',
+      'The shrug check now needs the ear tracked in a majority of frames before it can say anything, the same evidence bar every other criterion already had. An ear glimpsed for a few frames used to be enough for a confident shrug flag while identical elbow coverage was — correctly — refused. When the shoulder-to-ear line was not seen enough, that is now said plainly instead of the check being silently skipped.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'The form check stops calling locked arms bent',
     area: 'camera',
     notes: [
