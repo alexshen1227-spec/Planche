@@ -10,7 +10,14 @@ import { fmtWeight } from '../lib/units'
 import { lastOf } from '../components/MeasurePrompt'
 import { fmtDate, fmtTime, fmtDuration, fmtHold, fmtClock } from '../lib/time'
 import { HoldLineChart, VolumeBarChart, TrainingHeatmap } from '../components/charts'
-import { describeTrend, filmedExercises, readFormTrends } from '../lib/formTrend'
+import {
+  describeTrend,
+  filmedExercises,
+  formatCriterionValue,
+  readFormTrends,
+  type FormComparison,
+} from '../lib/formTrend'
+import { ClipPlayer } from '../components/ClipPlayer'
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle, Stat } from '../components/ui'
 import { pushToast } from '../lib/toast'
@@ -30,6 +37,7 @@ function FormTrendCard() {
   const { state } = useStore()
   const filmed = useMemo(() => filmedExercises(state), [state])
   const [exerciseId, setExerciseId] = useState<string | null>(null)
+  const [comparing, setComparing] = useState<FormComparison | null>(null)
   const active = exerciseId && filmed.includes(exerciseId) ? exerciseId : (filmed[0] ?? null)
   const result = useMemo(() => (active ? readFormTrends(state, active) : null), [state, active])
 
@@ -106,6 +114,21 @@ function FormTrendCard() {
               </li>
             ))}
           </ul>
+          {/* One comparison for the card, not one per row: it is the same two
+              clips whichever criterion you came in for, and four buttons
+              saying the same thing is how a useful screen becomes a busy one. */}
+          {result.comparison ? (
+            <button
+              onClick={() => setComparing(result.comparison)}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-line bg-raised px-4 py-2.5 text-[13.5px] font-medium text-ink transition hover:border-line-strong"
+            >
+              <Icon name="monitor" size={15} /> Watch then and now
+              <span className="text-ink3">
+                · {fmtDate(result.comparison.from.at)} vs {fmtDate(result.comparison.to.at)}
+              </span>
+            </button>
+          ) : null}
+
           {result.skipped.length > 0 ? (
             <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">
               Not trended:{' '}
@@ -124,6 +147,108 @@ function FormTrendCard() {
           </p>
         </>
       )}
+
+      <Modal open={comparing !== null} onClose={() => setComparing(null)} label="Then and now form comparison" wide>
+        {comparing ? <ThenAndNow comparison={comparing} exerciseId={active} /> : null}
+      </Modal>
+    </div>
+  )
+}
+
+/**
+ * The same position, months apart, playing side by side.
+ *
+ * A trend can tell you the body line drifted from 0.18 to 0.40. It cannot show
+ * you what 0.40 looks like, and that is the thing you actually have to change.
+ * Clips are kept for a limited time, so either of these can have been pruned —
+ * the player reports its own availability and this says so plainly rather than
+ * showing a dead frame.
+ */
+function ThenAndNow({ comparison, exerciseId }: { comparison: FormComparison; exerciseId: string }) {
+  const [missing, setMissing] = useState<{ from: boolean; to: boolean }>({ from: false, to: false })
+  const days = Math.max(1, Math.round((comparison.to.at - comparison.from.at) / 86_400_000))
+
+  return (
+    <div className="p-6">
+      <div className="pr-10">
+        <h2 className="font-display text-[20px] font-bold text-ink">Then and now</h2>
+        <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">
+          Your oldest and newest kept clips of the {EXERCISE_BY_ID[exerciseId]?.name.toLowerCase() ?? 'exercise'},{' '}
+          {days} day{days === 1 ? '' : 's'} apart. Clips are only kept for a while, so this is the widest window still
+          on your device — not necessarily the whole trend.
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {(['from', 'to'] as const).map((side) => (
+          <div key={side}>
+            <div className="mb-1.5 flex items-baseline justify-between gap-2">
+              <span className="text-[13px] font-semibold text-ink">{side === 'from' ? 'Then' : 'Now'}</span>
+              <span className="text-[12.5px] text-ink3">{fmtDate(comparison[side].at)}</span>
+            </div>
+            {missing[side] ? (
+              <div className="grid h-40 place-items-center rounded-lg border border-dashed border-line-strong px-4 text-center text-[12.5px] leading-relaxed text-ink3">
+                This recording has been cleared. Pin a clip from the exercise guide to keep it as a reference.
+              </div>
+            ) : (
+              <ClipPlayer
+                clipKey={comparison[side].clipKey}
+                label={`${side === 'from' ? 'Earlier' : 'Latest'} form clip`}
+                onAvailabilityChange={(available: boolean) =>
+                  setMissing((m) => (m[side] === !available ? m : { ...m, [side]: !available }))
+                }
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full text-left text-[13px]">
+          <caption className="sr-only">What the camera measured in each clip</caption>
+          <thead>
+            <tr className="text-[12px] uppercase tracking-wide text-ink3">
+              <th scope="col" className="pb-1.5 pr-3 font-semibold">
+                Measured
+              </th>
+              <th scope="col" className="pb-1.5 pr-3 font-semibold">
+                Then
+              </th>
+              <th scope="col" className="pb-1.5 pr-3 font-semibold">
+                Now
+              </th>
+              <th scope="col" className="pb-1.5 font-semibold">
+                Change
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {comparison.criteria.map((c) => (
+              <tr key={c.label} className="border-t border-line">
+                <td className="py-2 pr-3 text-ink">{c.label}</td>
+                <td className="py-2 pr-3 text-ink2 tnum">{formatCriterionValue(c.from, c.unit)}</td>
+                <td className="py-2 pr-3 font-medium text-ink tnum">{formatCriterionValue(c.to, c.unit)}</td>
+                <td
+                  className={`py-2 font-medium ${
+                    c.direction === 'improving'
+                      ? 'text-ok-text'
+                      : c.direction === 'declining'
+                        ? 'text-danger-text'
+                        : 'text-ink3'
+                  }`}
+                >
+                  {c.direction === 'steady' ? 'no real change' : c.direction}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">
+        Only criteria the camera measured in <em>both</em> clips are listed — comparing a reading against a blank would
+        make framing look like progress.
+      </p>
     </div>
   )
 }

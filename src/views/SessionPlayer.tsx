@@ -1109,10 +1109,15 @@ export function SessionPlayer({
                   {/* Live "can the camera actually see you" check — placement
                       problems get caught here, before the effort is spent,
                       instead of by a refused verdict afterwards. */}
-                  <FramingCheck
-                    videoRef={recorder.videoRef}
-                    active={state.settings.autoAnalyze && recorder.status === 'idle'}
-                  />
+                  {/* Deliberately not gated on autoAnalyze. Bad placement is
+                      the top reason a clip comes back ungradeable, and that is
+                      just as true for someone who films now and checks later —
+                      they were the ones getting no help at all. Framing also
+                      decides what the form trends can measure at all, so a
+                      criterion that is never in shot quietly disappears from
+                      them. FramingCheck's own poseModelReady() guard still
+                      prevents any unwanted model download. */}
+                  <FramingCheck videoRef={recorder.videoRef} active={recorder.status === 'idle'} />
                   <div className="absolute inset-x-0 bottom-0 bg-black/55 px-3 py-1.5 text-[11.5px] text-white/85">
                     Side-on · whole body and both hands inside the box · phone level.
                   </div>

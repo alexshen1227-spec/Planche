@@ -159,12 +159,19 @@ export type FormTrendResult =
       /** Criteria that exist for this position but could not be trended. */
       skipped: { label: string; reason: string }[]
       filmedSets: number
+      /**
+       * Oldest and newest surviving recordings, when there are two worth
+       * putting side by side. Null once the older clip has been pruned.
+       */
+      comparison: FormComparison | null
     }
   | { kind: 'insufficient'; need: string; filmedSets: number }
 
 interface FilmedSet {
   at: number
   auto: AutoForm
+  /** Present while the recording still exists in the clip store. */
+  clipKey?: string
 }
 
 /** Every filmed, analysed set of one exercise, oldest first. */
@@ -176,10 +183,75 @@ function filmedSetsFor(state: Pick<AppState, 'sessions'>, exerciseId: string): F
       if (set.exerciseId !== exerciseId || !auto) continue
       // A refused or near-blind read is not evidence about the athlete.
       if (auto.confidence < 0.35) continue
-      out.push({ at: set.at, auto })
+      const clipKey = set.form?.clipKey ?? set.clipKey
+      out.push({ at: set.at, auto, ...(clipKey ? { clipKey } : {}) })
     }
   }
   return out.sort((a, b) => a.at - b.at)
+}
+
+/**
+ * The two clips worth putting side by side.
+ *
+ * A number tells you something drifted; two clips tell you what to change. So
+ * the oldest and newest recordings still on the device are offered together,
+ * with every criterion both of them measured.
+ *
+ * Deliberately the oldest *kept* clip rather than the oldest data point:
+ * recordings are pruned after `CLIP_RETENTION_DAYS`, so reaching for the true
+ * start of the trend would usually reach for a file that no longer exists.
+ * The dates are shown so the window is never implied to be longer than it is.
+ */
+function buildComparison(filmed: FilmedSet[]): FormComparison | null {
+  const withClips = filmed.filter((f) => f.clipKey)
+  if (withClips.length < 2) return null
+  const from = withClips[0]
+  const to = withClips[withClips.length - 1]
+  if (from.clipKey === to.clipKey || to.at - from.at < 3 * DAY) return null
+
+  const criteria: FormComparison['criteria'] = []
+  for (const spec of CRITERIA) {
+    // Both ends must have genuinely measured it, or the row would compare a
+    // reading against a blank and call the difference progress.
+    const unseenEitherEnd =
+      spec.unseenLabel !== undefined &&
+      (from.auto.unseen?.includes(spec.unseenLabel) || to.auto.unseen?.includes(spec.unseenLabel))
+    if (unseenEitherEnd) continue
+    const a = from.auto[spec.field]
+    const b = to.auto[spec.field]
+    if (typeof a !== 'number' || typeof b !== 'number') continue
+    const change = b - a
+    criteria.push({
+      label: spec.label,
+      unit: spec.unit,
+      from: a,
+      to: b,
+      direction:
+        Math.abs(change) < spec.deadband
+          ? 'steady'
+          : (change > 0) === spec.higherIsBetter
+            ? 'improving'
+            : 'declining',
+    })
+  }
+  if (criteria.length === 0) return null
+  return {
+    from: { at: from.at, clipKey: from.clipKey! },
+    to: { at: to.at, clipKey: to.clipKey! },
+    criteria,
+  }
+}
+
+export interface FormComparison {
+  from: { at: number; clipKey: string }
+  to: { at: number; clipKey: string }
+  criteria: {
+    label: string
+    unit: CriterionSpec['unit']
+    from: number
+    to: number
+    direction: 'improving' | 'declining' | 'steady'
+  }[]
 }
 
 /**
@@ -306,7 +378,14 @@ export function readFormTrends(
   const rank = { declining: 0, improving: 1, steady: 2 }
   trends.sort((a, b) => rank[a.direction] - rank[b.direction])
 
-  return { kind: 'trends', exerciseId, trends, skipped, filmedSets: filmed.length }
+  return {
+    kind: 'trends',
+    exerciseId,
+    trends,
+    skipped,
+    filmedSets: filmed.length,
+    comparison: buildComparison(filmed),
+  }
 }
 
 /** Which exercises have any camera-checked sets at all, most recent first. */

@@ -28,6 +28,8 @@ export const CHANGELOG: ChangeEntry[] = [
       'Sets where the camera could not see something are left out rather than averaged in, and each row says how many of your clips it could actually measure — "seen in 7 of 11" means something different from "seen in 11 of 11".',
       'A change smaller than the camera\'s own measurement error is reported as steady, not as progress. Those tolerances are the same measured numbers the judge uses to decide whether a fault is worth naming.',
       'Trends are per position. A planche lean\'s numbers and a tuck planche\'s are not the same measurement, and mixing them would produce a line that moves when you change exercise rather than when you improve.',
+      'Then and now: one tap plays your oldest and newest kept clips of a position side by side, with a table of what the camera measured in each. A number tells you the body line drifted; two clips show you what to change. Only things measured in both clips are listed, so a criterion that was out of shot in one of them cannot masquerade as a form change.',
+      'The live framing guide now runs whenever the camera preview is up, not only when automatic checking is on. Bad placement is the main reason a clip comes back ungradeable — and it is also what quietly removes a criterion from your trends, so the people filming for later review were the ones getting no help at all.',
     ],
   },
   {

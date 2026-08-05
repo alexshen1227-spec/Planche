@@ -246,6 +246,64 @@ describe('readFormTrends — presentation contract', () => {
   })
 })
 
+describe('then-and-now comparison', () => {
+  /** Filmed sets that also kept their recording. */
+  function withClips(n: number, auto: (i: number) => Partial<AutoForm>): SetLog[] {
+    return series('tuck-planche', n, auto).map((s, i) => ({
+      ...s,
+      form: { ...s.form!, clipKey: `clip-${i}` },
+    }))
+  }
+
+  it('offers the oldest and newest surviving clips', () => {
+    const r = readFormTrends(stateOf(withClips(8, (i) => ({ elbowDeg: 160 + i * 2.5 }))), 'tuck-planche', NOW)
+    if (r.kind !== 'trends') return
+    expect(r.comparison).not.toBeNull()
+    expect(r.comparison!.from.clipKey).toBe('clip-0')
+    expect(r.comparison!.to.clipKey).toBe('clip-7')
+    expect(r.comparison!.to.at).toBeGreaterThan(r.comparison!.from.at)
+  })
+
+  it('offers nothing when the recordings were pruned away', () => {
+    // Analysed sets survive in history long after their clips are deleted.
+    const r = readFormTrends(stateOf(series('tuck-planche', 8, () => ({ elbowDeg: 175 }))), 'tuck-planche', NOW)
+    if (r.kind !== 'trends') return
+    expect(r.comparison).toBeNull()
+  })
+
+  it('never compares a measured reading against a criterion the camera missed', () => {
+    // Elbows seen only in the newest clip. Listing it would make a framing
+    // difference look like a form change.
+    const sets = withClips(8, (i) => ({
+      leanRatio: 0.4 + i * 0.01,
+      elbowDeg: 178,
+      ...(i < 7 ? { unseen: ['elbows'] } : {}),
+    }))
+    const r = readFormTrends(stateOf(sets), 'tuck-planche', NOW)
+    if (r.kind !== 'trends' || !r.comparison) return
+    expect(r.comparison.criteria.some((c) => /Elbow/.test(c.label))).toBe(false)
+    expect(r.comparison.criteria.some((c) => /lean/i.test(c.label))).toBe(true)
+  })
+
+  it('marks a change under the camera error as no real change', () => {
+    const sets = withClips(8, (i) => ({ elbowDeg: 174 + i * 0.4 }))
+    const r = readFormTrends(stateOf(sets), 'tuck-planche', NOW)
+    if (r.kind !== 'trends' || !r.comparison) return
+    const elbow = r.comparison.criteria.find((c) => /Elbow/.test(c.label))!
+    expect(Math.abs(elbow.to - elbow.from)).toBeLessThan(MATERIAL_TOLERANCE.elbowDeg)
+    expect(elbow.direction).toBe('steady')
+  })
+
+  it('does not offer two clips taken days apart as a then-and-now', () => {
+    const sets = Array.from({ length: 6 }, (_, i) =>
+      filmedSet('tuck-planche', NOW - i * DAY, { elbowDeg: 170 }),
+    ).map((s, i) => ({ ...s, form: { ...s.form!, clipKey: `c${i}` } }))
+    // Spread is under the span floor, so trends refuse first.
+    const r = readFormTrends(stateOf(sets), 'tuck-planche', NOW)
+    expect(r.kind).toBe('insufficient')
+  })
+})
+
 describe('filmedExercises', () => {
   it('lists only exercises with camera-checked sets, most recent first', () => {
     const sets = [
