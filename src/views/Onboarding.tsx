@@ -280,7 +280,7 @@ export function Onboarding() {
         ) : null}
 
         {stage === 'interview' ? (
-          skippedInterview || !currentItem ? (
+          skippedInterview ? (
             <ManualPlacement
               headingRef={headingRef}
               placement={manualPlacement}
@@ -294,7 +294,7 @@ export function Onboarding() {
               primaryBtn={primaryBtn}
               backBtn={backBtn}
             />
-          ) : (
+          ) : currentItem ? (
             <div className="animate-rise">
               <div className="text-center">
                 <div className="text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
@@ -319,7 +319,15 @@ export function Onboarding() {
                     key={opt.label}
                     role="radio"
                     aria-checked={false}
-                    onClick={() => setAnswers((a) => ({ ...a, [currentItem.id]: opt.value }))}
+                    onClick={() => {
+                      // Advance here rather than in an effect: the ladder ends
+                      // the moment an answer makes the next question
+                      // unnecessary, and that is knowable synchronously from
+                      // the answer just given.
+                      const next = { ...answers, [currentItem.id]: opt.value }
+                      setAnswers(next)
+                      if (nextAssessmentItem(next) === null) setStage('result')
+                    }}
                     className="flex w-full items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4 text-left transition hover:border-accent hover:bg-accent-soft"
                   >
                     <span className="min-w-0">
@@ -361,7 +369,7 @@ export function Onboarding() {
                 starting one step low costs you a fortnight — starting one step high costs you months.
               </p>
             </div>
-          )
+          ) : null
         ) : null}
 
         {stage === 'result' ? (
@@ -446,7 +454,20 @@ export function Onboarding() {
 
             <div className="mt-6 flex gap-2.5">
               <button
-                onClick={() => setStage('interview')}
+                onClick={() => {
+                  // Going back into a *finished* interview would render an
+                  // empty screen, because there is no next question to ask.
+                  // Drop the last answer so the final question reappears.
+                  if (!skippedInterview) {
+                    const asked = Object.keys(answers)
+                    if (asked.length > 0) {
+                      const next = { ...answers }
+                      delete next[asked[asked.length - 1] as keyof AssessmentAnswers]
+                      setAnswers(next)
+                    }
+                  }
+                  setStage('interview')
+                }}
                 className={backBtn}
               >
                 Back

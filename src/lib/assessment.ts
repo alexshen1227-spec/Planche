@@ -428,10 +428,10 @@ export function placeFromAssessment(answers: AssessmentAnswers): Placement {
       id: 'straight-arm-novice',
       label: 'New to straight-arm loading',
       detail:
-        'Tendon and connective tissue adapt over months, well behind the muscle that is already strong enough. Early sessions stay deliberately below what you could survive — that is the shortest path, not the cautious one.',
+        'Strength arrives faster than the structures carrying it. Early gains are largely your nervous system learning the position — measured strength can climb by a third while muscle and tendon are still unchanged — so what you can do today is ahead of what your tissue has adapted to. Early sessions stay deliberately below what you could survive, which is the shortest path rather than the cautious one.',
     })
     caveats.push(
-      'You can already hold advanced positions with under six months of straight-arm training. That is exactly the profile that picks up elbow and biceps-tendon trouble, so the plan will hold volume back for a while even when it feels easy.',
+      'You can already hold advanced positions with under six months of straight-arm training. That combination is the one coaches most often associate with elbow and biceps-tendon trouble — it is coaching consensus rather than a measured risk, since nobody has studied injury rates in this population, but the cost of respecting it is small. The plan holds volume back for a while even when it feels easy.',
     )
   }
 

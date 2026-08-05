@@ -76,7 +76,9 @@ function ExercisePane() {
           </Chip>
         ))}
         <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
-          <span className="shrink-0 text-[12.5px] text-ink3 tnum">{list.length} moves</span>
+          <span className="shrink-0 text-[12.5px] text-ink3 tnum">
+            {list.length} move{list.length === 1 ? '' : 's'}
+          </span>
           <div className="relative min-w-0 flex-1 sm:w-[210px]">
             <input
               value={query}

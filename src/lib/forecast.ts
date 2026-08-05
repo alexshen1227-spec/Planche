@@ -257,8 +257,22 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
     if (!firstSessionOnStep.has(s.stepId)) firstSessionOnStep.set(s.stepId, s.startedAt)
   }
   const ordered = STEPS.filter((s) => firstSessionOnStep.has(s.id)).sort((a, b) => a.order - b.order)
+
+  /**
+   * Only steps that resemble the ones still ahead.
+   *
+   * The early road is genuinely quick — someone can pass Foundations, Planche
+   * Lean and Frog Stand in a few weeks each — and every step after Tuck is a
+   * different order of difficulty. Averaging the first three and multiplying
+   * by the remaining four produced "1–14 weeks to a straddle planche", which
+   * is not a wide estimate so much as a wrong one. So the pace is measured
+   * only from steps at Tuck or beyond, and with fewer than two of those the
+   * honest output is a step count and no duration at all.
+   */
+  const COMPARABLE_FROM = STEP_BY_ID.tuck.order
   const durations: number[] = []
   for (let i = 0; i < ordered.length - 1; i++) {
+    if (ordered[i].order < COMPARABLE_FROM) continue
     const from = firstSessionOnStep.get(ordered[i].id)!
     const to = firstSessionOnStep.get(ordered[i + 1].id)!
     if (to > from) durations.push((to - from) / WEEK)
@@ -271,7 +285,7 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
       estimate: null,
       note: `${stepsRemaining} step${stepsRemaining === 1 ? '' : 's'} between you and ${
         goal.name
-      }. How long that takes depends on leverage, training age and how consistently you recover — the app will estimate it once you have finished a couple of steps here and it can measure your own pace instead of quoting somebody else's.`,
+      }. How long that takes depends on leverage, bodyweight, training age and how consistently you recover, and the honest ranges people report span years rather than months. The app will put a number on it once you have finished a couple of steps at this level of difficulty and it can measure your own pace instead of quoting somebody else's.`,
     }
   }
 

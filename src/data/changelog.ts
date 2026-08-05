@@ -12,9 +12,37 @@ export interface ChangeEntry {
   /** Where the change lands, for the coloured tag. */
   area: 'camera' | 'coach' | 'training' | 'app'
   notes: string[]
+  /** Marks a release worth calling out rather than another dated entry. */
+  major?: { version: string; blurb: string }
 }
 
 export const CHANGELOG: ChangeEntry[] = [
+  {
+    date: '2026-08-04',
+    title: 'Planche Lab V2',
+    area: 'coach',
+    major: {
+      version: 'V2',
+      blurb:
+        'V2 is built to help you make better training decisions and reach your goal efficiently — not to keep you in the app longer. Everything below either improves a decision you have to make, or admits something the app previously pretended to know.',
+    },
+    notes: [
+      'The app now works out where you are instead of asking you to guess. Onboarding used to offer five descriptions and trust the tap; it now asks for numbers you can check against a stopwatch, in order, and stops as soon as the answers make the next question pointless — usually five of them. It tells you how confident it is, what it thinks will actually limit you, and which of your answers disagree with each other. You can still skip it and pick your own level.',
+      "It no longer strands you at the frog stand. If you have a real tuck planche but never learned to balance, the placement steps past it and notes the gap rather than sending you back two steps.",
+      'You choose what you are chasing. Tuck, advanced tuck, straddle or full — it shapes the mobility work in your sessions and how far the app says you have to go. Change it any time from the Road screen.',
+      '“On pace to unlock in ~4 weeks” is gone. It was a straight line drawn through six noisy numbers, and one lucky hold could swing it by a month. You now get a range built from your own session-to-session rates, a plain statement of how much to trust it, and — when the evidence is thin or your times are flat — no number at all. “Not enough evidence yet” is a real answer and you will see it.',
+      'When you stall, the app says why. A flat line is a chart, not coaching: two athletes with identical flat lines can need opposite advice. Plateaus are now diagnosed by cause — recovery debt, position quality, not enough exposure, the same session shape for too long, pressing strength, or simply too much measurement noise to call — and each one changes your plan differently. If it cannot separate them, it says so.',
+      'Longer holds from an easier position are not progress. If your hips have quietly opened toward a shallower shape over the past few weeks, the app now notices and tells you, because the stopwatch cannot.',
+      'Weekly training load is weighted by how hard each position actually is, so thirty seconds of planche lean no longer counts the same as thirty seconds of advanced tuck.',
+      'When you say something hurts, the app asks where — and the session changes. A sore lower back used to be handed hollow holds, arch holds and leg lifts, which are the three things it should not do. An elbow now stops straight-arm work for the day rather than merely trimming it.',
+      'A complaint that keeps coming back now outranks how you feel today. The rule that matters for irritated tissue is not about a single session — discomfort should settle by the next morning and should not build week on week — and every per-session check let it through, because on any given day it was only a niggle.',
+      'A big jump in what you can hold now holds your volume steady instead of adding to it. Gains that fast are mostly your nervous system learning the position; the structures carrying the load have not caught up yet.',
+      'Where the evidence is thin, the app now says so instead of sounding certain. Deload weeks, for instance, are convention rather than proven — the few trials that exist found neither a benefit nor a cost — and it now tells you that rather than claiming strength lands during recovery.',
+      'Accessibility: the check-in and the bodyweight field could not be completed with a keyboard or a screen reader at all — the dialog was pulling focus back to its close button ten times a second. Tabbing to a button and pressing Space now activates it instead of doing something else. Toasts and PRs are announced. Faint text, the accent colour on white and the focus outline itself were all measured against their backgrounds and darkened until they passed. Reduced-motion settings now stop the looping animations rather than just speeding them up.',
+      'A form check that never finishes can no longer trap your session. If the model download stalls on gym wi-fi, the check now gives up after 45 seconds and your sets save normally — previously the only way out was Discard, which threw the whole session away.',
+      'The two charts that ran off the edge of a small phone screen now scroll inside their own card.',
+    ],
+  },
   {
     date: '2026-08-04',
     title: 'Sets you never did, and other things that were not true',

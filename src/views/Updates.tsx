@@ -35,10 +35,17 @@ export function Updates({ go }: { go: (t: Tab) => void }) {
         {CHANGELOG.map((entry, i) => (
           <div
             key={`${entry.date}-${entry.title}`}
-            className="animate-rise rounded-2xl border border-line bg-surface p-5 shadow-card"
+            className={`animate-rise rounded-2xl border bg-surface p-5 shadow-card ${
+              entry.major ? 'card-sheen border-accent/40 sm:p-6' : 'border-line'
+            }`}
             style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}
           >
             <div className="flex flex-wrap items-center gap-2">
+              {entry.major ? (
+                <span className="rounded-full px-2.5 py-0.5 text-[11.5px] font-bold uppercase tracking-wide text-on-accent" style={{ background: 'var(--t-btn-accent)' }}>
+                  {entry.major.version}
+                </span>
+              ) : null}
               <span
                 className={`rounded-full border px-2.5 py-0.5 text-[11.5px] font-semibold uppercase tracking-wide ${AREA_STYLE[entry.area]}`}
               >
@@ -50,8 +57,17 @@ export function Updates({ go }: { go: (t: Tab) => void }) {
                 {fmtDate(new Date(`${entry.date}T00:00:00`).getTime())}
               </span>
             </div>
-            <h2 className="mt-2 font-display text-[17px] font-semibold leading-snug text-ink">{entry.title}</h2>
-            <ul className="mt-2.5 space-y-2">
+            <h2
+              className={`mt-2 font-display font-bold leading-snug text-ink ${
+                entry.major ? 'text-[24px]' : 'text-[17px] font-semibold'
+              }`}
+            >
+              {entry.title}
+            </h2>
+            {entry.major ? (
+              <p className="mt-1.5 max-w-2xl text-[13.5px] leading-relaxed text-ink2">{entry.major.blurb}</p>
+            ) : null}
+            <ul className={`space-y-2 ${entry.major ? 'mt-4' : 'mt-2.5'}`}>
               {entry.notes.map((n) => (
                 <li key={n} className="flex gap-2.5 text-[13.5px] leading-relaxed text-ink2">
                   <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-accent/70" />
@@ -64,7 +80,7 @@ export function Updates({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <p className="mt-6 text-center text-[12.5px] text-ink3">
-        That is the whole history — {CHANGELOG.length} updates so far.
+        That is the whole history — {CHANGELOG.length} update{CHANGELOG.length === 1 ? '' : 's'} so far.
       </p>
     </div>
   )

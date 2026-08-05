@@ -599,8 +599,16 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     dayType = 'deload'
     dayReason = sig.deloadActive
       ? 'Your deload week is active — keep the whole week deliberately light so fatigue can clear.'
-      : `${sig.weeksSinceDeload} weeks without an easy week — this one is deliberately light. Strength lands during recovery.`
-    decisions.push({ text: 'Deload scheduled — adaptation happens on easy weeks.', kind: 'info' })
+      : `${sig.weeksSinceDeload} weeks without an easy week — this one is deliberately light.`
+    // Deliberately not "strength lands during recovery". Only two controlled
+    // trials of planned deloads exist and neither found a benefit; what is
+    // well-established is what athletes *do* (about a week off every five or
+    // six), and that a reduced week costs nothing. Say that instead of
+    // asserting a mechanism the evidence does not support.
+    decisions.push({
+      text: 'Scheduled easy week. Worth knowing this one is convention rather than proven: the handful of trials on planned deloads have not shown a performance benefit — but they have not shown a cost either, and backing off periodically is what almost every strength athlete does. Volume drops, the movements stay.',
+      kind: 'info',
+    })
   }
 
   // ——— Performance-driven target nudges ———

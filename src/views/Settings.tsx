@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { EquipmentId, Settings as SettingsShape, Tab, TrainingSurface } from '../types'
+import type { AppState, EquipmentId, Settings as SettingsShape, Tab, TrainingSurface } from '../types'
 import { useStore, normalizeState, rebuildDerivedState } from '../lib/store'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
 import { defaultSurface, EQUIPMENT_OPTIONS, TRAINING_SURFACES } from '../data/equipment'
@@ -234,6 +234,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   const s = state.settings
   const fileRef = useRef<HTMLInputElement | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [pendingImport, setPendingImport] = useState<{ state: AppState; incoming: number } | null>(null)
   const [confirmSample, setConfirmSample] = useState(false)
   const [name, setName] = useState(state.name)
   const [injuryNote, setInjuryNote] = useState(state.profile.injuryNote ?? '')
@@ -281,7 +282,14 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
     })
   }
 
-  const onImport = async (file: File) => {
+  /**
+   * Import is the most destructive action in the app — it replaces every
+   * session, record and achievement, and wipes every saved clip — and it was
+   * the only one with no confirmation. Reset and Load Sample both ask, and
+   * both destroy strictly less. So the file is validated first and the athlete
+   * is shown what they are about to trade before anything is touched.
+   */
+  const stageImport = async (file: File) => {
     try {
       const raw = await readImportFile(file)
       validateImport(raw)
@@ -292,13 +300,23 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           `${rawSessionCount - normalized.sessions.length} invalid session(s) were found. Nothing was imported.`,
         )
       }
-      const rebuilt = rebuildDerivedState(normalized)
+      setPendingImport({ state: rebuildDerivedState(normalized), incoming: rawSessionCount })
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : 'Import failed.', 'danger')
+    }
+  }
+
+  const applyImport = async () => {
+    const staged = pendingImport
+    if (!staged) return
+    setPendingImport(null)
+    try {
       // Clips belong to the history being replaced; keeping them would surface
       // the previous data's videos under the imported sessions.
       if (!(await clearAllClips())) throw new Error('Could not clear existing clips. Nothing was imported.')
       setClipCount(0)
       setClipBytes(0)
-      dispatch({ type: 'REPLACE', state: rebuilt })
+      dispatch({ type: 'REPLACE', state: staged.state })
       pushToast('Data imported.', 'success')
     } catch (err) {
       pushToast(err instanceof Error ? err.message : 'Import failed.', 'danger')
@@ -767,7 +785,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0]
-              if (f) void onImport(f)
+              if (f) void stageImport(f)
               e.target.value = ''
             }}
           />
@@ -861,6 +879,42 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               className="flex-1 rounded-xl bg-accent py-3 text-[14.5px] font-semibold text-on-accent"
             >
               Load sample
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={pendingImport !== null} onClose={() => setPendingImport(null)} label="Confirm import">
+        <div className="p-6">
+          <h2 className="font-display text-[19px] font-semibold text-ink">Replace everything with this file?</h2>
+          <p className="mt-1.5 text-[14px] leading-relaxed text-ink2">
+            The file checks out and holds{' '}
+            <span className="font-semibold text-ink">
+              {pendingImport?.incoming ?? 0} session{pendingImport?.incoming === 1 ? '' : 's'}
+            </span>
+            . Importing replaces the{' '}
+            <span className="font-semibold text-ink">
+              {state.sessions.length} session{state.sessions.length === 1 ? '' : 's'}
+            </span>{' '}
+            on this device, along with every record, achievement and saved form clip. There is no undo.
+          </p>
+          {state.sessions.length > 0 ? (
+            <p className="mt-2 text-[13px] leading-relaxed text-ink3">
+              If you have not exported what is here yet, cancel and do that first.
+            </p>
+          ) : null}
+          <div className="mt-5 flex gap-2.5">
+            <button
+              onClick={() => setPendingImport(null)}
+              className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14.5px] font-medium text-ink"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => void applyImport()}
+              className="flex-1 rounded-xl bg-danger py-3 text-[14.5px] font-semibold text-white"
+            >
+              Replace my data
             </button>
           </div>
         </div>

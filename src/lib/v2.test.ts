@@ -264,20 +264,39 @@ describe('goalOutlook', () => {
     expect(o.note).toMatch(/steps? between you and/i)
   })
 
-  it('estimates from the athlete-s own completed steps once there are enough', () => {
+  it('estimates from completed steps of comparable difficulty', () => {
     const sessions: Session[] = [
-      ...historyOf('lean', [{ daysAgo: 200, value: 20 }]),
-      ...historyOf('frog', [{ daysAgo: 160, value: 20 }]),
-      ...historyOf('tuck', [{ daysAgo: 120, value: 8 }]),
+      ...historyOf('tuck', [{ daysAgo: 300, value: 8 }]),
+      ...historyOf('advtuck', [{ daysAgo: 200, value: 8 }]),
+      ...historyOf('oneleg', [{ daysAgo: 90, value: 5 }]),
     ]
-    const state = stateWith('tuck', sessions, {
-      profile: { ...initialState().profile, goalStepId: 'straddle' },
+    const state = stateWith('oneleg', sessions, {
+      profile: { ...initialState().profile, goalStepId: 'full' },
     })
     const o = goalOutlook(state, NOW)
     expect(o.estimate).not.toBeNull()
     expect(o.estimate!.lowWeeks).toBeGreaterThan(0)
     expect(o.estimate!.highWeeks).toBeGreaterThan(o.estimate!.lowWeeks)
     expect(o.estimate!.measuredFrom).toBe(2)
+  })
+
+  it('refuses to extrapolate the quick early steps onto the hard ones', () => {
+    // The bug this pins: Foundations, Lean and Frog can each take a fortnight,
+    // and multiplying that pace by the four steps to a straddle produced
+    // "1-14 weeks", which is not a wide estimate but a wrong one.
+    const sessions: Session[] = [
+      ...historyOf('foundations', [{ daysAgo: 60, value: 32 }]),
+      ...historyOf('lean', [{ daysAgo: 45, value: 32 }]),
+      ...historyOf('frog', [{ daysAgo: 30, value: 32 }]),
+      ...historyOf('tuck', [{ daysAgo: 14, value: 8 }]),
+    ]
+    const state = stateWith('tuck', sessions, {
+      profile: { ...initialState().profile, goalStepId: 'straddle' },
+    })
+    const o = goalOutlook(state, NOW)
+    expect(o.estimate).toBeNull()
+    expect(o.stepsRemaining).toBe(3)
+    expect(o.note).not.toMatch(/\d+\s*[–-]\s*\d+\s*weeks/)
   })
 
   it('handles an athlete already at their chosen goal', () => {

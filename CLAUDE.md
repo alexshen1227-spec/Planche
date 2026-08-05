@@ -22,6 +22,73 @@ only observes, hard `LIMITS` clamp last. Live workouts mirror to
 portalled to `document.body` (every view root's animation makes it a containing
 block for `position: fixed`).
 
+## The V2 product rule
+
+**Every number shown to an athlete must be able to refuse to exist.** That is
+the through-line: the placement reports a confidence and its own
+contradictions, the forecast returns a range or declines, the plateau
+diagnosis names a cause or says it cannot separate them, and the judge already
+reports `unseen`. When adding anything that produces a number, give it a
+"not enough evidence" branch and make sure that branch is reachable — most of
+the V2 bugs found in review were screens that had no state for *don't know*.
+
+Where a claim rests on coaching consensus rather than evidence, the copy says
+so. See "Evidence tiers" below.
+
+## V2 domain modules
+
+- `src/lib/assessment.ts` — the placement interview. Pure: answers in,
+  `Placement` out. The ladder stops at the first rung answered zero, and
+  **steps past the frog stand** (a bent-arm balance drill, not a straight-arm
+  gate) rather than stranding someone who has a tuck planche.
+- `src/lib/forecast.ts` — `forecastUnlock` returns `ready | range |
+  not-trending | insufficient`. The interval is the interquartile spread of
+  *pairwise* rates (Theil–Sen-ish), not a least-squares line: one lucky hold
+  must not rotate the estimate. `goalOutlook` measures only from completed
+  steps at Tuck or above — extrapolating the quick early steps onto the hard
+  ones produced "1–14 weeks to a straddle", which is wrong rather than wide.
+- `src/lib/plateau.ts` — `diagnosePlateau` separates *is it stalled* from
+  *why*. Cause order is deliberate: noise first (every other prescription
+  would be acting on a fiction), then recovery (the one cause where "train
+  more" is actively harmful), then form, then frequency, then the ceilings.
+- `src/lib/loading.ts` — lever fractions. A progression *name* is not a
+  difficulty: an advanced tuck spans ~72–92% of full-planche load on hip angle
+  alone. Used to weight weekly volume and to detect *difficulty drift* (hold
+  times improving because the position got easier). The fractions are
+  INFERENCE from a rigid-body model — coarse on purpose, never a grade.
+
+### Things measured or corrected, not assumed
+
+1. **Early strength gains are largely neural.** Measured strength can rise
+   ~30% while muscle CSA *and* tendon stiffness are both unchanged. So a big
+   capability jump holds volume steady. Do **not** restate this as "tendons lag
+   muscle by two months" — the same time-course data does not support it (on
+   detraining, muscle size decayed sooner).
+2. **Deloads are convention, not proven.** Two controlled trials exist; neither
+   found a benefit, one leaned mildly against. The copy says that. Do not
+   reintroduce "strength lands during recovery".
+3. **The 10%-per-week progression rule failed its RCT** (20.8% vs 20.3%
+   injury). `MAX_WEEKLY_LOAD_RAMP` is a design heuristic and is labelled as
+   one wherever it reaches an athlete. Same for `readinessLoad`, which is an
+   acute:chronic ratio — a construct with substantial published criticism. It
+   may describe load; it must never claim to predict injury.
+4. **Pain must not build week on week.** `signals.persistentComplaint` is the
+   rail with the best evidence behind it in the whole app, and it deliberately
+   outranks today's answer: every per-session check let a recurring elbow
+   through, because on any given day it was only a niggle.
+5. **No hold-time standard is validated.** Credible coaches disagree by 3–6×,
+   and the widely-repeated "10 second rule" traces to no named coach. The
+   unlock bars are convention. Do not present them as measured.
+
+### Evidence tiers
+
+When writing athlete-facing copy, keep these distinguishable:
+STRONG (meta-analysis/RCT) · MODERATE · CONSENSUS (coaches agree, no trial) ·
+INFERENCE (mechanics) · OPEN. Notably **there is no peer-reviewed research on
+planche training itself** — zero PubMed results — so almost everything
+progression-specific is CONSENSUS or INFERENCE and must not be phrased as
+science. `docs/research-ledger.md` holds the sources and their tiers.
+
 ## The camera form judge (the part most work touches)
 
 - `src/lib/poseForm.ts` — the verdict. `judgeTrackedFrames(input, exerciseId,
