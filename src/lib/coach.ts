@@ -387,6 +387,16 @@ export type WarmupLevel = 'short' | 'standard' | 'extended'
 export interface CoachDecision {
   text: string
   kind: 'info' | 'good' | 'warn'
+  /**
+   * Where the line came from.
+   *
+   * `plateau` lets a screen that already renders the full diagnosis card drop
+   * the duplicate bullet. `load-advice` marks lines that prescribe *more*
+   * loaded work — they are removed outright on a day the rails have forbidden
+   * it, because "add pressing volume" beside "no loaded pressing today" is the
+   * plan contradicting itself.
+   */
+  source?: 'plateau' | 'load-advice'
 }
 
 export interface CoachLimiter {
@@ -512,7 +522,7 @@ const LIMITS = {
   setsDelta: [-2, 3] as const,
   restMain: [60, 240] as const,
   restAccessory: [30, 150] as const,
-  volume: [0.5, 1] as const,
+  volume: [1, 1] as const,
 }
 
 const clampTo = (v: number, [lo, hi]: readonly [number, number]) => Math.min(hi, Math.max(lo, v))
@@ -880,6 +890,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     decisions.push({
       text: 'Your holds and your pressing numbers have both flattened — adding pressing volume, which usually unblocks the hold.',
       kind: 'info',
+      source: 'load-advice',
     })
   } else if (sig.accessoryTrend === 'up' && (sig.trendPerWeek ?? 0) <= 0.1 && accessoryEmphasis === 'none') {
     // Never override a form-driven emphasis — the plan text would then say
@@ -893,6 +904,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     decisions.push({
       text: 'Pressing strength is climbing but the hold is not — that points at balance and position, so skill work is up today.',
       kind: 'info',
+      source: 'load-advice',
     })
   }
 
@@ -959,12 +971,6 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // rails below still get the last word on strategy, day type and load.
   const plateau = diagnosePlateau(state, sig, now)
   if (plateau) {
-    decisions.push({
-      text: `${plateau.status === 'regressing' ? 'Your key hold has been going backwards' : 'Your key hold has been flat'} for about ${
-        plateau.weeksFlat
-      } week${plateau.weeksFlat === 1 ? '' : 's'}. ${plateau.evidence} ${plateau.intervention}`,
-      kind: plateau.cause === 'measurement-noise' ? 'info' : 'warn',
-    })
     if (plateau.suggestStrategy && !formRepairNeeded) {
       strategy = plateau.suggestStrategy
       strategyOverrideReason = `your hold has been ${
@@ -1124,7 +1130,12 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   }
 
   const ramp = readLoadRamp(state, now)
-  if (ramp?.rampingFast && loadedDay) {
+  // Never tell someone training barely once a week that they are ramping too
+  // fast. Their baseline is so small that a single normal session clears the
+  // threshold, and the plateau diagnosis is simultaneously telling them the
+  // problem is too little exposure — two opposite instructions in one plan.
+  const enoughVolumeToRamp = sig.sessionsPerWeek >= 2
+  if (ramp?.rampingFast && loadedDay && enoughVolumeToRamp) {
     volumeFactor = Math.min(volumeFactor, 0.85)
     decisions.push({
       text: `Last week's planche-specific load was ${Math.round(
@@ -1133,6 +1144,28 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
         (MAX_WEEKLY_LOAD_RAMP - 1) * 100,
       )}% a week this app will encourage. Today is trimmed to bring it back in line. Load here is weighted by how hard each position is, so a long easy lean does not count the same as a short advanced tuck.`,
       kind: 'warn',
+    })
+  }
+
+  // ——— The plateau, said only once the rails have decided today ———
+  //
+  // A plateau prescription is a training opinion and the rails outrank it, so
+  // the sentence has to be written after they have run. The failure this
+  // avoids was visible in the app: an athlete with a recurring elbow was told
+  // "loaded work is off until it settles" and, two lines later, "two or three
+  // sessions a week will move this number more than anything else" — the plan
+  // arguing with itself about whether to train at all.
+  if (plateau) {
+    const stalled = `${
+      plateau.status === 'regressing' ? 'Your key hold has been going backwards' : 'Your key hold has been flat'
+    } for about ${plateau.weeksFlat} week${plateau.weeksFlat === 1 ? '' : 's'}. ${plateau.evidence}`
+    decisions.push({
+      source: 'plateau',
+      kind: plateau.cause === 'measurement-noise' ? 'info' : 'warn',
+      text:
+        loadPermission === 'none'
+          ? `${stalled} That is worth fixing, but not today — what you reported comes first, and the plan returns to it once you are training loaded again.`
+          : `${stalled} ${plateau.intervention}`,
     })
   }
 
@@ -1225,8 +1258,23 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   }
 
-  if (decisions.length === 0) {
-    decisions.push({ text: 'Everything looks steady — running your best-performing setup unchanged.', kind: 'good' })
+  // ——— Last word: nothing survives that argues with today's rails ———
+  //
+  // Advice about adding loaded work is written earlier in the plan, before the
+  // rails know whether loading is happening at all. On a pain or recovery day
+  // the session contains none of it, so lines like "adding pressing volume"
+  // describe a workout the athlete will not be given. Drop them, and drop the
+  // limiter chip with them — on a day like this the limiter is the complaint,
+  // not a training quality.
+  const loadForbidden = loadPermission === 'none'
+  const finalDecisions = loadForbidden ? decisions.filter((d) => d.source !== 'load-advice') : decisions
+  const finalLimiter = loadForbidden ? null : limiter
+
+  if (finalDecisions.length === 0) {
+    finalDecisions.push({
+      text: 'Everything looks steady — running your best-performing setup unchanged.',
+      kind: 'good',
+    })
   }
 
   return {
@@ -1242,13 +1290,13 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     queueUnlockAttempt,
     suggestMaxTest,
     accessoryEmphasis,
-    limiter,
+    limiter: finalLimiter,
     plateau,
     capabilityJump,
     volumeFactor: clampTo(volumeFactor, LIMITS.volume),
     loadPermission,
     askCheckIn,
-    decisions,
+    decisions: finalDecisions,
     signals: sig,
   }
 }

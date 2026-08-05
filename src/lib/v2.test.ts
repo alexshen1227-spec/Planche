@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, BodyRegion, FormCheck, Session, SetLog, StepId } from '../types'
-import { initialState } from './store'
+import { initialState, normalizeState, rebuildDerivedState } from './store'
 import { readSignals } from './signals'
 import { buildPlan } from './coach'
+import { painSafeRecoveryWorkout } from '../data/workouts'
 import {
   CAPABILITY_JUMP_PCT,
   LEVER_FRACTION,
@@ -13,6 +14,7 @@ import { STEP_BY_ID } from '../data/progressions'
 import {
   CONFIDENCE_NOTE,
   MIN_FORECAST_POINTS,
+  MAX_FORECAST_WEEKS,
   MIN_FORECAST_SPAN_DAYS,
   describeForecast,
   forecastUnlock,
@@ -94,6 +96,110 @@ function stateWith(stepId: StepId, sessions: Session[], patch: Partial<AppState>
     ...patch,
   }
 }
+
+// ———————————————————————— Migration into V2 ————————————————————————
+
+describe('v5 and older data surviving the V2 upgrade', () => {
+  /** A v5 save: no assessment, no regions, no training age. */
+  const legacy = {
+    version: 5,
+    onboarded: true,
+    name: 'Legacy',
+    startedAt: NOW - 200 * DAY,
+    stepId: 'advtuck',
+    baseStepId: 'tuck',
+    unlocked: ['foundations', 'lean', 'frog', 'tuck', 'advtuck'],
+    sessions: [
+      {
+        id: 'old-1',
+        startedAt: NOW - 30 * DAY,
+        endedAt: NOW - 30 * DAY + 60_000,
+        workoutName: 'Old session',
+        workoutKind: 'auto',
+        stepId: 'advtuck',
+        sets: [{ exerciseId: 'adv-tuck-planche', kind: 'hold', value: 9, target: 8, section: 'main', at: NOW - 30 * DAY }],
+        checkIn: { joints: 'niggle', energy: 'ok', at: NOW - 30 * DAY },
+      },
+    ],
+    prs: { 'adv-tuck-planche': { value: 9, at: NOW - 30 * DAY } },
+    achievementVersion: 0,
+    achievements: { 'first-session': NOW - 190 * DAY },
+    videoLinks: {},
+    profile: { equipment: ['floor', 'parallettes'], goalStepId: 'straddle' },
+    measurements: [{ at: NOW - 40 * DAY, weightKg: 72 }],
+    settings: { theme: 'dark', weeklyGoal: 4 },
+  }
+
+  it('keeps every earned step, session, PR and achievement', () => {
+    const s = normalizeState(legacy)
+    expect(s.version).toBe(6)
+    expect(s.sessions).toHaveLength(1)
+    expect(s.stepId).toBe('advtuck')
+    expect(s.unlocked).toContain('advtuck')
+    expect(s.prs['adv-tuck-planche'].value).toBe(9)
+    expect(s.achievements['first-session']).toBeDefined()
+    expect(s.measurements[0].weightKg).toBe(72)
+    expect(s.settings.weeklyGoal).toBe(4)
+  })
+
+  it('anchors the athlete at what they had already earned', () => {
+    // The floor only ever moves up, so a replay can never demote them.
+    const s = normalizeState(legacy)
+    expect(s.grandfatheredStepId).toBe('advtuck')
+    const replayed = rebuildDerivedState(s)
+    expect(STEP_BY_ID[replayed.stepId].order).toBeGreaterThanOrEqual(STEP_BY_ID.advtuck.order)
+  })
+
+  it('treats a check-in with no regions as unknown, never as everything hurting', () => {
+    const s = normalizeState(legacy)
+    expect(s.sessions[0].checkIn?.joints).toBe('niggle')
+    expect(s.sessions[0].checkIn?.regions).toBeUndefined()
+    // And the region-aware recovery session must not silently strip anything.
+    expect(painSafeRecoveryWorkout(s.sessions[0].checkIn?.regions ?? []).blocks.length).toBeGreaterThan(0)
+  })
+
+  it('leaves V2-only fields absent rather than inventing defaults', () => {
+    const s = normalizeState(legacy)
+    expect(s.assessment).toBeUndefined()
+    expect(s.profile.trainingAgeMonths).toBeUndefined()
+    // An athlete with no assessment must not be read as "assessed, no gaps".
+    const plan = buildPlan(s, NOW)
+    expect(plan).toBeTruthy()
+  })
+
+  it('rejects hostile values in the new fields instead of trusting them', () => {
+    const hostile = normalizeState({
+      ...legacy,
+      assessment: { at: 'nope', answers: 'not-an-object', placedStepId: 'moon', confidence: 'perfect' },
+      sessions: [
+        {
+          ...legacy.sessions[0],
+          // regions as a bare string would be iterated per character.
+          checkIn: { joints: 'pain', energy: 'ok', at: NOW, regions: 'elbow', sleep: 'amazing' },
+        },
+      ],
+      profile: { ...legacy.profile, trainingAgeMonths: -50 },
+    })
+    expect(hostile.assessment).toBeUndefined()
+    expect(hostile.sessions[0].checkIn?.regions).toBeUndefined()
+    expect(hostile.sessions[0].checkIn?.sleep).toBeUndefined()
+    expect(hostile.profile.trainingAgeMonths).toBe(0)
+  })
+
+  it('survives a v1 save with almost nothing in it', () => {
+    const ancient = normalizeState({ version: 1, onboarded: true, stepId: 'lean' })
+    expect(ancient.version).toBe(6)
+    expect(ancient.stepId).toBe('lean')
+    expect(ancient.sessions).toEqual([])
+    expect(() => buildPlan(ancient, NOW)).not.toThrow()
+  })
+
+  it('does not grant a step nobody earned', () => {
+    const beginner = normalizeState({ ...legacy, stepId: 'foundations', unlocked: ['foundations'], baseStepId: 'foundations' })
+    expect(beginner.grandfatheredStepId).toBe('foundations')
+    expect(beginner.unlocked).not.toContain('straddle')
+  })
+})
 
 // ————————————————————————————— Forecast —————————————————————————————
 
@@ -252,6 +358,71 @@ describe('forecastUnlock', () => {
     }))
     expect(qualifyingSeries(stateWith('tuck', unverified), 'tuck')).toHaveLength(0)
     expect(forecastUnlock(stateWith('tuck', unverified), 'tuck', NOW).kind).toBe('insufficient')
+  })
+})
+
+describe('forecast robustness against hostile histories', () => {
+  const hostileShapes: { name: string; points: { daysAgo: number; value: number }[] }[] = [
+    { name: 'all identical timestamps', points: Array.from({ length: 6 }, (_, i) => ({ daysAgo: 10, value: 5 + i })) },
+    { name: 'values that never change', points: [40, 30, 20, 10, 2].map((d) => ({ daysAgo: d, value: 7 })) },
+    {
+      name: 'a single enormous outlier',
+      points: [
+        { daysAgo: 60, value: 4 },
+        { daysAgo: 45, value: 4 },
+        { daysAgo: 30, value: 3000 },
+        { daysAgo: 15, value: 4 },
+        { daysAgo: 2, value: 4 },
+      ],
+    },
+    {
+      name: 'sub-second holds',
+      points: [60, 45, 30, 15, 2].map((d, i) => ({ daysAgo: d, value: 0.1 + i * 0.01 })),
+    },
+    {
+      name: 'a session stamped in the future',
+      points: [
+        { daysAgo: 60, value: 4 },
+        { daysAgo: 40, value: 6 },
+        { daysAgo: 20, value: 8 },
+        { daysAgo: -30, value: 10 },
+      ],
+    },
+    {
+      name: 'two points on the same day, repeatedly',
+      points: [60, 60, 30, 30, 5, 5].map((d, i) => ({ daysAgo: d, value: 4 + i })),
+    },
+  ]
+
+  it.each(hostileShapes)('never emits a nonsensical forecast: $name', ({ points }) => {
+    const state = stateWith('tuck', historyOf('tuck', points))
+    const f = forecastUnlock(state, 'tuck', NOW)
+    // Whatever it decides, it must be a legal shape with finite numbers and
+    // prose an athlete could read.
+    expect(['ready', 'range', 'not-trending', 'insufficient']).toContain(f.kind)
+    if (f.kind === 'range') {
+      expect(Number.isFinite(f.lowWeeks)).toBe(true)
+      expect(f.lowWeeks).toBeGreaterThanOrEqual(1)
+      expect(f.lowWeeks).toBeLessThanOrEqual(MAX_FORECAST_WEEKS)
+      if (f.highWeeks !== null) {
+        expect(Number.isFinite(f.highWeeks)).toBe(true)
+        expect(f.highWeeks).toBeGreaterThanOrEqual(f.lowWeeks)
+      }
+      expect(f.basis).not.toMatch(/NaN|Infinity|undefined/)
+    }
+    if (f.kind === 'insufficient') expect(f.need).not.toMatch(/NaN|Infinity|undefined/)
+    if (f.kind === 'not-trending') expect(f.basis).not.toMatch(/NaN|Infinity|undefined/)
+    expect(describeForecast(f)).not.toMatch(/NaN|Infinity|undefined/)
+  })
+
+  it('stays fast and sane on a very long history', () => {
+    const many = Array.from({ length: 600 }, (_, i) => ({ daysAgo: 600 - i, value: 2 + i * 0.02 }))
+    const state = stateWith('tuck', historyOf('tuck', many))
+    const started = Date.now()
+    const f = forecastUnlock(state, 'tuck', NOW)
+    // Pairwise rates are O(n^2); 600 points is 180k pairs and must not stall.
+    expect(Date.now() - started).toBeLessThan(3000)
+    expect(['ready', 'range', 'not-trending']).toContain(f.kind)
   })
 })
 
@@ -592,6 +763,140 @@ describe('capability jump and load ramp', () => {
       expect(LEVER_FRACTION[ladder[i]]).toBeGreaterThan(LEVER_FRACTION[ladder[i - 1]])
     }
     expect(LEVER_FRACTION['full-planche']).toBe(1)
+  })
+})
+
+describe('the coach never argues with itself', () => {
+  it('does not tell an infrequent athlete both to train more and to trim', () => {
+    // A rarely-training athlete has a tiny baseline, so one ordinary session
+    // clears the ramp threshold — while the plateau diagnosis is telling them
+    // the problem is too little exposure. Both in one plan is incoherent.
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 84, value: 8 },
+        { daysAgo: 60, value: 8 },
+        { daysAgo: 40, value: 8 },
+        { daysAgo: 9, value: 8 },
+      ]),
+    )
+    const plan = buildPlan(state, NOW)
+    const text = plan.decisions.map((d) => d.text).join(' ')
+    const saysMore = /too little exposure|below the frequency|sessions a week will move/i.test(
+      `${text} ${plan.plateau?.intervention ?? ''}`,
+    )
+    const saysTrim = /steeper climb|trimmed to bring it back/i.test(text)
+    expect(saysMore && saysTrim).toBe(false)
+  })
+
+  it('does not tell an athlete to train more on a day it forbade loaded work', () => {
+    // Seen in the running app: a recurring elbow produced "loaded work is off
+    // until it settles" and, two lines later, the plateau's "two or three
+    // sessions a week will move this number". One plan, two opposite answers.
+    const at = (d: number) => NOW - d * DAY
+    const sessions: Session[] = [0, 1, 2, 3].map((i) => ({
+      id: `pc-${i}`,
+      startedAt: at(60 - i * 18),
+      endedAt: at(60 - i * 18) + 60_000,
+      workoutName: 'Session',
+      workoutKind: 'auto' as const,
+      stepId: 'tuck' as StepId,
+      sets: [holdSet('tuck-planche', 8, at(60 - i * 18))],
+      checkIn: { joints: 'niggle' as const, energy: 'ok' as const, at: at(60 - i * 18), regions: ['elbow' as BodyRegion] },
+    }))
+    const plan = buildPlan(stateWith('tuck', sessions), NOW)
+    expect(plan.loadPermission).toBe('none')
+    expect(plan.plateau).not.toBeNull()
+    const text = `${plan.dayReason} ${plan.decisions.map((d) => d.text).join(' ')}`
+    expect(text).toMatch(/off today|off until it settles/i)
+    // The plateau line must defer rather than prescribe more training.
+    expect(text).not.toMatch(/sessions a week will move this number/i)
+    expect(text).toMatch(/not today|comes first/i)
+  })
+
+  it('drops advice to add loaded work on a day loaded work is forbidden', () => {
+    // "Adding pressing volume" printed beside "no loaded pressing today"
+    // describes a workout the athlete will never be handed.
+    const at = (d: number) => NOW - d * DAY
+    const sessions: Session[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `pl-${i}`,
+      startedAt: at(70 - i * 7),
+      endedAt: at(70 - i * 7) + 60_000,
+      workoutName: 'Session',
+      workoutKind: 'auto' as const,
+      stepId: 'tuck' as StepId,
+      rpe: 8,
+      sets: [
+        holdSet('tuck-planche', 8, at(70 - i * 7)),
+        { exerciseId: 'pppu', kind: 'reps' as const, value: 6, target: 6, section: 'strength' as const, at: at(70 - i * 7) },
+      ],
+      ...(i >= 6
+        ? { checkIn: { joints: 'niggle' as const, energy: 'ok' as const, at: at(70 - i * 7), regions: ['elbow' as BodyRegion] } }
+        : {}),
+    }))
+    const plan = buildPlan(stateWith('tuck', sessions), NOW)
+    expect(plan.loadPermission).toBe('none')
+    const text = plan.decisions.map((d) => d.text).join(' ')
+    expect(text).not.toMatch(/adding pressing volume|skill work is up today/i)
+    expect(plan.decisions.some((d) => d.source === 'load-advice')).toBe(false)
+    // The limiter chip is about training quality; today it is the complaint.
+    expect(plan.limiter).toBeNull()
+    // And it never leaves the athlete with an empty coach card.
+    expect(plan.decisions.length).toBeGreaterThan(0)
+  })
+
+  it('tags the plateau line so a screen showing the card does not repeat it', () => {
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 70, value: 8 },
+        { daysAgo: 50, value: 8 },
+        { daysAgo: 30, value: 8 },
+        { daysAgo: 4, value: 8 },
+      ]),
+    )
+    const plan = buildPlan(state, NOW)
+    expect(plan.plateau).not.toBeNull()
+    expect(plan.decisions.filter((d) => d.source === 'plateau')).toHaveLength(1)
+  })
+
+  it('does not hold volume for a jump on a day it has already stood work down', () => {
+    // Pain and deload days already prescribe less than any tissue rail would.
+    const jumpy = historyOf('tuck', [
+      { daysAgo: 60, value: 6 },
+      { daysAgo: 45, value: 6 },
+      { daysAgo: 30, value: 6.5 },
+      { daysAgo: 4, value: 11 },
+    ])
+    const state = stateWith('tuck', jumpy)
+    const painPlan = buildPlan(state, NOW, { joints: 'pain', energy: 'ok', at: NOW, regions: ['elbow'] })
+    expect(painPlan.loadPermission).toBe('none')
+    const text = painPlan.decisions.map((d) => d.text).join(' ')
+    expect(text).not.toMatch(/Volume is being held rather than raised/i)
+  })
+
+  it('keeps every decision free of sentinels and placeholders', () => {
+    const shapes: number[][] = [
+      [8, 8, 8, 8, 8],
+      [3, 5, 7, 9, 12],
+      [12, 10, 9, 7, 5],
+    ]
+    for (const values of shapes) {
+      const state = stateWith(
+        'tuck',
+        historyOf(
+          'tuck',
+          values.map((value, i) => ({ daysAgo: 70 - i * 14, value })),
+        ),
+      )
+      for (const plan of [buildPlan(state, NOW), buildPlan(state, NOW, { joints: 'good', energy: 'fresh', at: NOW })]) {
+        for (const d of plan.decisions) {
+          expect(d.text).not.toMatch(/\bNaN\b|\bundefined\b|\bnull\b|\[object|\b99 days\b/)
+          expect(d.text.trim().length).toBeGreaterThan(10)
+        }
+        expect(plan.dayReason).not.toMatch(/\bNaN\b|\bundefined\b|\[object/)
+      }
+    }
   })
 })
 

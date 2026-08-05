@@ -383,8 +383,16 @@ export function adjustedTemplateWorkout(workout: Workout, checkIn: CheckIn): Wor
   }
 }
 
-/** The recommended session, assembled from the coach's plan for today. */
-export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
+/**
+ * The recommended session, assembled from the coach's plan for today.
+ *
+ * @param minutesOverride a smaller time budget for today only. The realistic
+ * alternative to "I have twenty minutes" is skipping entirely, and a skipped
+ * session teaches the coach nothing — so re-scoping today beats re-planning
+ * the week. The trimming order in `fitToBudget` already protects the warm-up,
+ * the key main work and the cooldown, so a short session is a real session.
+ */
+export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverride?: number): Workout {
   const stepId = state.stepId
   const step = STEP_BY_ID[stepId]
   const plan = planIn ?? buildPlan(state)
@@ -581,7 +589,8 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
     })
   }
 
-  const budget = easy ? Math.min(22, state.settings.sessionMinutes) : state.settings.sessionMinutes
+  const baseBudget = easy ? Math.min(22, state.settings.sessionMinutes) : state.settings.sessionMinutes
+  const budget = minutesOverride !== undefined ? Math.min(baseBudget, Math.max(8, minutesOverride)) : baseBudget
   // Sides are expanded before trimming, so the budget accounts for the fact
   // that unilateral work costs twice as long.
   const fitted = fitToBudget(
@@ -592,12 +601,17 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
     state.settings.phoneWithinReach,
   )
 
+  const shortened = minutesOverride !== undefined && budget < baseBudget
   return {
-    id: `auto-${stepId}-${plan.dayType}-${plan.strategy}`,
-    name: `${step.name} · ${DAY_LABEL[plan.dayType]}`,
-    focus: plan.limiter
-      ? `${plan.dayReason} Current limiter: ${plan.limiter.label}. ${plan.limiter.prescription}`
-      : plan.dayReason,
+    id: `auto-${stepId}-${plan.dayType}-${plan.strategy}${shortened ? `-${budget}m` : ''}`,
+    name: `${step.name} · ${DAY_LABEL[plan.dayType]}${shortened ? ' · Short' : ''}`,
+    focus: shortened
+      ? `Trimmed to about ${budget} minutes. The warm-up and your main ${
+          EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? 'work'
+        } are intact — accessories came off first, because a short session you actually do beats a full one you skip. ${plan.dayReason}`
+      : plan.limiter
+        ? `${plan.dayReason} Current limiter: ${plan.limiter.label}. ${plan.limiter.prescription}`
+        : plan.dayReason,
     minutes: estimateMinutes(fitted, state.settings.stopLatencySec, state.settings.phoneWithinReach),
     kind: 'auto',
     blocks: fitted,

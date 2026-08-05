@@ -81,8 +81,11 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
   // rail's "joint pain reported" must never be squeezed out by an FYI that
   // happened to be pushed earlier in the plan.
   const topDecisions = useMemo(() => {
-    const warns = plan.decisions.filter((d) => d.kind === 'warn')
-    const rest = plan.decisions.filter((d) => d.kind !== 'warn')
+    // The plateau has its own card directly above; repeating the paragraph as
+    // a bullet made one screen say the same thing twice.
+    const shown = plan.decisions.filter((d) => d.source !== 'plateau')
+    const warns = shown.filter((d) => d.kind === 'warn')
+    const rest = shown.filter((d) => d.kind !== 'warn')
     return [...warns, ...rest].slice(0, 3)
   }, [plan])
 
@@ -211,6 +214,23 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
             View the road <Icon name="chevronR" size={15} />
           </button>
         </div>
+        {/* Re-scope today rather than re-plan the week. The realistic
+            alternative to "I've got twenty minutes" is training nothing, and a
+            skipped session teaches the coach nothing either. */}
+        {state.settings.sessionMinutes > 18 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
+            <span className="text-ink3">Short on time?</span>
+            {[15, 20].map((m) => (
+              <button
+                key={m}
+                onClick={() => startWorkout(todaysSession(state, plan, m))}
+                className="rounded-lg border border-line bg-raised px-3 py-1.5 font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
+              >
+                {m} min version
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {/* A named stall, or a real jump. Neither is filler: the card only
@@ -242,8 +262,18 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
             {keyEx.name.toLowerCase()}
           </h2>
           <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">{plan.plateau.evidence}</p>
-          <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink">{plan.plateau.intervention}</p>
-          {plan.plateau.suggestMaxTest ? (
+          {plan.loadPermission === 'none' ? (
+            // What they reported outranks the plateau. Showing the "do more"
+            // prescription beside a rest day would be the plan contradicting
+            // itself on the one screen where it should be clearest.
+            <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink">
+              Worth fixing, but not today — what you reported in your check-in comes first. This returns as soon as
+              you are training loaded again.
+            </p>
+          ) : (
+            <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink">{plan.plateau.intervention}</p>
+          )}
+          {plan.plateau.suggestMaxTest && plan.loadPermission !== 'none' ? (
             <button
               onClick={() => startWorkout(maxTestWorkout(state.stepId))}
               className="mt-3 inline-flex items-center gap-2 rounded-xl border border-line bg-raised px-4 py-2.5 text-[13.5px] font-medium text-ink transition hover:border-line-strong"
