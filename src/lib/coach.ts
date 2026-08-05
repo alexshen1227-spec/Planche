@@ -522,7 +522,7 @@ const LIMITS = {
   setsDelta: [-2, 3] as const,
   restMain: [60, 240] as const,
   restAccessory: [30, 150] as const,
-  volume: [1, 1] as const,
+  volume: [0.5, 1] as const,
 }
 
 const clampTo = (v: number, [lo, hi]: readonly [number, number]) => Math.min(hi, Math.max(lo, v))

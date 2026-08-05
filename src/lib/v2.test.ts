@@ -766,6 +766,39 @@ describe('capability jump and load ramp', () => {
   })
 })
 
+describe('hard limits actually permit the reductions the rails ask for', () => {
+  // Regression guard: LIMITS.volume was briefly clamped to [1, 1], which
+  // silently made every volume reduction a no-op — deload days, pain days and
+  // the tissue rails all still returned a full-volume session while the copy
+  // said they had backed off. Nothing else in the suite noticed, because every
+  // other assertion was about the *text*, not the number.
+  it('lets a deload day actually cut volume', () => {
+    const at = (d: number) => NOW - d * DAY
+    const sessions: Session[] = Array.from({ length: 14 }, (_, i) => ({
+      id: `d-${i}`,
+      startedAt: at(60 - i * 4),
+      endedAt: at(60 - i * 4) + 60_000,
+      workoutName: 'Session',
+      workoutKind: 'auto' as const,
+      stepId: 'tuck' as StepId,
+      rpe: 8,
+      sets: [holdSet('tuck-planche', 9, at(60 - i * 4))],
+    }))
+    const plan = buildPlan(stateWith('tuck', sessions), NOW)
+    // Whatever day it lands on, a plan that says it is reducing volume must
+    // return a factor that can actually be below 1.
+    expect(plan.volumeFactor).toBeLessThanOrEqual(1)
+    const painPlan = buildPlan(stateWith('tuck', sessions), NOW, {
+      joints: 'pain',
+      energy: 'tired',
+      at: NOW,
+      regions: ['wrist'],
+    })
+    expect(painPlan.volumeFactor).toBeLessThan(1)
+    expect(painPlan.loadPermission).toBe('none')
+  })
+})
+
 describe('the coach never argues with itself', () => {
   it('does not tell an infrequent athlete both to train more and to trim', () => {
     // A rarely-training athlete has a tiny baseline, so one ordinary session

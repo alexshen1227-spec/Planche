@@ -449,12 +449,18 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
             <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-ink3">
               <Icon name="route" size={15} /> Your goal
             </div>
+            {/* The separator is a real space, not only the `ml-2` margin: a
+                screen reader reads the concatenated text, and without it this
+                announced as "Straddle Planche3 steps to go". */}
             <h2 className="mt-1.5 font-display text-[17px] font-semibold text-ink">
               {STEP_BY_ID[outlook.goalStepId].name}
               {outlook.stepsRemaining > 0 ? (
-                <span className="ml-2 text-[13.5px] font-medium text-ink2">
-                  {outlook.stepsRemaining} step{outlook.stepsRemaining === 1 ? '' : 's'} to go
-                </span>
+                <>
+                  {' '}
+                  <span className="ml-1 text-[13.5px] font-medium text-ink2">
+                    · {outlook.stepsRemaining} step{outlook.stepsRemaining === 1 ? '' : 's'} to go
+                  </span>
+                </>
               ) : null}
             </h2>
             {outlook.estimate ? (
