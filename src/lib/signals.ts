@@ -1,7 +1,7 @@
 import type { AppState, CheckIn, Session, SetLog } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { dayKey } from './time'
+import { addDays, dayKey, weekStart } from './time'
 import { progressionCredit, qualifyingSessionValue } from './progression'
 import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
 
@@ -519,8 +519,38 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const daysSinceMaxTest = lastTest ? Math.round((now - lastTest.startedAt) / DAY) : null
 
   const lastDeload = [...sessions].reverse().find((s) => s.workoutName.toLowerCase().includes('deload'))
-  const weeksSinceDeload = lastDeload
-    ? Math.floor((now - lastDeload.startedAt) / (7 * DAY))
+  // An easy week counts whatever it was called.
+  //
+  // Recognising only the "Deload Flow" template meant an athlete who backed
+  // off in their own way — a light week, a holiday, one session instead of
+  // four — was recorded as never having deloaded. Since the fallback measured
+  // weeks since their *first ever session*, that number only grew, and past
+  // five weeks the coach prescribed a deload on every session from then on,
+  // permanently. The point of a deload is the drop in load, not the name on
+  // the workout, so a week whose training load fell well below this athlete's
+  // own normal is counted as one.
+  const weeklyStrain = new Map<number, number>()
+  for (const s of sessions) {
+    const week = weekStart(s.startedAt)
+    weeklyStrain.set(week, (weeklyStrain.get(week) ?? 0) + strainOf(s))
+  }
+  const currentWeek = weekStart(now)
+  // Walk the calendar, not just the weeks that happen to contain sessions: a
+  // week off is the most complete deload there is, and it leaves no entry.
+  const firstWeek = sessions.length ? weekStart(sessions[0].startedAt) : currentWeek
+  const spanned: { week: number; strain: number }[] = []
+  for (let week = firstWeek; week < currentWeek; week = addDays(week, 7)) {
+    spanned.push({ week, strain: weeklyStrain.get(week) ?? 0 })
+    if (spanned.length > 260) break
+  }
+  const typicalWeek = median(spanned.map((w) => w.strain).filter((s) => s > 0)) ?? 0
+  const lastEasyWeek =
+    typicalWeek > 0
+      ? spanned.filter((w) => w.strain <= typicalWeek * 0.6).sort((a, b) => b.week - a.week)[0]?.week
+      : undefined
+  const lastEaseAt = Math.max(lastDeload?.startedAt ?? 0, lastEasyWeek ?? 0)
+  const weeksSinceDeload = lastEaseAt
+    ? Math.floor((now - lastEaseAt) / (7 * DAY))
     : Math.floor((now - (sessions[0]?.startedAt ?? now)) / (7 * DAY))
   let deloadActive = false
   if (lastDeload && now - lastDeload.startedAt < 7 * DAY) {

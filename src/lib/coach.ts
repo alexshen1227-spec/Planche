@@ -323,13 +323,34 @@ export function pickStrategy(state: AppState): CoachPick {
   const ranked = [...stats].sort((a, b) => b.mean - a.mean)
   const exploring = best.id !== ranked[0].id
   const name = STRATEGY_BY_ID[best.id].name
+
+  /**
+   * Whether the leader is actually ahead of the field, or merely first.
+   *
+   * A gain shows up in the sessions on either side of the one that caused it,
+   * so neighbouring strategies collect near-identical credit and the ranking
+   * can be decided by a rounding error. Ordering still has to pick something —
+   * but claiming "your fastest gains" off a lead of two hundredths of a second
+   * a week is the coach asserting something it does not know. Below half a
+   * second a week the two are the same answer as far as an athlete is
+   * concerned, so it says that instead.
+   */
+  const unlockSec = STEP_BY_ID[state.stepId]?.unlockSec ?? 20
+  const runnerUp = ranked.find((arm) => arm.id !== best.id)
+  const leadSecPerWeek = runnerUp ? (best.mean - runnerUp.mean) * unlockSec : Infinity
+  const decided = leadSecPerWeek >= 0.5
+
   return {
     strategy: best.id,
     reason: exploring
       ? `Re-testing ${name.toLowerCase()} to keep its read on you current.`
-      : best.secPerWeek > 0.05
-        ? `${name} has produced your fastest gains: ${formatRate(best.secPerWeek)}.`
-        : `${name} is holding up best while your numbers are flat — keeping the stimulus steady.`,
+      : best.secPerWeek <= 0.05
+        ? `${name} is holding up best while your numbers are flat — keeping the stimulus steady.`
+        : decided
+          ? `${name} has produced your fastest gains: ${formatRate(best.secPerWeek)}.`
+          : `${name} and ${STRATEGY_BY_ID[runnerUp!.id].name.toLowerCase()} are running neck and neck (${formatRate(
+              best.secPerWeek,
+            )}). Staying on ${name.toLowerCase()} while the difference is still inside the noise.`,
     exploring,
   }
 }
