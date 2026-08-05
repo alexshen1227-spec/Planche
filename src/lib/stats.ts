@@ -1,6 +1,5 @@
 import type { AppState, Session, TrainingSurface } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { STEP_BY_ID } from '../data/progressions'
 import { addDays, weekStart } from './time'
 import { isQualifyingSet } from './progression'
 
@@ -112,30 +111,14 @@ export function sessionHoldSec(session: Session): number {
   return Math.round(session.sets.filter((s) => s.kind === 'hold').reduce((t, s) => t + s.value, 0))
 }
 
-/**
- * Least-squares trend over recent bests on the current step's key hold,
- * projected forward to the unlock bar. Returns null when there isn't enough
- * signal (or the trend is flat/negative) — never show a made-up forecast.
+/*
+ * `paceToUnlock` used to live here: a least-squares fit over at most six noisy
+ * session bests, printed as "on pace to unlock in ~N weeks".
+ *
+ * It was removed rather than tuned. Least squares lets one lucky hold rotate
+ * the whole line, and a single number hid the fact that the honest answer
+ * spans months — an athlete told four weeks who takes eleven is right to
+ * conclude the app was guessing. `forecastUnlock` in lib/forecast.ts replaces
+ * it with an interval built from the spread of the athlete's own pairwise
+ * rates, a confidence tier, and the option to refuse outright.
  */
-export function paceToUnlock(state: AppState): { weeks: number } | null {
-  const step = STEP_BY_ID[state.stepId]
-  const series = bestSeries(state, step.keyExerciseId).slice(-6)
-  if (series.length < 3) return null
-  const best = Math.max(...series.map((p) => p.value))
-  if (best >= step.unlockSec) return { weeks: 0 }
-  const n = series.length
-  const mx = series.reduce((t, p) => t + p.at, 0) / n
-  const my = series.reduce((t, p) => t + p.value, 0) / n
-  let num = 0
-  let den = 0
-  for (const p of series) {
-    num += (p.at - mx) * (p.value - my)
-    den += (p.at - mx) ** 2
-  }
-  if (den === 0) return null
-  const slope = num / den // seconds gained per ms
-  if (slope <= 0) return null
-  const msLeft = (step.unlockSec - best) / slope
-  const weeks = Math.max(1, Math.ceil(msLeft / (7 * 86_400_000)))
-  return weeks > 26 ? null : { weeks }
-}

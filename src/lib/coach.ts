@@ -2,6 +2,14 @@ import type { AppState, BodyRegion, CheckIn, EquipmentId, Session, StepId, Strat
 import { STEP_BY_ID } from '../data/progressions'
 import { defaultSurface } from '../data/equipment'
 import { diagnosePlateau, type PlateauVerdict } from './plateau'
+import { emphasisFromGaps } from './assessment'
+import {
+  MAX_WEEKLY_LOAD_RAMP,
+  readCapabilityJump,
+  readDifficultyDrift,
+  readLoadRamp,
+  type CapabilityJump,
+} from './loading'
 import {
   readSignals,
   observedRestSec,
@@ -408,6 +416,11 @@ export interface CoachPlan {
    * there is not yet enough training to judge either way.
    */
   plateau: PlateauVerdict | null
+  /**
+   * A recent large gain in capability. Present means volume is deliberately
+   * being held rather than added — see the tendon-lag rail in buildPlan.
+   */
+  capabilityJump: CapabilityJump | null
   volumeFactor: number
   /** Whether loaded upper-body planche work is appropriate today. */
   loadPermission: 'normal' | 'reduced' | 'none'
@@ -436,6 +449,15 @@ const REGION_PAIN_NOTE: Partial<Record<BodyRegion, string>> = {
     'Lower back: the usual core work is off today, because hollow holds, arch holds and leg lifts all load exactly what you flagged. Walking and easy hip mobility are better uses of the day.',
 }
 
+/** How a region reads inside a sentence. */
+const REGION_NOUN: Record<BodyRegion, string> = {
+  wrist: 'wrist',
+  elbow: 'elbow',
+  shoulder: 'shoulder',
+  'lower-back': 'lower back',
+  other: 'reported area',
+}
+
 const REGION_NIGGLE_NOTE: Partial<Record<BodyRegion, string>> = {
   wrist:
     'For the wrist niggle: switch today\'s main holds to parallettes or fists if you have them, and keep the lean shallower than usual. A neutral wrist angle is the fastest fix there is for this.',
@@ -443,6 +465,21 @@ const REGION_NIGGLE_NOTE: Partial<Record<BodyRegion, string>> = {
     'For the shoulder: keep the lean conservative and stop any set where the position drifts, rather than pushing to the target.',
   'lower-back':
     'For the lower back: keep the hollow and arch work light today and prioritise a level pelvis over a longer hold.',
+}
+
+/** How a placement gap reads as a limiter, before any session exists. */
+const GAP_LIMITER_LABEL: Record<'pressing' | 'core' | 'balance', string> = {
+  pressing: 'Pressing strength',
+  core: 'Body line',
+  balance: 'Hand balance',
+}
+
+const GAP_LIMITER_PRESCRIPTION: Record<'pressing' | 'core' | 'balance', string> = {
+  pressing:
+    'Pressing volume is up while the holds stay conservative — your straight-arm work is ahead of the engine behind it.',
+  core: 'Hollow and arch work gets the extra sets: a flat line is what separates the next step from this one.',
+  balance:
+    'Low-fatigue balance practice gets priority. It is the cheapest thing on the list in recovery terms and it is often what makes early holds feel impossible.',
 }
 
 /** Clause form, so the strategy sentence reads as one thought. */
@@ -851,6 +888,26 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   }
 
+  // ——— The placement interview steers the first weeks ———
+  //
+  // A brand-new athlete has no logged form issues and no accessory trend, so
+  // every signal-driven emphasis above stays silent and they get the generic
+  // block. But they did tell us what was weak during placement, and that is
+  // real information going unused. It only applies while history is thin —
+  // once there are sessions to read, measured evidence outranks a self-report
+  // from week one.
+  if (accessoryEmphasis === 'none' && sig.totalSessions < 6 && state.assessment?.gapIds.length) {
+    const fromGaps = emphasisFromGaps(state.assessment.gapIds)
+    if (fromGaps !== 'none') {
+      accessoryEmphasis = fromGaps
+      limiter ??= {
+        label: GAP_LIMITER_LABEL[fromGaps],
+        evidence: 'From your placement answers — not yet from logged sessions.',
+        prescription: GAP_LIMITER_PRESCRIPTION[fromGaps],
+      }
+    }
+  }
+
   // ——— Warm-up adherence and readiness ———
   if (sig.skippedLastWarmup || sig.warmupRate < 0.7) {
     warmup = 'extended'
@@ -969,6 +1026,43 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     }
   }
 
+  // ——— A complaint that is not settling outranks today's answer ———
+  //
+  // The best-supported rule available for loading irritated tissue is not
+  // about any single session: it is that pain must not build week on week. An
+  // athlete who reports the same elbow on most of their recent check-ins and
+  // keeps training is following the exact path that turns a fortnight off into
+  // a season off — and every per-session rail above will keep letting them
+  // through, because on any given day it is only a niggle.
+  const persistent = sig.persistentComplaint
+  if (persistent && persistent.region !== 'other') {
+    const label = REGION_NOUN[persistent.region]
+    if (persistent.worsening || persistent.region === 'elbow') {
+      loadPermission = 'none'
+      dayType = 'recovery'
+      strategy = 'technique'
+      queueUnlockAttempt = false
+      suggestMaxTest = false
+      dayReason = `Your ${label} has been flagged in ${persistent.count} of your last ${persistent.of} check-ins${
+        persistent.worsening ? ' and is getting worse, not better' : ''
+      }. Loaded work is off until it settles.`
+    } else {
+      volumeFactor = Math.min(volumeFactor, 0.7)
+      loadPermission = loadPermission === 'normal' ? 'reduced' : loadPermission
+      queueUnlockAttempt = false
+    }
+    decisions.push({
+      text: `Your ${label} has come up in ${persistent.count} of your last ${persistent.of} check-ins${
+        persistent.worsening ? ', and more of those were pain rather than a niggle than at the start' : ''
+      }. A single sore day is normal; the same area not settling across weeks is the signal that the current dose is more than it is tolerating. The usable rule from the tendon-rehab literature: discomfort should stay mild during and just after training, be back to normal by the next morning, and not build week on week. Yours is not doing that. ${
+        persistent.worsening
+          ? 'Please get it looked at by a clinician rather than working around it.'
+          : 'Back the load off until it does, or get it looked at.'
+      }`,
+      kind: 'warn',
+    })
+  }
+
   if (checkInFresh && sig.lastCheckIn?.energy === 'tired') {
     volumeFactor = Math.min(volumeFactor, 0.85)
     targetFactor = Math.min(targetFactor, 1)
@@ -988,6 +1082,61 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   if (dayType === 'recovery') {
     strategy = 'technique'
     queueUnlockAttempt = false
+  }
+
+  // ——— Tissue rails: applied last, where dayType is final ———
+  //
+  // These read the *load* rather than the athlete's report, so they belong
+  // after the check-in rails: on a pain or deload day the volume is already
+  // lower than anything they would ask for, and saying "volume stays where it
+  // is" next to "no loaded work today" would be two answers to one question.
+  const loadedDay = dayType !== 'deload' && dayType !== 'recovery'
+
+  // The one place "you got stronger" means "add nothing".
+  //
+  // A fast jump in what you can hold is mostly a jump in *neural* drive and
+  // skill: in the one study that measured all three monthly, strength rose
+  // nearly 30% by month two while muscle cross-section and tendon stiffness
+  // were both still unchanged. So the capacity of the tissue has not moved as
+  // far as the stopwatch suggests, and this is precisely the moment an app
+  // would normally reward the athlete with more work.
+  //
+  // Note this is deliberately *not* the popular "tendons lag muscle by two
+  // months" claim, which the same time-course data does not support — on
+  // detraining, muscle size decayed sooner than tendon did. The defensible
+  // version is narrower: early gains outrun tissue change, so hold the dose.
+  // It caps volume, not difficulty — an earned target rise still stands.
+  const capabilityJump = readCapabilityJump(state, state.stepId, now)
+  if (capabilityJump && loadedDay) {
+    volumeFactor = Math.min(volumeFactor, 0.85)
+    decisions.push({
+      text: `Your verified hold jumped ${capabilityJump.fromSec}s → ${capabilityJump.toSec}s inside a fortnight. Volume is being held rather than raised to match. A jump that fast is mostly your nervous system learning the position rather than new tissue — measured strength can climb by a third while muscle and tendon are both still unchanged — so the structures carrying the load have not caught up with what the stopwatch says. Reasoning rather than a measured rule, and it costs you almost nothing to respect.`,
+      kind: 'info',
+    })
+  }
+
+  const ramp = readLoadRamp(state, now)
+  if (ramp?.rampingFast && loadedDay) {
+    volumeFactor = Math.min(volumeFactor, 0.85)
+    decisions.push({
+      text: `Last week's planche-specific load was ${Math.round(
+        ramp.ratio * 100,
+      )}% of your own recent normal — a steeper climb than the ${Math.round(
+        (MAX_WEEKLY_LOAD_RAMP - 1) * 100,
+      )}% a week this app will encourage. Today is trimmed to bring it back in line. Load here is weighted by how hard each position is, so a long easy lean does not count the same as a short advanced tuck.`,
+      kind: 'warn',
+    })
+  }
+
+  // Progress that came from the shape rather than the strength.
+  const drift = readDifficultyDrift(state, state.stepId, now)
+  if (drift && drift.deltaPct < 0) {
+    decisions.push({
+      text: `Your recent holds on this step are being performed in a measurably easier position than they were a few weeks ago — the hips have drifted about ${Math.round(
+        Math.abs(drift.deltaPct) * 100,
+      )}% toward the next-easiest shape. A longer time in an easier position is not the same as getting stronger, so it is worth checking the side-on replay against the position checklist before trusting the trend.`,
+      kind: 'warn',
+    })
   }
 
   const shape = STRATEGY_BY_ID[strategy]
@@ -1087,6 +1236,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     accessoryEmphasis,
     limiter,
     plateau,
+    capabilityJump,
     volumeFactor: clampTo(volumeFactor, LIMITS.volume),
     loadPermission,
     askCheckIn,

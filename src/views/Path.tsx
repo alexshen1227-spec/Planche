@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import type { StepDef, Workout } from '../types'
+import type { StepDef, StepId, Workout } from '../types'
 import { useStore } from '../lib/store'
-import { STEPS } from '../data/progressions'
+import { STEPS, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { maxTestWorkout } from '../data/workouts'
 import { fmtHold, fmtDate } from '../lib/time'
@@ -11,11 +11,15 @@ import { Figure } from '../components/Figure'
 import { Modal } from '../components/ui'
 import { qualifyingProgress } from '../lib/progression'
 
+/** Destinations worth aiming at; the early steps are waypoints, not goals. */
+const GOAL_CHOICES: StepId[] = ['tuck', 'advtuck', 'straddle', 'full']
+
 export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
-  const { state } = useStore()
+  const { state, dispatch } = useStore()
   const [detail, setDetail] = useState<StepDef | null>(null)
 
   const currentOrder = STEPS.find((s) => s.id === state.stepId)?.order ?? 0
+  const goalStepId = state.profile.goalStepId ?? 'straddle'
 
   return (
     <div className="animate-rise">
@@ -23,6 +27,38 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
       <p className="mt-0.5 max-w-2xl text-[14px] leading-relaxed text-ink2">
         Eight steps from first plank to full flight. Tap any step for coaching, form cues and a max test.
       </p>
+
+      {/* Goal picker. Deliberately here rather than buried in Settings: the
+          goal decides which cooldown mobility appears and how far the app
+          says you have to go, so it belongs beside the road it describes. */}
+      <div className="mt-4 rounded-2xl border border-line bg-surface p-4 shadow-card">
+        <div className="text-[13px] font-semibold text-ink" id="path-goal">
+          What are you aiming at?
+        </div>
+        <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink3">
+          Your destination, not your current step. It shapes the mobility work in your sessions and how the app
+          measures the distance left.
+        </p>
+        <div className="mt-2.5 flex flex-wrap gap-1.5" role="radiogroup" aria-labelledby="path-goal">
+          {GOAL_CHOICES.map((id) => {
+            const on = goalStepId === id
+            return (
+              <button
+                key={id}
+                role="radio"
+                aria-checked={on}
+                onClick={() => dispatch({ type: 'SET_PROFILE', patch: { goalStepId: id } })}
+                className={`rounded-full border px-3.5 py-2 text-[13px] font-medium transition ${
+                  on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2 hover:text-ink'
+                }`}
+              >
+                {STEP_BY_ID[id].name}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px]">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-ok/25 bg-ok-soft px-3 py-1.5 font-medium text-ok">
           <Icon name="check" size={13} /> Clean hold

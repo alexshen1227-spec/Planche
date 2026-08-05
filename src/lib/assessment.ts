@@ -470,12 +470,16 @@ export const LEGACY_PLACEMENT_STEPS: StepId[] = ['foundations', 'lean', 'tuck', 
 /**
  * Which accessory the placement gaps argue for on the athlete's first sessions.
  *
+ * Takes ids rather than whole gaps so the saved `AssessmentRecord` — which
+ * keeps only the ids — can be passed straight in without reconstructing
+ * objects it never stored.
+ *
  * Deliberately a single answer rather than a list: a beginner given four
- * priorities has none. Wrists outrank everything because they are the most
- * common reason people stop training entirely.
+ * priorities has none. Wrist gaps are handled by the warm-up and the equipment
+ * advice instead, so they do not compete for this slot.
  */
-export function emphasisFromGaps(gaps: AssessmentGap[]): 'pressing' | 'core' | 'balance' | 'none' {
-  const ids = new Set(gaps.map((g) => g.id))
+export function emphasisFromGaps(gapIds: readonly string[]): 'pressing' | 'core' | 'balance' | 'none' {
+  const ids = new Set(gapIds)
   if (ids.has('pressing')) return 'pressing'
   if (ids.has('core')) return 'core'
   if (ids.has('balance')) return 'balance'

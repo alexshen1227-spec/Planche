@@ -1,4 +1,4 @@
-import type { AppState, CheckIn, Session, SetLog } from '../types'
+import type { AppState, BodyRegion, CheckIn, Session, SetLog } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { addDays, dayKey, weekStart } from './time'
@@ -192,6 +192,16 @@ export interface Signals {
   sideGap: SideGap | null
   lastCheckIn?: AppState['sessions'][number]['checkIn']
   daysSinceCheckIn: number | null
+  /**
+   * A complaint that keeps coming back rather than settling.
+   *
+   * The best-supported rule in the tendinopathy literature is not about a
+   * single session's pain level — it is that pain must not build week on week.
+   * One sore day is noise; the same region flagged across most recent
+   * check-ins is the signal that the current dose is not being tolerated, and
+   * it is the one thing a training log can actually watch for.
+   */
+  persistentComplaint: { region: BodyRegion; count: number; of: number; worsening: boolean } | null
 
   /** Fraction of last session's main sets that reached their target. */
   mainHitRate: number | null
@@ -571,6 +581,45 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
       ? Math.round((now - lastWithCheckIn.startedAt) / DAY)
       : null
 
+  // ——— A complaint that is not settling ———
+  //
+  // Deliberately looks across check-ins rather than at the latest one. The
+  // rails elsewhere already handle "it hurts today"; this catches the slower
+  // and more expensive pattern — the same region flagged again and again while
+  // the athlete keeps training through it, which is how a niggle becomes three
+  // months off. Fresh answers are included so a report made moments ago counts
+  // toward the run immediately.
+  const recentCheckIns = [
+    ...sessions
+      .filter((s) => s.checkIn && now - s.startedAt <= 28 * DAY)
+      .slice(-6)
+      .map((s) => s.checkIn!),
+    ...(freshCheckIn ? [freshCheckIn] : []),
+  ]
+  let persistentComplaint: Signals['persistentComplaint'] = null
+  if (recentCheckIns.length >= 3) {
+    const counts = new Map<BodyRegion, number>()
+    for (const c of recentCheckIns) {
+      if (c.joints === 'good') continue
+      for (const r of c.regions ?? []) counts.set(r, (counts.get(r) ?? 0) + 1)
+    }
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]
+    if (top && top[1] >= 3 && top[1] / recentCheckIns.length >= 0.5) {
+      // Worsening = the complaint escalated from niggle to pain across the run.
+      const flagged = recentCheckIns.filter((c) => (c.regions ?? []).includes(top[0]))
+      const firstHalf = flagged.slice(0, Math.floor(flagged.length / 2))
+      const lastHalf = flagged.slice(Math.floor(flagged.length / 2))
+      const painShare = (list: CheckIn[]) =>
+        list.length ? list.filter((c) => c.joints === 'pain').length / list.length : 0
+      persistentComplaint = {
+        region: top[0],
+        count: top[1],
+        of: recentCheckIns.length,
+        worsening: painShare(lastHalf) > painShare(firstHalf),
+      }
+    }
+  }
+
   return {
     restDays,
     lastRpe: last?.rpe,
@@ -582,6 +631,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     sideGap,
     lastCheckIn,
     daysSinceCheckIn,
+    persistentComplaint,
     mainHitRate,
     mainSetCount,
     mainMedian,

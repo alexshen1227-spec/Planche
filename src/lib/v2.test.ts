@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import type { AppState, FormCheck, Session, SetLog, StepId } from '../types'
+import type { AppState, BodyRegion, FormCheck, Session, SetLog, StepId } from '../types'
 import { initialState } from './store'
 import { readSignals } from './signals'
+import { buildPlan } from './coach'
+import {
+  CAPABILITY_JUMP_PCT,
+  LEVER_FRACTION,
+  readCapabilityJump,
+  weightedHoldSeconds,
+} from './loading'
 import { STEP_BY_ID } from '../data/progressions'
 import {
   CONFIDENCE_NOTE,
@@ -504,6 +511,142 @@ describe('recentBreakthrough', () => {
   })
 })
 
+// ————————————————————————— Tissue and pain rails —————————————————————————
+
+describe('capability jump and load ramp', () => {
+  it('holds volume after a big verified jump rather than rewarding it', () => {
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 60, value: 6 },
+        { daysAgo: 45, value: 6.5 },
+        { daysAgo: 30, value: 6 },
+        { daysAgo: 20, value: 6.5 },
+        { daysAgo: 5, value: 11 },
+      ]),
+    )
+    const jump = readCapabilityJump(state, 'tuck', NOW)
+    expect(jump).not.toBeNull()
+    expect(jump!.gainPct).toBeGreaterThanOrEqual(CAPABILITY_JUMP_PCT)
+
+    const plan = buildPlan(state, NOW)
+    expect(plan.capabilityJump).not.toBeNull()
+    expect(plan.volumeFactor).toBeLessThanOrEqual(0.85)
+    // The claim it makes must be the defensible one about neural gains, not
+    // the popular "tendons lag muscle by two months" overstatement.
+    const text = plan.decisions.map((d) => d.text).join(' ')
+    expect(text).toMatch(/nervous system|tissue/i)
+  })
+
+  it('does not fire on ordinary week-to-week progress', () => {
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 60, value: 8 },
+        { daysAgo: 45, value: 8.5 },
+        { daysAgo: 30, value: 9 },
+        { daysAgo: 15, value: 9.5 },
+        { daysAgo: 4, value: 10 },
+      ]),
+    )
+    expect(readCapabilityJump(state, 'tuck', NOW)).toBeNull()
+  })
+
+  it('weights hold volume by how hard the position is', () => {
+    // 30s of planche lean is not 30s of advanced tuck, and summing them
+    // unweighted makes an athlete look like they trained less as they improve.
+    const lean = weightedHoldSeconds({
+      ...historyOf('lean', [{ daysAgo: 1, value: 30 }])[0],
+    })
+    const advTuck = weightedHoldSeconds({
+      ...historyOf('advtuck', [{ daysAgo: 1, value: 10 }])[0],
+    })
+    expect(lean).toBeCloseTo(30 * LEVER_FRACTION['planche-lean'], 5)
+    expect(advTuck).toBeCloseTo(10 * LEVER_FRACTION['adv-tuck-planche'], 5)
+    // A third of the stopwatch time, but comparable real load.
+    expect(advTuck / lean).toBeGreaterThan(0.5)
+  })
+
+  it('orders the lever table the same way the road does', () => {
+    const ladder = ['ppp-hold', 'planche-lean', 'tuck-planche', 'adv-tuck-planche', 'straddle-planche', 'full-planche']
+    for (let i = 1; i < ladder.length; i++) {
+      expect(LEVER_FRACTION[ladder[i]]).toBeGreaterThan(LEVER_FRACTION[ladder[i - 1]])
+    }
+    expect(LEVER_FRACTION['full-planche']).toBe(1)
+  })
+})
+
+describe('persistent complaint rail', () => {
+  function withCheckIns(checkIns: { daysAgo: number; joints: 'good' | 'niggle' | 'pain'; regions?: BodyRegion[] }[]) {
+    const sessions: Session[] = checkIns.map((c, i) => {
+      const at = NOW - c.daysAgo * DAY
+      return {
+        id: `ci-${i}`,
+        startedAt: at,
+        endedAt: at + 60_000,
+        workoutName: 'Session',
+        workoutKind: 'auto' as const,
+        stepId: 'tuck' as StepId,
+        sets: [holdSet('tuck-planche', 8, at)],
+        checkIn: { joints: c.joints, energy: 'ok' as const, at, ...(c.regions ? { regions: c.regions } : {}) },
+      }
+    })
+    return stateWith('tuck', sessions)
+  }
+
+  it('notices the same region flagged again and again', () => {
+    const state = withCheckIns([
+      { daysAgo: 20, joints: 'niggle', regions: ['elbow'] },
+      { daysAgo: 14, joints: 'niggle', regions: ['elbow'] },
+      { daysAgo: 8, joints: 'niggle', regions: ['elbow'] },
+      { daysAgo: 3, joints: 'niggle', regions: ['elbow'] },
+    ])
+    const sig = readSignals(state, NOW)
+    expect(sig.persistentComplaint).not.toBeNull()
+    expect(sig.persistentComplaint!.region).toBe('elbow')
+    // An elbow that keeps recurring stops loaded work outright.
+    const plan = buildPlan(state, NOW)
+    expect(plan.loadPermission).toBe('none')
+    expect(plan.decisions.map((d) => d.text).join(' ')).toMatch(/next morning|week on week|not settling|clinician/i)
+  })
+
+  it('escalates when the same region turns from niggle into pain', () => {
+    const state = withCheckIns([
+      { daysAgo: 24, joints: 'niggle', regions: ['wrist'] },
+      { daysAgo: 18, joints: 'niggle', regions: ['wrist'] },
+      { daysAgo: 10, joints: 'pain', regions: ['wrist'] },
+      { daysAgo: 3, joints: 'pain', regions: ['wrist'] },
+    ])
+    const sig = readSignals(state, NOW)
+    expect(sig.persistentComplaint?.worsening).toBe(true)
+    const plan = buildPlan(state, NOW)
+    expect(plan.loadPermission).toBe('none')
+    expect(plan.decisions.map((d) => d.text).join(' ')).toMatch(/clinician/i)
+  })
+
+  it('stays quiet for an isolated sore day', () => {
+    const state = withCheckIns([
+      { daysAgo: 20, joints: 'good' },
+      { daysAgo: 14, joints: 'good' },
+      { daysAgo: 8, joints: 'niggle', regions: ['wrist'] },
+      { daysAgo: 3, joints: 'good' },
+    ])
+    expect(readSignals(state, NOW).persistentComplaint).toBeNull()
+  })
+
+  it('never invents a complaint from check-ins with no region recorded', () => {
+    // Legacy check-ins predate regions entirely; they must not be read as
+    // "everything hurts" nor crash the rail.
+    const state = withCheckIns([
+      { daysAgo: 20, joints: 'niggle' },
+      { daysAgo: 14, joints: 'niggle' },
+      { daysAgo: 8, joints: 'pain' },
+      { daysAgo: 3, joints: 'niggle' },
+    ])
+    expect(readSignals(state, NOW).persistentComplaint).toBeNull()
+  })
+})
+
 // ————————————————————————————— Assessment —————————————————————————————
 
 describe('assessment ladder', () => {
@@ -681,7 +824,7 @@ describe('placeFromAssessment', () => {
       'frog-stand': 0,
       'tuck-planche': 16,
     })
-    expect(['pressing', 'core', 'balance', 'none']).toContain(emphasisFromGaps(many.gaps))
+    expect(["pressing", "core", "balance", "none"]).toContain(emphasisFromGaps(many.gaps.map((g) => g.id)))
   })
 
   it('has a standard on every measured item so answers mean the same thing', () => {

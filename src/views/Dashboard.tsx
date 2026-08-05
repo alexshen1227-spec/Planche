@@ -6,8 +6,10 @@ import { EXERCISE_BY_ID } from '../data/exercises'
 import { todaysSession, maxTestWorkout, TEMPLATES } from '../data/workouts'
 import { tipOfTheDay } from '../data/tips'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
-import { sessionsInWeekOf, weekStreak, totalHoldSec, sessionHighlight, paceToUnlock } from '../lib/stats'
+import { sessionsInWeekOf, weekStreak, totalHoldSec, sessionHighlight } from '../lib/stats'
 import { buildPlan, STRATEGY_BY_ID, coachConfidence } from '../lib/coach'
+import { CONFIDENCE_NOTE, describeForecast, forecastUnlock, goalOutlook } from '../lib/forecast'
+import { PLATEAU_LABEL, recentBreakthrough } from '../lib/plateau'
 import { qualifyingProgress } from '../lib/progression'
 import { addDays, dayKey, fmtDate, fmtDuration, fmtHold, weekStart } from '../lib/time'
 import { exportData } from '../lib/exportImport'
@@ -70,8 +72,10 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
   const tut = totalHoldSec(state)
   const trainedToday = state.sessions.some((s) => dayKey(s.startedAt) === dayKey(Date.now()))
   const tip = tipOfTheDay()
-  const pace = paceToUnlock(state)
+  const forecast = useMemo(() => forecastUnlock(state), [state])
+  const outlook = useMemo(() => goalOutlook(state), [state])
   const plan = useMemo(() => buildPlan(state), [state])
+  const breakthrough = useMemo(() => recentBreakthrough(state), [state])
   const confidence = useMemo(() => coachConfidence(state), [state])
   // Only three decisions fit the card. Warnings are picked first — a safety
   // rail's "joint pain reported" must never be squeezed out by an FYI that
@@ -151,11 +155,33 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
                   </>
                 )}
               </div>
-              {pace && next ? (
-                <div className="mt-0.5 text-[12.5px] font-medium text-accent">
-                  {pace.weeks === 0
-                    ? 'Attempt ready — you can clear this bar. Test it.'
-                    : `On pace to unlock in ~${pace.weeks} week${pace.weeks === 1 ? '' : 's'}`}
+              {next ? (
+                <div className="mt-1 sm:flex sm:justify-end">
+                  <div className="max-w-xs sm:text-right">
+                    {forecast.kind === 'ready' ? (
+                      <span className="text-[12.5px] font-medium text-accent-text">
+                        Attempt ready — you have already held this bar. Test it.
+                      </span>
+                    ) : forecast.kind === 'range' ? (
+                      <>
+                        <span className="text-[12.5px] font-medium text-accent-text">
+                          {describeForecast(forecast)} at your measured rate
+                        </span>
+                        <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink3">
+                          {CONFIDENCE_NOTE[forecast.confidence]}
+                        </div>
+                      </>
+                    ) : forecast.kind === 'not-trending' ? (
+                      <span className="text-[12.5px] leading-relaxed text-ink3">
+                        No date yet — {forecast.points} measured sessions and the trend is flat, so any number would
+                        be invented.
+                      </span>
+                    ) : (
+                      <span className="text-[12.5px] leading-relaxed text-ink3">
+                        No forecast yet — {forecast.need}
+                      </span>
+                    )}
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -186,6 +212,60 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
           </button>
         </div>
       </div>
+
+      {/* A named stall, or a real jump. Neither is filler: the card only
+          exists when the log supports one, so an athlete who is simply
+          progressing normally never sees it. */}
+      {plan.plateau ? (
+        <div
+          className="animate-rise mt-4 rounded-2xl border border-line bg-surface p-5 shadow-card"
+          style={{ animationDelay: '20ms' }}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-ink3">
+              <Icon name="chart" size={15} />
+              {plan.plateau.status === 'regressing' ? 'Going backwards' : 'Plateau'}
+            </span>
+            <span className="rounded-full border border-line bg-raised px-3 py-1 text-[12.5px] font-semibold text-ink2">
+              {PLATEAU_LABEL[plan.plateau.cause]}
+            </span>
+            <span className="text-[12.5px] text-ink3">
+              {plan.plateau.confidence === 'good'
+                ? 'confident read'
+                : plan.plateau.confidence === 'moderate'
+                  ? 'likely cause'
+                  : 'best guess'}
+            </span>
+          </div>
+          <h2 className="mt-2 font-display text-[17px] font-semibold text-ink">
+            {plan.plateau.weeksFlat} week{plan.plateau.weeksFlat === 1 ? '' : 's'} without moving the{' '}
+            {keyEx.name.toLowerCase()}
+          </h2>
+          <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">{plan.plateau.evidence}</p>
+          <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink">{plan.plateau.intervention}</p>
+          {plan.plateau.suggestMaxTest ? (
+            <button
+              onClick={() => startWorkout(maxTestWorkout(state.stepId))}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-line bg-raised px-4 py-2.5 text-[13.5px] font-medium text-ink transition hover:border-line-strong"
+            >
+              <Icon name="target" size={15} /> Run a max test
+            </button>
+          ) : null}
+        </div>
+      ) : breakthrough ? (
+        <div
+          className="animate-rise mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-ok/25 bg-ok-soft px-5 py-3.5"
+          style={{ animationDelay: '20ms' }}
+        >
+          <Icon name="sparkle" size={17} className="shrink-0 text-ok" />
+          <span className="text-[14px] leading-relaxed text-ink">
+            <span className="font-semibold">
+              Your verified {keyEx.name.toLowerCase()} is up {breakthrough.gainSec}s
+            </span>{' '}
+            on where it sat a month ago. That is real, camera-checked progress rather than a stopwatch number.
+          </span>
+        </div>
+      ) : null}
 
       {/* Backup nudge once real history has accumulated */}
       {state.sessions.length >= 8 &&
@@ -326,6 +406,40 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
               ? 'Learning starts after your first couple of sessions'
               : `${confidence.evaluated} session${confidence.evaluated === 1 ? '' : 's'} measured · ${confidence.tested}/5 approaches tested`}
           </span>
+        </div>
+      </div>
+
+      {/* Where the road ends, and how honestly far that is */}
+      <div
+        className="animate-rise mt-4 rounded-2xl border border-line bg-surface p-5 shadow-card"
+        style={{ animationDelay: '125ms' }}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-ink3">
+              <Icon name="route" size={15} /> Your goal
+            </div>
+            <h2 className="mt-1.5 font-display text-[17px] font-semibold text-ink">
+              {STEP_BY_ID[outlook.goalStepId].name}
+              {outlook.stepsRemaining > 0 ? (
+                <span className="ml-2 text-[13.5px] font-medium text-ink2">
+                  {outlook.stepsRemaining} step{outlook.stepsRemaining === 1 ? '' : 's'} to go
+                </span>
+              ) : null}
+            </h2>
+            {outlook.estimate ? (
+              <div className="mt-1 text-[13.5px] font-medium text-accent-text">
+                Roughly {outlook.estimate.lowWeeks}–{outlook.estimate.highWeeks} weeks at your own measured pace
+              </div>
+            ) : null}
+            <p className="mt-1 max-w-xl text-[12.5px] leading-relaxed text-ink3">{outlook.note}</p>
+          </div>
+          <button
+            onClick={() => go('path')}
+            className="shrink-0 rounded-lg border border-line bg-raised px-3 py-2 text-[12.5px] font-medium text-ink2 transition hover:text-ink"
+          >
+            Change goal →
+          </button>
         </div>
       </div>
 

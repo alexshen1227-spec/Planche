@@ -580,6 +580,8 @@ export type Action =
       units: Units
       weightKg?: number
       heightCm?: number
+      /** Absent when the athlete skipped the placement interview. */
+      assessment?: AssessmentRecord
     }
   | { type: 'SET_VIDEO'; exerciseId: string; url: string | null }
   | { type: 'LOG_MEASUREMENT'; weightKg?: number; heightCm?: number }
@@ -617,6 +619,7 @@ function reducer(state: AppState, action: Action): AppState {
         stepId: action.stepId,
         baseStepId: action.stepId,
         unlocked,
+        ...(action.assessment ? { assessment: action.assessment } : {}),
         profile: { ...action.profile, heightCm: action.heightCm ?? action.profile.heightCm },
         measurements:
           action.weightKg !== undefined || action.heightCm !== undefined
