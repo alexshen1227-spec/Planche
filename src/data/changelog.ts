@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-05',
+    title: 'Small things that were quietly broken',
+    area: 'app',
+    notes: [
+      'Messages about something going wrong now wait for you instead of disappearing. "Could not delete form clips, so no data was reset" used to vanish after three and a half seconds with no way to bring it back — which is how you end up believing your data was cleared when it was not. Failures now stay until you close them; everything else still passes on its own.',
+      'Charts finally work on a phone. Every tooltip was mouse-only, so on a touchscreen there was no way to read an exact value off any of them. Tap or drag along a chart to read it — and dragging up and down still scrolls the page normally.',
+      'The form comparison now explains itself when there is nothing to compare: recordings are cleared after 30 days, and pinning one from its exercise guide keeps it for good, which gives you a permanent "before" to measure the next few months against.',
+    ],
+  },
+  {
+    date: '2026-08-05',
     title: 'Form over time',
     area: 'camera',
     notes: [

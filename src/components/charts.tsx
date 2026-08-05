@@ -134,8 +134,15 @@ export function HoldLineChart({
       <svg
         width={w}
         height={height}
-        onMouseMove={onMove}
-        onMouseLeave={() => setTip(null)}
+        onPointerMove={onMove}
+        onPointerDown={onMove}
+        onPointerLeave={(e) => {
+          // Keep the reading visible after a tap; only a departing mouse
+          // clears it, since a finger has nowhere to "leave" to.
+          if (e.pointerType === 'mouse') setTip(null)
+        }}
+        // Horizontal drags scrub the chart, vertical ones still scroll the page.
+        style={{ touchAction: 'pan-y' }}
         className="block"
         role="img"
         aria-label={summary}
@@ -239,7 +246,15 @@ export function TrainingHeatmap({ sessions, weeks = 16 }: { sessions: Session[];
 
   return (
     <div className="relative overflow-x-auto">
-      <svg width={w} height={h} className="block" onMouseLeave={() => setTip(null)}>
+      <svg
+        width={w}
+        height={h}
+        className="block"
+        onPointerLeave={(e) => {
+          if (e.pointerType === 'mouse') setTip(null)
+        }}
+        style={{ touchAction: 'pan-y' }}
+      >
         {monthLabels.map((m) => (
           <text key={m.x} x={m.x} y={10} fontSize={10.5} fill="var(--t-ink3)">
             {m.label}
@@ -283,8 +298,9 @@ export function TrainingHeatmap({ sessions, weeks = 16 }: { sessions: Session[];
               fillOpacity={lv === 0 ? 1 : (FILL[lv] as number)}
               stroke={k === today ? 'var(--t-accent)' : 'none'}
               strokeWidth={k === today ? 1.5 : 0}
-              onMouseEnter={hover}
-              onMouseMove={hover}
+              onPointerEnter={hover}
+              onPointerMove={hover}
+              onPointerDown={hover}
             />
           )
         })}
@@ -364,7 +380,10 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
       <svg
         width={w}
         height={height}
-        onMouseLeave={() => setTip(null)}
+        onPointerLeave={(e) => {
+          if (e.pointerType === 'mouse') setTip(null)
+        }}
+        style={{ touchAction: 'pan-y' }}
         className="block"
         role="img"
         aria-label={summary}
@@ -394,7 +413,7 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
               ],
             })
           return (
-            <g key={wk.start} onMouseEnter={hover} onMouseMove={hover}>
+            <g key={wk.start} onPointerEnter={hover} onPointerMove={hover} onPointerDown={hover}>
               <rect x={pad.l + slot * i} y={pad.t} width={slot} height={ih} fill="transparent" />
               {ph > 0 ? (
                 <path

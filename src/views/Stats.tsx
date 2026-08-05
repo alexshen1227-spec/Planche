@@ -18,6 +18,7 @@ import {
   type FormComparison,
 } from '../lib/formTrend'
 import { ClipPlayer } from '../components/ClipPlayer'
+import { CLIP_RETENTION_DAYS } from '../lib/clips'
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle, Stat } from '../components/ui'
 import { pushToast } from '../lib/toast'
@@ -127,6 +128,17 @@ function FormTrendCard() {
                 · {fmtDate(result.comparison.from.at)} vs {fmtDate(result.comparison.to.at)}
               </span>
             </button>
+          ) : null}
+
+          {/* Recordings are pruned, so the comparison window silently shrinks
+              to the retention period unless a clip is pinned. Said once, here,
+              at the moment it is relevant — not as a standing banner. */}
+          {result.comparison === null ? (
+            <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">
+              No two clips left to compare — recordings are cleared after {CLIP_RETENTION_DAYS} days to keep the app
+              off your storage. Pin one from its exercise guide in Learn and it is kept indefinitely, which gives you a
+              permanent "before" to hold the next months against.
+            </p>
           ) : null}
 
           {result.skipped.length > 0 ? (

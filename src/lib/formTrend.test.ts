@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, AutoForm, Session, SetLog } from '../types'
 import { initialState } from './store'
+import { dismissToast, pushToast, subscribeToasts, type Toast } from './toast'
 import { MATERIAL_TOLERANCE } from './poseForm'
 import {
   MIN_TREND_POINTS,
@@ -322,5 +323,38 @@ describe('filmedExercises', () => {
 
   it('returns nothing for an athlete who has never filmed', () => {
     expect(filmedExercises(stateOf([]))).toEqual([])
+  })
+})
+
+describe('failure messages wait to be read', () => {
+  it('keeps a danger toast until it is dismissed, and times the rest out', async () => {
+    const seen: Toast[][] = []
+    const stop = subscribeToasts((t) => seen.push([...t]))
+
+    pushToast('Set logged.', 'success', 20)
+    pushToast('Could not delete form clips, so no data was reset.', 'danger')
+
+    const live = () => seen[seen.length - 1]
+    expect(live().map((t) => t.kind)).toEqual(['success', 'danger'])
+    expect(live().find((t) => t.kind === 'danger')!.sticky).toBe(true)
+    expect(live().find((t) => t.kind === 'success')!.sticky).toBeUndefined()
+
+    // The passing one goes on its own; the failure does not.
+    await new Promise((r) => setTimeout(r, 60))
+    expect(live().map((t) => t.kind)).toEqual(['danger'])
+
+    dismissToast(live()[0].id)
+    expect(live()).toEqual([])
+    stop()
+  })
+
+  it('ignores a dismiss for a toast that is already gone', () => {
+    const seen: Toast[][] = []
+    const stop = subscribeToasts((t) => seen.push([...t]))
+    const before = seen.length
+    dismissToast(999_999)
+    // No spurious re-render for a no-op.
+    expect(seen.length).toBe(before)
+    stop()
   })
 })
