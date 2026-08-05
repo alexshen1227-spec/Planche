@@ -766,6 +766,213 @@ describe('capability jump and load ramp', () => {
   })
 })
 
+/**
+ * Every case below was a mutation that survived an independent review — the
+ * suite passed against deliberately broken code. They are grouped together
+ * because they share a cause: the assertions around these rails checked the
+ * *wording* rather than the decision, so removing the decision changed nothing
+ * a test could see.
+ */
+describe('rails that a mutation test proved were unpinned', () => {
+  const at = (d: number) => NOW - d * DAY
+
+  /** Check-ins old enough that `checkInFresh` is false — only the persistent rail can fire. */
+  function staleComplaint(region: BodyRegion, joints: 'niggle' | 'pain' = 'niggle'): AppState {
+    const sessions: Session[] = [26, 20, 14, 9].map((daysAgo, i) => ({
+      id: `sc-${i}`,
+      startedAt: at(daysAgo),
+      endedAt: at(daysAgo) + 60_000,
+      workoutName: 'Session',
+      workoutKind: 'auto' as const,
+      stepId: 'tuck' as StepId,
+      sets: [holdSet('tuck-planche', 8, at(daysAgo))],
+      checkIn: { joints, energy: 'ok' as const, at: at(daysAgo), regions: [region] },
+    }))
+    return stateWith('tuck', sessions)
+  }
+
+  it('stops loaded work for a recurring elbow even when no check-in is recent', () => {
+    // The previous test for this passed through the *fresh niggle* elbow rail
+    // because its newest check-in was three days old. With a nine-day-old
+    // check-in only the persistent rail can act — and it must.
+    const plan = buildPlan(staleComplaint('elbow'), NOW)
+    expect(plan.signals.daysSinceCheckIn).toBeGreaterThan(7)
+    expect(plan.loadPermission).toBe('none')
+    expect(plan.dayType).toBe('recovery')
+    expect(plan.suggestMaxTest).toBe(false)
+  })
+
+  it('backs the dose off for a recurring non-elbow complaint', () => {
+    const plan = buildPlan(staleComplaint('shoulder'), NOW)
+    expect(plan.volumeFactor).toBeLessThanOrEqual(0.7)
+    expect(plan.loadPermission).toBe('reduced')
+    expect(plan.queueUnlockAttempt).toBe(false)
+  })
+
+  it('never offers a max test or a target rise to tissue that is complaining', () => {
+    // The combination an independent review actually produced: "the current
+    // dose is more than it is tolerating" alongside "nudging the target up 5%"
+    // and "a max test today would calibrate every target".
+    for (const region of ['shoulder', 'wrist', 'lower-back'] as BodyRegion[]) {
+      const plan = buildPlan(staleComplaint(region), NOW)
+      expect(plan.suggestMaxTest).toBe(false)
+      expect(plan.targetFactor).toBeLessThanOrEqual(1)
+      expect(plan.dayType).not.toBe('push')
+      const text = plan.decisions.map((d) => d.text).join(' ')
+      expect(text).not.toMatch(/max test today would calibrate|nudging the target up/i)
+    }
+  })
+
+  it('keeps the clinician referral in the pain-day message itself', () => {
+    // The old assertion matched the *persistent complaint* text, so deleting
+    // the referral from the pain-day line changed nothing a test could see.
+    const plan = buildPlan(stateWith('tuck', []), NOW, {
+      joints: 'pain',
+      energy: 'ok',
+      at: NOW,
+    })
+    const painLine = plan.decisions.find((d) => /Joint pain reported/i.test(d.text))
+    expect(painLine).toBeDefined()
+    expect(painLine!.text).toMatch(/clinician/i)
+  })
+
+  it('never suggests a max test on a fresh pain day', () => {
+    const plan = buildPlan(stateWith('tuck', []), NOW, { joints: 'pain', energy: 'ok', at: NOW })
+    expect(plan.suggestMaxTest).toBe(false)
+    expect(plan.queueUnlockAttempt).toBe(false)
+  })
+
+  it('does not warn about a fast ramp when the athlete barely trains', () => {
+    // Removing the frequency guard reproduces "ramping too fast" beside "not
+    // enough exposure" — the contradiction the guard exists to prevent.
+    const sessions: Session[] = [84, 60, 40, 6].map((daysAgo, i) => ({
+      id: `lr-${i}`,
+      startedAt: at(daysAgo),
+      endedAt: at(daysAgo) + 60_000,
+      workoutName: 'Session',
+      workoutKind: 'auto' as const,
+      stepId: 'tuck' as StepId,
+      sets: Array.from({ length: 8 }, () => holdSet('tuck-planche', 9, at(daysAgo))),
+    }))
+    const plan = buildPlan(stateWith('tuck', sessions), NOW)
+    expect(plan.signals.sessionsPerWeek).toBeLessThan(2)
+    expect(plan.decisions.map((d) => d.text).join(' ')).not.toMatch(/steeper climb/i)
+  })
+
+  it('needs two credible completed steps before quoting a goal duration', () => {
+    // One comparable duration used to be enough once the early-step filter
+    // was in place, so relaxing the guard to `< 1` went unnoticed.
+    const sessions: Session[] = [
+      ...historyOf('tuck', [{ daysAgo: 200, value: 8 }]),
+      ...historyOf('advtuck', [{ daysAgo: 120, value: 8 }]),
+    ]
+    const state = stateWith('advtuck', sessions, {
+      profile: { ...initialState().profile, goalStepId: 'straddle' },
+    })
+    expect(goalOutlook(state, NOW).estimate).toBeNull()
+  })
+
+  it('refuses a goal duration built from steps cleared in days', () => {
+    // An athlete placed high logs one session per step on the way up. Those
+    // are not durations, and they produced "1-2 weeks" to a full planche.
+    const sessions: Session[] = [
+      ...historyOf('tuck', [{ daysAgo: 30, value: 8 }]),
+      ...historyOf('advtuck', [{ daysAgo: 28, value: 8 }]),
+      ...historyOf('oneleg', [{ daysAgo: 26, value: 5 }]),
+      ...historyOf('straddle', [{ daysAgo: 24, value: 4 }]),
+    ]
+    const state = stateWith('straddle', sessions, {
+      profile: { ...initialState().profile, goalStepId: 'full' },
+    })
+    const o = goalOutlook(state, NOW)
+    expect(o.estimate).toBeNull()
+    expect(o.note).not.toMatch(/\d+\s*[–-]\s*\d+\s*weeks/)
+    expect(o.note).not.toMatch(/typically 0 weeks/)
+  })
+
+  it('refuses a number rather than forecasting twenty-one years', () => {
+    // A barely-positive rate put the *near* edge 1095 weeks out, printed
+    // beside a basis line that rounded the same rate to "+0.0s a week".
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 199, value: 5.0 },
+        { daysAgo: 150, value: 5.1 },
+        { daysAgo: 100, value: 5.15 },
+        { daysAgo: 50, value: 5.25 },
+        { daysAgo: 2, value: 5.3 },
+      ]),
+    )
+    const f = forecastUnlock(state, 'tuck', NOW)
+    expect(f.kind).toBe('not-trending')
+    expect(describeForecast(f)).not.toMatch(/\d{3,}/)
+    if (f.kind === 'not-trending') expect(f.basis).toMatch(/years at this rate/i)
+  })
+
+  it('never quotes a near edge beyond the stated horizon', () => {
+    for (let i = 0; i < 60; i++) {
+      const drift = 0.02 + i * 0.03
+      const state = stateWith(
+        'tuck',
+        historyOf(
+          'tuck',
+          [180, 140, 100, 60, 3].map((daysAgo, k) => ({ daysAgo, value: 4 + k * drift })),
+        ),
+      )
+      const f = forecastUnlock(state, 'tuck', NOW)
+      if (f.kind !== 'range') continue
+      expect(f.lowWeeks).toBeLessThanOrEqual(MAX_FORECAST_WEEKS)
+    }
+  })
+
+  it('rejects an imported set naming an exercise that does not exist', () => {
+    const s = normalizeState({
+      version: 6,
+      onboarded: true,
+      sessions: [
+        {
+          id: 'x',
+          startedAt: NOW,
+          endedAt: NOW,
+          workoutName: 'S',
+          workoutKind: 'auto',
+          stepId: 'tuck',
+          sets: [
+            { exerciseId: 'not-a-real-exercise', kind: 'hold', value: 999, target: 1, section: 'main', at: NOW },
+            { exerciseId: 'tuck-planche', kind: 'hold', value: 8, target: 8, section: 'main', at: NOW },
+          ],
+        },
+      ],
+    })
+    expect(s.sessions[0].sets).toHaveLength(1)
+    expect(s.sessions[0].sets[0].exerciseId).toBe('tuck-planche')
+  })
+
+  it('keeps the deload copy free of the claim the evidence does not support', () => {
+    // "Adaptation lands during recovery" survived in the plateau module after
+    // being removed from the coach — the changelog told athletes otherwise.
+    const sessions: Session[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `ur-${i}`,
+      startedAt: at(60 - i * 6),
+      endedAt: at(60 - i * 6) + 60_000,
+      workoutName: 'Session',
+      workoutKind: 'auto' as const,
+      stepId: 'tuck' as StepId,
+      rpe: 9.5,
+      sets: Array.from({ length: 6 }, () => holdSet('tuck-planche', 8, at(60 - i * 6))),
+    }))
+    const state = stateWith('tuck', sessions)
+    const verdict = diagnosePlateau(state, readSignals(state, NOW), NOW)
+    const allCopy = [
+      verdict?.intervention ?? '',
+      ...buildPlan(state, NOW).decisions.map((d) => d.text),
+      buildPlan(state, NOW).limiter?.prescription ?? '',
+    ].join(' ')
+    expect(allCopy).not.toMatch(/lands during recovery|strength lands/i)
+    expect(allCopy).not.toMatch(/slowest tissue/i)
+  })
+})
+
 describe('hard limits actually permit the reductions the rails ask for', () => {
   // Regression guard: LIMITS.volume was briefly clamped to [1, 1], which
   // silently made every volume reduction a no-op — deload days, pain days and

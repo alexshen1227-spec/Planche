@@ -114,7 +114,7 @@ function ExercisePane() {
                 <div className="font-display text-[16px] font-semibold leading-snug text-ink">{e.name}</div>
                 <span
                   className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
-                    e.type === 'hold' ? 'bg-accent-soft text-accent' : 'bg-info-soft text-info'
+                    e.type === 'hold' ? 'bg-accent-soft text-accent-text' : 'bg-info-soft text-info-text'
                   }`}
                 >
                   {e.type}
@@ -128,7 +128,7 @@ function ExercisePane() {
                   ))}
                 </div>
                 <span className="flex items-center gap-2 text-[12.5px] text-ink3">
-                  {pinned ? <Icon name="play" size={12} className="text-accent" /> : null}
+                  {pinned ? <Icon name="play" size={12} className="text-accent-text" /> : null}
                   {pr ? (
                     <span className="font-medium text-ink2 tnum">
                       best {e.type === 'hold' ? fmtHold(pr.value) : `${pr.value} reps`}
@@ -182,7 +182,7 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
     <div className="mt-4 rounded-2xl border border-line bg-raised p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
-          <Icon name="play" size={14} className="text-accent" /> Demo video
+          <Icon name="play" size={14} className="text-accent-text" /> Demo video
         </div>
         <div className="flex items-center gap-2">
           <a
@@ -221,7 +221,7 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
               dispatch({ type: 'SET_VIDEO', exerciseId: exercise.id, url: null })
               pushToast('Pinned video removed.', 'info')
             }}
-            className="mt-2 text-[12.5px] font-medium text-ink3 hover:text-danger"
+            className="mt-2 text-[12.5px] font-medium text-ink3 hover:text-danger-text"
           >
             Remove pinned video
           </button>
@@ -265,12 +265,12 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
     <div className="p-6 sm:p-8">
       <div className="pr-10">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[12.5px] font-semibold uppercase tracking-wider text-accent">
+          <span className="text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
             {CATEGORY_LABEL[e.category]}
           </span>
           <span
             className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
-              e.type === 'hold' ? 'bg-accent-soft text-accent' : 'bg-info-soft text-info'
+              e.type === 'hold' ? 'bg-accent-soft text-accent-text' : 'bg-info-soft text-info-text'
             }`}
           >
             {e.type === 'hold' ? 'timed hold' : 'reps'}
@@ -305,7 +305,7 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
       {isFilmable(e.id) ? (
         <div className="mt-4 rounded-2xl border border-line bg-raised p-4">
           <div className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
-            <Icon name="monitor" size={14} className="text-accent" /> Your recorded sets
+            <Icon name="monitor" size={14} className="text-accent-text" /> Your recorded sets
           </div>
           <p className="mt-1 text-[12.5px] leading-relaxed text-ink3">
             Compare your current position against an older one — pin a clip to keep it as your reference.
@@ -319,7 +319,7 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
         <ol className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
           {e.howTo.map((s, i) => (
             <li key={s} className="flex gap-2.5">
-              <span className="font-display font-semibold text-accent tnum">{i + 1}</span>
+              <span className="font-display font-semibold text-accent-text tnum">{i + 1}</span>
               {s}
             </li>
           ))}
@@ -328,7 +328,7 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-line bg-raised p-4">
-          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-ok">
+          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-ok-text">
             <Icon name="check" size={14} /> Cues
           </div>
           <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
@@ -341,7 +341,7 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
           </ul>
         </div>
         <div className="rounded-2xl border border-line bg-raised p-4">
-          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-danger">
+          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-danger-text">
             <Icon name="x" size={14} /> Watch out for
           </div>
           <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
@@ -387,7 +387,7 @@ function BasicsPane() {
             <div className="text-[26px]">{g.icon}</div>
             <div className="mt-1.5 font-display text-[16px] font-semibold text-ink">{g.title}</div>
             <p className="mt-1 text-[13px] leading-relaxed text-ink2">{g.summary}</p>
-            <div className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-accent">
+            <div className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-accent-text">
               Read <Icon name="chevronR" size={14} />
             </div>
           </button>
@@ -408,7 +408,7 @@ function BasicsPane() {
           <div key={t.term} className="rounded-2xl border border-line bg-surface p-4 shadow-card">
             <div className="flex flex-wrap items-baseline gap-x-2">
               <span className="font-display text-[15px] font-semibold text-ink">{t.term}</span>
-              <span className="text-[13px] text-accent">{t.short}</span>
+              <span className="text-[13px] text-accent-text">{t.short}</span>
             </div>
             <p className="mt-1 text-[13px] leading-relaxed text-ink2">{t.detail}</p>
           </div>
@@ -451,7 +451,7 @@ function BasicsPane() {
                   {s.link ? (
                     <a
                       href={s.link.href}
-                      className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-accent/30 bg-accent-soft px-4 py-2 text-[13.5px] font-semibold text-accent transition hover:brightness-105"
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-accent/30 bg-accent-soft px-4 py-2 text-[13.5px] font-semibold text-accent-text transition hover:brightness-105"
                     >
                       {s.link.label} <Icon name="chevronR" size={14} />
                     </a>

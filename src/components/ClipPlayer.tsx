@@ -239,7 +239,7 @@ export function ClipPlayer({
             title="What the form checker saw"
             className={`absolute left-2 top-2 flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11.5px] font-semibold shadow-lg backdrop-blur ${
               showSkeleton
-                ? 'border-accent/50 bg-black/75 text-accent'
+                ? 'border-accent/50 bg-black/75 text-accent-text'
                 : 'border-white/20 bg-black/75 text-white hover:bg-black/90'
             }`}
           >

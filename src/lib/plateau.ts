@@ -124,8 +124,15 @@ export function diagnosePlateau(
         .filter(Boolean)
         .join(', ')
         .replace(/^./, (c) => c.toUpperCase()) + '.',
+      // Deliberately hedged, and it must stay that way. The obvious sentence
+      // here — "adaptation lands during recovery" — is the one CLAUDE.md
+      // forbids: the two controlled trials of planned deloads found no
+      // benefit. The honest case for backing off is not that it makes you
+      // stronger, it is that it costs nothing and the alternative is grinding.
+      // The companion claim that tendon is "the slowest tissue to recover" is
+      // also unsupported: on detraining, muscle size decayed sooner.
       intervention:
-        'An easy week now, not later. Adaptation to straight-arm work lands during recovery, and the tendons that carry a planche are the slowest tissue to come back once they are irritated.',
+        'An easy week now rather than later. Backing off is not proven to make you stronger — the handful of trials on planned deloads found no benefit either way — but it reliably costs nothing, and continuing to grind a stalled hold under this much accumulated load has a real cost. Drop the volume, keep the movements.',
       suggestDeload: true,
       suggestStrategy: 'technique',
     }

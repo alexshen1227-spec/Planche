@@ -35,10 +35,14 @@ export function Toasts() {
 
   return (
     <div className="pointer-events-none fixed inset-x-0 top-4 z-[60] flex flex-col items-center gap-2 px-4">
-      <div role="alert" aria-live="assertive" className="flex flex-col items-center gap-2">
+      {/* aria-atomic false on both: each container holds a *list*, and the
+          implicit `true` on alert/status re-announces the whole stack every
+          time a second toast arrives — which it does routinely, since a PR and
+          an unlock fire back to back. */}
+      <div role="alert" aria-live="assertive" aria-atomic="false" className="flex flex-col items-center gap-2">
         {urgent.map(bubble)}
       </div>
-      <div role="status" aria-live="polite" className="flex flex-col items-center gap-2">
+      <div role="status" aria-live="polite" aria-atomic="false" className="flex flex-col items-center gap-2">
         {polite.map(bubble)}
       </div>
     </div>

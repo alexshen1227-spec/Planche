@@ -144,7 +144,7 @@ function Skeleton({ poses, frame }: { poses: JudgeInput; frame: number }) {
 }
 
 function Row({ label, value, tone }: { label: string; value: string; tone?: 'ok' | 'bad' | 'warn' }) {
-  const colour = tone === 'ok' ? 'text-ok' : tone === 'bad' ? 'text-danger' : tone === 'warn' ? 'text-accent' : 'text-ink2'
+  const colour = tone === 'ok' ? 'text-ok-text' : tone === 'bad' ? 'text-danger-text' : tone === 'warn' ? 'text-accent-text' : 'text-ink2'
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-line/60 py-1 last:border-0">
       <span className="text-[12px] text-ink3">{label}</span>
@@ -163,10 +163,10 @@ function Verdict({ result }: { result: PoseFormResult }) {
             <span
               className={`grid h-11 w-11 place-items-center rounded-full border-[3px] font-display text-[16px] font-bold tnum ${
                 (result.score ?? 0) >= 85
-                  ? 'border-ok/60 text-ok'
+                  ? 'border-ok/60 text-ok-text'
                   : (result.score ?? 0) >= 60
-                    ? 'border-accent/60 text-accent'
-                    : 'border-danger/60 text-danger'
+                    ? 'border-accent/60 text-accent-text'
+                    : 'border-danger/60 text-danger-text'
               }`}
             >
               {result.score ?? '—'}
@@ -197,7 +197,7 @@ function Verdict({ result }: { result: PoseFormResult }) {
                 <span
                   key={s.key}
                   className={`rounded-full px-2 py-0.5 text-[11px] font-medium tnum ${
-                    s.score >= 85 ? 'bg-ok-soft text-ok' : s.score >= 60 ? 'bg-accent-soft text-accent' : 'bg-danger-soft text-danger'
+                    s.score >= 85 ? 'bg-ok-soft text-ok-text' : s.score >= 60 ? 'bg-accent-soft text-accent-text' : 'bg-danger-soft text-danger-text'
                   }`}
                 >
                   {s.label} {s.score}
@@ -214,7 +214,7 @@ function Verdict({ result }: { result: PoseFormResult }) {
           ) : null}
         </>
       ) : (
-        <div className="text-[12.5px] text-danger">{result.reason}</div>
+        <div className="text-[12.5px] text-danger-text">{result.reason}</div>
       )}
     </div>
   )
@@ -535,7 +535,7 @@ export function DevLab({ onClose }: { onClose: () => void }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
-              <Icon name="sparkle" size={14} className="text-accent" /> What is this page?
+              <Icon name="sparkle" size={14} className="text-accent-text" /> What is this page?
             </div>
             <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-ink2">
               This is the test bench the form judge is built against — the same one used to set every
@@ -548,14 +548,14 @@ export function DevLab({ onClose }: { onClose: () => void }) {
           <div className="flex shrink-0 flex-col items-stretch gap-1.5">
             <button
               onClick={runSelfTest}
-              className="rounded-xl border border-accent/30 bg-accent-soft px-4 py-2 text-[13px] font-semibold text-accent transition hover:brightness-105"
+              className="rounded-xl border border-accent/30 bg-accent-soft px-4 py-2 text-[13px] font-semibold text-accent-text transition hover:brightness-105"
             >
               Run the self-test
             </button>
             {selfTest ? (
               <div
                 className={`rounded-xl px-3 py-1.5 text-center text-[12.5px] font-semibold ${
-                  selfTest.pass ? 'bg-ok-soft text-ok' : 'bg-danger-soft text-danger'
+                  selfTest.pass ? 'bg-ok-soft text-ok-text' : 'bg-danger-soft text-danger-text'
                 }`}
                 role="status"
               >
@@ -571,16 +571,16 @@ export function DevLab({ onClose }: { onClose: () => void }) {
                 <Icon
                   name={check.pass ? 'check' : 'x'}
                   size={13}
-                  className={`mt-0.5 shrink-0 ${check.pass ? 'text-ok' : 'text-danger'}`}
+                  className={`mt-0.5 shrink-0 ${check.pass ? 'text-ok-text' : 'text-danger-text'}`}
                 />
-                <span className={check.pass ? 'text-ink2' : 'font-medium text-danger'}>
+                <span className={check.pass ? 'text-ink2' : 'font-medium text-danger-text'}>
                   {check.name}
                   {check.detail ? <span className="text-ink3"> — {check.detail}</span> : null}
                 </span>
               </div>
             ))}
             {selfTest.pass && !showAllChecks ? (
-              <button onClick={() => setShowAllChecks(true)} className="text-[12px] font-medium text-accent">
+              <button onClick={() => setShowAllChecks(true)} className="text-[12px] font-medium text-accent-text">
                 Every check passed — show the full list
               </button>
             ) : null}
@@ -595,7 +595,7 @@ export function DevLab({ onClose }: { onClose: () => void }) {
             onClick={() => setExerciseId(id)}
             className={`rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition ${
               id === exerciseId
-                ? 'border-accent bg-accent-soft text-accent'
+                ? 'border-accent bg-accent-soft text-accent-text'
                 : 'border-line bg-raised text-ink2 hover:border-line-strong'
             }`}
           >
@@ -621,7 +621,7 @@ export function DevLab({ onClose }: { onClose: () => void }) {
               <span className="text-[11px] font-semibold uppercase tracking-wide text-ink3">
                 Ground truth vs measured
               </span>
-              <button onClick={reset} className="text-[11.5px] font-medium text-accent">
+              <button onClick={reset} className="text-[11.5px] font-medium text-accent-text">
                 Reset
               </button>
             </div>
@@ -716,7 +716,7 @@ export function DevLab({ onClose }: { onClose: () => void }) {
               </button>
             </div>
             {busy ? (
-              <p className="mt-2 flex items-center gap-1.5 text-[12px] text-accent" role="status">
+              <p className="mt-2 flex items-center gap-1.5 text-[12px] text-accent-text" role="status">
                 <Icon name="sparkle" size={13} /> {busy}
               </p>
             ) : null}

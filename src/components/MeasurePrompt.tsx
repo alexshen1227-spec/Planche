@@ -116,7 +116,7 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
     <Modal open={open} onClose={dismiss} label="Weekly bodyweight and height check">
       <div className="p-6">
         <div className="pr-10">
-          <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-accent">
+          <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
             <Icon name="chart" size={14} /> Weekly check
           </div>
           <h2 className="mt-1 font-display text-[20px] font-bold text-ink">Where are you at?</h2>
@@ -145,7 +145,7 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
               error ? 'border-danger' : 'border-line'
             }`}
           />
-          {error ? <span className="mt-1 block text-[12.5px] text-danger">{error}</span> : null}
+          {error ? <span className="mt-1 block text-[12.5px] text-danger-text">{error}</span> : null}
           {lastW ? (
             <span className="mt-1 block text-[12px] text-ink3">
               Last logged {new Date(lastW.at).toLocaleDateString()} — leave blank to skip.
@@ -162,7 +162,7 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
               <span className="text-ink3">(optional)</span>
             )}
             {due.height && lastH ? (
-              <span className="ml-1.5 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">
+              <span className="ml-1.5 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-text">
                 worth a check
               </span>
             ) : null}

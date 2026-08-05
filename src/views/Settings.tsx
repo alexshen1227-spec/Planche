@@ -757,7 +757,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               Protect
             </button>
           ) : (
-            <span className={`text-[13px] font-semibold ${storage?.persisted ? 'text-ok' : 'text-ink3'}`}>
+            <span className={`text-[13px] font-semibold ${storage?.persisted ? 'text-ok-text' : 'text-ink3'}`}>
               {storage === null ? '…' : storage.persisted ? '✓ Protected' : '—'}
             </span>
           )}
@@ -807,7 +807,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         <Row label="Reset everything" hint="Deletes all local data. There is no undo (export first!).">
           <button
             onClick={() => setConfirmReset(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-danger/30 bg-danger-soft px-3.5 py-2 text-[13.5px] font-semibold text-danger"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-danger/30 bg-danger-soft px-3.5 py-2 text-[13.5px] font-semibold text-danger-text"
           >
             <Icon name="trash" size={15} /> Reset
           </button>
@@ -836,7 +836,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             footage, and watch what it makes of them. */}
         <p className="mt-3 border-t border-line pt-3 text-[12.5px] text-ink3">
           Curious how the camera form check decides?{' '}
-          <a href="#devlab" className="font-medium text-accent underline-offset-2 hover:underline">
+          <a href="#devlab" className="font-medium text-accent-text underline-offset-2 hover:underline">
             Open the form judge bench
           </a>{' '}
           to run it against known positions or your own clip.

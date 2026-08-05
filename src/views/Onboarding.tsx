@@ -89,16 +89,19 @@ export function Onboarding() {
   const [injuryNote, setInjuryNote] = useState('')
   const [measurementError, setMeasurementError] = useState<string | null>(null)
 
-  // Each stage is a page. Focus has to follow, or a screen-reader user is left
-  // reading the previous screen with no idea anything moved.
+  // Each stage is a page, and so is each interview question. Focus has to
+  // follow, or a screen-reader user is left reading the previous screen with
+  // no idea anything moved — and the whole ladder lives inside one `stage`,
+  // so keying this on `stage` alone fired exactly once for eleven questions.
   const headingRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    headingRef.current?.focus()
-  }, [stage])
 
   const placement = useMemo(() => placeFromAssessment(answers), [answers])
   const currentItem = useMemo(() => nextAssessmentItem(answers), [answers])
   const progress = useMemo(() => assessmentProgress(answers), [answers])
+
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [stage, currentItem?.id, skippedInterview])
   const placedStepId = skippedInterview ? manualPlacement : placement.stepId
 
   const parsedWeight = (() => {
@@ -188,8 +191,13 @@ export function Onboarding() {
             />
           ))}
         </div>
+        {/* Carries the question, not only the stage: the whole ladder lives
+            inside one stage, so a region that only said "Step 3 of 6" went
+            silent for every question after the first. */}
         <div className="sr-only" aria-live="polite">
-          Step {stageIndex + 1} of {STAGE_ORDER.length}
+          {stage === 'interview' && currentItem
+            ? `Question ${progress.answered + 1} of about ${progress.likelyTotal}. ${currentItem.question}`
+            : `Step ${stageIndex + 1} of ${STAGE_ORDER.length}`}
         </div>
 
         {stage === 'welcome' ? (
@@ -238,21 +246,20 @@ export function Onboarding() {
             <p className="mt-1 text-center text-[14px] text-ink2">
               This sets your destination, not your starting point. You can change it any time.
             </p>
-            <div className="mt-6 space-y-2.5" role="radiogroup" aria-label="Training goal">
+            <div className="mt-6 space-y-2.5" role="group" aria-label="Training goal">
               {GOAL_CHOICES.map((id) => {
                 const step = STEP_BY_ID[id]
                 const active = goalStepId === id
                 return (
                   <button
                     key={id}
-                    role="radio"
-                    aria-checked={active}
+                    aria-pressed={active}
                     onClick={() => setGoalStepId(id)}
                     className={`flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition ${
                       active ? 'border-accent bg-accent-soft shadow-card' : 'border-line bg-surface hover:border-line-strong'
                     }`}
                   >
-                    <Figure step={id} className={`h-14 w-[70px] shrink-0 ${active ? 'text-accent' : 'text-ink2'}`} />
+                    <Figure step={id} className={`h-14 w-[70px] shrink-0 ${active ? 'text-accent-text' : 'text-ink2'}`} />
                     <div className="min-w-0">
                       <div className="text-[15px] font-semibold text-ink">{step.name}</div>
                       <div className="mt-0.5 text-[13px] leading-relaxed text-ink2">{GOAL_BLURB[id]}</div>
@@ -313,12 +320,24 @@ export function Onboarding() {
                   </p>
                 ) : null}
               </div>
-              <div className="mt-6 space-y-2.5" role="radiogroup" aria-label={currentItem.question}>
+              {/* Not a radiogroup. These options are *actions* — tapping one
+                  answers and immediately advances, so nothing is ever left
+                  "selected", and announcing "radio, not checked" for every
+                  option describes a control that does not exist. A plain list
+                  of buttons is what they are. */}
+              <div className="mt-6 space-y-2.5" role="group" aria-label={currentItem.question}>
                 {currentItem.options.map((opt) => (
                   <button
-                    key={opt.label}
-                    role="radio"
-                    aria-checked={false}
+                    // Keyed by question *and* option: consecutive rungs share
+                    // option labels ("Not yet", "1–4s", …), so a label-only key
+                    // let React reuse the DOM node across questions. Focus then
+                    // stayed on the button just pressed while the question
+                    // silently changed underneath it, and a double-press or a
+                    // held key answered the *next* question with the same value
+                    // — which, since clearing a rung is what surfaces the next
+                    // one, placed the athlete a whole step high. Exactly the
+                    // failure this interview exists to prevent.
+                    key={`${currentItem.id}:${opt.label}`}
                     onClick={() => {
                       // Advance here rather than in an effect: the ladder ends
                       // the moment an answer makes the next question
@@ -383,7 +402,7 @@ export function Onboarding() {
             </h1>
             <div className="mt-5 rounded-2xl border border-line bg-surface p-5 shadow-card">
               <div className="flex items-center gap-4">
-                <Figure step={placedStepId} className="h-16 w-20 shrink-0 text-accent" />
+                <Figure step={placedStepId} className="h-16 w-20 shrink-0 text-accent-text" />
                 <div className="min-w-0">
                   <div className="font-display text-[20px] font-bold text-ink">{STEP_BY_ID[placedStepId].name}</div>
                   <div className="text-[13px] text-ink2">{STEP_BY_ID[placedStepId].tagline}</div>
@@ -399,7 +418,7 @@ export function Onboarding() {
                   <Icon
                     name={placement.confidence === 'good' ? 'check' : 'info'}
                     size={15}
-                    className={placement.confidence === 'good' ? 'text-ok' : 'text-ink3'}
+                    className={placement.confidence === 'good' ? 'text-ok-text' : 'text-ink3'}
                   />
                   <span className="text-[12.5px] leading-relaxed text-ink2">
                     {placement.confidence === 'good'
@@ -613,7 +632,7 @@ export function Onboarding() {
               </button>
             </div>
             {measurementError ? (
-              <p className="mt-2 text-center text-[12.5px] text-danger" role="alert">
+              <p className="mt-2 text-center text-[12.5px] text-danger-text" role="alert">
                 {measurementError}
               </p>
             ) : null}
@@ -633,12 +652,11 @@ export function Onboarding() {
               Sessions per week. Three is the number most coaching sources land on for straight-arm work, and rest days
               are where the strength actually arrives.
             </p>
-            <div className="mt-7 flex justify-center gap-2.5" role="radiogroup" aria-label="Sessions per week">
+            <div className="mt-7 flex justify-center gap-2.5" role="group" aria-label="Sessions per week">
               {[2, 3, 4, 5].map((n) => (
                 <button
                   key={n}
-                  role="radio"
-                  aria-checked={goal === n}
+                  aria-pressed={goal === n}
                   onClick={() => setGoal(n)}
                   className={`h-16 w-16 rounded-2xl border font-display text-[22px] font-bold transition ${
                     goal === n
@@ -656,7 +674,7 @@ export function Onboarding() {
             <div className="mx-auto mt-7 max-w-md rounded-2xl border border-line bg-surface p-4 text-left">
               <div className="text-[13px] font-semibold uppercase tracking-wide text-ink3">Your plan</div>
               <div className="mt-1.5 flex items-center gap-3">
-                <Figure step={placedStepId} className="h-12 w-16 text-accent" />
+                <Figure step={placedStepId} className="h-12 w-16 text-accent-text" />
                 <div className="min-w-0">
                   <div className="font-display text-[17px] font-semibold text-ink">
                     {STEP_BY_ID[placedStepId].name}
@@ -713,20 +731,19 @@ function ManualPlacement({
       <p className="mt-1 text-center text-[14px] text-ink2">
         Honest placement beats ambitious placement — you can test up any time.
       </p>
-      <div className="mt-6 space-y-2.5" role="radiogroup" aria-label="Starting step">
+      <div className="mt-6 space-y-2.5" role="group" aria-label="Starting step">
         {PLACEMENTS.map((p) => {
           const active = placement === p.stepId
           return (
             <button
               key={p.stepId}
-              role="radio"
-              aria-checked={active}
+              aria-pressed={active}
               onClick={() => onPick(p.stepId)}
               className={`flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition ${
                 active ? 'border-accent bg-accent-soft shadow-card' : 'border-line bg-surface hover:border-line-strong'
               }`}
             >
-              <Figure step={p.stepId} className={`h-14 w-[70px] shrink-0 ${active ? 'text-accent' : 'text-ink2'}`} />
+              <Figure step={p.stepId} className={`h-14 w-[70px] shrink-0 ${active ? 'text-accent-text' : 'text-ink2'}`} />
               <div className="min-w-0">
                 <div className="text-[15px] font-semibold text-ink">{p.label}</div>
                 <div className="mt-0.5 text-[13px] leading-relaxed text-ink2">{p.desc}</div>

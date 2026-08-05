@@ -118,7 +118,7 @@ function UpdateBanner({ defer = false }: { defer?: boolean }) {
   return (
     <div className="fixed inset-x-0 bottom-20 z-[65] flex justify-center px-4 lg:bottom-6">
       <div className="animate-rise flex items-center gap-3 rounded-2xl border border-accent/35 bg-raised py-2.5 pl-4 pr-2.5 shadow-pop backdrop-blur">
-        <Icon name="sparkle" size={17} className="shrink-0 text-accent" />
+        <Icon name="sparkle" size={17} className="shrink-0 text-accent-text" />
         <span className="text-[13.5px] font-medium text-ink">A new version of Planche Lab is ready.</span>
         <button
           onClick={refresh}
@@ -288,7 +288,7 @@ export default function App() {
                     : 'border border-transparent text-ink2 hover:bg-surface/60 hover:text-ink'
                 }`}
               >
-                <Icon name={n.icon} size={18} className={navTab === n.tab ? 'text-accent' : ''} />
+                <Icon name={n.icon} size={18} className={navTab === n.tab ? 'text-accent-text' : ''} />
                 {n.label}
               </button>
             ))}
@@ -336,7 +336,7 @@ export default function App() {
               aria-current={navTab === n.tab ? 'page' : undefined}
               className={`relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[10.5px] font-medium transition ${
                 navTab === n.tab
-                  ? 'bg-accent-soft text-accent shadow-[inset_0_0_0_1px_var(--t-line)]'
+                  ? 'bg-accent-soft text-accent-text shadow-[inset_0_0_0_1px_var(--t-line)]'
                   : 'text-ink3 hover:bg-raised hover:text-ink2'
               }`}
             >

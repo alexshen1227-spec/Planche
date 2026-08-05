@@ -80,6 +80,24 @@ so. See "Evidence tiers" below.
    and the widely-repeated "10 second rule" traces to no named coach. The
    unlock bars are convention. Do not present them as measured.
 
+### Two rules that came out of the V2 review
+
+**A rail that only changes wording is not a rail.** Independent mutation
+testing broke eight decisions the suite could not see, because the assertions
+around them checked the *sentence* rather than the number. Every safety rail
+now asserts the decision it makes (`volumeFactor`, `loadPermission`,
+`suggestMaxTest`, `dayType`), not the copy that accompanies it. `LIMITS.volume`
+shipped as `[1, 1]` for one commit — every reduction in the coach silently
+became a no-op — and nothing failed.
+
+**Advice written before the rails run must not survive them.** The plan is
+assembled top-to-bottom but the rails decide last, so anything that prescribes
+loaded work has to be reconsidered afterwards. Lines are tagged
+(`CoachDecision.source`) and filtered: `load-advice` is dropped outright when
+`loadPermission === 'none'`, and the plateau line is composed *after* the rails
+so it can defer instead of telling a sore athlete to train more. Three separate
+bugs of this shape were found in review; assume a fourth if you add a decision.
+
 ### Evidence tiers
 
 When writing athlete-facing copy, keep these distinguishable:

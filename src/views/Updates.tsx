@@ -4,8 +4,8 @@ import { fmtDate } from '../lib/time'
 import { Icon } from '../components/Icon'
 
 const AREA_STYLE: Record<ChangeEntry['area'], string> = {
-  camera: 'border-accent/30 bg-accent-soft text-accent',
-  coach: 'border-ok/30 bg-ok-soft text-ok',
+  camera: 'border-accent/30 bg-accent-soft text-accent-text',
+  coach: 'border-ok/30 bg-ok-soft text-ok-text',
   training: 'border-line bg-raised text-ink2',
   app: 'border-line bg-raised text-ink3',
 }

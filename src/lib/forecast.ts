@@ -155,7 +155,24 @@ export function forecastUnlock(state: AppState, stepId: StepId = state.stepId, n
   }
 
   // Fast edge → the soonest plausible week; slow edge → the latest.
-  const lowWeeks = Math.max(1, Math.ceil(remaining / Math.max(fast, central)))
+  const lowRaw = Math.max(1, Math.ceil(remaining / Math.max(fast, central)))
+  // The horizon binds the *near* edge too. A barely-positive rate put the
+  // soonest plausible date 1095 weeks out — twenty-one years, printed beside a
+  // basis line that rounded the same rate to "+0.0s a week". Past a year there
+  // is no honest number, only "at this rate, not soon".
+  if (lowRaw > MAX_FORECAST_WEEKS) {
+    return {
+      kind: 'not-trending',
+      ratePerWeek: central,
+      points,
+      basis: `Your verified holds are climbing, but at about ${central.toFixed(
+        2,
+      )}s a week the remaining ${remaining.toFixed(
+        1,
+      )}s would take years at this rate. That is a real measurement rather than a stall — it just is not a number worth planning around, and something in the training needs to change before it is.`,
+    }
+  }
+  const lowWeeks = lowRaw
   const highRate = slow > 0.01 ? slow : null
   const highRaw = highRate === null ? null : Math.ceil(remaining / highRate)
   const highWeeks = highRaw === null || highRaw > MAX_FORECAST_WEEKS ? null : Math.max(lowWeeks, highRaw)
@@ -278,7 +295,20 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
     if (to > from) durations.push((to - from) / WEEK)
   }
 
-  if (durations.length < 2) {
+  /**
+   * A "duration" shorter than this is not a step someone trained through.
+   *
+   * The pace is measured from the first session logged on each step, so an
+   * athlete placed high who logs one session per step while moving up records
+   * days rather than months — and the arithmetic then offered a full planche
+   * in "1–2 weeks", beside a note saying "typically 0 weeks each". Nothing on
+   * this road is cleared in under a fortnight, so anything faster is an
+   * artefact of how the placement was entered, not a measurement of them.
+   */
+  const MIN_PLAUSIBLE_STEP_WEEKS = 2
+  const credible = durations.filter((w) => w >= MIN_PLAUSIBLE_STEP_WEEKS)
+
+  if (credible.length < 2) {
     return {
       goalStepId: goal.id,
       stepsRemaining,
@@ -289,9 +319,9 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
     }
   }
 
-  const typical = median(durations)!
-  const fastest = Math.min(...durations)
-  const slowest = Math.max(...durations)
+  const typical = median(credible)!
+  const fastest = Math.min(...credible)
+  const slowest = Math.max(...credible)
 
   // Later steps are longer than earlier ones, always. Widening the upper edge
   // per remaining step is the least-dishonest way to say so without pretending
@@ -308,8 +338,8 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
   return {
     goalStepId: goal.id,
     stepsRemaining,
-    estimate: { lowWeeks, highWeeks, measuredFrom: durations.length },
-    note: `Measured from the ${durations.length} steps you have finished here (typically ${Math.round(
+    estimate: { lowWeeks, highWeeks, measuredFrom: credible.length },
+    note: `Measured from the ${credible.length} steps you have finished here (typically ${Math.round(
       typical,
     )} weeks each).${
       behindTypical

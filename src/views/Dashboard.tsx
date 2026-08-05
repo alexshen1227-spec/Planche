@@ -40,7 +40,7 @@ function WeekStrip({ trainedDays }: { trainedDays: Set<string> }) {
               trained
                 ? 'bg-accent text-on-accent'
                 : isToday
-                  ? 'border-[1.5px] border-accent text-accent'
+                  ? 'border-[1.5px] border-accent text-accent-text'
                   : 'border border-line text-ink3'
             }`}
           >
@@ -115,7 +115,7 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-[13.5px] font-medium text-ink2">
-          <Icon name="flame" size={16} className={streak.weeks > 0 ? 'text-accent' : 'text-ink3'} />
+          <Icon name="flame" size={16} className={streak.weeks > 0 ? 'text-accent-text' : 'text-ink3'} />
           <span className="tnum">
             {streak.weeks} week{streak.weeks === 1 ? '' : 's'} streak
           </span>
@@ -130,7 +130,7 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
           <div className="flex items-center gap-5">
             <Figure step={step.id} className="h-28 w-32 shrink-0 text-ink animate-floaty" />
             <div>
-              <div className="text-[12.5px] font-semibold uppercase tracking-wider text-accent">
+              <div className="text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
                 Step {step.order + 1} of 8 · current
                 {goalStep.order > step.order ? ` · goal ${goalStep.name}` : ' · goal reached'}
               </div>
@@ -287,7 +287,7 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
           className="animate-rise mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-ok/25 bg-ok-soft px-5 py-3.5"
           style={{ animationDelay: '20ms' }}
         >
-          <Icon name="sparkle" size={17} className="shrink-0 text-ok" />
+          <Icon name="sparkle" size={17} className="shrink-0 text-ok-text" />
           <span className="text-[14px] leading-relaxed text-ink">
             <span className="font-semibold">
               Your verified {keyEx.name.toLowerCase()} is up {breakthrough.gainSec}s
@@ -326,7 +326,7 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
       {trainedToday ? (
         <div className="animate-rise mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ok/25 bg-ok-soft px-5 py-3.5" style={{ animationDelay: '40ms' }}>
           <div className="flex items-center gap-2.5 text-[14px] text-ink">
-            <Icon name="check" size={16} className="text-ok" />
+            <Icon name="check" size={16} className="text-ok-text" />
             <span>
               <span className="font-semibold">Today is banked.</span> Recovery counts too — happy wrists hold longer.
             </span>
@@ -365,7 +365,16 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
         <Stat
           label="Week streak"
           value={<span className="tnum">{streak.weeks}</span>}
-          sub={streak.currentMet ? 'this week is banked' : `${Math.max(0, goal - thisWeek)} more to keep it`}
+          // "N more to keep it" frames training as defending something you are
+          // about to lose — and the displayed streak already counts the
+          // in-progress week, so part of what it threatened had not been
+          // earned. The North Star puts streak preservation below actually
+          // training, so this states the fact and drops the loss frame.
+          sub={
+            streak.currentMet
+              ? 'this week is banked'
+              : `${Math.max(0, goal - thisWeek)} more this week to meet your goal`
+          }
         />
         <Stat label="Time under tension" value={fmtDuration(tut)} sub="all holds, all time" />
         <Stat
@@ -379,15 +388,15 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
       <div className="animate-rise card-sheen mt-4 rounded-2xl border border-line bg-surface p-5 shadow-card" style={{ animationDelay: '110ms' }}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-accent">
+            <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-accent-text">
               <Icon name="target" size={15} /> Coach
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="rounded-full bg-accent-soft px-3 py-1 text-[13px] font-semibold text-accent">
+              <span className="rounded-full bg-accent-soft px-3 py-1 text-[13px] font-semibold text-accent-text">
                 {STRATEGY_BY_ID[plan.strategy].name}
               </span>
               {plan.limiter ? (
-                <span className="rounded-full border border-accent/30 bg-accent-soft px-3 py-1 text-[12.5px] font-semibold text-accent">
+                <span className="rounded-full border border-accent/30 bg-accent-soft px-3 py-1 text-[12.5px] font-semibold text-accent-text">
                   Limiter: {plan.limiter.label}
                 </span>
               ) : null}
@@ -482,7 +491,7 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
       {/* Tip + achievements */}
       <div className="animate-rise mt-4 grid gap-3 lg:grid-cols-2" style={{ animationDelay: '140ms' }}>
         <div className="card-sheen rounded-2xl border border-line bg-surface p-5 shadow-card">
-          <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-accent">
+          <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-accent-text">
             <Icon name="sparkle" size={15} /> Coach's tip
           </div>
           <div className="mt-2 text-[15px] font-semibold text-ink">{tip.title}</div>
@@ -499,7 +508,8 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
           </div>
           {recentAchievements.length === 0 ? (
             <p className="mt-3 text-[13.5px] text-ink2">
-              None yet — your first session unlocks the first one. No pressure. (Some pressure.)
+              None yet — your first session unlocks the first one. They are a record of what you have done, not
+              something to chase.
             </p>
           ) : (
             <div className="mt-3 space-y-2.5">

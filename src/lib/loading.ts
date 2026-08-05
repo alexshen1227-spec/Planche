@@ -1,5 +1,4 @@
 import type { AppState, Session, StepId } from '../types'
-import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { addDays, weekStart } from './time'
 import { median } from './signals'
@@ -22,11 +21,15 @@ import { qualifyingSeries } from './forecast'
  *    and a hold time that improves because the legs opened wider is not
  *    progress.
  *
- * 2. **Capability outruns the tissue that carries it.** Tendon collagen turns
- *    over roughly an order of magnitude slower than muscle protein, and
- *    measured strength gains have preceded tendon stiffness changes by one to
- *    two months. The usual app instinct — got stronger, add volume — is
- *    exactly wrong in the window where it matters most.
+ * 2. **Capability outruns the tissue that carries it.** Early strength gains
+ *    are largely neural: measured strength has risen ~30% by month two while
+ *    muscle cross-section *and* tendon stiffness were both still unchanged. So
+ *    the usual app instinct — got stronger, add volume — is exactly wrong in
+ *    the window where it matters most.
+ *
+ *    Deliberately *not* stated as "tendon lags muscle by two months". The same
+ *    time-course data does not support that framing — on detraining, muscle
+ *    size decayed sooner than tendon did. Keep the narrower claim.
  *
  * Evidence note: the lever fractions below are INFERENCE from a rigid-body
  * model with standard segment parameters, not measurements of anyone. They are
@@ -132,7 +135,7 @@ export function weeklyLoads(state: Pick<AppState, 'sessions'>, weeks = 8, now = 
  * Fastest weekly increase in planche-specific load this app will encourage.
  *
  * INFERENCE, and labelled as such wherever it reaches an athlete. It is a
- * conservative reading of the tendon-lag literature rather than a measured
+ * conservative reading of the tissue-adaptation literature rather than a measured
  * threshold, and the acute:chronic ratio it resembles has been substantively
  * criticised. It exists because the alternative — no ceiling at all — is how
  * a strong newcomer earns a tendon problem in their second month.
@@ -173,8 +176,9 @@ export function readLoadRamp(state: Pick<AppState, 'sessions'>, now = Date.now()
  * A recent, unusually large gain in what the athlete can hold.
  *
  * Reported so the planner can do the counter-intuitive thing and *hold volume
- * steady*: the muscle that produced the jump has adapted, and the tendon
- * carrying it has not yet. Measured on verified holds only, because an
+ * steady*: a jump this fast is mostly the nervous system learning the
+ * position, so what the athlete can do has moved further than what their
+ * tissue has adapted to. Measured on verified holds only, because an
  * unverified spike is far more likely to be a measurement than a gain.
  */
 export interface CapabilityJump {
@@ -249,18 +253,4 @@ export function readDifficultyDrift(
   const deltaPct = (recentFraction - earlierFraction) / earlierFraction
   if (Math.abs(deltaPct) < DRIFT_REPORT_PCT) return null
   return { earlierFraction, recentFraction, deltaPct }
-}
-
-/** Whether two exercises are close enough in load to compare hold times. */
-export function comparableLoad(a: string, b: string): boolean {
-  const fa = LEVER_FRACTION[a]
-  const fb = LEVER_FRACTION[b]
-  if (fa === undefined || fb === undefined) return false
-  return Math.abs(fa - fb) <= 0.06
-}
-
-/** Positions that are not straight-arm planche work, whatever the road says. */
-export function isStraightArmPlanche(exerciseId: string): boolean {
-  const ex = EXERCISE_BY_ID[exerciseId]
-  return ex?.category === 'planche' && exerciseId !== 'frog-stand'
 }

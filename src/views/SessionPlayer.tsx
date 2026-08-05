@@ -718,7 +718,7 @@ export function SessionPlayer({
         onClick={() => setWalkedBackForLog(log.at, !didWalk)}
         className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-[12.5px] font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
       >
-        <Icon name="rotate" size={13} className="text-accent" />
+        <Icon name="rotate" size={13} className="text-accent-text" />
         {didWalk
           ? `Stopped it without getting up? +${credits.delta.toFixed(1)}s`
           : `Had to walk back to the phone? −${credits.delta.toFixed(1)}s`}
@@ -797,11 +797,20 @@ export function SessionPlayer({
       // set", "+30s", an RPE value or a form rating and pressing Space either
       // did nothing or fired the phase action instead of the button — the
       // shortcut made the visible controls unreachable without a mouse.
+      // Media counts as a focused control too. Space is play/pause on a
+      // focused <video>, and during rest the athlete is often scrubbing the
+      // clip they just recorded — swallowing it there stopped the replay
+      // responding at all, for a phase that has no Space action anyway.
       if (
         e.target instanceof HTMLElement &&
-        e.target.closest('button, a, select, [role="switch"], [role="button"], [contenteditable]')
+        e.target.closest(
+          'button, a, select, video, audio, [role="switch"], [role="button"], [role="slider"], [contenteditable]',
+        )
       ) {
-        return
+        // Scoped to Space only: Escape and "skip rest" are not keys a button
+        // owns, and returning early for everything meant tabbing to any
+        // control silently disabled both of them.
+        if (e.code === 'Space') return
       }
       if (e.code === 'Space') {
         e.preventDefault()
@@ -890,7 +899,7 @@ export function SessionPlayer({
                   <Icon name="target" size={18} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent">Main target</div>
+                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent-text">Main target</div>
                   <div className="truncate text-[14px] font-semibold text-ink">{primaryExercise.name}</div>
                 </div>
                 <div className="shrink-0 text-right">
@@ -901,7 +910,7 @@ export function SessionPlayer({
             ) : null}
             {willFilm ? (
               <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-line bg-raised px-4 py-3 text-left">
-                <Icon name="monitor" size={16} className="mt-0.5 shrink-0 text-accent" />
+                <Icon name="monitor" size={16} className="mt-0.5 shrink-0 text-accent-text" />
                 <div>
                   <div className="text-[13.5px] font-medium text-ink">Side-view camera check on main sets</div>
                   <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink2">
@@ -955,12 +964,12 @@ export function SessionPlayer({
       const target = block.target.kind === 'hold' ? `${block.target.sec}s` : `${block.target.reps} reps`
       return (
         <div className="mx-auto w-full max-w-lg px-5 pb-10 text-center">
-          <div className="mt-4 text-[13px] font-semibold uppercase tracking-wide text-accent">
+          <div className="mt-4 text-[13px] font-semibold uppercase tracking-wide text-accent-text">
             {SECTION_LABEL[block.section]} · Set {displaySet} of {displayTotal}
           </div>
           <h1 className="mt-1 font-display text-[30px] font-bold leading-tight text-ink">{exercise.name}</h1>
           {perSide ? (
-            <div className="mt-1.5 inline-flex items-center gap-2 rounded-full bg-accent-soft px-3.5 py-1 text-[14px] font-semibold text-accent">
+            <div className="mt-1.5 inline-flex items-center gap-2 rounded-full bg-accent-soft px-3.5 py-1 text-[14px] font-semibold text-accent-text">
               {side === 'left' ? 'Left side' : 'Right side'}
               <span className="text-[12px] font-normal text-ink2">
                 {si % 2 === 0
@@ -971,7 +980,7 @@ export function SessionPlayer({
               </span>
             </div>
           ) : null}
-          <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accent-soft px-4 py-2 text-accent">
+          <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accent-soft px-4 py-2 text-accent-text">
             <Icon name="target" size={16} />
             <span className="text-[11px] font-bold uppercase tracking-wider">Target</span>
             <span className="text-[18px] font-bold text-ink tnum">
@@ -1059,7 +1068,7 @@ export function SessionPlayer({
             <div className="mx-auto mt-3 w-full max-w-sm">
               <div className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-2.5">
                 <span className="flex items-center gap-2 text-[13.5px] text-ink2">
-                  <Icon name="monitor" size={15} className={cameraOn ? 'text-accent' : 'text-ink3'} />
+                  <Icon name="monitor" size={15} className={cameraOn ? 'text-accent-text' : 'text-ink3'} />
                   {cameraOn ? 'Filming this set' : 'Camera off'}
                 </span>
                 <button
@@ -1118,7 +1127,7 @@ export function SessionPlayer({
                   <button
                     onClick={() => recorder.setWide(!recorder.wide)}
                     className={`rounded-lg border px-2.5 py-1 text-[12px] font-semibold transition ${
-                      recorder.wide ? 'border-accent/40 bg-accent-soft text-accent' : 'border-line bg-raised text-ink2'
+                      recorder.wide ? 'border-accent/40 bg-accent-soft text-accent-text' : 'border-line bg-raised text-ink2'
                     }`}
                   >
                     {recorder.wide ? '0.5× on' : '0.5× off'}
@@ -1126,19 +1135,19 @@ export function SessionPlayer({
                 </div>
               ) : null}
               {cameraOn && recorder.portrait ? (
-                <p className="mt-1.5 flex items-start gap-1.5 text-[12.5px] leading-relaxed text-accent">
+                <p className="mt-1.5 flex items-start gap-1.5 text-[12.5px] leading-relaxed text-accent-text">
                   <Icon name="rotate" size={14} className="mt-0.5 shrink-0" />
                   Turn the phone on its side. A planche is a wide shape, and an upright frame cuts off your
                   hands or your feet.
                 </p>
               ) : null}
               {recorder.status === 'denied' ? (
-                <p className="mt-1.5 text-[12.5px] text-danger">
+                <p className="mt-1.5 text-[12.5px] text-danger-text">
                   Camera access was blocked. Allow it in your browser settings, or leave this off.
                 </p>
               ) : null}
               {recorder.status === 'unsupported' ? (
-                <p className="mt-1.5 text-[12.5px] text-danger">
+                <p className="mt-1.5 text-[12.5px] text-danger-text">
                   This browser could not start a compatible video recorder. Your sets still log normally.
                 </p>
               ) : null}
@@ -1156,7 +1165,7 @@ export function SessionPlayer({
               the one screen where taps are one-handed and mid-workout. The
               padding buys a real target without changing how the row looks. */}
           <div className="mt-2 flex flex-wrap justify-center gap-x-4 text-[13px]">
-            <button onClick={() => setShowDemo(true)} className="px-1 py-2 text-accent underline-offset-2 hover:underline">
+            <button onClick={() => setShowDemo(true)} className="px-1 py-2 text-accent-text underline-offset-2 hover:underline">
               How do I do this?
             </button>
             <button onClick={skipSet} className="px-1 py-2 text-ink3 underline-offset-2 hover:text-ink hover:underline">
@@ -1178,13 +1187,13 @@ export function SessionPlayer({
           <div className="mt-6 text-[14px] font-medium uppercase tracking-wide text-ink2">Get into position</div>
           <div className="relative mt-2 grid h-56 w-56 place-items-center">
             <div className="absolute inset-0 rounded-full bg-accent-soft blur-2xl" />
-            <div key={n} className="font-timer relative text-[130px] leading-none text-accent animate-pop-num">
+            <div key={n} className="font-timer relative text-[130px] leading-none text-accent-text animate-pop-num">
               {n}
             </div>
           </div>
           <div className="text-[15px] font-medium text-ink2">{exercise.name}</div>
           <div className="mt-2 inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accent-soft px-3.5 py-2 text-[14px] font-semibold text-ink">
-            <Icon name="target" size={15} className="text-accent" /> Target {target}
+            <Icon name="target" size={15} className="text-accent-text" /> Target {target}
             {perSide ? ` · ${side === 'left' ? 'left' : 'right'} side` : ''}
           </div>
           <button
@@ -1220,16 +1229,16 @@ export function SessionPlayer({
               <div>
                 <div
                   className={`font-timer text-[72px] leading-none ${
-                    isPr || overTarget ? 'text-ok' : 'text-ink'
+                    isPr || overTarget ? 'text-ok-text' : 'text-ink'
                   }`}
                 >
                   {holdElapsed.toFixed(1)}
                 </div>
                 <div className="mt-1.5 text-[14px] font-semibold">
                   {isPr ? (
-                    <span className="text-ok">PR secured — exit under control</span>
+                    <span className="text-ok-text">PR secured — exit under control</span>
                   ) : overTarget ? (
-                    <span className="text-ok">target reached — stop while clean</span>
+                    <span className="text-ok-text">target reached — stop while clean</span>
                   ) : (
                     <span className="text-ink3 tnum">target {target}s</span>
                   )}
@@ -1542,7 +1551,7 @@ export function SessionPlayer({
         <div className="mx-auto w-full max-w-lg px-5 pb-10 text-center">
           {unlocked ? (
             <div className="mt-6 rounded-3xl border border-accent/30 bg-accent-soft p-6">
-              <div className="text-[13px] font-semibold uppercase tracking-wide text-accent">Step unlocked</div>
+              <div className="text-[13px] font-semibold uppercase tracking-wide text-accent-text">Step unlocked</div>
               <Figure step={unlocked.id} className="mx-auto mt-2 h-32 w-40 text-ink" />
               <div className="font-display text-[26px] font-bold text-ink">{unlocked.name}</div>
               <p className="mt-1 text-[14px] text-ink2">{unlocked.tagline}</p>
@@ -1556,13 +1565,13 @@ export function SessionPlayer({
                 insight.delta >= 0 ? 'border-ok/30 bg-ok-soft text-ink' : 'border-line bg-surface text-ink2'
               }`}
             >
-              <Icon name="chart" size={15} className={insight.delta >= 0 ? 'text-ok' : 'text-ink3'} />
+              <Icon name="chart" size={15} className={insight.delta >= 0 ? 'text-ok-text' : 'text-ink3'} />
               {insight.label}
             </div>
           ) : null}
           {debrief.length > 0 ? (
             <div className="mt-4 rounded-2xl border border-line bg-surface p-4 text-left">
-              <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-accent">
+              <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-accent-text">
                 <Icon name="target" size={14} /> Coach's read
               </div>
               <ul className="space-y-1.5">
@@ -1593,7 +1602,7 @@ export function SessionPlayer({
                       {ex?.name ?? p.exerciseId}
                       {p.surface ? <span className="ml-1 text-[12px] text-ink3">· {surfaceLabel(p.surface)}</span> : null}
                     </span>
-                    <span className="font-semibold text-accent tnum">
+                    <span className="font-semibold text-accent-text tnum">
                       {ex?.type === 'hold' ? fmtHold(p.value) : `${p.value} reps`}
                       {p.previous !== undefined ? (
                         <span className="ml-1.5 font-normal text-ink3">
@@ -1698,7 +1707,7 @@ export function SessionPlayer({
               ['10', 'Everything you had.'],
             ].map(([n, d]) => (
               <div key={n} className="flex gap-3 rounded-xl bg-raised px-3 py-2">
-                <span className="font-display font-bold text-accent tnum">{n}</span>
+                <span className="font-display font-bold text-accent-text tnum">{n}</span>
                 <span className="text-ink2">{d}</span>
               </div>
             ))}
@@ -1978,7 +1987,7 @@ function FormCheckRow({
               aria-busy={analysing}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-raised py-2 text-[13px] font-semibold text-ink transition hover:border-line-strong disabled:opacity-60"
             >
-              <Icon name="sparkle" size={14} className="text-accent" />
+              <Icon name="sparkle" size={14} className="text-accent-text" />
               {analysing ? 'Checking your position…' : 'Check my form automatically'}
             </button>
           ) : null}
@@ -2000,10 +2009,10 @@ function FormCheckRow({
                       <div
                         className={`grid h-14 w-14 shrink-0 place-items-center rounded-full border-[3px] font-display text-[19px] font-bold tnum ${
                           analysis.score >= 85
-                            ? 'border-ok/60 text-ok'
+                            ? 'border-ok/60 text-ok-text'
                             : analysis.score >= 60
-                              ? 'border-accent/60 text-accent'
-                              : 'border-danger/60 text-danger'
+                              ? 'border-accent/60 text-accent-text'
+                              : 'border-danger/60 text-danger-text'
                         }`}
                         aria-label={`Form score ${analysis.score} out of 100`}
                       >
@@ -2020,10 +2029,10 @@ function FormCheckRow({
                                 key={s.key}
                                 className={`rounded-full px-2 py-0.5 text-[11px] font-medium tnum ${
                                   s.score >= 85
-                                    ? 'bg-ok-soft text-ok'
+                                    ? 'bg-ok-soft text-ok-text'
                                     : s.score >= 60
-                                      ? 'bg-accent-soft text-accent'
-                                      : 'bg-danger-soft text-danger'
+                                      ? 'bg-accent-soft text-accent-text'
+                                      : 'bg-danger-soft text-danger-text'
                                 }`}
                               >
                                 {s.label} {s.score}
@@ -2036,7 +2045,7 @@ function FormCheckRow({
                   ) : null}
                   {analysis.fixFirst ? (
                     <div className="mb-2 rounded-lg border border-accent/30 bg-accent-soft px-2.5 py-2">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-accent">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-accent-text">
                         Fix this first
                       </div>
                       <div className="mt-0.5 text-[12.5px] font-medium leading-snug text-ink">
@@ -2048,8 +2057,8 @@ function FormCheckRow({
                     <div
                       className={`mb-2 rounded-lg px-2.5 py-2 ${
                         analysis.cleanSeconds + 0.05 >= creditedHoldSec
-                          ? 'bg-ok-soft text-ok'
-                          : 'bg-accent-soft text-accent'
+                          ? 'bg-ok-soft text-ok-text'
+                          : 'bg-accent-soft text-accent-text'
                       }`}
                     >
                       <span className="font-semibold">
@@ -2072,14 +2081,14 @@ function FormCheckRow({
                       ))}
                     </div>
                   ) : (
-                    <div className="font-medium text-ok">
+                    <div className="font-medium text-ok-text">
                       No measured issue found — confirm scapular position and control yourself.
                     </div>
                   )}
                   {analysis.good.length ? (
                     <div className="mt-2 flex flex-wrap gap-1">
                       {analysis.good.map((g) => (
-                        <span key={g} className="rounded-full bg-ok-soft px-2 py-0.5 text-[11.5px] font-medium text-ok">
+                        <span key={g} className="rounded-full bg-ok-soft px-2 py-0.5 text-[11.5px] font-medium text-ok-text">
                           ✓ {g}
                         </span>
                       ))}
@@ -2122,7 +2131,7 @@ function FormCheckRow({
       ) : null}
       <div className="text-[13px] font-semibold text-ink">How did that set look?</div>
       {value?.confirmed === false && rating ? (
-        <p className="mt-1 text-[11.5px] font-medium text-accent" role="status">
+        <p className="mt-1 text-[11.5px] font-medium text-accent-text" role="status">
           Camera suggestion only — tap your answer below to confirm or correct it.
         </p>
       ) : null}
@@ -2177,7 +2186,7 @@ function FormCheckRow({
             aria-pressed={visualReviewPassed}
             className={`mt-2 w-full rounded-xl border px-3 py-2 text-[12.5px] font-semibold transition ${
               visualReviewPassed
-                ? 'border-ok/40 bg-ok-soft text-ok'
+                ? 'border-ok/40 bg-ok-soft text-ok-text'
                 : 'border-line-strong bg-surface text-ink hover:border-accent'
             }`}
           >
@@ -2200,7 +2209,7 @@ function FormCheckRow({
             aria-pressed={flightConfirmed}
             className={`mt-2 w-full rounded-xl border px-3 py-2 text-[12.5px] font-semibold transition ${
               flightConfirmed
-                ? 'border-ok/40 bg-ok-soft text-ok'
+                ? 'border-ok/40 bg-ok-soft text-ok-text'
                 : 'border-line-strong bg-surface text-ink hover:border-accent'
             }`}
           >
@@ -2210,7 +2219,7 @@ function FormCheckRow({
       ) : null}
       {rating === 'clean' && value?.confirmed === true ? (
         <p
-          className={`mt-2 text-[11.5px] font-medium ${progressionFormPassed ? 'text-ok' : 'text-accent'}`}
+          className={`mt-2 text-[11.5px] font-medium ${progressionFormPassed ? 'text-ok-text' : 'text-accent-text'}`}
           role="status"
         >
           {progressionFormPassed
@@ -2306,12 +2315,11 @@ function CheckInForm({ onDone, onSkip }: { onDone: (c: CheckIn) => void; onSkip:
         <div className="text-[13px] font-semibold text-ink" id="ci-joints">
           Wrists, elbows and shoulders
         </div>
-        <div className="mt-2 space-y-2" role="radiogroup" aria-labelledby="ci-joints">
+        <div className="mt-2 space-y-2" role="group" aria-labelledby="ci-joints">
           {JOINTS.map((j) => (
             <button
               key={j.id}
-              role="radio"
-              aria-checked={joints === j.id}
+              aria-pressed={joints === j.id}
               onClick={() => {
                 setJoints(j.id)
                 if (j.id === 'good') setRegions([])
@@ -2369,12 +2377,11 @@ function CheckInForm({ onDone, onSkip }: { onDone: (c: CheckIn) => void; onSkip:
         <div className="text-[13px] font-semibold text-ink" id="ci-energy">
           Energy today
         </div>
-        <div className="mt-2 flex gap-2" role="radiogroup" aria-labelledby="ci-energy">
+        <div className="mt-2 flex gap-2" role="group" aria-labelledby="ci-energy">
           {ENERGY.map((e) => (
             <button
               key={e.id}
-              role="radio"
-              aria-checked={energy === e.id}
+              aria-pressed={energy === e.id}
               onClick={() => setEnergy(e.id)}
               className={`flex-1 rounded-xl border py-2.5 text-[13.5px] font-medium transition ${
                 energy === e.id
@@ -2438,7 +2445,7 @@ function DemoHelp({ exercise, pinnedUrl }: { exercise: Exercise; pinnedUrl?: str
           rel="noopener noreferrer"
           className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-line bg-raised py-3 text-[14px] font-medium text-ink transition hover:border-line-strong"
         >
-          <Icon name="play" size={15} className="text-accent" /> Watch demos on YouTube
+          <Icon name="play" size={15} className="text-accent-text" /> Watch demos on YouTube
         </a>
       )}
       <div className="mt-4 rounded-2xl border border-line bg-raised p-4">
@@ -2446,14 +2453,14 @@ function DemoHelp({ exercise, pinnedUrl }: { exercise: Exercise; pinnedUrl?: str
         <ol className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
           {exercise.howTo.map((s, i) => (
             <li key={s} className="flex gap-2.5">
-              <span className="font-display font-semibold text-accent tnum">{i + 1}</span>
+              <span className="font-display font-semibold text-accent-text tnum">{i + 1}</span>
               {s}
             </li>
           ))}
         </ol>
       </div>
       <div className="mt-3 rounded-2xl border border-line bg-raised p-4">
-        <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-danger">
+        <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-danger-text">
           <Icon name="x" size={14} /> Watch out for
         </div>
         <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">

@@ -428,7 +428,7 @@ export interface CoachPlan {
   plateau: PlateauVerdict | null
   /**
    * A recent large gain in capability. Present means volume is deliberately
-   * being held rather than added — see the tendon-lag rail in buildPlan.
+   * being held rather than added — see the tissue rails in buildPlan.
    */
   capabilityJump: CapabilityJump | null
   volumeFactor: number
@@ -451,8 +451,12 @@ export interface CoachPlan {
 const REGION_PAIN_NOTE: Partial<Record<BodyRegion, string>> = {
   wrist:
     'Wrist pain specifically: the usual cause is deep extension under load, and the usual fix is mechanical rather than rest. Parallettes, push-up handles or even fists put the joint in a neutral position and often remove the problem the same day.',
+  // Hedged to match the ledger: coaches agree on this almost universally, and
+  // there is essentially no literature on it — a 2025 review of tendon-loading
+  // studies found one touching the distal biceps against six each for Achilles
+  // and patellar. The advice is still worth giving; the certainty is not.
   elbow:
-    'Elbow pain is the one to take seriously on this road. It is usually the biceps tendon where it inserts, it is provoked by exactly the straight-arm loading a planche is made of, and it settles over weeks rather than days. Do not test it to see whether it still hurts.',
+    'Elbow pain is the one most planche coaches take most seriously, and it is the one the research has least to say about — the tissue usually blamed is the biceps tendon near its insertion, which is precisely what straight-arm loading stresses. Treat that as experienced opinion rather than established fact, but the cautious reading costs you days and the other reading can cost months. Rest it rather than testing whether it still hurts.',
   shoulder:
     'Shoulder pain: skip overhead and pressing movement entirely today, including the warm-up arm circles. Pain at the front of the shoulder under a lean is worth a clinician rather than a deload.',
   'lower-back':
@@ -981,7 +985,18 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       dayType = 'deload'
       dayReason = `Deload — ${plateau.weeksFlat} weeks flat with recovery debt behind it. Backing off is the intervention, not a pause in it.`
     }
-    if (plateau.suggestMaxTest && dayType !== 'deload' && !formRepairNeeded) suggestMaxTest = true
+    // A plateau can *ask* for a re-test, but it does not get to bypass the
+    // preconditions the suggestion already had. Overriding them produced a
+    // plan that said "your holds swung ±32%, this is measurement noise" and
+    // "you are fresh and your numbers are steady" at the same time — with one
+    // rest day. Both halves false in the same breath.
+    // A plateau can *ask* for a re-test, but it does not get to bypass
+    // freshness. A max test on a day with no rest behind it measures fatigue.
+    // (The later rails still clear this flag on pain, elbow and persistent
+    // complaint days, so this is the floor, not the last word.)
+    if (plateau.suggestMaxTest && dayType !== 'deload' && !formRepairNeeded && sig.restDays >= 2) {
+      suggestMaxTest = true
+    }
     // A stall is not the moment to also chase an unlock attempt.
     if (plateau.cause !== 'measurement-noise') queueUnlockAttempt = false
     limiter ??= {
@@ -1064,6 +1079,19 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       volumeFactor = Math.min(volumeFactor, 0.7)
       loadPermission = loadPermission === 'normal' ? 'reduced' : loadPermission
       queueUnlockAttempt = false
+      // The non-escalating branch used to trim volume and nothing else, which
+      // left the rest of the plan free to contradict it: an athlete told "the
+      // current dose is more than it is tolerating" could be handed a push
+      // day, a target increase and a max-test suggestion in the same breath.
+      // A max test is the single most provocative thing you can offer tissue
+      // that is already complaining.
+      suggestMaxTest = false
+      targetFactor = Math.min(targetFactor, 1)
+      if (dayType === 'push') {
+        dayType = 'build'
+        dayReason = `You are fresh, but your ${label} has come up in ${persistent.count} of your last ${persistent.of} check-ins — so today builds rather than pushes.`
+      }
+      if (strategy === 'intensity') strategy = 'balanced'
     }
     decisions.push({
       text: `Your ${label} has come up in ${persistent.count} of your last ${persistent.of} check-ins${
@@ -1250,8 +1278,13 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // shown nowhere, so the one day it fired the athlete never heard about it.
   if (suggestMaxTest) {
     decisions.push({
-      text:
-        sig.daysSinceMaxTest === null
+      // "Steady" is a claim about the numbers, and it was being printed on
+      // exactly the days the coach had just called them too noisy to read.
+      text: sig.noisy
+        ? `Your recent holds have been swinging too much to read a trend from${
+            sig.daysSinceMaxTest === null ? '' : `, and it has been ${sig.daysSinceMaxTest} days since your last max test`
+          }. You are fresh today, so a clean max test would give every target a real number to sit on instead of an average of scatter.`
+        : sig.daysSinceMaxTest === null
           ? 'You are fresh and your numbers are steady — a first max test today would calibrate every target the coach sets.'
           : `It has been ${sig.daysSinceMaxTest} days since your last max test and you are fresh today — a re-test would recalibrate your targets.`,
       kind: 'info',

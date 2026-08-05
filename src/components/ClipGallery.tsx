@@ -76,7 +76,7 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
                 disabled={busy === c.key}
                 aria-label="Check form"
                 title="Check form automatically"
-                className="grid h-7 w-7 place-items-center rounded-lg border border-line bg-raised text-ink3 hover:text-accent disabled:opacity-40"
+                className="grid h-7 w-7 place-items-center rounded-lg border border-line bg-raised text-ink3 hover:text-accent-text disabled:opacity-40"
               >
                 <Icon name={busy === c.key ? 'clock' : 'sparkle'} size={13} />
               </button>
@@ -94,7 +94,7 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
                 aria-label={c.pinned ? 'Unpin clip' : 'Pin as reference'}
                 title={c.pinned ? 'Unpin' : 'Pin as reference — never auto-deleted'}
                 className={`grid h-7 w-7 place-items-center rounded-lg border border-line ${
-                  c.pinned ? 'bg-accent-soft text-accent' : 'bg-raised text-ink3 hover:text-ink'
+                  c.pinned ? 'bg-accent-soft text-accent-text' : 'bg-raised text-ink3 hover:text-ink'
                 }`}
               >
                 <Icon name="target" size={13} />
@@ -107,7 +107,7 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
                   })
                 }
                 aria-label="Delete clip"
-                className="grid h-7 w-7 place-items-center rounded-lg border border-line bg-raised text-ink3 hover:text-danger"
+                className="grid h-7 w-7 place-items-center rounded-lg border border-line bg-raised text-ink3 hover:text-danger-text"
               >
                 <Icon name="trash" size={13} />
               </button>

@@ -80,7 +80,9 @@ export function Modal({
       window.clearTimeout(focusTimer)
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = previousOverflow
-      previouslyFocused?.focus()
+      // Only if it is still in the document: a trigger that unmounted while
+      // the modal was open would otherwise drop focus silently onto <body>.
+      if (previouslyFocused?.isConnected) previouslyFocused.focus()
     }
   }, [open])
 

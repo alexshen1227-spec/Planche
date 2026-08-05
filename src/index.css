@@ -22,16 +22,27 @@
   /* Fills and borders only — 2.75:1 on white, which is fine for a 3:1
      graphical element and not fine for text. Small accent copy must use
      --t-accent-text instead. The dark theme needs no such split: its accent
-     is already 10.14:1. */
-  --t-accent-text: #a35c00;
+     is already 10.14:1.
+
+     The text variants are tuned against the *soft* tint, not plain white:
+     these colours are mostly used inside `bg-*-soft` chips, which is the
+     lowest-contrast surface they land on. 4.82:1 there, 5.37:1 on the page. */
+  --t-accent-text: #945400;
   --t-accent-soft: rgba(224, 135, 0, 0.12);
   --t-on-accent: #201302;
   --t-ok: #0f9d58;
-  --t-ok-text: #0a7d45;
+  /* 4.92:1 on --t-ok-soft, 5.59:1 on the page. */
+  --t-ok-text: #097038;
   --t-ok-soft: rgba(15, 157, 88, 0.12);
   --t-danger: #d64550;
+  /* 5.20:1 on --t-bg and 4.58:1 composited over --t-danger-soft, where the
+     error copy actually sits. The fill colour stays as it was — it is used for
+     solid destructive buttons, where the white sits on top of it. */
+  --t-danger-text: #c02b36;
   --t-danger-soft: rgba(214, 69, 80, 0.1);
   --t-info: #2a78d6;
+  /* 5.09:1 on --t-info-soft, where the 11px type badges sit. */
+  --t-info-text: #1f5fae;
   --t-info-soft: rgba(42, 120, 214, 0.1);
   --t-grid: #e4e6ea;
   --t-glow: rgba(224, 135, 0, 0.16);
@@ -67,8 +78,10 @@
   --t-ok-text: #4ade80;
   --t-ok-soft: rgba(74, 222, 128, 0.12);
   --t-danger: #fb7185;
+  --t-danger-text: #fb7185;
   --t-danger-soft: rgba(251, 113, 133, 0.12);
   --t-info: #5b9be6;
+  --t-info-text: #5b9be6;
   --t-info-soft: rgba(91, 155, 230, 0.12);
   --t-grid: #21262e;
   --t-glow: rgba(255, 178, 36, 0.14);
@@ -100,8 +113,10 @@
   --color-ok-text: var(--t-ok-text);
   --color-ok-soft: var(--t-ok-soft);
   --color-danger: var(--t-danger);
+  --color-danger-text: var(--t-danger-text);
   --color-danger-soft: var(--t-danger-soft);
   --color-info: var(--t-info);
+  --color-info-text: var(--t-info-text);
   --color-info-soft: var(--t-info-soft);
   --color-grid: var(--t-grid);
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;

@@ -1,5 +1,5 @@
 import type { StepId } from '../types'
-import { STEPS, STEP_BY_ID, stepAfter } from '../data/progressions'
+import { STEP_BY_ID, stepAfter } from '../data/progressions'
 
 /**
  * Working out where an athlete actually is, instead of asking them to guess.
@@ -344,27 +344,19 @@ export function placeFromAssessment(answers: AssessmentAnswers): Placement {
     break
   }
 
-  // The frog stand sits between the lean and the tuck on the road but gates
-  // neither. If it is the only thing standing between the athlete and a tuck
-  // they can already hold, step past it and note the gap instead.
-  if (placed === 'frog') {
-    const tuck = answers['tuck-planche']
-    if (tuck !== undefined && tuck >= STEP_BY_ID.tuck.startSec) {
-      const advanced = placeFromAssessment({ ...answers, 'frog-stand': STEP_BY_ID.frog.unlockSec })
-      return {
-        ...advanced,
-        gaps: dedupeGaps([
-          ...advanced.gaps,
-          {
-            id: 'balance',
-            label: 'Hand balance',
-            detail:
-              'You have the strength for this step but not the frog stand that usually comes with it. Balance is cheap to train and it is often what makes a hold feel unstable rather than heavy.',
-          },
-        ]),
-      }
-    }
-  }
+  // How the frog stand gets stepped past: it is simply not in STRENGTH_LADDER,
+  // so an athlete who owns the lean and can hold a tuck walks straight from
+  // one to the other and never has the balance drill held against them. The
+  // gap is still surfaced below, so it is noted rather than ignored.
+  //
+  // Landing *on* frog is a real outcome, not a fallback: it happens when the
+  // lean is owned but the tuck is not yet holdable, which is exactly when
+  // cheap balance practice is the most useful thing available.
+  //
+  // (A guard used to sit here re-running the placement with the frog stand
+  // faked as passed. It was unreachable — reaching it required the tuck to be
+  // both below and above its start threshold — and removing it changes no
+  // placement. Verified against an exhaustive sweep of answer combinations.)
 
   const gaps: AssessmentGap[] = []
   const caveats: string[] = []
@@ -464,9 +456,6 @@ function describeSeconds(sec: number): string {
   return sec >= 1 ? `about ${Math.round(sec)}s` : 'under a second'
 }
 
-/** The placement the old five-option screen would have produced, for comparison. */
-export const LEGACY_PLACEMENT_STEPS: StepId[] = ['foundations', 'lean', 'tuck', 'advtuck', 'straddle']
-
 /**
  * Which accessory the placement gaps argue for on the athlete's first sessions.
  *
@@ -485,6 +474,3 @@ export function emphasisFromGaps(gapIds: readonly string[]): 'pressing' | 'core'
   if (ids.has('balance')) return 'balance'
   return 'none'
 }
-
-/** Every step the ladder can place someone at, for tests and for the UI. */
-export const PLACEABLE_STEPS: StepId[] = STEPS.map((s) => s.id)

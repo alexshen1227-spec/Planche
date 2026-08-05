@@ -234,11 +234,11 @@ export function Stats() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="font-display text-[16px] font-semibold text-ink">Why am I stuck?</div>
           {diag.plateaued ? (
-            <span className="rounded-full bg-danger-soft px-3 py-1 text-[12.5px] font-semibold text-danger">
+            <span className="rounded-full bg-danger-soft px-3 py-1 text-[12.5px] font-semibold text-danger-text">
               Flat ~{diag.weeksFlat} weeks
             </span>
           ) : (
-            <span className="rounded-full bg-ok-soft px-3 py-1 text-[12.5px] font-semibold text-ok">Progressing</span>
+            <span className="rounded-full bg-ok-soft px-3 py-1 text-[12.5px] font-semibold text-ok-text">Progressing</span>
           )}
         </div>
         <p className="mt-1 max-w-2xl text-[13.5px] leading-relaxed text-ink2">{diag.summary}</p>
@@ -256,7 +256,7 @@ export function Stats() {
                 </div>
                 <p className="mt-1 text-[13px] leading-relaxed text-ink2">{c.detail}</p>
                 <p className="mt-1 text-[13px] leading-relaxed text-ink">
-                  <span className="font-medium text-accent">Do this:</span> {c.fix}
+                  <span className="font-medium text-accent-text">Do this:</span> {c.fix}
                 </p>
               </div>
             ))}
@@ -279,11 +279,11 @@ export function Stats() {
                 <span
                   className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
                     l.status === 'limiting'
-                      ? 'bg-danger-soft text-danger'
+                      ? 'bg-danger-soft text-danger-text'
                       : l.status === 'strong'
-                        ? 'bg-ok-soft text-ok'
+                        ? 'bg-ok-soft text-ok-text'
                         : l.status === 'adequate'
-                          ? 'bg-accent-soft text-accent'
+                          ? 'bg-accent-soft text-accent-text'
                           : 'bg-line text-ink3'
                   }`}
                 >
@@ -338,7 +338,7 @@ export function Stats() {
               the next session. The fastest approach gets used most, and untested ones get their turn.
             </div>
           </div>
-          <span className="rounded-full bg-accent-soft px-3 py-1 text-[12.5px] font-semibold text-accent">
+          <span className="rounded-full bg-accent-soft px-3 py-1 text-[12.5px] font-semibold text-accent-text">
             Today: {STRATEGY_BY_ID[coachPick.strategy].name}
           </span>
         </div>
@@ -353,12 +353,12 @@ export function Stats() {
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-semibold text-ink">{def.name}</span>
                     {isBest ? (
-                      <span className="rounded-full bg-ok-soft px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-ok">
+                      <span className="rounded-full bg-ok-soft px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-ok-text">
                         fastest
                       </span>
                     ) : null}
                     {a.id === coachPick.strategy ? (
-                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-accent">
+                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-accent-text">
                         today
                       </span>
                     ) : null}
@@ -455,7 +455,7 @@ export function Stats() {
         <div className="card-sheen bg-gradient-to-br from-accent-soft to-transparent p-5">
           <div className="flex items-end justify-between gap-4">
             <div>
-              <div className="text-[12px] font-semibold uppercase tracking-wider text-accent">Trophy cabinet</div>
+              <div className="text-[12px] font-semibold uppercase tracking-wider text-accent-text">Trophy cabinet</div>
               <div className="mt-1 font-display text-[25px] font-semibold text-ink tnum">
                 {unlockedCount} <span className="text-[14px] font-normal text-ink3">of {ACHIEVEMENTS.length} earned</span>
               </div>
@@ -531,7 +531,7 @@ export function Stats() {
               <div className={`mt-1.5 text-[13.5px] font-semibold ${at ? 'text-ink' : 'text-ink3'}`}>{a.name}</div>
               <div className="mt-0.5 text-[12px] leading-snug text-ink3">{a.desc}</div>
               {at ? (
-                <div className="mt-auto pt-2 text-[11.5px] font-medium text-accent">Earned {fmtDate(at)}</div>
+                <div className="mt-auto pt-2 text-[11.5px] font-medium text-accent-text">Earned {fmtDate(at)}</div>
               ) : prog ? (
                 <div className="mt-auto pt-3">
                   <div className="h-1 overflow-hidden rounded-full bg-line">
@@ -605,7 +605,7 @@ export function Stats() {
                     </div>
                     <button
                       onClick={() => setConfirmDelete(s.id)}
-                      className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-danger/80 hover:text-danger"
+                      className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-danger-text/80 hover:text-danger-text"
                     >
                       <Icon name="trash" size={14} /> Delete session
                     </button>

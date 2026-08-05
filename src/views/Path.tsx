@@ -39,14 +39,13 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
           Your destination, not your current step. It shapes the mobility work in your sessions and how the app
           measures the distance left.
         </p>
-        <div className="mt-2.5 flex flex-wrap gap-1.5" role="radiogroup" aria-labelledby="path-goal">
+        <div className="mt-2.5 flex flex-wrap gap-1.5" role="group" aria-labelledby="path-goal">
           {GOAL_CHOICES.map((id) => {
             const on = goalStepId === id
             return (
               <button
                 key={id}
-                role="radio"
-                aria-checked={on}
+                aria-pressed={on}
                 onClick={() => dispatch({ type: 'SET_PROFILE', patch: { goalStepId: id } })}
                 className={`rounded-full border px-3.5 py-2 text-[13px] font-medium transition ${
                   on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2 hover:text-ink'
@@ -60,10 +59,10 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px]">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-ok/25 bg-ok-soft px-3 py-1.5 font-medium text-ok">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-ok/25 bg-ok-soft px-3 py-1.5 font-medium text-ok-text">
           <Icon name="check" size={13} /> Clean hold
         </span>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent-soft px-3 py-1.5 font-medium text-accent">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent-soft px-3 py-1.5 font-medium text-accent-text">
           <Icon name="monitor" size={13} /> Camera pass
         </span>
         <details className="group">
@@ -112,9 +111,9 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
                 <div
                   className={`relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 sm:h-9 sm:w-9 ${
                     done
-                      ? 'border-ok bg-ok-soft text-ok'
+                      ? 'border-ok bg-ok-soft text-ok-text'
                       : isCurrent
-                        ? 'border-accent bg-accent-soft text-accent'
+                        ? 'border-accent bg-accent-soft text-accent-text'
                         : unlocked
                           ? 'border-line-strong bg-raised text-ink2'
                           : 'border-line bg-raised text-ink3'
@@ -145,7 +144,7 @@ export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
                         current
                       </span>
                     ) : done ? (
-                      <span className="text-[12px] font-medium text-ok">cleared</span>
+                      <span className="text-[12px] font-medium text-ok-text">cleared</span>
                     ) : available ? (
                       <span className="text-[12px] font-medium text-ink3">available</span>
                     ) : null}
@@ -228,7 +227,7 @@ function StepDetail({
       <div className="flex flex-wrap items-center gap-5 pr-10">
         <Figure step={step.id} className="h-24 w-28 text-ink" />
         <div>
-          <div className="text-[12.5px] font-semibold uppercase tracking-wider text-accent">
+          <div className="text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
             Step {step.order + 1} of 8
           </div>
           <h2 className="font-display text-[26px] font-bold text-ink">{step.name}</h2>
@@ -253,7 +252,7 @@ function StepDetail({
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-line bg-raised p-4">
-          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-ok">
+          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-ok-text">
             <Icon name="check" size={14} /> Form checklist
           </div>
           <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
@@ -266,7 +265,7 @@ function StepDetail({
           </ul>
         </div>
         <div className="rounded-2xl border border-line bg-raised p-4">
-          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-danger">
+          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-danger-text">
             <Icon name="x" size={14} /> Common mistakes
           </div>
           <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
@@ -281,7 +280,7 @@ function StepDetail({
       </div>
 
       <div className="mt-4 rounded-2xl border border-accent/25 bg-accent-soft p-4">
-        <div className="text-[13px] font-semibold text-accent">Why it matters</div>
+        <div className="text-[13px] font-semibold text-accent-text">Why it matters</div>
         <p className="mt-1 text-[13.5px] leading-relaxed text-ink">{step.whyItMatters}</p>
         <div className="mt-2.5 text-[13px] text-ink2">
           <span className="font-semibold text-ink">Suggested dose:</span> {step.scheme}
@@ -329,7 +328,7 @@ function StepDetail({
             </div>
             <button
               onClick={() => setSkipStage(1)}
-              className="inline-flex items-center gap-2 rounded-xl border border-accent/35 bg-accent-soft px-5 py-3 font-display text-[14.5px] font-semibold text-accent transition hover:border-accent/60"
+              className="inline-flex items-center gap-2 rounded-xl border border-accent/35 bg-accent-soft px-5 py-3 font-display text-[14.5px] font-semibold text-accent-text transition hover:border-accent/60"
             >
               <Icon name="skip" size={16} /> Skip ahead to {step.name}
             </button>
@@ -362,7 +361,7 @@ function SkipStepFlow({
 }) {
   return (
     <div className="p-6 sm:p-8">
-      <div className="pr-10 text-[12.5px] font-semibold uppercase tracking-wider text-accent">
+      <div className="pr-10 text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
         Safety check {stage} of 3
       </div>
       <div className="mt-4 flex items-center gap-4">

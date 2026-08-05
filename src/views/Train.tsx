@@ -40,7 +40,7 @@ function WorkoutTarget({ workout }: { workout: Workout }) {
         <Icon name="target" size={18} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent">Main target</div>
+        <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent-text">Main target</div>
         <div className="truncate text-[14px] font-semibold text-ink">{exercise.name}</div>
       </div>
       <div className="shrink-0 text-right">
@@ -83,7 +83,7 @@ export function Train({ startWorkout }: { startWorkout: (w: Workout) => void }) 
         >
           <div className="pointer-events-none absolute -right-8 -top-12 h-44 w-44 rounded-full bg-accent-soft blur-2xl" />
           <div className="relative">
-            <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-accent">
+            <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
               <Icon name="bolt" size={14} /> Recommended today
             </div>
             <div className="mt-1.5 font-display text-[22px] font-bold text-ink">{today.name}</div>
@@ -114,7 +114,7 @@ export function Train({ startWorkout }: { startWorkout: (w: Workout) => void }) 
             the {EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. A verified{' '}
             <span className="font-semibold text-ink tnum">{step.unlockSec}s</span> unlocks the next step.
           </p>
-          <div className="mt-4 inline-flex items-center gap-1.5 text-[14px] font-medium text-accent">
+          <div className="mt-4 inline-flex items-center gap-1.5 text-[14px] font-medium text-accent-text">
             Test yourself <Icon name="arrowR" size={15} />
           </div>
         </button>
