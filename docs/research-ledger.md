@@ -193,3 +193,142 @@ Citations in sections 1–8 were verified against PubMed/PMC/Crossref records
 displaying title and author list. One fabricated citation was caught and
 discarded during research and is not present. Sources that could not be
 verified are omitted rather than included with a caveat.
+
+---
+
+# Second pass — 2026-08-05 (adversarially verified)
+
+A 112-agent deep-research run with 3-vote adversarial verification per claim.
+**Twenty claims failed verification and are recorded below rather than
+suppressed**, because several are attractive enough to be re-derived by
+accident. Everything in this section is either 3-0 verified or explicitly
+flagged as refuted/uncovered.
+
+## The competitor question: CaliPro
+
+**VERIFIED 3-0**, against Apple's iTunes Lookup API (primary JSON, not a
+summarised page):
+
+| | |
+|---|---|
+| App | `id6762614539`, bundle `com.ofek.calipro` |
+| Title | "CaliPro" — subtitle "AI Calisthenics Form Coach" |
+| Developer | individual, `ofek yahalom` (no Ltd/Inc/LLC) |
+| Released | 2026-04-30 · v2.8 on 2026-07-30 (actively maintained) |
+| Price | free download; IAP $6.99/wk, $9.99/mo, $39.99/yr (50% off), $79.99/yr |
+| Ratings | 3.909 from **22** ratings |
+| Languages | English only |
+
+Self-describes as on-device pose tracking scoring a filmed planche or
+front-lever hold 1–100 on joint angles across six aspects. **This is developer
+copy, not observed behaviour.**
+
+Excluded lookalikes: "Calisthenics Pro – Workout" (`id6762489614`, Tomohito
+Kii) is a different product on every discriminator. `calipro.io` and
+`calipro.co.uk` belong to unrelated entities — **the claim that calipro.io is
+this product was refuted 0-3**. No official website was confirmed; the App
+Store listing is the only verified primary source.
+
+No Android competitor is worth benchmarking: the nearest is a Brazil-focused
+app with 500+ installs and zero ratings.
+
+## The null result that matters most
+
+**Nothing could be established about ANY competitor's actual mechanics from
+public sources.** Every such claim failed verification, almost all because they
+were *arguments from absence in marketing copy*.
+
+Specifically refuted — do not re-derive these:
+- CaliPro lacks placement / progression gating / plateau diagnosis / deloads /
+  pain rails / forecasting (1-2)
+- CaliPro v2.8 shipped a side-view refusal gate and honest sub-3s scoring,
+  i.e. convergent evolution on this app's invariants (**0-3**)
+- Movement Athlete's adaptation inputs are entirely self-reported (1-2)
+- A Movement Athlete redesign destroyed users' training history (0-3)
+- Both gamification-harm claims
+
+**Absence from a store listing is not absence from a product.** This app must
+not claim competitors lack features.
+
+## Pose estimation — the substantive science
+
+**Rode et al. 2025, *Scientific Reports*** — `10.1038/s41598-025-22626-7` ·
+[PMC12589393](https://pmc.ncbi.nlm.nih.gov/articles/PMC12589393/).
+Validation against 27-camera marker-based mocap: **2.2M frames, 25
+participants, 44 model configurations.** VERIFIED 3-0.
+
+- Monocular **depth (out-of-image-plane) error is ~2–3× in-plane error** for
+  every 3D-capable estimator tested.
+- The authors' operational recommendation: **orient the camera so the angles
+  you care about lie in the image plane**, or use multi-view.
+- They name **BlazePose "Local" mode as accurate in 2D when depth estimates
+  are discarded**.
+
+This is published, model-specific backing for `MAX_SIDE_VIEW_RATIO` and for
+judging in 2D. Critically, the cause is **projective geometry, not model
+quality** — a newer model will not fix it.
+
+The same paper documents the near-arm/far-arm **self-occlusion** problem a side
+view creates. The existing near+far averaging and `unseen` states are the
+correct response; do not replace with worst-of or silent single-arm judging.
+
+**Cabuk et al.** — `10.5114/biolsport.2026.154942` ·
+[PubMed 41783455](https://pubmed.ncbi.nlm.nih.gov/41783455/). VERIFIED 3-0,
+abstract level only. Markerless accuracy is **task- and joint-specific**;
+test-retest ranged moderate to very good with marked variability in certain
+task-joint combinations. **Aggregate RMSE figures cannot be borrowed.**
+
+### Flagged, do NOT rely on
+
+Elbow flexion may sit in the least favourable measurement regime of any joint
+angle — reported MAEs 2D 21.5–26.1°, 3D 16.3–23.2°, versus knee 2D 9.3–22.9°.
+This matters disproportionately because progression credit rests on signed
+elbow bend. **But both the standalone claim and the "no monocular estimator
+reaches the ~5° clinical threshold" claim FAILED verification (0-3 and 1-2).**
+The paper's elbow task was shoulder rotation with a partly self-occluded upper
+limb — not a static side-view straight-arm hold. Transfer is INFERENCE.
+
+## Additions to "what the app must not claim"
+
+11. Do **not** quote OpenCap's pooled RMSE (~4.9–5.9°), r=0.845 or ES=−0.140 as
+    this app's accuracy — different pipeline (two-camera, OpenSim-fitted), and
+    the standalone claims asserting those as a transferable floor were refuted.
+12. Do **not** claim any absolute joint-angle accuracy without task-specific
+    validation of *that* task, *that* joint and *that* camera view.
+13. Do **not** claim competitors lack placement, plateau diagnosis, deloads,
+    pain rails or uncertainty handling.
+14. Do **not** claim a competitor independently rediscovered this app's
+    invariants (refuted 0-3).
+
+## The open question this app is uniquely placed to answer
+
+> **What is single-camera BlazePose's joint-angle error for a static,
+> side-view, straight-arm hold with the far arm partly self-occluded?**
+> No published validation covers this task-joint-view combination.
+
+The app already owns the machinery to measure it — `poseSynth` (skeletons built
+from known angles), `realPoses.fixture.ts`, `formJudge.eval.test.ts` and
+`selfTestJudge()`. Nobody else's number applies, so measuring it would be a
+genuine contribution and the only defensible accuracy figure the app could ever
+state.
+
+## Coverage gaps — "not investigated", not "nothing found"
+
+No surviving claim addressed: isometric training at long muscle lengths or
+joint-angle specificity of transfer; scapular protraction / serratus / straight-
+arm loading biomechanics; tendon and distal-biceps tendinopathy literature
+depth; CV uncertainty quantification as distinct from accuracy; motor learning
+and the McKay/Carter replication re-analyses; anthropometry and leverage. The
+**whole of Priority 4** is uncovered — no FIG Code of Points, no rings
+research, no hand-balancing injury epidemiology, no physiotherapy return-to-load
+protocols, no open pose datasets, no on-device ML privacy.
+
+## Source-quality limits
+
+App Store and Play listings were verified as authentic via primary APIs and live
+DOM inspection — this establishes existence, identity, pricing, ratings and
+self-description, **not** that any app behaves as its marketing says. The
+Emerald/Kybernetes gamification study is paywalled; only abstract-level
+direction of effect was visible. Neither Rode et al. nor Cabuk et al. could be
+cross-checked on the publisher's own site (auth walls); both were confirmed real
+via PMC/PubMed/Europe PMC and DOI landings.

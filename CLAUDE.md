@@ -108,6 +108,15 @@ bugs of this shape were found in review; assume a fourth if you add a decision.
 
 ### Evidence tiers
 
+`docs/research-ledger.md` has **two** passes. The second (2026-08-05) was
+adversarially verified and its most important output is a **null result**:
+nothing could be established about any competitor's actual mechanics from
+public sources — every such claim failed 3-vote verification, almost all
+because they were arguments from absence in marketing copy. Twenty refuted
+claims are recorded there *by name* precisely because they are attractive
+enough to be re-derived by accident. Read it before writing anything
+comparative, and before quoting any pose-estimation accuracy figure.
+
 When writing athlete-facing copy, keep these distinguishable:
 STRONG (meta-analysis/RCT) · MODERATE · CONSENSUS (coaches agree, no trial) ·
 INFERENCE (mechanics) · OPEN. Notably **there is no peer-reviewed research on
