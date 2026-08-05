@@ -117,9 +117,29 @@ export function HoldLineChart({
     setTip({ x: x(best.at), y: y(best.value), lines: [fmtHold(best.value), fmtShortDay(best.at)] })
   }
 
+  // Read out for anyone who cannot see the line. Tooltips here are mouse-only,
+  // so on a phone — this app's main device — the summary is the only way to
+  // get the numbers out of the chart at all.
+  const summary = `Best hold per session. ${points.length} points from ${fmtShortDay(t0)} to ${fmtShortDay(
+    t1,
+  )}, ${fmtHold(points[0].value)} to ${fmtHold(last.value)}${
+    goal ? `, against a ${fmtHold(goal)} goal` : ''
+  }.`
+
   return (
-    <div ref={ref} className="relative">
-      <svg width={w} height={height} onMouseMove={onMove} onMouseLeave={() => setTip(null)} className="block">
+    // overflow-x-auto matches TrainingHeatmap below: the SVG has a 280px
+    // floor, and at a 320px viewport the card only offers ~248px, so without
+    // this the whole page scrolled sideways.
+    <div ref={ref} className="relative overflow-x-auto">
+      <svg
+        width={w}
+        height={height}
+        onMouseMove={onMove}
+        onMouseLeave={() => setTip(null)}
+        className="block"
+        role="img"
+        aria-label={summary}
+      >
         {ticks.map((t) => (
           <g key={t}>
             <line x1={pad.l} x2={w - pad.r} y1={y(t)} y2={y(t)} stroke="var(--t-grid)" strokeWidth={1} />
@@ -319,9 +339,18 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
   const bw = Math.min(24, slot * 0.55)
   const y = (sec: number) => pad.t + ih - (sec / maxV) * ih
 
+  const totalPlanche = weeks.reduce((t, wk) => t + wk.plancheSec, 0)
+  const totalOther = weeks.reduce((t, wk) => t + wk.otherSec, 0)
+  const summary = `Weekly hold volume over ${weeks.length} weeks: ${Math.round(
+    totalPlanche / 60,
+  )} minutes of planche holds and ${Math.round(totalOther / 60)} minutes of accessory holds in total.`
+
   return (
     <div ref={ref} className="relative">
-      <div className="absolute right-1 top-0 flex items-center gap-4 text-[12px] text-ink2">
+      {/* In normal flow rather than absolutely positioned over the plot: the
+          two labelled swatches need ~190px, which at a narrow width sat on
+          top of the top gridline and the tallest bars. */}
+      <div className="mb-1 flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[12px] text-ink2">
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: 'var(--t-chart1)' }} />
           Planche holds
@@ -331,7 +360,15 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
           Accessory
         </span>
       </div>
-      <svg width={w} height={height} onMouseLeave={() => setTip(null)} className="block">
+      <div className="overflow-x-auto">
+      <svg
+        width={w}
+        height={height}
+        onMouseLeave={() => setTip(null)}
+        className="block"
+        role="img"
+        aria-label={summary}
+      >
         {ticks.map((t) => (
           <g key={t}>
             <line x1={pad.l} x2={w - pad.r} y1={y(t * 60)} y2={y(t * 60)} stroke="var(--t-grid)" strokeWidth={1} />
@@ -384,6 +421,7 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
           )
         })}
       </svg>
+      </div>
       <Tooltip tip={tip} />
     </div>
   )

@@ -1,8 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react'
-import { CURRENT_STATE_VERSION } from '../types'
+import { BODY_REGIONS, CURRENT_STATE_VERSION } from '../types'
 import type {
   AppState,
+  AssessmentRecord,
   AutoForm,
+  BodyRegion,
+  CheckIn,
   EquipmentId,
   FormCheck,
   FormIssue,
@@ -163,6 +166,57 @@ function clampOptional(v: unknown, lo: number, hi: number): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : undefined
 }
 
+const JOINT_STATES = new Set(['good', 'niggle', 'pain'])
+const ENERGY_STATES = new Set(['fresh', 'ok', 'tired'])
+const SLEEP_STATES = new Set(['good', 'ok', 'poor'])
+const REGION_IDS = new Set<BodyRegion>(BODY_REGIONS)
+
+/**
+ * A check-in drives safety rails, so every field is validated rather than
+ * waved through. An imported file claiming `regions: 'elbow'` (a string, not an
+ * array) would otherwise be spread into a rail that iterates it per character.
+ */
+function sanitizeCheckIn(raw: unknown): CheckIn | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const c = raw as Partial<CheckIn>
+  if (typeof c.joints !== 'string' || !JOINT_STATES.has(c.joints)) return undefined
+  if (typeof c.energy !== 'string' || !ENERGY_STATES.has(c.energy)) return undefined
+  if (typeof c.at !== 'number' || !Number.isFinite(c.at)) return undefined
+  const regions = Array.isArray(c.regions)
+    ? [...new Set(c.regions.filter((r): r is BodyRegion => typeof r === 'string' && REGION_IDS.has(r)))]
+    : []
+  const out: CheckIn = { joints: c.joints, energy: c.energy, at: c.at }
+  if (regions.length) out.regions = regions
+  if (typeof c.sleep === 'string' && SLEEP_STATES.has(c.sleep)) out.sleep = c.sleep
+  return out
+}
+
+/** Placement answers are numbers keyed by known item ids; anything else goes. */
+function sanitizeAssessment(raw: unknown): AssessmentRecord | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const c = raw as Partial<AssessmentRecord>
+  if (typeof c.at !== 'number' || !Number.isFinite(c.at)) return undefined
+  if (typeof c.placedStepId !== 'string' || !STEP_BY_ID[c.placedStepId as StepId]) return undefined
+  const answers: Record<string, number> = {}
+  if (typeof c.answers === 'object' && c.answers !== null) {
+    for (const [k, v] of Object.entries(c.answers)) {
+      if (typeof k === 'string' && typeof v === 'number' && Number.isFinite(v)) {
+        answers[k.slice(0, 40)] = Math.min(3600, Math.max(0, v))
+      }
+    }
+  }
+  return {
+    at: c.at,
+    answers,
+    placedStepId: c.placedStepId as StepId,
+    confidence:
+      c.confidence === 'good' || c.confidence === 'moderate' || c.confidence === 'low' ? c.confidence : 'low',
+    gapIds: Array.isArray(c.gapIds)
+      ? c.gapIds.filter((g): g is string => typeof g === 'string').slice(0, 8)
+      : [],
+  }
+}
+
 /**
  * Drop anything that would crash the app downstream. An imported file is
  * untrusted input: a session without a `sets` array used to white-screen every
@@ -210,13 +264,7 @@ function sanitizeSessions(raw: unknown): Session[] {
     let id = typeof c.id === 'string' && c.id ? c.id : crypto.randomUUID()
     if (ids.has(id)) id = crypto.randomUUID()
     ids.add(id)
-    const checkIn =
-      c.checkIn &&
-      (c.checkIn.joints === 'good' || c.checkIn.joints === 'niggle' || c.checkIn.joints === 'pain') &&
-      (c.checkIn.energy === 'fresh' || c.checkIn.energy === 'ok' || c.checkIn.energy === 'tired') &&
-      typeof c.checkIn.at === 'number'
-        ? c.checkIn
-        : undefined
+    const checkIn = sanitizeCheckIn(c.checkIn)
     out.push({
       id,
       startedAt: c.startedAt,
@@ -251,9 +299,12 @@ export function normalizeState(raw: unknown): AppState {
     'foundations',
   )
   const grandfatheredStepId =
-    // v4 could not store the human "feet stayed unsupported" confirmation.
-    // Preserve every already-earned step when v5 adds that stricter evidence;
-    // only future unlocks are held to the new gate.
+    // Any version bump anchors the athlete at what they had already earned.
+    // v4 could not store the human "feet stayed unsupported" confirmation, so
+    // v5 needed this to avoid revoking steps under stricter evidence; v6 adds
+    // no new gate, and re-anchoring is a no-op for those saves because the
+    // floor only ever moves up. Keeping it unconditional means the next
+    // version that *does* tighten evidence cannot silently demote anybody.
     priorVersion < CURRENT_STATE_VERSION
       ? highestUnlocked
       : r.grandfatheredStepId && STEP_BY_ID[r.grandfatheredStepId]
@@ -300,6 +351,7 @@ export function normalizeState(raw: unknown): AppState {
     startedAt: typeof r.startedAt === 'number' ? r.startedAt : Date.now(),
     lastBackupAt: typeof r.lastBackupAt === 'number' ? r.lastBackupAt : undefined,
     measureSnoozedAt: typeof r.measureSnoozedAt === 'number' ? r.measureSnoozedAt : undefined,
+    ...(sanitizeAssessment(r.assessment) ? { assessment: sanitizeAssessment(r.assessment) } : {}),
     stepId,
     // Older saves predate this field and their placement is unrecoverable, so
     // anchor at the current step: never demote someone who is already there.
@@ -369,6 +421,7 @@ export function normalizeState(raw: unknown): AppState {
       heightCm: clampOptional(r.profile?.heightCm, 100, 250),
       injuryNote: typeof r.profile?.injuryNote === 'string' ? r.profile.injuryNote : undefined,
       birthYear: clampOptional(r.profile?.birthYear, 1920, new Date().getFullYear()),
+      trainingAgeMonths: clampOptional(r.profile?.trainingAgeMonths, 0, 1200),
       preferredSurface:
         typeof r.profile?.preferredSurface === 'string' &&
         TRAINING_SURFACES.has(r.profile.preferredSurface as TrainingSurface) &&

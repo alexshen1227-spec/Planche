@@ -1,4 +1,4 @@
-import type { AppState, Block, BlockTarget, CheckIn, StepId, Workout } from '../types'
+import type { AppState, Block, BlockTarget, BodyRegion, CheckIn, StepId, Workout } from '../types'
 import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID, stepBefore } from './progressions'
 import { buildPlan, type CoachPlan, type WarmupLevel } from '../lib/coach'
@@ -265,8 +265,48 @@ const DAY_LABEL: Record<CoachPlan['dayType'], string> = {
   recovery: 'Pain-Safe Recovery',
 }
 
-export function painSafeRecoveryWorkout(): Workout {
-  const blocks: Block[] = [
+/**
+ * Which reported region makes a given movement a bad idea today.
+ *
+ * Only movements that genuinely load the region are listed. Being too eager
+ * here is its own failure: strip everything and the session becomes an empty
+ * screen, which teaches athletes to stop reporting pain at all.
+ */
+const REGION_CONFLICTS: Record<BodyRegion, string[]> = {
+  // Anything that puts bodyweight through an extended wrist. Cat–Cow looks
+  // harmless but is on hands and knees — its own description says it loads the
+  // wrists, and a recovery session is exactly where that matters.
+  wrist: ['cat-cow'],
+  // Nothing in the recovery set loads a straight arm — kept explicit so a
+  // future addition has to make the same judgement rather than inherit a gap.
+  elbow: [],
+  shoulder: ['jumping-jacks'],
+  // The default recovery block was three straight lumbar/hip-flexor exercises,
+  // handed to the one athlete who should not be doing any of them.
+  'lower-back': ['arch-hold', 'leg-lifts', 'hollow-hold'],
+  other: [],
+}
+
+const REGION_LABEL: Record<BodyRegion, string> = {
+  wrist: 'wrist',
+  elbow: 'elbow',
+  shoulder: 'shoulder',
+  'lower-back': 'lower back',
+  other: 'reported area',
+}
+
+/**
+ * A session for a day something hurts.
+ *
+ * The region matters. This used to be one fixed block list handed to everyone
+ * who reported pain — which meant an athlete with a sore lower back was
+ * prescribed arch holds, leg lifts and hollow holds, three movements that load
+ * exactly the thing they had just flagged. Naming the region lets the session
+ * avoid it and say so, instead of hoping they read the disclaimer.
+ */
+export function painSafeRecoveryWorkout(regions: BodyRegion[] = []): Workout {
+  const avoid = new Set(regions.flatMap((r) => REGION_CONFLICTS[r] ?? []))
+  const candidates: Block[] = [
     {
       exerciseId: 'jumping-jacks',
       sets: 2,
@@ -275,16 +315,29 @@ export function painSafeRecoveryWorkout(): Workout {
       section: 'warmup',
       note: 'Easy pace. Skip if the arm motion reproduces symptoms.',
     },
+    { exerciseId: 'cat-cow', sets: 2, target: reps(8), restSec: 20, section: 'warmup' },
     { exerciseId: 'hollow-hold', sets: 3, target: hold(20), restSec: 60, section: 'core' },
     { exerciseId: 'leg-lifts', sets: 3, target: reps(8), restSec: 60, section: 'core' },
     { exerciseId: 'arch-hold', sets: 2, target: hold(15), restSec: 45, section: 'core' },
     { exerciseId: 'pancake-stretch', sets: 2, target: hold(30), restSec: 30, section: 'cooldown' },
   ]
+  const blocks = candidates.filter((b) => !avoid.has(b.exerciseId))
+  const named = regions.filter((r) => r !== 'other').map((r) => REGION_LABEL[r])
+  const removed = candidates.length - blocks.length
+
+  const focus =
+    named.length > 0
+      ? `No loaded planche, pressing or wrist work. ${
+          removed > 0
+            ? `Movements that load your ${joinWords(named)} have been left out too. `
+            : ''
+        }Use only pain-free movement, and stop anything that reproduces symptoms.`
+      : 'No loaded planche, pressing or wrist work. Use only pain-free movement; stop anything that reproduces symptoms.'
+
   return {
-    id: 'pain-safe-recovery',
+    id: named.length ? `pain-safe-recovery-${[...regions].sort().join('-')}` : 'pain-safe-recovery',
     name: 'Pain-Safe Recovery',
-    focus:
-      'No loaded planche, pressing or wrist work. Use only pain-free movement; stop anything that reproduces symptoms.',
+    focus,
     minutes: estimateMinutes(blocks),
     kind: 'auto',
     blocks,
@@ -292,9 +345,14 @@ export function painSafeRecoveryWorkout(): Workout {
   }
 }
 
+function joinWords(words: string[]): string {
+  if (words.length <= 1) return words[0] ?? ''
+  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`
+}
+
 /** Apply a readiness answer to a user-selected template before it can start. */
 export function adjustedTemplateWorkout(workout: Workout, checkIn: CheckIn): Workout {
-  if (checkIn.joints === 'pain') return painSafeRecoveryWorkout()
+  if (checkIn.joints === 'pain') return painSafeRecoveryWorkout(checkIn.regions ?? [])
   if (workout.kind !== 'template' || (checkIn.joints === 'good' && checkIn.energy !== 'tired')) return workout
 
   const jointScale = checkIn.joints === 'niggle' ? 0.8 : 1
@@ -330,7 +388,9 @@ export function todaysSession(state: AppState, planIn?: CoachPlan): Workout {
   const stepId = state.stepId
   const step = STEP_BY_ID[stepId]
   const plan = planIn ?? buildPlan(state)
-  if (plan.loadPermission === 'none') return painSafeRecoveryWorkout()
+  if (plan.loadPermission === 'none') {
+    return painSafeRecoveryWorkout(plan.signals.lastCheckIn?.regions ?? [])
+  }
   const rMain = plan.restMainSec
   const rAcc = plan.restAccessorySec
   const vol = plan.volumeFactor

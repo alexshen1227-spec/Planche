@@ -21,7 +21,7 @@ export type Units = 'metric' | 'imperial'
 export type EquipmentId = 'floor' | 'parallettes' | 'band' | 'pullup-bar' | 'dip-bars'
 export type TrainingSurface = 'floor' | 'parallettes'
 
-export const CURRENT_STATE_VERSION = 5 as const
+export const CURRENT_STATE_VERSION = 6 as const
 
 export interface Measurement {
   at: number
@@ -41,6 +41,12 @@ export interface Profile {
   injuryNote?: string
   /** Optional local context; it never changes an earned progression result. */
   birthYear?: number
+  /**
+   * Months of straight-arm training behind the athlete. Connective tissue
+   * adapts over months while muscle adapts over weeks, so this changes the
+   * sensible starting dose for someone who is already strong.
+   */
+  trainingAgeMonths?: number
 }
 
 /**
@@ -122,11 +128,54 @@ export interface FormCheck {
   auto?: AutoForm
 }
 
+/**
+ * Where something hurts.
+ *
+ * A single "joints hurt" flag made every complaint cost the same session: a
+ * sore wrist and an angry biceps tendon both wiped out the whole day. They are
+ * not the same problem and they do not need the same rest — a wrist that
+ * cannot take floor extension is usually fine on parallettes, while an elbow
+ * is the one signal that should stop straight-arm loading outright.
+ */
+export type BodyRegion = 'wrist' | 'elbow' | 'shoulder' | 'lower-back' | 'other'
+
+export const BODY_REGIONS: BodyRegion[] = ['wrist', 'elbow', 'shoulder', 'lower-back', 'other']
+
 /** Answers to the coach's periodic pre-session check-in. */
 export interface CheckIn {
   joints: 'good' | 'niggle' | 'pain'
   energy: 'fresh' | 'ok' | 'tired'
   at: number
+  /**
+   * Where the complaint is, asked only when `joints` is not 'good'. Empty or
+   * absent means "reported but not localised" — the rails then fall back to
+   * the conservative whole-body response rather than guessing a region.
+   */
+  regions?: BodyRegion[]
+  /**
+   * Sleep the night before. Optional because an athlete who does not want to
+   * answer should not be blocked, and a missing answer must never read as
+   * 'poor' — absence of evidence is not evidence of bad recovery.
+   */
+  sleep?: 'good' | 'ok' | 'poor'
+}
+
+/**
+ * A completed placement interview.
+ *
+ * Kept as data rather than only its result so a later change to the placement
+ * rules can be re-applied to what the athlete actually answered, and so the
+ * app can show its working when someone asks why they started where they did.
+ * Answers are a plain id→number map to keep this module free of dependencies
+ * on the assessment logic that consumes it.
+ */
+export interface AssessmentRecord {
+  at: number
+  answers: Record<string, number>
+  placedStepId: StepId
+  confidence: 'low' | 'moderate' | 'good'
+  /** Prerequisite gap ids the placement identified, for the first plans. */
+  gapIds: string[]
 }
 
 export type ExerciseType = 'hold' | 'reps'
@@ -305,6 +354,12 @@ export interface AppState {
   measurements: Measurement[]
   /** When the weekly check was last dismissed, so it stops re-asking. */
   measureSnoozedAt?: number
+  /**
+   * The most recent placement interview. Absent for athletes who onboarded
+   * before it existed or who skipped it — every consumer must treat that as
+   * "unknown", never as "assessed and found lacking".
+   */
+  assessment?: AssessmentRecord
   settings: Settings
 }
 

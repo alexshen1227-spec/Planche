@@ -215,7 +215,7 @@ export default function App() {
     const plan = buildPlan(state)
     let nextWorkout = w
     if (plan.loadPermission === 'none') {
-      nextWorkout = painSafeRecoveryWorkout()
+      nextWorkout = painSafeRecoveryWorkout(plan.signals.lastCheckIn?.regions ?? [])
     } else if (w.kind === 'template' && plan.loadPermission === 'reduced' && plan.signals.lastCheckIn) {
       nextWorkout = adjustedTemplateWorkout(w, plan.signals.lastCheckIn)
     }
@@ -358,7 +358,7 @@ export default function App() {
             // safely rebuilt around what the athlete just reported.
             const plan = buildPlan(state, Date.now(), c)
             if (c.joints === 'pain') {
-              setActiveWorkout(painSafeRecoveryWorkout())
+              setActiveWorkout(painSafeRecoveryWorkout(c.regions ?? []))
             } else if (activeWorkout.kind === 'auto') {
               setActiveWorkout(todaysSession(state, plan))
             } else if (

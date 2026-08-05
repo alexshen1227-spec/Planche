@@ -17,28 +17,55 @@ export function Modal({
   label?: string
 }) {
   const dialogRef = useRef<HTMLDivElement | null>(null)
+
+  /**
+   * Read through a ref, never a dependency.
+   *
+   * Every call site passes an inline arrow, so `onClose` has a fresh identity
+   * on each parent render. With it in the dependency array the whole trap tore
+   * down and re-installed on every render of the parent — and the session
+   * player re-renders ten times a second from its clock. The visible result
+   * was focus being yanked back to the Close button 10×/s: the readiness
+   * check-in could not be completed by keyboard at all, the bodyweight field
+   * lost focus after each keystroke, and a screen reader announced "Close,
+   * button" forever. The effect must depend on `open` and nothing else.
+   */
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
   useEffect(() => {
     if (!open) return
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
+    // Media elements are focus stops too. Without them the pinned YouTube
+    // embed and the clip's own video controls were skipped by Tab, and a
+    // mouse user who clicked into the iframe could Tab straight out of the
+    // dialog into the page behind it.
     const focusable =
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    window.setTimeout(() => {
-      const first = dialogRef.current?.querySelector<HTMLElement>(focusable)
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), video[controls], audio[controls], iframe, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])'
+    const visible = (el: HTMLElement) => el.getClientRects().length > 0 || el === dialogRef.current
+    const items = () => [...(dialogRef.current?.querySelectorAll<HTMLElement>(focusable) ?? [])].filter(visible)
+    const focusTimer = window.setTimeout(() => {
+      const first = items()[0]
       ;(first ?? dialogRef.current)?.focus()
     }, 0)
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') onCloseRef.current()
       if (e.key === 'Tab' && dialogRef.current) {
-        const items = [...dialogRef.current.querySelectorAll<HTMLElement>(focusable)]
-        if (!items.length) {
+        const list = items()
+        if (!list.length) {
           e.preventDefault()
           dialogRef.current.focus()
           return
         }
-        const first = items[0]
-        const last = items[items.length - 1]
-        if (e.shiftKey && document.activeElement === first) {
+        const first = list[0]
+        const last = list[list.length - 1]
+        // `contains` rather than an identity check: focus can sit on the
+        // dialog itself or inside an embed, and neither matches first/last.
+        if (!dialogRef.current.contains(document.activeElement)) {
+          e.preventDefault()
+          first.focus()
+        } else if (e.shiftKey && document.activeElement === first) {
           e.preventDefault()
           last.focus()
         } else if (!e.shiftKey && document.activeElement === last) {
@@ -50,11 +77,12 @@ export function Modal({
     window.addEventListener('keydown', onKey)
     document.body.style.overflow = 'hidden'
     return () => {
+      window.clearTimeout(focusTimer)
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = previousOverflow
       previouslyFocused?.focus()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
   // Portalled to <body>: the views animate in with a transform, and a
@@ -73,7 +101,10 @@ export function Modal({
         aria-modal="true"
         aria-label={label}
         tabIndex={-1}
-        className={`relative max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border border-line bg-surface shadow-pop animate-pop sm:rounded-3xl ${
+        // The bottom-sheet form on mobile put the last control (often a
+        // dismiss link) behind the iOS home indicator, which is 34px tall
+        // against 24px of padding. The tab bar already accounts for this.
+        className={`relative max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border border-line bg-surface pb-[max(env(safe-area-inset-bottom),0px)] shadow-pop animate-pop sm:rounded-3xl sm:pb-0 ${
           wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'
         }`}
       >

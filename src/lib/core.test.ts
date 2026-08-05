@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog, Workout } from '../types'
+import { BODY_REGIONS } from '../types'
+import { EXERCISE_BY_ID } from '../data/exercises'
 import { initialState, normalizeState, rebuildDerivedState, reconcileAchievements, skipToStep } from './store'
 import { applySession } from './engine'
 import {
@@ -1409,19 +1411,50 @@ describe('readiness rails', () => {
     const plan = buildPlan(state('tuck'), Date.now(), checkIn)
     expect(plan.loadPermission).toBe('none')
     expect(todaysSession(state('tuck'), plan)).toEqual(painSafeRecoveryWorkout())
-    expect(
-      todaysSession(state('tuck'), plan).blocks.some((block) =>
-        ['planche', 'push', 'scapula', 'wrist'].includes(
-          // The recovery contract is intentionally asserted by exercise ids
-          // here so a later content edit cannot quietly re-add loaded work.
-          ['hollow-hold', 'leg-lifts', 'arch-hold', 'pancake-stretch', 'jumping-jacks'].includes(
-            block.exerciseId,
-          )
-            ? ''
-            : 'planche',
-        ),
-      ),
-    ).toBe(false)
+    // Asserted by category rather than by an id whitelist: the contract is
+    // "nothing that loads the complaining tissue", and a whitelist has to be
+    // remembered every time safe content is added, which is exactly when it
+    // gets rubber-stamped instead of checked.
+    const loaded = ['planche', 'push', 'scapula', 'wrist']
+    for (const block of todaysSession(state('tuck'), plan).blocks) {
+      expect(loaded).not.toContain(EXERCISE_BY_ID[block.exerciseId]?.category)
+    }
+  })
+
+  it('leaves out the movements that load the region the athlete named', () => {
+    // The failure this prevents: a sore lower back being prescribed arch
+    // holds, leg lifts and hollow holds — the three things it should not do.
+    const back = painSafeRecoveryWorkout(['lower-back'])
+    const ids = back.blocks.map((b) => b.exerciseId)
+    expect(ids).not.toContain('arch-hold')
+    expect(ids).not.toContain('leg-lifts')
+    expect(ids).not.toContain('hollow-hold')
+    expect(back.blocks.length).toBeGreaterThan(0)
+    expect(back.focus).toMatch(/lower back/i)
+
+    // A wrist complaint keeps the core work but drops the hands-down mobility.
+    const wrist = painSafeRecoveryWorkout(['wrist'])
+    expect(wrist.blocks.map((b) => b.exerciseId)).not.toContain('cat-cow')
+    expect(wrist.blocks.map((b) => b.exerciseId)).toContain('hollow-hold')
+
+    // Every region combination still yields a usable session, never an empty
+    // screen — an athlete handed nothing stops reporting pain at all.
+    for (const region of BODY_REGIONS) {
+      expect(painSafeRecoveryWorkout([region]).blocks.length).toBeGreaterThan(0)
+    }
+    expect(painSafeRecoveryWorkout([...BODY_REGIONS]).blocks.length).toBeGreaterThan(0)
+  })
+
+  it('stops straight-arm loading for an elbow niggle, not just reduces it', () => {
+    // Every other niggle scales the session back. An elbow is the one that
+    // should stop it: the tissue is a tendon, and it is the exact tissue a
+    // planche loads hardest.
+    const now = Date.now()
+    const elbow: CheckIn = { joints: 'niggle', energy: 'ok', at: now, regions: ['elbow'] }
+    const wrist: CheckIn = { joints: 'niggle', energy: 'ok', at: now, regions: ['wrist'] }
+    expect(buildPlan(state('tuck'), now, elbow).loadPermission).toBe('none')
+    expect(buildPlan(state('tuck'), now, wrist).loadPermission).toBe('reduced')
+    expect(buildPlan(state('tuck'), now, elbow).suggestMaxTest).toBe(false)
   })
 })
 

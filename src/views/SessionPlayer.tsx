@@ -67,6 +67,46 @@ const SECTION_LABEL: Record<Section, string> = {
   cooldown: 'Cooldown',
 }
 
+/**
+ * How long a form check may run before the session stops waiting for it.
+ *
+ * Generous, because a genuine first-run model download on a slow connection is
+ * legitimately slow and cutting it off early would waste the athlete's clip.
+ */
+const ANALYSIS_TIMEOUT_MS = 45_000
+
+/**
+ * Bound the form check so a stalled one cannot trap the whole session.
+ *
+ * `analyseClip` already converts every *rejection* into a friendly result, but
+ * a promise that never settles is not a rejection. The model fetch is several
+ * megabytes over whatever network the gym has, and on a captive portal it can
+ * hang indefinitely — at which point the `finally` that clears the busy flag
+ * never runs, Save stays disabled forever, and the athlete's only remaining
+ * exit is Discard, which throws away every set they logged. A session must
+ * never become unsavable because a camera check went quiet.
+ */
+function withAnalysisTimeout(work: Promise<PoseFormResult>): Promise<PoseFormResult> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      resolve(
+        emptyResult(
+          'The form check ran out of time — usually a slow or blocked connection while the model downloads. Your set is saved either way, and you can run the check later from the clip in Learn.',
+        ),
+      )
+    }, ANALYSIS_TIMEOUT_MS)
+    work
+      .then((res) => {
+        window.clearTimeout(timer)
+        resolve(res)
+      })
+      .catch(() => {
+        window.clearTimeout(timer)
+        resolve(emptyResult('That form check could not be completed.'))
+      })
+  })
+}
+
 export function SessionPlayer({
   workout,
   onExit,
@@ -750,6 +790,17 @@ export function SessionPlayer({
       // A child dialog is on top: let it own the keyboard, or Escape would
       // also open the exit prompt and Space would start behind the overlay.
       if (showCheckIn || showDemo || showRpeHelp || confirmExit) return
+      // A focused control owns its own keys. Space is how a keyboard user
+      // activates a button, and swallowing it here meant tabbing to "Skip
+      // set", "+30s", an RPE value or a form rating and pressing Space either
+      // did nothing or fired the phase action instead of the button — the
+      // shortcut made the visible controls unreachable without a mouse.
+      if (
+        e.target instanceof HTMLElement &&
+        e.target.closest('button, a, select, [role="switch"], [role="button"], [contenteditable]')
+      ) {
+        return
+      }
       if (e.code === 'Space') {
         e.preventDefault()
         // Every Space action is a one-shot phase transition, so at most one may
@@ -1767,7 +1818,7 @@ function FormCheckRow({
     try {
       const blob = await getClipBlob(clipKey)
       const res: PoseFormResult = blob
-        ? await analyseClip(blob, exerciseId, undefined, creditedHoldSec)
+        ? await withAnalysisTimeout(analyseClip(blob, exerciseId, undefined, creditedHoldSec))
         : // Never leave the button looking like it did nothing.
           emptyResult('That clip could not be loaded.')
       setAnalysis(friendlyResult(res))

@@ -1,6 +1,7 @@
-import type { AppState, CheckIn, EquipmentId, Session, StepId, StrategyId } from '../types'
+import type { AppState, BodyRegion, CheckIn, EquipmentId, Session, StepId, StrategyId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { defaultSurface } from '../data/equipment'
+import { diagnosePlateau, type PlateauVerdict } from './plateau'
 import {
   readSignals,
   observedRestSec,
@@ -401,12 +402,71 @@ export interface CoachPlan {
   accessoryEmphasis: 'pressing' | 'scapula' | 'balance' | 'core' | 'none'
   /** Best-supported current bottleneck, if enough history exists to name one. */
   limiter: CoachLimiter | null
+  /**
+   * Named stall and its diagnosed cause, when the log supports one. Null is
+   * the common and good case — it means the athlete is progressing, or that
+   * there is not yet enough training to judge either way.
+   */
+  plateau: PlateauVerdict | null
   volumeFactor: number
   /** Whether loaded upper-body planche work is appropriate today. */
   loadPermission: 'normal' | 'reduced' | 'none'
   askCheckIn: boolean
   decisions: CoachDecision[]
   signals: Signals
+}
+
+/**
+ * What a specific region changes about today, beyond "rest it".
+ *
+ * Written per region because the useful advice genuinely differs: a wrist has
+ * a mechanical fix available this afternoon, an elbow needs time and nothing
+ * else, and a lower back changes which "safe" core work is actually safe.
+ * Empty strings are deliberate for regions with nothing extra worth saying —
+ * padding these out would train athletes to skip them.
+ */
+const REGION_PAIN_NOTE: Partial<Record<BodyRegion, string>> = {
+  wrist:
+    'Wrist pain specifically: the usual cause is deep extension under load, and the usual fix is mechanical rather than rest. Parallettes, push-up handles or even fists put the joint in a neutral position and often remove the problem the same day.',
+  elbow:
+    'Elbow pain is the one to take seriously on this road. It is usually the biceps tendon where it inserts, it is provoked by exactly the straight-arm loading a planche is made of, and it settles over weeks rather than days. Do not test it to see whether it still hurts.',
+  shoulder:
+    'Shoulder pain: skip overhead and pressing movement entirely today, including the warm-up arm circles. Pain at the front of the shoulder under a lean is worth a clinician rather than a deload.',
+  'lower-back':
+    'Lower back: the usual core work is off today, because hollow holds, arch holds and leg lifts all load exactly what you flagged. Walking and easy hip mobility are better uses of the day.',
+}
+
+const REGION_NIGGLE_NOTE: Partial<Record<BodyRegion, string>> = {
+  wrist:
+    'For the wrist niggle: switch today\'s main holds to parallettes or fists if you have them, and keep the lean shallower than usual. A neutral wrist angle is the fastest fix there is for this.',
+  shoulder:
+    'For the shoulder: keep the lean conservative and stop any set where the position drifts, rather than pushing to the target.',
+  'lower-back':
+    'For the lower back: keep the hollow and arch work light today and prioritise a level pelvis over a longer hold.',
+}
+
+/** Clause form, so the strategy sentence reads as one thought. */
+const PLATEAU_REASON: Record<PlateauVerdict['cause'], string> = {
+  'form-limited': 'the position rather than the strength',
+  'under-recovered': 'accumulated fatigue',
+  'under-stimulated': 'how little exposure the hold has had',
+  monotony: 'a stimulus you have fully adapted to',
+  'strength-ceiling': 'pressing strength',
+  'skill-ceiling': 'balance and position rather than force',
+  'measurement-noise': 'measurement spread rather than your training',
+  unclear: 'nothing the log can separate',
+}
+
+/** Limiter-chip wording for a plateau that named no other bottleneck. */
+const PLATEAU_LABEL_SHORT: Record<PlateauVerdict['cause'], string> = {
+  'form-limited': 'Position quality',
+  'under-recovered': 'Recovery',
+  'under-stimulated': 'Training frequency',
+  monotony: 'Stimulus variety',
+  'strength-ceiling': 'Pressing strength',
+  'skill-ceiling': 'Balance and position',
+  'measurement-noise': 'Measurement consistency',
+  unclear: 'Unresolved plateau',
 }
 
 /** Hard limits. Nothing the planner does is allowed outside these. */
@@ -827,11 +887,45 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     dayType !== 'deload' &&
     !formRepairNeeded
 
+  // ——— A named stall, and the one change it argues for ———
+  //
+  // Applied before the safety rails on purpose: a plateau prescription is a
+  // training opinion, and a sore elbow outranks every training opinion. The
+  // rails below still get the last word on strategy, day type and load.
+  const plateau = diagnosePlateau(state, sig, now)
+  if (plateau) {
+    decisions.push({
+      text: `${plateau.status === 'regressing' ? 'Your key hold has been going backwards' : 'Your key hold has been flat'} for about ${
+        plateau.weeksFlat
+      } week${plateau.weeksFlat === 1 ? '' : 's'}. ${plateau.evidence} ${plateau.intervention}`,
+      kind: plateau.cause === 'measurement-noise' ? 'info' : 'warn',
+    })
+    if (plateau.suggestStrategy && !formRepairNeeded) {
+      strategy = plateau.suggestStrategy
+      strategyOverrideReason = `your hold has been ${
+        plateau.status === 'regressing' ? 'slipping' : 'flat'
+      } and the evidence points at ${PLATEAU_REASON[plateau.cause]}.`
+    }
+    if (plateau.suggestDeload) {
+      dayType = 'deload'
+      dayReason = `Deload — ${plateau.weeksFlat} weeks flat with recovery debt behind it. Backing off is the intervention, not a pause in it.`
+    }
+    if (plateau.suggestMaxTest && dayType !== 'deload' && !formRepairNeeded) suggestMaxTest = true
+    // A stall is not the moment to also chase an unlock attempt.
+    if (plateau.cause !== 'measurement-noise') queueUnlockAttempt = false
+    limiter ??= {
+      label: PLATEAU_LABEL_SHORT[plateau.cause],
+      evidence: plateau.evidence,
+      prescription: plateau.intervention,
+    }
+  }
+
   // ——————————————— SAFETY RAILS — these always win ———————————————
   const joints = sig.lastCheckIn?.joints
   const checkInAge = sig.daysSinceCheckIn
   const checkInFresh = checkInAge !== null && checkInAge <= 7
 
+  const painRegions = sig.lastCheckIn?.regions ?? []
   if (checkInFresh && joints === 'pain') {
     dayType = 'recovery'
     dayReason = 'You reported joint pain — loaded planche work is off today. Use only pain-free recovery movement.'
@@ -845,6 +939,10 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       text: 'Joint pain reported — no loaded planche, pressing or wrist work today. Stop any recovery movement that reproduces symptoms and seek a qualified clinician for severe, worsening or persistent pain.',
       kind: 'warn',
     })
+    for (const region of painRegions) {
+      const note = REGION_PAIN_NOTE[region]
+      if (note) decisions.push({ text: note, kind: 'warn' })
+    }
   } else if (checkInFresh && joints === 'niggle') {
     if (strategy === 'intensity') strategy = 'balanced'
     targetFactor = Math.min(targetFactor, 1)
@@ -853,6 +951,22 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     loadPermission = 'reduced'
     queueUnlockAttempt = false
     decisions.push({ text: 'You flagged a niggle — no max-intensity work today, longer warm-up, slightly less volume.', kind: 'warn' })
+    for (const region of painRegions) {
+      const note = REGION_NIGGLE_NOTE[region]
+      if (note) decisions.push({ text: note, kind: 'warn' })
+    }
+    // An elbow is the one niggle that should stop straight-arm loading rather
+    // than merely reduce it. The tissue that complains here is the biceps
+    // tendon at its insertion, it is slow to settle, and a planche is the most
+    // provocative thing an athlete could offer it.
+    if (painRegions.includes('elbow')) {
+      loadPermission = 'none'
+      dayType = 'recovery'
+      dayReason =
+        'You flagged an elbow. Straight-arm loading is off today — this is the one complaint where training through it reliably turns weeks into months.'
+      volumeFactor = Math.min(volumeFactor, 0.5)
+      suggestMaxTest = false
+    }
   }
 
   if (checkInFresh && sig.lastCheckIn?.energy === 'tired') {
@@ -972,6 +1086,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     suggestMaxTest,
     accessoryEmphasis,
     limiter,
+    plateau,
     volumeFactor: clampTo(volumeFactor, LIMITS.volume),
     loadPermission,
     askCheckIn,

@@ -13,12 +13,21 @@
   --t-line-strong: rgba(16, 24, 34, 0.18);
   --t-ink: #161c25;
   --t-ink2: #4d5763;
-  --t-ink3: #8792a0;
+  /* 4.64:1 against --t-bg, the worst surface it lands on (was #8792a0 at
+     2.85:1). This ramp carries most of the app's 11–13px copy — dates,
+     "not tested yet", chart axis labels — so it has to clear 4.5:1. */
+  --t-ink3: #666e7a;
   --t-accent: #e08700;
   --t-accent-strong: #c46e00;
+  /* Fills and borders only — 2.75:1 on white, which is fine for a 3:1
+     graphical element and not fine for text. Small accent copy must use
+     --t-accent-text instead. The dark theme needs no such split: its accent
+     is already 10.14:1. */
+  --t-accent-text: #a35c00;
   --t-accent-soft: rgba(224, 135, 0, 0.12);
   --t-on-accent: #201302;
   --t-ok: #0f9d58;
+  --t-ok-text: #0a7d45;
   --t-ok-soft: rgba(15, 157, 88, 0.12);
   --t-danger: #d64550;
   --t-danger-soft: rgba(214, 69, 80, 0.1);
@@ -45,12 +54,17 @@
   --t-line-strong: rgba(255, 255, 255, 0.16);
   --t-ink: #ecEEf1;
   --t-ink2: #a6aeb9;
-  --t-ink3: #67707c;
+  /* 5.45:1 against --t-raised, its worst surface (was #67707c at 3.30:1). */
+  --t-ink3: #8b95a2;
   --t-accent: #ffb224;
   --t-accent-strong: #ffc14d;
+  /* Already 10.14:1 on surface — the dark accent needs no text variant, but
+     the token has to exist so components can reference one name in both. */
+  --t-accent-text: #ffb224;
   --t-accent-soft: rgba(255, 178, 36, 0.12);
   --t-on-accent: #201302;
   --t-ok: #4ade80;
+  --t-ok-text: #4ade80;
   --t-ok-soft: rgba(74, 222, 128, 0.12);
   --t-danger: #fb7185;
   --t-danger-soft: rgba(251, 113, 133, 0.12);
@@ -79,9 +93,11 @@
   --color-ink3: var(--t-ink3);
   --color-accent: var(--t-accent);
   --color-accent-strong: var(--t-accent-strong);
+  --color-accent-text: var(--t-accent-text);
   --color-accent-soft: var(--t-accent-soft);
   --color-on-accent: var(--t-on-accent);
   --color-ok: var(--t-ok);
+  --color-ok-text: var(--t-ok-text);
   --color-ok-soft: var(--t-ok-soft);
   --color-danger: var(--t-danger);
   --color-danger-soft: var(--t-danger-soft);
@@ -268,8 +284,12 @@ body {
   color: var(--t-on-accent);
 }
 
+/* The ring itself is a non-text graphical element and needs 3:1. The light
+   accent is 2.75:1 on white, so the ring that marks keyboard focus was itself
+   the least visible thing on the screen. --t-accent-text clears 5:1 in light
+   and is the accent unchanged in dark. */
 *:focus-visible {
-  outline: 2px solid var(--t-accent);
+  outline: 2px solid var(--t-accent-text);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -299,5 +319,19 @@ input[type='range'] {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+    /* Duration alone was not enough. Three animations loop forever (the
+       pulsing ring on the current step, the floating figure, the soft ping),
+       so zeroing only the duration left them restarting endlessly at 0.01ms —
+       still burning a phone battery for the one user who asked for less
+       motion. Staggered entry delays had the opposite problem: with a
+       `both` fill and no duration, elements sat at opacity 0 for up to 240ms
+       and then snapped in, which is a flash of invisible content. */
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-delay: 0ms !important;
+  }
+
+  html {
+    scroll-behavior: auto !important;
   }
 }
