@@ -67,6 +67,36 @@ block for `position: fixed`).
    measuring lean along the torso axis — made accuracy worse. The reasons are
    documented inline; re-measure before resurrecting either.
 
+## The coach
+
+- `src/lib/athleteSynth.ts` — training histories built **from known truth**
+  (which stimulus the body answers, gain rate, honesty of filming, layoffs).
+  `simulateSeason` runs the loop *closed*: the coach's target shapes what the
+  athlete logs, and that log is its next input.
+- `src/lib/coach.eval.test.ts` — the accuracy/safety eval: responder
+  identification for all five strategies, pain-day rails, hard-limit sweeps,
+  a 200+ athlete fuzz for placeholders/NaN/contradictions, degenerate
+  histories, and season-long feedback behaviour.
+
+### Things measured, not assumed
+
+1. **A gain smears across the attribution window.** Sessions either side of the
+   one that caused it collect near-identical credit (measured: 0.2475 each on a
+   noiseless history). Under a *fixed* rotation the true cause is unidentifiable
+   — that is the data, not a bug. The real bandit varies its order, and then the
+   responder is found every time. `pickStrategy` therefore refuses to claim
+   "your fastest gains" when the lead is under 0.5s/week.
+2. **An easy week counts by its load, not its name.** `weeksSinceDeload` once
+   reset only for a workout called "Deload Flow" and otherwise counted from the
+   first session ever — so past five weeks anyone who backed off their own way
+   got a *permanent* deload. The calendar is now walked so a week with no
+   sessions counts too.
+3. **The working target assumes the top set reflects capacity.** It is a
+   fraction of recent session bests, so an athlete who never exceeds the number
+   they were given makes the log echo the target back and it compounds
+   downward. The `to-target` compliance mode in `simulateSeason` pins this; the
+   max-test suggestion is the corrective and the eval asserts it engages.
+
 ## Camera lifecycle
 
 `src/lib/recorder.test.tsx` drives `useFormRecorder` against a simulated

@@ -220,6 +220,160 @@ export function synthesizeAthlete(params: AthleteParams = {}): Session[] {
   return sessions.sort((a, b) => a.startedAt - b.startedAt)
 }
 
+export interface SeasonResult {
+  state: AppState
+  plans: {
+    dayType: string
+    targetFactor: number
+    strategy: StrategyId
+    prescribed: number
+    suggestMaxTest: boolean
+  }[]
+  /** Logged best on the key exercise, session by session. */
+  performance: number[]
+  /** True capacity, session by session — what the athlete could have done. */
+  capacity: number[]
+}
+
+/**
+ * Train an athlete *through* the coach, week after week.
+ *
+ * Every test above is open-loop: a fixed history goes in and one plan comes
+ * out. But the coach's advice changes what the athlete does next, and that
+ * output becomes its next input — which is where the interesting failures
+ * live. A rule that quietly ratchets the target down feeds itself: lower
+ * target, lower logged seconds, lower target again. Nothing in a single-plan
+ * test can see that; a season can.
+ *
+ * The athlete here is cooperative and honest: they train to the prescribed
+ * target, stop about there, and their body answers only the stimulus they
+ * actually respond to. Anything bad that happens to them over a season is
+ * therefore the coach's doing.
+ */
+export function simulateSeason(
+  params: AthleteParams & {
+    weeks?: number
+    /**
+     * How the athlete relates to the prescribed number.
+     *
+     * `to-capacity` is the athlete the app coaches: working sets at the
+     * target, last set taken near the limit. `to-target` is the perfectly
+     * obedient one who never exceeds what they were asked for — worth
+     * simulating because the working target is a fraction of recent bests, so
+     * a log that only ever echoes the target back feeds itself downward.
+     */
+    compliance?: 'to-capacity' | 'to-target'
+  } = {},
+  buildPlanFn: (
+    state: AppState,
+    now: number,
+  ) => { dayType: string; targetFactor: number; strategy: StrategyId; suggestMaxTest: boolean },
+  adaptiveTargetFn: (state: AppState, stepId: StepId) => number,
+  applySessionFn: (state: AppState, session: Session) => { next: AppState },
+): SeasonResult {
+  const {
+    weeks = 12,
+    sessionsPerWeek = 3,
+    stepId = 'tuck',
+    respondsTo = 'volume',
+    startSec = 8,
+    gainPerWeek = 1.2,
+    noise = 0.06,
+    seed = 1,
+    now = Date.now(),
+    compliance = 'to-capacity',
+  } = params
+
+  const rand = rng(seed)
+  const keyId = STEP_BY_ID[stepId].keyExerciseId
+  const spacingMs = (7 / sessionsPerWeek) * DAY
+  const total = weeks * sessionsPerWeek
+  const start = now - total * spacingMs
+
+  let state: AppState = {
+    ...initialState(),
+    onboarded: true,
+    stepId,
+    baseStepId: stepId,
+    unlocked: Object.values(STEP_BY_ID)
+      .filter((s) => s.order <= STEP_BY_ID[stepId].order)
+      .map((s) => s.id),
+  }
+  let capacity = startSec
+  const plans: SeasonResult['plans'] = []
+  const performance: number[] = []
+  const capacityTrail: number[] = []
+
+  for (let i = 0; i < total; i++) {
+    const at = Math.round(start + i * spacingMs)
+    const plan = buildPlanFn(state, at)
+    // What the coach actually asks for today.
+    const prescribed = Math.max(1, adaptiveTargetFn(state, stepId) * plan.targetFactor)
+    plans.push({
+      dayType: plan.dayType,
+      targetFactor: plan.targetFactor,
+      strategy: plan.strategy,
+      prescribed,
+      suggestMaxTest: plan.suggestMaxTest,
+    })
+
+    const sets: SetLog[] = []
+    let clock = at
+    const push = (s: SetLog) => {
+      sets.push(s)
+      clock += 150_000
+    }
+    // Working sets sit at the prescribed target; the final set is taken close
+    // to the limit, which is what the app's own coaching tells an athlete to
+    // do ("finish about two seconds before you would collapse"). That last set
+    // is what makes the log reflect capacity rather than merely echoing the
+    // target back — see the `compliance` note below.
+    for (let setIndex = 0; setIndex < 5; setIndex++) {
+      const swing = 1 + (rand() - 0.5) * 2 * noise
+      const topSet = setIndex === 4
+      const ceiling =
+        topSet && compliance === 'to-capacity'
+          ? capacity
+          : Math.min(capacity, prescribed * (topSet ? 1.05 : 0.8))
+      const value = Math.max(1, ceiling * swing)
+      push(
+        holdSet(keyId, value, clock, 'main', {
+          rating: 'clean',
+          confirmed: true,
+          flightConfirmed: true,
+          auto: { issues: [], confidence: 0.9, score: 88, cleanSeconds: value, cleanRatio: 1 },
+        }),
+      )
+    }
+    push({ exerciseId: 'pppu', kind: 'reps', value: 6, target: 6, section: 'strength', at: clock })
+    push(holdSet('hollow-hold', 30, clock, 'core'))
+
+    const best = Math.max(...sets.filter((s) => s.exerciseId === keyId).map((s) => s.value))
+    performance.push(best)
+    capacityTrail.push(capacity)
+
+    state = applySessionFn(state, {
+      id: `season-${i}`,
+      startedAt: at,
+      endedAt: clock,
+      workoutName: plan.dayType === 'deload' ? 'Deload Flow' : 'Training Day',
+      workoutKind: 'auto',
+      stepId,
+      sets,
+      rpe: plan.dayType === 'push' ? 8 : 7,
+      strategy: plan.strategy,
+    }).next
+
+    // The body answers the right stimulus, and only when actually loaded.
+    const loaded = plan.dayType !== 'recovery' && plan.dayType !== 'deload'
+    if (loaded && respondsTo && plan.strategy === respondsTo) {
+      capacity += (gainPerWeek / sessionsPerWeek) * ROTATION.length
+    }
+  }
+
+  return { state, plans, performance, capacity: capacityTrail }
+}
+
 /** A full app state for an athlete like this, ready to hand to the coach. */
 export function synthesizeAthleteState(
   params: AthleteParams = {},

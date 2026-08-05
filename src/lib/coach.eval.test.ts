@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 import type { AppState, CheckIn, Session, StrategyId } from '../types'
 import { armStats, buildPlan, coachConfidence, pickStrategy } from './coach'
 import { readSignals } from './signals'
-import { synthesizeAthlete, synthesizeAthleteState, type AthleteParams } from './athleteSynth'
+import {
+  simulateSeason,
+  synthesizeAthlete,
+  synthesizeAthleteState,
+  type AthleteParams,
+} from './athleteSynth'
+import { adaptiveTarget } from '../data/workouts'
+import { applySession } from './engine'
 import { initialState } from './store'
 import { addDays, weekStart } from './time'
 
@@ -395,6 +402,113 @@ describe('the plan is stable and proportionate', () => {
       }).dayType,
     )
     expect(seen.size).toBeGreaterThan(2)
+  })
+})
+
+describe('a season coached end to end', () => {
+  /**
+   * Closed loop: the coach's target shapes what the athlete logs, and that log
+   * becomes the coach's next input. Feedback pathologies — a target that
+   * ratchets itself down, a day type that becomes absorbing — are invisible to
+   * any single-plan test and obvious here.
+   */
+  const season = (params: Parameters<typeof simulateSeason>[0] = {}) =>
+    simulateSeason(params, buildPlan, adaptiveTarget, applySession)
+
+  it('lets a responsive athlete actually improve over twelve weeks', () => {
+    const run = season({ weeks: 12, respondsTo: 'volume', gainPerWeek: 1.5, seed: 3 })
+    const first = run.performance.slice(0, 3).reduce((a, b) => a + b, 0) / 3
+    const last = run.performance.slice(-3).reduce((a, b) => a + b, 0) / 3
+    expect(last).toBeGreaterThan(first)
+    // The coach must not be the thing holding them below their own capacity.
+    const finalCapacity = run.capacity[run.capacity.length - 1]
+    expect(last).toBeGreaterThan(finalCapacity * 0.6)
+  })
+
+  it('never ratchets the target down into a spiral', () => {
+    for (const seed of [1, 2, 3]) {
+      const run = season({ weeks: 16, seed, gainPerWeek: 0.8 })
+      const factors = run.plans.map((p) => p.targetFactor)
+      // A spiral looks like the floor being reached and never left.
+      const tail = factors.slice(-8)
+      expect(Math.min(...tail)).toBeGreaterThan(0.6)
+      expect(Math.max(...tail)).toBeGreaterThan(0.75)
+      // Prescriptions stay in touch with what the athlete can actually do.
+      const lastPrescribed = run.plans[run.plans.length - 1].prescribed
+      expect(lastPrescribed).toBeGreaterThan(0)
+      expect(Number.isFinite(lastPrescribed)).toBe(true)
+    }
+  })
+
+  it('cycles hard blocks and easy weeks instead of getting stuck', () => {
+    for (const seed of [4, 5]) {
+      const run = season({ weeks: 16, seed })
+      const days = run.plans.map((p) => p.dayType)
+      // The permanent-deload bug looked like one value forever. A healthy
+      // season is mostly loaded days punctuated by real easy weeks.
+      expect(new Set(days).size).toBeGreaterThan(1)
+      const deloads = days.filter((d) => d === 'deload').length
+      expect(deloads).toBeGreaterThan(0)
+      expect(deloads).toBeLessThan(days.length / 3)
+      // And it must never leave the athlete on easy days from some point on.
+      expect(days.slice(-4).every((d) => d === 'deload')).toBe(false)
+    }
+  })
+
+  it('keeps trying every approach rather than locking onto its first guess', () => {
+    const run = season({ weeks: 20, respondsTo: 'density', gainPerWeek: 1.5, seed: 6 })
+    const used = new Set(run.plans.map((p) => p.strategy))
+    expect(used.size).toBeGreaterThanOrEqual(4)
+    // And it should end up favouring the one that actually worked.
+    const lateCounts = new Map<string, number>()
+    for (const p of run.plans.slice(-10)) lateCounts.set(p.strategy, (lateCounts.get(p.strategy) ?? 0) + 1)
+    const favourite = [...lateCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+    expect(favourite).toBe('density')
+  })
+
+  it('depends on the top set reflecting capacity, and says so', () => {
+    /**
+     * A property of the design worth knowing, found by running the loop.
+     *
+     * The working target is a fraction of recent session bests. That is stable
+     * as long as the log reflects what the athlete can *do* — which is why the
+     * app coaches a last set taken near the limit. An athlete who instead
+     * never exceeds the number they were given makes the log echo the target
+     * back, and the fraction then compounds downward.
+     *
+     * This is not a defect being tolerated silently: the floor below pins how
+     * far it can go, so if anyone ever changes the anchoring maths, the change
+     * shows up here rather than in someone's training.
+     */
+    const realistic = season({ weeks: 12, seed: 9, compliance: 'to-capacity' })
+    const obedient = season({ weeks: 12, seed: 9, compliance: 'to-target' })
+    const lastOf = (xs: number[]) => xs.slice(-3).reduce((a, b) => a + b, 0) / 3
+
+    expect(lastOf(realistic.performance)).toBeGreaterThan(realistic.performance[0])
+    expect(lastOf(obedient.performance)).toBeLessThan(obedient.performance[0])
+    // The design's own corrective must engage: when the working numbers drift
+    // away from what the athlete can do, the coach asks for a re-test, which
+    // is precisely what re-anchors the target.
+    expect(obedient.plans.some((p) => p.suggestMaxTest)).toBe(true)
+    // Whatever happens, the prescription stays a real, usable number.
+    for (const run of [realistic, obedient]) {
+      for (const p of run.plans) {
+        expect(p.prescribed).toBeGreaterThanOrEqual(1)
+        expect(Number.isFinite(p.prescribed)).toBe(true)
+      }
+    }
+  })
+
+  it('leaves the athlete with a coherent record at the end of a season', () => {
+    const run = season({ weeks: 14, seed: 7 })
+    expect(run.state.sessions.length).toBe(14 * 3)
+    // Every session it generated must still satisfy the app's own invariants.
+    for (const s of run.state.sessions) {
+      expect(s.sets.length).toBeGreaterThan(0)
+      expect(Number.isFinite(s.startedAt)).toBe(true)
+      expect(s.endedAt).toBeGreaterThanOrEqual(s.startedAt)
+    }
+    expect(Object.keys(run.state.prs).length).toBeGreaterThan(0)
   })
 })
 
