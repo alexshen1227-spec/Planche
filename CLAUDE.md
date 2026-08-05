@@ -51,6 +51,14 @@ so. See "Evidence tiers" below.
   *why*. Cause order is deliberate: noise first (every other prescription
   would be acting on a fiction), then recovery (the one cause where "train
   more" is actively harmful), then form, then frequency, then the ceilings.
+- `src/lib/formTrend.ts` — the judge, longitudinally. `readFormTrends(state,
+  exerciseId)` returns per-criterion direction or `insufficient`. Three rules
+  keep it honest: a criterion listed in the set's `unseen` contributes
+  **nothing** (and the coverage — "seen in 7 of 11" — is shown, not hidden); a
+  change smaller than that criterion's `MATERIAL_TOLERANCE` is `steady`, never
+  a direction; and trends never pool two exercises. Slope is
+  `robustSlopePerWeek`, so one hallucinated frame — including at the end of the
+  series — cannot flip a verdict.
 - `src/lib/loading.ts` — lever fractions. A progression *name* is not a
   difficulty: an advanced tuck spans ~72–92% of full-planche load on hip angle
   alone. Used to weight weekly volume and to detect *difficulty drift* (hold

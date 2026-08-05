@@ -10,11 +10,123 @@ import { fmtWeight } from '../lib/units'
 import { lastOf } from '../components/MeasurePrompt'
 import { fmtDate, fmtTime, fmtDuration, fmtHold, fmtClock } from '../lib/time'
 import { HoldLineChart, VolumeBarChart, TrainingHeatmap } from '../components/charts'
+import { describeTrend, filmedExercises, readFormTrends } from '../lib/formTrend'
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle, Stat } from '../components/ui'
 import { pushToast } from '../lib/toast'
 import type { TrainingSurface } from '../types'
 import { surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
+
+/**
+ * Form over weeks, per position.
+ *
+ * The judge already tells you whether one rep was clean. This is the question
+ * it could never answer: is the lean actually getting deeper, or does it only
+ * feel that way? Everything here is per exercise and excludes any set where
+ * the camera said it could not see that criterion — so the coverage line
+ * ("seen in 4 of 11") is part of the answer, not a footnote.
+ */
+function FormTrendCard() {
+  const { state } = useStore()
+  const filmed = useMemo(() => filmedExercises(state), [state])
+  const [exerciseId, setExerciseId] = useState<string | null>(null)
+  const active = exerciseId && filmed.includes(exerciseId) ? exerciseId : (filmed[0] ?? null)
+  const result = useMemo(() => (active ? readFormTrends(state, active) : null), [state, active])
+
+  if (!active || !result) {
+    return (
+      <div id="form-trend" className="mt-4 scroll-mt-5 rounded-3xl border border-line bg-surface p-5 shadow-card">
+        <div className="font-display text-[16px] font-semibold text-ink">Form over time</div>
+        <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-ink2">
+          Once you have filmed a position a few times, this compares those clips against each other — whether your
+          elbows are locking out more, whether your lean is deepening, whether your hips are drifting. Turn on the
+          camera check for your main sets and it fills in on its own.
+        </p>
+      </div>
+    )
+  }
+
+  const DIRECTION_STYLE: Record<'improving' | 'declining' | 'steady', string> = {
+    improving: 'border-ok/30 bg-ok-soft text-ok-text',
+    declining: 'border-danger/30 bg-danger-soft text-danger-text',
+    steady: 'border-line bg-raised text-ink2',
+  }
+
+  return (
+    <div id="form-trend" className="mt-4 scroll-mt-5 rounded-3xl border border-line bg-surface p-5 shadow-card">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-display text-[16px] font-semibold text-ink">Form over time</div>
+          <div className="text-[13px] text-ink2">
+            What the camera measured across your filmed {EXERCISE_BY_ID[active]?.name.toLowerCase() ?? 'sets'} sets
+          </div>
+        </div>
+        {filmed.length > 1 ? (
+          <label className="shrink-0 text-[12.5px] text-ink2">
+            <span className="sr-only">Exercise to show form trends for</span>
+            <select
+              value={active}
+              onChange={(e) => setExerciseId(e.target.value)}
+              className="rounded-xl border border-line bg-raised px-3 py-2 text-[13px] font-medium text-ink outline-none focus:border-accent"
+            >
+              {filmed.map((id) => (
+                <option key={id} value={id}>
+                  {EXERCISE_BY_ID[id]?.name ?? id}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+
+      {result.kind === 'insufficient' ? (
+        <div className="mt-3 rounded-2xl border border-dashed border-line-strong bg-surface/50 p-5 text-[13.5px] leading-relaxed text-ink2">
+          <span className="font-medium text-ink">Not enough yet.</span> {result.need}
+        </div>
+      ) : (
+        <>
+          <ul className="mt-3 space-y-2.5">
+            {result.trends.map((t) => (
+              <li key={t.criterion} className="rounded-2xl border border-line bg-raised p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[14px] font-semibold text-ink">{t.label}</span>
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[11.5px] font-semibold uppercase tracking-wide ${
+                      DIRECTION_STYLE[t.direction]
+                    }`}
+                  >
+                    {t.direction}
+                  </span>
+                  <span className="text-[12px] text-ink3">
+                    seen in {t.seen} of {t.seen + t.unseen} filmed sets
+                    {t.confidence === 'low' ? ' · low confidence' : ''}
+                  </span>
+                </div>
+                <p className="mt-1 text-[13px] leading-relaxed text-ink2">{describeTrend(t)}</p>
+              </li>
+            ))}
+          </ul>
+          {result.skipped.length > 0 ? (
+            <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">
+              Not trended:{' '}
+              {result.skipped.map((s, i) => (
+                <span key={s.label}>
+                  {i > 0 ? '; ' : ''}
+                  <span className="font-medium text-ink2">{s.label}</span> — {s.reason}
+                </span>
+              ))}
+              . Framing is the usual cause; the live guide on the ready screen catches it before you start.
+            </p>
+          ) : null}
+          <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">
+            Sets where the camera could not see a criterion are left out rather than averaged in, and a change smaller
+            than the camera's own measurement error is reported as steady rather than as progress.
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
 
 function achievementProgressText(progress: AchievementProgress): string {
   if (progress.unit === 'duration') return `${fmtDuration(progress.current)} / ${fmtDuration(progress.target)}`
@@ -147,6 +259,7 @@ export function Stats() {
       >
         {[
           ['trends', 'Trends'],
+          ['form-trend', 'Form over time'],
           ['insights', 'Coach insights'],
           ['records', 'Records'],
           ['achievements', 'Achievements'],
@@ -219,6 +332,9 @@ export function Stats() {
           <HoldLineChart points={series} goal={chartStep?.unlockSec} emptyHint={chartEmptyHint} />
         </div>
       </div>
+
+      {/* What the camera has measured about one position over weeks */}
+      <FormTrendCard />
 
       {/* Weekly volume */}
       <div id="insights" className="mt-4 scroll-mt-5 rounded-3xl border border-line bg-surface p-5 shadow-card">

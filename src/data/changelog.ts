@@ -19,6 +19,19 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-05',
+    title: 'Form over time',
+    area: 'camera',
+    notes: [
+      'The camera judge could tell you whether one rep was clean. It could not tell you whether your lean is actually getting deeper or your elbows are locking out more — the question you are really asking after a month of filming. Progress now has a "Form over time" card that compares your filmed clips of one position against each other.',
+      'It reports each thing separately — elbow lockout, forward lean, body line, shoulders, knees, overall score, and how much of the hold stayed clean — because these move independently. Your overall score can be climbing while your hips quietly drift, and averaging them into one number is how that gets missed.',
+      'Anything declining is listed first. It is the part worth acting on, and burying it under three improving lines is how you miss it.',
+      'Sets where the camera could not see something are left out rather than averaged in, and each row says how many of your clips it could actually measure — "seen in 7 of 11" means something different from "seen in 11 of 11".',
+      'A change smaller than the camera\'s own measurement error is reported as steady, not as progress. Those tolerances are the same measured numbers the judge uses to decide whether a fault is worth naming.',
+      'Trends are per position. A planche lean\'s numbers and a tuck planche\'s are not the same measurement, and mixing them would produce a line that moves when you change exercise rather than when you improve.',
+    ],
+  },
+  {
+    date: '2026-08-05',
     title: 'Planche Lab V2',
     area: 'coach',
     major: {
