@@ -18,7 +18,7 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
-    date: '2026-08-04',
+    date: '2026-08-05',
     title: 'Planche Lab V2',
     area: 'coach',
     major: {
