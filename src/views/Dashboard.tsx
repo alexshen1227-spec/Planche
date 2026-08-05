@@ -175,10 +175,12 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
                         </div>
                       </>
                     ) : forecast.kind === 'not-trending' ? (
-                      <span className="text-[12.5px] leading-relaxed text-ink3">
-                        No date yet — {forecast.points} measured sessions and the trend is flat, so any number would
-                        be invented.
-                      </span>
+                      // The module's own `basis` rather than a hardcoded
+                      // sentence: three different situations land here — flat,
+                      // falling, and climbing too slowly to date — and calling
+                      // all three "flat" told some athletes the opposite of
+                      // what their own data said.
+                      <span className="text-[12.5px] leading-relaxed text-ink3">{forecast.basis}</span>
                     ) : (
                       <span className="text-[12.5px] leading-relaxed text-ink3">
                         No forecast yet — {forecast.need}

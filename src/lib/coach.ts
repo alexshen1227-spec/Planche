@@ -986,14 +986,12 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       dayReason = `Deload — ${plateau.weeksFlat} weeks flat with recovery debt behind it. Backing off is the intervention, not a pause in it.`
     }
     // A plateau can *ask* for a re-test, but it does not get to bypass the
-    // preconditions the suggestion already had. Overriding them produced a
-    // plan that said "your holds swung ±32%, this is measurement noise" and
-    // "you are fresh and your numbers are steady" at the same time — with one
-    // rest day. Both halves false in the same breath.
-    // A plateau can *ask* for a re-test, but it does not get to bypass
-    // freshness. A max test on a day with no rest behind it measures fatigue.
-    // (The later rails still clear this flag on pain, elbow and persistent
-    // complaint days, so this is the floor, not the last word.)
+    // preconditions the suggestion already had. A max test on a day with no
+    // rest behind it measures fatigue, and overriding the gate produced a plan
+    // that said "your holds swung ±32%, this is measurement noise" and "you
+    // are fresh and your numbers are steady" in the same breath. The later
+    // rails still clear this flag on pain, elbow and persistent-complaint
+    // days, so this is the floor rather than the last word.
     if (plateau.suggestMaxTest && dayType !== 'deload' && !formRepairNeeded && sig.restDays >= 2) {
       suggestMaxTest = true
     }

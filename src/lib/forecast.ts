@@ -217,7 +217,15 @@ export function describeForecast(f: Forecast): string {
           ? `about ${f.lowWeeks} week${f.lowWeeks === 1 ? '' : 's'}`
           : `${f.lowWeeks}–${f.highWeeks} weeks`
     case 'not-trending':
-      return 'no date yet — the trend is flat'
+      // Three different situations reach this branch and they are not the same
+      // news. Saying "flat" to an athlete whose holds are measurably climbing
+      // — just too slowly to date — is the module contradicting the number it
+      // just computed.
+      return f.ratePerWeek > 0.01
+        ? 'no date yet — climbing too slowly to project'
+        : f.ratePerWeek < -0.05
+          ? 'no date yet — the trend is downward'
+          : 'no date yet — the trend is flat'
     case 'insufficient':
       return 'not enough evidence yet'
   }
@@ -326,7 +334,28 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
   // Later steps are longer than earlier ones, always. Widening the upper edge
   // per remaining step is the least-dishonest way to say so without pretending
   // to know the multiplier.
-  const lowWeeks = Math.max(1, Math.round(fastest * stepsRemaining))
+  //
+  // The near edge also gets a floor that grows with how hard the *remaining*
+  // steps are. Measuring two-week steps at Tuck and projecting them forward
+  // produced "2–3 weeks to a full planche" — narrower than the original bug
+  // but the same lie. Nobody has gone straddle-to-full in a month, and the
+  // app should not be the one to suggest it. INFERENCE, deliberately coarse.
+  const hardestAhead = STEPS.filter((s) => s.order > current.order && s.order <= goal.order).reduce(
+    (max, s) => Math.max(max, s.order),
+    current.order,
+  )
+  const MIN_WEEKS_PER_STEP_AT: Record<number, number> = {
+    [STEP_BY_ID.tuck.order]: 4,
+    [STEP_BY_ID.advtuck.order]: 6,
+    [STEP_BY_ID.oneleg.order]: 6,
+    [STEP_BY_ID.straddle.order]: 8,
+    [STEP_BY_ID.full.order]: 12,
+  }
+  const floorPerStep = MIN_WEEKS_PER_STEP_AT[hardestAhead] ?? 2
+  const lowWeeks = Math.max(
+    Math.round(floorPerStep * stepsRemaining),
+    Math.round(fastest * stepsRemaining),
+  )
   const highWeeks = Math.max(lowWeeks + 1, Math.round(slowest * stepsRemaining * 1.5))
 
   // How long the current step has already taken, so "typically 5 weeks each"

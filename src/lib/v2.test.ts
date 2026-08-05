@@ -6,6 +6,7 @@ import { buildPlan } from './coach'
 import { painSafeRecoveryWorkout } from '../data/workouts'
 import {
   CAPABILITY_JUMP_PCT,
+  readLoadRamp,
   LEVER_FRACTION,
   readCapabilityJump,
   weightedHoldSeconds,
@@ -809,6 +810,68 @@ describe('rails that a mutation test proved were unpinned', () => {
     expect(plan.queueUnlockAttempt).toBe(false)
   })
 
+  it('withholds a max test that every other condition would have granted', () => {
+    // The earlier version of this test passed for the wrong reason: with only
+    // four sessions, suggestMaxTest was already false because the coach needs
+    // eight before offering a first one. Removing the rail changed nothing.
+    // This fixture satisfies every precondition — enough sessions, rested, not
+    // noisy — so the complaint rail is the only thing that can say no.
+    const base: Session[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `mt-${i}`,
+      startedAt: at(70 - i * 6),
+      endedAt: at(70 - i * 6) + 60_000,
+      workoutName: 'Session',
+      workoutKind: 'auto' as const,
+      stepId: 'tuck' as StepId,
+      sets: [holdSet('tuck-planche', 8 + (i % 2) * 0.3, at(70 - i * 6))],
+      ...(i >= 6
+        ? { checkIn: { joints: 'niggle' as const, energy: 'ok' as const, at: at(70 - i * 6), regions: ['shoulder' as BodyRegion] } }
+        : {}),
+    }))
+    const withComplaint = stateWith('tuck', base)
+    const sig = readSignals(withComplaint, NOW)
+    // Preconditions the rail has to overrule.
+    expect(sig.restDays).toBeGreaterThanOrEqual(2)
+    expect(sig.totalSessions).toBeGreaterThanOrEqual(8)
+    expect(sig.persistentComplaint?.region).toBe('shoulder')
+    expect(buildPlan(withComplaint, NOW).suggestMaxTest).toBe(false)
+
+    // Same history without the complaint: the max test is genuinely on offer,
+    // which is what makes the assertion above mean something.
+    const clean = stateWith('tuck', base.map((s) => { const c = { ...s }; delete c.checkIn; return c }))
+    expect(buildPlan(clean, NOW).suggestMaxTest).toBe(true)
+  })
+
+  it('will not send a plateaued athlete to a max test with no rest behind it', () => {
+    // A max test on a day with no rest measures fatigue. The plateau used to
+    // force the suggestion past the freshness check that guards it.
+    // Trained often enough that the stall is not simply "not enough exposure"
+    // (which asks for frequency, not a test), flat, and with nothing else
+    // wrong — the cause the plateau cannot name, which is exactly when it
+    // wants a re-test.
+    const flat = (lastDaysAgo: number) =>
+      stateWith(
+        'tuck',
+        historyOf(
+          'tuck',
+          [...Array.from({ length: 14 }, (_, i) => 60 - i * 4), lastDaysAgo].map((d) => ({
+            daysAgo: d,
+            value: 8,
+          })),
+        ),
+      )
+    const rested = flat(4)
+    expect(buildPlan(rested, NOW).plateau?.suggestMaxTest).toBe(true)
+    expect(readSignals(rested, NOW).restDays).toBeGreaterThanOrEqual(2)
+    expect(buildPlan(rested, NOW).suggestMaxTest).toBe(true)
+
+    // Same plateau, trained today: the freshness gate has to override it.
+    const tired = flat(0)
+    expect(buildPlan(tired, NOW).plateau?.suggestMaxTest).toBe(true)
+    expect(readSignals(tired, NOW).restDays).toBeLessThan(2)
+    expect(buildPlan(tired, NOW).suggestMaxTest).toBe(false)
+  })
+
   it('never offers a max test or a target rise to tissue that is complaining', () => {
     // The combination an independent review actually produced: "the current
     // dose is more than it is tolerating" alongside "nudging the target up 5%"
@@ -843,18 +906,34 @@ describe('rails that a mutation test proved were unpinned', () => {
   })
 
   it('does not warn about a fast ramp when the athlete barely trains', () => {
-    // Removing the frequency guard reproduces "ramping too fast" beside "not
-    // enough exposure" — the contradiction the guard exists to prevent.
-    const sessions: Session[] = [84, 60, 40, 6].map((daysAgo, i) => ({
+    // The fixture has to actually reach readLoadRamp, or the test passes for
+    // the wrong reason: five completed weeks with a small session each (a real
+    // baseline), then one much bigger week — but under two sessions a week
+    // overall, so the plateau is simultaneously saying "too little exposure".
+    // Removing the frequency guard reproduces that contradiction.
+    // One session in each of four earlier complete weeks (baseline ~39
+    // weighted seconds each, over readLoadRamp's 30 floor), then a much
+    // bigger one in the most recent complete week.
+    const sessions: Session[] = [
+      { d: 36, sets: 6 },
+      { d: 29, sets: 6 },
+      { d: 22, sets: 6 },
+      { d: 15, sets: 6 },
+      { d: 5, sets: 20 },
+    ].map((s, i) => ({
       id: `lr-${i}`,
-      startedAt: at(daysAgo),
-      endedAt: at(daysAgo) + 60_000,
+      startedAt: at(s.d),
+      endedAt: at(s.d) + 60_000,
       workoutName: 'Session',
       workoutKind: 'auto' as const,
       stepId: 'tuck' as StepId,
-      sets: Array.from({ length: 8 }, () => holdSet('tuck-planche', 9, at(daysAgo))),
+      sets: Array.from({ length: s.sets }, () => holdSet('tuck-planche', 12, at(s.d))),
     }))
-    const plan = buildPlan(stateWith('tuck', sessions), NOW)
+    const state = stateWith('tuck', sessions)
+    const ramp = readLoadRamp(state, NOW)
+    // Precondition: without the guard this athlete *would* be warned.
+    expect(ramp?.rampingFast).toBe(true)
+    const plan = buildPlan(state, NOW)
     expect(plan.signals.sessionsPerWeek).toBeLessThan(2)
     expect(plan.decisions.map((d) => d.text).join(' ')).not.toMatch(/steeper climb/i)
   })
@@ -888,6 +967,58 @@ describe('rails that a mutation test proved were unpinned', () => {
     expect(o.estimate).toBeNull()
     expect(o.note).not.toMatch(/\d+\s*[–-]\s*\d+\s*weeks/)
     expect(o.note).not.toMatch(/typically 0 weeks/)
+  })
+
+  it('tells a slowly-climbing athlete they are climbing, not flat', () => {
+    // The module computed "climbing, but years at this rate" while the screen
+    // said "the trend is flat" — the app contradicting its own measurement.
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 199, value: 5.0 },
+        { daysAgo: 150, value: 5.1 },
+        { daysAgo: 100, value: 5.15 },
+        { daysAgo: 50, value: 5.25 },
+        { daysAgo: 2, value: 5.3 },
+      ]),
+    )
+    const f = forecastUnlock(state, 'tuck', NOW)
+    expect(f.kind).toBe('not-trending')
+    if (f.kind !== 'not-trending') return
+    expect(f.ratePerWeek).toBeGreaterThan(0)
+    expect(describeForecast(f)).not.toMatch(/flat/i)
+    expect(describeForecast(f)).toMatch(/climbing/i)
+    // And the same series read as falling must not claim "climbing".
+    const falling = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 60, value: 14 },
+        { daysAgo: 42, value: 12 },
+        { daysAgo: 28, value: 11 },
+        { daysAgo: 14, value: 9 },
+        { daysAgo: 3, value: 8 },
+      ]),
+    )
+    expect(describeForecast(forecastUnlock(falling, 'tuck', NOW))).toMatch(/downward/i)
+  })
+
+  it('never puts a full planche within single-digit weeks', () => {
+    // Genuine two-week steps at Tuck and above still projected "2-3 weeks to a
+    // full planche". Narrower than the original bug, same claim.
+    const sessions: Session[] = [
+      ...historyOf('tuck', [{ daysAgo: 75, value: 8 }]),
+      ...historyOf('advtuck', [{ daysAgo: 60, value: 8 }]),
+      ...historyOf('oneleg', [{ daysAgo: 45, value: 5 }]),
+      ...historyOf('straddle', [{ daysAgo: 30, value: 4 }]),
+    ]
+    const state = stateWith('straddle', sessions, {
+      profile: { ...initialState().profile, goalStepId: 'full' },
+    })
+    const o = goalOutlook(state, NOW)
+    if (o.estimate) {
+      expect(o.estimate.lowWeeks).toBeGreaterThanOrEqual(10)
+      expect(o.estimate.highWeeks).toBeGreaterThan(o.estimate.lowWeeks)
+    }
   })
 
   it('refuses a number rather than forecasting twenty-one years', () => {

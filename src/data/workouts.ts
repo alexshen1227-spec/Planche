@@ -601,18 +601,26 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     state.settings.phoneWithinReach,
   )
 
-  const shortened = minutesOverride !== undefined && budget < baseBudget
+  // The *fitted* length, not the requested one. `fitToBudget` protects the
+  // warm-up, the key main work and a floor of sets, so a session that is
+  // already near-minimal (a deload, say) cannot always reach a small budget —
+  // and promising "about 15 minutes" for a 20-minute session is the kind of
+  // number this app is not allowed to invent.
+  const fittedMinutes = estimateMinutes(fitted, state.settings.stopLatencySec, state.settings.phoneWithinReach)
+  const shortened = minutesOverride !== undefined && fittedMinutes < baseBudget
   return {
     id: `auto-${stepId}-${plan.dayType}-${plan.strategy}${shortened ? `-${budget}m` : ''}`,
     name: `${step.name} · ${DAY_LABEL[plan.dayType]}${shortened ? ' · Short' : ''}`,
     focus: shortened
-      ? `Trimmed to about ${budget} minutes. The warm-up and your main ${
+      ? `Trimmed to about ${fittedMinutes} minutes${
+          fittedMinutes > budget ? ` — as short as this day gets without cutting the work that matters` : ''
+        }. The warm-up and your main ${
           EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? 'work'
-        } are intact — accessories came off first, because a short session you actually do beats a full one you skip. ${plan.dayReason}`
+        } are intact; accessories came off first, because a short session you actually do beats a full one you skip. ${plan.dayReason}`
       : plan.limiter
         ? `${plan.dayReason} Current limiter: ${plan.limiter.label}. ${plan.limiter.prescription}`
         : plan.dayReason,
-    minutes: estimateMinutes(fitted, state.settings.stopLatencySec, state.settings.phoneWithinReach),
+    minutes: fittedMinutes,
     kind: 'auto',
     blocks: fitted,
     strategy: plan.strategy,
