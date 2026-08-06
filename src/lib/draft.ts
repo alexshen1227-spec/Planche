@@ -18,6 +18,10 @@ export interface SessionDraft {
   savedAt: number
   workout: Workout
   startedAt: number
+  /** Inactive time already completed before the current pause. */
+  pausedMs?: number
+  /** Wall-clock time when the app most recently became inactive. */
+  pausedAt?: number
   blockIndex: number
   setIndex: number
   logs: SetLog[]

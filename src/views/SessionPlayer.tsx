@@ -201,6 +201,15 @@ export function SessionPlayer({
    * 0 means "not started yet".
    */
   const startedAtRef = useRef(resumeFrom?.startedAt ?? 0)
+  const restoredPausedMs =
+    Math.max(0, resumeFrom?.pausedMs ?? 0) +
+    (resumeFrom?.startedAt && resumeFrom.pausedAt
+      ? Math.max(0, Date.now() - resumeFrom.pausedAt)
+      : 0)
+  /** Completed time spent outside the app during this session. */
+  const pausedMsRef = useRef(restoredPausedMs)
+  /** Start of the current inactive period, if the app is hidden. */
+  const hiddenAtRef = useRef<number | null>(null)
   const lastBeepRef = useRef(-1)
   const targetHitRef = useRef(false)
   const lastCountRef = useRef(-1)
@@ -323,6 +332,8 @@ export function SessionPlayer({
       saveDraft({
         workout,
         startedAt: startedAtRef.current,
+        pausedMs: pausedMsRef.current,
+        ...(hiddenAtRef.current !== null ? { pausedAt: hiddenAtRef.current } : {}),
         blockIndex: bi,
         setIndex: si,
         logs,
@@ -347,6 +358,7 @@ export function SessionPlayer({
     snapshot()
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
+        if (startedAtRef.current && hiddenAtRef.current === null) hiddenAtRef.current = Date.now()
         if (phase === 'hold') {
           const raw = Math.max(0, (Date.now() - holdStart) / 1000)
           frozenElapsedRef.current = raw
@@ -365,10 +377,18 @@ export function SessionPlayer({
         // render that the browser is free never to run.
         snapshot(filming ? { cameraOn: false } : undefined)
       } else {
+        const resumedAt = Date.now()
+        if (hiddenAtRef.current !== null) {
+          pausedMsRef.current += Math.max(0, resumedAt - hiddenAtRef.current)
+          hiddenAtRef.current = null
+          setNow(resumedAt)
+        }
         frozenElapsedRef.current = null
+        snapshot()
       }
     }
     const onPageHide = () => {
+      if (startedAtRef.current && hiddenAtRef.current === null) hiddenAtRef.current = Date.now()
       if (phase === 'hold' && frozenElapsedRef.current === null) {
         frozenElapsedRef.current = Math.max(0, (Date.now() - holdStart) / 1000)
       }
@@ -507,7 +527,11 @@ export function SessionPlayer({
    * began, and a resumed session keeps its original start time.
    */
   const startSession = useCallback(() => {
-    if (!startedAtRef.current) startedAtRef.current = Date.now()
+    if (!startedAtRef.current) {
+      startedAtRef.current = Date.now()
+      pausedMsRef.current = 0
+      hiddenAtRef.current = null
+    }
     setPhase('ready')
   }, [])
 
@@ -733,6 +757,7 @@ export function SessionPlayer({
       // leaving the intro — but a real timestamp beats an epoch date if it is.
       startedAt: startedAtRef.current || Date.now(),
       endedAt: Date.now(),
+      ...(pausedMsRef.current > 0 ? { pausedMs: pausedMsRef.current } : {}),
       workoutName: workout.name,
       workoutKind: workout.kind,
       stepId: state.stepId,
@@ -835,7 +860,9 @@ export function SessionPlayer({
     return () => window.removeEventListener('keydown', onKey)
   }, [phase, beginSet, stopHold, logSet, pendingReps, showCheckIn, showDemo, showRpeHelp, confirmExit])
 
-  const sessionElapsed = startedAtRef.current ? Math.max(0, (now - startedAtRef.current) / 1000) : 0
+  const sessionElapsed = startedAtRef.current
+    ? Math.max(0, (now - startedAtRef.current - pausedMsRef.current) / 1000)
+    : 0
   const lastLog = logs[logs.length - 1]
 
   const holdSecTotal = Math.round(logs.filter((l) => l.kind === 'hold').reduce((t, l) => t + l.value, 0))

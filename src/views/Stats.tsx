@@ -3,7 +3,7 @@ import { useStore } from '../lib/store'
 import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID, STEPS } from '../data/progressions'
 import { ACHIEVEMENTS, type AchievementProgress } from '../data/achievements'
-import { bestSeries, weeklyVolume, totalHoldSec, totalSets, sessionHoldSec } from '../lib/stats'
+import { bestSeries, weeklyVolume, totalHoldSec, totalSets, sessionHoldSec, sessionDurationSec } from '../lib/stats'
 import { armStats, STRATEGY_BY_ID, formatRate, buildPlan } from '../lib/coach'
 import { diagnose, weakLinks } from '../lib/diagnose'
 import { fmtWeight } from '../lib/units'
@@ -834,7 +834,7 @@ export function Stats() {
                       </span>
                     </div>
                     <div className="mt-0.5 text-[13px] text-ink2 tnum">
-                      {s.sets.length} sets · {sessionHoldSec(s)}s held · {fmtClock((s.endedAt - s.startedAt) / 1000)}
+                      {s.sets.length} sets · {sessionHoldSec(s)}s held · {fmtClock(sessionDurationSec(s))}
                       {s.rpe ? ` · RPE ${s.rpe}` : ''}
                     </div>
                   </div>

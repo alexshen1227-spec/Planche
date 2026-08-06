@@ -111,6 +111,11 @@ export function sessionHoldSec(session: Session): number {
   return Math.round(session.sets.filter((s) => s.kind === 'hold').reduce((t, s) => t + s.value, 0))
 }
 
+/** Workout time with periods spent outside the app removed. */
+export function sessionDurationSec(session: Session): number {
+  return Math.max(0, (session.endedAt - session.startedAt - (session.pausedMs ?? 0)) / 1000)
+}
+
 /*
  * `paceToUnlock` used to live here: a least-squares fit over at most six noisy
  * session bests, printed as "on pace to unlock in ~N weeks".

@@ -263,6 +263,8 @@ export interface Session {
   id: string
   startedAt: number
   endedAt: number
+  /** Time the app was backgrounded or closed during this session. */
+  pausedMs?: number
   workoutName: string
   workoutKind: Workout['kind']
   stepId: StepId

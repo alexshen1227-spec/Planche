@@ -265,10 +265,14 @@ function sanitizeSessions(raw: unknown): Session[] {
     if (ids.has(id)) id = crypto.randomUUID()
     ids.add(id)
     const checkIn = sanitizeCheckIn(c.checkIn)
+    const endedAt = typeof c.endedAt === 'number' && Number.isFinite(c.endedAt) ? c.endedAt : c.startedAt
     out.push({
       id,
       startedAt: c.startedAt,
-      endedAt: typeof c.endedAt === 'number' && Number.isFinite(c.endedAt) ? c.endedAt : c.startedAt,
+      endedAt,
+      ...(typeof c.pausedMs === 'number' && Number.isFinite(c.pausedMs)
+        ? { pausedMs: clampNum(c.pausedMs, 0, Math.max(0, endedAt - c.startedAt), 0) }
+        : {}),
       workoutName: typeof c.workoutName === 'string' ? c.workoutName : 'Session',
       workoutKind: c.workoutKind === 'template' || c.workoutKind === 'test' ? c.workoutKind : 'auto',
       stepId: c.stepId && STEP_BY_ID[c.stepId] ? c.stepId : 'foundations',
