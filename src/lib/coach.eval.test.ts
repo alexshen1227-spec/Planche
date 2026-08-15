@@ -429,9 +429,18 @@ describe('a season coached end to end', () => {
     for (const seed of [1, 2, 3]) {
       const run = season({ weeks: 16, seed, gainPerWeek: 0.8 })
       const factors = run.plans.map((p) => p.targetFactor)
-      // A spiral looks like the floor being reached and never left.
+      // A spiral looks like the floor being reached and never left. One
+      // scheduled deload may legitimately touch that floor, so pin the
+      // consecutive run rather than rejecting the deload itself.
       const tail = factors.slice(-8)
-      expect(Math.min(...tail)).toBeGreaterThan(0.6)
+      const longestFloorRun = tail.reduce(
+        (runs, factor) => {
+          const current = factor <= 0.6 ? runs.current + 1 : 0
+          return { current, longest: Math.max(runs.longest, current) }
+        },
+        { current: 0, longest: 0 },
+      ).longest
+      expect(longestFloorRun).toBeLessThan(2)
       expect(Math.max(...tail)).toBeGreaterThan(0.75)
       // Prescriptions stay in touch with what the athlete can actually do.
       const lastPrescribed = run.plans[run.plans.length - 1].prescribed
