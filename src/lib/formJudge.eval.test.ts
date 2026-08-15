@@ -301,6 +301,46 @@ describe('form judge robustness — the same hold filmed differently', () => {
 })
 
 describe('form judge — degraded tracking must fail gracefully, not collapse', () => {
+  it('never accuses an exactly straight arm at measured landmark noise', () => {
+    const failures: string[] = []
+    for (const id of GRADED) {
+      const runs = across(id, { elbowBendDeg: 0, noise: 0.02 }, 100)
+      const accused = runs
+        .map((run, index) => ({ seed: index + 1, run }))
+        .filter(({ run }) => run.issues.includes('arms'))
+      if (accused.length) {
+        failures.push(
+          `${id} accused=${accused.length}/100 ${JSON.stringify(accused.slice(0, 3))}`,
+        )
+      }
+    }
+    expect(failures).toEqual([])
+  })
+
+  it('leaves a contradictory borderline elbow track unjudged instead of guessing', () => {
+    // This seeded track has a wide signed-angle spread and a borderline centre,
+    // but no sustained moment clears the independent fault bar. It used to be
+    // reported confidently as bent arms despite the 2° true bend sitting well
+    // inside the camera's measured error.
+    const run = judge('tuck-planche', { elbowBendDeg: 2, noise: 0.02 }, 46)
+    expect(run.issues).not.toContain('arms')
+    expect(run.unseen).toContain('elbows')
+  })
+
+  it('does not let another noisy criterion manufacture a bent-arm verdict', () => {
+    // This exact-straight seed has a brief bad knee run near the start. Rounding
+    // its clean-time cutoff used to leave only three elbow moments in the
+    // headline aggregate, turning a knee tracking miss into an arms accusation.
+    const run = judge('straddle-planche', { elbowBendDeg: 0, noise: 0.02 }, 932)
+    expect(run.issues).not.toContain('arms')
+  })
+
+  it('keeps hyperextension internal and reports lockout as 180 degrees', () => {
+    const run = judge('tuck-planche', { elbowBendDeg: -10, noise: 0 }, 1)
+    expect(run.issues).not.toContain('arms')
+    expect(run.elbowDeg).toBe(180)
+  })
+
   /**
    * Doubling the landmark error is not a setup an athlete chooses; it is what a
    * dim room or an awkward angle does to the tracker. The contract here is

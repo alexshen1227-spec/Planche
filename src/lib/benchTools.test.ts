@@ -75,8 +75,70 @@ describe('verdict explanation', () => {
     const late = explain.envelope.filter((moment) => moment.t > 9)
     expect(early.every((moment) => moment.issues.length === 0)).toBe(true)
     expect(late.some((moment) => moment.issues.includes('arms'))).toBe(true)
-    const firstBad = explain.envelope.find((moment) => moment.bad === true)
-    expect(firstBad).toBeDefined()
-    expect(firstBad!.t).toBeGreaterThanOrEqual(verdict.cleanSeconds! - 0.5)
+    // An isolated earlier miss is allowed; clean time ends at the start of the
+    // first *sustained* run, not necessarily the first bad-looking sample.
+    const breakdownStart = explain.envelope.find(
+      (moment) => moment.bad === true && moment.t >= verdict.cleanSeconds! - 0.1,
+    )
+    expect(breakdownStart).toBeDefined()
+    expect(breakdownStart!.t).toBeLessThanOrEqual(verdict.cleanSeconds! + 0.5)
+  })
+
+  it('distinguishes the best joint position from what was held and never denies a visible fade', () => {
+    const mostlySoft = synthesizeClip({
+      ...IDEAL['ppp-hold'],
+      durationSec: 12,
+      frames: 40,
+      kneeBendDeg: (progress: number) => (progress < 0.05 ? 7 : 18),
+      hipAngleDeg: (progress: number) => (progress < 0.05 ? 166 : 154),
+      noise: 0,
+      seed: 1,
+    })
+    const mostlySoftVerdict = judgeTrackedFrames(mostlySoft, 'ppp-hold')
+    const notes = mostlySoftVerdict.notes.join(' ')
+
+    expect(mostlySoftVerdict.issues).toEqual(expect.arrayContaining(['knees', 'closed']))
+    expect(notes).toMatch(/Knees reached about \d+° at their straightest but sat nearer \d+°/)
+    expect(notes).toMatch(/Hips opened to about \d+° at their best but sat nearer \d+°/)
+
+    const faded = synthesizeClip({
+      ...IDEAL['ppp-hold'],
+      durationSec: 12,
+      frames: 40,
+      kneeBendDeg: (progress: number) => (progress < 0.4 ? 7 : 22),
+      hipAngleDeg: (progress: number) => (progress < 0.4 ? 166 : 150),
+      noise: 0,
+      seed: 1,
+    })
+    const fadedVerdict = judgeTrackedFrames(faded, 'ppp-hold')
+    expect(fadedVerdict.issues).toEqual(expect.arrayContaining(['knees', 'closed']))
+    expect(fadedVerdict.details).not.toContain('Shape held up through the whole hold — no visible fade from start to finish.')
+  })
+
+  it('does not let the timer-edge dismount rewrite the held joint angles', () => {
+    const common = {
+      ...IDEAL['ppp-hold'],
+      durationSec: 8,
+      frames: 25,
+      elbowBendDeg: 11,
+      noise: 0,
+      seed: 1,
+    }
+    const held = judgeTrackedFrames(
+      synthesizeClip({ ...common, kneeBendDeg: 15, hipAngleDeg: 155 }),
+      'ppp-hold',
+    )
+    const withDismount = judgeTrackedFrames(
+      synthesizeClip({
+        ...common,
+        kneeBendDeg: (progress: number) => (progress > 0.98 ? 120 : 15),
+        hipAngleDeg: (progress: number) => (progress > 0.98 ? 60 : 155),
+      }),
+      'ppp-hold',
+    )
+
+    expect(withDismount.kneeDeg).toBeCloseTo(held.kneeDeg!, 6)
+    expect(withDismount.hipAngleDeg).toBeCloseTo(held.hipAngleDeg!, 6)
+    expect(withDismount.details.some((detail) => /last 1 .*left out/.test(detail))).toBe(true)
   })
 })

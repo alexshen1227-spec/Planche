@@ -28,6 +28,25 @@ export const CHANGELOG: ChangeEntry[] = [
     ],
   },
   {
+    date: '2026-08-11',
+    title: 'Camera scores now say what they measured',
+    area: 'camera',
+    notes: [
+      'The camera score called shoulder-versus-hip height “Body line,” which made a green 100 look like proof that the separate shoulder–hip–knee angle was also straight. It now says “Hip height,” while hip opening remains its own measurement.',
+      'Bent-knee and closed-hip notes now show both the best angle you reached and the angle you actually held. The detail panel also watches knees and hip opening for fatigue, so it can no longer say your shape held up when either one visibly faded late.',
+      'The built-in self-test now proves that the straight-arm score changes when the measured elbow angle changes. Two attempts can still earn the same rounded score when their measured lockout is genuinely the same, but a stuck scorer cannot pass unnoticed.',
+    ],
+  },
+  {
+    date: '2026-08-09',
+    title: 'Straight arms stay straight on camera',
+    area: 'camera',
+    notes: [
+      'The form checker could turn ordinary elbow-landmark wobble into a sustained “bent arms” warning even when the real elbow was exactly straight. It now keeps both directions of tracking error until the whole hold is measured, uses a wider evidence bar for one noisy moment than for the full hold, and leaves an unstable elbow unjudged instead of guessing.',
+      'The built-in camera self-test now includes the exact straight-arm, high-jitter cases that exposed the mistake, so this failure can no longer hide behind the easier textbook checks.',
+    ],
+  },
+  {
     date: '2026-08-05',
     title: 'Small things that were quietly broken',
     area: 'app',

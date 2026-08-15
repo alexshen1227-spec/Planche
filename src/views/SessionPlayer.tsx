@@ -2228,14 +2228,14 @@ function FormCheckRow({
                     </div>
                   ) : null}
                   {/* Stated on the face of the panel, not folded into detail:
-                      everything above is a verdict on what the camera saw, and
-                      it must be obvious which parts it never looked at. */}
+                      everything above is a verdict on what the camera could
+                      judge reliably, and skipped criteria must stay obvious. */}
                   {analysis.unseen.length ? (
                     <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-raised px-2.5 py-1.5 text-[11.5px] text-ink3">
                       <Icon name="monitor" size={13} className="mt-[1px] shrink-0" />
                       <span>
-                        Could not see your {analysis.unseen.join(', ')} — not judged above. Move the phone back
-                        or turn it sideways to get {analysis.unseen.length === 1 ? 'it' : 'them'} in frame.
+                        Could not reliably judge your {analysis.unseen.join(', ')} — not judged above. Check the
+                        skeleton replay; a clearer side view, brighter light, or more distance can help.
                       </span>
                     </div>
                   ) : null}

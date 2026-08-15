@@ -35,6 +35,7 @@ import {
   sustainedMaterialIssues,
   sustainedObservableCleanSeconds,
   sustainedTypical,
+  trimTerminalDismountFrames,
   unrotateKeypoints,
 } from './poseForm'
 import { apparentBodyWidthRatio, MAX_SIDE_VIEW_RATIO } from './poseBackend'
@@ -1157,6 +1158,32 @@ describe('camera evaluator primitives', () => {
     expect(readings[2].elbowDeg).toBeUndefined()
     expect(readings[2].hipOffset).toBe(0.06)
   })
+
+  it('drops an abrupt timer-edge dismount but keeps a gradual late form loss', () => {
+    const held = Array.from({ length: 7 }, (_, index) => ({
+      t: index,
+      elbowDeg: 168,
+      kneeDeg: 164,
+      hipAngleDeg: 160,
+      hipOffset: 0,
+      leanRatio: 0.5,
+    }))
+    const withDismount = [
+      ...held,
+      { t: 7.5, elbowDeg: 166, kneeDeg: 52, hipAngleDeg: 64, hipOffset: -0.5, leanRatio: 0.05 },
+    ]
+    expect(trimTerminalDismountFrames(withDismount, 7.5)).toEqual(held)
+
+    const gradual = Array.from({ length: 8 }, (_, index) => ({
+      t: index,
+      elbowDeg: 174 - index,
+      kneeDeg: 170 - index * 2,
+      hipAngleDeg: 165 - index * 2,
+      hipOffset: -index * 0.02,
+      leanRatio: 0.55 - index * 0.02,
+    }))
+    expect(trimTerminalDismountFrames(gradual, 7)).toHaveLength(gradual.length)
+  })
 })
 
 describe('form scoring', () => {
@@ -1218,6 +1245,17 @@ describe('form scoring', () => {
     })
     expect(scored?.score).toBe(100)
     expect(scored?.subscores.every((s) => s.score === 100)).toBe(true)
+  })
+
+  it('calls the screen-relative line score hip height, not the separate hip-opening angle', () => {
+    const scored = computeFormScore({
+      profile: POSE_PROFILES['full-planche'],
+      judged: allJudged,
+      hipAngleDeg: 150,
+      hipOffset: 0,
+    })!
+    expect(scored.subscores.find((s) => s.key === 'line')?.label).toBe('Hip height')
+    expect(scored.subscores.find((s) => s.key === 'hipAngle')?.label).toBe('Hip opening')
   })
 
   it('drops the headline score when the elbows bend materially', () => {

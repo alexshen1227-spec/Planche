@@ -60,6 +60,39 @@ export function selfTestJudge(seeds = 3): SelfTestReport {
     add(`A textbook ${POSE_PROFILES[id].label.toLowerCase()} reads clean`, !failure, failure)
   }
 
+  // The ordinary textbook sweep uses a slight anatomical hyperextension and
+  // default tracker noise. That missed the reported failure: an exactly
+  // straight arm plus measured worst-normal (2% torso) landmark jitter could
+  // still be accused. Keep the seeds that exposed each old failure mode in the
+  // shipped, one-tap test so a bundled regression cannot hide behind averages.
+  {
+    let failure: string | undefined
+    for (const seed of [2, 5, 13, 21, 46]) {
+      const v = judgeSynth('tuck-planche', { elbowBendDeg: 0, noise: 0.02 }, seed)
+      if (!v.ok) failure = `seed ${seed} refused: ${v.reason}`
+      else if (v.issues.includes('arms')) failure = `seed ${seed} accused straight elbows at ${v.elbowDeg?.toFixed(1)}°`
+      if (failure) break
+    }
+    add('Exactly straight elbows survive measured tracking noise', !failure, failure)
+  }
+
+  // Repeated rounded scores can be legitimate when two attempts land at the
+  // same measured angle. Prove the shipped score itself is responsive rather
+  // than stuck: known 8° and 14° bends must produce ordered arm subscores.
+  {
+    const straighter = judgeSynth('ppp-hold', { elbowBendDeg: 8, noise: 0 }, 1)
+    const softer = judgeSynth('ppp-hold', { elbowBendDeg: 14, noise: 0 }, 1)
+    const armScore = (verdict: typeof straighter) =>
+      verdict.subscores?.find((subscore) => subscore.key === 'elbow')?.score
+    const straightScore = armScore(straighter)
+    const softScore = armScore(softer)
+    add(
+      'Arm score changes with measured elbow lockout',
+      straightScore !== undefined && softScore !== undefined && straightScore > softScore,
+      `8° bend scored ${straightScore ?? 'missing'}; 14° bend scored ${softScore ?? 'missing'}`,
+    )
+  }
+
   // 2. Each fault family is still named where the position checks it.
   const faults: { name: string; id: string; extra: SynthParams; issue: string }[] = [
     { name: 'Bent arms are named', id: 'tuck-planche', extra: { elbowBendDeg: 20 }, issue: 'arms' },

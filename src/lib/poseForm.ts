@@ -304,6 +304,22 @@ export const MATERIAL_TOLERANCE = {
   shrugRatio: 0.1,
 } as const
 
+/**
+ * A single sampled moment carries more elbow error than the whole-hold centre.
+ * In particular, the three-point angle turns ordinary landmark jitter into a
+ * short run of apparent flexion even when the true arm is exactly straight.
+ * The aggregate can safely use the measured 8° deadband above; a temporal run
+ * must clear this wider, independently swept bar before it can shorten clean
+ * time or become a sustained fault. Other criteria keep their aggregate bars.
+ */
+export const MOMENTARY_MATERIAL_TOLERANCE = {
+  ...MATERIAL_TOLERANCE,
+  elbowDeg: 16,
+} as const
+
+/** Past this robust spread, a borderline elbow aggregate is detector drift. */
+export const MAX_STABLE_ELBOW_IQR_DEG = 7
+
 export const POSE_PROFILES: Record<string, PoseProfile> = {
   'ppp-hold': {
     // The lean floor here is the one that separates this from an ordinary
@@ -474,13 +490,14 @@ export function materialIssuesForReading(
   frame: FrameReading,
   profile: PoseProfile,
   judged: JudgedCriteria,
+  tolerance: typeof MATERIAL_TOLERANCE | typeof MOMENTARY_MATERIAL_TOLERANCE = MATERIAL_TOLERANCE,
 ): FormIssue[] {
   const issues: FormIssue[] = []
   if (
     judged.elbow &&
     profile.minElbowDeg !== undefined &&
     frame.elbowDeg !== undefined &&
-    frame.elbowDeg < profile.minElbowDeg - MATERIAL_TOLERANCE.elbowDeg
+    frame.elbowDeg < profile.minElbowDeg - tolerance.elbowDeg
   ) {
     issues.push('arms')
   }
@@ -488,7 +505,7 @@ export function materialIssuesForReading(
     judged.knee &&
     profile.minKneeDeg !== undefined &&
     frame.kneeDeg !== undefined &&
-    frame.kneeDeg < profile.minKneeDeg - MATERIAL_TOLERANCE.kneeDeg
+    frame.kneeDeg < profile.minKneeDeg - tolerance.kneeDeg
   ) {
     issues.push('knees')
   }
@@ -496,19 +513,19 @@ export function materialIssuesForReading(
     judged.hipAngle &&
     profile.minHipAngleDeg !== undefined &&
     frame.hipAngleDeg !== undefined &&
-    frame.hipAngleDeg < profile.minHipAngleDeg - MATERIAL_TOLERANCE.hipAngleDeg
+    frame.hipAngleDeg < profile.minHipAngleDeg - tolerance.hipAngleDeg
   ) {
     issues.push('closed')
   }
   if (judged.line && profile.levelTolerance !== undefined && frame.hipOffset !== undefined) {
-    if (frame.hipOffset > profile.levelTolerance + MATERIAL_TOLERANCE.lineRatio) issues.push('pike')
-    if (frame.hipOffset < -profile.levelTolerance - MATERIAL_TOLERANCE.lineRatio) issues.push('sag')
+    if (frame.hipOffset > profile.levelTolerance + tolerance.lineRatio) issues.push('pike')
+    if (frame.hipOffset < -profile.levelTolerance - tolerance.lineRatio) issues.push('sag')
   }
   if (
     judged.lean &&
     profile.minLeanRatio !== undefined &&
     frame.leanRatio !== undefined &&
-    frame.leanRatio < profile.minLeanRatio - MATERIAL_TOLERANCE.leanRatio
+    frame.leanRatio < profile.minLeanRatio - tolerance.leanRatio
   ) {
     issues.push('lean')
   }
@@ -516,7 +533,7 @@ export function materialIssuesForReading(
     judged.shrug &&
     profile.checkShrug &&
     frame.shrugRatio !== undefined &&
-    frame.shrugRatio < SHRUG_MIN_RATIO - MATERIAL_TOLERANCE.shrugRatio
+    frame.shrugRatio < SHRUG_MIN_RATIO - tolerance.shrugRatio
   ) {
     issues.push('shrug')
   }
@@ -573,7 +590,7 @@ function materiallyOutsideEnvelope(
   if (profile.levelTolerance !== undefined && judged.line) required.push(frame.hipOffset)
   if (profile.minLeanRatio !== undefined && judged.lean) required.push(frame.leanRatio)
   if (required.some((value) => value === undefined)) return null
-  return materialIssuesForReading(frame, profile, judged).length > 0
+  return materialIssuesForReading(frame, profile, judged, MOMENTARY_MATERIAL_TOLERANCE).length > 0
 }
 
 type ReadingMetric = Exclude<keyof FrameReading, 't'>
@@ -625,7 +642,7 @@ export function suppressIsolatedMetricSpikes(
  * sample count and real elapsed time are required, so increasing sampling
  * density cannot make the same movement fail sooner.
  */
-export function sustainedCleanSeconds(
+export function sustainedBreakdownStart(
   samples: { t: number; bad: boolean }[],
   creditedHoldSec: number,
   minimumBadSamples = 3,
@@ -646,10 +663,25 @@ export function sustainedCleanSeconds(
       badRun >= Math.max(1, minimumBadSamples) &&
       sample.t - badRunStartedAt >= Math.max(0, minimumBadDurationSec)
     ) {
-      return Math.round(Math.min(hold, Math.max(0, badRunStartedAt)) * 10) / 10
+      return Math.min(hold, Math.max(0, badRunStartedAt))
     }
   }
-  return Math.round(hold * 10) / 10
+  return hold
+}
+
+export function sustainedCleanSeconds(
+  samples: { t: number; bad: boolean }[],
+  creditedHoldSec: number,
+  minimumBadSamples = 3,
+  minimumBadDurationSec = 0.75,
+): number {
+  const start = sustainedBreakdownStart(
+    samples,
+    creditedHoldSec,
+    minimumBadSamples,
+    minimumBadDurationSec,
+  )
+  return Math.round(start * 10) / 10
 }
 
 /**
@@ -665,6 +697,57 @@ export function sustainedObservableCleanSeconds(
     samples.map((sample) => ({ t: sample.t, bad: sample.bad !== false })),
     creditedHoldSec,
   )
+}
+
+/**
+ * Remove an abrupt final collapse from the angles that describe the held
+ * position. Athletes stop the timer as they come down, so the final sample can
+ * catch a kneeling body even when its timestamp is technically inside the
+ * credited hold. A gradual late loss stays: only two independent measurements
+ * dropping implausibly far from their recent baseline, inside the last fraction
+ * of a second, is treated as the dismount.
+ */
+export function trimTerminalDismountFrames(
+  frames: FrameReading[],
+  creditedHoldSec: number,
+  maxTailSec = 0.8,
+): FrameReading[] {
+  if (frames.length < 6 || !Number.isFinite(creditedHoldSec)) return frames
+
+  const angularKeys = ['elbowDeg', 'kneeDeg', 'hipAngleDeg'] as const
+  for (let index = 3; index < frames.length; index++) {
+    const current = frames[index]
+    if (creditedHoldSec - current.t > maxTailSec || current.t > creditedHoldSec + 0.05) continue
+    const recent = frames.slice(Math.max(0, index - 6), index)
+    let collapseSignals = 0
+
+    for (const key of angularKeys) {
+      const value = current[key]
+      const history = recent
+        .map((frame) => frame[key])
+        .filter((candidate): candidate is number =>
+          typeof candidate === 'number' && Number.isFinite(candidate),
+        )
+      const baseline = median(history)
+      if (value !== undefined && baseline !== undefined && baseline - value > 30) collapseSignals++
+    }
+
+    const ratioJump = (key: 'hipOffset' | 'leanRatio', threshold: number) => {
+      const value = current[key]
+      const history = recent
+        .map((frame) => frame[key])
+        .filter((candidate): candidate is number =>
+          typeof candidate === 'number' && Number.isFinite(candidate),
+        )
+      const baseline = median(history)
+      return value !== undefined && baseline !== undefined && Math.abs(value - baseline) > threshold
+    }
+    if (ratioJump('hipOffset', 0.35)) collapseSignals++
+    if (ratioJump('leanRatio', 0.35)) collapseSignals++
+
+    if (collapseSignals >= 2) return frames.slice(0, index)
+  }
+  return frames
 }
 
 export function hasVerifiableHoldDuration(creditedHoldSec: number): boolean {
@@ -1232,6 +1315,8 @@ export function judgeTrackedFrames(
   // Timestamped copies of the metrics that fatigue visibly, so the hold can
   // be compared against itself: early third vs final third.
   const elbowSeries: { t: number; v: number }[] = []
+  const kneeSeries: { t: number; v: number }[] = []
+  const hipAngleSeries: { t: number; v: number }[] = []
   const lineSeries: { t: number; v: number }[] = []
   const leanSeries: { t: number; v: number }[] = []
   let orientationFrames = 0
@@ -1342,7 +1427,13 @@ export function judgeTrackedFrames(
     }
     let frameElbowDeg: number | undefined
     if (armBends.length) {
-      const angle = 180 - Math.max(0, armBends.reduce((a, b) => a + b, 0) / armBends.length)
+      // Keep the sign until the whole-hold aggregate is built. Clamping every
+      // hyperextended/noisy sample to 180 here half-wave-rectifies otherwise
+      // symmetric landmark error: away-from-hips error disappears while
+      // toward-hips error survives as a bend. On an exactly straight arm that
+      // bias was enough to manufacture a red fault in roughly 8% of noisy
+      // clips. Athlete-facing output is still clamped to 180 below.
+      const angle = 180 - armBends.reduce((a, b) => a + b, 0) / armBends.length
       push(elbows, angle)
       frameElbowDeg = angle
       elbowSeries.push({ t, v: angle })
@@ -1372,8 +1463,14 @@ export function judgeTrackedFrames(
     const selectedLeg = selectSideViewLeg(legReadings, profile.oneLeg)
     const frameKneeDeg = selectedLeg?.knee
     const frameHipAngleDeg = selectedLeg?.hipAngle
-    if (frameKneeDeg !== undefined) push(knees, frameKneeDeg)
-    if (frameHipAngleDeg !== undefined) push(hipAngles, frameHipAngleDeg)
+    if (frameKneeDeg !== undefined) {
+      push(knees, frameKneeDeg)
+      kneeSeries.push({ t, v: frameKneeDeg })
+    }
+    if (frameHipAngleDeg !== undefined) {
+      push(hipAngles, frameHipAngleDeg)
+      hipAngleSeries.push({ t, v: frameHipAngleDeg })
+    }
 
     // Screen y grows downward, so a hip above the shoulders is negative dy.
     // Shoulder and hip both pass the precision gate: a barely-visible hip
@@ -1458,6 +1555,8 @@ export function judgeTrackedFrames(
   leans.length = 0
   shrugs.length = 0
   elbowSeries.length = 0
+  kneeSeries.length = 0
+  hipAngleSeries.length = 0
   lineSeries.length = 0
   leanSeries.length = 0
   for (const frame of frameReadings) {
@@ -1465,8 +1564,14 @@ export function judgeTrackedFrames(
       push(elbows, frame.elbowDeg)
       elbowSeries.push({ t: frame.t, v: frame.elbowDeg })
     }
-    if (frame.kneeDeg !== undefined) push(knees, frame.kneeDeg)
-    if (frame.hipAngleDeg !== undefined) push(hipAngles, frame.hipAngleDeg)
+    if (frame.kneeDeg !== undefined) {
+      push(knees, frame.kneeDeg)
+      kneeSeries.push({ t: frame.t, v: frame.kneeDeg })
+    }
+    if (frame.hipAngleDeg !== undefined) {
+      push(hipAngles, frame.hipAngleDeg)
+      hipAngleSeries.push({ t: frame.t, v: frame.hipAngleDeg })
+    }
     if (frame.hipOffset !== undefined) {
       push(hipOffsets, frame.hipOffset)
       lineSeries.push({ t: frame.t, v: frame.hipOffset })
@@ -1527,10 +1632,38 @@ export function judgeTrackedFrames(
   // failing the whole clip: a knee out of frame should cost you the knee
   // verdict, not the elbow, hip and lean verdicts alongside it. What stays
   // non-negotiable is that thin coverage never reads as a silent pass.
+  const wholeClipElbow = sustainedTypical(elbows)
+  const elbowIqr = interquartileSpread(elbows)
+  const strongElbowRun =
+    profile.minElbowDeg !== undefined &&
+    sustainedMaterialIssues(
+      frameReadings.map((frame) => ({
+        t: frame.t,
+        issues:
+          frame.elbowDeg !== undefined &&
+          frame.elbowDeg < profile.minElbowDeg! - MOMENTARY_MATERIAL_TOLERANCE.elbowDeg
+            ? (['arms'] as FormIssue[])
+            : [],
+      })),
+    ).includes('arms')
+  // A borderline bent-looking centre plus a wide signed-angle spread is not a
+  // trustworthy accusation. This is the exact failure shape produced when a
+  // straight elbow's landmarks drift coherently to one side of the arm chord:
+  // the aggregate clears 8°, but no moment clears the independent 16° bar.
+  // Preserve the strict static-bend check and gross breakdown check; only the
+  // contradictory criterion becomes unseen.
+  const elbowTrackingUncertain =
+    profile.minElbowDeg !== undefined &&
+    wholeClipElbow !== undefined &&
+    wholeClipElbow < profile.minElbowDeg - MATERIAL_TOLERANCE.elbowDeg &&
+    elbowIqr !== undefined &&
+    elbowIqr > MAX_STABLE_ELBOW_IQR_DEG &&
+    !strongElbowRun
+
   const { judged, unseen } = gradeCoverage(
     profile,
     {
-      elbows: elbows.length,
+      elbows: elbowTrackingUncertain ? 0 : elbows.length,
       knees: knees.length,
       hipAngles: hipAngles.length,
       hipOffsets: hipOffsets.length,
@@ -1566,7 +1699,16 @@ export function judgeTrackedFrames(
       bad: frame ? materiallyOutsideEnvelope(frame, profile, judged) : null,
     }
   })
-  const cleanSeconds = sustainedObservableCleanSeconds(envelopeSamples, creditedSeconds)
+  const observableEnvelope = envelopeSamples.map((sample) => ({
+    t: sample.t,
+    bad: sample.bad !== false,
+  }))
+  // Keep the exact sampled start for selecting verdict frames. The public
+  // clean-time number is rounded to a tenth for display; using that rounded
+  // value as a cutoff could round the first bad frame back into the supposedly
+  // clean window and let one criterion manufacture a fault in another.
+  const cleanCutoffSeconds = sustainedBreakdownStart(observableEnvelope, creditedSeconds)
+  const cleanSeconds = Math.round(cleanCutoffSeconds * 10) / 10
   const cleanRatio = creditedSeconds > 0 ? Math.min(1, cleanSeconds / creditedSeconds) : 0
   const sustainedFaults = new Set(
     sustainedMaterialIssues(
@@ -1575,7 +1717,12 @@ export function judgeTrackedFrames(
         .map((t) => ({
           t,
           issues: readingAt.has(t)
-            ? materialIssuesForReading(readingAt.get(t)!, profile, judged)
+            ? materialIssuesForReading(
+                readingAt.get(t)!,
+                profile,
+                judged,
+                MOMENTARY_MATERIAL_TOLERANCE,
+              )
             : [],
         })),
     ),
@@ -1589,10 +1736,18 @@ export function judgeTrackedFrames(
   // came back "elbows bent, hips sagging" — describing the exit, which is not
   // a form fault at all. The verdict now covers the sustained-clean portion,
   // and the breakdown is reported separately as the point where it ended.
-  const brokeDown = cleanSeconds + 0.05 < creditedSeconds
-  const cutoff = brokeDown ? cleanSeconds : creditedSeconds
-  const withinHold = frameReadings.filter((f) => f.t < cutoff)
-  const verdictFrames = withinHold.length >= MIN_FRAMES ? withinHold : frameReadings
+  const brokeDown = cleanCutoffSeconds + 0.05 < creditedSeconds
+  const cutoff = brokeDown ? cleanCutoffSeconds : creditedSeconds
+  // A clean hold owns its final sampled moment. The strict `<` comparison used
+  // for a real breakdown was also dropping the endpoint of every fully clean
+  // clip; on an even sample count, losing that one observation can move the
+  // median across the elbow threshold. Keep excluding the first bad moment
+  // after a breakdown, but retain the credited endpoint otherwise.
+  const withinHold = frameReadings.filter((f) =>
+    brokeDown ? f.t < cutoff : f.t <= cutoff + 0.05,
+  )
+  const candidateVerdictFrames = withinHold.length >= MIN_FRAMES ? withinHold : frameReadings
+  const verdictFrames = trimTerminalDismountFrames(candidateVerdictFrames, creditedSeconds)
   const exitFramesDropped = frameReadings.length - verdictFrames.length
 
   const pick = <K extends keyof FrameReading>(key: K): number[] =>
@@ -1666,7 +1821,10 @@ export function judgeTrackedFrames(
     ),
   )
   const namedFaults = new Set([...aggregateFaults, ...sustainedFaults])
-  const creditedReadings = frameReadings.filter((frame) => frame.t <= creditedSeconds + 0.05)
+  const creditedReadings = trimTerminalDismountFrames(
+    frameReadings.filter((frame) => frame.t <= creditedSeconds + 0.05),
+    creditedSeconds,
+  )
   const faultMetric = (issue: FormIssue, key: Exclude<keyof FrameReading, 't'>): number | undefined => {
     const values = creditedReadings
       .filter((frame) => materialIssuesForReading(frame, profile, judged).includes(issue))
@@ -1678,7 +1836,9 @@ export function judgeTrackedFrames(
   // When a fault appeared after an initially clean position, expose the
   // sustained faulty measurement rather than returning a pristine pre-fault
   // median next to a red issue label.
-  const reportedElbowDeg = namedFaults.has('arms') ? faultMetric('arms', 'elbowDeg') ?? elbowDeg : elbowDeg
+  const rawReportedElbowDeg = namedFaults.has('arms') ? faultMetric('arms', 'elbowDeg') ?? elbowDeg : elbowDeg
+  const reportedElbowDeg = rawReportedElbowDeg === undefined ? undefined : Math.min(180, rawReportedElbowDeg)
+  const displayedElbowPeak = elbowPeak === undefined ? undefined : Math.min(180, elbowPeak)
   const reportedKneeDeg = namedFaults.has('knees') ? faultMetric('knees', 'kneeDeg') ?? kneeDeg : kneeDeg
   const reportedHipAngleDeg = namedFaults.has('closed')
     ? faultMetric('closed', 'hipAngleDeg') ?? hipAngleDeg
@@ -1700,8 +1860,8 @@ export function judgeTrackedFrames(
         sustainedFaults.has('arms') && !aggregateFaults.has('arms')
           ? `Elbows softened to about ${Math.round(reportedElbowDeg)}° for a sustained part of the hold — even a small bend changes this from straight-arm work.`
           : elbowPeak !== undefined && elbowPeak >= profile.minElbowDeg - MATERIAL_TOLERANCE.elbowDeg
-            ? `Elbows locked at their best (${Math.round(elbowPeak)}°) but sat nearer ${Math.round(reportedElbowDeg)}° for much of the hold — keep the lock the whole way.`
-            : `Elbows reached about ${Math.round(elbowPeak ?? reportedElbowDeg)}° at their straightest — locked reads near 180°.`,
+            ? `Elbows locked at their best (${Math.round(displayedElbowPeak!)}°) but sat nearer ${Math.round(reportedElbowDeg)}° for much of the hold — keep the lock the whole way.`
+            : `Elbows reached about ${Math.round(displayedElbowPeak ?? reportedElbowDeg)}° at their straightest — locked reads near 180°.`,
       )
     } else {
       // Two different good outcomes, and conflating them would overclaim.
@@ -1722,9 +1882,9 @@ export function judgeTrackedFrames(
       notes.push(
         sustainedFaults.has('knees') && !aggregateFaults.has('knees')
           ? `Knee extension softened to about ${Math.round(reportedKneeDeg)}° for a sustained part of the hold.`
-          : kneePeak !== undefined && kneePeak >= profile.minKneeDeg
-            ? `Legs straightened fully at some point (${Math.round(kneePeak)}°) but bent for much of the hold — squeeze them straight and keep them there.`
-            : `Knees measured about ${Math.round(kneePeak ?? reportedKneeDeg)}° — straight legs read near 180°.`,
+          : kneePeak !== undefined && kneePeak - reportedKneeDeg >= 4
+            ? `Knees reached about ${Math.round(kneePeak)}° at their straightest but sat nearer ${Math.round(reportedKneeDeg)}° for much of the hold — squeeze the quads and keep them locked.`
+            : `Knees sat near ${Math.round(reportedKneeDeg)}° through the hold — straight legs read near 180°.`,
       )
     } else {
       good.push(
@@ -1743,8 +1903,8 @@ export function judgeTrackedFrames(
       notes.push(
         sustainedFaults.has('closed') && !aggregateFaults.has('closed')
           ? `The hip angle closed to about ${Math.round(reportedHipAngleDeg)}° for a sustained part of the hold.`
-          : hipAnglePeak !== undefined && hipAnglePeak >= profile.minHipAngleDeg
-            ? `Hips opened to ${Math.round(hipAnglePeak)}° at their best but closed back down for much of the hold — this position wants ${profile.minHipAngleDeg}°+ held, not visited.`
+          : hipAnglePeak !== undefined && hipAnglePeak - reportedHipAngleDeg >= 4
+            ? `Hips opened to about ${Math.round(hipAnglePeak)}° at their best but sat nearer ${Math.round(reportedHipAngleDeg)}° for much of the hold — this position wants ${profile.minHipAngleDeg}°+ held, not visited.`
             : `Hips were only about ${Math.round(reportedHipAngleDeg)}° open — this position wants closer to ${profile.minHipAngleDeg}°.`,
       )
     } else {
@@ -1767,7 +1927,7 @@ export function judgeTrackedFrames(
       good.push(
         Math.abs(reportedHipOffset) <= profile.levelTolerance
           ? 'Hips and shoulders level'
-          : 'Body line within camera tolerance',
+          : 'Hip height within camera tolerance',
       )
     }
   }
@@ -1795,7 +1955,7 @@ export function judgeTrackedFrames(
   details.push(
     profile.oneLeg
       ? 'Side-view mode graded the stable visible-side arm and only treated a leg as extended when its full reach was visible.'
-      : 'Side-view mode graded the stable visible-side arm, leg and body line; overlapped rear-side landmarks were not treated as separate evidence.',
+      : 'Side-view mode graded the stable visible-side arm, leg and hip height; overlapped rear-side landmarks were not treated as separate evidence.',
   )
 
   if (wobble !== undefined) {
@@ -1807,9 +1967,13 @@ export function judgeTrackedFrames(
   }
 
   // ——— Early vs late: did the shape survive the fatigue? ———
-  // Each comparison stays quiet when the headline check already complained
-  // about the same thing, so the panel never nags twice for one fault.
+  // The headline note already explains a named fault, so its trend stays quiet
+  // there. It must still set fadeSeen: otherwise an already-named hip or elbow
+  // fault can worsen late and be followed by the contradictory claim that the
+  // shape held up from start to finish.
   const elbowTrend = thirds(elbowSeries)
+  const kneeTrend = thirds(kneeSeries)
+  const hipAngleTrend = thirds(hipAngleSeries)
   const lineTrend = thirds(lineSeries)
   const leanTrend = thirds(leanSeries)
   let fadeSeen = false
@@ -1819,29 +1983,62 @@ export function judgeTrackedFrames(
     elbowTrend &&
     profile.minElbowDeg !== undefined &&
     elbowTrend.early - elbowTrend.late > 8 &&
-    elbowTrend.late < profile.minElbowDeg - MATERIAL_TOLERANCE.elbowDeg &&
-    !issues.includes('arms')
+    elbowTrend.late < profile.minElbowDeg - MATERIAL_TOLERANCE.elbowDeg
   ) {
     fadeSeen = true
-    details.push(
-      `Elbow tracking softened late (${Math.round(elbowTrend.early)}° → ${Math.round(elbowTrend.late)}°), but was not turned into a form flag without a sustained fault.`,
-    )
+    if (!issues.includes('arms')) {
+      details.push(
+        `Elbow tracking softened late (${Math.round(elbowTrend.early)}° → ${Math.round(elbowTrend.late)}°), but was not turned into a form flag without a sustained fault.`,
+      )
+    }
   }
-  if (judged.line && lineTrend && !issues.includes('sag') && !issues.includes('pike')) {
+  if (
+    judged.knee &&
+    kneeTrend &&
+    profile.minKneeDeg !== undefined &&
+    kneeTrend.early - kneeTrend.late > MATERIAL_TOLERANCE.kneeDeg &&
+    kneeTrend.late < profile.minKneeDeg - MATERIAL_TOLERANCE.kneeDeg
+  ) {
+    fadeSeen = true
+    if (!issues.includes('knees')) {
+      details.push(
+        `Knee extension softened late (${Math.round(kneeTrend.early)}° → ${Math.round(kneeTrend.late)}°), but was not turned into a form flag without a sustained fault.`,
+      )
+    }
+  }
+  if (
+    judged.hipAngle &&
+    hipAngleTrend &&
+    profile.minHipAngleDeg !== undefined &&
+    hipAngleTrend.early - hipAngleTrend.late > MATERIAL_TOLERANCE.hipAngleDeg &&
+    hipAngleTrend.late < profile.minHipAngleDeg - MATERIAL_TOLERANCE.hipAngleDeg
+  ) {
+    fadeSeen = true
+    if (!issues.includes('closed')) {
+      details.push(
+        `Hip opening faded late (${Math.round(hipAngleTrend.early)}° → ${Math.round(hipAngleTrend.late)}°), but was not turned into a form flag without a sustained fault.`,
+      )
+    }
+  }
+  if (judged.line && lineTrend) {
     if (
       profile.levelTolerance !== undefined &&
       lineTrend.early - lineTrend.late > 0.18 &&
       lineTrend.late < -profile.levelTolerance - MATERIAL_TOLERANCE.lineRatio
     ) {
       fadeSeen = true
-      details.push('The tracked hip line dropped late, but was not turned into a form flag without a sustained fault.')
+      if (!issues.includes('sag') && !issues.includes('pike')) {
+        details.push('The tracked hip line dropped late, but was not turned into a form flag without a sustained fault.')
+      }
     } else if (
       profile.levelTolerance !== undefined &&
       lineTrend.late - lineTrend.early > 0.18 &&
       lineTrend.late > profile.levelTolerance + MATERIAL_TOLERANCE.lineRatio
     ) {
       fadeSeen = true
-      details.push('The tracked hip line rose late, but was not turned into a form flag without a sustained fault.')
+      if (!issues.includes('sag') && !issues.includes('pike')) {
+        details.push('The tracked hip line rose late, but was not turned into a form flag without a sustained fault.')
+      }
     }
   }
   if (
@@ -1849,13 +2046,14 @@ export function judgeTrackedFrames(
     leanTrend &&
     profile.minLeanRatio !== undefined &&
     leanTrend.early - leanTrend.late > 0.12 &&
-    leanTrend.late < profile.minLeanRatio - MATERIAL_TOLERANCE.leanRatio &&
-    !issues.includes('lean')
+    leanTrend.late < profile.minLeanRatio - MATERIAL_TOLERANCE.leanRatio
   ) {
     fadeSeen = true
-    details.push('The tracked lean pulled back late, but was not turned into a form flag without a sustained fault.')
+    if (!issues.includes('lean')) {
+      details.push('The tracked lean pulled back late, but was not turned into a form flag without a sustained fault.')
+    }
   }
-  if (!fadeSeen && holdWindow >= 8 && (elbowTrend || lineTrend || leanTrend)) {
+  if (!fadeSeen && holdWindow >= 8 && (elbowTrend || kneeTrend || hipAngleTrend || lineTrend || leanTrend)) {
     details.push('Shape held up through the whole hold — no visible fade from start to finish.')
   }
   if (cleanSeconds < creditedSeconds) {
@@ -1901,11 +2099,17 @@ export function judgeTrackedFrames(
       rotation === 0 ? '' : `, reading the frame rotated ${rotation}° so your body sat upright to the model`
     }.`,
   )
-  if (unseen.length) {
+  const outOfView = elbowTrackingUncertain ? unseen.filter((criterion) => criterion !== 'elbows') : unseen
+  if (outOfView.length) {
     // Said plainly rather than buried: a verdict that quietly skipped a
     // criterion would read as a clean bill of health for it.
     details.push(
-      `Your ${listPhrase(unseen)} stayed out of shot, so ${unseen.length === 1 ? 'it was' : 'they were'} not part of this verdict.`,
+      `Your ${listPhrase(outOfView)} stayed out of shot, so ${outOfView.length === 1 ? 'it was' : 'they were'} not part of this verdict.`,
+    )
+  }
+  if (elbowTrackingUncertain) {
+    details.push(
+      'Elbow landmarks drifted too widely for a reliable straight-versus-bent call, so the camera left that criterion unjudged instead of guessing.',
     )
   }
 
@@ -1940,7 +2144,12 @@ export function judgeTrackedFrames(
               t,
               bad,
               issues: readingAt.has(t)
-                ? materialIssuesForReading(readingAt.get(t)!, profile, judged)
+                ? materialIssuesForReading(
+                    readingAt.get(t)!,
+                    profile,
+                    judged,
+                    MOMENTARY_MATERIAL_TOLERANCE,
+                  )
                 : [],
             })),
             aggregateFaults: [...aggregateFaults],
@@ -2165,6 +2374,18 @@ export function sustainedTypical(xs: number[]): number | undefined {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
 }
 
+/** Robust middle-half spread, used to detect an internally unstable angle. */
+export function interquartileSpread(xs: number[]): number | undefined {
+  if (xs.length < 4) return undefined
+  const sorted = [...xs].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  const lower = sorted.slice(0, middle)
+  const upper = sorted.slice(sorted.length % 2 ? middle + 1 : middle)
+  const q1 = sustainedTypical(lower)
+  const q3 = sustainedTypical(upper)
+  return q1 === undefined || q3 === undefined ? undefined : q3 - q1
+}
+
 /**
  * FIG Code of Points deduction bands, mapped onto a 0–100 criterion score.
  * Gymnastics judges deduct nothing inside 5° of the ideal, a small error to
@@ -2215,7 +2436,10 @@ const SUBSCORE_LABELS: Record<FormSubscore['key'], string> = {
   elbow: 'Straight arms',
   knee: 'Straight legs',
   hipAngle: 'Hip opening',
-  line: 'Body line',
+  // This is shoulder-versus-hip height, not shoulder–hip–ankle collinearity.
+  // Calling it "Body line" made a green 100 look like proof that the separate
+  // hip-opening angle must also be straight.
+  line: 'Hip height',
   lean: 'Forward lean',
   shrug: 'Shoulders down',
   steadiness: 'Steadiness',
