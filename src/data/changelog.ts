@@ -18,6 +18,16 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-08-14',
+    title: 'Camera mistakes can be saved and shared',
+    area: 'camera',
+    notes: [
+      'Rest after a filmed main hold now has a simple Report button in the top-right. Add a note if you want; the app keeps a private copy of that clip, the movement, score, measurements and frame-by-frame camera working so the mistake can be reproduced instead of guessed at.',
+      'Problem reports stay on your device and never send themselves. They exclude your name, profile and unrelated training history.',
+      'Settings can export every saved report and its video into one file to share for debugging, or permanently delete all report copies without touching normal form clips or progress.',
+    ],
+  },
+  {
     date: '2026-08-05',
     title: 'Small things that were quietly broken',
     area: 'app',

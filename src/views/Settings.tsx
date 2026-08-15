@@ -6,6 +6,11 @@ import { defaultSurface, EQUIPMENT_OPTIONS, TRAINING_SURFACES } from '../data/eq
 import { exportData, readImportFile, validateImport } from '../lib/exportImport'
 import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
 import { listClips, clearAllClips, CLIP_RETENTION_DAYS } from '../lib/clips'
+import {
+  clearAllProblemReports,
+  exportProblemReports,
+  listProblemReports,
+} from '../lib/problemReports'
 import { downloadPoseModel, poseModelReady } from '../lib/poseBackend'
 import { fmtDate } from '../lib/time'
 import { fmtWeight } from '../lib/units'
@@ -234,6 +239,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   const s = state.settings
   const fileRef = useRef<HTMLInputElement | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [confirmDeleteReports, setConfirmDeleteReports] = useState(false)
   const [pendingImport, setPendingImport] = useState<{ state: AppState; incoming: number } | null>(null)
   const [confirmSample, setConfirmSample] = useState(false)
   const [name, setName] = useState(state.name)
@@ -245,6 +251,9 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   const lastWeight = lastOf(state, 'weightKg')
   const [clipCount, setClipCount] = useState(0)
   const [clipBytes, setClipBytes] = useState(0)
+  const [reportCount, setReportCount] = useState(0)
+  const [reportBytes, setReportBytes] = useState(0)
+  const [exportingReports, setExportingReports] = useState(false)
   const [modelState, setModelState] = useState<'idle' | 'loading' | 'ready' | 'error'>(() =>
     poseModelReady() ? 'ready' : 'idle',
   )
@@ -253,6 +262,13 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
     void listClips().then((c) => {
       setClipCount(c.length)
       setClipBytes(c.reduce((t, x) => t + x.bytes, 0))
+    })
+  }, [])
+
+  useEffect(() => {
+    void listProblemReports().then((reports) => {
+      setReportCount(reports.length)
+      setReportBytes(reports.reduce((total, report) => total + report.videoBytes, 0))
     })
   }, [])
 
@@ -732,6 +748,60 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </Row>
       </div>
 
+      <SectionTitle>Problem reports</SectionTitle>
+      <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
+        <div className="flex items-start gap-3 border-b border-line py-4">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-text">
+            <Icon name="info" size={17} />
+          </span>
+          <div className="min-w-0">
+            <div className="text-[14.5px] font-medium text-ink">
+              {reportCount} saved camera problem {reportCount === 1 ? 'report' : 'reports'}
+            </div>
+            <p className="mt-0.5 text-[13px] leading-relaxed text-ink2">
+              Reports stay on this device until you delete them. Nothing is uploaded automatically.
+              {reportCount > 0 ? ` Copied videos use ${(reportBytes / 1048576).toFixed(1)} MB.` : ''}
+            </p>
+          </div>
+        </div>
+        <Row
+          label="Export problem reports"
+          hint="Downloads one sendable JSON file with each reported video, camera score, measurements, frame-by-frame working and optional note."
+        >
+          <button
+            onClick={() => {
+              setExportingReports(true)
+              void exportProblemReports()
+                .then((count) => {
+                  if (!count) throw new Error('There are no problem reports to export.')
+                  pushToast(`${count} problem ${count === 1 ? 'report' : 'reports'} exported.`, 'success', 4500)
+                })
+                .catch((error) => {
+                  pushToast(error instanceof Error ? error.message : 'Problem reports could not be exported.', 'danger')
+                })
+                .finally(() => setExportingReports(false))
+            }}
+            disabled={reportCount === 0 || exportingReports}
+            aria-busy={exportingReports}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Icon name="download" size={15} /> {exportingReports ? 'Preparing…' : 'Export reports'}
+          </button>
+        </Row>
+        <Row
+          label="Delete problem reports"
+          hint="Permanently removes the saved report copies. Your normal form clips and training history are not affected."
+        >
+          <button
+            onClick={() => setConfirmDeleteReports(true)}
+            disabled={reportCount === 0}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-danger/30 bg-danger-soft px-3.5 py-2 text-[13px] font-semibold text-danger-text disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Icon name="trash" size={15} /> Delete reports
+          </button>
+        </Row>
+      </div>
+
       <SectionTitle>Data</SectionTitle>
       <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
         <Row
@@ -845,6 +915,48 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
 
       <MeasurePrompt open={loggingWeight} onClose={() => setLoggingWeight(false)} />
 
+      <Modal
+        open={confirmDeleteReports}
+        onClose={() => setConfirmDeleteReports(false)}
+        label="Delete problem reports"
+      >
+        <div className="p-6">
+          <div className="pr-10">
+            <h2 className="font-display text-[19px] font-semibold text-ink">Delete all problem reports?</h2>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-ink2">
+              This permanently deletes {reportCount} saved problem {reportCount === 1 ? 'report' : 'reports'},
+              including the copied videos and diagnostics. Your regular form clips, sessions and progress stay
+              untouched.
+            </p>
+          </div>
+          <div className="mt-5 flex gap-2.5">
+            <button
+              onClick={() => setConfirmDeleteReports(false)}
+              className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14.5px] font-medium text-ink"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                void clearAllProblemReports().then((ok) => {
+                  if (!ok) {
+                    pushToast('Problem reports could not be deleted. Try again.', 'danger')
+                    return
+                  }
+                  setReportCount(0)
+                  setReportBytes(0)
+                  setConfirmDeleteReports(false)
+                  pushToast('Problem reports deleted.', 'info')
+                })
+              }}
+              className="flex-1 rounded-xl bg-danger py-3 text-[14.5px] font-semibold text-white"
+            >
+              Delete reports
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={calibrating} onClose={() => setCalibrating(false)} label="Calibrate reaction delay">
         <LatencyCalibrator
           onDone={(sec) => {
@@ -924,7 +1036,8 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         <div className="p-6">
           <h2 className="font-display text-[19px] font-semibold text-ink">Reset all data?</h2>
           <p className="mt-1.5 text-[14px] text-ink2">
-            Sessions, records, unlocks and achievements will be permanently deleted from this browser.
+            Sessions, records, unlocks, achievements, form clips and problem reports will be permanently deleted
+            from this browser.
           </p>
           <div className="mt-5 flex gap-2.5">
             <button
@@ -935,14 +1048,20 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             </button>
             <button
               onClick={async () => {
-                // Clips live in their own database — a reset that left the
-                // athlete's videos on the device would contradict the copy.
-                if (!(await clearAllClips())) {
-                  pushToast('Could not delete form clips, so no data was reset.', 'danger')
+                // Both video collections live outside app state. A reset that
+                // left either one on the device would contradict the copy.
+                const [clipsCleared, reportsCleared] = await Promise.all([
+                  clearAllClips(),
+                  clearAllProblemReports(),
+                ])
+                if (!clipsCleared || !reportsCleared) {
+                  pushToast('Some local videos could not be deleted, so training data was not reset.', 'danger')
                   return
                 }
                 setClipCount(0)
                 setClipBytes(0)
+                setReportCount(0)
+                setReportBytes(0)
                 dispatch({ type: 'RESET' })
                 setConfirmReset(false)
                 pushToast('Everything reset. Fresh start!', 'info')

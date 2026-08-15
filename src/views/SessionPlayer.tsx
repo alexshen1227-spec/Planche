@@ -28,13 +28,16 @@ import { clearDraft, restoredSessionSetup, saveDraft, type SessionDraft } from '
 import { useFormRecorder } from '../lib/recorder'
 import { saveClip, getClipBlob } from '../lib/clips'
 import {
-  analyseClip,
+  analyseClipDetailed,
   emptyResult,
   friendlyResult,
   isFilmable,
+  judgeTrackedFrames,
   warmDetector,
+  type ClipAnalysis,
   type PoseFormResult,
 } from '../lib/poseForm'
+import { saveProblemReport } from '../lib/problemReports'
 import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
 import { readSignals } from '../lib/signals'
@@ -88,14 +91,14 @@ const ANALYSIS_TIMEOUT_MS = 45_000
  * exit is Discard, which throws away every set they logged. A session must
  * never become unsavable because a camera check went quiet.
  */
-function withAnalysisTimeout(work: Promise<PoseFormResult>): Promise<PoseFormResult> {
+function withAnalysisTimeout(work: Promise<ClipAnalysis>): Promise<ClipAnalysis> {
   return new Promise((resolve) => {
     const timer = window.setTimeout(() => {
-      resolve(
-        emptyResult(
+      resolve({
+        result: emptyResult(
           'The form check ran out of time — usually a slow or blocked connection while the model downloads. Your set is saved either way, and you can run the check later from the clip in Learn.',
         ),
-      )
+      })
     }, ANALYSIS_TIMEOUT_MS)
     work
       .then((res) => {
@@ -104,7 +107,7 @@ function withAnalysisTimeout(work: Promise<PoseFormResult>): Promise<PoseFormRes
       })
       .catch(() => {
         window.clearTimeout(timer)
-        resolve(emptyResult('That form check could not be completed.'))
+        resolve({ result: emptyResult('That form check could not be completed.') })
       })
   })
 }
@@ -170,6 +173,7 @@ export function SessionPlayer({
   const [confirmExit, setConfirmExit] = useState(false)
   const [showDemo, setShowDemo] = useState(false)
   const [showRpeHelp, setShowRpeHelp] = useState(false)
+  const [problemReportOpen, setProblemReportOpen] = useState(false)
   const [checkIn, setCheckIn] = useState<CheckIn | null>(resumeFrom?.checkIn ?? null)
   const [cameraOn, setCameraOn] = useState(restoredSetup.cameraOn)
   /**
@@ -451,6 +455,7 @@ export function SessionPlayer({
   // Countdown cues for lead-in and rest: spoken when voice is on, ticks otherwise.
   useEffect(() => {
     if (phase !== 'lead' && phase !== 'rest') return
+    if (phase === 'rest' && problemReportOpen) return
     const remaining = phase === 'lead' ? leadRemaining : restRemaining
     const whole = Math.ceil(remaining)
     if (whole <= 3 && whole >= 1 && whole !== lastBeepRef.current) {
@@ -458,7 +463,7 @@ export function SessionPlayer({
       if (state.settings.voice) speak(String(whole))
       else if (state.settings.beeps) sfx.tick()
     }
-  }, [phase, leadRemaining, restRemaining, state.settings.beeps, state.settings.voice])
+  }, [phase, leadRemaining, restRemaining, problemReportOpen, state.settings.beeps, state.settings.voice])
 
   // Lead-in finished → the hold starts.
   useEffect(() => {
@@ -482,13 +487,13 @@ export function SessionPlayer({
 
   // Rest finished → back to ready.
   useEffect(() => {
-    if (phase === 'rest' && restRemaining <= 0) {
+    if (phase === 'rest' && restRemaining <= 0 && !problemReportOpen) {
       sfx.go()
       if (state.settings.voice) speak('Rest over')
       lastBeepRef.current = -1
       setPhase('ready')
     }
-  }, [phase, restRemaining, state.settings.voice])
+  }, [phase, restRemaining, problemReportOpen, state.settings.voice])
 
   // Chime + announce when the target is reached mid-hold.
   useEffect(() => {
@@ -1336,7 +1341,7 @@ export function SessionPlayer({
       const nx = EXERCISE_BY_ID[nb.exerciseId]
       const total = restTotal || nb.restSec
       return (
-        <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
+        <div className="relative mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
           <div className="mt-4 text-[14px] font-medium uppercase tracking-wide text-ink3">Rest</div>
           <ProgressRing value={restRemaining / Math.max(1, total)} size={210} stroke={10} className="mt-4">
             <div>
@@ -1387,6 +1392,8 @@ export function SessionPlayer({
               creditedHoldSec={lastLog.value}
               value={lastLog.form}
               autoRun={state.settings.autoAnalyze}
+              restReportAction
+              onReportOpenChange={setProblemReportOpen}
               onDone={(form) => {
                 setFormForLog(lastLog.at, form)
               }}
@@ -1822,6 +1829,8 @@ function FormCheckRow({
   creditedHoldSec,
   value,
   autoRun,
+  restReportAction,
+  onReportOpenChange,
   onDone,
   onBusyChange,
 }: {
@@ -1832,6 +1841,9 @@ function FormCheckRow({
   value?: FormCheck
   /** Kick the analysis off unprompted once the clip is ready. */
   autoRun?: boolean
+  /** Put the simple report trigger in the top-right of the surrounding rest screen. */
+  restReportAction?: boolean
+  onReportOpenChange?: (open: boolean) => void
   onDone: (f: FormCheck) => void
   onBusyChange?: (busy: boolean) => void
 }) {
@@ -1840,9 +1852,17 @@ function FormCheckRow({
   const [clipAvailable, setClipAvailable] = useState(false)
   const [analysis, setAnalysis] = useState<PoseFormResult | null>(null)
   const [analysing, setAnalysing] = useState(false)
+  const [showProblemReport, setShowProblemReport] = useState(false)
+  const [problemNote, setProblemNote] = useState('')
+  const [reportSaving, setReportSaving] = useState(false)
+  const [reportSaved, setReportSaved] = useState(false)
   const [visualReviewPassed, setVisualReviewPassed] = useState(value?.visualReviewPassed === true)
   const [flightConfirmed, setFlightConfirmed] = useState(value?.flightConfirmed === true)
   const autoRanRef = useRef(false)
+  /** Raw poses and technical wording stay out of the normal UI but make a reported verdict reproducible. */
+  const diagnosticRef = useRef<ClipAnalysis | null>(null)
+  /** Share one detector run when Report is tapped while the automatic check is still working. */
+  const diagnosticPromiseRef = useRef<Promise<ClipAnalysis> | null>(null)
   // Mirrors of rating/issues that async code can read after its awaits — the
   // state the closure captured goes stale, and an analysis resolving after a
   // tap used to overwrite the athlete's own answer with the model's.
@@ -1860,10 +1880,18 @@ function FormCheckRow({
     setAnalysing(true)
     try {
       const blob = await getClipBlob(clipKey)
-      const res: PoseFormResult = blob
-        ? await withAnalysisTimeout(analyseClip(blob, exerciseId, undefined, creditedHoldSec))
-        : // Never leave the button looking like it did nothing.
-          emptyResult('That clip could not be loaded.')
+      const pending: Promise<ClipAnalysis> = blob
+        ? withAnalysisTimeout(analyseClipDetailed(blob, exerciseId, undefined, creditedHoldSec))
+        : Promise.resolve({ result: emptyResult('That clip could not be loaded.') })
+      diagnosticPromiseRef.current = pending
+      const diagnostic = await pending
+      // The athlete sees the same verdict as before. The extra explanation is
+      // retained only so an explicitly saved problem report can say which
+      // sampled moments and criteria produced it.
+      const res = diagnostic.poses
+        ? judgeTrackedFrames(diagnostic.poses, exerciseId, { explain: true })
+        : diagnostic.result
+      diagnosticRef.current = { ...diagnostic, result: res }
       setAnalysis(friendlyResult(res))
       if (res.ok) {
         const auto = {
@@ -1919,8 +1947,64 @@ function FormCheckRow({
         }
       }
     } finally {
+      diagnosticPromiseRef.current = null
       setAnalysing(false)
       onBusyChange?.(false)
+    }
+  }
+
+  const saveReport = async () => {
+    if (!clipKey || reportSaving) return
+    setReportSaving(true)
+    try {
+      const video = await getClipBlob(clipKey)
+      if (!video) throw new Error('That clip is no longer available, so the report could not be saved.')
+
+      // The report button is available before automatic analysis finishes —
+      // and auto checking may be off. Run the same local checker here when
+      // needed so the support report gets raw poses and frame-by-frame working
+      // rather than only a video and the athlete's note.
+      let diagnostic = diagnosticRef.current
+      if (!diagnostic) {
+        const rerun = await (
+          diagnosticPromiseRef.current ??
+          withAnalysisTimeout(analyseClipDetailed(video, exerciseId, undefined, creditedHoldSec))
+        )
+        diagnostic = {
+          ...rerun,
+          result: rerun.poses
+            ? judgeTrackedFrames(rerun.poses, exerciseId, { explain: true })
+            : rerun.result,
+        }
+        diagnosticRef.current = diagnostic
+      }
+
+      const saved = await saveProblemReport({
+        note: problemNote,
+        movementId: exerciseId,
+        movementName: EXERCISE_BY_ID[exerciseId]?.name ?? exerciseId,
+        creditedHoldSec,
+        analysis: diagnostic.result,
+        poses: diagnostic.poses,
+        savedCameraReading: value?.auto,
+        athleteReview: ratingRef.current
+          ? {
+              rating: ratingRef.current,
+              confirmed: value?.confirmed === true,
+              issues: [...issuesRef.current],
+            }
+          : undefined,
+        video,
+      })
+      if (!saved) throw new Error('The problem report could not be saved. Check available device storage and try again.')
+      setReportSaved(true)
+      setShowProblemReport(false)
+      onReportOpenChange?.(false)
+      pushToast('Problem report saved on this device.', 'success', 4500)
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : 'The problem report could not be saved.', 'danger')
+    } finally {
+      setReportSaving(false)
     }
   }
 
@@ -2000,6 +2084,23 @@ function FormCheckRow({
 
   return (
     <div className="mx-auto mt-5 w-full max-w-sm rounded-2xl border border-line bg-surface p-4">
+      {restReportAction && clipKey ? (
+        <button
+          onClick={() => {
+            setShowProblemReport(true)
+            onReportOpenChange?.(true)
+          }}
+          disabled={reportSaved}
+          className={`absolute right-5 top-2.5 z-10 inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12.5px] font-semibold shadow-card transition ${
+            reportSaved
+              ? 'border-ok/30 bg-ok-soft text-ok-text'
+              : 'border-line bg-surface text-ink2 hover:border-line-strong hover:text-ink'
+          }`}
+        >
+          <Icon name={reportSaved ? 'check' : 'info'} size={14} />
+          {reportSaved ? 'Saved' : 'Report'}
+        </button>
+      ) : null}
       {clipKey ? (
         <ClipPlayer
           clipKey={clipKey}
@@ -2295,6 +2396,87 @@ function FormCheckRow({
           <p className="mt-2 text-[11.5px] text-ink3">Saved as you tap — no need to confirm.</p>
         </div>
       ) : null}
+      <Modal
+        open={showProblemReport}
+        onClose={() => {
+          if (!reportSaving) {
+            setShowProblemReport(false)
+            onReportOpenChange?.(false)
+          }
+        }}
+        label="Report a camera error"
+      >
+        <div className="p-6">
+          <div className="pr-10">
+            <div className="mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-accent-soft text-accent-text">
+              <Icon name="info" size={20} />
+            </div>
+            <h2 className="font-display text-[20px] font-bold text-ink">Save this camera check?</h2>
+            <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink2">
+              A private problem report will keep this {EXERCISE_BY_ID[exerciseId]?.name ?? 'movement'} video, its
+              score and measurements, the camera’s frame-by-frame working, and basic app/browser details on this
+              device. Your name and unrelated training history are not included, and nothing is sent automatically.
+            </p>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-line bg-raised px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-ink3">Check being saved</div>
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <span className="text-[14px] font-medium text-ink">
+                {EXERCISE_BY_ID[exerciseId]?.name ?? exerciseId}
+              </span>
+              <span className="shrink-0 rounded-full bg-surface px-2.5 py-1 text-[12px] font-semibold text-ink2 tnum">
+                {analysis?.score !== undefined || value?.auto?.score !== undefined
+                  ? `Score ${analysis?.score ?? value?.auto?.score}`
+                  : analysis?.ok === false
+                    ? 'Check failed'
+                    : `${creditedHoldSec.toFixed(1)}s hold`}
+              </span>
+            </div>
+          </div>
+
+          <label className="mt-4 block text-[13px] font-semibold text-ink" htmlFor={`problem-note-${clipKey}`}>
+            What looks wrong? <span className="font-normal text-ink3">(optional)</span>
+          </label>
+          <textarea
+            id={`problem-note-${clipKey}`}
+            value={problemNote}
+            onChange={(event) => setProblemNote(event.target.value)}
+            maxLength={1200}
+            rows={4}
+            placeholder="For example: My elbows were straight, but it marked them as bent."
+            className="mt-1.5 w-full resize-y rounded-2xl border border-line bg-raised px-3.5 py-3 text-[14px] leading-relaxed text-ink outline-none placeholder:text-ink3 focus:border-accent"
+          />
+          <div className="mt-1 text-right text-[11px] text-ink3 tnum">{problemNote.length}/1200</div>
+
+          <div className="mt-4 flex gap-2.5">
+            <button
+              onClick={() => {
+                setShowProblemReport(false)
+                onReportOpenChange?.(false)
+              }}
+              disabled={reportSaving}
+              className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14px] font-medium text-ink disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => void saveReport()}
+              disabled={reportSaving}
+              aria-busy={reportSaving}
+              className="flex flex-[1.35] items-center justify-center gap-2 rounded-xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-60"
+            >
+              <Icon name={reportSaving ? 'clock' : 'check'} size={15} />
+              {reportSaving ? 'Preparing report…' : 'Save problem report'}
+            </button>
+          </div>
+          {reportSaving && !diagnosticRef.current ? (
+            <p className="mt-2 text-center text-[11.5px] text-ink3" role="status">
+              Rebuilding the camera details can take a moment. Keep this screen open.
+            </p>
+          ) : null}
+        </div>
+      </Modal>
     </div>
   )
 }
