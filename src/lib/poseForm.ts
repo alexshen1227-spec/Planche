@@ -118,6 +118,8 @@ export const MIN_VERIFIABLE_HOLD_SEC = 1
 export interface PoseTrack {
   width: number
   height: number
+  /** Stable visible side the verdict actually graded in side-view mode. */
+  gradedSide?: 'left' | 'right'
   frames: { t: number; kps: Kp[] }[]
 }
 
@@ -164,6 +166,22 @@ export function poseKeypointsAtTime(
     .filter((frame): frame is PoseTrack['frames'][number] => Boolean(frame))
     .sort((a, b) => Math.abs(a.t - time) - Math.abs(b.t - time))[0]
   return nearest && Math.abs(nearest.t - time) <= maxSpanSec / 2 ? nearest.kps : []
+}
+
+/**
+ * Keypoints that belong in the athlete-facing replay.
+ *
+ * The detector still returns both anatomical sides in a side-on clip, even
+ * when the hidden side is really a confident guess placed through a shirt,
+ * hand or thigh. The judge deliberately grades one stable visible side; draw
+ * that same evidence instead of connecting ignored landmarks into fake limbs.
+ * Raw detections remain untouched in JudgeInput and problem-report exports.
+ */
+export function replayKeypointsAtTime(track: PoseTrack, time: number, maxSpanSec = 0.9): Kp[] {
+  const points = poseKeypointsAtTime(track, time, maxSpanSec)
+  if (!track.gradedSide) return points
+  const prefix = `${track.gradedSide}_`
+  return points.filter((point) => point.name?.startsWith(prefix))
 }
 
 export interface FormSubscore {
@@ -1355,6 +1373,7 @@ export function judgeTrackedFrames(
       ? {
           width: srcW,
           height: srcH,
+          ...(trackedSide ? { gradedSide: trackedSide } : {}),
           frames: tracked.map(({ t, kps }) => ({
             t,
             kps: kps

@@ -25,6 +25,7 @@ import {
   signedElbowBend,
   pickFixFirst,
   poseKeypointsAtTime,
+  replayKeypointsAtTime,
   reliableJointAngle,
   selectSideViewLeg,
   suppressBilateralCollisions,
@@ -828,6 +829,26 @@ describe('skeleton stabilization', () => {
 
     const gap = { width: 200, height: 100, frames: [pose(0, 0), pose(2, 100)] }
     expect(poseKeypointsAtTime(gap, 1)).toEqual([])
+  })
+
+  it('replays only the stable visible side that the judge actually graded', () => {
+    const left = pose(0, 0).kps
+    const right = left.map((point) => ({ ...point, name: point.name!.replace('left_', 'right_') }))
+    const track = {
+      width: 200,
+      height: 100,
+      gradedSide: 'right' as const,
+      frames: [{ t: 0, kps: [...left, ...right] }],
+    }
+
+    expect(replayKeypointsAtTime(track, 0).map((point) => point.name)).toEqual([
+      'right_shoulder',
+      'right_elbow',
+      'right_wrist',
+      'right_hip',
+    ])
+    // The underlying track remains complete for diagnostics and exports.
+    expect(track.frames[0].kps).toHaveLength(8)
   })
 })
 

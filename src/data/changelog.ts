@@ -18,6 +18,15 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-08-16',
+    title: 'Skeleton replays now show what was actually judged',
+    area: 'camera',
+    notes: [
+      'Side-on clips could earn a reasonable score while the replay drew a second skeleton through your torso, hands or legs. Those were confident guesses for the hidden side of the body: the form judge already ignored them, but the replay still connected them into fake limbs.',
+      'The replay now follows only the same stable visible side the form judge graded. Scores are unchanged, and exported problem reports still keep every raw detection for debugging.',
+    ],
+  },
+  {
     date: '2026-08-14',
     title: 'Camera mistakes can be saved and shared',
     area: 'camera',

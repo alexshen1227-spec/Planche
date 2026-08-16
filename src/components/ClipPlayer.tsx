@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { getClipBlob } from '../lib/clips'
-import { poseKeypointsAtTime, type PoseTrack } from '../lib/poseForm'
+import { replayKeypointsAtTime, type PoseTrack } from '../lib/poseForm'
 import type { FormIssue } from '../types'
 import { Icon } from './Icon'
 
@@ -55,12 +55,13 @@ const ISSUE_JOINTS: Partial<Record<FormIssue, string[]>> = {
 }
 
 /**
- * Draws what the pose model saw over the replay, synced to playback time.
+ * Draws the pose evidence the form judge actually used, synced to playback.
  *
  * The point is trust: a verdict like "elbows sat at 152°" is easy to argue
  * with until you can see exactly where the model thought your elbow was. It
- * also self-diagnoses bad tracking — dots on the curtains instead of the
- * athlete explain a refused verdict faster than any copy.
+ * also self-diagnoses bad visible-side tracking — dots off the athlete explain
+ * a refused verdict faster than any copy. Hidden-side guesses stay in the raw
+ * diagnostics instead of being connected into a second, misleading body.
  */
 function PoseOverlay({
   videoRef,
@@ -96,7 +97,7 @@ function PoseOverlay({
 
       // Blend adjacent analysed moments so the replay follows the athlete
       // instead of snapping between frozen samples. Real gaps stay blank.
-      const keypoints = poseKeypointsAtTime(track, video.currentTime)
+      const keypoints = replayKeypointsAtTime(track, video.currentTime)
       if (!keypoints.length) return
 
       // The <video> renders object-contain: work out where the letterboxed
