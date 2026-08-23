@@ -11,6 +11,7 @@ import {
   progressionRelevantIssues,
   qualifyingProgress,
   sessionLearningValue,
+  trainingSetValue,
 } from './progression'
 import {
   MATERIAL_TOLERANCE,
@@ -50,6 +51,7 @@ import {
   pickStrategy,
   previousTrainedStep,
   rewardFor,
+  STRATEGY_BY_ID,
 } from './coach'
 import {
   adaptiveTarget,
@@ -1416,11 +1418,11 @@ describe('readiness rails', () => {
     expect(plan.decisions.map((decision) => decision.text).join(' ')).toContain('days off')
   })
 
-  it('treats a timer target as missed when clean camera time fell short', () => {
+  it('treats a timer target as missed when athlete and camera agree the clean time fell short', () => {
     const now = Date.now()
     const logged = session(
       'foundations',
-      [log('ppp-hold', 12, { target: 10, form: form('clean', true, [], 0.9, 8, 8 / 12) })],
+      [log('ppp-hold', 12, { target: 10, form: form('slipped', true, ['sag'], 0.9, 8, 8 / 12) })],
       { startedAt: now - 3 * DAY },
     )
     expect(readSignals({ ...state(), sessions: [logged] }, now).mainHitRate).toBe(0)
@@ -1627,6 +1629,78 @@ describe('stage-specific planche lean programming', () => {
   })
 })
 
+describe('recognizable coach session archetypes', () => {
+  const strategyIds = ['balanced', 'volume', 'intensity', 'density', 'technique'] as const
+
+  function workoutFor(strategy: (typeof strategyIds)[number], sessionMinutes = 60) {
+    const athlete = {
+      ...state('tuck'),
+      settings: { ...state('tuck').settings, sessionMinutes, warmup: true },
+    }
+    const def = STRATEGY_BY_ID[strategy]
+    const plan = {
+      ...buildPlan(athlete, Date.now()),
+      dayType: strategy === 'technique' ? ('technique' as const) : ('build' as const),
+      strategy,
+      strategyReason: `Testing ${def.name}.`,
+      setsDelta: def.setsDelta,
+      targetFactor: def.targetFactor,
+      restMainSec: Math.round(150 * def.restFactor),
+      restAccessorySec: strategy === 'density' ? 45 : 75,
+      loadPermission: 'normal' as const,
+      warmup: 'standard' as const,
+      volumeFactor: 1,
+      queueUnlockAttempt: false,
+      accessoryEmphasis: 'none' as const,
+      limiter: null,
+    }
+    return todaysSession(athlete, plan)
+  }
+
+  it('gives every strategy a distinct support-work identity without changing the key skill', () => {
+    const workouts = strategyIds.map((strategy) => workoutFor(strategy))
+    const signatures = workouts.map((workout) =>
+      workout.blocks
+        .filter((block) => block.section !== 'warmup' && block.section !== 'cooldown')
+        .map((block) => block.exerciseId)
+        .join('|'),
+    )
+
+    expect(new Set(signatures).size).toBe(strategyIds.length)
+    for (const [index, workout] of workouts.entries()) {
+      expect(workout.blocks).toContainEqual(
+        expect.objectContaining({ exerciseId: 'tuck-planche', section: 'main' }),
+      )
+      expect(workout.name).toContain(STRATEGY_BY_ID[strategyIds[index]].name)
+      expect(workout.focus).toContain(STRATEGY_BY_ID[strategyIds[index]].blurb)
+    }
+  })
+
+  it('makes volume visibly larger, intensity fresher and density genuinely compact', () => {
+    const volume = workoutFor('volume')
+    const timedVolume = workoutFor('volume', 30)
+    const intensity = workoutFor('intensity')
+    const density = workoutFor('density', 30)
+    const main = (workout: Workout) =>
+      workout.blocks.find(
+        (block) => block.exerciseId === 'tuck-planche' && block.section === 'main',
+      )!
+    const volumeTarget = main(volume).target
+    const intensityTarget = main(intensity).target
+
+    expect(main(volume).sets).toBeGreaterThan(main(intensity).sets)
+    expect(main(timedVolume).sets).toBe(main(volume).sets)
+    expect(timedVolume.minutes).toBeLessThanOrEqual(30)
+    expect(volumeTarget.kind).toBe('hold')
+    expect(intensityTarget.kind).toBe('hold')
+    if (volumeTarget.kind === 'hold' && intensityTarget.kind === 'hold') {
+      expect(volumeTarget.sec).toBeLessThan(intensityTarget.sec)
+    }
+    expect(density.minutes).toBeLessThanOrEqual(30)
+    expect(density.blocks.some((block) => block.exerciseId === 'hollow-rocks')).toBe(true)
+  })
+})
+
 describe('coach learning', () => {
   it('shapes the first recommended session of the day with the strategy it chose', () => {
     const yesterday = Date.now() - DAY
@@ -1721,10 +1795,10 @@ describe('coach learning', () => {
     expect(sessionLearningValue(quick, 'tuck')).toBe(0)
   })
 
-  it('credits the camera-verified window rather than the stopwatch when filmed', () => {
+  it('credits an agreed camera-verified window rather than the stopwatch when filmed', () => {
     const filmed = session(
       'tuck',
-      [log('tuck-planche', 20, { form: form('clean', true, [], 0.9, 12, 0.6) })],
+      [log('tuck-planche', 20, { form: form('slipped', true, ['sag'], 0.9, 12, 0.6) })],
       { workoutName: 'Training Day' },
     )
     expect(sessionLearningValue(filmed, 'tuck')).toBe(12)
@@ -1735,6 +1809,29 @@ describe('coach learning', () => {
       { workoutName: 'Training Day' },
     )
     expect(sessionLearningValue(warmup, 'tuck')).toBe(0)
+  })
+
+  it('does not let a disputed camera guess lower coach performance or working targets', () => {
+    // Mirrors the exported-data failure: the athlete reviewed a hold as clean,
+    // while the camera claimed bent arms and only a fraction of a second. The
+    // clip remains non-qualifying for progression, but the disagreement must
+    // not poison the separate day-to-day coaching path.
+    const disputedSet = log('tuck-planche', 10, {
+      target: 6,
+      form: form('clean', true, ['arms'], 0.9, 0.2, 0.02),
+    })
+    const trained = session('tuck', [disputedSet], {
+      workoutName: 'Training Day',
+      startedAt: Date.now() - DAY,
+    })
+    const athlete = { ...state('tuck'), sessions: [trained] }
+
+    expect(trustedCameraEvidence(disputedSet)).toBe(false)
+    expect(progressionCredit(disputedSet, 'tuck-planche')).toBe(0)
+    expect(trainingSetValue(disputedSet)).toBe(10)
+    expect(sessionLearningValue(trained, 'tuck')).toBe(10)
+    expect(readSignals(athlete).mainHitRate).toBe(1)
+    expect(adaptiveTarget(athlete, 'tuck')).toBe(6)
   })
 
   it('carries the previous step\'s ranking into a fresh step as an order, not a claim', () => {

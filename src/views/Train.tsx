@@ -21,6 +21,7 @@ import { Icon } from '../components/Icon'
 import { Modal, SectionTitle } from '../components/ui'
 import { defaultSurface, surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 import { recordForSurface } from '../lib/records'
+import { STRATEGY_BY_ID } from '../lib/coach'
 
 const SECTION_LABEL: Record<Section, string> = {
   warmup: 'Warm-up',
@@ -89,6 +90,11 @@ export function Train({ startWorkout }: { startWorkout: (w: Workout) => void }) 
             <div className="mt-1.5 font-display text-[22px] font-bold text-ink">{today.name}</div>
             <p className="mt-1 max-w-lg text-[14px] leading-relaxed text-ink2">{today.focus}</p>
             <div className="mt-4 flex flex-wrap items-center gap-2 text-[13px] text-ink2">
+              {today.strategy ? (
+                <span className="rounded-full border border-accent/30 bg-accent-soft px-3 py-1 font-semibold text-accent-text">
+                  {STRATEGY_BY_ID[today.strategy].name}
+                </span>
+              ) : null}
               <span className="rounded-full border border-line bg-raised px-3 py-1 tnum">~{today.minutes} min</span>
               <span className="rounded-full border border-line bg-raised px-3 py-1 tnum">
                 {countRounds(today.blocks)} sets

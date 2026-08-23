@@ -2,7 +2,8 @@ import type { AppState, BodyRegion, CheckIn, Session, SetLog } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { addDays, dayKey, weekStart } from './time'
-import { progressionCredit, qualifyingSessionValue } from './progression'
+import { sessionLearningValue, trainingSetValue } from './progression'
+import { trustedCameraEvidence } from './formEvidence'
 import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
 
 /**
@@ -33,20 +34,7 @@ export function median(xs: number[]): number | null {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
 }
 
-/**
- * Camera output is strong enough to coach from only after the athlete reviewed
- * the set and the two sources broadly agree. A disputed or unconfirmed model
- * guess may still be shown beside the replay, but it must not quietly lower
- * future targets.
- */
-export function trustedCameraEvidence(set: SetLog): boolean {
-  const form = set.form
-  const auto = form?.auto
-  if (!form || form.confirmed !== true || !auto || auto.confidence < 0.5) return false
-  const athleteClean = form.rating === 'clean'
-  const cameraClean = auto.issues.length === 0 && (auto.cleanRatio ?? 1) >= 0.8
-  return athleteClean === cameraClean
-}
+export { trustedCameraEvidence } from './formEvidence'
 
 /** Median absolute deviation — an outlier-proof spread measure. */
 export function mad(xs: number[]): number | null {
@@ -336,10 +324,13 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     }
   }
 
-  // ——— Key-hold performance, measured robustly ———
-  const withKey = sessions.filter((s) => qualifyingSessionValue(s, state.stepId) > 0)
+  // ——— Key-hold training performance, measured robustly ———
+  // This is deliberately broader than progression credit. Unlocks remain
+  // camera-strict; ordinary target and fatigue decisions can learn from a
+  // logged timer result unless trusted camera evidence says to cap it.
+  const withKey = sessions.filter((s) => sessionLearningValue(s, state.stepId) > 0)
   const recent = withKey.slice(-6)
-  const recentBests = recent.map((s) => qualifyingSessionValue(s, state.stepId))
+  const recentBests = recent.map((s) => sessionLearningValue(s, state.stepId))
   const mainMedian = median(recentBests)
   const spread = mad(recentBests)
   const variability = mainMedian && mainMedian > 0 && spread !== null ? spread / mainMedian : null
@@ -347,7 +338,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const noisy = variability !== null && variability > 0.22 && recentBests.length >= 3
 
   const trendPerWeek = slopePerWeek(
-    withKey.slice(-6).map((s) => ({ at: s.startedAt, value: qualifyingSessionValue(s, state.stepId) })),
+    withKey.slice(-6).map((s) => ({ at: s.startedAt, value: sessionLearningValue(s, state.stepId) })),
   )
 
   // Hit rate from the most recent session that actually trained the key hold,
@@ -357,20 +348,25 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   let mainSetCount = 0
   const lastRelevant = [...sessions]
     .reverse()
-    .find((s) => now - s.startedAt <= 14 * DAY && keySetsOf(s, keyId, 'main').length > 0)
+    .find(
+      (s) =>
+        s.workoutName !== 'Quick Log' &&
+        now - s.startedAt <= 14 * DAY &&
+        keySetsOf(s, keyId, 'main').length > 0,
+    )
   if (lastRelevant) {
     const mains = keySetsOf(lastRelevant, keyId, 'main')
     mainSetCount = mains.length
-    mainHitRate = mains.filter((s) => progressionCredit(s, keyId) >= s.target).length / mains.length
+    mainHitRate = mains.filter((s) => trainingSetValue(s) >= s.target).length / mains.length
   }
 
   // An outlier is a value far outside the robust range of the ones before it.
   let lastWasOutlier = false
   if (withKey.length >= 4) {
-    const prior = withKey.slice(-5, -1).map((s) => qualifyingSessionValue(s, state.stepId))
+    const prior = withKey.slice(-5, -1).map((s) => sessionLearningValue(s, state.stepId))
     const pm = median(prior)
     const pmad = mad(prior)
-    const latest = qualifyingSessionValue(withKey[withKey.length - 1], state.stepId)
+    const latest = sessionLearningValue(withKey[withKey.length - 1], state.stepId)
     if (pm !== null && pmad !== null && pmad > 0) {
       lastWasOutlier = Math.abs(latest - pm) > Math.max(3, 3.5 * pmad)
     }

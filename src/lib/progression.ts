@@ -1,6 +1,7 @@
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import type { AppState, AutoForm, FormIssue, Session, SetLog, StepId } from '../types'
+import { trustedCameraEvidence } from './formEvidence'
 
 export interface Qualification {
   value: number
@@ -139,6 +140,18 @@ export function qualifyingSessionValue(session: Session, stepId: StepId): number
 }
 
 /**
+ * Performance credit for day-to-day coaching, deliberately separate from the
+ * stricter progression gate. An athlete-confirmed camera result can cap a
+ * stopwatch value when athlete and camera agree; an unreviewed or disputed
+ * model guess cannot silently rewrite what the coach thinks the athlete did.
+ */
+export function trainingSetValue(set: SetLog): number {
+  if (set.value <= 0 || set.form?.rating === 'broke') return 0
+  const cleanSeconds = trustedCameraEvidence(set) ? set.form?.auto?.cleanSeconds : undefined
+  return cleanSeconds === undefined ? set.value : Math.min(set.value, Math.max(0, cleanSeconds))
+}
+
+/**
  * What the coach measures a session against when learning which session shape
  * works — deliberately a lower bar than progression credit.
  *
@@ -151,11 +164,11 @@ export function qualifyingSessionValue(session: Session, stepId: StepId): number
  * they trained.
  *
  * So this asks only what it needs to — the best main-set hold of the step's
- * key exercise — minus the parts the athlete or the camera said were not real:
- * a set rated as broken down is not evidence a strategy worked, and where a
- * filmed set measured a clean window, that window is the number rather than
- * the stopwatch. Quick Log is excluded like everywhere else: it is a number
- * typed in afterwards, not a session the coach shaped.
+ * key exercise — minus the parts the athlete or trusted camera evidence said
+ * were not real. A set rated as broken down is not evidence a strategy worked;
+ * an athlete-confirmed camera result can cap the stopwatch, while a disputed
+ * model guess cannot. Quick Log is excluded like everywhere else: it is a
+ * number typed in afterwards, not a session the coach shaped.
  */
 export function sessionLearningValue(session: Session, stepId: StepId): number {
   const step = STEP_BY_ID[stepId]
@@ -170,10 +183,7 @@ export function sessionLearningValue(session: Session, stepId: StepId): number {
     ) {
       return best
     }
-    const cleanSeconds = set.form?.auto?.cleanSeconds
-    const value =
-      cleanSeconds !== undefined ? Math.min(set.value, Math.max(0, cleanSeconds)) : set.value
-    return Math.max(best, value)
+    return Math.max(best, trainingSetValue(set))
   }, 0)
 }
 

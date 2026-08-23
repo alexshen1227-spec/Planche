@@ -1,9 +1,9 @@
 import type { AppState, Block, BlockTarget, BodyRegion, CheckIn, StepId, Workout } from '../types'
 import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID, stepBefore } from './progressions'
-import { buildPlan, type CoachPlan, type WarmupLevel } from '../lib/coach'
+import { buildPlan, STRATEGY_BY_ID, type CoachPlan, type WarmupLevel } from '../lib/coach'
 import { median } from '../lib/signals'
-import { qualifyingProgress, qualifyingSessionValue } from '../lib/progression'
+import { qualifyingProgress, sessionLearningValue } from '../lib/progression'
 import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
 
 const hold = (sec: number): BlockTarget => ({ kind: 'hold', sec })
@@ -67,6 +67,11 @@ export function estimateMinutes(
   calibratedStopLatencySec = 2.3,
   phoneWithinReach = false,
 ): number {
+  // Starting/stopping the timer and changing position costs real time even
+  // with the phone nearby. Exported sessions showed the old work+rest-only
+  // estimate was consistently optimistic, so budget a small transition per
+  // set rather than pretending every movement begins instantly.
+  const transitionSec = phoneWithinReach ? 6 : 8
   let sec = 0
   let remaining = blocks.reduce((total, block) => total + block.sets, 0)
   for (const b of blocks) {
@@ -77,7 +82,7 @@ export function estimateMinutes(
           stopLatencySecondsFor(b.exerciseId, calibratedStopLatencySec, phoneWithinReach)
         : 0
     for (let set = 0; set < b.sets; set++) {
-      sec += work + setup
+      sec += work + setup + transitionSec
       remaining -= 1
       // The player rests between blocks too, but never after the final set.
       if (remaining > 0) sec += b.restSec
@@ -102,25 +107,31 @@ export function estimateMinutes(
  */
 export function adaptiveTarget(state: AppState, stepId: StepId): number {
   const step = STEP_BY_ID[stepId]
-  const best = qualifyingProgress(state, stepId).value
-  if (!best) {
-    // Unverified time must never raise a target or unlock a step, but it is
-    // still useful as a safety ceiling. A beginner with a real 3s tuck should
-    // not receive the generic 5s working sets merely because the clip failed.
+  const verifiedBest = qualifyingProgress(state, stepId).value
+  const recentBests = [...state.sessions]
+    .sort((a, b) => a.startedAt - b.startedAt)
+    .map((s) => sessionLearningValue(s, stepId))
+    .filter((v) => v > 0)
+    .slice(-6)
+
+  if (recentBests.length === 0) {
+    // A standalone unverified PR must never raise a target or unlock a step,
+    // but it is still useful as a safety ceiling. A beginner with a real 3s
+    // tuck should not receive generic 5s working sets merely because the clip
+    // failed. Repeated in-session performance is handled above as the more
+    // useful (but still non-unlocking) training signal.
     const timerBest = state.prs[step.keyExerciseId]?.value ?? 0
     if (timerBest > 0) return clamp(Math.round(timerBest * 0.6), 1, step.startSec)
     return step.startSec
   }
 
-  const recentBests = [...state.sessions]
-    .sort((a, b) => a.startedAt - b.startedAt)
-    .map((s) => qualifyingSessionValue(s, stepId))
-    .filter((v) => v > 0)
-    .slice(-6)
-
   const typical = median(recentBests)
   // Blend: mostly what you can repeat, with a nod to your peak.
-  const anchor = typical === null ? best : typical * 0.75 + Math.min(best, typical * 1.5) * 0.25
+  const observedBest = Math.max(verifiedBest, ...recentBests)
+  const anchor =
+    typical === null
+      ? observedBest
+      : typical * 0.75 + Math.min(observedBest, typical * 1.5) * 0.25
   const t = anchor * 0.6
   return clamp(Math.round(t), 1, step.unlockSec)
 }
@@ -190,11 +201,18 @@ function fitToBudget(
     }
     // 3. Drop a core block while more than one remains.
     const coreIdx = out.map((b, i) => (b.section === 'core' ? i : -1)).filter((i) => i >= 0)
-    if (coreIdx.length > 1) {
+    if (coreIdx.length > (preserveCorePair ? 2 : 1)) {
       out.splice(coreIdx[coreIdx.length - 1], 1)
       continue
     }
-    // 4. Reduce main sets, floor 3 (again in pairs for unilateral work).
+    // 4. The final supporting block is still less important than the key
+    //    planche dose. Drop it before cutting the work the strategy selected.
+    const lastStrength = out.findIndex((b) => b.section === 'strength')
+    if (lastStrength >= 0) {
+      out.splice(lastStrength, 1)
+      continue
+    }
+    // 5. Reduce main sets, floor 3 (again in pairs for unilateral work).
     const main = out.find((b) => {
       const stepSize = EXERCISE_BY_ID[b.exerciseId]?.perSide ? 2 : 1
       return b.section === 'main' && b.sets - stepSize >= 3
@@ -255,14 +273,6 @@ function warmupFor(stepId: StepId, level: WarmupLevel): Block[] {
     blocks.push({ exerciseId: 'plank', sets: 1, target: hold(20), restSec: 40, section: 'warmup' })
   }
   return blocks
-}
-
-const DAY_LABEL: Record<CoachPlan['dayType'], string> = {
-  push: 'Push Day',
-  build: 'Build Day',
-  technique: 'Technique Day',
-  deload: 'Deload Day',
-  recovery: 'Pain-Safe Recovery',
 }
 
 /**
@@ -441,20 +451,35 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
             : 'Stop each set ~2s before failure or at the first loss of shape. Quality over seconds.',
   })
 
-  // One back-off block on the previous step keeps old positions honest.
+  // Balanced and volume sessions keep an owned position in the session;
+  // intensity protects freshness, while density protects the short-rest
+  // identity. Tuck deliberately uses loaded leans below instead of Frog Stand
+  // as its back-off — the exported history showed that generic previous-step
+  // rule was making nearly every Tuck session look the same without adding
+  // useful straight-arm capacity.
   const prev = stepBefore(stepId)
-  if (prev && prev.order >= 1 && plan.dayType !== 'technique' && plan.dayType !== 'deload') {
+  if (
+    prev &&
+    prev.order >= 0 &&
+    stepId !== 'tuck' &&
+    (plan.strategy === 'balanced' || plan.strategy === 'volume') &&
+    plan.dayType !== 'technique' &&
+    plan.dayType !== 'deload'
+  ) {
     blocks.push({
       exerciseId: prev.keyExerciseId,
-      sets: 2,
+      sets: plan.strategy === 'volume' ? 3 : 2,
       target: hold(clamp(Math.round(prev.unlockSec * 0.6), 5, prev.unlockSec)),
       restSec: rAcc,
-      section: 'main',
-      note: 'Back-off volume on the step you already own.',
+      section: 'strength',
+      note:
+        plan.strategy === 'volume'
+          ? 'Capacity work on a position you already own — clean accumulation, not a second max effort.'
+          : 'A small back-off dose on the position you already own.',
     })
   }
 
-  const easy = plan.dayType === 'technique' || plan.dayType === 'deload'
+  const easy = plan.strategy === 'technique' || plan.dayType === 'technique' || plan.dayType === 'deload'
 
   // Leans remain strength work when an athlete first earns Tuck, then taper
   // to maintenance at Advanced Tuck. Longer-lever steps keep only the warm-up
@@ -463,7 +488,18 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     !easy && (stepId === 'tuck' || stepId === 'advtuck')
       ? {
           exerciseId: 'planche-lean',
-          sets: stepId === 'tuck' ? clamp(scale(3), 3, 4) : 2,
+          sets:
+            stepId === 'tuck'
+              ? plan.strategy === 'volume'
+                ? clamp(scale(4), 3, 5)
+                : plan.strategy === 'density'
+                  ? 0
+                  : plan.strategy === 'intensity'
+                    ? 2
+                    : clamp(scale(3), 3, 4)
+              : plan.strategy === 'density'
+                ? 0
+                : 2,
           target: hold(stepId === 'tuck' ? 12 : 10),
           restSec: rAcc,
           section: 'strength',
@@ -476,21 +512,12 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
 
   // With no measured limiter, this is the first accessory and survives before
   // generic pressing work when a short time budget needs trimming.
-  if (leanStrength && plan.accessoryEmphasis === 'none') {
+  if (leanStrength && leanStrength.sets > 0 && plan.accessoryEmphasis === 'none') {
     blocks.push(leanStrength)
   }
 
   // Accessories: the coach decides what is actually limiting you.
-  if (easy) {
-    blocks.push({
-      exerciseId: 'frog-stand',
-      sets: 2,
-      target: hold(15),
-      restSec: rAcc,
-      section: 'strength',
-      note: 'Balance practice — cheap on tendons, great for skill.',
-    })
-  } else if (plan.accessoryEmphasis === 'scapula') {
+  if (plan.accessoryEmphasis === 'scapula') {
     blocks.push(
       {
         exerciseId: 'scap-pushup',
@@ -523,6 +550,51 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     blocks.push(
       { exerciseId: 'pppu', sets: scale(4), target: reps(6), restSec: rAcc, section: 'strength', note: 'Extra pressing volume — this is what unblocks a stalled hold.' },
       { exerciseId: 'pike-pushup', sets: scale(3), target: reps(8), restSec: rAcc, section: 'strength' },
+    )
+  } else if (easy) {
+    blocks.push({
+      exerciseId: 'frog-stand',
+      sets: 2,
+      target: hold(15),
+      restSec: rAcc,
+      section: 'strength',
+      note: 'Balance practice — cheap on tendons, great for skill.',
+    })
+  } else if (plan.strategy === 'volume') {
+    blocks.push({
+      exerciseId: 'scap-pushup',
+      sets: scale(3),
+      target: reps(10),
+      restSec: rAcc,
+      section: 'strength',
+      note: 'Capacity support — repeat crisp protraction without turning the session into another max-strength day.',
+    })
+  } else if (plan.strategy === 'intensity') {
+    blocks.push({
+      exerciseId: 'pppu',
+      sets: 2,
+      target: reps(step.order <= 2 ? 5 : 6),
+      restSec: rMain,
+      section: 'strength',
+      note: 'One specific strength accessory, then stop — freshness is part of the high-intensity dose.',
+    })
+  } else if (plan.strategy === 'density') {
+    blocks.push(
+      {
+        exerciseId: 'scap-pushup',
+        sets: 3,
+        target: reps(8),
+        restSec: Math.min(45, rAcc),
+        section: 'strength',
+        note: 'Fast, clean support work. The session stays dense by limiting exercise changes.',
+      },
+      {
+        exerciseId: 'hollow-rocks',
+        sets: 3,
+        target: reps(10),
+        restSec: Math.min(40, rAcc),
+        section: 'core',
+      },
     )
   } else if (step.order <= 2) {
     blocks.push(
@@ -558,13 +630,21 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
 
   // A personalized limiter takes priority in a tight session, so its blocks
   // are inserted first and the supporting lean becomes the first thing cut.
-  if (leanStrength && plan.accessoryEmphasis !== 'none') {
+  if (leanStrength && leanStrength.sets > 0 && plan.accessoryEmphasis !== 'none') {
     blocks.push(leanStrength)
   }
 
   if (plan.accessoryEmphasis !== 'core') {
-    blocks.push({ exerciseId: 'hollow-hold', sets: scale(2), target: hold(30), restSec: 45, section: 'core' })
-    if (step.order >= 3 && !easy) {
+    if (plan.strategy !== 'density') {
+      blocks.push({
+        exerciseId: 'hollow-hold',
+        sets: plan.strategy === 'volume' ? scale(3) : scale(2),
+        target: hold(easy ? 20 : 30),
+        restSec: 45,
+        section: 'core',
+      })
+    }
+    if (step.order >= 3 && !easy && plan.strategy === 'balanced') {
       blocks.push({ exerciseId: 'l-sit', sets: 2, target: hold(12), restSec: 60, section: 'core' })
     }
   }
@@ -608,18 +688,20 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   // number this app is not allowed to invent.
   const fittedMinutes = estimateMinutes(fitted, state.settings.stopLatencySec, state.settings.phoneWithinReach)
   const shortened = minutesOverride !== undefined && fittedMinutes < baseBudget
+  const strategy = STRATEGY_BY_ID[plan.strategy]
+  const strategyContext = `${strategy.blurb} ${plan.dayReason}`
   return {
     id: `auto-${stepId}-${plan.dayType}-${plan.strategy}${shortened ? `-${budget}m` : ''}`,
-    name: `${step.name} · ${DAY_LABEL[plan.dayType]}${shortened ? ' · Short' : ''}`,
+    name: `${step.name} · ${strategy.name}${shortened ? ' · Short' : ''}`,
     focus: shortened
       ? `Trimmed to about ${fittedMinutes} minutes${
           fittedMinutes > budget ? ` — as short as this day gets without cutting the work that matters` : ''
         }. The warm-up and your main ${
           EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? 'work'
-        } are intact; accessories came off first, because a short session you actually do beats a full one you skip. ${plan.dayReason}`
+        } are intact; accessories came off first, because a short session you actually do beats a full one you skip. ${strategyContext}`
       : plan.limiter
-        ? `${plan.dayReason} Current limiter: ${plan.limiter.label}. ${plan.limiter.prescription}`
-        : plan.dayReason,
+        ? `${strategyContext} Current limiter: ${plan.limiter.label}. ${plan.limiter.prescription}`
+        : strategyContext,
     minutes: fittedMinutes,
     kind: 'auto',
     blocks: fitted,

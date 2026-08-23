@@ -19,6 +19,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-08-22',
+    title: 'Coach sessions now have their own shape',
+    area: 'coach',
+    notes: [
+      'Balanced, high-volume, high-intensity, short-rest and technique sessions now change the supporting work as well as the main sets. The current planche progression stays anchored in every session, while measured limiters and pain or recovery rules still get the final say.',
+      'The Train card and workout preview name the selected approach and explain what it is trying to do, so a real session change no longer hides behind a generic “Build Day” label.',
+      'Camera feedback that you reviewed and disagreed with can no longer quietly reduce the coach’s performance history, hit rate or next working target. It still stays in the replay, and progression unlocks remain strict.',
+      'Session estimates now include the small setup and movement time between sets. That keeps a 30-minute recommendation closer to 30 minutes and trims supporting work before the planche work that matters.',
+    ],
+  },
+  {
+    date: '2026-08-22',
     title: 'Coach learning is visible — and clean seconds stay earned',
     area: 'coach',
     notes: [
