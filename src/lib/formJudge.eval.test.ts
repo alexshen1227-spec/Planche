@@ -98,6 +98,7 @@ function judge(id: string, overrides: SynthParams = {}, seed = 3) {
     ok: verdict.ok,
     reason: verdict.reason,
     issues: verdict.issues,
+    heldIssues: verdict.heldIssues ?? verdict.issues,
     unseen: verdict.unseen,
     score: verdict.score,
     elbowDeg: verdict.elbowDeg,
@@ -386,8 +387,16 @@ describe('form judge — clean time and the one cue that matters', () => {
     })
     for (const run of runs) {
       expect(run.issues).toContain('arms')
+      expect(run.heldIssues).not.toContain('arms')
       expect(run.cleanRatio!).toBeGreaterThan(0.35)
       expect(run.cleanRatio!).toBeLessThan(0.85)
+    }
+  })
+
+  it('still rejects a visible persistent elbow softening', () => {
+    for (const id of GRADED) {
+      const runs = across(id, { elbowBendDeg: 10, noise: 0.01 }, 20)
+      expect(`${id} ${rate(runs, (run) => run.heldIssues.includes('arms'))}`).toBe(`${id} 1`)
     }
   })
 

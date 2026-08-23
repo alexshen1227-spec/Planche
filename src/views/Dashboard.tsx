@@ -443,9 +443,11 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
             />
           </div>
           <span className="tnum">
-            {confidence.evaluated === 0
-              ? 'Learning starts after your first couple of sessions'
-              : `${confidence.evaluated} session${confidence.evaluated === 1 ? '' : 's'} measured · ${confidence.tested}/5 approaches tested`}
+            {confidence.attempted === 0
+              ? 'Ready to shape your first recommended session'
+              : confidence.evaluated === 0
+                ? `${confidence.attempted} coached session${confidence.attempted === 1 ? '' : 's'} tried · waiting for a later result`
+                : `${confidence.evaluated} result${confidence.evaluated === 1 ? '' : 's'} measured · ${confidence.tried}/5 approaches tried`}
           </span>
         </div>
       </div>

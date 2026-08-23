@@ -1,6 +1,6 @@
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
-import type { AppState, Session, SetLog, StepId } from '../types'
+import type { AppState, AutoForm, FormIssue, Session, SetLog, StepId } from '../types'
 
 export interface Qualification {
   value: number
@@ -38,6 +38,17 @@ export function formEvidenceCoversArms(auto: NonNullable<SetLog['form']>['auto']
 }
 
 /**
+ * Issues in the verified portion of the hold, before a sustained breakdown.
+ * New camera checks preserve this distinction; older checks safely retain the
+ * original all-issues behaviour.
+ */
+export function progressionRelevantIssues(
+  auto: AutoForm | undefined,
+): FormIssue[] {
+  return auto?.heldIssues ?? auto?.issues ?? []
+}
+
+/**
  * The second half of the mastery gate. Most skills need a successful camera
  * check with at most one isolated secondary flag. A bent-arm flag is never
  * tolerated because straight arms define every graded planche progression.
@@ -51,11 +62,12 @@ export function passesProgressionFormCheck(form: SetLog['form'], exerciseId: str
     return form.visualReviewPassed === true
   }
   if (requiresFlightConfirmation(exerciseId) && form.flightConfirmed !== true) return false
+  if (!form.auto) return false
+  const issues = progressionRelevantIssues(form.auto)
   return Boolean(
-    form.auto &&
-      form.auto.confidence >= MIN_PROGRESSION_FORM_CONFIDENCE &&
-      form.auto.issues.length <= MAX_PROGRESSION_FORM_ISSUES &&
-      !form.auto.issues.includes('arms') &&
+    form.auto.confidence >= MIN_PROGRESSION_FORM_CONFIDENCE &&
+      issues.length <= MAX_PROGRESSION_FORM_ISSUES &&
+      !issues.includes('arms') &&
       formEvidenceCoversArms(form.auto),
   )
 }

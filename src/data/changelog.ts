@@ -18,6 +18,17 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-08-22',
+    title: 'Coach learning is visible — and clean seconds stay earned',
+    area: 'coach',
+    notes: [
+      'The Progress screen now distinguishes an approach the coach has not tried from one it already used but cannot measure until a later key-hold session. It shows how many of the five approaches were tried and measured, and the Home summary updates through the same stages instead of looking stuck.',
+      'The first recommended session of the day is coach-shaped too. A regression check now follows the chosen approach all the way into that session’s real sets and targets, so coach learning cannot quietly turn into display-only text.',
+      'A filmed hold that starts clean and breaks down late now keeps the verified clean seconds it earned. Feedback still names the late fault, but it no longer erases earlier progression credit; a bent arm inside the credited window still blocks the hold exactly as before.',
+      'The elbow flag now says “not fully locked,” which is more precise for the small but real softening the camera can resolve. The straight-arm tolerance remains calibrated against both noisy lockouts and known 10° bends.',
+    ],
+  },
+  {
     date: '2026-08-16',
     title: 'Skeleton replays now show what was actually judged',
     area: 'camera',

@@ -68,6 +68,8 @@ export interface PoseFormResult {
   /** Positional drift per second — high means the hold was slipping. */
   wobble?: number
   issues: FormIssue[]
+  /** Faults measured inside the clean window that can receive progression credit. */
+  heldIssues?: FormIssue[]
   notes: string[]
   /** Things that went well, so the feedback is not only negative. */
   good: string[]
@@ -2187,6 +2189,12 @@ export function judgeTrackedFrames(
     shrugRatio: reportedShrugRatio,
     wobble,
     issues: uniqueIssues,
+    // Aggregate faults are computed from `verdictFrames`, which ends at the
+    // first sustained breakdown. Keep them separate from the full issue list:
+    // the latter deliberately includes the late fault so feedback can explain
+    // why verified time stopped, but that late fault must not erase the clean
+    // seconds that came before it.
+    heldIssues: [...aggregateFaults],
     notes,
     good,
     details,

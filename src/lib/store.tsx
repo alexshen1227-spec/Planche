@@ -138,6 +138,9 @@ function sanitizeAuto(a: unknown): AutoForm | undefined {
   const issues = Array.isArray(c.issues)
     ? c.issues.filter((i): i is FormIssue => typeof i === 'string' && FORM_ISSUES.has(i as FormIssue))
     : []
+  const heldIssues = Array.isArray(c.heldIssues)
+    ? c.heldIssues.filter((i): i is FormIssue => typeof i === 'string' && FORM_ISSUES.has(i as FormIssue))
+    : undefined
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
   // `unseen` must round-trip: losing it on import would quietly re-arm unlock
   // evidence whose elbows the camera never actually saw.
@@ -146,6 +149,7 @@ function sanitizeAuto(a: unknown): AutoForm | undefined {
     : []
   return {
     issues,
+    ...(heldIssues ? { heldIssues } : {}),
     ...(unseen.length ? { unseen } : {}),
     confidence: num(c.confidence) ?? 0,
     score: clampOptional(c.score, 0, 100),

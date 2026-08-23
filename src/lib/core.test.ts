@@ -8,6 +8,7 @@ import {
   formEvidenceCoversArms,
   passesProgressionFormCheck,
   progressionCredit,
+  progressionRelevantIssues,
   qualifyingProgress,
   sessionLearningValue,
 } from './progression'
@@ -45,6 +46,7 @@ import {
   buildPlan,
   debriefSession,
   equipmentAdvice,
+  formatStrategyEvidence,
   pickStrategy,
   previousTrainedStep,
   rewardFor,
@@ -709,6 +711,37 @@ describe('partial camera coverage', () => {
         'tuck-planche',
       ),
     ).toBe(false)
+  })
+
+  it('credits the clean portion before a late camera-detected breakdown', () => {
+    const lateBreak: FormCheck = {
+      rating: 'clean',
+      confirmed: true,
+      flightConfirmed: true,
+      auto: {
+        issues: ['arms'],
+        heldIssues: [],
+        confidence: 0.9,
+        cleanSeconds: 8,
+        cleanRatio: 2 / 3,
+      },
+    }
+    const set = log('tuck-planche', 12, { form: lateBreak })
+
+    expect(progressionRelevantIssues(lateBreak.auto)).toEqual([])
+    expect(passesProgressionFormCheck(lateBreak, 'tuck-planche')).toBe(true)
+    expect(progressionCredit(set, 'tuck-planche')).toBe(8)
+  })
+
+  it('still blocks a bent arm inside the credited clean window', () => {
+    const heldBend: FormCheck = {
+      rating: 'clean',
+      confirmed: true,
+      flightConfirmed: true,
+      auto: { issues: ['arms'], heldIssues: ['arms'], confidence: 0.9, cleanSeconds: 8 },
+    }
+
+    expect(passesProgressionFormCheck(heldBend, 'tuck-planche')).toBe(false)
   })
 
   it('treats pre-partial-grading records as fully covered', () => {
@@ -1595,6 +1628,55 @@ describe('stage-specific planche lean programming', () => {
 })
 
 describe('coach learning', () => {
+  it('shapes the first recommended session of the day with the strategy it chose', () => {
+    const yesterday = Date.now() - DAY
+    const history = session(
+      'tuck',
+      [log('tuck-planche', 8, { form: { rating: 'clean', confirmed: true } })],
+      {
+        startedAt: yesterday,
+        endedAt: yesterday + 30 * 60_000,
+        workoutName: 'Training Day',
+        strategy: 'balanced',
+      },
+    )
+    const athlete: AppState = {
+      ...state('tuck'),
+      sessions: [history],
+      settings: { ...state('tuck').settings, sessionMinutes: 90, warmup: false },
+    }
+
+    const plan = buildPlan(athlete)
+    const recommended = todaysSession(athlete)
+    const recommendedMain = recommended.blocks.find(
+      (block) => block.section === 'main' && block.exerciseId === 'tuck-planche',
+    )!
+    const balanced = todaysSession(athlete, {
+      ...plan,
+      strategy: 'balanced',
+      setsDelta: 0,
+      targetFactor: 1,
+    })
+    const balancedMain = balanced.blocks.find(
+      (block) => block.section === 'main' && block.exerciseId === 'tuck-planche',
+    )!
+
+    expect(plan.strategy).toBe('volume')
+    expect(recommended.strategy).toBe('volume')
+    expect(recommendedMain.sets).toBeGreaterThan(balancedMain.sets)
+    expect(recommendedMain.target).toMatchObject({ kind: 'hold' })
+    expect(balancedMain.target).toMatchObject({ kind: 'hold' })
+    if (recommendedMain.target.kind === 'hold' && balancedMain.target.kind === 'hold') {
+      expect(recommendedMain.target.sec).toBeLessThanOrEqual(balancedMain.target.sec)
+    }
+  })
+
+  it('shows tried-but-not-yet-measurable coach work instead of calling it untested', () => {
+    expect(formatStrategyEvidence({ attempts: 0, n: 0, secPerWeek: 0 })).toBe('not tried yet')
+    expect(formatStrategyEvidence({ attempts: 1, n: 0, secPerWeek: 0 })).toContain('waiting for a later session')
+    expect(formatStrategyEvidence({ attempts: 2, n: 1, secPerWeek: 0.7 })).toContain('1/2 results measured')
+  })
+
   it('learns from an athlete who never films, without weakening the unlock bar', () => {
     // The bug this pins: learning used the *unlock* evidence chain, so an
     // athlete who trains honestly but does not film and flight-confirm every
@@ -1954,6 +2036,7 @@ describe('backup validation and normalization', () => {
               flightConfirmed: true,
               auto: {
                 issues: [],
+                heldIssues: [],
                 confidence: 0.8,
                 score: 77,
                 shrugRatio: 0.3,
@@ -1970,6 +2053,7 @@ describe('backup validation and normalization', () => {
     expect(auto?.shrugRatio).toBeCloseTo(0.3)
     expect(auto?.asymmetry).toBeCloseTo(0.1)
     expect(auto?.unseen).toEqual(['knees'])
+    expect(auto?.heldIssues).toEqual([])
     expect(normalizeState(raw).sessions[0].sets[0]).toMatchObject({
       surface: 'parallettes',
       leadInSec: 2.5,

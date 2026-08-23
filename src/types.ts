@@ -72,6 +72,13 @@ export type FormRating = 'clean' | 'slipped' | 'broke'
 /** What the camera measured, kept even if the athlete never confirms it. */
 export interface AutoForm {
   issues: FormIssue[]
+  /**
+   * Faults inside the portion of the hold that receives progression credit.
+   * `issues` also names a sustained breakdown after that clean window so the
+   * athlete still gets useful feedback. Older records omit this and safely
+   * fall back to `issues`.
+   */
+  heldIssues?: FormIssue[]
   confidence: number
   /**
    * Overall camera form score, 0–100, over the criteria that were judged.

@@ -370,10 +370,25 @@ export function formatRate(secPerWeek: number): string {
   return `+${secPerWeek.toFixed(1)}s/week`
 }
 
-/** How many evaluated sessions the coach has to learn from. */
-export function coachConfidence(state: AppState): { evaluated: number; tested: number } {
+/** Athlete-facing evidence state for one strategy in the Progress panel. */
+export function formatStrategyEvidence(arm: Pick<ArmStats, 'attempts' | 'n' | 'secPerWeek'>): string {
+  if (arm.n > 0) {
+    return `${formatRate(arm.secPerWeek)} · ${arm.n}/${arm.attempts} result${arm.attempts === 1 ? '' : 's'} measured`
+  }
+  if (arm.attempts > 0) {
+    return `tried ${arm.attempts}× · waiting for a later session`
+  }
+  return 'not tried yet'
+}
+
+/** How much current-step evidence the coach has attempted and evaluated. */
+export function coachConfidence(
+  state: AppState,
+): { attempted: number; tried: number; evaluated: number; tested: number } {
   const stats = armStats(state)
   return {
+    attempted: stats.reduce((t, s) => t + s.attempts, 0),
+    tried: stats.filter((s) => s.attempts > 0).length,
     evaluated: stats.reduce((t, s) => t + s.n, 0),
     tested: stats.filter((s) => s.n > 0).length,
   }

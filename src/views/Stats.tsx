@@ -4,7 +4,7 @@ import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID, STEPS } from '../data/progressions'
 import { ACHIEVEMENTS, type AchievementProgress } from '../data/achievements'
 import { bestSeries, weeklyVolume, totalHoldSec, totalSets, sessionHoldSec, sessionDurationSec } from '../lib/stats'
-import { armStats, STRATEGY_BY_ID, formatRate, buildPlan } from '../lib/coach'
+import { armStats, STRATEGY_BY_ID, formatStrategyEvidence, buildPlan } from '../lib/coach'
 import { diagnose, weakLinks } from '../lib/diagnose'
 import { fmtWeight } from '../lib/units'
 import { lastOf } from '../components/MeasurePrompt'
@@ -309,6 +309,8 @@ export function Stats() {
   }, [series.length, state.sessions, chartEx, chartIsPlanche, chartSurface])
 
   const arms = useMemo(() => armStats(state), [state])
+  const triedArms = useMemo(() => arms.filter((arm) => arm.attempts > 0).length, [arms])
+  const measuredArms = useMemo(() => arms.filter((arm) => arm.n > 0).length, [arms])
   const coachPick = useMemo(() => buildPlan(state), [state])
   const bestArm = useMemo(() => [...arms].filter((a) => a.n > 0).sort((a, b) => b.mean - a.mean)[0], [arms])
   const maxArmRate = useMemo(() => Math.max(0.001, ...arms.map((a) => Math.abs(a.secPerWeek))), [arms])
@@ -596,6 +598,14 @@ export function Stats() {
           </span>
         </div>
 
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] font-medium text-ink2">
+          <span className="rounded-full border border-line bg-raised px-2.5 py-1 tnum">{triedArms}/5 tried</span>
+          <span className="rounded-full border border-line bg-raised px-2.5 py-1 tnum">{measuredArms}/5 measured</span>
+          {arms.some((arm) => arm.attempts > arm.n) ? (
+            <span className="text-ink3">A try becomes measurable after a later key-hold session.</span>
+          ) : null}
+        </div>
+
         <div className="mt-4 space-y-2.5">
           {arms.map((a) => {
             const def = STRATEGY_BY_ID[a.id]
@@ -617,7 +627,7 @@ export function Stats() {
                     ) : null}
                   </div>
                   <span className="text-[13px] font-medium text-ink2 tnum">
-                    {a.n === 0 ? 'not tested yet' : `${formatRate(a.secPerWeek)} · ${a.n} session${a.n === 1 ? '' : 's'}`}
+                    {formatStrategyEvidence(a)}
                   </span>
                 </div>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">

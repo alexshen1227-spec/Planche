@@ -58,6 +58,7 @@ import { ClipPlayer } from '../components/ClipPlayer'
 import { FramingCheck } from '../components/FramingCheck'
 import {
   passesProgressionFormCheck,
+  progressionRelevantIssues,
   requiresFlightConfirmation,
   setNeedsProgressionFormEvidence,
 } from '../lib/progression'
@@ -1786,7 +1787,7 @@ export function SessionPlayer({
 }
 
 export const FORM_ISSUE_LABEL: Record<FormIssue, string> = {
-  arms: 'Elbows bent',
+  arms: 'Elbows not fully locked',
   scapula: 'Lost protraction',
   shrug: 'Shoulders shrugged',
   pike: 'Hips too high',
@@ -1896,6 +1897,7 @@ function FormCheckRow({
       if (res.ok) {
         const auto = {
           issues: res.issues,
+          heldIssues: res.heldIssues ?? res.issues,
           confidence: res.confidence,
           score: res.score,
           cleanSeconds: res.cleanSeconds,
@@ -2054,6 +2056,7 @@ function FormCheckRow({
         ? {
             auto: {
               issues: analysis.issues,
+              heldIssues: analysis.heldIssues ?? analysis.issues,
               confidence: analysis.confidence,
               score: analysis.score,
               cleanSeconds: analysis.cleanSeconds,
@@ -2081,6 +2084,7 @@ function FormCheckRow({
   }
 
   const progressionFormPassed = passesProgressionFormCheck(value, exerciseId)
+  const progressionCameraIssues = value?.auto ? progressionRelevantIssues(value.auto) : []
 
   return (
     <div className="mx-auto mt-5 w-full max-w-sm rounded-2xl border border-line bg-surface p-4">
@@ -2359,14 +2363,16 @@ function FormCheckRow({
             ? value?.auto?.cleanSeconds !== undefined &&
               value.auto.cleanSeconds + 0.05 < creditedHoldSec
               ? `Evidence complete — ${value.auto.cleanSeconds.toFixed(1)}s of this hold count toward progression before the sustained breakdown.`
-              : value?.auto?.issues.length === 1
+              : progressionCameraIssues.length === 1
               ? 'Progression evidence complete — your Clean rating plus one isolated camera flag.'
               : 'Progression evidence complete — athlete and filmed form checks agree.'
             : needsManualReplayReview
               ? 'Your Clean rating is saved. Review the replay above for this hold to count toward progression.'
               : needsFlightConfirmation && value?.flightConfirmed !== true
                 ? 'Your Clean rating is saved. Confirm that both feet stayed off the floor for this hold to count.'
-              : value?.auto && value.auto.issues.length > 1
+              : progressionCameraIssues.includes('arms')
+                ? 'Saved as a PR, but the camera measured elbows that were not fully locked in the credited window, so this hold will not unlock.'
+              : value?.auto && progressionCameraIssues.length > 1
                 ? 'Saved as a PR, but the camera found multiple form flags, so this hold will not unlock.'
                 : 'Your Clean rating is saved. A successful camera check is still needed for progression.'}
         </p>
