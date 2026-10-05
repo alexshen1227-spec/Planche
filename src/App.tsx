@@ -319,6 +319,8 @@ export default function App() {
   const [resuming, setResuming] = useState(resumeDraft !== null)
 
   const [askCheckIn, setAskCheckIn] = useState(false)
+  /** A just-saved session to open in History, from the celebration screen. */
+  const [focusSessionId, setFocusSessionId] = useState<string | null>(null)
   const [checkInContext, setCheckInContext] = useState<CheckInContext>({})
 
   // Updates has no nav entry of its own; it lives under Settings, so Settings
@@ -473,7 +475,7 @@ export default function App() {
           {tab === 'train' ? <Train startWorkout={startWorkout} /> : null}
           {tab === 'path' ? <Path startWorkout={startWorkout} /> : null}
           {tab === 'library' ? <Library /> : null}
-          {tab === 'stats' ? <Stats /> : null}
+          {tab === 'stats' ? <Stats focusSessionId={focusSessionId} onFocused={() => setFocusSessionId(null)} /> : null}
           {tab === 'settings' ? <Settings go={setTab} /> : null}
           {tab === 'updates' ? <Updates go={setTab} /> : null}
         </main>
@@ -533,6 +535,13 @@ export default function App() {
             setResuming(false)
             setAskCheckIn(false)
             setActiveWorkout(null)
+          }}
+          onViewSession={(sessionId) => {
+            setResuming(false)
+            setAskCheckIn(false)
+            setActiveWorkout(null)
+            setFocusSessionId(sessionId)
+            setTab('stats')
           }}
         />
       ) : null}

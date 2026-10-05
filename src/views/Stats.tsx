@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../lib/store'
 import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID, STEPS } from '../data/progressions'
@@ -282,11 +282,33 @@ function achievementProgressText(progress: AchievementProgress): string {
   return `${progress.current} / ${progress.target}`
 }
 
-export function Stats() {
+export function Stats({
+  focusSessionId = null,
+  onFocused,
+}: {
+  /** Open this session's history entry and bring it into view. */
+  focusSessionId?: string | null
+  onFocused?: () => void
+} = {}) {
   const { state, dispatch } = useStore()
   const [chartEx, setChartEx] = useState(() => STEP_BY_ID[state.stepId].keyExerciseId)
   const [chartSurface, setChartSurface] = useState<TrainingSurface | 'all'>('all')
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(focusSessionId)
+  useEffect(() => {
+    if (!focusSessionId) return
+    setExpanded(focusSessionId)
+    // After layout, so the entry exists to scroll to.
+    const timer = window.setTimeout(() => {
+      const card = [...document.querySelectorAll<HTMLElement>('[data-session]')].find(
+        (el) => el.dataset.session === focusSessionId,
+      )
+      card?.scrollIntoView({ block: 'center' })
+      card?.querySelector<HTMLElement>('button[aria-expanded]')?.focus({ preventScroll: true })
+      onFocused?.()
+    }, 50)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSessionId])
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [achievementFilter, setAchievementFilter] = useState<'all' | 'earned' | 'next' | 'locked'>('next')
 
@@ -869,7 +891,7 @@ export function Stats() {
             const open = expanded === s.id
             const panelId = `session-${s.id}`
             return (
-              <div key={s.id} className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
+              <div key={s.id} data-session={s.id} className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
                 <button
                   onClick={() => setExpanded(open ? null : s.id)}
                   aria-expanded={open}
@@ -884,7 +906,8 @@ export function Stats() {
                       </span>
                     </div>
                     <div className="mt-0.5 text-[13px] text-ink2 tnum">
-                      {s.sets.length} sets · {sessionHoldSec(s)}s held · {fmtClock(sessionDurationSec(s))}
+                      {s.sets.length} set{s.sets.length === 1 ? '' : 's'} · {sessionHoldSec(s)}s held ·{' '}
+                      {fmtClock(sessionDurationSec(s))}
                       {s.rpe ? ` · RPE ${s.rpe}` : ''}
                       {s.completion === 'partial' ? (
                         <span className="ml-1.5 rounded-full border border-line bg-raised px-2 py-0.5 text-[11px] font-medium text-ink3">

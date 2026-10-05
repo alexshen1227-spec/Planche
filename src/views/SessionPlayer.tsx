@@ -146,9 +146,12 @@ export function SessionPlayer({
   askCheckIn = false,
   checkInContext,
   onCheckInAnswered,
+  onViewSession,
 }: {
   workout: Workout
   onExit: () => void
+  /** Open the saved session in History. */
+  onViewSession?: (sessionId: string) => void
   resumeFrom?: SessionDraft | null
   askCheckIn?: boolean
   checkInContext?: CheckInContext
@@ -2121,6 +2124,14 @@ export function SessionPlayer({
         >
           Done
         </button>
+        {onViewSession ? (
+          <button
+            onClick={() => onViewSession(savedSession.id)}
+            className="mt-2 w-full rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink2 hover:text-ink"
+          >
+            See it in your history
+          </button>
+        ) : null}
       </div>
     )
   }
