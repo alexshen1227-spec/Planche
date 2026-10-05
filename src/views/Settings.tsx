@@ -26,7 +26,6 @@ import { fmtWeight } from '../lib/units'
 import { MeasurePrompt, lastOf } from '../components/MeasurePrompt'
 import { JointReports } from '../components/JointReports'
 import { buildSampleState } from '../data/sample'
-import { CHANGELOG } from '../data/changelog'
 import { pushToast } from '../lib/toast'
 import { sfx } from '../lib/audio'
 import { Icon } from '../components/Icon'
@@ -869,7 +868,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
 
       <SectionTitle>Updates</SectionTitle>
       <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
-        <Row label="What's new" hint={`Every update to the app, newest first — ${CHANGELOG.length} so far.`}>
+        <Row label="What's new" hint="Every update to the app, newest first.">
           <button
             onClick={() => go('updates')}
             className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"

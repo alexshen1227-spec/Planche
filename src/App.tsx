@@ -17,7 +17,6 @@ import { Path } from './views/Path'
 import { Library } from './views/Library'
 import { Stats } from './views/Stats'
 import { Settings } from './views/Settings'
-import { Updates } from './views/Updates'
 import { Onboarding } from './views/Onboarding'
 import { SessionPlayer, type CheckInContext } from './views/SessionPlayer'
 
@@ -29,6 +28,12 @@ import { SessionPlayer, type CheckInContext } from './views/SessionPlayer'
  * bundle an athlete downloads on a phone at the gym.
  */
 const DevLab = lazy(() => import('./views/DevLab'))
+
+/**
+ * The update log is the largest single file in the app and only one page
+ * reads it, so it loads when that page opens rather than with every launch.
+ */
+const Updates = lazy(() => import('./views/Updates').then((m) => ({ default: m.Updates })))
 
 function useDevLabRoute(): boolean {
   const [open, setOpen] = useState(() => window.location.hash === '#devlab')
@@ -486,7 +491,11 @@ export default function App() {
           {tab === 'library' ? <Library /> : null}
           {tab === 'stats' ? <Stats focusSessionId={focusSessionId} onFocused={() => setFocusSessionId(null)} /> : null}
           {tab === 'settings' ? <Settings go={setTab} /> : null}
-          {tab === 'updates' ? <Updates go={setTab} /> : null}
+          {tab === 'updates' ? (
+            <Suspense fallback={<div className="p-6 text-[13px] text-ink3">Loading the update log…</div>}>
+              <Updates go={setTab} />
+            </Suspense>
+          ) : null}
         </main>
       </div>
 
