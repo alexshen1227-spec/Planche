@@ -252,6 +252,17 @@ export interface LearningScope {
   side?: 'left' | 'right'
 }
 
+/**
+ * The attempt ended for a reason that says nothing about capacity: the
+ * athlete reported an interruption or a timing problem, or the screen went
+ * away mid-hold. Its value stays in history and volume, but it is not a
+ * measure of what the athlete can hold — a working target anchored on it
+ * would drop for a phone call.
+ */
+export function endedForNonCapacityReason(set: Pick<SetLog, 'endReason' | 'timing'>): boolean {
+  return set.endReason === 'interruption' || set.endReason === 'timing' || set.timing?.method === 'interrupted'
+}
+
 function inScope(set: SetLog, scope: LearningScope | undefined): boolean {
   if (isAssisted(set)) return false
   if (!scope) return true
@@ -285,6 +296,9 @@ function inScope(set: SetLog, scope: LearningScope | undefined): boolean {
  * For a unilateral hold, a session's value is its *weaker* side when both
  * sides were trained: a coach that anchored on the stronger side prescribed
  * 2.5× the weaker side's best while promising to cap at the weaker dose.
+ *
+ * An attempt the athlete said was interrupted, or that a hidden screen cut
+ * short, is not a capacity reading and is left out.
  */
 export function sessionLearningValue(session: Session, stepId: StepId, scope?: LearningScope): number {
   const step = STEP_BY_ID[stepId]
@@ -297,6 +311,7 @@ export function sessionLearningValue(session: Session, stepId: StepId, scope?: L
         set.section !== 'main' ||
         set.value <= 0 ||
         humanRating(set.form) === 'broke' ||
+        endedForNonCapacityReason(set) ||
         !inScope(set, sideScope)
       ) {
         return best

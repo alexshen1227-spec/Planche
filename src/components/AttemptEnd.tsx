@@ -105,7 +105,8 @@ export function AttemptEnd({
               expanded={otherOpen}
               onClick={() => setOtherOpen((open) => !open)}
             >
-              {log.endReason && log.endReason !== 'target' ? END_REASON_LABEL[log.endReason] : 'Other reason'}
+              {/* Collapsed, it names the chosen reason; open, the list below does. */}
+              {!otherOpen && log.endReason && log.endReason !== 'target' ? END_REASON_LABEL[log.endReason] : 'Other reason'}
             </Chip>
           </div>
           {otherOpen ? (

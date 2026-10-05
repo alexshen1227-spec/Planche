@@ -1261,7 +1261,7 @@ export function SessionPlayer({
 
   const formRowFor = (log: SetLog, rest: boolean) => (
     <FormCheckRow
-      key={log.at}
+      key={`form-${log.at}`}
       clipKey={log.clipKey ?? log.form?.clipKey ?? null}
       exerciseId={log.exerciseId}
       creditedHoldSec={log.value}
@@ -1798,7 +1798,7 @@ export function SessionPlayer({
           {lastLog ? stopAllowanceCorrection(lastLog) : null}
           {lastLog ? (
             <AttemptEnd
-              key={lastLog.at}
+              key={`end-${lastLog.at}`}
               log={lastLog}
               askReason={lastLog.kind === 'hold' && (lastLog.section === 'main' || lastLog.section === 'strength')}
               onReason={(reason) => setEndReason(lastLog.at, reason)}
@@ -1907,7 +1907,7 @@ export function SessionPlayer({
             </div>
             {finalPathHold && finalPathHold.at === lastLog.at ? stopAllowanceCorrection(finalPathHold) : null}
             <AttemptEnd
-              key={lastLog.at}
+              key={`end-${lastLog.at}`}
               log={lastLog}
               askReason={lastLog.kind === 'hold' && (lastLog.section === 'main' || lastLog.section === 'strength')}
               onReason={(reason) => setEndReason(lastLog.at, reason)}
