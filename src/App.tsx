@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, startTransition, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import type { CheckIn, Tab, Workout, WorkoutRequest } from './types'
 import { quarantinedData, useStore } from './lib/store'
@@ -14,10 +14,6 @@ import { Toasts } from './components/Toasts'
 import { Dashboard } from './views/Dashboard'
 import { Train } from './views/Train'
 import { Path } from './views/Path'
-import { Library } from './views/Library'
-import { Stats } from './views/Stats'
-import { Settings } from './views/Settings'
-import { Onboarding } from './views/Onboarding'
 import { SessionPlayer, type CheckInContext } from './views/SessionPlayer'
 
 /**
@@ -34,6 +30,39 @@ const DevLab = lazy(() => import('./views/DevLab'))
  * reads it, so it loads when that page opens rather than with every launch.
  */
 const Updates = lazy(() => import('./views/Updates').then((m) => ({ default: m.Updates })))
+
+/**
+ * Screens that are not on the path to training, loaded on demand: onboarding
+ * runs once per install, and Learn, Progress and Settings are visited, not
+ * lived in. Home, Train, Path and the session player stay in the main bundle
+ * so the gym-floor path — open the app, start, hold — never waits on a chunk.
+ * Tab changes run in a transition, so the current screen stays up while a
+ * chunk loads, and the chunks are fetched once the app is idle anyway.
+ */
+const loadLibrary = () => import('./views/Library')
+const loadStats = () => import('./views/Stats')
+const loadSettings = () => import('./views/Settings')
+const Library = lazy(() => loadLibrary().then((m) => ({ default: m.Library })))
+const Stats = lazy(() => loadStats().then((m) => ({ default: m.Stats })))
+const Settings = lazy(() => loadSettings().then((m) => ({ default: m.Settings })))
+const Onboarding = lazy(() => import('./views/Onboarding').then((m) => ({ default: m.Onboarding })))
+
+function usePrefetchScreens(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return
+    const fetchAll = () => {
+      void loadLibrary()
+      void loadStats()
+      void loadSettings()
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(fetchAll, { timeout: 4000 })
+      return () => window.cancelIdleCallback(id)
+    }
+    const t = window.setTimeout(fetchAll, 1500)
+    return () => window.clearTimeout(t)
+  }, [enabled])
+}
 
 function useDevLabRoute(): boolean {
   const [open, setOpen] = useState(() => window.location.hash === '#devlab')
@@ -315,8 +344,12 @@ function checkInContextFor(plan: CoachPlan): CheckInContext {
 
 export default function App() {
   const { state, dispatch, boot } = useStore()
-  const [tab, setTab] = useState<Tab>('home')
+  const [tab, setTabNow] = useState<Tab>('home')
+  // A transition keeps the current screen on show while a lazy one loads,
+  // rather than flashing a placeholder over the whole page.
+  const setTab = (next: Tab) => startTransition(() => setTabNow(next))
   const devLab = useDevLabRoute()
+  usePrefetchScreens(state.onboarded && boot.phase === 'ready' && !devLab)
   // An interrupted session (phone slept, tab discarded) is picked back up
   // automatically on the next load instead of being silently lost.
   const [resumeDraft] = useState(() => loadDraft())
@@ -408,7 +441,9 @@ export default function App() {
   if (!state.onboarded) {
     return (
       <AppShell>
-        <Onboarding />
+        <Suspense fallback={<BootSplash />}>
+          <Onboarding />
+        </Suspense>
       </AppShell>
     )
   }
@@ -476,6 +511,7 @@ export default function App() {
             <span className="font-display text-[16px] font-bold text-ink">Planche Lab</span>
           </div>
 
+          <Suspense fallback={<div className="p-6 text-[13px] text-ink3">Loading…</div>}>
           {tab === 'home' ? (
             <Dashboard
               startWorkout={startWorkout}
@@ -491,11 +527,8 @@ export default function App() {
           {tab === 'library' ? <Library /> : null}
           {tab === 'stats' ? <Stats focusSessionId={focusSessionId} onFocused={() => setFocusSessionId(null)} /> : null}
           {tab === 'settings' ? <Settings go={setTab} /> : null}
-          {tab === 'updates' ? (
-            <Suspense fallback={<div className="p-6 text-[13px] text-ink3">Loading the update log…</div>}>
-              <Updates go={setTab} />
-            </Suspense>
-          ) : null}
+          {tab === 'updates' ? <Updates go={setTab} /> : null}
+          </Suspense>
         </main>
       </div>
 
