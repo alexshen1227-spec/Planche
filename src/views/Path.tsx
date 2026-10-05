@@ -1,9 +1,10 @@
-import { useState } from 'react'
-import type { StepDef, StepId, Workout } from '../types'
+import { useMemo, useState } from 'react'
+import type { StepDef, StepId, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { maxTestWorkout } from '../data/workouts'
+import { challengeBlockedReason } from '../data/workouts'
+import { buildPlan } from '../lib/coach'
 import { fmtHold, fmtDate } from '../lib/time'
 import { pushToast } from '../lib/toast'
 import { Icon } from '../components/Icon'
@@ -14,7 +15,7 @@ import { qualifyingProgress } from '../lib/progression'
 /** Destinations worth aiming at; the early steps are waypoints, not goals. */
 const GOAL_CHOICES: StepId[] = ['tuck', 'advtuck', 'straddle', 'full']
 
-export function Path({ startWorkout }: { startWorkout: (w: Workout) => void }) {
+export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest) => void }) {
   const { state, dispatch } = useStore()
   const [detail, setDetail] = useState<StepDef | null>(null)
 
@@ -191,9 +192,11 @@ function StepDetail({
 }: {
   step: StepDef
   onClose: () => void
-  startWorkout: (w: Workout) => void
+  startWorkout: (request: WorkoutRequest) => void
 }) {
   const { state, dispatch } = useStore()
+  // Decided now, so the button never offers a test today's readiness rules out.
+  const testBlocked = useMemo(() => challengeBlockedReason(buildPlan(state)), [state])
   const unlocked = state.unlocked.includes(step.id)
   const isCurrent = state.stepId === step.id
   const pr = state.prs[step.keyExerciseId]
@@ -289,16 +292,22 @@ function StepDetail({
 
       <div className="mt-5 flex flex-wrap gap-2.5">
         {isCurrent ? (
-          <button
-            onClick={() => {
-              onClose()
-              startWorkout(maxTestWorkout(step.id))
-            }}
-            className="inline-flex items-center gap-2 rounded-xl px-5 py-3 font-display text-[15px] font-semibold text-on-accent shadow-card transition hover:brightness-105"
-            style={{ background: 'var(--t-btn-accent)' }}
-          >
-            <Icon name="target" size={16} /> Take the max test
-          </button>
+          testBlocked ? (
+            <p className="w-full rounded-xl border border-line bg-raised px-4 py-3 text-[13.5px] leading-relaxed text-ink2">
+              No max test today — {testBlocked}. It comes back on a day you can test fresh.
+            </p>
+          ) : (
+            <button
+              onClick={() => {
+                onClose()
+                startWorkout({ source: 'test', stepId: step.id })
+              }}
+              className="inline-flex items-center gap-2 rounded-xl px-5 py-3 font-display text-[15px] font-semibold text-on-accent shadow-card transition hover:brightness-105"
+              style={{ background: 'var(--t-btn-accent)' }}
+            >
+              <Icon name="target" size={16} /> Take the max test
+            </button>
+          )
         ) : unlocked ? (
           <button
             onClick={() => {

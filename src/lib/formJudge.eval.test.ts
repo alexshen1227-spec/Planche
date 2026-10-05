@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { FormIssue } from '../types'
-import { judgeTrackedFrames, MATERIAL_TOLERANCE, POSE_PROFILES, SHRUG_MIN_RATIO } from './poseForm'
+import {
+  chooseSampleCount,
+  judgeTrackedFrames,
+  MATERIAL_TOLERANCE,
+  minimumBadSamplesFor,
+  POSE_PROFILES,
+  SHRUG_MIN_RATIO,
+} from './poseForm'
 import { REAL_POSES, realClip } from './realPoses.fixture'
 import { buildTruePose, IDEAL, PROPORTIONS, synthesizeClip, type SynthParams } from './poseSynth'
 
@@ -655,6 +662,142 @@ describe('a plank is not a pseudo planche plank', () => {
     for (const id of ['ppp-hold', 'planche-lean']) {
       const runs = across(id, { leanRatio: 0.42 })
       expect(`${id} ${rate(runs, (r) => r.issues.includes('lean'))}`).toBe(`${id} 0`)
+    }
+  })
+})
+
+/**
+ * Regressions from the 2026-10-05 audit. Each one is a case where the judge
+ * certified evidence it did not have: worse views, filled-in joints, a bend
+ * cancelled by the other arm's hyperextension, and breakdowns that fell
+ * between sparse samples on a long hold.
+ */
+describe('form judge — evidence it does not have cannot become a pass', () => {
+  it('stops verified time where the view turns front-on, instead of grading the whole clip', () => {
+    // Half the clip side-on, half far too wide to be side-on. The wide half
+    // used to count only toward a clip-majority vote it narrowly lost — and
+    // then got graded as if it were side-on: twelve clean seconds.
+    const clip = synthesizeClip({
+      ...IDEAL['full-planche'],
+      noise: 0,
+      frames: 36,
+      durationSec: 12,
+      bodyWidth: (p) => (p < 0.5 ? 0.16 : 0.65),
+    })
+    const verdict = judgeTrackedFrames(clip, 'full-planche')
+    expect(verdict.ok).toBe(true)
+    expect(verdict.cleanSeconds!).toBeLessThan(7)
+  })
+
+  it('does not let a slightly fainter far side turn a refused view into a clean one', () => {
+    // At far-side confidence 0.42 this clip is refused as not side-on. At 0.41
+    // the precise view measure disappears — and the clip used to pass, 100.
+    for (const farScore of [0.42, 0.41, 0.35]) {
+      const verdict = judgeTrackedFrames(
+        synthesizeClip({ ...IDEAL['full-planche'], noise: 0, frames: 36, durationSec: 12, bodyWidth: 0.65, farScore }),
+        'full-planche',
+      )
+      expect(verdict.ok).toBe(false)
+      expect(verdict.reason).toMatch(/side-on/)
+    }
+  })
+
+  it('does not fill joints across long gaps, so alternating misses on a sparse clip stay unseen', () => {
+    // One minute sampled 72 times: the elbows vanish on every other moment.
+    // Neighbours are 1.7s apart, too far to fill, so coverage is honest.
+    const frames = 72
+    const sparse = judgeTrackedFrames(
+      synthesizeClip({
+        ...IDEAL['full-planche'],
+        noise: 0,
+        frames,
+        durationSec: 60,
+        jointScores: { elbow: (p) => (Math.round(p * (frames - 1)) % 2 === 1 ? 0.05 : 0.9) },
+      }),
+      'full-planche',
+    )
+    expect(sparse.unseen).toContain('elbows')
+    // Control: the same isolated misses at the normal three-a-second spacing
+    // are bridged from neighbours a third of a second away and stay judged.
+    const dense = judgeTrackedFrames(
+      synthesizeClip({
+        ...IDEAL['full-planche'],
+        noise: 0,
+        frames: 36,
+        durationSec: 12,
+        jointScores: { elbow: (p) => (Math.round(p * 35) % 2 === 1 ? 0.05 : 0.9) },
+      }),
+      'full-planche',
+    )
+    expect(dense.ok).toBe(true)
+    expect(dense.unseen).not.toContain('elbows')
+  })
+
+  it('never lets one arm hyperextending cancel a resolved bend in the other', () => {
+    // 25° of bend averaged with 10° past lockout read as 7.5° — inside the
+    // deadband — and passed clean. A locked arm counts as locked, not as
+    // negative bend, once the other arm is clearly bent.
+    const nearBent = across('full-planche', {
+      elbowBendDeg: 25,
+      secondArm: { elbowBendDeg: -10 },
+      farScore: 0.85,
+      bodyWidth: 0.24,
+    })
+    expect(rate(nearBent, (r) => r.issues.includes('arms'))).toBe(1)
+    // With the bend on the far arm, the tracker resolves it only some of the
+    // time, and the readings split between two shapes. Naming it or leaving
+    // the elbows unjudged are both honest — unjudged elbows earn no credit.
+    // Measured: 9 of 10 seeds do one or the other. The tenth resolves the far
+    // arm in too few moments and reads the near arm's lockout — the same
+    // monocular blind spot as the flare below, documented rather than hidden;
+    // the athlete's own Clean confirmation is still required for credit.
+    const farBent = across('full-planche', {
+      elbowBendDeg: -10,
+      secondArm: { elbowBendDeg: 25 },
+      farScore: 0.85,
+      bodyWidth: 0.24,
+    })
+    expect(rate(farBent, (r) => r.issues.includes('arms') || r.unseen.includes('elbows'))).toBeGreaterThanOrEqual(0.9)
+    // Symmetric noise still cancels: two locked arms are not accused.
+    const locked = across('full-planche', { elbowBendDeg: -3, secondArm: { elbowBendDeg: -6 }, farScore: 0.85, bodyWidth: 0.24 })
+    expect(rate(locked, (r) => r.issues.includes('arms'))).toBe(0)
+  })
+
+  it('catches a two-second elbow break anywhere in a long hold, at every sampling phase', () => {
+    // The old 72-sample cap put moments 0.83s apart on a minute's hold, and a
+    // 1.5s bend landing on one or two of them could never be named. Now the
+    // spacing stays near two a second up to a minute, the persistence rule
+    // adapts to sparse spacing, and the spacing is disclosed when it matters.
+    for (const durationSec of [60, 120]) {
+      const frames = chooseSampleCount(durationSec)
+      const gap = durationSec / (frames - 1)
+      for (let phase = 0; phase < 10; phase++) {
+        const start = durationSec * 0.55 + (gap * phase) / 10
+        const verdict = judgeTrackedFrames(
+          synthesizeClip({
+            ...IDEAL['full-planche'],
+            noise: 0,
+            frames,
+            durationSec,
+            elbowBendDeg: (p) => {
+              const t = p * durationSec
+              return t >= start && t <= start + 2 ? 25 : -2
+            },
+          }),
+          'full-planche',
+        )
+        expect(verdict.ok).toBe(true)
+        // Verified time ends at the first sampled moment inside the break.
+        expect(verdict.cleanSeconds!).toBeLessThanOrEqual(start + gap + 0.05)
+      }
+      const plain = judgeTrackedFrames(
+        synthesizeClip({ ...IDEAL['full-planche'], noise: 0, frames, durationSec }),
+        'full-planche',
+      )
+      expect(plain.samplingGapSec).toBeCloseTo(gap, 2)
+      if (gap * minimumBadSamplesFor(gap) > 1.2) {
+        expect(plain.details.some((line) => /sampled about every/.test(line))).toBe(true)
+      }
     }
   })
 })

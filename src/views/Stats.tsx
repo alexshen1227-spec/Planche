@@ -24,6 +24,8 @@ import { Modal, SectionTitle, Stat } from '../components/ui'
 import { pushToast } from '../lib/toast'
 import type { TrainingSurface } from '../types'
 import { surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
+import { ASSIST_LABEL } from '../components/SetupRow'
+import { END_REASON_LABEL } from '../components/AttemptEnd'
 
 /**
  * Form over weeks, per position.
@@ -295,25 +297,35 @@ export function Stats() {
    */
   const chartEmptyHint = useMemo(() => {
     if (series.length >= 2) return undefined
+    // One qualified session is evidence that exists — it just is not a trend
+    // yet. Saying "none is form-qualified" beside it denied the athlete's
+    // own verified hold.
+    if (series.length === 1) {
+      const only = series[0]
+      return `One ${chartIsPlanche ? 'form-qualified ' : ''}session so far: ${fmtHold(only.value)} on ${fmtDate(
+        only.at,
+      )}. A trend needs a second one.`
+    }
     const logged = state.sessions.reduce(
-      (n, session) =>
-        n + session.sets.filter((set) => set.exerciseId === chartEx && set.value > 0).length,
+      (n, session) => n + session.sets.filter((set) => set.exerciseId === chartEx && set.value > 0).length,
       0,
     )
     if (logged === 0) return undefined
     if (!chartIsPlanche) return undefined
-    if (chartSurface !== 'all' && series.length === 0) {
+    if (chartSurface !== 'all') {
       return `No form-qualified ${surfaceLabel(chartSurface).toLowerCase()} sets yet. Try “All surfaces”, or film a set on this surface.`
     }
-    return `${logged} set${logged === 1 ? '' : 's'} of this hold logged, but none is form-qualified yet. This chart plots sets you rated Clean that also passed a filmed check — your records and totals still count everything.`
-  }, [series.length, state.sessions, chartEx, chartIsPlanche, chartSurface])
+    return `${logged} set${logged === 1 ? '' : 's'} of this hold logged, but none is form-qualified yet. This chart plots the credit that counts toward unlocking — sets you rated Clean that also passed a filmed check, up to the camera's clean window${
+      EXERCISE_BY_ID[chartEx]?.perSide ? ', and the weaker side when both were trained' : ''
+    }. Your records and totals still count everything.`
+  }, [series, state.sessions, chartEx, chartIsPlanche, chartSurface])
 
   const arms = useMemo(() => armStats(state), [state])
   const triedArms = useMemo(() => arms.filter((arm) => arm.attempts > 0).length, [arms])
   const measuredArms = useMemo(() => arms.filter((arm) => arm.n > 0).length, [arms])
   const coachPick = useMemo(() => buildPlan(state), [state])
   const bestArm = useMemo(() => [...arms].filter((a) => a.n > 0).sort((a, b) => b.mean - a.mean)[0], [arms])
-  const maxArmRate = useMemo(() => Math.max(0.001, ...arms.map((a) => Math.abs(a.secPerWeek))), [arms])
+  const maxArmRate = useMemo(() => Math.max(0.001, ...arms.map((a) => Math.abs(a.secPerWeek ?? 0))), [arms])
   const diag = useMemo(() => diagnose(state), [state])
   const links = useMemo(() => weakLinks(state), [state])
   const weightNow = useMemo(() => lastOf(state, 'weightKg'), [state])
@@ -419,7 +431,7 @@ export function Stats() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="font-display text-[16px] font-semibold text-ink">
-              {chartIsPlanche ? 'Form-qualified best per session' : 'Best hold per session'}
+              {chartIsPlanche ? 'Form-qualified credit per session' : 'Best hold per session'}
             </div>
             <div className="text-[13px] text-ink2">
               {EXERCISE_BY_ID[chartEx]?.name}
@@ -468,7 +480,12 @@ export function Stats() {
           </div>
         ) : null}
         <div className="mt-3">
-          <HoldLineChart points={series} goal={chartStep?.unlockSec} emptyHint={chartEmptyHint} />
+          <HoldLineChart
+            points={series}
+            goal={chartStep?.unlockSec}
+            emptyHint={chartEmptyHint}
+            label={chartIsPlanche ? 'Form-qualified credit per session' : 'Best hold per session'}
+          />
         </div>
       </div>
 
@@ -589,8 +606,9 @@ export function Stats() {
           <div>
             <div className="font-display text-[16px] font-semibold text-ink">What your coach has learned</div>
             <div className="max-w-xl text-[13px] leading-relaxed text-ink2">
-              It tries different ways of shaping your main sets, then measures how much your key hold actually moved by
-              the next session. The fastest approach gets used most, and untested ones get their turn.
+              It tries different ways of shaping your main sets, then looks at how your key hold moved in the sessions
+              after each. The approach with the best measured results gets used most, and untested ones get their turn —
+              these are observations from your log, not proof of what caused a gain.
             </div>
           </div>
           <span className="rounded-full bg-accent-soft px-3 py-1 text-[12.5px] font-semibold text-accent-text">
@@ -615,9 +633,14 @@ export function Stats() {
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-semibold text-ink">{def.name}</span>
-                    {isBest ? (
-                      <span className="rounded-full bg-ok-soft px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-ok-text">
-                        fastest
+                    {isBest && measuredArms > 1 ? (
+                      // "Leading", not "fastest": the ranking is the coach's
+                      // utility, and a lead inside the noise is not a speed.
+                      <span
+                        className="rounded-full bg-ok-soft px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-ok-text"
+                        title="Highest measured result so far — not proof it causes faster gains"
+                      >
+                        leading
                       </span>
                     ) : null}
                     {a.id === coachPick.strategy ? (
@@ -632,9 +655,13 @@ export function Stats() {
                 </div>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
                   <div
-                    className={`h-full rounded-full ${a.secPerWeek < 0 ? 'bg-danger/60' : isBest ? 'bg-ok' : 'bg-accent/60'}`}
+                    className={`h-full rounded-full ${
+                      (a.secPerWeek ?? 0) < 0 ? 'bg-danger/60' : isBest ? 'bg-ok' : 'bg-accent/60'
+                    }`}
                     style={{
-                      width: `${a.n === 0 ? 0 : Math.max(3, (Math.abs(a.secPerWeek) / maxArmRate) * 100)}%`,
+                      width: `${
+                        a.n === 0 || a.secPerWeek === null ? 0 : Math.max(3, (Math.abs(a.secPerWeek) / maxArmRate) * 100)
+                      }%`,
                     }}
                   />
                 </div>
@@ -830,10 +857,13 @@ export function Stats() {
         <div className="space-y-2">
           {sessions.map((s) => {
             const open = expanded === s.id
+            const panelId = `session-${s.id}`
             return (
               <div key={s.id} className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
                 <button
                   onClick={() => setExpanded(open ? null : s.id)}
+                  aria-expanded={open}
+                  aria-controls={panelId}
                   className="flex w-full items-center gap-3 p-4 text-left"
                 >
                   <div className="min-w-0 flex-1">
@@ -846,20 +876,35 @@ export function Stats() {
                     <div className="mt-0.5 text-[13px] text-ink2 tnum">
                       {s.sets.length} sets · {sessionHoldSec(s)}s held · {fmtClock(sessionDurationSec(s))}
                       {s.rpe ? ` · RPE ${s.rpe}` : ''}
+                      {s.completion === 'partial' ? (
+                        <span className="ml-1.5 rounded-full border border-line bg-raised px-2 py-0.5 text-[11px] font-medium text-ink3">
+                          finished early{s.plannedRounds ? ` · ${s.sets.length}/${s.plannedRounds}` : ''}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   <Icon name="chevronD" size={16} className={`shrink-0 text-ink3 transition ${open ? 'rotate-180' : ''}`} />
                 </button>
                 {open ? (
-                  <div className="border-t border-line px-4 pb-4 pt-3">
+                  <div id={panelId} className="border-t border-line px-4 pb-4 pt-3">
                     {s.notes ? <div className="mb-3 rounded-xl bg-raised p-3 text-[13.5px] italic text-ink2">“{s.notes}”</div> : null}
                     <div className="grid gap-1 sm:grid-cols-2">
                       {s.sets.map((set, i) => {
                         const ex = EXERCISE_BY_ID[set.exerciseId]
+                        const tags = [
+                          set.side ? (set.side === 'left' ? 'left' : 'right') : null,
+                          set.assist && set.assist !== 'none' ? ASSIST_LABEL[set.assist].toLowerCase() : null,
+                          set.timing?.method === 'edited' ? 'entered by hand' : null,
+                          set.timing?.method === 'interrupted' ? 'interrupted' : null,
+                          set.endReason ? END_REASON_LABEL[set.endReason].toLowerCase() : null,
+                        ].filter(Boolean)
                         return (
                           <div key={i} className="flex items-baseline justify-between gap-3 text-[13.5px]">
-                            <span className="text-ink2">{ex?.name ?? set.exerciseId}</span>
-                            <span className="text-ink tnum">
+                            <span className="min-w-0 text-ink2">
+                              {ex?.name ?? set.exerciseId}
+                              {tags.length ? <span className="ml-1.5 text-[11.5px] text-ink3">· {tags.join(' · ')}</span> : null}
+                            </span>
+                            <span className="shrink-0 text-ink tnum">
                               {set.kind === 'hold' ? fmtHold(set.value) : `${set.value} reps`}
                             </span>
                           </div>

@@ -33,9 +33,24 @@ export function Modal({
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
 
+  /**
+   * Where focus returns on close — captured while rendering the opening,
+   * before any child mounts. An effect runs too late: an autoFocus field inside
+   * the dialog has already taken focus by then (so it was "returned" to a
+   * field that no longer exists), and a trigger inside a container that turns
+   * inert with the dialog has already been blurred to <body>.
+   */
+  const returnFocusRef = useRef<HTMLElement | null>(null)
+  const wasOpenRef = useRef(false)
+  if (open && !wasOpenRef.current && typeof document !== 'undefined') {
+    const active = document.activeElement
+    returnFocusRef.current = active instanceof HTMLElement && active !== document.body ? active : null
+  }
+  wasOpenRef.current = open
+
   useEffect(() => {
     if (!open) return
-    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previouslyFocused = returnFocusRef.current
     const previousOverflow = document.body.style.overflow
     // Media elements are focus stops too. Without them the pinned YouTube
     // embed and the clip's own video controls were skipped by Tab, and a

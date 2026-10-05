@@ -115,7 +115,8 @@ describe('the coach finds what actually works', () => {
     // Only assert the wording when the evidence really does separate them.
     if ((stats[0].mean - stats[1].mean) * 20 >= 0.5) {
       const pick = pickStrategy(decided)
-      if (!pick.exploring) expect(pick.reason).toMatch(/fastest gains/)
+      // An observation, worded as one: "best measured result", never "fastest gains".
+      if (!pick.exploring) expect(pick.reason).toMatch(/best measured result/)
     }
     expect(stats[0].id).toBe('volume')
   })

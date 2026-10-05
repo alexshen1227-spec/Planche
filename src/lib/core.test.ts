@@ -797,9 +797,10 @@ describe('session debrief', () => {
 
 describe('keypoint dropout repair', () => {
   const kp = (name: string, x: number, y: number, score = 0.9) => ({ name, x, y, score })
+  // Three moments a second, the production spacing for ordinary holds.
   const frames = (...scores: (number | null)[]) =>
     scores.map((s, i) => ({
-      t: i,
+      t: i / 3,
       kps: s === null ? [] : [kp('left_shoulder', 100 + i * 10, 200 + i * 10, s)],
     }))
 
@@ -809,8 +810,34 @@ describe('keypoint dropout repair', () => {
     const filled = f[1].kps.find((k) => k.name === 'left_shoulder')!
     expect(filled.x).toBe(110)
     expect(filled.y).toBe(210)
-    // Reduced score so a bridged point cannot inflate tracking confidence.
+    // Reduced score so a bridged point cannot inflate tracking confidence,
+    // and marked, so it never counts as observed coverage.
     expect(filled.score).toBeLessThan(0.9)
+    expect(filled.origin).toBe('interpolated')
+  })
+
+  it('never fills a joint across a long gap', () => {
+    // Seen at 0s and 60s says nothing about 30s.
+    const f = [0, 30, 60].map((t, i) => ({
+      t,
+      kps: i === 1 ? [] : [kp('left_elbow', i * 50, 0, 0.9)],
+    }))
+    expect(bridgeKeypointGaps(f)).toBe(0)
+    expect(f[1].kps).toHaveLength(0)
+    // Nor across the 1.65s spacing of a sparsely sampled minute.
+    const sparse = [0, 0.83, 1.65].map((t, i) => ({ t, kps: i === 1 ? [] : [kp('left_elbow', 10, 10, 0.9)] }))
+    expect(bridgeKeypointGaps(sparse)).toBe(0)
+  })
+
+  it('does not fill a joint that was moving, only one that was holding still', () => {
+    const torsoPoints = (x: number) => [kp('left_shoulder', x, 100), kp('left_hip', x + 100, 100)]
+    const f = [
+      { t: 0, kps: [...torsoPoints(0), kp('left_wrist', 0, 200)] },
+      { t: 1 / 3, kps: torsoPoints(0) },
+      // The wrist travelled half a torso between neighbours: that is movement.
+      { t: 2 / 3, kps: [...torsoPoints(0), kp('left_wrist', 50, 200)] },
+    ]
+    expect(bridgeKeypointGaps(f)).toBe(0)
   })
 
   it('refuses to bridge two consecutive misses', () => {
@@ -1046,7 +1073,10 @@ describe('camera evaluator primitives', () => {
     expect(chooseSampleCount(5)).toBe(18)
     expect(chooseSampleCount(10)).toBe(30)
     expect(chooseSampleCount(20)).toBe(60)
-    expect(chooseSampleCount(40)).toBe(72)
+    // Three a second up to the cap, so a minute's hold is not sampled sparsely
+    // enough for a short breakdown to fall between moments.
+    expect(chooseSampleCount(40)).toBe(120)
+    expect(chooseSampleCount(60)).toBe(120)
     expect(chooseSampleCount(40, 12)).toBe(12)
   })
 
@@ -1711,6 +1741,10 @@ describe('coach learning', () => {
         startedAt: yesterday,
         endedAt: yesterday + 30 * 60_000,
         workoutName: 'Training Day',
+        // An ordinary coached day. The helper's default kind is a max test,
+        // which is (correctly) maximal effort however short — and would make
+        // today a skill day for an unrelated reason.
+        workoutKind: 'auto',
         strategy: 'balanced',
       },
     )

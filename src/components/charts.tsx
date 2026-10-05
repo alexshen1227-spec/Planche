@@ -55,6 +55,7 @@ export function HoldLineChart({
   goal,
   height = 200,
   emptyHint,
+  label = 'Best hold per session',
 }: {
   points: { at: number; value: number }[]
   goal?: number
@@ -65,6 +66,8 @@ export function HoldLineChart({
    * logged sessions to log some sessions reads as the app being broken.
    */
   emptyHint?: string
+  /** What one point is, for the accessible summary — it must name the same quantity as the heading. */
+  label?: string
 }) {
   const { ref, width } = useWidth<HTMLDivElement>()
   const [tip, setTip] = useState<TipState | null>(null)
@@ -120,7 +123,7 @@ export function HoldLineChart({
   // Read out for anyone who cannot see the line. Tooltips here are mouse-only,
   // so on a phone — this app's main device — the summary is the only way to
   // get the numbers out of the chart at all.
-  const summary = `Best hold per session. ${points.length} points from ${fmtShortDay(t0)} to ${fmtShortDay(
+  const summary = `${label}. ${points.length} points from ${fmtShortDay(t0)} to ${fmtShortDay(
     t1,
   )}, ${fmtHold(points[0].value)} to ${fmtHold(last.value)}${
     goal ? `, against a ${fmtHold(goal)} goal` : ''

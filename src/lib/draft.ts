@@ -32,9 +32,15 @@ export interface SessionDraft {
   restEndsAt: number | null
   /** Stable phases that can be resumed exactly. Older v1 drafts omit this. */
   phase?: 'ready' | 'rest' | 'summary'
-  /** A backgrounded hold awaiting the athlete's log-or-redo decision. */
+  /** A backgrounded hold awaiting the athlete's log-or-redo decision (credited seconds). */
   interrupted?: number
+  /** The stopwatch reading behind `interrupted`, so the raw observation survives a reload. */
+  interruptedRaw?: number
   interruptedAt?: { bi: number; si: number }
+  /** When training actually ended (the summary opened). Review time after it is not training. */
+  endedAt?: number
+  /** The athlete chose to finish before the plan was complete. */
+  finishedEarly?: boolean
   restTotal?: number
   checkIn?: CheckIn
   /** Per-set stop setup carried to the next hold. */

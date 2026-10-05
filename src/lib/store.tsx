@@ -1052,6 +1052,8 @@ export type Action =
       setAt: number
       form: FormCheck
     }
+  /** A clip that finished saving after its session did. Evidence-neutral: no replay needed. */
+  | { type: 'ATTACH_SET_CLIP'; sessionId: string; setAt: number; clipKey: string }
   | { type: 'SET_SETUP'; exerciseId: string; setup: Omit<ExerciseSetup, 'updatedAt'> | null }
   | { type: 'MERGE_EXTERNAL'; incoming: AppState }
   /** Wholesale replacement: a mirror restore, sample data, or an unguarded legacy caller. */
@@ -1349,6 +1351,19 @@ function reduceAction(state: AppState, action: Action): AppState {
       if (!found) return state
       // Unlocks and badges depend on form evidence, so history is replayed.
       return rebuildDerivedState({ ...state, sessions }, sessions)
+    }
+    case 'ATTACH_SET_CLIP': {
+      let found = false
+      const sessions = state.sessions.map((s) => {
+        if (s.id !== action.sessionId) return s
+        const sets = s.sets.map((set) => {
+          if (set.at !== action.setAt || set.clipKey === action.clipKey) return set
+          found = true
+          return { ...set, clipKey: action.clipKey }
+        })
+        return found ? { ...s, sets, updatedAt: Date.now() } : s
+      })
+      return found ? { ...state, sessions } : state
     }
     case 'SET_SETUP': {
       const setups = { ...(state.setups ?? {}) }

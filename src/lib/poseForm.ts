@@ -3,6 +3,7 @@ import {
   apparentBodyWidthRatio,
   getBackend,
   MAX_SIDE_VIEW_RATIO,
+  retireBackend,
   trackingScore,
   type BackendId,
   type Kp,
@@ -10,6 +11,19 @@ import {
 } from './poseBackend'
 
 export { poseModelReady, warmDetector } from './poseBackend'
+
+/**
+ * Version of the verdict rules, stored on every camera reading.
+ *
+ * Bumped whenever a change can alter a verdict on the *same* detections, so a
+ * stored result always says which rules produced it. Readings saved before
+ * this existed carry none and are treated as version 1.
+ *
+ * 2 - per-moment side-view gate, observed-only coverage, bounded gap filling,
+ *     decode misses as missing evidence, a resolved bend is not cancelled by
+ *     the other arm's hyperextension, density-aware persistence.
+ */
+export const JUDGE_VERSION = 2
 
 /**
  * Automatic form analysis from a recorded clip.
@@ -33,6 +47,13 @@ export interface PoseFormResult {
   framesUsed: number
   /** Moments requested across the hold; `framesUsed` is the usable subset. */
   framesSampled?: number
+  /** Which detector weights produced this reading. */
+  model?: string
+  /**
+   * Widest gap between requested moments. A loss of position shorter than a
+   * couple of these can fall between samples, so long holds disclose it.
+   */
+  samplingGapSec?: number
   /**
    * Overall form score, 0–100, aggregated with FIG-style deduction bands over
    * the criteria that were actually judged. Advisory and explainable — the
@@ -230,6 +251,10 @@ export interface SideViewLegReading {
   hipAngle?: number
   /** Hip-to-ankle distance divided by torso length. */
   extension?: number
+  /** The knee angle rests only on observed points (hip, knee, ankle). */
+  kneeObserved?: boolean
+  /** The hip angle rests only on observed points (shoulder, hip, knee). */
+  hipObserved?: boolean
 }
 
 /**
@@ -985,6 +1010,11 @@ const BRIDGEABLE = [
   'left_knee', 'right_knee', 'left_ankle', 'right_ankle', 'left_ear', 'right_ear',
 ]
 
+/** Longest span (seconds, neighbour to neighbour) a missing joint may be filled across. */
+export const MAX_BRIDGE_SPAN_SEC = 1.25
+/** Farther than this (in torso lengths) between neighbours is movement, not a static hold. */
+const MAX_BRIDGE_TRAVEL = 0.35
+
 /**
  * Fill single-frame keypoint dropouts by interpolating between the samples
  * either side. During a hold the body is close to static between samples, so a
@@ -992,6 +1022,11 @@ const BRIDGEABLE = [
  * miss rather than movement. Only isolated gaps are bridged — two consecutive
  * misses are treated as genuinely not visible, and the interpolated point
  * carries a reduced score so it never props up the confidence average.
+ *
+ * Bounded in time and motion: a joint seen at 0s and 60s says nothing about
+ * 30s, and one that moved a third of a torso between its neighbours was
+ * moving. Filled points are marked `interpolated` — they keep the replay
+ * continuous but never count as observed coverage.
  *
  * Exported for tests: silently inventing keypoints would be a bad bug, so the
  * boundaries of what this will and will not fabricate are pinned down.
@@ -1009,7 +1044,12 @@ export function bridgeKeypointGaps(frames: { t: number; kps: Kp[] }[]): number {
       const after = good(frames[i + 1].kps, name)
       if (!before || !after) continue
       const span = frames[i + 1].t - frames[i - 1].t
-      const w = span > 0 ? (frames[i].t - frames[i - 1].t) / span : 0.5
+      if (!Number.isFinite(span) || span <= 0 || span > MAX_BRIDGE_SPAN_SEC) continue
+      const scale = median(
+        [torsoScale(frames[i - 1].kps), torsoScale(frames[i + 1].kps)].filter((v): v is number => v !== undefined),
+      )
+      if (scale !== undefined && Math.hypot(after.x - before.x, after.y - before.y) / scale > MAX_BRIDGE_TRAVEL) continue
+      const w = (frames[i].t - frames[i - 1].t) / span
       const score = Math.min(before.score ?? 0, after.score ?? 0) * 0.9
       if (score < MIN_KP_SCORE) continue
       const filled: Kp = {
@@ -1017,6 +1057,7 @@ export function bridgeKeypointGaps(frames: { t: number; kps: Kp[] }[]): number {
         x: before.x + (after.x - before.x) * w,
         y: before.y + (after.y - before.y) * w,
         score,
+        origin: 'interpolated',
       }
       const at = frames[i].kps.findIndex((p) => p.name === name)
       if (at >= 0) frames[i].kps[at] = filled
@@ -1096,6 +1137,7 @@ export function stabilizeKeypointSpikes(
         x: expectedX,
         y: expectedY,
         score: Math.min(point.score ?? 0, before.score ?? 0, after.score ?? 0) * 0.9,
+        origin: 'repaired',
       }
       const at = frames[i].kps.findIndex((candidate) => candidate.name === name)
       if (at >= 0) frames[i].kps[at] = replacement
@@ -1219,18 +1261,48 @@ export function unrotateKeypoints<T extends { x: number; y: number }>(
   )
 }
 
-function seekTo(video: HTMLVideoElement, t: number): Promise<void> {
+/** How long one seek may take to deliver a decoded frame before that moment counts as unread. */
+const SEEK_DEADLINE_MS = 1500
+
+/**
+ * Move to a moment and wait for a *decoded frame* there.
+ *
+ * The old version resolved on 'seeked' or after 600 ms, without saying which —
+ * so a seek that never completed was inferred on whatever pixels were still on
+ * screen and labelled with the requested time. A deadline is not evidence of
+ * a frame: a timed-out moment is now reported as unread and carries no pose.
+ */
+function seekTo(video: HTMLVideoElement, t: number): Promise<'ok' | 'timeout'> {
   return new Promise((resolve) => {
     let done = false
-    const finish = () => {
+    let timer: number | undefined
+    const onData = () => {
+      if (video.readyState >= 2) finish('ok')
+    }
+    // 'seeked' says the position moved; HAVE_CURRENT_DATA says a frame for it exists.
+    const onSeeked = () => {
+      if (video.readyState >= 2) finish('ok')
+      else {
+        video.addEventListener('loadeddata', onData)
+        video.addEventListener('canplay', onData)
+      }
+    }
+    const finish = (outcome: 'ok' | 'timeout') => {
       if (done) return
       done = true
-      video.removeEventListener('seeked', finish)
-      resolve()
+      video.removeEventListener('seeked', onSeeked)
+      video.removeEventListener('loadeddata', onData)
+      video.removeEventListener('canplay', onData)
+      window.clearTimeout(timer)
+      resolve(outcome)
     }
-    video.addEventListener('seeked', finish)
-    video.currentTime = t
-    window.setTimeout(finish, 600)
+    video.addEventListener('seeked', onSeeked)
+    timer = window.setTimeout(() => finish('timeout'), SEEK_DEADLINE_MS)
+    try {
+      video.currentTime = t
+    } catch {
+      finish('timeout')
+    }
   })
 }
 
@@ -1243,13 +1315,40 @@ export function emptyResult(reason?: string): PoseFormResult {
  * Dense enough to observe a short loss of position, bounded so a long
  * foundations hold does not leave a phone running inference indefinitely.
  * Explicit sample counts remain exact for tests and diagnostic re-runs.
+ *
+ * Three moments a second up to 40 seconds. The old cap of 72 stretched the
+ * spacing past 0.8s on a one-minute hold, where a 1.5s bend landed on one or
+ * two samples and could never meet the persistence rule — so the camera
+ * certified time it could not have seen fail. Beyond the cap the spacing is
+ * disclosed with the verdict instead of hidden.
  */
+export const MAX_SAMPLES = 120
 export function chooseSampleCount(holdWindowSec: number, requested?: number): number {
   if (requested !== undefined && Number.isFinite(requested)) {
-    return Math.max(1, Math.min(120, Math.round(requested)))
+    return Math.max(1, Math.min(MAX_SAMPLES, Math.round(requested)))
   }
   const seconds = Math.max(0, holdWindowSec)
-  return Math.round(Math.min(72, Math.max(18, seconds * 3)))
+  return Math.round(Math.min(MAX_SAMPLES, Math.max(18, seconds * 3)))
+}
+
+/**
+ * Bad samples needed before a breakdown counts, at a given spacing.
+ *
+ * The persistence rule is "roughly a second": three samples at the normal
+ * three-a-second spacing. At sparse spacing three samples would demand two
+ * whole gaps of persistence — far more than a second — so two suffice once the
+ * spacing alone exceeds the minimum duration.
+ */
+export function minimumBadSamplesFor(samplingGapSec: number): number {
+  return samplingGapSec >= 0.75 ? 2 : 3
+}
+
+/** Widest step between consecutive requested moments inside a window. */
+export function widestSamplingGap(times: number[], until = Infinity): number {
+  const inside = times.filter((t) => Number.isFinite(t) && t <= until + 0.05).sort((a, b) => a - b)
+  let widest = 0
+  for (let i = 1; i < inside.length; i++) widest = Math.max(widest, inside[i] - inside[i - 1])
+  return widest
 }
 
 /**
@@ -1273,7 +1372,11 @@ export interface JudgeInput {
   /** Length of the window that was sampled. */
   holdWindow: number
   backendId?: BackendId
+  /** Exact detector weights, when known. */
+  model?: string
   rotation?: Rotation
+  /** Requested moments whose frame could not be decoded; they carry no pose. */
+  decodeMisses?: number
 }
 
 /**
@@ -1341,6 +1444,14 @@ export function judgeTrackedFrames(
   const leanSeries: { t: number; v: number }[] = []
   let orientationFrames = 0
   let nonSideFrames = 0
+  /** Moments whose side-on view could not be checked either way. */
+  let viewUnknownFrames = 0
+  /**
+   * Which of each moment's measurements rest only on observed points. Filled
+   * and repaired points keep the replay continuous, but coverage — whether a
+   * criterion is graded at all — counts only what the camera actually saw.
+   */
+  const frameObserved = new Map<number, Partial<Record<ReadingMetric, boolean>>>()
   let trackedSide: 'left' | 'right' | null = null
   let prevAnchor: { sx: number; sy: number; hx: number; hy: number; torso: number; t: number } | null = null
 
@@ -1360,7 +1471,7 @@ export function judgeTrackedFrames(
   // a single sample and returns in the next has not moved — the model simply
   // lost it — and dropping the whole frame over it was throwing away good
   // evidence and leaving verdicts resting on a handful of samples.
-  bridgeKeypointGaps(tracked)
+  const bridgedJoints = bridgeKeypointGaps(tracked)
   const keypointStats = stabilizeKeypointSpikes(tracked)
   trackedSide = pickStableSide(tracked)
   const collisionStats = trackedSide
@@ -1385,11 +1496,24 @@ export function judgeTrackedFrames(
         }
       : undefined
 
+  const isObserved = (...points: (Kp | undefined)[]) => points.every((point) => point !== undefined && !point.origin)
   for (const { t, kps } of tracked) {
-    const bodyWidth = apparentBodyWidthRatio(kps, MIN_PRECISE_KP_SCORE)
+    // The side-view gate, per moment. A moment whose bilateral span is too
+    // wide is measured no further: it used to count only toward a whole-clip
+    // majority, so a clip that turned front-on halfway was graded as if it
+    // were side-on throughout. A far side too faint for the precise gate is
+    // checked again at the bar that says a joint exists at all — a weaker
+    // prerequisite must not turn a refusal into a pass.
+    const bodyWidth =
+      apparentBodyWidthRatio(kps, MIN_PRECISE_KP_SCORE) ?? apparentBodyWidthRatio(kps, MIN_KP_SCORE)
     if (bodyWidth !== undefined) {
       orientationFrames++
-      if (bodyWidth > MAX_SIDE_VIEW_RATIO) nonSideFrames++
+      if (bodyWidth > MAX_SIDE_VIEW_RATIO) {
+        nonSideFrames++
+        continue
+      }
+    } else {
+      viewUnknownFrames++
     }
     // Keep anatomical identity stable through the clip. Switching to
     // whichever side scores higher on each frame creates fake angle jumps.
@@ -1432,9 +1556,13 @@ export function judgeTrackedFrames(
     // biases toward "bent" and manufactures exactly the confident false warning
     // that made the far arm untrustworthy in the first place.
     const armBends: number[] = []
+    let armObserved = false
     if (preciseShoulder && preciseElbow && preciseWrist && preciseHip) {
       const near = signedElbowBend(preciseShoulder, preciseElbow, preciseWrist, preciseHip, torso)
-      if (near !== undefined) armBends.push(near)
+      if (near !== undefined) {
+        armBends.push(near)
+        armObserved = isObserved(preciseShoulder, preciseElbow, preciseWrist, preciseHip)
+      }
     }
     if (armBends.length && sidesAreVisiblySeparate(kps, side, farSide, ['elbow', 'wrist'], torso)) {
       const farShoulder = byName(kps, `${farSide}_shoulder`, MIN_FAR_KP_SCORE)
@@ -1454,7 +1582,22 @@ export function judgeTrackedFrames(
       // toward-hips error survives as a bend. On an exactly straight arm that
       // bias was enough to manufacture a red fault in roughly 8% of noisy
       // clips. Athlete-facing output is still clamped to 180 below.
-      const angle = 180 - armBends.reduce((a, b) => a + b, 0) / armBends.length
+      //
+      // One exception, for two arms only: when one arm reads a bend beyond
+      // the measured deadband and the other reads past lockout, the two are
+      // not noisy looks at one lockout — and a hyperextended arm cannot
+      // numerically cancel a resolved bend in the other. That arm counts as
+      // locked (0) instead of negative. Readings inside the deadband are
+      // still averaged as-is, so symmetric noise keeps cancelling.
+      const [first, second] = armBends
+      const resolvedBendAgainstExtension =
+        armBends.length === 2 &&
+        Math.max(first, second) > MATERIAL_TOLERANCE.elbowDeg &&
+        Math.min(first, second) < 0
+      const combined = resolvedBendAgainstExtension
+        ? (Math.max(first, 0) + Math.max(second, 0)) / 2
+        : armBends.reduce((a, b) => a + b, 0) / armBends.length
+      const angle = 180 - combined
       push(elbows, angle)
       frameElbowDeg = angle
       elbowSeries.push({ t, v: angle })
@@ -1479,7 +1622,15 @@ export function judgeTrackedFrames(
       const knee = h && k && a ? reliableJointAngle(h, k, a, torso) : undefined
       const hipAngle = sh && h && k ? reliableJointAngle(sh, h, k, torso) : undefined
       const extension = h && a ? Math.hypot(h.x - a.x, h.y - a.y) / torso : undefined
-      if (knee !== undefined || hipAngle !== undefined) legReadings.push({ knee, hipAngle, extension })
+      if (knee !== undefined || hipAngle !== undefined) {
+        legReadings.push({
+          knee,
+          hipAngle,
+          extension,
+          kneeObserved: isObserved(h, k, a),
+          hipObserved: isObserved(sh, h, k),
+        })
+      }
     }
     const selectedLeg = selectSideViewLeg(legReadings, profile.oneLeg)
     const frameKneeDeg = selectedLeg?.knee
@@ -1539,6 +1690,14 @@ export function judgeTrackedFrames(
       : undefined
     if (frameShrugRatio !== undefined) push(shrugs, frameShrugRatio)
 
+    frameObserved.set(t, {
+      elbowDeg: frameElbowDeg !== undefined && armObserved,
+      kneeDeg: frameKneeDeg !== undefined && selectedLeg?.kneeObserved === true,
+      hipAngleDeg: frameHipAngleDeg !== undefined && selectedLeg?.hipObserved === true,
+      hipOffset: frameHipOffset !== undefined && isObserved(preciseShoulder, preciseHip),
+      leanRatio: frameLeanRatio !== undefined && isObserved(preciseShoulder, preciseWrist, preciseHip),
+      shrugRatio: frameShrugRatio !== undefined && isObserved(preciseEar, preciseShoulder),
+    })
     frameReadings.push({
       t,
       elbowDeg: frameElbowDeg,
@@ -1605,19 +1764,9 @@ export function judgeTrackedFrames(
   }
 
   const framesUsed = confidences.length
-  if (framesUsed < MIN_FRAMES) {
-    // Name what the camera actually found. "Could not track your body" gave
-    // no clue whether the fix was moving the phone, turning it, or the light.
-    const seen = [...regionsSeen]
-    const reason =
-      posesSeen === 0
-        ? 'No body was found in this clip at all. Move the phone back until your whole body — hands to feet — fits in the frame, and film from the side.'
-        : seen.length
-          ? `Only your ${listPhrase(seen)} stayed in frame. Move the phone further back and turn it on its side so the whole body fits end to end.`
-          : 'Could not track your body reliably. Film side-on, whole body in frame, with the light in front of you rather than behind.'
-    return { ...empty, framesUsed, framesSampled: n, reason, track }
-  }
-
+  // Checked first: front-on moments are no longer measured at all, so a
+  // front-on clip would otherwise surface as "not enough of you in frame" —
+  // true, but it sends the athlete to fix distance instead of the angle.
   if (
     orientationFrames >= MIN_FRAMES &&
     nonSideFrames / orientationFrames > 0.5
@@ -1630,6 +1779,18 @@ export function judgeTrackedFrames(
       reason:
         'This clip is not fully side-on. Elbow, hip and lean angles are foreshortened from the front or a strong three-quarter view — put the phone directly beside you and retry.',
     }
+  }
+  if (framesUsed < MIN_FRAMES) {
+    // Name what the camera actually found. "Could not track your body" gave
+    // no clue whether the fix was moving the phone, turning it, or the light.
+    const seen = [...regionsSeen]
+    const reason =
+      posesSeen === 0
+        ? 'No body was found in this clip at all. Move the phone back until your whole body — hands to feet — fits in the frame, and film from the side.'
+        : seen.length
+          ? `Only your ${listPhrase(seen)} stayed in frame. Move the phone further back and turn it on its side so the whole body fits end to end.`
+          : 'Could not track your body reliably. Film side-on, whole body in frame, with the light in front of you rather than behind.'
+    return { ...empty, framesUsed, framesSampled: n, reason, track }
   }
 
   const confidence = confidences.reduce((a, b) => a + b, 0) / framesUsed
@@ -1653,6 +1814,14 @@ export function judgeTrackedFrames(
   // failing the whole clip: a knee out of frame should cost you the knee
   // verdict, not the elbow, hip and lean verdicts alongside it. What stays
   // non-negotiable is that thin coverage never reads as a silent pass.
+  // Persistence is "roughly a second" in time, not a fixed number of samples:
+  // at sparse spacing three samples would demand far longer than a second.
+  const creditedWindow =
+    creditedHoldSec !== undefined && Number.isFinite(creditedHoldSec) && creditedHoldSec > 0
+      ? Math.min(duration, creditedHoldSec)
+      : duration
+  const samplingGapSec = widestSamplingGap(times, creditedWindow)
+  const minBadSamples = minimumBadSamplesFor(samplingGapSec)
   const wholeClipElbow = sustainedTypical(elbows)
   const elbowIqr = interquartileSpread(elbows)
   const strongElbowRun =
@@ -1666,6 +1835,7 @@ export function judgeTrackedFrames(
             ? (['arms'] as FormIssue[])
             : [],
       })),
+      minBadSamples,
     ).includes('arms')
   // A borderline bent-looking centre plus a wide signed-angle spread is not a
   // trustworthy accusation. This is the exact failure shape produced when a
@@ -1681,17 +1851,35 @@ export function judgeTrackedFrames(
     elbowIqr > MAX_STABLE_ELBOW_IQR_DEG &&
     !strongElbowRun
 
+  // Coverage may lean on filled-in points only while they are the minority.
+  // An isolated dropout bridged from neighbours a third of a second either
+  // side is good evidence — the robustness evals depend on it — but a
+  // criterion resting mostly on filled points is continuity for the replay,
+  // not observation, and then only what the camera actually saw counts.
+  const observedCount = (key: ReadingMetric) => {
+    const present = frameReadings.filter((frame) => frame[key] !== undefined)
+    const observed = present.filter((frame) => frameObserved.get(frame.t)?.[key] === true).length
+    return present.length - observed > observed ? observed : present.length
+  }
   const { judged, unseen } = gradeCoverage(
     profile,
     {
-      elbows: elbowTrackingUncertain ? 0 : elbows.length,
-      knees: knees.length,
-      hipAngles: hipAngles.length,
-      hipOffsets: hipOffsets.length,
-      leans: leans.length,
-      shrugs: shrugs.length,
+      elbows: elbowTrackingUncertain ? 0 : observedCount('elbowDeg'),
+      knees: observedCount('kneeDeg'),
+      hipAngles: observedCount('hipAngleDeg'),
+      hipOffsets: observedCount('hipOffset'),
+      leans: observedCount('leanRatio'),
+      shrugs: observedCount('shrugRatio'),
     },
     framesUsed,
+  )
+  const filledReadings = frameReadings.reduce(
+    (total, frame) =>
+      total +
+      (['elbowDeg', 'kneeDeg', 'hipAngleDeg', 'hipOffset', 'leanRatio', 'shrugRatio'] as ReadingMetric[]).filter(
+        (key) => frame[key] !== undefined && frameObserved.get(frame.t)?.[key] !== true,
+      ).length,
+    0,
   )
 
   // Only a total blackout is unjudgeable. With nothing graded there is no
@@ -1728,7 +1916,7 @@ export function judgeTrackedFrames(
   // clean-time number is rounded to a tenth for display; using that rounded
   // value as a cutoff could round the first bad frame back into the supposedly
   // clean window and let one criterion manufacture a fault in another.
-  const cleanCutoffSeconds = sustainedBreakdownStart(observableEnvelope, creditedSeconds)
+  const cleanCutoffSeconds = sustainedBreakdownStart(observableEnvelope, creditedSeconds, minBadSamples)
   const cleanSeconds = Math.round(cleanCutoffSeconds * 10) / 10
   const cleanRatio = creditedSeconds > 0 ? Math.min(1, cleanSeconds / creditedSeconds) : 0
   const sustainedFaults = new Set(
@@ -1746,6 +1934,7 @@ export function judgeTrackedFrames(
               )
             : [],
         })),
+      minBadSamples,
     ),
   )
 
@@ -2114,6 +2303,33 @@ export function judgeTrackedFrames(
       `Graded on the ${verdictFrames.length} frames of the hold itself; the last ${exitFramesDropped} (coming out of the position) were left out.`,
     )
   }
+  if (nonSideFrames > 0) {
+    details.push(
+      `${nonSideFrames} ${nonSideFrames === 1 ? 'moment was' : 'moments were'} not side-on enough to measure and counted as unverified, not as clean.`,
+    )
+  }
+  if (viewUnknownFrames > framesUsed / 2) {
+    details.push('For most of the clip the camera could not confirm the side-on view either way; the verdict assumes it from the near side alone.')
+  }
+  if (input.decodeMisses) {
+    details.push(
+      `${input.decodeMisses} sampled ${input.decodeMisses === 1 ? 'moment' : 'moments'} could not be decoded on this device and counted as unverified.`,
+    )
+  }
+  if (bridgedJoints > 0) {
+    details.push(
+      `Filled ${bridgedJoints} brief joint ${bridgedJoints === 1 ? 'dropout' : 'dropouts'} from the moments either side for the replay; ${
+        filledReadings > 0 ? 'measurements resting on them did not count toward coverage' : 'none changed what was measured'
+      }.`,
+    )
+  }
+  if (samplingGapSec * minBadSamples > 1.2) {
+    details.push(
+      `Moments were sampled about every ${samplingGapSec.toFixed(1)}s across this long hold, so a loss of position shorter than about ${(
+        samplingGapSec * minBadSamples
+      ).toFixed(1)}s could fall between them.`,
+    )
+  }
   details.push('Scapular protraction is not measured by this camera check — confirm it yourself.')
   details.push(
     `Tracked with ${backend.id === 'mediapipe' ? 'BlazePose (MediaPipe)' : 'MoveNet'}${
@@ -2154,6 +2370,8 @@ export function judgeTrackedFrames(
     confidence,
     framesUsed,
     framesSampled: n,
+    ...(input.model ? { model: input.model } : {}),
+    samplingGapSec: Math.round(samplingGapSec * 1000) / 1000,
     ...(scored ? { score: scored.score, subscores: scored.subscores } : {}),
     ...(fix ? { fixFirst: fix } : {}),
     ...(options.explain
@@ -2291,17 +2509,21 @@ async function analyseClipNow(
       return unrotateKeypoints(found, candidate, srcW, srcH)
     }
 
+    /** Best rotation for a backend, or null when no probe frame could be decoded. */
     const probeBackend = async (backend: PoseBackend) => {
       const totals = new Map<Rotation, number>()
+      let decoded = 0
       for (const t of probes) {
-        await seekTo(video, t)
+        if ((await seekTo(video, t)) !== 'ok') continue
+        decoded++
         for (const candidate of [0, 90, 270] as Rotation[]) {
           totals.set(candidate, (totals.get(candidate) ?? 0) + trackingScore(await detectAt(backend, candidate)))
         }
       }
+      if (!decoded) return null
       let best: { rotation: Rotation; score: number } = { rotation: 0, score: -1 }
       for (const [candidate, total] of totals) {
-        const score = total / Math.max(1, probes.length)
+        const score = total / decoded
         // Ties keep the unrotated frame: rotating is only worth it when it
         // measurably helps.
         if (score > best.score + 1e-6) best = { rotation: candidate, score }
@@ -2309,46 +2531,104 @@ async function analyseClipNow(
       return best
     }
 
-    let backend = await getBackend('mediapipe').catch(() => getBackend('movenet'))
-    let best = await probeBackend(backend)
-    // Only pay for the second model when the first one struggled — each is a
-    // multi-megabyte download, and on good footage the first is already right.
-    if (best.score < 0.55 && backend.id === 'mediapipe') {
-      const alt = await getBackend('movenet').catch(() => null)
-      if (alt) {
-        const altBest = await probeBackend(alt)
-        if (altBest.score > best.score) {
-          backend = alt
-          best = altBest
+    // A detector that loaded fine can still fail on every call — a lost WebGL
+    // context is the classic case — and the cached instance used to be reused
+    // forever. A runtime failure retires that instance and the clip is tried
+    // once more on the other model; a second failure says so plainly.
+    const runtimeFailed = new Set<BackendId>()
+    const loadErrors: unknown[] = []
+    const noteRuntimeFailure = (backend: PoseBackend) => {
+      runtimeFailed.add(backend.id)
+      retireBackend(backend.id, backend)
+    }
+    const runtimeRefusal: ClipAnalysis = {
+      result: {
+        ...empty,
+        reason:
+          'The form checker hit a device error and was reset. Run the check again — if it keeps failing, close and reopen the app.',
+      },
+    }
+
+    for (let pass = 0; pass < 2; pass++) {
+      let chosen: { backend: PoseBackend; rotation: Rotation; score: number } | null = null
+      for (const id of ['mediapipe', 'movenet'] as BackendId[]) {
+        if (runtimeFailed.has(id)) continue
+        // Only pay for the second model when the first one struggled — each is
+        // a multi-megabyte download, and on good footage the first is right.
+        if (chosen && chosen.score >= 0.55) break
+        const backend = await getBackend(id).catch((err: unknown) => {
+          loadErrors.push(err)
+          return null
+        })
+        if (!backend) continue
+        let probed: { rotation: Rotation; score: number } | null
+        try {
+          probed = await probeBackend(backend)
+        } catch {
+          noteRuntimeFailure(backend)
+          continue
+        }
+        if (!probed) {
+          return {
+            result: {
+              ...empty,
+              reason:
+                'This device could not decode frames from that clip, so nothing was judged. Your set is saved either way — try the check again.',
+            },
+          }
+        }
+        if (!chosen || probed.score > chosen.score) chosen = { backend, ...probed }
+      }
+      if (!chosen) {
+        if (runtimeFailed.size) return runtimeRefusal
+        throw loadErrors[0] instanceof Error ? loadErrors[0] : new Error('The pose model failed to load.')
+      }
+
+      // Pass one: capture what the model saw, frame by frame. Measuring happens
+      // in judgeTrackedFrames so single-frame dropouts can be repaired first —
+      // and so the entire verdict stays a pure function of these detections.
+      const tracked: { t: number; kps: Kp[] }[] = []
+      let decodeMisses = 0
+      try {
+        for (const t of times) {
+          if ((await seekTo(video, t)) !== 'ok') {
+            decodeMisses++
+            continue
+          }
+          const kps = await detectAt(chosen.backend, chosen.rotation)
+          if (kps.length) tracked.push({ t, kps })
+        }
+      } catch {
+        noteRuntimeFailure(chosen.backend)
+        continue
+      }
+      if (decodeMisses > Math.max(4, Math.round(times.length * 0.4))) {
+        return {
+          result: {
+            ...empty,
+            reason: `This device could not decode enough of the clip to judge it (${decodeMisses} of ${times.length} moments could not be read). Your set is saved either way — try the check again.`,
+          },
         }
       }
-    }
-    const rotation = best.rotation
 
-    // Pass one: capture what the model saw, frame by frame. Measuring happens
-    // in judgeTrackedFrames so single-frame dropouts can be repaired first —
-    // and so the entire verdict stays a pure function of these detections.
-    const tracked: { t: number; kps: Kp[] }[] = []
-    for (const t of times) {
-      await seekTo(video, t)
-      const kps = await detectAt(backend, rotation)
-      if (kps.length) tracked.push({ t, kps })
+      const poses: JudgeInput = {
+        tracked,
+        times,
+        width: srcW,
+        height: srcH,
+        duration,
+        creditedHoldSec,
+        from,
+        to,
+        holdWindow,
+        backendId: chosen.backend.id,
+        model: chosen.backend.model,
+        rotation: chosen.rotation,
+        ...(decodeMisses ? { decodeMisses } : {}),
+      }
+      return { result: judgeTrackedFrames(poses, exerciseId), poses }
     }
-
-    const poses: JudgeInput = {
-      tracked,
-      times,
-      width: srcW,
-      height: srcH,
-      duration,
-      creditedHoldSec,
-      from,
-      to,
-      holdWindow,
-      backendId: backend.id,
-      rotation,
-    }
-    return { result: judgeTrackedFrames(poses, exerciseId), poses }
+    return runtimeRefusal
   } catch (err) {
     return { result: { ...empty, reason: err instanceof Error ? err.message : 'Analysis failed.' } }
   } finally {
@@ -2363,13 +2643,26 @@ async function analyseClipNow(
 // over the same detector and GPU context.
 let analysisQueue: Promise<void> = Promise.resolve()
 
+export interface AnalyseOptions {
+  /**
+   * Called when this job leaves the queue and actually starts. Waiting behind
+   * another check and running are different states with different clocks — a
+   * third queued check must not time out after five seconds of real work.
+   */
+  onStart?: () => void
+}
+
 export function analyseClipDetailed(
   blob: Blob,
   exerciseId: string,
   sampleCount?: number,
   creditedHoldSec?: number,
+  options: AnalyseOptions = {},
 ): Promise<ClipAnalysis> {
-  const analysis = analysisQueue.then(() => analyseClipNow(blob, exerciseId, sampleCount, creditedHoldSec))
+  const analysis = analysisQueue.then(() => {
+    options.onStart?.()
+    return analyseClipNow(blob, exerciseId, sampleCount, creditedHoldSec)
+  })
   analysisQueue = analysis.then(
     () => undefined,
     () => undefined,
@@ -2556,17 +2849,30 @@ export function pickFixFirst(issues: FormIssue[]): { issue: FormIssue; cue: stri
 }
 
 /**
- * Keep loader internals out of the athlete's face. A failed dynamic import
- * reads as a stack-trace-ish string that means nothing mid-workout.
+ * Keep loader and runtime internals out of the athlete's face — and tell them
+ * the fix that matches the failure. A detector that crashed mid-check used to
+ * be reported as needing a first-time connection, which sent people hunting
+ * for Wi-Fi when the model had been on the phone for weeks.
  */
 export function friendlyResult(res: PoseFormResult): PoseFormResult {
   if (res.ok || !res.reason) return res
-  const technical = /import|fetch|module|network|backend|webgl|undefined|\.js/i.test(res.reason)
-  return technical
-    ? {
-        ...res,
-        reason:
-          'The form checker could not load. It needs a connection the first time it runs — try again once you are online.',
-      }
-    : res
+  const reason = res.reason
+  if (/context lost|webgl|gpu|out of memory|RuntimeError|Aborted\(/i.test(reason)) {
+    return {
+      ...res,
+      reason:
+        'The form checker hit a device error and was reset. Run the check again — if it keeps failing, close and reopen the app.',
+    }
+  }
+  if (/import|fetch|module|network|failed to load|load failed|\.js\b|\.wasm\b/i.test(reason)) {
+    return {
+      ...res,
+      reason:
+        'The form checker could not load. It needs a connection the first time it runs — try again once you are online.',
+    }
+  }
+  if (/undefined|null|is not a function|TypeError|backend/i.test(reason)) {
+    return { ...res, reason: 'The form check failed unexpectedly. Your set is saved — try the check again.' }
+  }
+  return res
 }

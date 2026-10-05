@@ -410,7 +410,7 @@ export function pickStrategy(state: AppState): CoachPick {
       strategy: next.id,
       reason:
         totalN === 0 && carried
-          ? `Starting with ${STRATEGY_BY_ID[next.id].name.toLowerCase()}, which produced your fastest gains at ${STEP_BY_ID[priorStep!].name} — this step has to prove it again from scratch.`
+          ? `Starting with ${STRATEGY_BY_ID[next.id].name.toLowerCase()}, which had your best measured result at ${STEP_BY_ID[priorStep!].name} — this step has to prove it again from scratch.`
           : totalN === 0
             ? 'Starting with a baseline so it can measure everything else against it.'
             : `Trying ${STRATEGY_BY_ID[next.id].name.toLowerCase()} — it hasn't been tested on you yet.`,

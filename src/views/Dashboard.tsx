@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
-import type { Tab, Workout } from '../types'
+import type { Tab, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
 import { STEP_BY_ID, stepAfter } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { todaysSession, maxTestWorkout, TEMPLATES } from '../data/workouts'
+import { challengeBlockedReason } from '../data/workouts'
 import { tipOfTheDay } from '../data/tips'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { sessionsInWeekOf, weekStreak, totalHoldSec, sessionHighlight } from '../lib/stats'
@@ -13,6 +13,7 @@ import { PLATEAU_LABEL, recentBreakthrough } from '../lib/plateau'
 import { qualifyingProgress } from '../lib/progression'
 import { addDays, dayKey, fmtDate, fmtDuration, fmtHold, weekStart } from '../lib/time'
 import { exportData } from '../lib/exportImport'
+import { useToday } from '../lib/useToday'
 import { pushToast } from '../lib/toast'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
@@ -52,8 +53,17 @@ function WeekStrip({ trainedDays }: { trainedDays: Set<string> }) {
   )
 }
 
-export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => void; go: (t: Tab) => void }) {
+export function Dashboard({
+  startWorkout,
+  go,
+}: {
+  startWorkout: (request: WorkoutRequest) => void
+  go: (t: Tab) => void
+}) {
   const { state, dispatch } = useStore()
+  // Everything date-dependent is keyed on today too: a screen left open
+  // overnight used to offer yesterday's plan.
+  const today = useToday()
   const step = STEP_BY_ID[state.stepId]
   const keyEx = EXERCISE_BY_ID[step.keyExerciseId]
   const prBest = state.prs[step.keyExerciseId]?.value ?? 0
@@ -70,13 +80,18 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
   const goal = state.settings.weeklyGoal
   const streak = weekStreak(state)
   const tut = totalHoldSec(state)
-  const trainedToday = state.sessions.some((s) => dayKey(s.startedAt) === dayKey(Date.now()))
+  const trainedToday = state.sessions.some((s) => dayKey(s.startedAt) === today)
   const tip = tipOfTheDay()
-  const forecast = useMemo(() => forecastUnlock(state), [state])
-  const outlook = useMemo(() => goalOutlook(state), [state])
-  const plan = useMemo(() => buildPlan(state), [state])
-  const breakthrough = useMemo(() => recentBreakthrough(state), [state])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const forecast = useMemo(() => forecastUnlock(state), [state, today])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const outlook = useMemo(() => goalOutlook(state), [state, today])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const plan = useMemo(() => buildPlan(state), [state, today])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const breakthrough = useMemo(() => recentBreakthrough(state), [state, today])
   const confidence = useMemo(() => coachConfidence(state), [state])
+  const testBlocked = challengeBlockedReason(plan)
   // Only three decisions fit the card. Warnings are picked first — a safety
   // rail's "joint pain reported" must never be squeezed out by an FYI that
   // happened to be pushed earlier in the plan.
@@ -197,18 +212,20 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
         </div>
         <div className="relative mt-6 flex flex-wrap gap-2.5">
           <button
-            onClick={() => startWorkout(todaysSession(state))}
+            onClick={() => startWorkout({ source: 'auto' })}
             className="glow-accent inline-flex items-center gap-2 rounded-xl px-5 py-3 font-display text-[15px] font-semibold text-on-accent transition hover:brightness-105 active:scale-[0.99]"
             style={{ background: 'var(--t-btn-accent)' }}
           >
             <Icon name="play" size={16} /> Start today's session
           </button>
-          <button
-            onClick={() => startWorkout(maxTestWorkout(state.stepId))}
-            className="inline-flex items-center gap-2 rounded-xl border border-line bg-raised px-5 py-3 text-[15px] font-medium text-ink transition hover:border-line-strong"
-          >
-            <Icon name="target" size={16} /> Max test
-          </button>
+          {testBlocked ? null : (
+            <button
+              onClick={() => startWorkout({ source: 'test', stepId: state.stepId })}
+              className="inline-flex items-center gap-2 rounded-xl border border-line bg-raised px-5 py-3 text-[15px] font-medium text-ink transition hover:border-line-strong"
+            >
+              <Icon name="target" size={16} /> Max test
+            </button>
+          )}
           <button
             onClick={() => go('path')}
             className="inline-flex items-center gap-1.5 rounded-xl px-4 py-3 text-[14px] font-medium text-ink2 transition hover:text-ink"
@@ -219,14 +236,19 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
         {/* Re-scope today rather than re-plan the week. The realistic
             alternative to "I've got twenty minutes" is training nothing, and a
             skipped session teaches the coach nothing either. */}
+        {testBlocked && state.sessions.length > 0 ? (
+          <p className="relative mt-2 text-[12.5px] leading-relaxed text-ink3">
+            No max test today — {testBlocked}.
+          </p>
+        ) : null}
         {state.settings.sessionMinutes > 18 ? (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
             <span className="text-ink3">Short on time?</span>
             {[15, 20].map((m) => (
               <button
                 key={m}
-                onClick={() => startWorkout(todaysSession(state, plan, m))}
-                className="rounded-lg border border-line bg-raised px-3 py-1.5 font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
+                onClick={() => startWorkout({ source: 'auto', minutes: m })}
+                className="min-h-10 rounded-lg border border-line bg-raised px-3 py-1.5 font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
               >
                 {m} min version
               </button>
@@ -275,9 +297,9 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
           ) : (
             <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink">{plan.plateau.intervention}</p>
           )}
-          {plan.plateau.suggestMaxTest && plan.loadPermission !== 'none' ? (
+          {plan.plateau.suggestMaxTest && !testBlocked ? (
             <button
-              onClick={() => startWorkout(maxTestWorkout(state.stepId))}
+              onClick={() => startWorkout({ source: 'test', stepId: state.stepId })}
               className="mt-3 inline-flex items-center gap-2 rounded-xl border border-line bg-raised px-4 py-2.5 text-[13.5px] font-medium text-ink transition hover:border-line-strong"
             >
               <Icon name="target" size={15} /> Run a max test
@@ -312,9 +334,9 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
           </div>
           <button
             onClick={() => {
-              const stamped = { ...state, lastBackupAt: Date.now() }
-              exportData(stamped)
-              dispatch({ type: 'REPLACE', state: stamped })
+              const at = Date.now()
+              exportData({ ...state, lastBackupAt: at })
+              dispatch({ type: 'STAMP_BACKUP', at })
               pushToast('Backup exported.', 'success')
             }}
             className="rounded-lg border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 transition hover:text-ink"
@@ -334,10 +356,7 @@ export function Dashboard({ startWorkout, go }: { startWorkout: (w: Workout) => 
             </span>
           </div>
           <button
-            onClick={() => {
-              const w = TEMPLATES.find((t) => t.id === 'wrist-armor')
-              if (w) startWorkout(w)
-            }}
+            onClick={() => startWorkout({ source: 'template', templateId: 'wrist-armor' })}
             className="rounded-lg border border-line bg-surface px-3.5 py-2 text-[13px] font-medium text-ink2 transition hover:text-ink"
           >
             10-min Wrist Armor →

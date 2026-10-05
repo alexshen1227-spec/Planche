@@ -210,8 +210,8 @@ export function Onboarding() {
             </div>
             <h1 className="font-display text-[34px] font-bold leading-tight text-ink">Planche Lab</h1>
             <p className="mx-auto mt-2 max-w-md text-[15px] leading-relaxed text-ink2">
-              A focused, adaptive road to the fastest sustainable planche progress — guided sessions, honest form
-              tracking, and every hold timed.
+              A focused, adaptive road toward the planche — guided sessions, honest form tracking, and every hold
+              timed.
             </p>
             <p className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-ink3">
               Everything stays on this device. No account, no server, nothing to cancel.

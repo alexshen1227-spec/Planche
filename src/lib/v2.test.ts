@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, BodyRegion, FormCheck, Session, SetLog, StepId } from '../types'
+import { CURRENT_STATE_VERSION } from '../types'
 import { initialState, normalizeState, rebuildDerivedState } from './store'
 import { readSignals } from './signals'
 import { buildPlan } from './coach'
@@ -133,7 +134,7 @@ describe('v5 and older data surviving the V2 upgrade', () => {
 
   it('keeps every earned step, session, PR and achievement', () => {
     const s = normalizeState(legacy)
-    expect(s.version).toBe(6)
+    expect(s.version).toBe(CURRENT_STATE_VERSION)
     expect(s.sessions).toHaveLength(1)
     expect(s.stepId).toBe('advtuck')
     expect(s.unlocked).toContain('advtuck')
@@ -189,7 +190,7 @@ describe('v5 and older data surviving the V2 upgrade', () => {
 
   it('survives a v1 save with almost nothing in it', () => {
     const ancient = normalizeState({ version: 1, onboarded: true, stepId: 'lean' })
-    expect(ancient.version).toBe(6)
+    expect(ancient.version).toBe(CURRENT_STATE_VERSION)
     expect(ancient.stepId).toBe('lean')
     expect(ancient.sessions).toEqual([])
     expect(() => buildPlan(ancient, NOW)).not.toThrow()
@@ -816,16 +817,20 @@ describe('rails that a mutation test proved were unpinned', () => {
     // eight before offering a first one. Removing the rail changed nothing.
     // This fixture satisfies every precondition — enough sessions, rested, not
     // noisy — so the complaint rail is the only thing that can say no.
+    // Ten days since the last session: rested, but inside the long-gap window.
+    // (Sixteen days used to read as "rested"; it is now a gap the coach asks
+    // about, and a gap withholds a max test on its own — which would make the
+    // control below pass for the wrong reason.)
     const base: Session[] = Array.from({ length: 10 }, (_, i) => ({
       id: `mt-${i}`,
-      startedAt: at(70 - i * 6),
-      endedAt: at(70 - i * 6) + 60_000,
+      startedAt: at(64 - i * 6),
+      endedAt: at(64 - i * 6) + 60_000,
       workoutName: 'Session',
       workoutKind: 'auto' as const,
       stepId: 'tuck' as StepId,
-      sets: [holdSet('tuck-planche', 8 + (i % 2) * 0.3, at(70 - i * 6))],
+      sets: [holdSet('tuck-planche', 8 + (i % 2) * 0.3, at(64 - i * 6))],
       ...(i >= 6
-        ? { checkIn: { joints: 'niggle' as const, energy: 'ok' as const, at: at(70 - i * 6), regions: ['shoulder' as BodyRegion] } }
+        ? { checkIn: { joints: 'niggle' as const, energy: 'ok' as const, at: at(64 - i * 6), regions: ['shoulder' as BodyRegion] } }
         : {}),
     }))
     const withComplaint = stateWith('tuck', base)

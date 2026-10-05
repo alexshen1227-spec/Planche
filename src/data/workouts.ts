@@ -1211,7 +1211,20 @@ export function finalizeWorkoutWithPlan(
   freshCheckIn?: CheckIn,
   now = Date.now(),
 ): { workout: Workout; plan: CoachPlan } {
-  const plan = buildPlan(state, now, freshCheckIn)
+  return finalizeFromPlan(state, request, buildPlan(state, now, freshCheckIn), now)
+}
+
+/**
+ * The same decision from a plan already built for this state and moment —
+ * for screens that preview several requests at once (one plan, many cards).
+ * The plan must come from `buildPlan(state, now)`; nothing else is valid.
+ */
+export function finalizeFromPlan(
+  state: AppState,
+  request: WorkoutRequest,
+  plan: CoachPlan,
+  now = Date.now(),
+): { workout: Workout; plan: CoachPlan } {
   const adjustments: string[] = []
   let workout: Workout
 

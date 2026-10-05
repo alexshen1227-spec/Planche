@@ -1,7 +1,7 @@
 import type { AppState, Session, TrainingSurface } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { addDays, weekStart } from './time'
-import { isQualifyingSet } from './progression'
+import { addDays, CLOCK_SKEW_MS, weekStart } from './time'
+import { progressionCredit } from './progression'
 
 export function totalHoldSec(state: AppState): number {
   let t = 0
@@ -13,10 +13,12 @@ export function totalSets(state: AppState): number {
   return state.sessions.reduce((n, s) => n + s.sets.length, 0)
 }
 
-export function sessionsInWeekOf(state: AppState, ts: number): Session[] {
+export function sessionsInWeekOf(state: AppState, ts: number, now = Date.now()): Session[] {
   const start = weekStart(ts)
   const end = addDays(start, 7)
-  return state.sessions.filter((s) => s.startedAt >= start && s.startedAt < end)
+  // A session stamped in the future (a clock that ran ahead, an import from a
+  // device in another state) has not happened yet and cannot meet a goal.
+  return state.sessions.filter((s) => s.startedAt >= start && s.startedAt < end && s.startedAt <= now + CLOCK_SKEW_MS)
 }
 
 /**
@@ -26,10 +28,10 @@ export function sessionsInWeekOf(state: AppState, ts: number): Session[] {
  */
 export function weekStreak(state: AppState, now = Date.now()): { weeks: number; currentMet: boolean } {
   const goal = state.settings.weeklyGoal
-  const currentMet = sessionsInWeekOf(state, now).length >= goal
+  const currentMet = sessionsInWeekOf(state, now, now).length >= goal
   let weeks = 0
   let cursor = addDays(weekStart(now), -7)
-  while (sessionsInWeekOf(state, cursor).length >= goal) {
+  while (sessionsInWeekOf(state, cursor, now).length >= goal) {
     weeks += 1
     cursor = addDays(cursor, -7)
     if (weeks > 520) break
@@ -37,28 +39,39 @@ export function weekStreak(state: AppState, now = Date.now()): { weeks: number; 
   return { weeks: weeks + (currentMet ? 1 : 0), currentMet }
 }
 
-/** Max value logged for one exercise per session, oldest first. */
+/**
+ * One point per session, oldest first.
+ *
+ * For a progression hold the point is the *credit* that session earned — the
+ * same number unlocks use: only qualifying sets, capped at the camera's clean
+ * window, and for a unilateral hold the weaker side (a session that trained
+ * one side only earns no bilateral point). Plotting the stopwatch value of an
+ * eligible set instead drew 20s and 30s against a 20s goal while the unlock
+ * card correctly said five and six.
+ *
+ * Other holds plot their best timer value.
+ */
 export function bestSeries(
   state: AppState,
   exerciseId: string,
   surface?: TrainingSurface,
 ): { at: number; value: number }[] {
   const out: { at: number; value: number }[] = []
+  const exercise = EXERCISE_BY_ID[exerciseId]
+  const progressionExercise = exercise?.category === 'planche' || exerciseId === 'ppp-hold'
   for (const s of [...state.sessions].sort((a, b) => a.startedAt - b.startedAt)) {
-    let best = 0
-    const progressionExercise =
-      EXERCISE_BY_ID[exerciseId]?.category === 'planche' || exerciseId === 'ppp-hold'
-    for (const set of s.sets) {
-      if (
-        set.exerciseId === exerciseId &&
-        (!surface || set.surface === surface) &&
-        set.value > best &&
-        (!progressionExercise || isQualifyingSet(set, exerciseId))
-      ) {
-        best = set.value
-      }
+    const sets = s.sets.filter((set) => set.exerciseId === exerciseId && (!surface || set.surface === surface))
+    let value = 0
+    if (!progressionExercise) {
+      value = sets.reduce((best, set) => Math.max(best, set.value), 0)
+    } else if (exercise?.perSide) {
+      const side = (which: 'left' | 'right') =>
+        sets.filter((set) => set.side === which).reduce((best, set) => Math.max(best, progressionCredit(set, exerciseId)), 0)
+      value = Math.min(side('left'), side('right'))
+    } else {
+      value = sets.reduce((best, set) => Math.max(best, progressionCredit(set, exerciseId)), 0)
     }
-    if (best > 0) out.push({ at: s.startedAt, value: best })
+    if (value > 0) out.push({ at: s.startedAt, value })
   }
   return out
 }

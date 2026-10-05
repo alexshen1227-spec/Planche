@@ -23,13 +23,29 @@
  * (`left_shoulder`, `right_hip`, …), so callers do not care which one ran.
  */
 
-export type Kp = { x: number; y: number; score?: number; name?: string }
+export type Kp = {
+  x: number
+  y: number
+  score?: number
+  name?: string
+  /**
+   * Set when this point was not observed at this moment: `interpolated` fills
+   * a detector miss from its neighbours, `repaired` replaces an impossible
+   * one-frame jump. Either keeps the replay continuous, but neither is
+   * evidence — coverage counts only observed points.
+   */
+  origin?: 'interpolated' | 'repaired'
+}
 
 export type BackendId = 'mediapipe' | 'movenet'
 
 export interface PoseBackend {
   id: BackendId
+  /** The exact weights that produced a reading, stored with it. */
+  model: string
   estimate(img: HTMLCanvasElement | HTMLVideoElement): Promise<Kp[]>
+  /** Release GPU/WASM resources. The backend must not be used afterwards. */
+  close?: () => void
 }
 
 /** Pinned with the npm package so the runtime and its WASM never drift apart. */
@@ -39,9 +55,19 @@ const WASM_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TASKS_
  * The full (9 MB) variant: the same GHUM weights the old TFJS path used.
  * Heavy is markedly slower on phones for little gain on side-on footage,
  * lite gives up accuracy exactly where a horizontal body needs it.
+ *
+ * Pinned to version 1 rather than `latest`, so one published app version
+ * resolves to one identifiable model. Checked on 2026-10-05: the two files
+ * differ only in their zip timestamps — both contained .tflite files have
+ * identical CRCs (detector 0x5a302155, landmarks 0x7c5aff55) — so pinning
+ * changed nothing that any threshold was measured against.
  */
 const MODEL_URL =
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task'
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task'
+
+/** Stored with every camera reading, so a later model change is visible in history. */
+export const MEDIAPIPE_MODEL_ID = 'blazepose-full-f16@1'
+export const MOVENET_MODEL_ID = 'movenet-thunder'
 
 /** BlazePose's fixed landmark order, mapped to the names the geometry uses. */
 const BLAZEPOSE_NAMES = [
@@ -55,7 +81,13 @@ const BLAZEPOSE_NAMES = [
 
 const READY_KEY = 'planchelab.poseReady'
 
-/** True once any pose model has loaded successfully on this device. */
+/**
+ * True once any pose model has loaded successfully on this device.
+ *
+ * This is a memory of a past download, not proof the files are still cached —
+ * browsers evict storage. Say "previously downloaded" when showing it, and use
+ * `verifyOfflineReady` before promising offline use.
+ */
 export function poseModelReady(): boolean {
   try {
     return localStorage.getItem(READY_KEY) === '1'
@@ -117,6 +149,14 @@ async function loadMediaPipe(): Promise<PoseBackend> {
   markReady()
   return {
     id: 'mediapipe',
+    model: MEDIAPIPE_MODEL_ID,
+    close: () => {
+      try {
+        landmarker.close()
+      } catch {
+        /* already gone */
+      }
+    },
     estimate: async (img) => {
       const { w, h } = sizeOf(img)
       if (!w || !h) return []
@@ -144,6 +184,14 @@ async function loadMoveNet(): Promise<PoseBackend> {
   markReady()
   return {
     id: 'movenet',
+    model: MOVENET_MODEL_ID,
+    close: () => {
+      try {
+        detector.dispose()
+      } catch {
+        /* already gone */
+      }
+    },
     estimate: async (img) => (await detector.estimatePoses(img))[0]?.keypoints ?? [],
   }
 }
@@ -162,6 +210,55 @@ function load(id: BackendId): Promise<PoseBackend> {
 
 export function getBackend(id: BackendId): Promise<PoseBackend> {
   return load(id)
+}
+
+/**
+ * Drop a backend that keeps failing at inference time, so the next request
+ * builds a fresh one instead of reusing the broken instance forever.
+ *
+ * Creation failures already retried; what did not was a detector that loaded
+ * fine and then threw on every call (a lost WebGL context is the classic
+ * case). Callers retire only between jobs — analysis is serialised — so no
+ * inference is running on the instance being closed.
+ */
+export function retireBackend(id: BackendId, instance?: PoseBackend): void {
+  const existing = loaders[id]
+  if (!existing) return
+  delete loaders[id]
+  void existing
+    .then((backend) => {
+      if (!instance || backend === instance) backend.close?.()
+    })
+    .catch(() => {})
+}
+
+/** Classify an inference/loading error, so the athlete is told the right fix. */
+export function classifyPoseError(err: unknown): 'load' | 'runtime' {
+  const message = err instanceof Error ? `${err.name} ${err.message}` : String(err)
+  return /import|fetch|module|network|load|failed to fetch|404|offline|wasm/i.test(message) && !/context lost|webgl context/i.test(message)
+    ? 'load'
+    : 'runtime'
+}
+
+/**
+ * Whether the checker can actually start offline right now.
+ *
+ * Looks for the model weights and one complete WASM runtime in the cache the
+ * service worker fills on first use. `unknown` where the Cache API is not
+ * available (or not readable) — never a guess in either direction.
+ */
+export async function verifyOfflineReady(): Promise<'ready' | 'missing' | 'unknown'> {
+  if (typeof caches === 'undefined') return 'unknown'
+  try {
+    const has = async (url: string) => Boolean(await caches.match(url, { ignoreVary: true }))
+    const model = await has(MODEL_URL)
+    const simd = (await has(`${WASM_BASE}/vision_wasm_internal.js`)) && (await has(`${WASM_BASE}/vision_wasm_internal.wasm`))
+    const noSimd =
+      (await has(`${WASM_BASE}/vision_wasm_nosimd_internal.js`)) && (await has(`${WASM_BASE}/vision_wasm_nosimd_internal.wasm`))
+    return model && (simd || noSimd) ? 'ready' : 'missing'
+  } catch {
+    return 'unknown'
+  }
 }
 
 /**

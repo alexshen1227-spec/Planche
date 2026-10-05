@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
-  BodyRegion,
   CheckIn,
+  EndReason,
   Exercise,
   FormCheck,
-  FormIssue,
-  FormRating,
   Section,
   Session,
   SessionEvents,
   SetLog,
+  SetTiming,
   TrainingSurface,
   Workout,
 } from '../types'
-import { BODY_REGIONS } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { describeBlock, describeTarget, primaryTargetBlock, adaptiveTarget } from '../data/workouts'
@@ -25,19 +23,9 @@ import { sfx, speak, buzz } from '../lib/audio'
 import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
 import { clearDraft, restoredSessionSetup, saveDraft, type SessionDraft } from '../lib/draft'
-import { useFormRecorder } from '../lib/recorder'
-import { saveClip, getClipBlob } from '../lib/clips'
-import {
-  analyseClipDetailed,
-  emptyResult,
-  friendlyResult,
-  isFilmable,
-  judgeTrackedFrames,
-  warmDetector,
-  type ClipAnalysis,
-  type PoseFormResult,
-} from '../lib/poseForm'
-import { saveProblemReport } from '../lib/problemReports'
+import { useFormRecorder, type RecorderStatus } from '../lib/recorder'
+import { saveClip } from '../lib/clips'
+import { isFilmable, warmDetector } from '../lib/poseForm'
 import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
 import { readSignals } from '../lib/signals'
@@ -54,14 +42,24 @@ import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { ProgressRing, Modal } from '../components/ui'
-import { ClipPlayer } from '../components/ClipPlayer'
 import { FramingCheck } from '../components/FramingCheck'
 import {
-  passesProgressionFormCheck,
-  progressionRelevantIssues,
+  FormCheckRow,
+  mergeHumanReview,
+  mergeModelReading,
+  type HumanReview,
+  type ModelReading,
+} from '../components/FormCheckRow'
+import { CheckInForm, type CheckInContext } from '../components/CheckInForm'
+import { AttemptEnd, type AttemptSymptom } from '../components/AttemptEnd'
+import { SetupRow } from '../components/SetupRow'
+import {
   requiresFlightConfirmation,
   setNeedsProgressionFormEvidence,
+  unseenVariantCriteria,
 } from '../lib/progression'
+
+export type { CheckInContext } from '../components/CheckInForm'
 
 type Phase = 'intro' | 'ready' | 'lead' | 'hold' | 'reps' | 'rest' | 'summary' | 'celebrate'
 
@@ -73,44 +71,72 @@ const SECTION_LABEL: Record<Section, string> = {
   cooldown: 'Cooldown',
 }
 
-/**
- * How long a form check may run before the session stops waiting for it.
- *
- * Generous, because a genuine first-run model download on a slow connection is
- * legitimately slow and cutting it off early would waste the athlete's clip.
- */
-const ANALYSIS_TIMEOUT_MS = 45_000
+const round1 = (n: number) => Math.round(n * 10) / 10
+
+/** What the athlete can do about a camera that is not live, by cause. */
+const CAMERA_FAILURE: Partial<Record<RecorderStatus, string>> = {
+  denied:
+    'Camera permission was refused. Allow it in this site’s browser settings to film — or train without filming.',
+  unavailable: 'No usable camera was found, or it stopped. Try again, or train without filming.',
+  busy: 'The camera is in use by another app or could not start. Close other camera apps and try again — or train without filming.',
+  unsupported: 'This browser cannot record video here. Your sets still log normally.',
+}
+
+/** Holds where a remembered setup (assistance) is worth asking about. */
+function assistApplies(ex: Exercise | undefined): boolean {
+  return Boolean(ex && ex.type === 'hold' && ex.category === 'planche' && ex.id !== 'frog-stand')
+}
+
+interface LogExtra {
+  raw?: number
+  timing?: SetTiming
+  at?: number
+  /** Actual setup countdown used; null when unknowable (a restored attempt). */
+  leadInSec?: number | null
+  recordingOffsetSec?: number
+}
 
 /**
- * Bound the form check so a stalled one cannot trap the whole session.
+ * A hold ring that leaves the Stop button on screen.
  *
- * `analyseClip` already converts every *rejection* into a friendly result, but
- * a promise that never settles is not a rejection. The model fetch is several
- * megabytes over whatever network the gym has, and on a captive portal it can
- * hang indefinitely — at which point the `finally` that clears the busy flag
- * never runs, Save stays disabled forever, and the athlete's only remaining
- * exit is Discard, which throws away every set they logged. A session must
- * never become unsavable because a camera check went quiet.
+ * The fixed 290px ring pushed Stop below the fold on a short phone held
+ * sideways — the one control that has to be reachable without scrolling while
+ * someone is climbing out of a planche.
  */
-function withAnalysisTimeout(work: Promise<ClipAnalysis>): Promise<ClipAnalysis> {
-  return new Promise((resolve) => {
-    const timer = window.setTimeout(() => {
-      resolve({
-        result: emptyResult(
-          'The form check ran out of time — usually a slow or blocked connection while the model downloads. Your set is saved either way, and you can run the check later from the clip in Learn.',
-        ),
-      })
-    }, ANALYSIS_TIMEOUT_MS)
-    work
-      .then((res) => {
-        window.clearTimeout(timer)
-        resolve(res)
-      })
-      .catch(() => {
-        window.clearTimeout(timer)
-        resolve({ result: emptyResult('That form check could not be completed.') })
-      })
-  })
+function useRingSize(max: number, min = 168): number {
+  const measure = useCallback(
+    () =>
+      typeof window === 'undefined'
+        ? max
+        : Math.round(Math.max(min, Math.min(max, window.innerWidth - 56, window.innerHeight - 300))),
+    [max, min],
+  )
+  const [size, setSize] = useState(measure)
+  useEffect(() => {
+    const onResize = () => setSize(measure())
+    window.addEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+    }
+  }, [measure])
+  return size
+}
+
+/** How a logged value was arrived at, when it is not a plain stopwatch reading. */
+function timingNote(log: SetLog): string | null {
+  if (log.kind !== 'hold') return null
+  if (log.timing?.method === 'edited') {
+    return log.raw !== undefined ? `(edited · the timer read ${log.raw.toFixed(1)}s)` : '(edited by hand)'
+  }
+  if (log.timing?.method === 'interrupted') {
+    return log.raw !== undefined ? `(interrupted at ${log.raw.toFixed(1)}s on the timer)` : '(interrupted)'
+  }
+  if (log.raw !== undefined && log.raw - log.value > 0.05) {
+    return `(${log.raw.toFixed(1)}s − ${(log.raw - log.value).toFixed(1)}s to stop it)`
+  }
+  return null
 }
 
 export function SessionPlayer({
@@ -118,19 +144,19 @@ export function SessionPlayer({
   onExit,
   resumeFrom,
   askCheckIn = false,
+  checkInContext,
   onCheckInAnswered,
 }: {
   workout: Workout
   onExit: () => void
   resumeFrom?: SessionDraft | null
   askCheckIn?: boolean
+  checkInContext?: CheckInContext
   onCheckInAnswered?: (c: CheckIn) => void
 }) {
-  const { state, dispatch } = useStore()
+  const { state, dispatch, persist } = useStore()
   const restoredSetup = restoredSessionSetup(resumeFrom, state.settings)
-  const resumeExerciseId = resumeFrom
-    ? workout.blocks[resumeFrom.blockIndex]?.exerciseId
-    : undefined
+  const resumeExerciseId = resumeFrom ? workout.blocks[resumeFrom.blockIndex]?.exerciseId : undefined
   const resumeLatency = stopLatencySecondsFor(
     resumeExerciseId,
     state.settings.stopLatencySec,
@@ -148,6 +174,8 @@ export function SessionPlayer({
   const [bi, setBi] = useState(resumeFrom?.blockIndex ?? 0)
   const [si, setSi] = useState(resumeFrom?.setIndex ?? 0)
   const [logs, setLogs] = useState<SetLog[]>(resumeFrom?.logs ?? [])
+  const logsRef = useRef(logs)
+  logsRef.current = logs
   const [now, setNow] = useState(() => Date.now())
   const [leadEnd, setLeadEnd] = useState(0)
   const [holdStart, setHoldStart] = useState(0)
@@ -161,13 +189,26 @@ export function SessionPlayer({
   const [pendingReps, setPendingReps] = useState(0)
   const [rpe, setRpe] = useState<number | undefined>(resumeFrom?.rpe)
   const [notes, setNotes] = useState(resumeFrom?.notes ?? '')
-  /** Seconds from a hold that was cut short by the page being discarded. */
+  /**
+   * A hold cut short by the page being hidden, awaiting log-or-redo: the
+   * credited value, and the stopwatch reading behind it. The raw reading used
+   * to be dropped on the way, so a logged interruption looked like an
+   * ordinary measured hold.
+   */
+  const restoredHolding = Boolean(resumeFrom?.wasHolding && resumeFrom.holdElapsed > 1)
   const [interrupted, setInterrupted] = useState<number | null>(
     resumeFrom?.interrupted !== undefined
       ? resumeFrom.interrupted
-      : resumeFrom?.wasHolding && resumeFrom.holdElapsed > 1
-      ? Math.max(0, Math.round((resumeFrom.holdElapsed - resumeLatency) * 10) / 10)
-      : null,
+      : restoredHolding
+        ? Math.max(0, round1(resumeFrom!.holdElapsed - resumeLatency))
+        : null,
+  )
+  const [interruptedRaw, setInterruptedRaw] = useState<number | null>(
+    resumeFrom?.interrupted !== undefined
+      ? (resumeFrom.interruptedRaw ?? null)
+      : restoredHolding
+        ? round1(resumeFrom!.holdElapsed)
+        : null,
   )
   const [events, setEvents] = useState<SessionEvents | null>(null)
   const [savedSession, setSavedSession] = useState<Session | null>(null)
@@ -175,6 +216,8 @@ export function SessionPlayer({
   const [showDemo, setShowDemo] = useState(false)
   const [showRpeHelp, setShowRpeHelp] = useState(false)
   const [problemReportOpen, setProblemReportOpen] = useState(false)
+  /** Fullscreen clip review is open: the session holds its rest clock and keyboard for it. */
+  const [reviewOpen, setReviewOpen] = useState(false)
   const [checkIn, setCheckIn] = useState<CheckIn | null>(resumeFrom?.checkIn ?? null)
   const [cameraOn, setCameraOn] = useState(restoredSetup.cameraOn)
   /**
@@ -188,32 +231,45 @@ export function SessionPlayer({
    * it only ever costs a tap when it is actually wrong.
    */
   const [walkedBack, setWalkedBack] = useState(restoredSetup.walkedBack)
-  const [pendingClip, setPendingClip] = useState<{ key: string; logAt: number } | null>(null)
-  const [clipFinalizing, setClipFinalizing] = useState(false)
-  const [analysingSets, setAnalysingSets] = useState<Set<number>>(() => new Set())
+  /** Clips still being finalised and stored. */
+  const [clipsFinalizing, setClipsFinalizing] = useState(0)
+  /**
+   * Form checks in flight, by operation. Only the operation that set busy can
+   * clear it: keying by set let an older check finish and clear the flag while
+   * a newer check of the same set was still running.
+   */
+  const [busyOps, setBusyOps] = useState<Set<string>>(() => new Set())
+  /** The app is hidden; nothing that was running keeps running unseen. */
+  const [suspended, setSuspended] = useState(false)
+  const [finishedEarly, setFinishedEarly] = useState(resumeFrom?.finishedEarly === true)
   const recorder = useFormRecorder()
   const [showCheckIn, setShowCheckIn] = useState(askCheckIn && !resumeFrom)
   const [insight, setInsight] = useState<{ delta: number; label: string } | null>(null)
   const [debrief, setDebrief] = useState<CoachDecision[]>([])
+  const ringSize = useRingSize(290)
   const sessionRef = useRef<HTMLDivElement | null>(null)
   /**
    * When training actually started — stamped on "Begin session", not on mount.
    *
    * Opening a workout is not training: the intro screen is a plan you might
-   * read for a minute, walk away from, or back out of entirely. Starting the
-   * clock there inflated every session's duration by however long you spent
-   * deciding, and that number is saved on the session and shown in the summary.
-   * 0 means "not started yet".
+   * read for a minute, walk away from, or back out of entirely. 0 means "not
+   * started yet".
    */
   const startedAtRef = useRef(resumeFrom?.startedAt ?? 0)
+  /**
+   * When training ended — stamped the moment the summary opens. Time spent
+   * reviewing clips, rating sets and writing notes is not training; saving
+   * with Date.now() used to add all of it to the session's duration.
+   */
+  const endedAtRef = useRef(resumeFrom?.endedAt ?? 0)
   const restoredPausedMs =
     Math.max(0, resumeFrom?.pausedMs ?? 0) +
     (resumeFrom?.startedAt && resumeFrom.pausedAt
-      ? Math.max(0, Date.now() - resumeFrom.pausedAt)
+      ? Math.max(0, (resumeFrom.endedAt || Date.now()) - resumeFrom.pausedAt)
       : 0)
-  /** Completed time spent outside the app during this session. */
+  /** Completed time spent outside the app during training. */
   const pausedMsRef = useRef(restoredPausedMs)
-  /** Start of the current inactive period, if the app is hidden. */
+  /** Start of the current inactive period, if the app is hidden mid-training. */
   const hiddenAtRef = useRef<number | null>(null)
   const lastBeepRef = useRef(-1)
   const targetHitRef = useRef(false)
@@ -230,6 +286,15 @@ export function SessionPlayer({
   /** Current phase, readable from async callbacks without going stale. */
   const phaseRef = useRef(phase)
   phaseRef.current = phase
+  /** This attempt was started with a live camera and is meant to be recorded. */
+  const filmAttemptRef = useRef(false)
+  /** Recording actually began for this attempt, and how long after the hold did. */
+  const recordingRef = useRef<{ offsetSec: number } | null>(null)
+  /** Set once saved: late camera results and clips then update the saved session. */
+  const savedSessionIdRef = useRef<string | null>(null)
+  const savingRef = useRef(false)
+  /** Forms written after saving, so two late results merge instead of racing. */
+  const postSaveForms = useRef(new Map<number, FormCheck | undefined>())
   // A new phase re-arms the keyboard: the claim only exists to collapse the
   // burst of events that arrives before this render.
   useEffect(() => {
@@ -257,15 +322,18 @@ export function SessionPlayer({
   const doneSets = logs.length
   /**
    * Unilateral work runs twice per set so both sides get the same dose. The
-   * weaker side goes first while the athlete is freshest — the coach's
-   * "lead with the weak side" advice used to be contradicted right here by a
-   * hard-coded left-first order. The set counter still shows real rounds.
+   * weaker side goes first while the athlete is freshest. The set counter
+   * still shows real rounds.
    */
   const perSide = Boolean(exercise?.perSide)
   const sideGap = useMemo(() => readSignals(state).sideGap, [state])
   const weakSideFirst = sideGap?.weakSide ?? 'left'
-  const side: 'left' | 'right' =
-    si % 2 === 0 ? weakSideFirst : weakSideFirst === 'left' ? 'right' : 'left'
+  const sideFor = useCallback(
+    (setIndex: number): 'left' | 'right' =>
+      setIndex % 2 === 0 ? weakSideFirst : weakSideFirst === 'left' ? 'right' : 'left',
+    [weakSideFirst],
+  )
+  const side = sideFor(si)
   const roundsPerSet = perSide ? 2 : 1
   const displaySet = Math.floor(si / roundsPerSet) + 1
   const displayTotal = block ? Math.ceil(block.sets / roundsPerSet) : 0
@@ -279,9 +347,7 @@ export function SessionPlayer({
       : state.prs[exercise.id]?.value
     const thisSession = logs.reduce(
       (best, log) =>
-        log.exerciseId === exercise.id &&
-        (!surfaceAware || log.surface === surface) &&
-        log.value > best
+        log.exerciseId === exercise.id && (!surfaceAware || log.surface === surface) && log.value > best
           ? log.value
           : best,
       0,
@@ -291,20 +357,25 @@ export function SessionPlayer({
   }, [exercise, state.prs, logs, surface])
   const leadSec = leadInSecondsFor(exercise?.id)
   const latency =
-    exercise?.type === 'hold'
-      ? stopLatencySecondsFor(exercise.id, state.settings.stopLatencySec, !walkedBack)
-      : 0
+    exercise?.type === 'hold' ? stopLatencySecondsFor(exercise.id, state.settings.stopLatencySec, !walkedBack) : 0
   // Film every key hold on the road. Most use pose geometry; Frog Stand keeps
   // the replay for an explicit checklist review instead.
   const filmable = Boolean(block?.section === 'main' && exercise && isFilmable(exercise.id))
-  const filming = Boolean(filmable && cameraOn && recorder.supported)
+  /** The athlete wants this set filmed — intent, not capability. */
+  const wantsFilm = Boolean(filmable && cameraOn && recorder.supported)
+  const cameraLive = recorder.status === 'live' || recorder.status === 'recording'
+  const cameraFailure = wantsFilm ? CAMERA_FAILURE[recorder.status] : undefined
+  /** A filmed attempt waits for a live camera; a timer-only one never does. */
+  const startWaitsForCamera =
+    exercise?.type === 'hold' && wantsFilm && (recorder.status === 'starting' || recorder.status === 'off')
+  const setup = exercise && assistApplies(exercise) ? state.setups?.[exercise.id] : undefined
 
   // Spin the pose model up while the athlete is still getting into position,
   // so an automatic check lands right after the clip instead of stalling on
   // the model load.
   useEffect(() => {
-    if (filming && state.settings.autoAnalyze && exercise?.id !== 'frog-stand') warmDetector()
-  }, [filming, state.settings.autoAnalyze, exercise?.id])
+    if (wantsFilm && state.settings.autoAnalyze && exercise?.id !== 'frog-stand') warmDetector()
+  }, [wantsFilm, state.settings.autoAnalyze, exercise?.id])
 
   // Shared 100ms clock (also keeps the header session-elapsed ticking).
   useEffect(() => {
@@ -328,7 +399,7 @@ export function SessionPlayer({
   // the OS without warning, and this is what makes that survivable.
   useEffect(() => {
     if (phase === 'celebrate') return
-    const snapshot = (override?: { cameraOn?: boolean }) => {
+    const snapshot = () => {
       // Once the screen is off the athlete is no longer holding, so the
       // elapsed value is frozen at the moment the page was hidden rather
       // than left to climb while the tab is torn down.
@@ -351,36 +422,62 @@ export function SessionPlayer({
         // crash can change the next hold's seconds or reopen a camera the
         // athlete explicitly switched off.
         walkedBack,
-        cameraOn: override?.cameraOn ?? cameraOn,
+        cameraOn,
         phase: phase === 'rest' || phase === 'summary' ? phase : 'ready',
         ...(interrupted !== null && interruptedAt.current
-          ? { interrupted, interruptedAt: interruptedAt.current }
+          ? {
+              interrupted,
+              interruptedAt: interruptedAt.current,
+              ...(interruptedRaw !== null ? { interruptedRaw } : {}),
+            }
           : {}),
+        ...(endedAtRef.current ? { endedAt: endedAtRef.current } : {}),
+        ...(finishedEarly ? { finishedEarly: true } : {}),
         rpe,
         notes,
       })
     }
     snapshot()
+    /**
+     * One suspend action for every phase. Hiding an active hold already ended
+     * it; Ready and the lead-in used to keep the camera open and the
+     * countdown running, so a phone in a pocket could start a hold — and a
+     * recording — that nobody was in.
+     */
+    const suspend = () => {
+      if (startedAtRef.current && !endedAtRef.current && hiddenAtRef.current === null) {
+        hiddenAtRef.current = Date.now()
+      }
+      if (phase === 'hold') {
+        const raw = Math.max(0, (Date.now() - holdStart) / 1000)
+        frozenElapsedRef.current = raw
+        // Hidden time is unknowable. End the attempt now rather than letting a
+        // locked phone manufacture a PR; the athlete can log or redo it. The
+        // same allowance as stopping it yourself is held back, because the
+        // moment the position was left is not known either.
+        setInterrupted(Math.max(0, round1(raw - latency)))
+        setInterruptedRaw(round1(raw))
+        interruptedAt.current = { bi, si }
+        stoppingHoldRef.current = true
+        // Footage of an interrupted attempt is not kept: it cannot be lined
+        // up with a value the athlete has not chosen yet.
+        if (filmAttemptRef.current) void recorder.stop()
+        filmAttemptRef.current = false
+        recordingRef.current = null
+        setPhase('ready')
+      } else if (phase === 'lead') {
+        filmAttemptRef.current = false
+        setPhase('ready')
+      }
+      recorder.release()
+      setSuspended(true)
+    }
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        if (startedAtRef.current && hiddenAtRef.current === null) hiddenAtRef.current = Date.now()
-        if (phase === 'hold') {
-          const raw = Math.max(0, (Date.now() - holdStart) / 1000)
-          frozenElapsedRef.current = raw
-          setInterrupted(Math.max(0, Math.round((raw - latency) * 10) / 10))
-          interruptedAt.current = { bi, si }
-          // Hidden time is unknowable. End the attempt now rather than letting
-          // a locked phone manufacture a PR; the athlete can log or redo it.
-          if (filming) {
-            setCameraOn(false)
-            void recorder.stop().finally(() => recorder.release())
-          }
-          setPhase('ready')
-        }
-        // React state may not flush before a hidden tab is discarded. Persist
-        // the forced-off camera synchronously instead of relying on a later
-        // render that the browser is free never to run.
-        snapshot(filming ? { cameraOn: false } : undefined)
+        suspend()
+        // React state may not flush before a hidden tab is discarded; this
+        // synchronous write still carries the frozen hold.
+        snapshot()
       } else {
         const resumedAt = Date.now()
         if (hiddenAtRef.current !== null) {
@@ -389,11 +486,14 @@ export function SessionPlayer({
           setNow(resumedAt)
         }
         frozenElapsedRef.current = null
+        setSuspended(false)
         snapshot()
       }
     }
     const onPageHide = () => {
-      if (startedAtRef.current && hiddenAtRef.current === null) hiddenAtRef.current = Date.now()
+      if (startedAtRef.current && !endedAtRef.current && hiddenAtRef.current === null) {
+        hiddenAtRef.current = Date.now()
+      }
       if (phase === 'hold' && frozenElapsedRef.current === null) {
         frozenElapsedRef.current = Math.max(0, (Date.now() - holdStart) / 1000)
       }
@@ -426,37 +526,47 @@ export function SessionPlayer({
     notes,
     workout,
     latency,
-    filming,
     recorder,
     interrupted,
+    interruptedRaw,
     checkIn,
     walkedBack,
     cameraOn,
+    finishedEarly,
   ])
 
+  // Say what was recovered, not that nothing was lost — an interrupted hold
+  // is exactly the thing that may have been.
   useEffect(() => {
-    if (resumeFrom) pushToast('Session restored — nothing was lost.', 'success', 4500)
+    if (!resumeFrom) return
+    const n = resumeFrom.logs.length
+    pushToast(
+      `Session restored — ${n} set${n === 1 ? '' : 's'} logged so far${
+        interrupted !== null ? '. Your last hold was interrupted: choose whether to log it' : ''
+      }.`,
+      'success',
+      5500,
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Open the camera while setting up so the shot can be framed, and close it
   // again as soon as filming is not imminent — no stray camera light.
-  // A clip belongs to the set that was just rated. Leaving the rest screen
-  // without rating discards it rather than carrying it to the next exercise.
-  useEffect(() => {
-    if (phase !== 'rest' && phase !== 'summary') setPendingClip(null)
-  }, [phase])
-
   const { prepare: prepareCamera, release: releaseCamera } = recorder
   useEffect(() => {
-    if (phase === 'ready' && filming) void prepareCamera()
-    else if (phase !== 'lead' && phase !== 'hold' && phase !== 'ready') releaseCamera()
-  }, [phase, filming, prepareCamera, releaseCamera])
+    if (suspended) return
+    if (phase === 'ready') {
+      if (wantsFilm) void prepareCamera()
+      else releaseCamera()
+    } else if (phase !== 'lead' && phase !== 'hold') {
+      releaseCamera()
+    }
+  }, [phase, wantsFilm, suspended, prepareCamera, releaseCamera])
 
   // Countdown cues for lead-in and rest: spoken when voice is on, ticks otherwise.
   useEffect(() => {
     if (phase !== 'lead' && phase !== 'rest') return
-    if (phase === 'rest' && problemReportOpen) return
+    if (phase === 'rest' && (problemReportOpen || reviewOpen)) return
     const remaining = phase === 'lead' ? leadRemaining : restRemaining
     const whole = Math.ceil(remaining)
     if (whole <= 3 && whole >= 1 && whole !== lastBeepRef.current) {
@@ -464,37 +574,50 @@ export function SessionPlayer({
       if (state.settings.voice) speak(String(whole))
       else if (state.settings.beeps) sfx.tick()
     }
-  }, [phase, leadRemaining, restRemaining, problemReportOpen, state.settings.beeps, state.settings.voice])
+  }, [phase, leadRemaining, restRemaining, problemReportOpen, reviewOpen, state.settings.beeps, state.settings.voice])
 
   // Lead-in finished → the hold starts.
   useEffect(() => {
     if (phase === 'lead' && leadRemaining <= 0) {
       sfx.go()
-      // Recording starts with the hold, not with the lead-in. Filming the
-      // walk into position put upright frames inside the analysed window,
-      // and a single standing frame reads as perfectly locked arms.
-      if (filming) void recorder.start()
+      const startedAt = Date.now()
+      recordingRef.current = null
+      // Recording starts with the hold, not with the lead-in — and only from a
+      // camera that was live when the attempt began. A late camera never
+      // starts a recording mid-hold: its clip's first frame would not be the
+      // hold's first second, and the judge would grade the wrong window.
+      if (filmAttemptRef.current) {
+        void recorder.start().then((ok) => {
+          if (ok) {
+            recordingRef.current = { offsetSec: Math.max(0, (Date.now() - startedAt) / 1000) }
+          } else if (filmAttemptRef.current) {
+            filmAttemptRef.current = false
+            pushToast('The camera stopped before this hold started — it is timed, but not filmed.', 'info', 4500)
+          }
+        })
+      }
       if (state.settings.voice) speak('Go')
       targetHitRef.current = false
       lastCountRef.current = -1
       prBuzzedRef.current = false
-      leadUsedRef.current = Math.max(0, (Date.now() - leadStartedAtRef.current) / 1000)
+      leadUsedRef.current = Math.max(0, (startedAt - leadStartedAtRef.current) / 1000)
       stoppingHoldRef.current = false
-      setHoldStart(Date.now())
+      setHoldStart(startedAt)
       setPhase('hold')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, leadRemaining, state.settings.voice, filming])
+  }, [phase, leadRemaining, state.settings.voice])
 
-  // Rest finished → back to ready.
+  // Rest finished → back to ready. Never underneath an open review or report:
+  // finishing the rest must not dismiss the clip someone is looking at.
   useEffect(() => {
-    if (phase === 'rest' && restRemaining <= 0 && !problemReportOpen) {
+    if (phase === 'rest' && restRemaining <= 0 && !problemReportOpen && !reviewOpen) {
       sfx.go()
       if (state.settings.voice) speak('Rest over')
       lastBeepRef.current = -1
       setPhase('ready')
     }
-  }, [phase, restRemaining, problemReportOpen, state.settings.voice])
+  }, [phase, restRemaining, problemReportOpen, reviewOpen, state.settings.voice])
 
   // Chime + announce when the target is reached mid-hold.
   useEffect(() => {
@@ -541,6 +664,14 @@ export function SessionPlayer({
     setPhase('ready')
   }, [])
 
+  /** Training is over: fix its end now, before any review time accrues. */
+  const enterSummary = useCallback((early: boolean) => {
+    lastBeepRef.current = -1
+    if (!endedAtRef.current) endedAtRef.current = Date.now()
+    if (early) setFinishedEarly(true)
+    setPhase('summary')
+  }, [])
+
   const advance = useCallback(
     (withRest: boolean) => {
       lastBeepRef.current = -1
@@ -548,7 +679,7 @@ export function SessionPlayer({
       const isLastSet = si + 1 >= b.sets
       const isLastBlock = bi + 1 >= workout.blocks.length
       if (isLastSet && isLastBlock) {
-        setPhase('summary')
+        enterSummary(false)
         return
       }
       if (isLastSet) {
@@ -567,145 +698,241 @@ export function SessionPlayer({
         setPhase('ready')
       }
     },
-    [bi, si, workout],
+    [bi, si, workout, enterSummary],
+  )
+
+  /** Move on without logging anything — by whole rounds, across blocks if needed. */
+  const moveBy = useCallback(
+    (rounds: number) => {
+      lastBeepRef.current = -1
+      const b = workout.blocks[bi]
+      if (b && si + rounds < b.sets) {
+        setSi(si + rounds)
+        setPhase('ready')
+        return
+      }
+      if (bi + 1 < workout.blocks.length) {
+        setBi(bi + 1)
+        setSi(0)
+        setPhase('ready')
+        return
+      }
+      enterSummary(false)
+    },
+    [bi, si, workout, enterSummary],
+  )
+
+  /** One set's record, built for an explicit block and round. */
+  const buildLog = useCallback(
+    (blockIndex: number, setIndex: number, value: number, extra: LogExtra = {}): SetLog | null => {
+      const b = workout.blocks[blockIndex]
+      const ex = b ? EXERCISE_BY_ID[b.exerciseId] : undefined
+      if (!b || !ex) return null
+      // A snapshot of the remembered setup, so changing it later never
+      // relabels this set.
+      const remembered = assistApplies(ex) ? state.setups?.[ex.id] : undefined
+      const { raw, timing, leadInSec, recordingOffsetSec } = extra
+      return {
+        exerciseId: ex.id,
+        kind: ex.type,
+        value,
+        ...(raw !== undefined && Math.abs(raw - value) > 0.05 ? { raw } : {}),
+        ...(ex.perSide ? { side: sideFor(setIndex) } : {}),
+        ...(ex.category === 'planche' ? { surface } : {}),
+        ...(ex.type === 'hold' && leadInSec !== undefined && leadInSec !== null ? { leadInSec: round1(leadInSec) } : {}),
+        ...(ex.type === 'hold' && timing ? { timing } : {}),
+        ...(remembered ? { assist: remembered.assist } : {}),
+        ...(recordingOffsetSec !== undefined && recordingOffsetSec > 0.25
+          ? { recordingOffsetSec: round1(recordingOffsetSec) }
+          : {}),
+        target: b.target.kind === 'hold' ? b.target.sec : b.target.reps,
+        section: b.section,
+        at: extra.at ?? Date.now(),
+      }
+    },
+    [workout, sideFor, surface, state.setups],
   )
 
   const logSet = useCallback(
-    (value: number, raw?: number, at = Date.now(), usedLeadInSec: number | null = leadUsedRef.current) => {
-      if (!block || !exercise) return
-      setLogs((l) => [
-        ...l,
-        {
-          exerciseId: exercise.id,
-          kind: exercise.type,
-          value,
-          ...(raw !== undefined && Math.abs(raw - value) > 0.05 ? { raw } : {}),
-          ...(exercise.perSide ? { side } : {}),
-          ...(exercise.category === 'planche' ? { surface } : {}),
-          ...(exercise.type === 'hold' && usedLeadInSec !== null
-            ? { leadInSec: Math.round(usedLeadInSec * 10) / 10 }
-            : {}),
-          target: block.target.kind === 'hold' ? block.target.sec : block.target.reps,
-          section: block.section,
-          at,
-        },
-      ])
-      advance(true)
+    (value: number, extra: LogExtra = {}, then: 'advance' | 'finish' = 'advance') => {
+      const entry = buildLog(bi, si, value, { leadInSec: leadUsedRef.current, ...extra })
+      if (!entry) return
+      setLogs((l) => [...l, entry])
+      if (then === 'finish') enterSummary(true)
+      else advance(true)
     },
-    [block, exercise, advance, side, surface],
+    [bi, si, buildLog, advance, enterSummary],
   )
 
-  const stopHold = useCallback(() => {
-    // A hold can only be stopped once.
-    //
-    // `phase` is read from a closure, and several events can fire before React
-    // re-renders: holding the space bar auto-repeats, and an impatient double
-    // tap on Stop is ordinary behaviour mid-workout. Every one of them used to
-    // reach this function while the phase still read 'hold', logging its own
-    // set — five taps wrote five sets, four of them phantom 0s holds that then
-    // counted toward set totals, session volume and the coach's history. The
-    // ref is claimed synchronously, so the duplicates have nothing left to do.
-    if (stoppingHoldRef.current) return
-    stoppingHoldRef.current = true
-    const raw = Math.round(((Date.now() - holdStart) / 1000) * 10) / 10
-    // You come out of the hold, then reach for the button. That gap is time
-    // you were not actually holding, so it comes back off.
-    const v = Math.max(0, Math.round((raw - latency) * 10) / 10)
-    sfx.stop()
-    if (bestBefore !== undefined && v > bestBefore) sfx.pr()
-    const loggedAt = Date.now()
-    if (filming && exercise) {
-      const exId = exercise.id
-      setClipFinalizing(true)
-      void recorder
-        .stop()
-        .then(async (blob) => {
-          if (!blob) return
-          const key = await saveClip(exId, blob, v)
-          if (key) {
-            // Attach the clip immediately, even if the rest screen is skipped.
-            // Summary can still run the required review on this exact set.
-            setLogs((current) =>
-              current.map((log) => (log.at === loggedAt ? { ...log, clipKey: key } : log)),
-            )
-          }
-          // Only offer it on the screen that rates that very set — otherwise it
-          // would surface under a later, unrelated exercise.
-          const ratable = phaseRef.current === 'rest' || phaseRef.current === 'summary'
-          setPendingClip(key && ratable ? { key, logAt: loggedAt } : null)
-          if (!key) pushToast('The clip could not be saved. Your set is still logged.', 'danger', 5000)
-        })
-        .finally(() => setClipFinalizing(false))
-    }
-    logSet(v, raw, loggedAt)
-  }, [holdStart, logSet, bestBefore, latency, filming, exercise, recorder])
-
-  const beginSet = useCallback(() => {
-    if (!block || !exercise) return
-    lastBeepRef.current = -1
-    if (exercise.type === 'hold') {
-      const started = Date.now()
-      leadStartedAtRef.current = started
-      leadUsedRef.current = 0
-      setLeadEnd(started + leadSec * 1000)
-      setPhase('lead')
-    } else {
-      setPendingReps(block.target.kind === 'reps' ? block.target.reps : 0)
-      setPhase('reps')
-    }
-  }, [block, exercise, leadSec])
-
-  // Skipping a unilateral round skips its partner too, so a set never ends up
-  // trained on one side only.
-  const skipSet = useCallback(() => {
-    if (perSide && si % 2 === 0 && block && si + 1 < block.sets) {
-      // Advance normally when this is the final pair; directly adding two
-      // would leave the index past the end of the same block.
-      if (si + 2 >= block.sets) advance(false)
-      else {
-        setSi(si + 2)
-        setPhase('ready')
+  const stopHold = useCallback(
+    (then: 'advance' | 'finish' = 'advance') => {
+      // A hold can only be stopped once.
+      //
+      // `phase` is read from a closure, and several events can fire before
+      // React re-renders: holding the space bar auto-repeats, and an impatient
+      // double tap on Stop is ordinary behaviour mid-workout. The ref is
+      // claimed synchronously, so the duplicates have nothing left to do.
+      if (stoppingHoldRef.current) return
+      stoppingHoldRef.current = true
+      const raw = round1((Date.now() - holdStart) / 1000)
+      // You come out of the hold, then reach for the button. That gap is time
+      // you were not actually holding, so it comes back off.
+      const v = Math.max(0, round1(raw - latency))
+      sfx.stop()
+      if (bestBefore !== undefined && v > bestBefore) sfx.pr()
+      const loggedAt = Date.now()
+      const recording = recordingRef.current
+      recordingRef.current = null
+      if (filmAttemptRef.current && exercise) {
+        filmAttemptRef.current = false
+        const exId = exercise.id
+        setClipsFinalizing((n) => n + 1)
+        void recorder
+          .stop()
+          .then(async (blob) => {
+            if (!blob) return
+            const key = await saveClip(exId, blob, v)
+            if (!key) {
+              pushToast('The clip could not be saved. Your set is still logged.', 'danger', 5000)
+              return
+            }
+            // Attached by timestamp, so it lands on this exact set even if the
+            // athlete has moved on — and on the saved session if it was saved
+            // before the clip finished.
+            setLogs((current) => current.map((log) => (log.at === loggedAt ? { ...log, clipKey: key } : log)))
+            const sessionId = savedSessionIdRef.current
+            if (sessionId) dispatch({ type: 'ATTACH_SET_CLIP', sessionId, setAt: loggedAt, clipKey: key })
+          })
+          .finally(() => setClipsFinalizing((n) => Math.max(0, n - 1)))
       }
-      return
-    }
-    advance(false)
-  }, [advance, perSide, si, block])
+      const allowanceSec = round1(raw - v)
+      const timing: SetTiming = {
+        method: 'stopwatch',
+        ...(allowanceSec > 0
+          ? {
+              allowanceSec,
+              allowance: exercise && isMainProgressionHold(exercise.id) && walkedBack ? 'walk-back' : 'reaction',
+            }
+          : {}),
+      }
+      logSet(v, { raw, at: loggedAt, timing, ...(recording ? { recordingOffsetSec: recording.offsetSec } : {}) }, then)
+    },
+    [holdStart, latency, bestBefore, exercise, recorder, logSet, walkedBack, dispatch],
+  )
 
-  const skipBlock = useCallback(() => {
+  const beginSet = useCallback(
+    (film: boolean) => {
+      if (!block || !exercise) return
+      lastBeepRef.current = -1
+      // Starting this round again is the "redo" of an interrupted attempt.
+      if (interruptedAt.current?.bi === bi && interruptedAt.current?.si === si) {
+        setInterrupted(null)
+        setInterruptedRaw(null)
+        interruptedAt.current = null
+      }
+      if (exercise.type === 'hold') {
+        filmAttemptRef.current = film && recorder.status === 'live'
+        const started = Date.now()
+        leadStartedAtRef.current = started
+        leadUsedRef.current = 0
+        setLeadEnd(started + leadSec * 1000)
+        setPhase('lead')
+      } else {
+        setPendingReps(block.target.kind === 'reps' ? block.target.reps : 0)
+        setPhase('reps')
+      }
+    },
+    [block, exercise, leadSec, recorder.status, bi, si],
+  )
+
+  /** Back out of a countdown; nothing has been done yet, so nothing is logged. */
+  const cancelLead = useCallback(() => {
+    filmAttemptRef.current = false
     lastBeepRef.current = -1
-    if (bi + 1 >= workout.blocks.length) {
-      setPhase('summary')
-    } else {
-      setBi(bi + 1)
-      setSi(0)
-      setPhase('ready')
-    }
-  }, [bi, workout])
-
-  /** Attach form to the exact set that produced it, even after navigation. */
-  const setFormForLog = useCallback((at: number, form: FormCheck) => {
-    setLogs((current) => current.map((log) => (log.at === at ? { ...log, form } : log)))
+    setPhase('ready')
   }, [])
 
-  const setAnalysisBusy = useCallback((at: number, busy: boolean) => {
-    setAnalysingSets((current) => {
+  // Skipping a unilateral round skips its partner too, so a set is never
+  // trained on one side only — including the final pair of a block, which
+  // used to move only to the second side.
+  const skipSet = useCallback(() => {
+    const pairStart = perSide && si % 2 === 0 && block !== undefined && si + 1 < block.sets
+    moveBy(pairStart ? 2 : 1)
+  }, [moveBy, perSide, si, block])
+
+  const skipBlock = useCallback(() => {
+    const b = workout.blocks[bi]
+    moveBy(b ? b.sets - si : 1)
+  }, [moveBy, workout, bi, si])
+
+  /**
+   * Apply a form change to the exact set it belongs to — in this session, and
+   * on the saved session if it has already been saved.
+   */
+  const commitForm = useCallback(
+    (at: number, merge: (current: FormCheck | undefined) => FormCheck) => {
+      setLogs((current) => current.map((log) => (log.at === at ? { ...log, form: merge(log.form) } : log)))
+      const sessionId = savedSessionIdRef.current
+      if (sessionId) {
+        const before = postSaveForms.current.has(at)
+          ? postSaveForms.current.get(at)
+          : logsRef.current.find((log) => log.at === at)?.form
+        const next = merge(before)
+        postSaveForms.current.set(at, next)
+        dispatch({ type: 'UPDATE_SET_FORM', sessionId, setAt: at, form: next })
+      }
+    },
+    [dispatch],
+  )
+  const applyHuman = useCallback(
+    (at: number, review: HumanReview) => commitForm(at, (current) => mergeHumanReview(current, review)),
+    [commitForm],
+  )
+  const applyModel = useCallback(
+    (at: number, reading: ModelReading) => commitForm(at, (current) => mergeModelReading(current, reading)),
+    [commitForm],
+  )
+  const onBusyChange = useCallback((opId: string, busy: boolean) => {
+    setBusyOps((current) => {
+      if (busy === current.has(opId)) return current
       const next = new Set(current)
-      if (busy) next.add(at)
-      else next.delete(at)
+      if (busy) next.add(opId)
+      else next.delete(opId)
       return next
     })
   }, [])
+
+  const setEndReason = useCallback((at: number, reason: EndReason | undefined) => {
+    setLogs((current) =>
+      current.map((log) => {
+        if (log.at !== at) return log
+        const { endReason: _previous, ...rest } = log
+        void _previous
+        return reason ? { ...rest, endReason: reason } : rest
+      }),
+    )
+  }, [])
+
+  /** A joint report from the middle of a session reaches the record now, saved session or not. */
+  const recordAttemptSymptom = useCallback(
+    (symptom: AttemptSymptom) => {
+      dispatch({
+        type: 'RECORD_SYMPTOM',
+        event: { at: Date.now(), joints: symptom.joints, regions: symptom.regions, source: 'attempt' },
+      })
+    },
+    [dispatch],
+  )
 
   const adjustLastLog = useCallback((delta: number) => {
     setLogs((l) => {
       if (l.length === 0) return l
       const last = l[l.length - 1]
-      const value = Math.max(0, Math.round((last.value + delta) * 10) / 10)
-      // Hand-edited now, so the original stopwatch reading no longer explains
-      // it — keeping it would render a nonsense negative reaction time.
-      const { raw: _dropped, ...rest } = last
-      void _dropped
-      return [...l.slice(0, -1), { ...rest, value }]
+      const value = Math.max(0, round1(last.value + delta))
+      // A hand edit replaces the value, not the observation: the timer's raw
+      // reading stays on record and the set says it was edited, instead of
+      // the reading being thrown away.
+      return [...l.slice(0, -1), { ...last, value, ...(last.kind === 'hold' ? { timing: { method: 'edited' as const } } : {}) }]
     })
   }, [])
 
@@ -714,25 +941,28 @@ export function SessionPlayer({
    *
    * Recomputed from the untouched stopwatch reading rather than nudged, so
    * tapping back and forth always lands on exactly the same two numbers and
-   * cannot drift. `raw` is deliberately kept even when it now equals the
-   * credited value, because it is what makes the tap reversible.
+   * cannot drift. Only for plain stopwatch readings — an edited or
+   * interrupted value is not a stopwatch reading any more.
    */
   const setWalkedBackForLog = useCallback(
     (at: number, didWalk: boolean) => {
       setWalkedBack(didWalk)
-      setLogs((l) => {
-        const target = l.find((log) => log.at === at)
-        if (!target || target.kind !== 'hold' || target.raw === undefined) return l
-        const value = creditedHoldSeconds(
-          target.raw,
-          target.exerciseId,
-          state.settings.stopLatencySec,
-          !didWalk,
-        )
-        // Target by timestamp so the summary can correct its final Path hold
-        // even when a cooldown set was logged after it.
-        return l.map((log) => (log.at === at ? { ...log, value } : log))
-      })
+      setLogs((l) =>
+        l.map((log) => {
+          if (log.at !== at || log.kind !== 'hold' || log.raw === undefined) return log
+          if (log.timing && log.timing.method !== 'stopwatch') return log
+          const value = creditedHoldSeconds(log.raw, log.exerciseId, state.settings.stopLatencySec, !didWalk)
+          const allowanceSec = round1(log.raw - value)
+          return {
+            ...log,
+            value,
+            timing: {
+              method: 'stopwatch',
+              ...(allowanceSec > 0 ? { allowanceSec, allowance: didWalk ? ('walk-back' as const) : ('reaction' as const) } : {}),
+            },
+          }
+        }),
+      )
     },
     [state.settings.stopLatencySec],
   )
@@ -740,13 +970,14 @@ export function SessionPlayer({
   /** The stopwatch correction shared by rest and the final summary screen. */
   const stopAllowanceCorrection = (log: SetLog) => {
     if (log.kind !== 'hold' || log.raw === undefined || !isMainProgressionHold(log.exerciseId)) return null
+    if (log.timing && log.timing.method !== 'stopwatch') return null
     const credits = stopSetupCredits(log.raw, log.exerciseId, state.settings.stopLatencySec)
     if (credits.delta <= 0.05) return null
     const didWalk = Math.abs(log.value - credits.walkedBack) <= Math.abs(log.value - credits.withinReach)
     return (
       <button
         onClick={() => setWalkedBackForLog(log.at, !didWalk)}
-        className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-[12.5px] font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
+        className="mt-2 inline-flex min-h-10 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-[12.5px] font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
       >
         <Icon name="rotate" size={13} className="text-accent-text" />
         {didWalk
@@ -756,14 +987,81 @@ export function SessionPlayer({
     )
   }
 
+  const clearInterrupted = useCallback(() => {
+    setInterrupted(null)
+    setInterruptedRaw(null)
+    interruptedAt.current = null
+  }, [])
+
+  /**
+   * Log the interrupted hold as what it is: an interrupted attempt, with the
+   * timer's raw reading and the allowance held back, not a plain stopwatch set.
+   */
+  const logInterrupted = useCallback(() => {
+    const where = interruptedAt.current
+    if (interrupted === null || !where) return
+    const raw = interruptedRaw ?? undefined
+    const allowanceSec = raw !== undefined ? round1(raw - interrupted) : 0
+    const entry = buildLog(where.bi, where.si, interrupted, {
+      ...(raw !== undefined ? { raw } : {}),
+      // The page was restored after this attempt, so its exact setup countdown
+      // is unknowable. Leave it unspecified and let rest reconstruction use
+      // the normal fallback.
+      leadInSec: null,
+      timing: {
+        method: 'interrupted',
+        ...(allowanceSec > 0.05 ? { allowanceSec, allowance: 'interruption' as const } : {}),
+      },
+    })
+    clearInterrupted()
+    if (!entry) return
+    setLogs((l) => [...l, entry])
+    if (phaseRef.current === 'ready' && where.bi === bi && where.si === si) advance(true)
+  }, [interrupted, interruptedRaw, buildLog, clearInterrupted, advance, bi, si])
+
+  const requestExit = useCallback(() => {
+    if (phase === 'celebrate') {
+      onExit()
+      return
+    }
+    // A countdown never runs on behind a dialog — it would start a hold, and
+    // a recording, under it.
+    if (phase === 'lead') cancelLead()
+    setConfirmExit(true)
+  }, [phase, onExit, cancelLead])
+
+  /** Stop here and review what was actually done. Distinct from discarding it. */
+  const finishEarly = useCallback(() => {
+    setConfirmExit(false)
+    if (phase === 'hold') {
+      stopHold('finish')
+      return
+    }
+    if (phase === 'lead') cancelLead()
+    enterSummary(true)
+  }, [phase, stopHold, cancelLead, enterSummary])
+
+  const discard = useCallback(() => {
+    clearDraft()
+    recorder.release()
+    onExit()
+  }, [recorder, onExit])
+
   const save = useCallback(() => {
+    // Exactly once, however many taps arrive before the next render.
+    if (savingRef.current || savedSessionIdRef.current || logs.length === 0) return
+    savingRef.current = true
+    const savedAt = Date.now()
+    const endedAt = endedAtRef.current || savedAt
+    const partial = finishedEarly || logs.length < totalSets
     const session: Session = {
       id: crypto.randomUUID(),
       // Never 0 in practice — a session cannot reach the summary without
       // leaving the intro — but a real timestamp beats an epoch date if it is.
-      startedAt: startedAtRef.current || Date.now(),
-      endedAt: Date.now(),
+      startedAt: startedAtRef.current || endedAt,
+      endedAt,
       ...(pausedMsRef.current > 0 ? { pausedMs: pausedMsRef.current } : {}),
+      savedAt,
       workoutName: workout.name,
       workoutKind: workout.kind,
       stepId: state.stepId,
@@ -772,6 +1070,9 @@ export function SessionPlayer({
       notes: notes.trim() || undefined,
       strategy: workout.strategy,
       checkIn: checkIn ?? undefined,
+      // Skipped or unstarted work is not adherence; only what was done is here.
+      completion: partial ? 'partial' : 'full',
+      plannedRounds: totalSets,
     }
     const { next, events: raw } = applySession(state, session)
     // The coach reacts to every finished session, whatever kind it was.
@@ -786,7 +1087,8 @@ export function SessionPlayer({
         (p) => p.previous !== undefined || EXERCISE_BY_ID[p.exerciseId]?.category === 'planche',
       ),
     }
-    // Compare against the last run of this same workout.
+    // Compare against the last run of this same workout — but not a partial
+    // one: stopping early is not "down" on the full version.
     const plancheHold = (s: Session) =>
       Math.round(
         s.sets
@@ -794,9 +1096,9 @@ export function SessionPlayer({
           .reduce((t, x) => t + x.value, 0),
       )
     const prevSame = [...state.sessions]
-      .filter((s) => s.workoutName === workout.name)
+      .filter((s) => s.workoutName === workout.name && s.completion !== 'partial')
       .sort((a, b) => b.startedAt - a.startedAt)[0]
-    if (prevSame) {
+    if (prevSame && !partial) {
       const delta = plancheHold(session) - plancheHold(prevSame)
       setInsight({
         delta,
@@ -806,96 +1108,105 @@ export function SessionPlayer({
             : `${delta}s planche hold time vs last time — down days are part of it`,
       })
     }
+    savedSessionIdRef.current = session.id
     dispatch({ type: 'SAVE_SESSION', session })
     clearDraft()
     setEvents(ev)
     setSavedSession(session)
+    setConfirmExit(false)
     setPhase('celebrate')
     sfx.done()
     if (ev.unlockedStep) confetti(2)
     else if (ev.prs.length > 0) confetti(1)
-  }, [workout, state, logs, rpe, notes, dispatch])
+  }, [workout, state, logs, rpe, notes, dispatch, checkIn, finishedEarly, totalSets])
 
   // Keyboard shortcuts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      // A child dialog is on top: let it own the keyboard, or Escape would
-      // also open the exit prompt and Space would start behind the overlay.
-      if (showCheckIn || showDemo || showRpeHelp || confirmExit) return
-      // A focused control owns its own keys. Space is how a keyboard user
-      // activates a button, and swallowing it here meant tabbing to "Skip
-      // set", "+30s", an RPE value or a form rating and pressing Space either
-      // did nothing or fired the phase action instead of the button — the
-      // shortcut made the visible controls unreachable without a mouse.
-      // Media counts as a focused control too. Space is play/pause on a
-      // focused <video>, and during rest the athlete is often scrubbing the
-      // clip they just recorded — swallowing it there stopped the replay
-      // responding at all, for a phase that has no Space action anyway.
+      // A layer is on top: let it own the keyboard, or Escape would also open
+      // the exit prompt and Space would start a set behind the overlay.
+      if (showCheckIn || showDemo || showRpeHelp || confirmExit || reviewOpen || problemReportOpen) return
+      // A focused control owns its own Space (activating a button, play/pause
+      // on a focused video). Escape and "skip rest" are not keys a button owns.
       if (
         e.target instanceof HTMLElement &&
         e.target.closest(
           'button, a, select, video, audio, [role="switch"], [role="button"], [role="slider"], [contenteditable]',
-        )
+        ) &&
+        e.code === 'Space'
       ) {
-        // Scoped to Space only: Escape and "skip rest" are not keys a button
-        // owns, and returning early for everything meant tabbing to any
-        // control silently disabled both of them.
-        if (e.code === 'Space') return
+        return
       }
       if (e.code === 'Space') {
         e.preventDefault()
         // Every Space action is a one-shot phase transition, so at most one may
-        // run per phase. Holding the bar auto-repeats and a double tap fires
-        // twice before React re-renders; each event read the same stale phase
-        // and ran the transition again, which logged duplicate sets. The claim
-        // is taken synchronously and cleared when the phase actually changes.
+        // run per phase. The claim is taken synchronously and cleared when the
+        // phase actually changes.
         if (e.repeat || spaceClaimRef.current === phase) return
+        if (phase === 'ready' && startWaitsForCamera) return
         spaceClaimRef.current = phase
         if (phase === 'intro') startSession()
-        else if (phase === 'ready') beginSet()
+        else if (phase === 'ready') beginSet(wantsFilm && cameraLive)
         else if (phase === 'hold') stopHold()
         else if (phase === 'reps') logSet(pendingReps)
       } else if (e.key.toLowerCase() === 's' && phase === 'rest') {
         setRestEnd(Date.now())
       } else if (e.key === 'Escape' && phase !== 'celebrate') {
-        setConfirmExit(true)
+        requestExit()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [phase, beginSet, stopHold, logSet, pendingReps, showCheckIn, showDemo, showRpeHelp, confirmExit])
+  }, [
+    phase,
+    beginSet,
+    stopHold,
+    logSet,
+    pendingReps,
+    showCheckIn,
+    showDemo,
+    showRpeHelp,
+    confirmExit,
+    reviewOpen,
+    problemReportOpen,
+    startSession,
+    startWaitsForCamera,
+    wantsFilm,
+    cameraLive,
+    requestExit,
+  ])
 
+  const trainingEnd = endedAtRef.current || now
   const sessionElapsed = startedAtRef.current
-    ? Math.max(0, (now - startedAtRef.current - pausedMsRef.current) / 1000)
+    ? Math.max(0, (trainingEnd - startedAtRef.current - pausedMsRef.current) / 1000)
     : 0
   const lastLog = logs[logs.length - 1]
 
   const holdSecTotal = Math.round(logs.filter((l) => l.kind === 'hold').reduce((t, l) => t + l.value, 0))
+  const layerOpen = showCheckIn || showDemo || showRpeHelp || confirmExit || reviewOpen || problemReportOpen
 
   // ————— Render helpers —————
 
   const header = (
-    <div className="flex items-center justify-between gap-3 px-5 pt-5 sm:px-8">
+    <div className="flex items-center justify-between gap-3 px-5 pt-[max(env(safe-area-inset-top),20px)] sm:px-8">
       <div className="min-w-0">
         <div className="truncate font-display text-[15px] font-semibold text-ink">{workout.name}</div>
-        <div className="text-[12.5px] text-ink3 tnum">
-          {doneSets}/{totalSets} sets · {fmtClock(sessionElapsed)}
+        <div className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-ink3 tnum">
+          <span>
+            {doneSets}/{totalSets} sets · {fmtClock(sessionElapsed)}
+          </span>
+          {phase === 'summary' ? (
+            <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-text">
+              Not saved yet
+            </span>
+          ) : null}
         </div>
       </div>
       <button
-        onClick={() => {
-          if (phase === 'summary' || phase === 'celebrate') {
-            // Leaving a finished session without saving discards it, so the
-            // draft must go too or it reopens on next launch.
-            clearDraft()
-            onExit()
-          } else {
-            setConfirmExit(true)
-          }
-        }}
-        aria-label="Exit session"
-        className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line bg-surface text-ink2 hover:text-ink"
+        onClick={requestExit}
+        aria-label={phase === 'celebrate' ? 'Close' : 'Exit session'}
+        className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line bg-surface text-ink2 hover:text-ink"
       >
         <Icon name="x" size={17} />
       </button>
@@ -911,6 +1222,61 @@ export function SessionPlayer({
     </div>
   )
 
+  /** The interrupted-hold card, on Ready for its own set and on the summary when still pending. */
+  const interruptedCard = (where: 'ready' | 'summary') =>
+    interrupted !== null ? (
+      <div className="mx-auto mt-3 max-w-sm rounded-2xl border border-accent/30 bg-accent-soft p-4 text-left">
+        <div className="text-[13.5px] font-semibold text-ink">Your last hold was interrupted</div>
+        <p className="mt-0.5 text-[13px] leading-relaxed text-ink2">
+          The app was hidden mid-set
+          {interruptedRaw !== null ? (
+            <>
+              {' '}
+              at <span className="font-semibold text-ink tnum">{fmtHold(interruptedRaw)}</span> on the timer
+            </>
+          ) : null}
+          . Logging it counts <span className="font-semibold text-ink tnum">{fmtHold(interrupted)}</span>
+          {interruptedRaw !== null && interruptedRaw - interrupted > 0.05
+            ? ' — the same allowance as stopping it yourself, because the moment you left the position is not known'
+            : ''}
+          .
+        </p>
+        <div className="mt-2.5 flex gap-2">
+          <button
+            onClick={logInterrupted}
+            className="min-h-11 flex-1 rounded-lg px-3 py-2 text-[13px] font-semibold text-on-accent"
+            style={{ background: 'var(--t-btn-accent)' }}
+          >
+            Log {fmtHold(interrupted)}
+          </button>
+          <button
+            onClick={clearInterrupted}
+            className="min-h-11 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+          >
+            {where === 'ready' ? 'Redo the set' : 'Leave it out'}
+          </button>
+        </div>
+      </div>
+    ) : null
+
+  const formRowFor = (log: SetLog, rest: boolean) => (
+    <FormCheckRow
+      key={log.at}
+      clipKey={log.clipKey ?? log.form?.clipKey ?? null}
+      exerciseId={log.exerciseId}
+      creditedHoldSec={log.value}
+      analysisWindowSec={Math.max(0, log.value - (log.recordingOffsetSec ?? 0))}
+      value={log.form}
+      autoRun={state.settings.autoAnalyze}
+      restReportAction={rest}
+      onReportOpenChange={setProblemReportOpen}
+      onReviewOpenChange={setReviewOpen}
+      onHuman={(review) => applyHuman(log.at, review)}
+      onModel={(reading) => applyModel(log.at, reading)}
+      onBusyChange={onBusyChange}
+    />
+  )
+
   function body() {
     if (phase === 'intro') {
       const sections = [...new Set(workout.blocks.map((b) => b.section))]
@@ -920,12 +1286,39 @@ export function SessionPlayer({
       // work starts, which is several sets in and easy to be surprised by.
       const willFilm =
         cameraOn && recorder.supported && workout.blocks.some((b) => b.section === 'main' && isFilmable(b.exerciseId))
+      const requested =
+        workout.request?.minutes ?? (workout.kind === 'auto' ? state.settings.sessionMinutes : undefined)
+      const overBudget = requested !== undefined && workout.minutes > requested + 1
       return (
         <div className="mx-auto w-full max-w-lg px-5 pb-10">
           <div className="mt-6 rounded-3xl border border-line bg-surface p-6 shadow-card">
-            <div className="text-[13px] font-medium uppercase tracking-wide text-ink3">Up next</div>
+            <div className="flex items-baseline justify-between gap-3">
+              <div className="text-[13px] font-medium uppercase tracking-wide text-ink3">Up next</div>
+              <div className="text-[12.5px] text-ink3 tnum">About {workout.minutes} min</div>
+            </div>
             <h1 className="mt-1 font-display text-[26px] font-bold text-ink">{workout.name}</h1>
             <p className="mt-1.5 text-[14px] leading-relaxed text-ink2">{workout.focus}</p>
+            {workout.purpose && workout.purpose !== workout.focus ? (
+              <p className="mt-1 text-[13px] leading-relaxed text-ink3">
+                <span className="font-semibold text-ink2">Why today:</span> {workout.purpose}
+              </p>
+            ) : null}
+            {overBudget ? (
+              <p className="mt-2 rounded-xl bg-raised px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
+                You asked for about {requested} min. Under the current rules this plan's minimum runs about{' '}
+                {workout.minutes} — it keeps the working sets rather than cutting them to fit.
+              </p>
+            ) : null}
+            {workout.adjustments?.length ? (
+              <div className="mt-3 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3">
+                <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent-text">Adjusted for today</div>
+                <ul className="mt-1 space-y-1 text-[13px] leading-relaxed text-ink">
+                  {workout.adjustments.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {primaryTarget && primaryExercise ? (
               <div className="mt-4 flex items-center gap-3 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-on-accent">
@@ -947,8 +1340,8 @@ export function SessionPlayer({
                 <div>
                   <div className="text-[13.5px] font-medium text-ink">Side-view camera check on main sets</div>
                   <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink2">
-                    Put the phone directly beside you. The live guide confirms your whole body is ready before each
-                    filmed set.
+                    Put the phone directly beside you. Filming starts only once the camera is actually live — if it
+                    cannot open, the set runs on the timer and says so.
                   </p>
                 </div>
               </div>
@@ -990,11 +1383,14 @@ export function SessionPlayer({
       )
     }
 
+    if (phase === 'summary') return summary()
+    if (phase === 'celebrate') return celebrate()
     if (!block || !exercise) return null
 
     if (phase === 'ready') {
       const isHold = exercise.type === 'hold'
       const target = block.target.kind === 'hold' ? `${block.target.sec}s` : `${block.target.reps} reps`
+      const filmingThis = wantsFilm && cameraLive
       return (
         <div className="mx-auto w-full max-w-lg px-5 pb-10 text-center">
           <div className="mt-4 text-[13px] font-semibold uppercase tracking-wide text-accent-text">
@@ -1008,7 +1404,7 @@ export function SessionPlayer({
                 {si % 2 === 0
                   ? sideGap
                     ? `weaker side first — then the ${side === 'left' ? 'right' : 'left'}`
-                    : 'then you’ll do the right'
+                    : `then you’ll do the ${side === 'left' ? 'right' : 'left'}`
                   : 'second half of this set'}
               </span>
             </div>
@@ -1017,7 +1413,8 @@ export function SessionPlayer({
             <Icon name="target" size={16} />
             <span className="text-[11px] font-bold uppercase tracking-wider">Target</span>
             <span className="text-[18px] font-bold text-ink tnum">
-              {target}{perSide ? ' this side' : ''}
+              {target}
+              {perSide ? ' this side' : ''}
             </span>
           </div>
           {bestBefore ? (
@@ -1027,13 +1424,17 @@ export function SessionPlayer({
             </div>
           ) : null}
           {exercise.category === 'planche' && state.profile.equipment.includes('parallettes') ? (
-            <div className="mt-2 inline-flex overflow-hidden rounded-xl border border-line" aria-label="Training surface">
+            <div
+              className="mt-2 inline-flex overflow-hidden rounded-xl border border-line"
+              role="group"
+              aria-label="Training surface"
+            >
               {TRAINING_SURFACES.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => setSurface(item.id)}
                   aria-pressed={surface === item.id}
-                  className={`px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
+                  className={`min-h-10 px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
                     surface === item.id ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                   }`}
                 >
@@ -1042,49 +1443,20 @@ export function SessionPlayer({
               ))}
             </div>
           ) : null}
+          {assistApplies(exercise) ? (
+            <SetupRow
+              key={exercise.id}
+              exerciseName={exercise.name}
+              setup={setup}
+              onSave={(next) => dispatch({ type: 'SET_SETUP', exerciseId: exercise.id, setup: next })}
+            />
+          ) : null}
           {exercise.category === 'planche' ? (
             <Figure step={figureFor(exercise.id)} className="mx-auto mt-2 h-36 w-44 text-ink" />
           ) : (
             <div className="mt-6" />
           )}
-          {interrupted !== null &&
-          interruptedAt.current?.bi === bi &&
-          interruptedAt.current?.si === si ? (
-            <div className="mx-auto mt-3 max-w-sm rounded-2xl border border-accent/30 bg-accent-soft p-4 text-left">
-              <div className="text-[13.5px] font-semibold text-ink">Your last hold was interrupted</div>
-              <p className="mt-0.5 text-[13px] leading-relaxed text-ink2">
-                Your phone locked mid-set. It had reached{' '}
-                <span className="font-semibold text-ink tnum">{fmtHold(interrupted)}</span> — log it, or redo the set.
-              </p>
-              <div className="mt-2.5 flex gap-2">
-                <button
-                  onClick={() => {
-                    // No button was pressed to end this one, so there is no
-                    // reaction delay to subtract.
-                    // The page was restored after this attempt, so its exact
-                    // setup countdown is unknowable. Leave it unspecified and
-                    // let rest reconstruction use the normal fallback.
-                    logSet(interrupted, undefined, Date.now(), null)
-                    setInterrupted(null)
-                    interruptedAt.current = null
-                  }}
-                  className="flex-1 rounded-lg px-3 py-2 text-[13px] font-semibold text-on-accent"
-                  style={{ background: 'var(--t-btn-accent)' }}
-                >
-                  Log {fmtHold(interrupted)}
-                </button>
-                <button
-                  onClick={() => {
-                    setInterrupted(null)
-                    interruptedAt.current = null
-                  }}
-                  className="flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
-                >
-                  Redo the set
-                </button>
-              </div>
-            </div>
-          ) : null}
+          {interruptedAt.current?.bi === bi && interruptedAt.current?.si === si ? interruptedCard('ready') : null}
           <div className="mx-auto mt-2 max-w-sm space-y-1.5">
             {exercise.cues.slice(0, 3).map((c) => (
               <div key={c} className="rounded-xl border border-line bg-surface px-4 py-2 text-[13.5px] text-ink2">
@@ -1100,9 +1472,15 @@ export function SessionPlayer({
           {filmable && recorder.supported ? (
             <div className="mx-auto mt-3 w-full max-w-sm">
               <div className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-2.5">
-                <span className="flex items-center gap-2 text-[13.5px] text-ink2">
-                  <Icon name="monitor" size={15} className={cameraOn ? 'text-accent-text' : 'text-ink3'} />
-                  {cameraOn ? 'Filming this set' : 'Camera off'}
+                <span className="flex min-w-0 items-center gap-2 text-left text-[13.5px] text-ink2" role="status">
+                  <Icon name="monitor" size={15} className={filmingThis ? 'shrink-0 text-accent-text' : 'shrink-0 text-ink3'} />
+                  {!cameraOn
+                    ? 'Camera off — this set is timed only'
+                    : filmingThis
+                      ? 'Camera live — this set will be filmed'
+                      : cameraFailure
+                        ? 'Camera not available'
+                        : 'Opening the camera…'}
                 </span>
                 <button
                   onClick={() => {
@@ -1121,84 +1499,104 @@ export function SessionPlayer({
                   />
                 </button>
               </div>
-              {cameraOn ? (
+              {cameraOn && !cameraFailure ? (
                 // The box takes the camera's real shape rather than forcing
-                // 16:9. Letterboxing a portrait stream into a wide frame put
-                // the framing guide over black bars, so the one thing the
-                // preview exists for — seeing what will actually be in the
-                // clip — was the thing it got wrong.
+                // 16:9, and follows it when the phone is turned — the preview
+                // exists to show what will actually be in the clip.
                 <div
                   className="relative mt-2 w-full overflow-hidden rounded-2xl border border-line bg-black"
                   style={{ aspectRatio: recorder.frame ? recorder.frame.width / recorder.frame.height : 16 / 9 }}
                 >
-                  <video
-                    ref={recorder.previewRef}
-                    muted
-                    playsInline
-                    className="h-full w-full object-cover"
-                  />
+                  <video ref={recorder.previewRef} muted playsInline className="h-full w-full object-cover" />
                   <div className="pointer-events-none absolute inset-[8%] rounded-xl border border-dashed border-accent/70" />
                   <div className="pointer-events-none absolute inset-x-[8%] top-1/2 h-px bg-accent/60" />
-                  {/* Live "can the camera actually see you" check — placement
-                      problems get caught here, before the effort is spent,
-                      instead of by a refused verdict afterwards. */}
-                  {/* Deliberately not gated on autoAnalyze. Bad placement is
-                      the top reason a clip comes back ungradeable, and that is
-                      just as true for someone who films now and checks later —
-                      they were the ones getting no help at all. Framing also
-                      decides what the form trends can measure at all, so a
-                      criterion that is never in shot quietly disappears from
-                      them. FramingCheck's own poseModelReady() guard still
-                      prevents any unwanted model download. */}
-                  <FramingCheck videoRef={recorder.videoRef} active={recorder.status === 'idle'} />
+                  {/* Live "can the camera actually see you" check. Deliberately
+                      not gated on autoAnalyze: bad placement is the top reason
+                      a clip comes back ungradeable, for everyone who films.
+                      FramingCheck's own model-ready guard still prevents any
+                      unwanted model download. */}
+                  <FramingCheck videoRef={recorder.videoRef} active={recorder.status === 'live'} />
+                  {!cameraLive ? (
+                    <div className="absolute inset-0 grid place-items-center text-[13px] text-white/80">
+                      Opening the camera…
+                    </div>
+                  ) : null}
                   <div className="absolute inset-x-0 bottom-0 bg-black/55 px-3 py-1.5 text-[11.5px] text-white/85">
                     Side-on · whole body and both hands inside the box · phone level.
                   </div>
                 </div>
               ) : null}
-              {cameraOn ? (
+              {cameraOn && cameraLive ? (
                 <div className="mt-1.5 flex items-center justify-between gap-3">
-                  <span className="text-[12.5px] text-ink3">
-                    {recorder.onWideLens ? 'Ultra-wide (0.5×) lens' : 'Standard lens'}
+                  <span className="text-left text-[12.5px] text-ink3">
+                    {recorder.lens === 'ultra-wide'
+                      ? 'Ultra-wide (0.5×) lens in use'
+                      : recorder.lens === 'standard'
+                        ? recorder.wide
+                          ? 'Standard lens — no ultra-wide found'
+                          : 'Standard lens'
+                        : 'Lens not reported by this device'}
                     {recorder.frame ? ` · ${recorder.frame.width}×${recorder.frame.height}` : ''}
                   </span>
                   <button
                     onClick={() => recorder.setWide(!recorder.wide)}
-                    className={`rounded-lg border px-2.5 py-1 text-[12px] font-semibold transition ${
+                    aria-pressed={recorder.wide}
+                    className={`min-h-9 shrink-0 rounded-lg border px-2.5 py-1 text-[12px] font-semibold transition ${
                       recorder.wide ? 'border-accent/40 bg-accent-soft text-accent-text' : 'border-line bg-raised text-ink2'
                     }`}
                   >
-                    {recorder.wide ? '0.5× on' : '0.5× off'}
+                    Prefer 0.5×
                   </button>
                 </div>
               ) : null}
-              {cameraOn && recorder.portrait ? (
-                <p className="mt-1.5 flex items-start gap-1.5 text-[12.5px] leading-relaxed text-accent-text">
+              {cameraOn && cameraLive && recorder.portrait ? (
+                <p className="mt-1.5 flex items-start gap-1.5 text-left text-[12.5px] leading-relaxed text-accent-text">
                   <Icon name="rotate" size={14} className="mt-0.5 shrink-0" />
-                  Turn the phone on its side. A planche is a wide shape, and an upright frame cuts off your
-                  hands or your feet.
+                  Turn the phone on its side. A planche is a wide shape, and an upright frame cuts off your hands or
+                  your feet.
                 </p>
               ) : null}
-              {recorder.status === 'denied' ? (
-                <p className="mt-1.5 text-[12.5px] text-danger-text">
-                  Camera access was blocked. Allow it in your browser settings, or leave this off.
-                </p>
-              ) : null}
-              {recorder.status === 'unsupported' ? (
-                <p className="mt-1.5 text-[12.5px] text-danger-text">
-                  This browser could not start a compatible video recorder. Your sets still log normally.
-                </p>
+              {cameraOn && cameraFailure ? (
+                <div
+                  className="mt-1.5 rounded-xl border border-danger/30 bg-danger-soft px-3 py-2 text-left text-[12.5px] leading-relaxed text-ink"
+                  role="alert"
+                >
+                  {cameraFailure}
+                  {recorder.status !== 'unsupported' ? (
+                    <button
+                      onClick={() => void recorder.prepare()}
+                      className="ml-1 min-h-9 font-semibold text-accent-text underline underline-offset-2"
+                    >
+                      Try again
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           ) : null}
           <button
-            onClick={beginSet}
-            className="mt-6 inline-flex w-full max-w-sm items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99]"
+            onClick={() => beginSet(filmingThis)}
+            disabled={startWaitsForCamera}
+            className="mt-6 inline-flex w-full max-w-sm items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
             style={{ background: 'var(--t-btn-accent)' }}
           >
             <Icon name="play" size={18} />
-            {isHold ? `Start · ${leadSec}s lead-in` : 'Begin set'}
+            {!isHold
+              ? 'Begin set'
+              : startWaitsForCamera
+                ? 'Waiting for the camera…'
+                : wantsFilm && !cameraLive
+                  ? `Start without filming · ${leadSec}s lead-in`
+                  : `Start · ${leadSec}s lead-in`}
           </button>
+          {startWaitsForCamera ? (
+            <button
+              onClick={() => beginSet(false)}
+              className="mx-auto mt-1 block px-2 py-2 text-[13px] font-medium text-ink2 underline-offset-2 hover:text-ink hover:underline"
+            >
+              Start without filming
+            </button>
+          ) : null}
           {/* Bare text buttons measured 20px tall, under the 24px minimum, on
               the one screen where taps are one-handed and mid-workout. The
               padding buys a real target without changing how the row looks. */}
@@ -1207,7 +1605,7 @@ export function SessionPlayer({
               How do I do this?
             </button>
             <button onClick={skipSet} className="px-1 py-2 text-ink3 underline-offset-2 hover:text-ink hover:underline">
-              Skip set
+              {perSide && si % 2 === 0 ? 'Skip this pair' : 'Skip set'}
             </button>
             <button onClick={skipBlock} className="px-1 py-2 text-ink3 underline-offset-2 hover:text-ink hover:underline">
               Skip exercise
@@ -1234,12 +1632,25 @@ export function SessionPlayer({
             <Icon name="target" size={15} className="text-accent-text" /> Target {target}
             {perSide ? ` · ${side === 'left' ? 'left' : 'right'} side` : ''}
           </div>
-          <button
-            onClick={() => setLeadEnd(Date.now())}
-            className="mt-8 rounded-xl border border-line bg-surface px-5 py-2.5 text-[14px] font-medium text-ink2 hover:text-ink"
-          >
-            Skip lead-in
-          </button>
+          {wantsFilm ? (
+            <div className="mt-2 text-[12.5px] text-ink3">
+              {filmAttemptRef.current ? 'Filming starts at Go.' : 'Timer only — this set is not being filmed.'}
+            </div>
+          ) : null}
+          <div className="mt-8 flex gap-2.5">
+            <button
+              onClick={() => setLeadEnd(Date.now())}
+              className="min-h-11 rounded-xl border border-line bg-surface px-5 py-2.5 text-[14px] font-medium text-ink2 hover:text-ink"
+            >
+              Skip lead-in
+            </button>
+            <button
+              onClick={cancelLead}
+              className="min-h-11 rounded-xl border border-line bg-surface px-5 py-2.5 text-[14px] font-medium text-ink3 hover:text-ink"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )
     }
@@ -1249,26 +1660,30 @@ export function SessionPlayer({
       const overTarget = holdCredited >= target
       const isPr = bestBefore !== undefined && holdCredited > bestBefore
       return (
-        <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
+        <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 text-center">
           <div className="mt-2 text-[14px] font-medium text-ink2">
             {exercise.name} · Set {displaySet}/{displayTotal}
             {perSide ? ` · ${side === 'left' ? 'Left' : 'Right'}` : ''}
           </div>
+          {filmAttemptRef.current ? (
+            <div className="mt-1 inline-flex items-center gap-1.5 text-[12px] font-medium text-danger-text">
+              <span className="h-2 w-2 rounded-full bg-danger" aria-hidden="true" /> Filming
+            </div>
+          ) : null}
           <div className="relative mt-4">
             <div className="pointer-events-none absolute inset-6 rounded-full bg-accent-soft blur-3xl" />
             <ProgressRing
               value={Math.min(1, holdCredited / Math.max(1, target))}
-              size={290}
-              stroke={13}
+              size={ringSize}
+              stroke={ringSize > 220 ? 13 : 10}
               glow
-              color={isPr ? 'var(--t-ok)' : overTarget ? 'var(--t-ok)' : undefined}
+              color={isPr || overTarget ? 'var(--t-ok)' : undefined}
               className="relative"
             >
               <div>
                 <div
-                  className={`font-timer text-[72px] leading-none ${
-                    isPr || overTarget ? 'text-ok-text' : 'text-ink'
-                  }`}
+                  className={`font-timer leading-none ${isPr || overTarget ? 'text-ok-text' : 'text-ink'}`}
+                  style={{ fontSize: Math.round(ringSize * 0.25) }}
                 >
                   {holdElapsed.toFixed(1)}
                 </div>
@@ -1287,13 +1702,16 @@ export function SessionPlayer({
               </div>
             </ProgressRing>
           </div>
-          <button
-            onClick={stopHold}
-            className="mt-8 inline-flex w-full max-w-sm items-center justify-center gap-2 rounded-2xl bg-danger px-6 py-5 font-display text-[18px] font-semibold text-white shadow-card transition active:scale-[0.99]"
-          >
-            <Icon name="stop" size={18} /> Stop hold
-          </button>
-          <div className="mt-3 text-[12.5px] text-ink3">or press Space</div>
+          {/* Sticky so it stays reachable on a short screen held sideways. */}
+          <div className="sticky bottom-0 z-10 mt-6 w-full max-w-sm bg-bg/80 pb-[max(env(safe-area-inset-bottom),16px)] pt-3 backdrop-blur-sm">
+            <button
+              onClick={() => stopHold()}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-danger px-6 py-5 font-display text-[18px] font-semibold text-white shadow-card transition active:scale-[0.99]"
+            >
+              <Icon name="stop" size={18} /> Stop hold
+            </button>
+            <div className="mt-2 text-[12.5px] text-ink3">or press Space</div>
+          </div>
         </div>
       )
     }
@@ -1314,7 +1732,9 @@ export function SessionPlayer({
             >
               <Icon name="minus" size={20} />
             </button>
-            <div className="w-32 font-display text-[80px] font-bold leading-none text-ink tnum">{pendingReps}</div>
+            <div className="w-32 font-display text-[80px] font-bold leading-none text-ink tnum" aria-live="polite">
+              {pendingReps}
+            </div>
             <button
               onClick={() => setPendingReps((r) => r + 1)}
               aria-label="More reps"
@@ -1323,9 +1743,7 @@ export function SessionPlayer({
               <Icon name="plus" size={20} />
             </button>
           </div>
-          <div className="mt-1 text-[13px] text-ink3 tnum">
-            target {block.target.kind === 'reps' ? block.target.reps : 0}
-          </div>
+          <div className="mt-1 text-[13px] text-ink3 tnum">target {block.target.kind === 'reps' ? block.target.reps : 0}</div>
           <button
             onClick={() => logSet(pendingReps)}
             className="mt-8 inline-flex w-full max-w-sm items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99]"
@@ -1341,10 +1759,13 @@ export function SessionPlayer({
       const nb = workout.blocks[bi]
       const nx = EXERCISE_BY_ID[nb.exerciseId]
       const total = restTotal || nb.restSec
+      const note = lastLog ? timingNote(lastLog) : null
       return (
         <div className="relative mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
-          <div className="mt-4 text-[14px] font-medium uppercase tracking-wide text-ink3">Rest</div>
-          <ProgressRing value={restRemaining / Math.max(1, total)} size={210} stroke={10} className="mt-4">
+          <div className="mt-4 text-[14px] font-medium uppercase tracking-wide text-ink3">
+            {restRemaining <= 0 && (reviewOpen || problemReportOpen) ? 'Rest over — finish reviewing to continue' : 'Rest'}
+          </div>
+          <ProgressRing value={restRemaining / Math.max(1, total)} size={Math.min(210, ringSize)} stroke={10} className="mt-4">
             <div>
               <div className="font-timer text-[54px] leading-none text-ink">{fmtClock(restRemaining)}</div>
             </div>
@@ -1352,23 +1773,19 @@ export function SessionPlayer({
           {lastLog ? (
             <div className="mt-5 flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-2xl border border-line bg-surface px-4 py-2 text-[13.5px] text-ink2">
               Logged {lastLog.kind === 'hold' ? fmtHold(lastLog.value) : `${lastLog.value} reps`}
-              {lastLog.raw !== undefined && lastLog.raw - lastLog.value > 0.05 ? (
-                <span className="text-[12px] text-ink3 tnum">
-                  ({lastLog.raw.toFixed(1)}s − {(lastLog.raw - lastLog.value).toFixed(1)}s to stop it)
-                </span>
-              ) : null}
+              {note ? <span className="text-[12px] text-ink3 tnum">{note}</span> : null}
               <span className="flex gap-1">
                 <button
                   onClick={() => adjustLastLog(-1)}
                   aria-label="Decrease logged value"
-                  className="grid h-9 w-9 place-items-center rounded-full border border-line bg-raised text-ink2 hover:text-ink"
+                  className="grid h-10 w-10 place-items-center rounded-full border border-line bg-raised text-ink2 hover:text-ink"
                 >
                   <Icon name="minus" size={13} />
                 </button>
                 <button
                   onClick={() => adjustLastLog(1)}
                   aria-label="Increase logged value"
-                  className="grid h-9 w-9 place-items-center rounded-full border border-line bg-raised text-ink2 hover:text-ink"
+                  className="grid h-10 w-10 place-items-center rounded-full border border-line bg-raised text-ink2 hover:text-ink"
                 >
                   <Icon name="plus" size={13} />
                 </button>
@@ -1379,28 +1796,21 @@ export function SessionPlayer({
               where the number it changes is already on screen, phrased as what
               the tap does, and only when the two answers actually differ. */}
           {lastLog ? stopAllowanceCorrection(lastLog) : null}
-          {lastLog?.kind === 'hold' &&
-          lastLog.section === 'main' &&
-          (lastLog.exerciseId === STEP_BY_ID[state.stepId].keyExerciseId || isFilmable(lastLog.exerciseId)) ? (
-            <FormCheckRow
+          {lastLog ? (
+            <AttemptEnd
               key={lastLog.at}
-              clipKey={
-                pendingClip?.logAt === lastLog.at
-                  ? pendingClip.key
-                  : (lastLog.clipKey ?? lastLog.form?.clipKey ?? null)
-              }
-              exerciseId={lastLog.exerciseId}
-              creditedHoldSec={lastLog.value}
-              value={lastLog.form}
-              autoRun={state.settings.autoAnalyze}
-              restReportAction
-              onReportOpenChange={setProblemReportOpen}
-              onDone={(form) => {
-                setFormForLog(lastLog.at, form)
-              }}
-              onBusyChange={(busy) => setAnalysisBusy(lastLog.at, busy)}
+              log={lastLog}
+              askReason={lastLog.kind === 'hold' && (lastLog.section === 'main' || lastLog.section === 'strength')}
+              onReason={(reason) => setEndReason(lastLog.at, reason)}
+              onSymptom={recordAttemptSymptom}
+              onEndSession={() => enterSummary(true)}
             />
           ) : null}
+          {lastLog?.kind === 'hold' &&
+          lastLog.section === 'main' &&
+          (lastLog.exerciseId === STEP_BY_ID[state.stepId].keyExerciseId || isFilmable(lastLog.exerciseId))
+            ? formRowFor(lastLog, true)
+            : null}
 
           <div className="mt-5 text-[14px] text-ink2">
             Next: <span className="font-medium text-ink">{nx.name}</span>
@@ -1414,14 +1824,14 @@ export function SessionPlayer({
           </div>
           <div className="mt-5 flex gap-3">
             <button
-              onClick={() => setRestEnd((e) => e + 30_000)}
-              className="rounded-xl border border-line bg-surface px-5 py-2.5 text-[14px] font-medium text-ink2 hover:text-ink"
+              onClick={() => setRestEnd((e) => Math.max(e, Date.now()) + 30_000)}
+              className="min-h-11 rounded-xl border border-line bg-surface px-5 py-2.5 text-[14px] font-medium text-ink2 hover:text-ink"
             >
               +30s
             </button>
             <button
               onClick={() => setRestEnd(Date.now())}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-5 py-2.5 text-[14px] font-medium text-ink2 hover:text-ink"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-line bg-surface px-5 py-2.5 text-[14px] font-medium text-ink2 hover:text-ink"
             >
               <Icon name="skip" size={15} /> Skip rest
             </button>
@@ -1429,263 +1839,275 @@ export function SessionPlayer({
         </div>
       )
     }
-
-    if (phase === 'summary') {
-      return (
-        <div className="mx-auto w-full max-w-lg px-5 pb-10">
-          <h1 className="mt-6 text-center font-display text-[26px] font-bold text-ink">Session done 🎉</h1>
-          <div className="mt-4 grid grid-cols-3 gap-2.5">
-            {[
-              ['Duration', fmtClock(sessionElapsed)],
-              ['Sets', String(doneSets)],
-              ['Hold time', `${holdSecTotal}s`],
-            ].map(([l, v]) => (
-              <div key={l} className="rounded-2xl border border-line bg-surface p-3 text-center">
-                <div className="text-[12px] text-ink3">{l}</div>
-                <div className="font-display text-[20px] font-semibold text-ink tnum">{v}</div>
-              </div>
-            ))}
-          </div>
-          {(() => {
-            // The final set bypasses the rest screen. Keep the per-set stop
-            // question reachable here or that hold is permanently stuck with
-            // the opening guess from Settings.
-            const finalPathHold = [...logs]
-              .reverse()
-              .find(
-                (log) =>
-                  log.kind === 'hold' &&
-                  log.raw !== undefined &&
-                  isMainProgressionHold(log.exerciseId),
-              )
-            if (!finalPathHold) return null
-            return (
-              <div className="mt-3 text-center">
-                <div className="text-[12px] text-ink3">
-                  Final Path hold: {fmtHold(finalPathHold.value)} credited
-                </div>
-                {stopAllowanceCorrection(finalPathHold)}
-              </div>
-            )
-          })()}
-          {(() => {
-            // The last set of a session skips the rest screen entirely, so
-            // without this its form would never get rated.
-            const lastMain = [...logs]
-              .reverse()
-              .find(
-                (l) =>
-                  l.kind === 'hold' &&
-                  l.section === 'main' &&
-                  (l.exerciseId === STEP_BY_ID[state.stepId].keyExerciseId || isFilmable(l.exerciseId)),
-              )
-            if (!lastMain) return null
-            const blocking = logs.filter((log) => setNeedsProgressionFormEvidence(log, state))
-            const unreviewedFilmed = logs.filter((log) => {
-              const hasClip = Boolean(log.clipKey ?? log.form?.clipKey)
-              if (!hasClip || log.kind !== 'hold' || log.section !== 'main' || !isFilmable(log.exerciseId)) {
-                return false
-              }
-              if (log.form?.confirmed !== true) return true
-              if (log.exerciseId === 'frog-stand') return log.form.visualReviewPassed !== true
-              if (!log.form.auto) return true
-              return requiresFlightConfirmation(log.exerciseId) && log.form.flightConfirmed !== true
-            })
-            const formLogs = [...unreviewedFilmed, ...blocking, lastMain].filter(
-              (log, index, all) => all.findIndex((candidate) => candidate.at === log.at) === index,
-            )
-            return formLogs.map((log) => (
-              <FormCheckRow
-                key={log.at}
-                clipKey={
-                  pendingClip?.logAt === log.at
-                    ? pendingClip.key
-                    : (log.clipKey ?? log.form?.clipKey ?? null)
-                }
-                exerciseId={log.exerciseId}
-                creditedHoldSec={log.value}
-                value={log.form}
-                autoRun={state.settings.autoAnalyze}
-                onDone={(form) => {
-                  setFormForLog(log.at, form)
-                }}
-                onBusyChange={(busy) => setAnalysisBusy(log.at, busy)}
-              />
-            ))
-          })()}
-
-          <div className="mt-5">
-            <div className="mb-2 flex items-center justify-center gap-2 text-[14px] font-medium text-ink">
-              How hard was it? (RPE)
-              <button
-                onClick={() => setShowRpeHelp(true)}
-                aria-label="What is RPE?"
-                className="grid h-5 w-5 place-items-center rounded-full border border-line text-ink3 hover:text-ink"
-              >
-                <Icon name="info" size={12} />
-              </button>
-            </div>
-            <div className="flex gap-2">
-              {[6, 7, 8, 9, 10].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setRpe(n)}
-                  className={`flex-1 rounded-xl border py-2.5 font-display text-[16px] font-semibold transition ${
-                    rpe === n
-                      ? 'border-transparent bg-accent text-on-accent'
-                      : 'border-line bg-surface text-ink2 hover:text-ink'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Notes — how did it feel? (optional)"
-            rows={2}
-            className="mt-4 w-full resize-none rounded-2xl border border-line bg-surface p-4 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
-          />
-          {logs.some((log) => setNeedsProgressionFormEvidence(log, state)) ? (
-            <p className="mt-4 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-center text-[13px] text-ink">
-              This unlock-level hold will still save as a PR, but mastery needs both your confirmed Clean rating and
-              a passing filmed form check. True flight skills also need your no-foot-support confirmation. One isolated
-              camera flag may pass; two or more flags do not.
-            </p>
-          ) : null}
-          {clipFinalizing || analysingSets.size > 0 ? (
-            <p className="mt-3 text-center text-[12.5px] text-ink3" role="status">
-              {clipFinalizing ? 'Finishing your clip…' : 'Finishing the form check…'}
-            </p>
-          ) : null}
-          <button
-            onClick={save}
-            disabled={
-              logs.length === 0 ||
-              clipFinalizing ||
-              analysingSets.size > 0
-            }
-            className="mt-4 w-full rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
-            style={{ background: 'var(--t-btn-accent)' }}
-          >
-            Save session
-          </button>
-          <button
-            onClick={() => setConfirmExit(true)}
-            className="mt-2 w-full rounded-2xl py-3 text-[14px] font-medium text-ink3 hover:text-ink"
-          >
-            Discard
-          </button>
-          <p className="mt-2 text-center text-[12px] text-ink3">
-            Unsaved sessions are not kept — save it to bank the work.
-          </p>
-        </div>
-      )
-    }
-
-    if (phase === 'celebrate' && events && savedSession) {
-      const unlocked = events.unlockedStep ? STEP_BY_ID[events.unlockedStep] : undefined
-      return (
-        <div className="mx-auto w-full max-w-lg px-5 pb-10 text-center">
-          {unlocked ? (
-            <div className="mt-6 rounded-3xl border border-accent/30 bg-accent-soft p-6">
-              <div className="text-[13px] font-semibold uppercase tracking-wide text-accent-text">Step unlocked</div>
-              <Figure step={unlocked.id} className="mx-auto mt-2 h-32 w-40 text-ink" />
-              <div className="font-display text-[26px] font-bold text-ink">{unlocked.name}</div>
-              <p className="mt-1 text-[14px] text-ink2">{unlocked.tagline}</p>
-            </div>
-          ) : (
-            <h1 className="mt-8 font-display text-[26px] font-bold text-ink">Saved ✓</h1>
-          )}
-          {insight ? (
-            <div
-              className={`mt-4 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13.5px] font-medium ${
-                insight.delta >= 0 ? 'border-ok/30 bg-ok-soft text-ink' : 'border-line bg-surface text-ink2'
-              }`}
-            >
-              <Icon name="chart" size={15} className={insight.delta >= 0 ? 'text-ok-text' : 'text-ink3'} />
-              {insight.label}
-            </div>
-          ) : null}
-          {debrief.length > 0 ? (
-            <div className="mt-4 rounded-2xl border border-line bg-surface p-4 text-left">
-              <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-accent-text">
-                <Icon name="target" size={14} /> Coach's read
-              </div>
-              <ul className="space-y-1.5">
-                {debrief.map((d) => (
-                  <li key={d.text} className="flex gap-2 text-[13.5px] leading-relaxed">
-                    <span
-                      className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${
-                        d.kind === 'warn' ? 'bg-danger' : d.kind === 'good' ? 'bg-ok' : 'bg-ink3'
-                      }`}
-                    />
-                    <span className="text-ink2">{d.text}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {events.prs.length > 0 ? (
-            <div className="mt-4 rounded-2xl border border-line bg-surface p-4 text-left">
-              <div className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-ink3">New records</div>
-              {events.prs.map((p) => {
-                const ex = EXERCISE_BY_ID[p.exerciseId]
-                return (
-                  <div
-                    key={`${p.exerciseId}-${p.surface ?? 'overall'}`}
-                    className="flex items-baseline justify-between py-1 text-[14.5px]"
-                  >
-                    <span className="text-ink">
-                      {ex?.name ?? p.exerciseId}
-                      {p.surface ? <span className="ml-1 text-[12px] text-ink3">· {surfaceLabel(p.surface)}</span> : null}
-                    </span>
-                    <span className="font-semibold text-accent-text tnum">
-                      {ex?.type === 'hold' ? fmtHold(p.value) : `${p.value} reps`}
-                      {p.previous !== undefined ? (
-                        <span className="ml-1.5 font-normal text-ink3">
-                          was {ex?.type === 'hold' ? fmtHold(p.previous) : p.previous}
-                        </span>
-                      ) : null}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          ) : null}
-          {events.achievements.length > 0 ? (
-            <div className="mt-4 space-y-2">
-              {events.achievements.map((id) => {
-                const a = ACHIEVEMENT_BY_ID[id]
-                return (
-                  <div
-                    key={id}
-                    className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3.5 text-left"
-                  >
-                    <div className="text-[26px]">{a.icon}</div>
-                    <div>
-                      <div className="text-[14.5px] font-semibold text-ink">{a.name}</div>
-                      <div className="text-[13px] text-ink2">{a.desc}</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ) : null}
-          <button
-            onClick={onExit}
-            className="mt-6 w-full rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105"
-            style={{ background: 'var(--t-btn-accent)' }}
-          >
-            Done
-          </button>
-        </div>
-      )
-    }
     return null
   }
+
+  function summary() {
+    const waiting = clipsFinalizing > 0 || busyOps.size > 0
+    // The final set of a session skips the rest screen, so the stop question,
+    // the end reason and the form review all need a home here.
+    const finalPathHold = [...logs]
+      .reverse()
+      .find((log) => log.kind === 'hold' && log.raw !== undefined && isMainProgressionHold(log.exerciseId))
+    const lastMain = [...logs]
+      .reverse()
+      .find(
+        (l) =>
+          l.kind === 'hold' &&
+          l.section === 'main' &&
+          (l.exerciseId === STEP_BY_ID[state.stepId].keyExerciseId || isFilmable(l.exerciseId)),
+      )
+    const blocking = logs.filter((log) => setNeedsProgressionFormEvidence(log, state))
+    const unreviewedFilmed = logs.filter((log) => {
+      const hasClip = Boolean(log.clipKey ?? log.form?.clipKey)
+      if (!hasClip || log.kind !== 'hold' || log.section !== 'main' || !isFilmable(log.exerciseId)) return false
+      if (log.form?.confirmed !== true) return true
+      if (log.exerciseId === 'frog-stand') return log.form.visualReviewPassed !== true
+      if (!log.form.auto) return true
+      if (requiresFlightConfirmation(log.exerciseId) && log.form.flightConfirmed !== true) return true
+      return unseenVariantCriteria(log.exerciseId, log.form.auto).length > 0 && log.form.variantConfirmed !== true
+    })
+    const formLogs = lastMain
+      ? [...unreviewedFilmed, ...blocking, lastMain].filter(
+          (log, index, all) => all.findIndex((candidate) => candidate.at === log.at) === index,
+        )
+      : []
+    const lastNote = lastLog ? timingNote(lastLog) : null
+    return (
+      <div className="mx-auto w-full max-w-lg px-5 pb-10">
+        <h1 className="mt-6 text-center font-display text-[26px] font-bold text-ink">
+          {finishedEarly ? 'Finished early' : 'Session done 🎉'}
+        </h1>
+        <p className="mt-1 text-center text-[13px] text-ink2">Review and save — nothing is kept until you do.</p>
+        {doneSets < totalSets ? (
+          <p className="mx-auto mt-2 max-w-sm text-center text-[12.5px] leading-relaxed text-ink3">
+            {doneSets} of {totalSets} planned rounds done. Only what you did is saved — skipped work does not count as
+            done{finishedEarly ? ', and stopping early is never held against you' : ''}.
+          </p>
+        ) : null}
+        <div className="mt-4 grid grid-cols-3 gap-2.5">
+          {[
+            ['Training time', fmtClock(sessionElapsed)],
+            ['Sets', String(doneSets)],
+            ['Hold time', `${holdSecTotal}s`],
+          ].map(([l, v]) => (
+            <div key={l} className="rounded-2xl border border-line bg-surface p-3 text-center">
+              <div className="text-[12px] text-ink3">{l}</div>
+              <div className="font-display text-[20px] font-semibold text-ink tnum">{v}</div>
+            </div>
+          ))}
+        </div>
+        {interruptedAt.current ? interruptedCard('summary') : null}
+        {lastLog ? (
+          <div className="mt-3 text-center">
+            <div className="text-[12px] text-ink3">
+              Last set: {lastLog.kind === 'hold' ? fmtHold(lastLog.value) : `${lastLog.value} reps`}{' '}
+              {EXERCISE_BY_ID[lastLog.exerciseId]?.name ?? ''}
+              {lastNote ? ` ${lastNote}` : ''}
+            </div>
+            {finalPathHold && finalPathHold.at === lastLog.at ? stopAllowanceCorrection(finalPathHold) : null}
+            <AttemptEnd
+              key={lastLog.at}
+              log={lastLog}
+              askReason={lastLog.kind === 'hold' && (lastLog.section === 'main' || lastLog.section === 'strength')}
+              onReason={(reason) => setEndReason(lastLog.at, reason)}
+              onSymptom={recordAttemptSymptom}
+            />
+          </div>
+        ) : null}
+        {finalPathHold && finalPathHold.at !== lastLog?.at ? (
+          <div className="mt-3 text-center">
+            <div className="text-[12px] text-ink3">Final Path hold: {fmtHold(finalPathHold.value)} credited</div>
+            {stopAllowanceCorrection(finalPathHold)}
+          </div>
+        ) : null}
+        {formLogs.map((log) => formRowFor(log, false))}
+
+        <div className="mt-5">
+          <div className="mb-2 flex items-center justify-center gap-2 text-[14px] font-medium text-ink" id="rpe-label">
+            How hard was it? (RPE)
+            <button
+              onClick={() => setShowRpeHelp(true)}
+              aria-label="What is RPE?"
+              className="grid h-8 w-8 place-items-center rounded-full border border-line text-ink3 hover:text-ink"
+            >
+              <Icon name="info" size={12} />
+            </button>
+          </div>
+          <div className="flex gap-2" role="group" aria-labelledby="rpe-label">
+            {[6, 7, 8, 9, 10].map((n) => (
+              <button
+                key={n}
+                onClick={() => setRpe(rpe === n ? undefined : n)}
+                aria-pressed={rpe === n}
+                className={`min-h-11 flex-1 rounded-xl border py-2.5 font-display text-[16px] font-semibold transition ${
+                  rpe === n ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-surface text-ink2 hover:text-ink'
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Notes — how did it feel? (optional)"
+          aria-label="Session notes"
+          rows={2}
+          className="mt-4 w-full resize-none rounded-2xl border border-line bg-surface p-4 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+        />
+        {logs.some((log) => setNeedsProgressionFormEvidence(log, state)) ? (
+          <p className="mt-4 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-center text-[13px] text-ink">
+            This unlock-level hold will still save as a PR, but mastery needs both your confirmed Clean rating and a
+            passing filmed form check. True flight skills also need your no-foot-support confirmation. One isolated
+            camera flag may pass; two or more flags do not.
+          </p>
+        ) : null}
+        {waiting ? (
+          <p className="mt-3 text-center text-[12.5px] text-ink3" role="status">
+            {clipsFinalizing > 0 ? 'Finishing your clip…' : 'Finishing the form check…'}
+          </p>
+        ) : null}
+        <button
+          onClick={save}
+          disabled={logs.length === 0 || waiting}
+          className="mt-4 w-full rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+          style={{ background: 'var(--t-btn-accent)' }}
+        >
+          Save session
+        </button>
+        {waiting && logs.length > 0 ? (
+          <button
+            onClick={save}
+            className="mt-2 w-full rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink"
+          >
+            Save without waiting
+          </button>
+        ) : null}
+        {waiting && logs.length > 0 ? (
+          <p className="mt-1 text-center text-[11.5px] leading-relaxed text-ink3">
+            A check or clip still finishing attaches to the saved set if the app stays open; otherwise the clip stays in
+            your gallery to check later.
+          </p>
+        ) : null}
+        {logs.length === 0 ? (
+          <p className="mt-2 text-center text-[12.5px] text-ink3">Nothing was logged, so there is nothing to save.</p>
+        ) : null}
+        <button
+          onClick={() => setConfirmExit(true)}
+          className="mt-2 w-full rounded-2xl py-3 text-[14px] font-medium text-ink3 hover:text-ink"
+        >
+          {logs.length ? 'Discard…' : 'Close'}
+        </button>
+      </div>
+    )
+  }
+
+  function celebrate() {
+    if (!events || !savedSession) return null
+    const unlocked = events.unlockedStep ? STEP_BY_ID[events.unlockedStep] : undefined
+    return (
+      <div className="mx-auto w-full max-w-lg px-5 pb-10 text-center">
+        {unlocked ? (
+          <div className="mt-6 rounded-3xl border border-accent/30 bg-accent-soft p-6">
+            <div className="text-[13px] font-semibold uppercase tracking-wide text-accent-text">Step unlocked</div>
+            <Figure step={unlocked.id} className="mx-auto mt-2 h-32 w-40 text-ink" />
+            <div className="font-display text-[26px] font-bold text-ink">{unlocked.name}</div>
+            <p className="mt-1 text-[14px] text-ink2">{unlocked.tagline}</p>
+          </div>
+        ) : (
+          <h1 className="mt-8 font-display text-[26px] font-bold text-ink">
+            {persist.primary === 'ok' ? 'Saved ✓' : 'Saved in the app'}
+          </h1>
+        )}
+        <p className="mt-1 text-[12.5px] text-ink3" role="status">
+          {persist.primary === 'ok'
+            ? 'Stored on this device.'
+            : 'Not yet written to this device’s storage — use the warning at the top to export a backup now.'}
+        </p>
+        {insight ? (
+          <div
+            className={`mt-4 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13.5px] font-medium ${
+              insight.delta >= 0 ? 'border-ok/30 bg-ok-soft text-ink' : 'border-line bg-surface text-ink2'
+            }`}
+          >
+            <Icon name="chart" size={15} className={insight.delta >= 0 ? 'text-ok-text' : 'text-ink3'} />
+            {insight.label}
+          </div>
+        ) : null}
+        {debrief.length > 0 ? (
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-4 text-left">
+            <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-accent-text">
+              <Icon name="target" size={14} /> Coach's read
+            </div>
+            <ul className="space-y-1.5">
+              {debrief.map((d) => (
+                <li key={d.text} className="flex gap-2 text-[13.5px] leading-relaxed">
+                  <span
+                    className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${
+                      d.kind === 'warn' ? 'bg-danger' : d.kind === 'good' ? 'bg-ok' : 'bg-ink3'
+                    }`}
+                  />
+                  <span className="text-ink2">{d.text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {events.prs.length > 0 ? (
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-4 text-left">
+            <div className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-ink3">New records</div>
+            {events.prs.map((p) => {
+              const ex = EXERCISE_BY_ID[p.exerciseId]
+              return (
+                <div key={`${p.exerciseId}-${p.surface ?? 'overall'}`} className="flex items-baseline justify-between py-1 text-[14.5px]">
+                  <span className="text-ink">
+                    {ex?.name ?? p.exerciseId}
+                    {p.surface ? <span className="ml-1 text-[12px] text-ink3">· {surfaceLabel(p.surface)}</span> : null}
+                  </span>
+                  <span className="font-semibold text-accent-text tnum">
+                    {ex?.type === 'hold' ? fmtHold(p.value) : `${p.value} reps`}
+                    {p.previous !== undefined ? (
+                      <span className="ml-1.5 font-normal text-ink3">
+                        was {ex?.type === 'hold' ? fmtHold(p.previous) : p.previous}
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
+        {events.achievements.length > 0 ? (
+          <div className="mt-4 space-y-2">
+            {events.achievements.map((id) => {
+              const a = ACHIEVEMENT_BY_ID[id]
+              return (
+                <div key={id} className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3.5 text-left">
+                  <div className="text-[26px]">{a.icon}</div>
+                  <div>
+                    <div className="text-[14.5px] font-semibold text-ink">{a.name}</div>
+                    <div className="text-[13px] text-ink2">{a.desc}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
+        <button
+          onClick={onExit}
+          className="mt-6 w-full rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105"
+          style={{ background: 'var(--t-btn-accent)' }}
+        >
+          Done
+        </button>
+      </div>
+    )
+  }
+
+  const holdRunning = phase === 'hold' && holdElapsed > 1
+  const canFinishEarly = phase !== 'summary' && (logs.length > 0 || holdRunning)
 
   return (
     <div
@@ -1693,8 +2115,8 @@ export function SessionPlayer({
       role="dialog"
       aria-modal="true"
       aria-label={`${workout.name} training session`}
-      aria-hidden={showCheckIn || showDemo || showRpeHelp || confirmExit ? true : undefined}
-      inert={showCheckIn || showDemo || showRpeHelp || confirmExit ? true : undefined}
+      aria-hidden={layerOpen ? true : undefined}
+      inert={layerOpen ? true : undefined}
       tabIndex={-1}
       className="fixed inset-0 z-40 overflow-y-auto bg-bg outline-none"
     >
@@ -1705,18 +2127,14 @@ export function SessionPlayer({
       </div>
       <Modal open={showCheckIn} onClose={() => setShowCheckIn(false)} label="Readiness check-in">
         <CheckInForm
+          context={checkInContext}
           onDone={(c) => {
             setCheckIn(c)
             setShowCheckIn(false)
             // Re-plan today's session with the answers, not just tomorrow's.
+            // What changed is listed in the brief, decided by the same rails.
             onCheckInAnswered?.(c)
-            if (c.joints === 'pain') {
-              pushToast("Today's session has been scaled back and intensity locked out.", 'info', 5500)
-            } else if (c.joints === 'niggle') {
-              pushToast('Adjusted — longer warm-up, no max-intensity work today.', 'info', 5000)
-            } else if (c.energy === 'tired') {
-              pushToast('Adjusted — trimmed volume so today still counts.', 'info', 4500)
-            }
+            pushToast('Today’s plan now reflects your answers — anything adjusted is listed below.', 'info', 4500)
           }}
           onSkip={() => setShowCheckIn(false)}
         />
@@ -1755,887 +2173,91 @@ export function SessionPlayer({
         </div>
       </Modal>
 
-      <Modal open={confirmExit} onClose={() => setConfirmExit(false)} label="Leave training session">
-        <div className="p-6">
-          <h2 className="font-display text-[19px] font-semibold text-ink">Leave this session?</h2>
-          <p className="mt-1.5 text-[14px] text-ink2">
-            {logs.length > 0
-              ? `You have ${logs.length} logged set${logs.length === 1 ? '' : 's'} that will be lost.`
-              : 'Nothing has been logged yet.'}
-          </p>
-          <div className="mt-5 flex gap-2.5">
-            <button
-              onClick={() => setConfirmExit(false)}
-              className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14.5px] font-medium text-ink"
-            >
-              Keep training
-            </button>
-            <button
-              onClick={() => {
-                clearDraft()
-                onExit()
-              }}
-              className="flex-1 rounded-xl bg-danger py-3 text-[14.5px] font-semibold text-white"
-            >
-              Leave
-            </button>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  )
-}
-
-export const FORM_ISSUE_LABEL: Record<FormIssue, string> = {
-  arms: 'Elbows not fully locked',
-  scapula: 'Lost protraction',
-  shrug: 'Shoulders shrugged',
-  pike: 'Hips too high',
-  sag: 'Hips too low',
-  closed: 'Hips not open enough',
-  knees: 'Knees bent',
-  lean: 'Not enough lean',
-  twist: 'Twisted / uneven',
-  narrow: 'Straddle too narrow',
-  hips: 'Hips sagged',
-  level: 'Not level',
-}
-
-const COMMON_ISSUES: FormIssue[] = ['arms', 'scapula', 'shrug', 'pike', 'sag', 'lean', 'twist']
-/** Only offered where they mean something — a lean has no straddle to narrow. */
-const ISSUES_BY_EXERCISE: Record<string, FormIssue[]> = {
-  'frog-stand': [],
-  'adv-tuck-planche': [...COMMON_ISSUES, 'closed'],
-  'one-leg-planche': [...COMMON_ISSUES, 'closed', 'knees'],
-  'straddle-planche': [...COMMON_ISSUES, 'closed', 'knees', 'narrow'],
-  'band-straddle-planche': [...COMMON_ISSUES, 'closed', 'knees', 'narrow'],
-  'full-planche': [...COMMON_ISSUES, 'closed', 'knees'],
-}
-
-function issuesFor(exerciseId: string): { id: FormIssue; label: string }[] {
-  return (ISSUES_BY_EXERCISE[exerciseId] ?? COMMON_ISSUES).map((id) => ({ id, label: FORM_ISSUE_LABEL[id] }))
-}
-
-/** Clips whose automatic analysis is currently running, across row instances. */
-const autoAnalysisInFlight = new Set<string>()
-
-/**
- * One tap for the common case, detail only when something went wrong. This is
- * the only signal the coach has about *quality* — without it, seconds earned
- * with bent arms look identical to clean ones.
- */
-function FormCheckRow({
-  clipKey,
-  exerciseId,
-  creditedHoldSec,
-  value,
-  autoRun,
-  restReportAction,
-  onReportOpenChange,
-  onDone,
-  onBusyChange,
-}: {
-  clipKey: string | null
-  exerciseId: string
-  creditedHoldSec: number
-  /** Already-saved rating, so the panel reflects it instead of looking blank. */
-  value?: FormCheck
-  /** Kick the analysis off unprompted once the clip is ready. */
-  autoRun?: boolean
-  /** Put the simple report trigger in the top-right of the surrounding rest screen. */
-  restReportAction?: boolean
-  onReportOpenChange?: (open: boolean) => void
-  onDone: (f: FormCheck) => void
-  onBusyChange?: (busy: boolean) => void
-}) {
-  const [rating, setRating] = useState<FormRating | null>(value?.rating ?? null)
-  const [issues, setIssues] = useState<FormIssue[]>(value?.issues ?? [])
-  const [clipAvailable, setClipAvailable] = useState(false)
-  const [analysis, setAnalysis] = useState<PoseFormResult | null>(null)
-  const [analysing, setAnalysing] = useState(false)
-  const [showProblemReport, setShowProblemReport] = useState(false)
-  const [problemNote, setProblemNote] = useState('')
-  const [reportSaving, setReportSaving] = useState(false)
-  const [reportSaved, setReportSaved] = useState(false)
-  const [visualReviewPassed, setVisualReviewPassed] = useState(value?.visualReviewPassed === true)
-  const [flightConfirmed, setFlightConfirmed] = useState(value?.flightConfirmed === true)
-  const autoRanRef = useRef(false)
-  /** Raw poses and technical wording stay out of the normal UI but make a reported verdict reproducible. */
-  const diagnosticRef = useRef<ClipAnalysis | null>(null)
-  /** Share one detector run when Report is tapped while the automatic check is still working. */
-  const diagnosticPromiseRef = useRef<Promise<ClipAnalysis> | null>(null)
-  // Mirrors of rating/issues that async code can read after its awaits — the
-  // state the closure captured goes stale, and an analysis resolving after a
-  // tap used to overwrite the athlete's own answer with the model's.
-  const ratingRef = useRef<FormRating | null>(value?.rating ?? null)
-  const issuesRef = useRef<FormIssue[]>(value?.issues ?? [])
-  const visualReviewRef = useRef(value?.visualReviewPassed === true)
-  const flightConfirmedRef = useRef(value?.flightConfirmed === true)
-  const needsManualReplayReview = exerciseId === 'frog-stand'
-  const needsFlightConfirmation = requiresFlightConfirmation(exerciseId)
-  const handleClipAvailability = useCallback((available: boolean) => setClipAvailable(available), [])
-
-  const runAnalysis = async () => {
-    if (!clipKey) return
-    onBusyChange?.(true)
-    setAnalysing(true)
-    try {
-      const blob = await getClipBlob(clipKey)
-      const pending: Promise<ClipAnalysis> = blob
-        ? withAnalysisTimeout(analyseClipDetailed(blob, exerciseId, undefined, creditedHoldSec))
-        : Promise.resolve({ result: emptyResult('That clip could not be loaded.') })
-      diagnosticPromiseRef.current = pending
-      const diagnostic = await pending
-      // The athlete sees the same verdict as before. The extra explanation is
-      // retained only so an explicitly saved problem report can say which
-      // sampled moments and criteria produced it.
-      const res = diagnostic.poses
-        ? judgeTrackedFrames(diagnostic.poses, exerciseId, { explain: true })
-        : diagnostic.result
-      diagnosticRef.current = { ...diagnostic, result: res }
-      setAnalysis(friendlyResult(res))
-      if (res.ok) {
-        const auto = {
-          issues: res.issues,
-          heldIssues: res.heldIssues ?? res.issues,
-          confidence: res.confidence,
-          score: res.score,
-          cleanSeconds: res.cleanSeconds,
-          cleanRatio: res.cleanRatio,
-          elbowDeg: res.elbowDeg,
-          kneeDeg: res.kneeDeg,
-          hipAngleDeg: res.hipAngleDeg,
-          hipOffset: res.hipOffset,
-          leanRatio: res.leanRatio,
-          shrugRatio: res.shrugRatio,
-          wobble: res.wobble,
-          ...(res.unseen.length ? { unseen: res.unseen } : {}),
-        }
-        if (ratingRef.current !== null) {
-          // The athlete answered while the check was running — their word
-          // stands. File the camera's reading alongside it, don't overwrite.
-          onDone({
-            rating: ratingRef.current,
-            confirmed: true,
-            ...(visualReviewRef.current ? { visualReviewPassed: true } : {}),
-            ...(flightConfirmedRef.current ? { flightConfirmed: true } : {}),
-            ...(issuesRef.current.length ? { issues: issuesRef.current } : {}),
-            ...(clipKey ? { clipKey } : {}),
-            auto,
-          })
-        } else {
-          // Pre-fills the answer and saves it immediately — it used to render
-          // as selected while storing nothing, so a rest timer expiring lost
-          // it. The athlete can still correct it; the model is guessing at a
-          // body position it was barely trained on.
-          const cleanShare = res.cleanRatio ?? 1
-          const r: FormRating =
-            res.issues.length === 0 && cleanShare >= 0.8
-              ? 'clean'
-              : res.issues.length > 1 || cleanShare < 0.6
-                ? 'broke'
-                : 'slipped'
-          ratingRef.current = r
-          issuesRef.current = res.issues
-          setIssues(res.issues)
-          setRating(r)
-          onDone({
-            rating: r,
-            confirmed: false,
-            ...(res.issues.length ? { issues: res.issues } : {}),
-            ...(clipKey ? { clipKey } : {}),
-            auto,
-          })
-        }
-      }
-    } finally {
-      diagnosticPromiseRef.current = null
-      setAnalysing(false)
-      onBusyChange?.(false)
-    }
-  }
-
-  const saveReport = async () => {
-    if (!clipKey || reportSaving) return
-    setReportSaving(true)
-    try {
-      const video = await getClipBlob(clipKey)
-      if (!video) throw new Error('That clip is no longer available, so the report could not be saved.')
-
-      // The report button is available before automatic analysis finishes —
-      // and auto checking may be off. Run the same local checker here when
-      // needed so the support report gets raw poses and frame-by-frame working
-      // rather than only a video and the athlete's note.
-      let diagnostic = diagnosticRef.current
-      if (!diagnostic) {
-        const rerun = await (
-          diagnosticPromiseRef.current ??
-          withAnalysisTimeout(analyseClipDetailed(video, exerciseId, undefined, creditedHoldSec))
-        )
-        diagnostic = {
-          ...rerun,
-          result: rerun.poses
-            ? judgeTrackedFrames(rerun.poses, exerciseId, { explain: true })
-            : rerun.result,
-        }
-        diagnosticRef.current = diagnostic
-      }
-
-      const saved = await saveProblemReport({
-        note: problemNote,
-        movementId: exerciseId,
-        movementName: EXERCISE_BY_ID[exerciseId]?.name ?? exerciseId,
-        creditedHoldSec,
-        analysis: diagnostic.result,
-        poses: diagnostic.poses,
-        savedCameraReading: value?.auto,
-        athleteReview: ratingRef.current
-          ? {
-              rating: ratingRef.current,
-              confirmed: value?.confirmed === true,
-              issues: [...issuesRef.current],
-            }
-          : undefined,
-        video,
-      })
-      if (!saved) throw new Error('The problem report could not be saved. Check available device storage and try again.')
-      setReportSaved(true)
-      setShowProblemReport(false)
-      onReportOpenChange?.(false)
-      pushToast('Problem report saved on this device.', 'success', 4500)
-    } catch (error) {
-      pushToast(error instanceof Error ? error.message : 'The problem report could not be saved.', 'danger')
-    } finally {
-      setReportSaving(false)
-    }
-  }
-
-  // Fires at most once per set when auto-check is on. It may run after the
-  // athlete has already answered; runAnalysis preserves that answer and adds
-  // the camera evidence beside it. The in-flight set covers the same clip
-  // mounting twice (rest screen row → skip rest → finish row).
-  useEffect(() => {
-    if (
-      !autoRun ||
-      !clipAvailable ||
-      autoRanRef.current ||
-      analysing ||
-      analysis ||
-      value?.auto ||
-      needsManualReplayReview
-    ) {
-      return
-    }
-    if (clipKey && autoAnalysisInFlight.has(clipKey)) return
-    autoRanRef.current = true
-    if (clipKey) autoAnalysisInFlight.add(clipKey)
-    void runAnalysis().finally(() => {
-      if (clipKey) autoAnalysisInFlight.delete(clipKey)
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRun, clipAvailable, analysing, analysis, value?.auto, needsManualReplayReview])
-
-  // Committed on every tap rather than behind a Save button: the rest timer
-  // can expire mid-selection and used to throw the whole rating away.
-  const commit = (
-    r: FormRating,
-    iss: FormIssue[],
-    replayPassed = visualReviewRef.current,
-    flightPassed = flightConfirmedRef.current,
-  ) =>
-    onDone({
-      rating: r,
-      confirmed: true,
-      ...(r === 'clean' && replayPassed ? { visualReviewPassed: true } : {}),
-      ...(r === 'clean' && flightPassed ? { flightConfirmed: true } : {}),
-      ...(iss.length ? { issues: iss } : {}),
-      ...(clipKey ? { clipKey } : {}),
-      // The camera's own reading rides along, so the coach has an objective
-      // record even when the athlete's rating disagrees with it.
-      ...(analysis?.ok
-        ? {
-            auto: {
-              issues: analysis.issues,
-              heldIssues: analysis.heldIssues ?? analysis.issues,
-              confidence: analysis.confidence,
-              score: analysis.score,
-              cleanSeconds: analysis.cleanSeconds,
-              cleanRatio: analysis.cleanRatio,
-              elbowDeg: analysis.elbowDeg,
-              kneeDeg: analysis.kneeDeg,
-              hipAngleDeg: analysis.hipAngleDeg,
-              hipOffset: analysis.hipOffset,
-              leanRatio: analysis.leanRatio,
-              shrugRatio: analysis.shrugRatio,
-              wobble: analysis.wobble,
-              ...(analysis.unseen.length ? { unseen: analysis.unseen } : {}),
-            },
-          }
-        : value?.auto
-          ? { auto: value.auto }
-          : {}),
-    })
-
-  const toggleIssue = (id: FormIssue) => {
-    const next = issues.includes(id) ? issues.filter((x) => x !== id) : [...issues, id]
-    issuesRef.current = next
-    setIssues(next)
-    if (rating) commit(rating, next)
-  }
-
-  const progressionFormPassed = passesProgressionFormCheck(value, exerciseId)
-  const progressionCameraIssues = value?.auto ? progressionRelevantIssues(value.auto) : []
-
-  return (
-    <div className="mx-auto mt-5 w-full max-w-sm rounded-2xl border border-line bg-surface p-4">
-      {restReportAction && clipKey ? (
-        <button
-          onClick={() => {
-            setShowProblemReport(true)
-            onReportOpenChange?.(true)
-          }}
-          disabled={reportSaved}
-          className={`absolute right-5 top-2.5 z-10 inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12.5px] font-semibold shadow-card transition ${
-            reportSaved
-              ? 'border-ok/30 bg-ok-soft text-ok-text'
-              : 'border-line bg-surface text-ink2 hover:border-line-strong hover:text-ink'
-          }`}
-        >
-          <Icon name={reportSaved ? 'check' : 'info'} size={14} />
-          {reportSaved ? 'Saved' : 'Report'}
-        </button>
-      ) : null}
-      {clipKey ? (
-        <ClipPlayer
-          clipKey={clipKey}
-          label={`${EXERCISE_BY_ID[exerciseId]?.name ?? 'Hold'} form check`}
-          className="mb-3 h-40 w-full rounded-xl border border-line"
-          onAvailabilityChange={handleClipAvailability}
-          overlay={analysis?.track}
-          overlayIssues={analysis?.issues}
-        />
-      ) : null}
-      {clipKey ? (
-        <div className="mb-3">
-          {!needsManualReplayReview ? (
-            <button
-              onClick={() => void runAnalysis()}
-              disabled={analysing || !clipAvailable}
-              aria-busy={analysing}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-raised py-2 text-[13px] font-semibold text-ink transition hover:border-line-strong disabled:opacity-60"
-            >
-              <Icon name="sparkle" size={14} className="text-accent-text" />
-              {analysing ? 'Checking your position…' : 'Check my form automatically'}
-            </button>
-          ) : null}
-          {analysing ? (
-            <p className="mt-1 text-center text-[11.5px] text-ink3" role="status">
-              First run downloads the checker. Longer holds sample more moments, so keep this screen open.
-            </p>
-          ) : null}
-          {analysis ? (
-            <div
-              className={`mt-2 rounded-xl border p-3 text-[12.5px] leading-relaxed ${
-                analysis.ok ? 'border-line bg-raised text-ink2' : 'border-line bg-raised text-ink3'
-              }`}
-            >
-              {analysis.ok ? (
-                <>
-                  {analysis.score !== undefined ? (
-                    <div className="mb-2 flex items-center gap-3">
-                      <div
-                        className={`grid h-14 w-14 shrink-0 place-items-center rounded-full border-[3px] font-display text-[19px] font-bold tnum ${
-                          analysis.score >= 85
-                            ? 'border-ok/60 text-ok-text'
-                            : analysis.score >= 60
-                              ? 'border-accent/60 text-accent-text'
-                              : 'border-danger/60 text-danger-text'
-                        }`}
-                        aria-label={`Form score ${analysis.score} out of 100`}
-                      >
-                        {analysis.score}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[12px] font-semibold uppercase tracking-wide text-ink3">
-                          Form score
-                        </div>
-                        {analysis.subscores?.length ? (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {analysis.subscores.map((s) => (
-                              <span
-                                key={s.key}
-                                className={`rounded-full px-2 py-0.5 text-[11px] font-medium tnum ${
-                                  s.score >= 85
-                                    ? 'bg-ok-soft text-ok-text'
-                                    : s.score >= 60
-                                      ? 'bg-accent-soft text-accent-text'
-                                      : 'bg-danger-soft text-danger-text'
-                                }`}
-                              >
-                                {s.label} {s.score}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                  {analysis.fixFirst ? (
-                    <div className="mb-2 rounded-lg border border-accent/30 bg-accent-soft px-2.5 py-2">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-accent-text">
-                        Fix this first
-                      </div>
-                      <div className="mt-0.5 text-[12.5px] font-medium leading-snug text-ink">
-                        {analysis.fixFirst.cue}
-                      </div>
-                    </div>
-                  ) : null}
-                  {analysis.cleanSeconds !== undefined ? (
-                    <div
-                      className={`mb-2 rounded-lg px-2.5 py-2 ${
-                        analysis.cleanSeconds + 0.05 >= creditedHoldSec
-                          ? 'bg-ok-soft text-ok-text'
-                          : 'bg-accent-soft text-accent-text'
-                      }`}
-                    >
-                      <span className="font-semibold">
-                        Camera-verified clean window: {analysis.cleanSeconds.toFixed(1)}s
-                      </span>
-                      <span className="text-[11.5px]">
-                        {' '}
-                        of {creditedHoldSec.toFixed(1)}s. Isolated joint-tracking jumps are ignored; a material
-                        miss has to persist for roughly a second before it stops progression credit.
-                      </span>
-                    </div>
-                  ) : null}
-                  {analysis.notes.length > 0 ? (
-                    <div className="space-y-1">
-                      {analysis.notes.map((n) => (
-                        <div key={n} className="flex gap-1.5">
-                          <span className="mt-[6px] h-1 w-1 shrink-0 rounded-full bg-accent" />
-                          <span>{n}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="font-medium text-ok-text">
-                      No measured issue found — confirm scapular position and control yourself.
-                    </div>
-                  )}
-                  {analysis.good.length ? (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {analysis.good.map((g) => (
-                        <span key={g} className="rounded-full bg-ok-soft px-2 py-0.5 text-[11.5px] font-medium text-ok-text">
-                          ✓ {g}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  {/* Stated on the face of the panel, not folded into detail:
-                      everything above is a verdict on what the camera could
-                      judge reliably, and skipped criteria must stay obvious. */}
-                  {analysis.unseen.length ? (
-                    <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-raised px-2.5 py-1.5 text-[11.5px] text-ink3">
-                      <Icon name="monitor" size={13} className="mt-[1px] shrink-0" />
-                      <span>
-                        Could not reliably judge your {analysis.unseen.join(', ')} — not judged above. Check the
-                        skeleton replay; a clearer side view, brighter light, or more distance can help.
-                      </span>
-                    </div>
-                  ) : null}
-                  {
-                    <details className="mt-2">
-                      <summary className="cursor-pointer text-[11.5px] text-ink3">Measurement detail</summary>
-                      <div className="mt-1 space-y-0.5 text-[11.5px] text-ink3">
-                        {analysis.details.map((d) => (
-                          <div key={d}>{d}</div>
-                        ))}
-                        <div>
-                          {analysis.framesUsed} usable of {analysis.framesSampled ?? analysis.framesUsed} sampled
-                          moments · {Math.round(analysis.confidence * 100)}% tracking confidence. A side-on estimate,
-                          not a verdict — correct it below if it read you wrong.
-                        </div>
-                      </div>
-                    </details>
-                  }
-                </>
-              ) : (
-                (analysis.reason ?? 'Could not analyse that clip.')
-              )}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      <div className="text-[13px] font-semibold text-ink">How did that set look?</div>
-      {value?.confirmed === false && rating ? (
-        <p className="mt-1 text-[11.5px] font-medium text-accent-text" role="status">
-          Camera suggestion only — tap your answer below to confirm or correct it.
-        </p>
-      ) : null}
-      <div className="mt-2 flex gap-2">
-        {(
-          [
-            ['clean', 'Clean'],
-            ['slipped', 'Slipped'],
-            ['broke', 'Broke down'],
-          ] as [FormRating, string][]
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => {
-              // Refs updated synchronously so an analysis resolving a moment
-              // later sees this tap and defers to it.
-              ratingRef.current = id
-              issuesRef.current = id === 'clean' ? [] : issues
-              if (id !== 'clean') {
-                visualReviewRef.current = false
-                setVisualReviewPassed(false)
-                flightConfirmedRef.current = false
-                setFlightConfirmed(false)
-              }
-              setRating(id)
-              commit(id, id === 'clean' ? [] : issues, id === 'clean' && visualReviewRef.current)
-              if (id === 'clean') setIssues([])
-            }}
-            aria-pressed={rating === id}
-            className={`flex-1 rounded-xl border py-2 text-[13px] font-medium transition ${
-              rating === id
-                ? 'border-transparent bg-accent text-on-accent'
-                : 'border-line bg-raised text-ink2 hover:text-ink'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {needsManualReplayReview && clipAvailable && rating === 'clean' ? (
-        <div className="mt-3 rounded-xl border border-line bg-raised p-3">
-          <p className="text-[12.5px] leading-relaxed text-ink2">
-            Frog Stand has no fixed geometry the camera can grade honestly. Watch the replay and check that balance
-            stayed controlled, with no uncontrolled collapse.
-          </p>
-          <button
-            onClick={() => {
-              visualReviewRef.current = true
-              setVisualReviewPassed(true)
-              commit('clean', [], true)
-            }}
-            aria-pressed={visualReviewPassed}
-            className={`mt-2 w-full rounded-xl border px-3 py-2 text-[12.5px] font-semibold transition ${
-              visualReviewPassed
-                ? 'border-ok/40 bg-ok-soft text-ok-text'
-                : 'border-line-strong bg-surface text-ink hover:border-accent'
-            }`}
-          >
-            {visualReviewPassed ? 'Replay checked — form held' : 'I reviewed the replay — form held'}
-          </button>
-        </div>
-      ) : null}
-      {needsFlightConfirmation && rating === 'clean' ? (
-        <div className="mt-3 rounded-xl border border-line bg-raised p-3">
-          <p className="text-[12.5px] leading-relaxed text-ink2">
-            The camera can judge your shape, but it cannot reliably tell whether a toe was helping. Confirm that both
-            feet stayed fully off the floor for the camera-verified window.
-          </p>
-          <button
-            onClick={() => {
-              flightConfirmedRef.current = true
-              setFlightConfirmed(true)
-              commit('clean', [], visualReviewRef.current, true)
-            }}
-            aria-pressed={flightConfirmed}
-            className={`mt-2 w-full rounded-xl border px-3 py-2 text-[12.5px] font-semibold transition ${
-              flightConfirmed
-                ? 'border-ok/40 bg-ok-soft text-ok-text'
-                : 'border-line-strong bg-surface text-ink hover:border-accent'
-            }`}
-          >
-            {flightConfirmed ? 'Flight confirmed — no foot support' : 'Both feet stayed completely off the floor'}
-          </button>
-        </div>
-      ) : null}
-      {rating === 'clean' && value?.confirmed === true ? (
-        <p
-          className={`mt-2 text-[11.5px] font-medium ${progressionFormPassed ? 'text-ok-text' : 'text-accent-text'}`}
-          role="status"
-        >
-          {progressionFormPassed
-            ? value?.auto?.cleanSeconds !== undefined &&
-              value.auto.cleanSeconds + 0.05 < creditedHoldSec
-              ? `Evidence complete — ${value.auto.cleanSeconds.toFixed(1)}s of this hold count toward progression before the sustained breakdown.`
-              : progressionCameraIssues.length === 1
-              ? 'Progression evidence complete — your Clean rating plus one isolated camera flag.'
-              : 'Progression evidence complete — athlete and filmed form checks agree.'
-            : needsManualReplayReview
-              ? 'Your Clean rating is saved. Review the replay above for this hold to count toward progression.'
-              : needsFlightConfirmation && value?.flightConfirmed !== true
-                ? 'Your Clean rating is saved. Confirm that both feet stayed off the floor for this hold to count.'
-              : progressionCameraIssues.includes('arms')
-                ? 'Saved as a PR, but the camera measured elbows that were not fully locked in the credited window, so this hold will not unlock.'
-              : value?.auto && progressionCameraIssues.length > 1
-                ? 'Saved as a PR, but the camera found multiple form flags, so this hold will not unlock.'
-                : 'Your Clean rating is saved. A successful camera check is still needed for progression.'}
-        </p>
-      ) : null}
-      {rating && rating !== 'clean' ? (
-        <div className="mt-3">
-          <div className="text-[12.5px] text-ink2">
-            What gave out?{analysis?.ok && analysis.issues.length ? ' (pre-filled from the clip)' : ''}
-          </div>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {issuesFor(exerciseId).map((f) => {
-              const on = issues.includes(f.id)
-              return (
-                <button
-                  key={f.id}
-                  onClick={() => toggleIssue(f.id)}
-                  aria-pressed={on}
-                  className={`rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition ${
-                    on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              )
-            })}
-          </div>
-          <p className="mt-2 text-[11.5px] text-ink3">Saved as you tap — no need to confirm.</p>
-        </div>
-      ) : null}
       <Modal
-        open={showProblemReport}
-        onClose={() => {
-          if (!reportSaving) {
-            setShowProblemReport(false)
-            onReportOpenChange?.(false)
-          }
-        }}
-        label="Report a camera error"
+        open={confirmExit}
+        onClose={() => setConfirmExit(false)}
+        label={phase === 'summary' ? 'Leave without saving' : 'Leave training session'}
       >
         <div className="p-6">
-          <div className="pr-10">
-            <div className="mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-accent-soft text-accent-text">
-              <Icon name="info" size={20} />
-            </div>
-            <h2 className="font-display text-[20px] font-bold text-ink">Save this camera check?</h2>
-            <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink2">
-              A private problem report will keep this {EXERCISE_BY_ID[exerciseId]?.name ?? 'movement'} video, its
-              score and measurements, the camera’s frame-by-frame working, and basic app/browser details on this
-              device. Your name and unrelated training history are not included, and nothing is sent automatically.
-            </p>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-line bg-raised px-4 py-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-ink3">Check being saved</div>
-            <div className="mt-1 flex items-center justify-between gap-3">
-              <span className="text-[14px] font-medium text-ink">
-                {EXERCISE_BY_ID[exerciseId]?.name ?? exerciseId}
-              </span>
-              <span className="shrink-0 rounded-full bg-surface px-2.5 py-1 text-[12px] font-semibold text-ink2 tnum">
-                {analysis?.score !== undefined || value?.auto?.score !== undefined
-                  ? `Score ${analysis?.score ?? value?.auto?.score}`
-                  : analysis?.ok === false
-                    ? 'Check failed'
-                    : `${creditedHoldSec.toFixed(1)}s hold`}
-              </span>
-            </div>
-          </div>
-
-          <label className="mt-4 block text-[13px] font-semibold text-ink" htmlFor={`problem-note-${clipKey}`}>
-            What looks wrong? <span className="font-normal text-ink3">(optional)</span>
-          </label>
-          <textarea
-            id={`problem-note-${clipKey}`}
-            value={problemNote}
-            onChange={(event) => setProblemNote(event.target.value)}
-            maxLength={1200}
-            rows={4}
-            placeholder="For example: My elbows were straight, but it marked them as bent."
-            className="mt-1.5 w-full resize-y rounded-2xl border border-line bg-raised px-3.5 py-3 text-[14px] leading-relaxed text-ink outline-none placeholder:text-ink3 focus:border-accent"
-          />
-          <div className="mt-1 text-right text-[11px] text-ink3 tnum">{problemNote.length}/1200</div>
-
-          <div className="mt-4 flex gap-2.5">
-            <button
-              onClick={() => {
-                setShowProblemReport(false)
-                onReportOpenChange?.(false)
-              }}
-              disabled={reportSaving}
-              className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14px] font-medium text-ink disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => void saveReport()}
-              disabled={reportSaving}
-              aria-busy={reportSaving}
-              className="flex flex-[1.35] items-center justify-center gap-2 rounded-xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-60"
-            >
-              <Icon name={reportSaving ? 'clock' : 'check'} size={15} />
-              {reportSaving ? 'Preparing report…' : 'Save problem report'}
-            </button>
-          </div>
-          {reportSaving && !diagnosticRef.current ? (
-            <p className="mt-2 text-center text-[11.5px] text-ink3" role="status">
-              Rebuilding the camera details can take a moment. Keep this screen open.
-            </p>
-          ) : null}
-        </div>
-      </Modal>
-    </div>
-  )
-}
-
-/** The coach's periodic readiness questions — answers change today's plan. */
-const REGION_LABEL: Record<BodyRegion, string> = {
-  wrist: 'Wrist',
-  elbow: 'Elbow',
-  shoulder: 'Shoulder',
-  'lower-back': 'Lower back',
-  other: 'Somewhere else',
-}
-
-function CheckInForm({ onDone, onSkip }: { onDone: (c: CheckIn) => void; onSkip: () => void }) {
-  const [joints, setJoints] = useState<CheckIn['joints'] | null>(null)
-  const [energy, setEnergy] = useState<CheckIn['energy'] | null>(null)
-  const [regions, setRegions] = useState<BodyRegion[]>([])
-
-  const JOINTS: { id: CheckIn['joints']; label: string; hint: string }[] = [
-    { id: 'good', label: 'All good', hint: 'Wrists and elbows feel normal' },
-    { id: 'niggle', label: 'A bit off', hint: 'Slight ache or stiffness, no real pain' },
-    { id: 'pain', label: 'Painful', hint: 'Sharp or persistent joint pain' },
-  ]
-  const ENERGY: { id: CheckIn['energy']; label: string }[] = [
-    { id: 'fresh', label: 'Fresh' },
-    { id: 'ok', label: 'Okay' },
-    { id: 'tired', label: 'Tired' },
-  ]
-
-  // Asked only when there is something to locate. A region changes what the
-  // session actually contains — a sore lower back gets its core work swapped
-  // out, a wrist keeps it — so this is a real question, not extra paperwork.
-  const needsRegion = joints === 'niggle' || joints === 'pain'
-  const ready = Boolean(joints && energy && (!needsRegion || regions.length > 0))
-
-  return (
-    <div className="p-6">
-      <div className="pr-10">
-        <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
-          <Icon name="target" size={14} /> Quick check-in
-        </div>
-        <h2 className="mt-1 font-display text-[20px] font-bold text-ink">How are you feeling?</h2>
-        <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">
-          Your answers change today's warm-up, intensity and volume — being honest here is what keeps you training
-          instead of recovering.
-        </p>
-      </div>
-
-      <div className="mt-4">
-        <div className="text-[13px] font-semibold text-ink" id="ci-joints">
-          Wrists, elbows and shoulders
-        </div>
-        <div className="mt-2 space-y-2" role="group" aria-labelledby="ci-joints">
-          {JOINTS.map((j) => (
-            <button
-              key={j.id}
-              aria-pressed={joints === j.id}
-              onClick={() => {
-                setJoints(j.id)
-                if (j.id === 'good') setRegions([])
-              }}
-              className={`flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition ${
-                joints === j.id ? 'border-accent bg-accent-soft' : 'border-line bg-raised hover:border-line-strong'
-              }`}
-            >
-              <span>
-                <span className="block text-[14px] font-medium text-ink">{j.label}</span>
-                <span className="block text-[12.5px] text-ink2">{j.hint}</span>
-              </span>
-              <span
-                className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 ${
-                  joints === j.id ? 'border-accent bg-accent text-on-accent' : 'border-line-strong'
-                }`}
-              >
-                {joints === j.id ? <Icon name="check" size={11} strokeWidth={3} /> : null}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {needsRegion ? (
-        <div className="mt-4">
-          <div className="text-[13px] font-semibold text-ink" id="ci-regions">
-            Where? <span className="font-normal text-ink2">Pick all that apply.</span>
-          </div>
-          <p className="mt-0.5 text-[12px] leading-relaxed text-ink3">
-            This changes the session rather than just being recorded — the plan leaves out whatever loads the area you
-            name.
-          </p>
-          <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-labelledby="ci-regions">
-            {BODY_REGIONS.map((r) => {
-              const on = regions.includes(r)
-              return (
+          {phase === 'summary' ? (
+            <>
+              <h2 className="pr-10 font-display text-[19px] font-semibold text-ink">
+                {logs.length ? 'Leave without saving?' : 'Close this session?'}
+              </h2>
+              <p className="mt-1.5 text-[14px] text-ink2">
+                {logs.length
+                  ? `${logs.length} logged set${logs.length === 1 ? ' is' : 's are'} not saved yet. Discarding removes ${
+                      logs.length === 1 ? 'it' : 'them'
+                    } for good.`
+                  : 'Nothing was logged.'}
+              </p>
+              <div className="mt-5 flex flex-col gap-2">
+                {logs.length ? (
+                  <button
+                    onClick={save}
+                    className="min-h-12 rounded-xl px-4 py-3 text-[14.5px] font-semibold text-on-accent"
+                    style={{ background: 'var(--t-btn-accent)' }}
+                  >
+                    Save session
+                  </button>
+                ) : null}
                 <button
-                  key={r}
-                  aria-pressed={on}
-                  onClick={() => setRegions((v) => (on ? v.filter((x) => x !== r) : [...v, r]))}
-                  className={`rounded-full border px-3.5 py-2 text-[13px] font-medium transition ${
-                    on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2 hover:text-ink'
+                  onClick={() => setConfirmExit(false)}
+                  className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-[14.5px] font-medium text-ink"
+                >
+                  Keep reviewing
+                </button>
+                <button
+                  onClick={discard}
+                  className={`min-h-12 rounded-xl px-4 py-3 text-[14.5px] font-semibold ${
+                    logs.length ? 'bg-danger text-white' : 'border border-line bg-surface text-ink2'
                   }`}
                 >
-                  {REGION_LABEL[r]}
+                  {logs.length ? `Discard ${logs.length} set${logs.length === 1 ? '' : 's'}` : 'Close'}
                 </button>
-              )
-            })}
-          </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 className="pr-10 font-display text-[19px] font-semibold text-ink">Leave this session?</h2>
+              <p className="mt-1.5 text-[14px] text-ink2">
+                {canFinishEarly
+                  ? `Finish early to review and save what you did${
+                      holdRunning ? ' — the hold in progress is stopped and logged' : ''
+                    }, or discard it all.`
+                  : 'Nothing has been logged yet.'}
+              </p>
+              <div className="mt-5 flex flex-col gap-2">
+                {canFinishEarly ? (
+                  <button
+                    onClick={finishEarly}
+                    className="min-h-12 rounded-xl px-4 py-3 text-[14.5px] font-semibold text-on-accent"
+                    style={{ background: 'var(--t-btn-accent)' }}
+                  >
+                    Finish early &amp; review
+                  </button>
+                ) : null}
+                <button
+                  onClick={() => setConfirmExit(false)}
+                  className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-[14.5px] font-medium text-ink"
+                >
+                  Keep training
+                </button>
+                <button
+                  onClick={discard}
+                  className={`min-h-12 rounded-xl px-4 py-3 text-[14.5px] font-semibold ${
+                    canFinishEarly ? 'bg-danger text-white' : 'border border-line bg-surface text-ink2'
+                  }`}
+                >
+                  {canFinishEarly
+                    ? `Discard${logs.length ? ` ${logs.length} set${logs.length === 1 ? '' : 's'}` : ''}`
+                    : 'Leave'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
-      ) : null}
-
-      <div className="mt-4">
-        <div className="text-[13px] font-semibold text-ink" id="ci-energy">
-          Energy today
-        </div>
-        <div className="mt-2 flex gap-2" role="group" aria-labelledby="ci-energy">
-          {ENERGY.map((e) => (
-            <button
-              key={e.id}
-              aria-pressed={energy === e.id}
-              onClick={() => setEnergy(e.id)}
-              className={`flex-1 rounded-xl border py-2.5 text-[13.5px] font-medium transition ${
-                energy === e.id
-                  ? 'border-transparent bg-accent text-on-accent'
-                  : 'border-line bg-raised text-ink2 hover:text-ink'
-              }`}
-            >
-              {e.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <button
-        disabled={!ready}
-        onClick={() =>
-          ready &&
-          joints &&
-          energy &&
-          onDone({ joints, energy, at: Date.now(), ...(regions.length ? { regions } : {}) })
-        }
-        className="mt-5 w-full rounded-2xl px-6 py-3.5 font-display text-[16px] font-semibold text-on-accent shadow-card transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
-        style={{ background: 'var(--t-btn-accent)' }}
-      >
-        Start session
-      </button>
-      {needsRegion && regions.length === 0 ? (
-        <p className="mt-1.5 text-center text-[12px] text-ink3" aria-live="polite">
-          Pick where it is, so the session can leave that out.
-        </p>
-      ) : null}
-      <button onClick={onSkip} className="mt-2 w-full py-2 text-[13px] font-medium text-ink3 hover:text-ink">
-        Skip for now
-      </button>
+      </Modal>
     </div>
   )
 }
