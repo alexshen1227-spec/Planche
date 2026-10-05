@@ -19,6 +19,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-05',
+    title: 'Time a hold from its video, and take back a mis-tap',
+    area: 'training',
+    notes: [
+      'A filmed hold can now be timed from the clip itself. Open Review, step to the first frame you are fully in position and the last, and that stretch becomes the hold — no walk-back allowance taken off it, and the form check looks at exactly that stretch. The stopwatch reading stays on record. It works mid-session and later from the clip in Learn.',
+      'Tapped “pain” by mistake? A report made during a set has an Undo, and Settings now lists the joint reports the coach is reading, each with “That was a mistake”. The report stays in your history but stops counting — so one mis-tap no longer costs a week of loading.',
+      'After saving, “See it in your history” opens that exact session in Progress.',
+      'On a phone, Start and Save now stay on screen instead of sitting below the cues and camera preview.',
+    ],
+  },
+  {
+    date: '2026-10-05',
     title: 'Safer sessions, honest saves and a stricter camera',
     area: 'app',
     major: {

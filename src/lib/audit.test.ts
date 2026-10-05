@@ -429,3 +429,37 @@ describe('a mistaken joint report can be withdrawn without rewriting history', (
     expect(withComplaint!).toBeLessThan(withdrawn!)
   })
 })
+
+describe('a hold can be timed from its video', () => {
+  it('re-timing a saved hold from the clip replaces the value, keeps the timer reading and replays records', () => {
+    const set = hold('tuck-planche', 3, at(1), {
+      raw: 8,
+      timing: { method: 'stopwatch', allowanceSec: 5, allowance: 'walk-back' },
+    })
+    const saved = reducer(athlete(), { type: 'SAVE_SESSION', session: trainingDay(1, [set]) })
+    expect(saved.prs['tuck-planche']?.value).toBe(3)
+    const session = saved.sessions[0]
+    const retimed = reducer(saved, {
+      type: 'UPDATE_SET_TIMING',
+      sessionId: session.id,
+      setAt: set.at,
+      value: 6.4,
+      timing: { method: 'video', videoStartSec: 0.8, videoEndSec: 7.2 },
+    })
+    const after = retimed.sessions[0].sets[0]
+    expect(after.value).toBe(6.4)
+    expect(after.raw).toBe(8)
+    expect(after.timing).toEqual({ method: 'video', videoStartSec: 0.8, videoEndSec: 7.2 })
+    // Records come from replaying history, so the re-timed value is the PR now.
+    expect(retimed.prs['tuck-planche']?.value).toBe(6.4)
+  })
+
+  it('video timing survives an export round trip; a backwards interval does not', () => {
+    const good = hold('tuck-planche', 5, at(1), { timing: { method: 'video', videoStartSec: 1, videoEndSec: 6 } })
+    const bad = hold('tuck-planche', 5, at(1) + 1, { timing: { method: 'video', videoStartSec: 6, videoEndSec: 1 } })
+    const { state } = normalizeStateWithReport({ ...athlete(), sessions: [trainingDay(1, [good, bad])] }, NOW)
+    const [a, b] = state.sessions[0].sets
+    expect(a.timing).toEqual({ method: 'video', videoStartSec: 1, videoEndSec: 6 })
+    expect(b.timing).toEqual({ method: 'video' })
+  })
+})

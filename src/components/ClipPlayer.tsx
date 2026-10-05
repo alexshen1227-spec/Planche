@@ -22,7 +22,20 @@ interface ClipPlayerProps {
   overlay?: PoseTrack | null
   /** Faults found — the joints involved are drawn in the warning colour. */
   overlayIssues?: FormIssue[]
+  /** Offer marking where the hold started and ended, in the fullscreen reviewer. */
+  onMarkInterval?: (interval: ClipInterval) => void
+  /** The interval already marked on this clip, if any. */
+  markedInterval?: ClipInterval
 }
+
+/** A stretch of the clip, in clip seconds. */
+export interface ClipInterval {
+  startSec: number
+  endSec: number
+}
+
+/** Shortest hold the reviewer will time — below it the marks are noise. */
+const MIN_MARKED_HOLD_SEC = 0.5
 
 /** Limb connections drawn between tracked joints. */
 const BONES: [string, string][] = [
@@ -99,7 +112,7 @@ function PoseOverlay({
 
       // Blend adjacent analysed moments so the replay follows the athlete
       // instead of snapping between frozen samples. Real gaps stay blank.
-      const keypoints = replayKeypointsAtTime(track, video.currentTime)
+      const keypoints = replayKeypointsAtTime(track, video.currentTime - (track.offsetSec ?? 0))
       if (!keypoints.length) return
 
       // The <video> renders object-contain: work out where the letterboxed
@@ -155,6 +168,8 @@ export function ClipPlayer({
   onReviewOpenChange,
   overlay,
   overlayIssues,
+  onMarkInterval,
+  markedInterval,
 }: ClipPlayerProps) {
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
@@ -301,6 +316,8 @@ export function ClipPlayer({
               overlay={hasOverlay && showSkeleton ? overlay! : null}
               overlayIssues={overlayIssues ?? []}
               onClose={closeReview}
+              onMarkInterval={onMarkInterval}
+              markedInterval={markedInterval}
             />,
             document.body,
           )
@@ -319,6 +336,8 @@ function ClipReviewOverlay({
   overlay,
   overlayIssues,
   onClose,
+  onMarkInterval,
+  markedInterval,
 }: {
   url: string
   label: string
@@ -326,11 +345,18 @@ function ClipReviewOverlay({
   overlay?: PoseTrack | null
   overlayIssues?: FormIssue[]
   onClose: () => void
+  onMarkInterval?: (interval: ClipInterval) => void
+  markedInterval?: ClipInterval
 }) {
   const shellRef = useRef<HTMLDivElement | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const closeRef = useRef<HTMLButtonElement | null>(null)
   const [speed, setSpeed] = useState(1)
+  const [markStart, setMarkStart] = useState<number | null>(markedInterval?.startSec ?? null)
+  const [markEnd, setMarkEnd] = useState<number | null>(markedInterval?.endSec ?? null)
+  const [markSaved, setMarkSaved] = useState(false)
+  const markedLength = markStart !== null && markEnd !== null ? markEnd - markStart : null
+  const markValid = markedLength !== null && markedLength >= MIN_MARKED_HOLD_SEC
   /**
    * Read through a ref, never a dependency. The session player re-renders ten
    * times a second, and with `onClose` in the dependency list this effect
@@ -456,7 +482,11 @@ function ClipReviewOverlay({
           <PoseOverlay videoRef={videoRef} track={overlay} issues={overlayIssues ?? []} />
         ) : null}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 border-t border-white/10 px-3 pb-[max(env(safe-area-inset-bottom),8px)] pt-2 text-white">
+      <div
+        className={`flex shrink-0 flex-wrap items-center justify-center gap-2 border-t border-white/10 px-3 pt-2 text-white ${
+          onMarkInterval ? 'pb-2' : 'pb-[max(env(safe-area-inset-bottom),8px)]'
+        }`}
+      >
         <button
           onClick={() => {
             if (!videoRef.current) return
@@ -495,6 +525,55 @@ function ClipReviewOverlay({
           + ~1/30 s
         </button>
       </div>
+      {onMarkInterval ? (
+        // Timing from the footage: the hold's real start and end, frame by
+        // frame, instead of the stopwatch minus a guessed walk-back. The
+        // interval *is* the measurement, so nothing is taken off it.
+        <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 border-t border-white/10 px-3 pb-[max(env(safe-area-inset-bottom),8px)] pt-2 text-white">
+          <button
+            onClick={() => {
+              if (!videoRef.current) return
+              videoRef.current.pause()
+              setMarkStart(Math.round(videoRef.current.currentTime * 100) / 100)
+              setMarkSaved(false)
+            }}
+            className="min-h-11 rounded-lg border border-white/20 px-3 py-2 text-[12px] font-semibold"
+          >
+            Hold started here{markStart !== null ? ` · ${markStart.toFixed(2)}s` : ''}
+          </button>
+          <button
+            onClick={() => {
+              if (!videoRef.current) return
+              videoRef.current.pause()
+              setMarkEnd(Math.round(videoRef.current.currentTime * 100) / 100)
+              setMarkSaved(false)
+            }}
+            className="min-h-11 rounded-lg border border-white/20 px-3 py-2 text-[12px] font-semibold"
+          >
+            Hold ended here{markEnd !== null ? ` · ${markEnd.toFixed(2)}s` : ''}
+          </button>
+          <button
+            onClick={() => {
+              if (!markValid || markStart === null || markEnd === null) return
+              onMarkInterval({ startSec: markStart, endSec: markEnd })
+              setMarkSaved(true)
+            }}
+            disabled={!markValid}
+            className="min-h-11 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-on-accent disabled:opacity-40"
+          >
+            {markSaved
+              ? `Timed from the video · ${markedLength!.toFixed(1)}s`
+              : markValid
+                ? `Use ${markedLength!.toFixed(1)}s for this hold`
+                : markedLength !== null && markedLength < MIN_MARKED_HOLD_SEC
+                  ? 'End must come after the start'
+                  : 'Mark the start and end'}
+          </button>
+          <p className="w-full text-center text-[10.5px] text-white/55" role="status">
+            Step to the first frame you are fully in position, then the last. The timer’s reading is kept on record.
+          </p>
+        </div>
+      ) : null}
     </div>
   )
 }

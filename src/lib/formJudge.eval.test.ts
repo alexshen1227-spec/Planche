@@ -819,3 +819,15 @@ describe('the bench shows what the generator uses', () => {
     expect(explicit.tracked).toEqual(absent.tracked)
   })
 })
+
+describe('a verdict over a marked stretch of the clip', () => {
+  it('carries the clip offset so the replay skeleton lines up', () => {
+    const clip = synthesizeClip({ ...IDEAL['tuck-planche'], noise: 0 })
+    const shifted = judgeTrackedFrames({ ...clip, timeOffsetSec: 1.5 }, 'tuck-planche')
+    expect(shifted.track?.offsetSec).toBe(1.5)
+    // The verdict itself is unchanged by where the stretch sits in the clip.
+    const plain = judgeTrackedFrames(clip, 'tuck-planche')
+    expect(shifted.cleanSeconds).toBe(plain.cleanSeconds)
+    expect(shifted.issues).toEqual(plain.issues)
+  })
+})

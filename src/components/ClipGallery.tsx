@@ -77,6 +77,11 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
   useEffect(load, [exerciseId])
 
   const reviewOwner = reviewing ? owners.get(reviewing) : undefined
+  const reviewTiming = reviewOwner?.set.timing
+  const videoInterval =
+    reviewTiming?.method === 'video' && reviewTiming.videoStartSec !== undefined && reviewTiming.videoEndSec !== undefined
+      ? { startSec: reviewTiming.videoStartSec, endSec: reviewTiming.videoEndSec }
+      : undefined
 
   if (clips === null) return null
   if (clips.length === 0) {
@@ -200,7 +205,31 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
               clipKey={reviewing}
               exerciseId={reviewOwner.set.exerciseId}
               creditedHoldSec={reviewOwner.set.value}
-              analysisWindowSec={Math.max(0, reviewOwner.set.value - (reviewOwner.set.recordingOffsetSec ?? 0))}
+              analysisWindowSec={
+                videoInterval
+                  ? reviewOwner.set.value
+                  : Math.max(0, reviewOwner.set.value - (reviewOwner.set.recordingOffsetSec ?? 0))
+              }
+              analysisWindowStartSec={videoInterval?.startSec ?? 0}
+              videoInterval={videoInterval}
+              onVideoInterval={(interval) => {
+                const latest = getState()
+                  .sessions.find((s) => s.id === reviewOwner.session.id)
+                  ?.sets.find((set) => set.at === reviewOwner.set.at)
+                if (!latest) return
+                dispatch({
+                  type: 'UPDATE_SET_TIMING',
+                  sessionId: reviewOwner.session.id,
+                  setAt: reviewOwner.set.at,
+                  value: Math.round((interval.endSec - interval.startSec) * 10) / 10,
+                  timing: {
+                    method: 'video',
+                    videoStartSec: Math.round(interval.startSec * 100) / 100,
+                    videoEndSec: Math.round(interval.endSec * 100) / 100,
+                  },
+                })
+                pushToast('Re-timed from the video. Records were recalculated.', 'success', 4500)
+              }}
               value={reviewOwner.set.form}
               onHuman={(review) => commit(reviewOwner, (current) => mergeHumanReview(current, review))}
               onModel={(reading) => commit(reviewOwner, (current) => mergeModelReading(current, reading))}

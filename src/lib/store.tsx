@@ -156,7 +156,7 @@ const SECTIONS = new Set(['warmup', 'main', 'strength', 'core', 'cooldown'])
 const STRATEGIES = new Set(['balanced', 'volume', 'intensity', 'density', 'technique'])
 const ASSIST_TYPES = new Set<AssistType>(['none', 'band', 'feet', 'partner', 'other'])
 const END_REASONS = new Set<EndReason>(['target', 'balance', 'technique', 'effort', 'interruption', 'timing', 'unsure'])
-const TIMING_METHODS = new Set<SetTiming['method']>(['stopwatch', 'interrupted', 'edited'])
+const TIMING_METHODS = new Set<SetTiming['method']>(['stopwatch', 'interrupted', 'edited', 'video'])
 const TIMING_ALLOWANCES = new Set<NonNullable<SetTiming['allowance']>>(['walk-back', 'reaction', 'interruption'])
 const SYMPTOM_SOURCES = new Set<SymptomEvent['source']>(['onboarding', 'check-in', 'attempt', 'manual'])
 
@@ -241,6 +241,7 @@ function sanitizeAuto(a: unknown, repairs: string[]): AutoForm | undefined {
     asymmetry: num(c.asymmetry),
     wobble: num(c.wobble),
     analysedSec: clampOptional(c.analysedSec, 0, 3600),
+    analysedFromSec: clampOptional(c.analysedFromSec, 0, 3600),
     samplingGapSec: clampOptional(c.samplingGapSec, 0, 60),
     ...(typeof c.model === 'string' ? { model: c.model.slice(0, 60) } : {}),
     ...(typeof c.judge === 'number' && Number.isFinite(c.judge) ? { judge: c.judge } : {}),
@@ -467,6 +468,14 @@ function sanitizeSet(rawSet: unknown, sessionStart: number, report: NormalizeRep
           ? { allowanceSec: clampNum(t.allowanceSec, 0, 60, 0) }
           : {}),
         ...(typeof t.allowance === 'string' && TIMING_ALLOWANCES.has(t.allowance) ? { allowance: t.allowance } : {}),
+        ...(t.method === 'video' &&
+        typeof t.videoStartSec === 'number' &&
+        typeof t.videoEndSec === 'number' &&
+        Number.isFinite(t.videoStartSec) &&
+        Number.isFinite(t.videoEndSec) &&
+        t.videoEndSec > t.videoStartSec
+          ? { videoStartSec: clampNum(t.videoStartSec, 0, 3600, 0), videoEndSec: clampNum(t.videoEndSec, 0, 3600, 0) }
+          : {}),
       }
     }
   }
@@ -1063,6 +1072,8 @@ export type Action =
       setAt: number
       form: FormCheck
     }
+  /** Re-time a saved hold, e.g. from the video later. Values feed records, so history is replayed. */
+  | { type: 'UPDATE_SET_TIMING'; sessionId: string; setAt: number; value: number; timing: SetTiming }
   /** A clip that finished saving after its session did. Evidence-neutral: no replay needed. */
   | { type: 'ATTACH_SET_CLIP'; sessionId: string; setAt: number; clipKey: string }
   | { type: 'SET_SETUP'; exerciseId: string; setup: Omit<ExerciseSetup, 'updatedAt'> | null }
@@ -1362,6 +1373,21 @@ function reduceAction(state: AppState, action: Action): AppState {
       if (!found) return state
       // Unlocks and badges depend on form evidence, so history is replayed.
       return rebuildDerivedState({ ...state, sessions }, sessions)
+    }
+    case 'UPDATE_SET_TIMING': {
+      if (!Number.isFinite(action.value) || action.value < 0) return state
+      let found = false
+      const sessions = state.sessions.map((s) => {
+        if (s.id !== action.sessionId) return s
+        const sets = s.sets.map((set) => {
+          if (set.at !== action.setAt || set.kind !== 'hold') return set
+          found = true
+          // The stopwatch reading is the observation; it survives a re-timing.
+          return { ...set, value: Math.round(action.value * 10) / 10, timing: action.timing }
+        })
+        return found ? { ...s, sets, updatedAt: Date.now() } : s
+      })
+      return found ? rebuildDerivedState({ ...state, sessions }, sessions) : state
     }
     case 'ATTACH_SET_CLIP': {
       let found = false

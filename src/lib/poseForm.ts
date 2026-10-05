@@ -143,6 +143,11 @@ export interface PoseTrack {
   height: number
   /** Stable visible side the verdict actually graded in side-view mode. */
   gradedSide?: 'left' | 'right'
+  /**
+   * Clip time the frames' `t` is measured from. Analysis of a hold timed from
+   * the video starts at the marked start, and the replay must add it back.
+   */
+  offsetSec?: number
   frames: { t: number; kps: Kp[] }[]
 }
 
@@ -1377,6 +1382,8 @@ export interface JudgeInput {
   rotation?: Rotation
   /** Requested moments whose frame could not be decoded; they carry no pose. */
   decodeMisses?: number
+  /** Clip time that `t = 0` corresponds to (a hold timed from the video). */
+  timeOffsetSec?: number
 }
 
 /**
@@ -1487,6 +1494,7 @@ export function judgeTrackedFrames(
           width: srcW,
           height: srcH,
           ...(trackedSide ? { gradedSide: trackedSide } : {}),
+          ...(input.timeOffsetSec ? { offsetSec: input.timeOffsetSec } : {}),
           frames: tracked.map(({ t, kps }) => ({
             t,
             kps: kps
@@ -2438,6 +2446,7 @@ async function analyseClipNow(
   exerciseId: string,
   sampleCount?: number,
   creditedHoldSec?: number,
+  windowStartSec = 0,
 ): Promise<ClipAnalysis> {
   const empty = emptyResult()
   const profile = POSE_PROFILES[exerciseId]
@@ -2473,8 +2482,13 @@ async function analyseClipNow(
       window.setTimeout(() => reject(new Error('That clip took too long to load.')), 10000)
     })
 
-    const duration = await resolveDuration(video)
-    if (duration === 0) return { result: { ...empty, reason: 'That clip has no readable duration.' } }
+    const fullDuration = await resolveDuration(video)
+    if (fullDuration === 0) return { result: { ...empty, reason: 'That clip has no readable duration.' } }
+    // A hold timed from the video is analysed from its marked start; every
+    // time below is relative to that start, and seeks add it back.
+    const offset = Math.max(0, Math.min(windowStartSec, fullDuration))
+    const duration = fullDuration - offset
+    if (duration <= 0) return { result: { ...empty, reason: 'The marked hold starts after the clip ends.' } }
 
     // Analyse the credited hold, not the walk back to the phone after it. The
     // timer's value is intentionally the authority for where useful work ends.
@@ -2514,7 +2528,7 @@ async function analyseClipNow(
       const totals = new Map<Rotation, number>()
       let decoded = 0
       for (const t of probes) {
-        if ((await seekTo(video, t)) !== 'ok') continue
+        if ((await seekTo(video, offset + t)) !== 'ok') continue
         decoded++
         for (const candidate of [0, 90, 270] as Rotation[]) {
           totals.set(candidate, (totals.get(candidate) ?? 0) + trackingScore(await detectAt(backend, candidate)))
@@ -2591,7 +2605,7 @@ async function analyseClipNow(
       let decodeMisses = 0
       try {
         for (const t of times) {
-          if ((await seekTo(video, t)) !== 'ok') {
+          if ((await seekTo(video, offset + t)) !== 'ok') {
             decodeMisses++
             continue
           }
@@ -2625,6 +2639,7 @@ async function analyseClipNow(
         model: chosen.backend.model,
         rotation: chosen.rotation,
         ...(decodeMisses ? { decodeMisses } : {}),
+        ...(offset > 0 ? { timeOffsetSec: Math.round(offset * 1000) / 1000 } : {}),
       }
       return { result: judgeTrackedFrames(poses, exerciseId), poses }
     }
@@ -2650,6 +2665,8 @@ export interface AnalyseOptions {
    * third queued check must not time out after five seconds of real work.
    */
   onStart?: () => void
+  /** Clip time to start the analysed window at — the marked start of a video-timed hold. */
+  windowStartSec?: number
 }
 
 export function analyseClipDetailed(
@@ -2661,7 +2678,7 @@ export function analyseClipDetailed(
 ): Promise<ClipAnalysis> {
   const analysis = analysisQueue.then(() => {
     options.onStart?.()
-    return analyseClipNow(blob, exerciseId, sampleCount, creditedHoldSec)
+    return analyseClipNow(blob, exerciseId, sampleCount, creditedHoldSec, options.windowStartSec ?? 0)
   })
   analysisQueue = analysis.then(
     () => undefined,

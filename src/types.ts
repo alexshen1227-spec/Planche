@@ -121,6 +121,8 @@ export interface AutoForm {
    * the old, shorter window must not be read as covering the new one.
    */
   analysedSec?: number
+  /** Clip time the analysed window began at (0 unless the hold was timed from the video). */
+  analysedFromSec?: number
   /** Widest gap between sampled moments; a break shorter than this can hide between them. */
   samplingGapSec?: number
   /** Which detector produced the reading, so results stay attributable to model bytes. */
@@ -351,10 +353,18 @@ export type AssistType = 'none' | 'band' | 'feet' | 'partner' | 'other'
  * number the athlete typed in — and those are not the same evidence.
  */
 export interface SetTiming {
-  method: 'stopwatch' | 'interrupted' | 'edited'
+  /**
+   * `video`: the athlete marked where the hold started and ended on the clip
+   * itself. That interval is the measurement — no reaction or walk-back
+   * allowance is taken off it, and the stopwatch reading stays in `raw`.
+   */
+  method: 'stopwatch' | 'interrupted' | 'edited' | 'video'
   /** Seconds taken off the raw reading, when any were. */
   allowanceSec?: number
   allowance?: 'walk-back' | 'reaction' | 'interruption'
+  /** Clip-time of the marked start and end, for `video` timing. */
+  videoStartSec?: number
+  videoEndSec?: number
 }
 
 export interface SetLog {

@@ -125,8 +125,19 @@ function useRingSize(max: number, min = 168): number {
 }
 
 /** How a logged value was arrived at, when it is not a plain stopwatch reading. */
+/** The clip interval a hold was timed from, when it was. */
+function videoIntervalOf(log: SetLog): { startSec: number; endSec: number } | undefined {
+  const t = log.timing
+  return t?.method === 'video' && t.videoStartSec !== undefined && t.videoEndSec !== undefined
+    ? { startSec: t.videoStartSec, endSec: t.videoEndSec }
+    : undefined
+}
+
 function timingNote(log: SetLog): string | null {
   if (log.kind !== 'hold') return null
+  if (log.timing?.method === 'video') {
+    return log.raw !== undefined ? `(timed from the video · the timer read ${log.raw.toFixed(1)}s)` : '(timed from the video)'
+  }
   if (log.timing?.method === 'edited') {
     return log.raw !== undefined ? `(edited · the timer read ${log.raw.toFixed(1)}s)` : '(edited by hand)'
   }
@@ -927,6 +938,25 @@ export function SessionPlayer({
     [dispatch],
   )
 
+  /**
+   * Re-time a hold from its clip. The marked interval is the measurement — no
+   * allowance is taken off it — and the stopwatch reading stays in `raw`.
+   */
+  const applyVideoInterval = useCallback(
+    (at: number, interval: { startSec: number; endSec: number }) => {
+      const value = round1(interval.endSec - interval.startSec)
+      const timing: SetTiming = {
+        method: 'video',
+        videoStartSec: Math.round(interval.startSec * 100) / 100,
+        videoEndSec: Math.round(interval.endSec * 100) / 100,
+      }
+      setLogs((current) => current.map((log) => (log.at === at && log.kind === 'hold' ? { ...log, value, timing } : log)))
+      const sessionId = savedSessionIdRef.current
+      if (sessionId) dispatch({ type: 'UPDATE_SET_TIMING', sessionId, setAt: at, value, timing })
+    },
+    [dispatch],
+  )
+
   /** A mis-tapped report is withdrawn by a correction, never deleted — history stays honest. */
   const undoAttemptSymptom = useCallback(
     (symptom: AttemptSymptom) => {
@@ -1273,23 +1303,31 @@ export function SessionPlayer({
       </div>
     ) : null
 
-  const formRowFor = (log: SetLog, rest: boolean) => (
-    <FormCheckRow
-      key={`form-${log.at}`}
-      clipKey={log.clipKey ?? log.form?.clipKey ?? null}
-      exerciseId={log.exerciseId}
-      creditedHoldSec={log.value}
-      analysisWindowSec={Math.max(0, log.value - (log.recordingOffsetSec ?? 0))}
-      value={log.form}
-      autoRun={state.settings.autoAnalyze}
-      restReportAction={rest}
-      onReportOpenChange={setProblemReportOpen}
-      onReviewOpenChange={setReviewOpen}
-      onHuman={(review) => applyHuman(log.at, review)}
-      onModel={(reading) => applyModel(log.at, reading)}
-      onBusyChange={onBusyChange}
-    />
-  )
+  const formRowFor = (log: SetLog, rest: boolean) => {
+    const video = videoIntervalOf(log)
+    return (
+      <FormCheckRow
+        key={`form-${log.at}`}
+        clipKey={log.clipKey ?? log.form?.clipKey ?? null}
+        exerciseId={log.exerciseId}
+        creditedHoldSec={log.value}
+        // A video-timed hold is analysed over exactly its marked stretch; a
+        // stopwatch hold from the clip's start, less any late recording start.
+        analysisWindowSec={video ? log.value : Math.max(0, log.value - (log.recordingOffsetSec ?? 0))}
+        analysisWindowStartSec={video?.startSec ?? 0}
+        videoInterval={video}
+        onVideoInterval={(interval) => applyVideoInterval(log.at, interval)}
+        value={log.form}
+        autoRun={state.settings.autoAnalyze}
+        restReportAction={rest}
+        onReportOpenChange={setProblemReportOpen}
+        onReviewOpenChange={setReviewOpen}
+        onHuman={(review) => applyHuman(log.at, review)}
+        onModel={(reading) => applyModel(log.at, reading)}
+        onBusyChange={onBusyChange}
+      />
+    )
+  }
 
   function body() {
     if (phase === 'intro') {

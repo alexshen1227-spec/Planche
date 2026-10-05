@@ -249,9 +249,14 @@ them. Real-hardware behaviour is still unproven.
 - **Joint reports are a timeline** (`state.symptoms`, read through
   `readinessTimeline`): onboarding answers, check-ins (recorded the moment they
   are given, so a discarded session cannot lose one) and mid-session reports.
-  Future-dated reports are ignored; a correction withdraws, it is not recovery.
+  Future-dated reports are ignored; a correction withdraws, it is not recovery
+  (UI: Undo on a mid-set report, and Settings → Joint reports; the strategy
+  reward honours corrections too).
 - **Attempts keep their provenance.** `SetLog.raw` survives edits and
-  interruptions; `timing.method` says stopwatch / interrupted / edited;
+  interruptions; `timing.method` says stopwatch / interrupted / edited / video
+  (a `video` hold's value is the interval marked on its clip — no allowance is
+  taken off it, and the form check analyses exactly that stretch via
+  `windowStartSec` / `PoseTrack.offsetSec`);
   `endReason` and `assist` are optional and absent means unknown. Assisted or
   import-repaired sets never qualify; endings the athlete called an
   interruption or timing problem are kept out of the working dose.

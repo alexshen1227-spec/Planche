@@ -22,7 +22,7 @@ import {
 } from '../lib/progression'
 import { Icon } from './Icon'
 import { Modal } from './ui'
-import { ClipPlayer } from './ClipPlayer'
+import { ClipPlayer, type ClipInterval } from './ClipPlayer'
 
 export const FORM_ISSUE_LABEL: Record<FormIssue, string> = {
   arms: 'Elbows not fully locked',
@@ -147,7 +147,7 @@ export function suggestedRatingFor(res: Pick<PoseFormResult, 'issues' | 'cleanRa
 }
 
 /** The persisted reading for a successful result. */
-export function autoFromResult(res: PoseFormResult, analysedSec: number): AutoForm {
+export function autoFromResult(res: PoseFormResult, analysedSec: number, analysedFromSec = 0): AutoForm {
   return {
     issues: res.issues,
     heldIssues: res.heldIssues ?? res.issues,
@@ -163,6 +163,7 @@ export function autoFromResult(res: PoseFormResult, analysedSec: number): AutoFo
     shrugRatio: res.shrugRatio,
     wobble: res.wobble,
     analysedSec: Math.round(analysedSec * 10) / 10,
+    ...(analysedFromSec > 0 ? { analysedFromSec: Math.round(analysedFromSec * 100) / 100 } : {}),
     ...(res.samplingGapSec !== undefined ? { samplingGapSec: Math.round(res.samplingGapSec * 100) / 100 } : {}),
     ...(res.model ? { model: res.model } : {}),
     judge: JUDGE_VERSION,
@@ -190,6 +191,9 @@ export function FormCheckRow({
   onHuman,
   onModel,
   onBusyChange,
+  analysisWindowStartSec = 0,
+  videoInterval,
+  onVideoInterval,
 }: {
   clipKey: string | null
   exerciseId: string
@@ -212,6 +216,12 @@ export function FormCheckRow({
   onModel: (reading: ModelReading) => void
   /** Per-operation busy reporting; only the operation that set busy can clear it. */
   onBusyChange?: (opId: string, busy: boolean) => void
+  /** Clip time the analysed window starts at — the marked start of a video-timed hold. */
+  analysisWindowStartSec?: number
+  /** The interval marked on the clip, when the hold was timed from the video. */
+  videoInterval?: ClipInterval
+  /** Re-time the hold from the clip. Absent where re-timing is not allowed. */
+  onVideoInterval?: (interval: ClipInterval) => void
 }) {
   // Whether a *person* has answered for this set. Kept apart from the
   // displayed rating, because the camera's suggestion pre-fills that rating —
@@ -294,6 +304,7 @@ export function FormCheckRow({
             }
             setStatus('queued')
             const result = await analyseClipDetailed(blob, exerciseId, undefined, windowSec, {
+              windowStartSec: analysisWindowStartSec,
               onStart: () => {
                 if (settled) return
                 setStatus('running')
@@ -326,7 +337,7 @@ export function FormCheckRow({
       setAnalysis(friendlyResult(res))
       if (res.ok) {
         const reading: ModelReading = {
-          auto: autoFromResult(res, windowSec),
+          auto: autoFromResult(res, windowSec, analysisWindowStartSec),
           suggestedRating: suggestedRatingFor(res),
           suggestedIssues: res.issues,
           clipKey,
@@ -361,7 +372,8 @@ export function FormCheckRow({
       // rather than only a video and the athlete's note.
       let diagnostic = diagnosticRef.current
       if (!diagnostic) {
-        const rerun = await (diagnosticPromiseRef.current ?? analyseClipDetailed(video, exerciseId, undefined, windowSec))
+        const rerun = await (diagnosticPromiseRef.current ??
+          analyseClipDetailed(video, exerciseId, undefined, windowSec, { windowStartSec: analysisWindowStartSec }))
         diagnostic = {
           ...rerun,
           result: rerun.poses ? judgeTrackedFrames(rerun.poses, exerciseId, { explain: true }) : rerun.result,
@@ -431,7 +443,7 @@ export function FormCheckRow({
       flightConfirmed: flightPassed,
       variantConfirmed: variantPassed,
       ...(clipKey ? { clipKey } : {}),
-      ...(analysis?.ok ? { auto: autoFromResult(analysis, windowSec) } : {}),
+      ...(analysis?.ok ? { auto: autoFromResult(analysis, windowSec, analysisWindowStartSec) } : {}),
     })
   }
 
@@ -446,7 +458,10 @@ export function FormCheckRow({
   const progressionCameraIssues = value?.auto ? progressionRelevantIssues(value.auto) : []
   const variantGaps = unseenVariantCriteria(exerciseId, value?.auto ?? (analysis?.ok ? { issues: analysis.issues, confidence: analysis.confidence, unseen: analysis.unseen } : undefined))
   const analysedSec = value?.auto?.analysedSec
-  const coverageStale = analysedSec !== undefined && windowSec > analysedSec + 0.5
+  // Stale when the hold now counts more than was checked, or was re-timed to
+  // a different stretch of the clip than the one the camera looked at.
+  const windowMoved = Math.abs((value?.auto?.analysedFromSec ?? 0) - analysisWindowStartSec) > 0.1
+  const coverageStale = analysedSec !== undefined && (windowSec > analysedSec + 0.5 || windowMoved)
   const confirmedByHuman = value?.confirmed === true
   const statusLine =
     status === 'loading'
@@ -485,7 +500,16 @@ export function FormCheckRow({
           onReviewOpenChange={onReviewOpenChange}
           overlay={analysis?.track}
           overlayIssues={analysis?.issues}
+          onMarkInterval={onVideoInterval}
+          markedInterval={videoInterval}
         />
+      ) : null}
+      {clipKey && onVideoInterval && clipAvailable ? (
+        <p className="-mt-1.5 mb-3 text-[11.5px] leading-relaxed text-ink3">
+          {videoInterval
+            ? `Timed from the video: ${(videoInterval.endSec - videoInterval.startSec).toFixed(1)}s between the marked start and end. Open Review to change it.`
+            : 'Timed by the stopwatch, minus the time it takes to stop it. For an exact time, open Review and mark where the hold started and ended.'}
+        </p>
       ) : null}
       {clipKey ? (
         <div className="mb-3">
@@ -509,8 +533,9 @@ export function FormCheckRow({
           ) : null}
           {coverageStale && !analysing ? (
             <p className="mt-2 rounded-lg bg-accent-soft px-2.5 py-2 text-[12px] leading-relaxed text-ink" role="status">
-              The camera checked the first {analysedSec!.toFixed(1)}s, but this hold now counts as {windowSec.toFixed(1)}s.
-              Only the checked part can count toward progression — run the check again to cover all of it.
+              {windowMoved
+                ? 'This hold was re-timed from the video since the camera checked it. Run the check again so it covers the marked stretch.'
+                : `The camera checked the first ${analysedSec!.toFixed(1)}s, but this hold now counts as ${windowSec.toFixed(1)}s. Only the checked part can count toward progression — run the check again to cover all of it.`}
             </p>
           ) : null}
           {analysis ? (
