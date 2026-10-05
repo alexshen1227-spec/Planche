@@ -85,12 +85,14 @@ function holdSet(
   at: number,
   section: SetLog['section'],
   form?: SetLog['form'],
+  /** What the set was prescribed. Absent: the value itself, as in a free log. */
+  target?: number,
 ): SetLog {
   return {
     exerciseId,
     kind: 'hold',
     value: Math.round(value * 10) / 10,
-    target: Math.round(value),
+    target: Math.max(1, Math.round(target ?? value)),
     section,
     at,
     ...(form ? { form } : {}),
@@ -270,7 +272,7 @@ export function simulateSeason(
     state: AppState,
     now: number,
   ) => { dayType: string; targetFactor: number; strategy: StrategyId; suggestMaxTest: boolean },
-  adaptiveTargetFn: (state: AppState, stepId: StepId) => number,
+  adaptiveTargetFn: (state: AppState, stepId: StepId, now?: number) => number,
   applySessionFn: (state: AppState, session: Session) => { next: AppState },
 ): SeasonResult {
   const {
@@ -310,7 +312,9 @@ export function simulateSeason(
     const at = Math.round(start + i * spacingMs)
     const plan = buildPlanFn(state, at)
     // What the coach actually asks for today.
-    const prescribed = Math.max(1, adaptiveTargetFn(state, stepId) * plan.targetFactor)
+    const baseTarget = adaptiveTargetFn(state, stepId, at)
+    // Whole seconds, as the player's blocks show it.
+    const prescribed = Math.max(1, Math.round(baseTarget * plan.targetFactor))
     plans.push({
       dayType: plan.dayType,
       targetFactor: plan.targetFactor,
@@ -333,18 +337,28 @@ export function simulateSeason(
     for (let setIndex = 0; setIndex < 5; setIndex++) {
       const swing = 1 + (rand() - 0.5) * 2 * noise
       const topSet = setIndex === 4
-      const ceiling =
-        topSet && compliance === 'to-capacity'
-          ? capacity
-          : Math.min(capacity, prescribed * (topSet ? 1.05 : 0.8))
-      const value = Math.max(1, ceiling * swing)
+      // Working sets are held for the prescribed target, as the player asks;
+      // only the athlete's own limit can cut one short. A held target is
+      // stopped after the chime, so it reads at or a little over — never
+      // under, unless the athlete genuinely could not hold it.
+      const ceiling = topSet && compliance === 'to-capacity' ? capacity : Math.min(capacity, prescribed)
+      const heldToTarget = ceiling === prescribed && !(topSet && compliance === 'to-capacity')
+      const value = Math.max(1, heldToTarget ? ceiling * (1 + Math.abs(swing - 1)) : ceiling * swing)
       push(
-        holdSet(keyId, value, clock, 'main', {
-          rating: 'clean',
-          confirmed: true,
-          flightConfirmed: true,
-          auto: { issues: [], confidence: 0.9, score: 88, cleanSeconds: value, cleanRatio: 1 },
-        }),
+        holdSet(
+          keyId,
+          value,
+          clock,
+          'main',
+          {
+            rating: 'clean',
+            confirmed: true,
+            flightConfirmed: true,
+            auto: { issues: [], confidence: 0.9, score: 88, cleanSeconds: value, cleanRatio: 1 },
+          },
+          // Every set in a block carries the block's prescription, as in the app.
+          prescribed,
+        ),
       )
     }
     push({ exerciseId: 'pppu', kind: 'reps', value: 6, target: 6, section: 'strength', at: clock })
@@ -364,6 +378,7 @@ export function simulateSeason(
       sets,
       rpe: plan.dayType === 'push' ? 8 : 7,
       strategy: plan.strategy,
+      baseTargetSec: Math.round(baseTarget),
     }).next
 
     // The body answers the right stimulus, and only when actually loaded.

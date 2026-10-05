@@ -339,6 +339,8 @@ export interface Workout {
    * words, so the brief can say it instead of hiding it.
    */
   adjustments?: string[]
+  /** The key hold's working target before strategy and rail factors. Coach sessions only. */
+  baseTargetSec?: number
 }
 
 /** Why an attempt ended, when the athlete chose to say. Unanswered stays unknown. */
@@ -433,6 +435,12 @@ export interface Session {
   completion?: 'full' | 'partial'
   /** Raw rounds the plan contained. */
   plannedRounds?: number
+  /**
+   * The key hold's base working target this session was built from. If its
+   * key work was completed as prescribed, the next base does not fall below
+   * it — completing a target is evidence it was within capacity.
+   */
+  baseTargetSec?: number
 }
 
 export interface PRMark {

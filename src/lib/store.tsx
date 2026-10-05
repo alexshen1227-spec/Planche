@@ -583,6 +583,9 @@ function sanitizeSessions(
       ...(typeof c.plannedRounds === 'number' && Number.isInteger(c.plannedRounds) && c.plannedRounds >= 0
         ? { plannedRounds: Math.min(500, c.plannedRounds) }
         : {}),
+      ...(typeof c.baseTargetSec === 'number' && Number.isFinite(c.baseTargetSec) && c.baseTargetSec > 0
+        ? { baseTargetSec: clampNum(c.baseTargetSec, 1, 600, 1) }
+        : {}),
     }
     if (tombstones.has(session.id)) return
     const fingerprint = JSON.stringify(session)

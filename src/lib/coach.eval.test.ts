@@ -481,24 +481,33 @@ describe('a season coached end to end', () => {
      * A property of the design worth knowing, found by running the loop.
      *
      * The working target is a fraction of recent session bests. That is stable
-     * as long as the log reflects what the athlete can *do* — which is why the
-     * app coaches a last set taken near the limit. An athlete who instead
-     * never exceeds the number they were given makes the log echo the target
-     * back, and the fraction then compounds downward.
+     * as long as the log reflects what the athlete can *do*. An athlete who
+     * instead stops every set at the number they were given — which the hold
+     * screen invites — makes the log echo the target back, and the fraction
+     * used to compound downward: this exact athlete went from 5s to 1s in five
+     * sessions and stayed there for the season while getting stronger.
      *
-     * This is not a defect being tolerated silently: the floor below pins how
-     * far it can go, so if anyone ever changes the anchoring maths, the change
-     * shows up here rather than in someone's training.
+     * Now a session whose key work was completed as prescribed holds the next
+     * base up (`completedBaseTarget`): completion is evidence the target was
+     * within capacity. The obedient athlete's targets hold steady, and the
+     * max-test suggestion remains what re-anchors them upward.
      */
     const realistic = season({ weeks: 12, seed: 9, compliance: 'to-capacity' })
     const obedient = season({ weeks: 12, seed: 9, compliance: 'to-target' })
     const lastOf = (xs: number[]) => xs.slice(-3).reduce((a, b) => a + b, 0) / 3
+    const medianOf = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]
+    const third = Math.floor(obedient.plans.length / 3)
 
     expect(lastOf(realistic.performance)).toBeGreaterThan(realistic.performance[0])
-    expect(lastOf(obedient.performance)).toBeLessThan(obedient.performance[0])
-    // The design's own corrective must engage: when the working numbers drift
-    // away from what the athlete can do, the coach asks for a re-test, which
-    // is precisely what re-anchors the target.
+    // No echo: the late prescriptions sit where the early ones did.
+    const early = medianOf(obedient.plans.slice(0, third).map((p) => p.prescribed))
+    const late = medianOf(obedient.plans.slice(-third).map((p) => p.prescribed))
+    expect(late).toBeGreaterThanOrEqual(early * 0.9)
+    // Strategy and safety factors still move a day's target either way, but
+    // never all the way down to the floor.
+    expect(Math.min(...obedient.plans.map((p) => p.prescribed))).toBeGreaterThan(1)
+    // The design's corrective still engages: the numbers it has are all lower
+    // bounds, so the coach asks for a re-test, which re-anchors the target.
     expect(obedient.plans.some((p) => p.suggestMaxTest)).toBe(true)
     // Whatever happens, the prescription stays a real, usable number.
     for (const run of [realistic, obedient]) {

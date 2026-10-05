@@ -14,7 +14,7 @@ import { STEP_BY_ID, stepBefore } from './progressions'
 import { defaultSurface, equipmentLabel } from './equipment'
 import { buildPlan, STRATEGY_BY_ID, type CoachPlan, type WarmupLevel } from '../lib/coach'
 import { median } from '../lib/signals'
-import { learningSeries, qualifyingProgress } from '../lib/progression'
+import { completedBaseTarget, learningSeries, qualifyingProgress } from '../lib/progression'
 import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
 
 const hold = (sec: number): BlockTarget => ({ kind: 'hold', sec })
@@ -123,11 +123,18 @@ export function estimateMinutes(
  * logged, the placement answer for this exact hold is the next-best evidence,
  * then the timer PR as a ceiling, then the step's conventional start.
  */
-export function adaptiveTarget(state: AppState, stepId: StepId): number {
+export function adaptiveTarget(state: AppState, stepId: StepId, now = Date.now()): number {
   const step = STEP_BY_ID[stepId]
   const surface = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
-  const series = learningSeries(state, stepId, surface)
-  const recentBests = series.points.map((p) => p.value).slice(-6)
+  const series = learningSeries(state, stepId, surface, now)
+  // Sessions stopped at their targets are right-censored: they say "at least
+  // this much". They may not pull the estimate below what the athlete has
+  // actually been measured at — the last sessions that went past or fell
+  // short of their targets (a max test, a set taken to the limit).
+  const measured = median(series.points.filter((p) => p.cappedAt === undefined).slice(-3).map((p) => p.value))
+  const recentBests = series.points
+    .slice(-6)
+    .map((p) => (p.cappedAt !== undefined && measured !== null ? Math.max(p.value, measured) : p.value))
 
   if (recentBests.length === 0) {
     // A standalone unverified PR must never raise a target or unlock a step,
@@ -157,7 +164,12 @@ export function adaptiveTarget(state: AppState, stepId: StepId): number {
       ? observedBest
       : typical * 0.75 + Math.min(observedBest, typical * 1.5) * 0.25
   const t = anchor * 0.6
-  const target = clamp(Math.round(t), 1, step.unlockSec)
+  // A prescription completed as asked is evidence it was within capacity: the
+  // next base does not fall below it (strategy and rail factors still apply).
+  // Without this, an athlete who stopped every set at its target — as the
+  // hold screen invites — saw each target come out at a fraction of the last.
+  const floor = series.transferred ? null : completedBaseTarget(state, stepId, series.surface, now)
+  const target = clamp(Math.max(Math.round(t), floor ?? 0), 1, step.unlockSec)
   // Nothing on this surface yet: another surface's numbers are an uncertain
   // transfer, so they may only lower the conventional start, never raise it.
   return series.transferred ? Math.min(target, step.startSec) : target
@@ -1005,6 +1017,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     kind: 'auto',
     blocks: fitted,
     strategy: plan.strategy,
+    baseTargetSec: baseTarget,
     purpose: `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at a working dose, with supporting work around it.`,
     ...(adjustments.length ? { adjustments } : {}),
   }

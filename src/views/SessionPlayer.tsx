@@ -1117,6 +1117,7 @@ export function SessionPlayer({
       // Skipped or unstarted work is not adherence; only what was done is here.
       completion: partial ? 'partial' : 'full',
       plannedRounds: totalSets,
+      ...(workout.baseTargetSec !== undefined ? { baseTargetSec: workout.baseTargetSec } : {}),
     }
     const { next, events: raw } = applySession(state, session)
     // The coach reacts to every finished session, whatever kind it was.

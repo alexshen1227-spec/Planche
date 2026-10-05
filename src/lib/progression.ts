@@ -332,6 +332,72 @@ export function sessionLearningValue(session: Session, stepId: StepId, scope?: L
   return bestOf(scope)
 }
 
+/**
+ * The prescribed target the latest comparable session stopped at, when its
+ * key work was capped by that target rather than by the athlete.
+ *
+ * A clean stop at the target proves "at least this much", not "this much".
+ * Every key main set reaching its target — or the athlete saying it ended at
+ * target — makes that session's best a lower bound. Anchoring the next target
+ * on it as if it were capacity let an obedient athlete's prescription echo
+ * downward session after session (6 → 3 seconds in the audit's replay). Null
+ * when the session went past its targets or fell short: then the numbers are
+ * a real reading.
+ */
+export function sessionTargetCap(session: Session, stepId: StepId, surface: TrainingSurface | null): number | null {
+  const step = STEP_BY_ID[stepId]
+  if (!step) return null
+  const key = session.sets.filter(
+    (set) =>
+      set.exerciseId === step.keyExerciseId &&
+      set.kind === 'hold' &&
+      set.section === 'main' &&
+      set.value > 0 &&
+      !endedForNonCapacityReason(set) &&
+      humanRating(set.form) !== 'broke' &&
+      inScope(set, { surface }),
+  )
+  if (!key.length) return null
+  // Reached, and not meaningfully passed. The tolerance is the size of the
+  // stop itself: the chime sounds at the target and the stopwatch is stopped
+  // a moment later, so an obedient hold reads up to about a second over.
+  const capped = key.every(
+    (set) =>
+      set.endReason === 'target' ||
+      (set.value >= set.target - 0.05 && set.value <= set.target + Math.max(1, set.target * 0.1)),
+  )
+  return capped ? Math.max(...key.map((set) => set.target)) : null
+}
+
+/** How recent a completed prescription must be to hold the next one up. */
+const CAPPED_FLOOR_DAYS = 14
+
+/**
+ * The base working target the latest comparable coach session was built from,
+ * when its key work was completed as prescribed.
+ *
+ * The working target is a fraction of recent bests, and the hold screen tells
+ * an athlete to stop once the target is reached — so an athlete who does
+ * exactly that logged bests equal to their targets, and the next target came
+ * out at a fraction of the last: a perfectly obedient simulated athlete went
+ * from 5s to 1s in five sessions while getting stronger. Completing a target
+ * is evidence it was within capacity, so the next base does not fall below
+ * it. A miss is a real reading and lifts nothing; a max test re-anchors upward.
+ */
+export function completedBaseTarget(
+  state: Pick<AppState, 'sessions'>,
+  stepId: StepId,
+  surface: TrainingSurface | null,
+  now = Date.now(),
+): number | null {
+  const latest = [...state.sessions]
+    .filter((s) => s.startedAt <= now && sessionLearningValue(s, stepId, { surface }) > 0)
+    .sort((a, b) => b.startedAt - a.startedAt)[0]
+  if (!latest || latest.baseTargetSec === undefined || latest.stepId !== stepId) return null
+  if (now - latest.startedAt > CAPPED_FLOOR_DAYS * 86_400_000) return null
+  return sessionTargetCap(latest, stepId, surface) !== null ? latest.baseTargetSec : null
+}
+
 /** The surface a session's key-hold work was done on, when it is unambiguous. */
 export function sessionSurface(session: Session, stepId: StepId): TrainingSurface | null | 'mixed' {
   const step = STEP_BY_ID[stepId]
@@ -349,6 +415,11 @@ export function sessionSurface(session: Session, stepId: StepId): TrainingSurfac
 export interface LearningPoint {
   at: number
   value: number
+  /**
+   * Set when the session's key work stopped at its prescribed targets: the
+   * value is then a lower bound ("at least this much"), not a measurement.
+   */
+  cappedAt?: number
 }
 
 export interface LearningSeries {
@@ -380,7 +451,11 @@ export function learningSeries(
     .sort((a, b) => a.startedAt - b.startedAt)
   const seriesFor = (surface: TrainingSurface | null): LearningPoint[] =>
     sorted
-      .map((s) => ({ at: s.startedAt, value: sessionLearningValue(s, stepId, { surface }) }))
+      .map((s) => {
+        const value = sessionLearningValue(s, stepId, { surface })
+        const cap = value > 0 ? sessionTargetCap(s, stepId, surface) : null
+        return { at: s.startedAt, value, ...(cap !== null ? { cappedAt: cap } : {}) }
+      })
       .filter((p) => p.value > 0)
   const own = seriesFor(preferred)
   if (own.length) return { surface: preferred, points: own, transferred: false }
