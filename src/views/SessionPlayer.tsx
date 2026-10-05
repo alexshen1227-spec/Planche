@@ -924,6 +924,17 @@ export function SessionPlayer({
     [dispatch],
   )
 
+  /** A mis-tapped report is withdrawn by a correction, never deleted — history stays honest. */
+  const undoAttemptSymptom = useCallback(
+    (symptom: AttemptSymptom) => {
+      dispatch({
+        type: 'RECORD_SYMPTOM',
+        event: { at: Date.now(), joints: symptom.joints, regions: symptom.regions, source: 'attempt', correction: true },
+      })
+    },
+    [dispatch],
+  )
+
   const adjustLastLog = useCallback((delta: number) => {
     setLogs((l) => {
       if (l.length === 0) return l
@@ -1803,6 +1814,7 @@ export function SessionPlayer({
               askReason={lastLog.kind === 'hold' && (lastLog.section === 'main' || lastLog.section === 'strength')}
               onReason={(reason) => setEndReason(lastLog.at, reason)}
               onSymptom={recordAttemptSymptom}
+              onUndoSymptom={undoAttemptSymptom}
               onEndSession={() => enterSummary(true)}
             />
           ) : null}
@@ -1912,6 +1924,7 @@ export function SessionPlayer({
               askReason={lastLog.kind === 'hold' && (lastLog.section === 'main' || lastLog.section === 'strength')}
               onReason={(reason) => setEndReason(lastLog.at, reason)}
               onSymptom={recordAttemptSymptom}
+              onUndoSymptom={undoAttemptSymptom}
             />
           </div>
         ) : null}

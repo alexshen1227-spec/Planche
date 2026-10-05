@@ -68,6 +68,7 @@ export function AttemptEnd({
   askReason,
   onReason,
   onSymptom,
+  onUndoSymptom,
   onEndSession,
 }: {
   log: SetLog
@@ -75,6 +76,8 @@ export function AttemptEnd({
   askReason: boolean
   onReason: (reason: EndReason | undefined) => void
   onSymptom: (symptom: AttemptSymptom) => void
+  /** Withdraw the report just made — a mis-tap must not lock out a week of loading. */
+  onUndoSymptom?: (symptom: AttemptSymptom) => void
   /** Offered after a report, so stopping is one tap. Absent when already finishing. */
   onEndSession?: () => void
 }) {
@@ -159,6 +162,20 @@ export function AttemptEnd({
                   {onEndSession ? 'Carry on carefully' : 'OK'}
                 </button>
               </div>
+              {onUndoSymptom ? (
+                <button
+                  onClick={() => {
+                    onUndoSymptom(recorded)
+                    setRecorded(null)
+                    setAdviceDismissed(false)
+                    setSeverity(null)
+                    setRegions([])
+                  }}
+                  className="mt-1.5 min-h-9 px-1 text-[12px] font-medium text-ink3 underline-offset-2 hover:text-ink hover:underline"
+                >
+                  Undo — I tapped that by mistake
+                </button>
+              ) : null}
             </div>
           )
         ) : hurtOpen ? (

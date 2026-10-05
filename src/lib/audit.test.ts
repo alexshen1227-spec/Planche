@@ -4,7 +4,7 @@ import { STEP_BY_ID, STEPS } from '../data/progressions'
 import { finalizeWorkout, finalizeWorkoutWithPlan, requestFor, TEMPLATE_BY_ID } from '../data/workouts'
 import { ACHIEVEMENTS } from '../data/achievements'
 import { initialState, mergeExternalState, normalizeStateWithReport, reducer, reportHasLosses } from './store'
-import { buildPlan } from './coach'
+import { buildPlan, rewardFor } from './coach'
 import { readSignals, readinessTimeline } from './signals'
 import {
   endedForNonCapacityReason,
@@ -384,5 +384,48 @@ describe('what a session claims is what was done', () => {
       hold('tuck-planche', 10, at(1), { form: { ...machineOnly, confirmed: true } }),
     ])
     expect(sessionLearningValue(confirmedBroke, 'tuck')).toBe(0)
+  })
+})
+
+describe('a mistaken joint report can be withdrawn without rewriting history', () => {
+  it('undoing a mis-tapped pain report restores normal loading', () => {
+    const tapped = reducer(athlete(), {
+      type: 'RECORD_SYMPTOM',
+      event: { at: NOW - 120_000, joints: 'pain', regions: ['elbow'], source: 'attempt' },
+    })
+    expect(buildPlan(tapped, NOW).loadPermission).toBe('none')
+    const undone = reducer(tapped, {
+      type: 'RECORD_SYMPTOM',
+      event: { at: NOW - 60_000, joints: 'pain', regions: ['elbow'], source: 'attempt', correction: true },
+    })
+    expect(undone.symptoms).toHaveLength(2)
+    expect(buildPlan(undone, NOW).loadPermission).not.toBe('none')
+  })
+
+  it('a correction stamped just after an older report withdraws that one, not the latest', () => {
+    const older = { id: 'a', at: NOW - 3 * DAY, joints: 'pain' as const, regions: ['wrist' as const], source: 'check-in' as const }
+    const newer = { id: 'b', at: NOW - DAY, joints: 'niggle' as const, regions: ['shoulder' as const], source: 'check-in' as const }
+    const state = athlete('tuck', {
+      symptoms: [older, newer, { id: 'c', at: older.at + 1, joints: 'pain', source: 'manual', correction: true }],
+    })
+    const complaints = readinessTimeline(state, NOW).filter((r) => r.joints !== 'good')
+    expect(complaints.map((r) => r.at)).toEqual([newer.at])
+  })
+
+  it('a withdrawn complaint no longer costs the strategy that preceded it', () => {
+    const strategyDay = trainingDay(5, [hold('tuck-planche', 10, at(5))], { strategy: 'volume' })
+    const follow = trainingDay(2, [hold('tuck-planche', 11, at(2))])
+    const prior = [9, 8, 7].map((d) => trainingDay(d, [hold('tuck-planche', 10, at(d))]))
+    const sessions = [...prior, strategyDay, follow]
+    const complaint = { id: 'p', at: at(3), joints: 'pain' as const, source: 'check-in' as const }
+    const withComplaint = rewardFor(sessions, strategyDay, [complaint])
+    const withdrawn = rewardFor(sessions, strategyDay, [
+      complaint,
+      { id: 'q', at: at(3) + 1, joints: 'pain', source: 'manual', correction: true },
+    ])
+    const none = rewardFor(sessions, strategyDay, [])
+    expect(withComplaint).not.toBeNull()
+    expect(withdrawn).toBe(none)
+    expect(withComplaint!).toBeLessThan(withdrawn!)
   })
 })

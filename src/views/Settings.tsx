@@ -24,6 +24,7 @@ import { downloadPoseModel, poseModelReady, verifyOfflineReady } from '../lib/po
 import { fmtDate } from '../lib/time'
 import { fmtWeight } from '../lib/units'
 import { MeasurePrompt, lastOf } from '../components/MeasurePrompt'
+import { JointReports } from '../components/JointReports'
 import { buildSampleState } from '../data/sample'
 import { CHANGELOG } from '../data/changelog'
 import { pushToast } from '../lib/toast'
@@ -616,6 +617,13 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               Save
             </button>
           </div>
+        </Row>
+        <Row
+          label="Joint reports"
+          hint="What the coach is currently reading. Mark a report you made by mistake; to say something has settled, just answer the next check-in."
+          stack
+        >
+          <JointReports />
         </Row>
         <Row
           label="Bodyweight"

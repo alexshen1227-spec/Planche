@@ -223,12 +223,28 @@ function complaintsAfter(sessions: Session[], session: Session, symptoms: Sympto
   const to = session.startedAt + ATTRIBUTION_DAYS * DAY
   const reports = new Map<number, CheckIn['joints']>()
   for (const s of sessions) {
-    if (s.checkIn && s.checkIn.at > from && s.checkIn.at <= to) reports.set(s.checkIn.at, s.checkIn.joints)
+    if (s.checkIn) reports.set(s.checkIn.at, s.checkIn.joints)
   }
   for (const e of symptoms) {
-    if (!e.correction && e.at > from && e.at <= to) reports.set(e.at, e.joints)
+    if (!e.correction) reports.set(e.at, e.joints)
   }
-  return [...reports.values()].filter((joints) => joints !== 'good')
+  // A correction withdraws the most recent complaint made at or before it,
+  // exactly as on the readiness timeline: an accidental "pain" tap the
+  // athlete took back is not a cost this strategy should carry.
+  const timeline = [...reports.entries()].sort((a, b) => a[0] - b[0])
+  const corrections = symptoms
+    .filter((e) => e.correction)
+    .map((e) => e.at)
+    .sort((a, b) => a - b)
+  for (const at of corrections) {
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      if (timeline[i][0] <= at && timeline[i][1] !== 'good') {
+        timeline.splice(i, 1)
+        break
+      }
+    }
+  }
+  return timeline.filter(([at, joints]) => at > from && at <= to && joints !== 'good').map(([, joints]) => joints)
 }
 
 export function rewardFor(sessions: Session[], session: Session, symptoms: SymptomEvent[] = []): number | null {
