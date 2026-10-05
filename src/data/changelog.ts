@@ -26,6 +26,8 @@ export const CHANGELOG: ChangeEntry[] = [
       'On a scheduled easy week, the plateau note no longer tells you to “keep training normally” in the same breath, and it no longer repeats how long you have been flat.',
       'On a day an elbow turns into rest, the plan no longer also tells you it is a scheduled easy week where “the movements stay”, that today has “slightly less volume”, or that the warm-up prepares you “before loading” — none of which happens on a rest day. The elbow note now says plainly that keeping it out of loading is experienced opinion rather than established fact.',
       'If you have never filmed a set, Progress now says your progress is not measurable yet and how to start — rather than “too early to call” after a month of training.',
+      'A plateau is no longer called within a fortnight of your best hold. One dip after a record read as “going backwards for about 1 week”, in red, to someone who had just set it.',
+      'Your very first plan says it starts from your placement answers, instead of “everything looks steady” with nothing logged yet.',
       'Home and Progress now read your pace the same way. Before, three weeks in, Home could quote “11+ weeks” while Progress said it was too early to call — they used different evidence and different rates. Progress now uses the same verified holds and recent pace as the unlock estimate, and says plainly when something is flat but not yet long enough to call a plateau.',
     ],
   },

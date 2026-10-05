@@ -1609,12 +1609,22 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const finalLimiter = loadForbidden ? null : limiter
 
   if (finalDecisions.length === 0) {
-    finalDecisions.push({
-      // Not "your best-performing setup": with nothing measured yet that was a
-      // claim of superiority the log could not support.
-      text: 'Everything looks steady — today runs the plan as set.',
-      kind: 'good',
-    })
+    finalDecisions.push(
+      sig.totalSessions === 0
+        ? {
+            // "Everything looks steady" greeted athletes with nothing logged.
+            text: state.assessment
+              ? 'Nothing logged yet — today starts from your placement answers, and every set you log from here teaches the coach.'
+              : 'Nothing logged yet — today starts from this step’s usual opening dose, and every set you log from here teaches the coach.',
+            kind: 'info',
+          }
+        : {
+            // Not "your best-performing setup": with nothing measured yet that was a
+            // claim of superiority the log could not support.
+            text: 'Everything looks steady — today runs the plan as set.',
+            kind: 'good',
+          },
+    )
   }
 
   return {

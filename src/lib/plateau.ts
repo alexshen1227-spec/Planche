@@ -23,6 +23,12 @@ export const PLATEAU_MIN_SESSIONS = 4
 export const PLATEAU_MIN_DAYS = 21
 /** Seconds per week below which the key hold is not meaningfully moving. */
 export const FLAT_RATE = 0.15
+/**
+ * A stall is measured from the athlete's best, and a best set last week is
+ * not a stall: one dip after it read as "going backwards for about 1 week"
+ * in red, to someone who had just set a record.
+ */
+export const PLATEAU_MIN_WEEKS_FLAT = 2
 
 export type PlateauCause =
   | 'form-limited'
@@ -78,7 +84,8 @@ export function diagnosePlateau(
   // best of the ones before it by a meaningful margin.
   const overallBest = Math.max(...series.map((p) => p.value))
   const firstAtBest = series.find((p) => p.value >= overallBest * 0.98)?.at ?? series[0].at
-  const weeksFlat = Math.max(1, Math.floor((now - firstAtBest) / (7 * 86_400_000)))
+  const weeksFlat = Math.floor((now - firstAtBest) / (7 * 86_400_000))
+  if (weeksFlat < PLATEAU_MIN_WEEKS_FLAT) return null
 
   const status: PlateauVerdict['status'] = rate < -FLAT_RATE ? 'regressing' : 'stalled'
 

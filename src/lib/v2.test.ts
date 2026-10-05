@@ -1427,6 +1427,33 @@ describe('pressing evidence is what was measured, not what was prescribed', () =
   })
 })
 
+describe('a plateau is not called on a fresh best', () => {
+  it('stays silent when the best was set last week, whatever the dip since', () => {
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 35, value: 10 },
+        { daysAgo: 28, value: 10.1 },
+        { daysAgo: 21, value: 9.9 },
+        { daysAgo: 14, value: 10 },
+        { daysAgo: 7, value: 10.6 },
+        { daysAgo: 2, value: 9.6 },
+      ]),
+    )
+    const sig = readSignals(state, NOW)
+    // Flat enough, and long enough, to reach the cause logic otherwise.
+    expect(sig.trendPerWeek!).toBeLessThanOrEqual(FLAT_RATE)
+    expect(diagnosePlateau(state, sig, NOW)).toBeNull()
+  })
+
+  it('tells an athlete with nothing logged where today comes from, not that all is steady', () => {
+    const plan = buildPlan(stateWith('tuck', []), NOW)
+    expect(plan.decisions).toHaveLength(1)
+    expect(plan.decisions[0].kind).toBe('info')
+    expect(plan.decisions[0].text).toMatch(/nothing logged yet/i)
+  })
+})
+
 describe('lines written before the rails do not outlive them', () => {
   // Six even weeks, no warm-up sets logged, no easy week: a deload is
   // scheduled and the skipped-warm-up note fires before any rail has run.
