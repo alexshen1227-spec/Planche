@@ -19,6 +19,14 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-05',
+    title: 'Your first weeks are counted fairly',
+    area: 'coach',
+    notes: [
+      'Sessions per week used to be your last four weeks’ sessions divided by four — even if you had only been training for two. Three sessions a week in your second week read as 1.5, so Progress said you were training less than you planned, and a plateau in your fourth week could be blamed on too little training. It now divides by the weeks you have actually been training, up to four.',
+    ],
+  },
+  {
+    date: '2026-10-05',
     title: 'Two more claims taken back',
     area: 'app',
     notes: [

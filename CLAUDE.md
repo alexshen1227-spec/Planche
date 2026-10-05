@@ -230,6 +230,10 @@ more certain than its basis.
    from fast-improving beginners above all. `spreadAroundTrend` measures
    residuals from a Theil–Sen line; scrambling the same values is still noisy
    (`v2.test.ts`, "a fast, steady climb is progress, not noise").
+5. **A rate over a window divides by the time actually trained.** Chronic load
+   and `sessionsPerWeek` both once divided by a flat 28 days, so a fortnight-old
+   athlete at 3/week read as 1.5/week. Any new per-week signal must do the same
+   (`Math.min(window, timeSinceFirstSession)`), or new athletes inherit a deficit.
 
 ## Camera lifecycle
 

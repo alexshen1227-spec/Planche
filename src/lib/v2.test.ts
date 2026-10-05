@@ -718,6 +718,41 @@ describe('a fast, steady climb is progress, not noise', () => {
   })
 })
 
+describe('training frequency is measured over the weeks actually trained', () => {
+  it('does not tell a new athlete on schedule that they train less than planned', () => {
+    // Two weeks in, three sessions a week, goal of three. Divided by a flat
+    // four weeks this read as 1.5 a week.
+    const sessions = historyOf(
+      'tuck',
+      [13, 11, 9, 6, 4, 2].map((daysAgo, i) => ({ daysAgo, value: 8 + i * 0.5 })),
+    )
+    const state = stateWith('tuck', sessions, { settings: { ...initialState().settings, weeklyGoal: 3 } })
+    expect(readSignals(state, NOW).sessionsPerWeek).toBeGreaterThanOrEqual(2.9)
+    expect(diagnoseProgress(state, NOW).causes.map((c) => c.id)).not.toContain('frequency')
+  })
+
+  it('does not blame a plateau on frequency when the history has only just reached three weeks', () => {
+    // Five flat sessions across 22 days is about 1.6 a week, not 1.25.
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [22, 16, 11, 6, 1].map((daysAgo) => ({ daysAgo, value: 8 }))),
+    )
+    const sig = readSignals(state, NOW)
+    expect(sig.sessionsPerWeek).toBeGreaterThan(1.5)
+    const verdict = diagnosePlateau(state, sig, NOW)
+    expect(verdict).not.toBeNull()
+    expect(verdict!.cause).not.toBe('under-stimulated')
+  })
+
+  it('still counts a sparse long history as sparse', () => {
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [84, 60, 40, 18, 4].map((daysAgo) => ({ daysAgo, value: 8 }))),
+    )
+    expect(readSignals(state, NOW).sessionsPerWeek).toBeCloseTo(0.5, 5)
+  })
+})
+
 describe('the Progress screen reads the same verdict the coach acts on', () => {
   it('says it is too early on thin verified history, and claims no rate', () => {
     const state = stateWith(

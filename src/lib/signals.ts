@@ -650,7 +650,13 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
 
   const fourWeeksAgo = now - 28 * DAY
   const recentCount = sessions.filter((s) => s.startedAt >= fourWeeksAgo).length
-  const sessionsPerWeek = recentCount / 4
+  // Over the weeks actually trained, up to four — the same fix the chronic
+  // load needed. Dividing a fortnight's history by four weeks told a new
+  // athlete training three times a week that they averaged 1.5: "training
+  // less than you planned" from their second week, and a plateau blamed on
+  // frequency for anyone whose history had only just reached three weeks.
+  const historyWeeks = sessions.length ? (now - sessions[0].startedAt) / (7 * DAY) : 0
+  const sessionsPerWeek = recentCount / Math.min(4, Math.max(1, historyWeeks))
 
   // Only a test with an attempt in it counts as a test. Saving the warm-ups of
   // a skipped test used to reset this clock and hide the next re-test prompt.
