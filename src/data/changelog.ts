@@ -19,6 +19,14 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-05',
+    title: 'Opens faster',
+    area: 'app',
+    notes: [
+      'The app loads about a quarter less code when it opens. Learn, Progress, Settings and this update log arrive when you first visit them instead — they are still stored on your device, so they work offline as before. Starting a session is unaffected.',
+    ],
+  },
+  {
+    date: '2026-10-05',
     title: 'Your first weeks are counted fairly',
     area: 'coach',
     notes: [
