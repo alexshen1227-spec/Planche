@@ -115,7 +115,7 @@ export function diagnose(state: AppState, now = Date.now()): Diagnosis {
       id: 'warmup',
       title: 'Warm-ups are getting skipped',
       detail: `Only ${Math.round(sig.warmupRate * 100)}% of recent sessions included the warm-up.`,
-      fix: 'Cold tissue holds less and complains more. The full warm-up costs three minutes and protects the wrists that all of this runs on.',
+      fix: 'The full warm-up costs about three minutes. Warming up tends to help performance on the day — it has not been shown to prevent injury — and it is the moment to notice how your wrists feel before loading them.',
       severity: 'medium',
     })
   }

@@ -256,9 +256,9 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
 
       <QuickLogModal open={quickLog} onClose={() => setQuickLog(false)} onSaved={() => setQuickLog(false)} />
       <div className="mt-8 rounded-2xl border border-line bg-surface/60 p-4 text-[13px] leading-relaxed text-ink3">
-        <span className="font-semibold text-ink2">Safety note:</span> straight-arm training loads tendons hard. Warm up
-        every session, keep most holds ~2s shy of failure, and back off at the first sign of elbow or wrist pain. This
-        app is a training log, not medical advice.
+        <span className="font-semibold text-ink2">Safety note:</span> prepare before loading, keep most holds a little
+        shy of failure, and back off at the first sign of elbow or wrist pain — coaching conventions rather than tested
+        rules. This app is a training log, not medical advice.
       </div>
     </div>
   )

@@ -127,6 +127,14 @@ science. Do not write "there is no research": that narrow-search zero was
 corrected in the 2026-10-05 audit. Likewise a nonsignificant result is "no
 difference detected", never equivalence or "costs nothing". `docs/research-ledger.md` holds the sources and their tiers.
 
+`src/lib/claims.test.ts` enforces the ledger's "must not claim" list on every
+string the app can show (it parses string literals, templates and JSX text, not
+comments). When it flags new copy, rewrite the copy. Loosen a rule only for a
+sentence that genuinely denies the claim, and add that sentence to the test's
+allowed list; the removed-sentences list must keep failing. Tips carry a
+`basis` (`src/data/tips.ts`) that is shown beside them — a tip may not sound
+more certain than its basis.
+
 ## The camera form judge (the part most work touches)
 
 - `src/lib/poseForm.ts` — the verdict. `judgeTrackedFrames(input, exerciseId,

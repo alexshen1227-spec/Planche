@@ -770,11 +770,11 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
           : `Nothing logged for ${sig.restDays} days. That could be a break or training the app could not see, so today is an ordinary session rather than a push day, and old results are not treated as today's capacity.`
   } else if (sig.daysSinceLoaded === 0) {
     dayType = 'technique'
-    dayReason = 'Second loaded session today — skill work only, tendons keep score.'
+    dayReason = 'Second loaded session today — skill work only. One hard session a day is this app’s ceiling: a design choice, not a measured limit.'
   } else if (sig.readinessLoad !== null && sig.readinessLoad > 1.5) {
     dayType = 'technique'
     dayReason =
-      'Your recent training load is running well above your own four-week normal — today recovers it into strength instead of stacking more on top.'
+      'Your recent training load is running well above your own four-week normal — today is skill work rather than more load stacked on top.'
   } else if (sig.daysSinceLoaded === 1 && sig.lastLoadedWasTest) {
     // A max test is maximal whatever its seconds add up to. Three five-second
     // attempts used to fall below the volume bar and leave the next day
@@ -783,7 +783,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     dayReason = 'Yesterday was a max test — a maximal effort however short it was — so today is skill work rather than another push.'
   } else if (sig.daysSinceLoaded === 1 && (sig.lastLoadedRpe ?? 0) >= 9) {
     dayType = 'technique'
-    dayReason = 'Your last hard session hit RPE 9+ — today turns that into strength instead of fatigue.'
+    dayReason = 'Your last hard session hit RPE 9+ — today is skill work, so fatigue does not stack on fatigue.'
   } else if (sig.daysSinceLoaded >= 2) {
     dayType = 'push'
     dayReason = !sig.hasLoadedSession
@@ -1175,7 +1175,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     }
     if (plateau.suggestDeload) {
       dayType = 'deload'
-      dayReason = `Deload — ${plateau.weeksFlat} weeks flat with recovery debt behind it. Backing off is the intervention, not a pause in it.`
+      dayReason = `Deload — ${plateau.weeksFlat} weeks flat with recovery debt behind it, so today backs off on purpose.`
     }
     // A plateau can *ask* for a re-test, but it does not get to bypass the
     // preconditions the suggestion already had. A max test on a day with no

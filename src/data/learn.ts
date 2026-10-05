@@ -23,7 +23,7 @@ export const GUIDES: Guide[] = [
     sections: [
       {
         heading: 'What a planche actually is',
-        body: 'Holding your whole body horizontal in the air, parallel to the floor, supported only by your hands — with your arms completely straight. The straight arms are what make it brutally hard: your shoulders and biceps tendons carry a load that no push-up ever asks for.',
+        body: 'Holding your whole body horizontal in the air, parallel to the floor, supported only by your hands — with your arms completely straight. The straight arms are what make it so hard: the whole body is levered out in front of the shoulders, and the elbows stay locked the entire time.',
       },
       {
         heading: 'How long it takes (honestly)',
@@ -31,37 +31,37 @@ export const GUIDES: Guide[] = [
       },
       {
         heading: 'Your first four weeks',
-        body: 'Do not chase the hardest position you can wobble into. Spend the first weeks earning the basics, and everything after them arrives faster.',
+        body: 'Do not chase the hardest position you can wobble into. Spend the first weeks learning the basics well — every later position is the same shape with a longer lever.',
         bullets: [
           'Train 3 days a week with at least one rest day between sessions.',
-          'Every session starts with the wrist warm-up. Non-negotiable — wrist pain is the most common complaint in hand-support sports.',
-          'Finish each hold about 2 seconds before you would collapse. Grinding to failure teaches bad positions.',
+          'Sessions start with a short wrist preparation — a moment to notice how your wrists feel before loading them. It is preparation, not protection. Wrist pain is common among gymnasts, the closest group anyone has studied.',
+          'Finish each hold a little before you would collapse. Coaches generally prefer practising seconds in a good position to grinding to failure.',
           'Film yourself from the side once a week. Video can reveal what you cannot feel, but automated estimates can be wrong — confirm the position yourself.',
         ],
       },
       {
         heading: 'What you need',
-        body: 'For the first two steps: nothing but floor space. Once you reach tuck planche work, a pair of parallettes is the single most useful purchase — the neutral grip takes your wrists out of extreme extension, and many people find it easier and stronger. A resistance band becomes useful around straddle work.',
+        body: 'For the first two steps: nothing but floor space. Once you reach tuck planche work, a pair of parallettes is the purchase most worth making — the neutral grip takes your wrists out of extreme extension, and many people find it easier and stronger. A resistance band becomes useful around straddle work.',
       },
       {
         heading: 'How to use this app',
-        body: 'Open Train and hit the recommended session — it is built for your current step, adapts to how rested you are, and fits your time budget. The app times every hold, logs it, and moves you up the road automatically when you clear an unlock bar. You never have to plan anything.',
+        body: 'Open Train and hit the recommended session — it is built for your current step, adapts to how rested you are, and fits your time budget. The app times every hold, logs it, and moves you up the road when a hold clears the unlock bar with your Clean rating and a passing filmed check. You never have to plan anything.',
       },
     ],
   },
   {
     id: 'safety',
     icon: '🛡️',
-    title: 'Staying injury-free',
-    summary: 'Straight-arm training loads tendons harder than muscles. Here is how not to get hurt.',
+    title: 'Looking after your joints',
+    summary: 'No routine makes injury impossible. What the app does to keep the risk down, and what to do when something hurts.',
     sections: [
       {
-        heading: 'Tendons adapt slower than muscles',
-        body: 'Your shoulders will feel strong enough to push harder weeks before your biceps tendons and wrists are ready for it. That gap is where injuries happen. When in doubt, add sessions rather than intensity, and keep progressions boring.',
+        heading: 'Fast gains are mostly skill',
+        body: 'Early strength gains are largely your nervous system learning the position: in one small study, strength rose by about a third in two months while muscle size and tendon stiffness had not changed. So when your holds jump, the app holds volume steady rather than raising it to match, and keeps progressions boring. (The popular line that tendons lag muscle by a set number of months is not what that research found.)',
       },
       {
-        heading: 'Warm up every single time',
-        body: 'Two to three minutes: wrist circles, wrist rocks, scapula push-ups, one easy lean. The generated sessions do this for you automatically. Cold wrists under a planche lean is how people end up taking three months off.',
+        heading: 'Prepare, then check in',
+        body: 'Sessions start with two or three minutes of wrist circles, wrist rocks, scapula push-ups and one easy lean. That is preparation, not protection — no trial has shown a warm-up prevents injury in strength training — but it is a good moment to notice how your joints feel before loading them.',
       },
       {
         heading: 'Pain rules',
@@ -74,8 +74,8 @@ export const GUIDES: Guide[] = [
         ],
       },
       {
-        heading: 'Deload on purpose',
-        body: 'Every 4–6 weeks, take a week at roughly half volume with easy targets (there is a Deload Flow session ready for you). Strength is built during recovery, not during the hard sessions. Skipping deloads is slower, not faster.',
+        heading: 'Easy weeks are a convention',
+        body: 'Many coaches schedule a week at roughly half volume every 4–6 weeks, and there is a Deload Flow session ready for one. The two controlled trials of planned deloads did not detect a strength benefit, so treat it as a pressure valve for fatigue, soreness or a busy week rather than the week strength appears.',
       },
     ],
   },
@@ -87,19 +87,19 @@ export const GUIDES: Guide[] = [
     sections: [
       {
         heading: 'Seconds are noisy — trends are not',
-        body: 'A 12-second day after a 16-second day means almost nothing. Sleep, caffeine, stress, and how recently you trained all swing a max hold by 20% or more. Judge yourself on two-week trends, which is exactly what the Progress charts and the coach look at.',
+        body: 'A 12-second day after a 16-second day usually means very little. Sleep, caffeine, stress and how recently you trained all move a max hold, often by more than people expect — the app measures your own day-to-day swing rather than assuming one. Judge yourself on trends over a couple of weeks, which is what the Progress charts and the coach look at.',
       },
       {
         heading: 'Why you hold below your maximum',
-        body: 'Working sets sit at roughly 60% of your best hold. That looks too easy, and that is the point: it lets you accumulate quality seconds in a good position without wrecking your recovery. Maxing out every session produces fast progress for three weeks and a plateau for three months.',
+        body: 'Working sets sit at roughly 60% of your recent best. That looks too easy, and it is meant to: it lets you collect seconds in a good position and leaves room to recover. The 60% is this app’s design choice, in line with common coaching practice rather than a measured optimum — and an occasional max test is where your ceiling gets re-measured.',
       },
       {
         heading: 'When to move up a step',
-        body: 'When you clear the unlock bar on the step key exercise with two signals: you explicitly rate the hold Clean, and its filmed form check passes with no more than one isolated flag. Frog Stand uses an explicit replay-and-checklist review because its balance shape is not honest for the pose model to grade. The bars are minimums, not targets — banking a few extra clean seconds before moving on makes the next step arrive faster, not slower.',
+        body: 'When you clear the unlock bar on the step key exercise with two signals: you explicitly rate the hold Clean, and its filmed form check passes with no more than one isolated flag. Frog Stand uses an explicit replay-and-checklist review because its balance shape is not honest for the pose model to grade. The bars themselves are convention, not measured thresholds — credible coaches’ standards differ several-fold — so many would rather you own a step with clean seconds to spare than scrape past it.',
       },
       {
-        heading: 'Consistency beats heroics',
-        body: 'Three focused 30-minute sessions a week will outrun one exhausting weekly marathon every time. Planche is a skill as much as a strength feat, and skills want frequent, fresh practice.',
+        heading: 'Little and often',
+        body: 'Coaches generally prefer three focused 30-minute sessions a week to one exhausting weekly marathon: planche is a skill as much as a strength feat, and skills are practised best fresh. That is coaching consensus — no trial has compared the two for planche.',
       },
     ],
   },
@@ -122,11 +122,11 @@ export const GUIDES: Guide[] = [
       },
       {
         heading: 'Why it matters here',
-        body: 'The app reads your RPE. Log a 9 or 10 and the next day becomes a lighter Technique Day so the hard work turns into strength instead of accumulated fatigue. The coach also penalises strategies that leave you at RPE 9 without producing any gain — that is the signature of grinding, and it is the fastest way to stall.',
+        body: 'The app reads your RPE. Log a 9 or 10 and, if you train again the next day, that day becomes a lighter Technique Day so fatigue does not stack on fatigue. The coach also marks down approaches that leave you at RPE 9 without any gain — in a log, that is what grinding looks like.',
       },
       {
         heading: 'Be honest, not tough',
-        body: 'Reporting an 8 when it was really a 10 does not make you stronger; it just feeds the app bad data and slows you down.',
+        body: 'Reporting an 8 when it was really a 10 does not make you stronger; it just feeds the app bad data, and the plan is only as good as the log it reads.',
       },
     ],
   },
@@ -262,7 +262,7 @@ export const GLOSSARY: GlossaryTerm[] = [
     term: 'Protraction',
     short: 'Pushing your shoulder blades apart',
     detail:
-      'Actively pushing the floor away so your upper back rounds slightly and your shoulder blades spread. This is the single most important planche cue — without it, the hold gets dramatically heavier and your shoulders take a worse angle.',
+      'Actively pushing the floor away so your upper back rounds gently and your shoulder blades spread. Coaches treat it as a core planche cue. A side-on camera cannot see it, which is why it is part of your own Clean rating.',
   },
   {
     term: 'Retraction',
@@ -274,13 +274,13 @@ export const GLOSSARY: GlossaryTerm[] = [
     term: 'Scapula',
     short: 'Your shoulder blade',
     detail:
-      'The flat triangular bone that slides across your ribcage. Planche strength is largely about controlling it, which is why scapula push-ups appear in every warm-up.',
+      'The flat triangular bone that slides across your ribcage. Controlling it is a big part of straight-arm work, which is why scapula push-ups appear in the warm-ups.',
   },
   {
     term: 'Hollow body',
     short: 'Ribs down, lower back flat, body slightly banana-shaped',
     detail:
-      'The gymnastics core position: press your lower back toward the floor, tuck your ribs, squeeze your glutes. It stops your hips sagging in every hold on the road.',
+      'The gymnastics core position: press your lower back toward the floor, tuck your ribs, squeeze your glutes. Coaches use it to teach the trunk position that keeps the hips from sagging in a hold.',
   },
   {
     term: 'Lean',
@@ -310,7 +310,7 @@ export const GLOSSARY: GlossaryTerm[] = [
     term: 'PPPU',
     short: 'Pseudo planche push-up',
     detail:
-      'A push-up with your hands down by your waist and your shoulders leaning forward past them. The closest thing to a planche you can train with bent arms, and the best dynamic strength builder on the road.',
+      'A push-up with your hands low, toward the waist, and your shoulders leaning forward past them. Bent-arm pressing support that many planche programmes include — kept separate from straight-arm skill time, and not a planche in disguise.',
   },
   {
     term: 'RPE',
@@ -334,7 +334,7 @@ export const GLOSSARY: GlossaryTerm[] = [
     term: 'Pancake',
     short: 'A wide-legged seated forward fold',
     detail:
-      'The mobility drill that widens your straddle. Two sessions a week quietly makes your straddle planche cheaper to hold.',
+      'The mobility drill for a wider straddle. A wider straddle shortens the lever, which is why pancake work appears once a straddle is in view.',
   },
   {
     term: 'Tuck',
@@ -352,6 +352,6 @@ export const GLOSSARY: GlossaryTerm[] = [
     term: 'Progressive overload',
     short: 'Gradually asking for slightly more',
     detail:
-      'Adding a little time, a little lean, or a longer lever over weeks. The app handles this for you by nudging your working targets up whenever you hit most of your sets.',
+      'Adding a little time, a little lean, or a longer lever over weeks. The app handles this for you: working targets follow your recent bests, and an occasional max test re-measures the ceiling.',
   },
 ]

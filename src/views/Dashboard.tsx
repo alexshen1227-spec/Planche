@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { STEP_BY_ID, stepAfter } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { challengeBlockedReason } from '../data/workouts'
-import { tipOfTheDay } from '../data/tips'
+import { BASIS_LABEL, tipOfTheDay } from '../data/tips'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { sessionsInWeekOf, weekStreak, totalHoldSec, sessionHighlight } from '../lib/stats'
 import { buildPlan, STRATEGY_BY_ID, coachConfidence } from '../lib/coach'
@@ -530,6 +530,7 @@ export function Dashboard({
           </div>
           <div className="mt-2 text-[15px] font-semibold text-ink">{tip.title}</div>
           <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">{tip.body}</p>
+          <p className="mt-2 text-[12px] text-ink3">{BASIS_LABEL[tip.basis]}</p>
         </div>
         <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
           <div className="flex items-center justify-between">

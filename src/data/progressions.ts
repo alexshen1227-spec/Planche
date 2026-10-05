@@ -14,7 +14,7 @@ export const STEPS: StepDef[] = [
     unlockSec: 30,
     startSec: 15,
     description:
-      'Before leaning an entire bodyweight over your hands, the supporting cast has to be ready: wrists that tolerate extension under load, shoulder blades that can protract hard, and a trunk that holds a hollow line without leaking. This phase is short but skipping it is how people earn wrist and elbow issues.',
+      'Before leaning an entire bodyweight over your hands, the supporting cast has to be ready: wrists that tolerate extension under load, shoulder blades that can protract hard, and a trunk that holds a hollow line without leaking. This phase is short, and coaches build it first because everything after it loads the same joints harder.',
     formChecks: [
       'Pseudo planche plank: shoulders in front of the wrists, elbows locked',
       'Scapula pushed apart (protracted) — upper back gently rounded',
@@ -34,12 +34,12 @@ export const STEPS: StepDef[] = [
     id: 'lean',
     order: 1,
     name: 'Planche Lean',
-    tagline: 'Load the lean, condition the joints',
+    tagline: 'Load the lean, own the position',
     keyExerciseId: 'planche-lean',
     unlockSec: 30,
     startSec: 12,
     description:
-      'From a push-up plank, shift your shoulders forward past your hands and hold. The further the lean, the closer the loading gets to a real planche. This is the single most important strength builder on the whole road — treat it as a main lift, not a warm-up.',
+      'From a push-up plank, shift your shoulders forward past your hands and hold. The further the lean, the closer the loading gets to a real planche. Many coaches treat it as a main lift rather than a warm-up.',
     formChecks: [
       'Elbows completely locked, biceps facing slightly forward',
       'Shoulders travel forward past the fingertips',
@@ -52,7 +52,7 @@ export const STEPS: StepDef[] = [
       'Measuring progress by seconds while the lean angle quietly shrinks',
     ],
     whyItMatters:
-      'The lean conditions wrists, biceps tendons and anterior delts to straight-arm loading — the exact capacity every planche position runs on.',
+      'The lean loads a planche-like position at a weight you choose by how far you lean — straight-arm strength in the exact shape, before the feet leave the floor.',
     scheme: '3–4 sessions/week · 4–6 leans of 10–30s at a lean that feels like RPE 8',
   },
   {
@@ -89,7 +89,7 @@ export const STEPS: StepDef[] = [
     unlockSec: 20,
     startSec: 5,
     description:
-      'Knees pulled to the chest, hips at shoulder height, feet off the floor, arms straight: the first true planche. Parallettes make it far friendlier on the wrists. Expect single seconds at first — that is normal and it grows fast.',
+      'Knees pulled to the chest, hips at shoulder height, feet off the floor, arms straight: the first true planche. Many people find parallettes friendlier on the wrists. Expect single seconds at first — that is normal, and early gains often come quickly.',
     formChecks: [
       'Arms locked and vertical-ish, shoulders leaning forward of the wrists',
       'Scapula protracted — back rounded like an angry cat',
@@ -102,7 +102,7 @@ export const STEPS: StepDef[] = [
       'Holding breath and going purple; breathe shallowly',
     ],
     whyItMatters:
-      'This is the base camp every higher planche is trained from. A big tuck planche (20s+) is the price of admission for flat-back work.',
+      'This is the base camp every higher planche is trained from. The app asks for a solid 20s tuck before flat-back work — a coaching convention, not a measured threshold.',
     scheme: '3–4 sessions/week · 5–8 sets of 40–60% of your max hold · rest 2–3 min',
   },
   {
@@ -114,7 +114,7 @@ export const STEPS: StepDef[] = [
     unlockSec: 20,
     startSec: 5,
     description:
-      'Same tuck, but the back flattens to horizontal and the hips open so the knees sit under the hips instead of at the chest. The lever gets meaningfully longer and the loading jumps. This step usually takes months — respect it.',
+      'Same tuck, but the back flattens to horizontal and the hips open so the knees sit under the hips instead of at the chest. The lever gets meaningfully longer and the loading jumps. This step commonly takes months — respect it.',
     formChecks: [
       'Back flat and parallel to the floor (film yourself from the side)',
       'Hips open to roughly 90°, knees pointing down',

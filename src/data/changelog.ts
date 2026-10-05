@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-05',
+    title: 'Tips that say what they rest on',
+    area: 'app',
+    notes: [
+      'The tip of the day now says what it is based on — coaching consensus, mechanics, research or safety guidance. Almost nothing about planche training itself has been studied, and a tip reads like a fact whatever its source.',
+      'Several tips, Learn pages and coach notes said more than the evidence does. Gone: tendons “taking months” to catch up (the study usually behind that does not show it), strength “built during recovery”, a warm-up that “protects” the wrists, wrist pain as “the #1 reason people quit”, a short night “erasing 20% of your holds”, and unlock bars described as minimums. Most of the advice stands — it now says it is advice.',
+      'The safety guide is now “Looking after your joints”. No routine can keep you injury-free, so it no longer promises to; it says what the app does to keep the risk down and what to do when something hurts.',
+    ],
+  },
+  {
+    date: '2026-10-05',
     title: 'Gentler wrist and core instructions',
     area: 'training',
     notes: [

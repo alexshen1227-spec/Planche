@@ -1,27 +1,116 @@
+/**
+ * What a tip rests on. Shown beside it, because a tip of the day reads like a
+ * fact whatever its source — and almost nothing about planche training itself
+ * has been studied (see docs/research-ledger.md). The wording of a tip must not
+ * sound more certain than its basis.
+ */
+export type TipBasis = 'research' | 'consensus' | 'mechanics' | 'safety' | 'app'
+
+export const BASIS_LABEL: Record<TipBasis, string> = {
+  research: 'From general strength-training research, not planche studies',
+  consensus: 'Coaching consensus — no trial behind it',
+  mechanics: 'Reasoning from mechanics, not a measurement',
+  safety: 'Safety guidance, not a diagnosis',
+  app: 'How this app reads your training',
+}
+
 export interface Tip {
   title: string
   body: string
+  basis: TipBasis
 }
 
 export const TIPS: Tip[] = [
-  { title: 'Straight arms are the whole game', body: 'A bent-arm planche is a different exercise. If the elbows bend, shorten the hold or regress the step — never trade lockout for seconds.' },
-  { title: 'Film from the side', body: 'Side video can reveal flat-back and hip-height errors you cannot feel. Treat automated estimates as suggestions and confirm them yourself.' },
-  { title: 'Stop two seconds early', body: 'Isometrics respond best around RPE 8. End each hold ~2s before collapse; the ugly shaking seconds mostly train bad positions.' },
-  { title: 'Warm wrists, long career', body: 'Two minutes of circles, rocks and palm lifts before every session. Wrist pain is the #1 reason people quit planche training.' },
-  { title: 'Rest like you mean it', body: 'Between hard sets, take 2–3 minutes. Straight-arm strength is neural — fatigue stacking just teaches worse positions.' },
-  { title: 'Tendons are slower than muscles', body: 'Your delts adapt in weeks; your biceps tendons take months. If a joint aches, cut lean/planche volume before it becomes a real issue.' },
-  { title: 'Protraction is the engine', body: 'Push the floor away until your upper back rounds. If the chest sags between the shoulder blades, the serratus is off duty and the hold gets heavier.' },
-  { title: 'The lean never retires', body: 'Even straddle-level athletes keep planche leans as a main lift. It is the safest way to overload the exact position.' },
-  { title: 'Parallettes are a cheat code', body: 'A neutral grip takes the wrists out of end-range extension, which many people find easier and stronger. It is not a fix for pain: if a wrist hurts, stop and get it looked at.' },
-  { title: 'Frequency beats heroics', body: 'Three or four focused sessions a week outgrow one weekly massacre. Planche is a skill — visit it often, fresh.' },
-  { title: 'Deload when fatigue piles up', body: 'Half the volume, easy targets, same movements. Coaches schedule one every 4–6 weeks by convention; trials have not shown it adds strength, but it is a sensible pressure valve.' },
-  { title: 'Bands are for positions', body: 'Band assistance lets you rehearse the true straddle shape long before you can hold it free. Same form rules apply — the band carries load, not sins.' },
-  { title: 'Pancake now, straddle later', body: 'Every degree of straddle width shortens the lever. Two pancake sessions a week quietly makes the straddle planche cheaper.' },
-  { title: 'Squeeze everything', body: 'Glutes, quads, toes points, fists of the feet. Total-body tension transmits force; a loose body leaks the strength you do have.' },
-  { title: 'Seconds are streaky', body: 'A 12s day after a 16s day means nothing. Judge progress on two-week trends, not single sessions.' },
-  { title: 'Sleep is a training day', body: 'Straight-arm strength is nervous-system strength. A short night can erase 20% of your holds — plan tests for rested days.' },
-  { title: 'Own it before you leave it', body: 'The unlock targets are minimums. Banking extra seconds on the current step makes the next one arrive faster, not slower.' },
-  { title: 'Do not diagnose pain by location', body: 'If elbow, wrist or shoulder pain is new or worsening, stop the provoking movement and seek qualified help when it is severe or persistent.' },
+  {
+    title: 'Straight arms are the whole game',
+    body: 'A bent-arm planche is a different exercise. If the elbows bend, shorten the hold or regress the step — do not trade lockout for seconds.',
+    basis: 'consensus',
+  },
+  {
+    title: 'Film from the side',
+    body: 'Side-on video can show a sagging back or low hips you cannot feel. The camera check is an estimate — confirm what it says against the clip yourself.',
+    basis: 'app',
+  },
+  {
+    title: 'Stop before the shaking',
+    body: 'Many coaches end skill holds a couple of seconds short of collapse, so the seconds you practise are seconds in the position. The shaking, sagging end of a hold mostly practises something else.',
+    basis: 'consensus',
+  },
+  {
+    title: 'Prepare the wrists',
+    body: 'A couple of minutes of circles, rocks and palm lifts before loading is a chance to check how your wrists feel today. It is preparation, not protection: no trial has shown a warm-up prevents injury, and it does not make a sore wrist safe to load.',
+    basis: 'consensus',
+  },
+  {
+    title: 'Rest between hard holds',
+    body: 'Two to three minutes between hard sets is common practice for skill holds, so each one is practised fresh rather than tired.',
+    basis: 'consensus',
+  },
+  {
+    title: 'Fast gains are mostly skill',
+    body: 'Early strength gains are largely your nervous system learning the position: in one small study, strength rose by about a third in two months while muscle size and tendon stiffness had not changed. When your holds jump, the app keeps volume steady rather than raising it to match.',
+    basis: 'research',
+  },
+  {
+    title: 'Push the floor away',
+    body: 'Keep the shoulders pushed forward and the upper back gently rounded. If the chest sinks between the shoulder blades, the position has changed — reset rather than hang on for the seconds.',
+    basis: 'consensus',
+  },
+  {
+    title: 'The lean is a main lift',
+    body: 'Many coaches keep planche leans in training long after the tuck: the lean loads a planche-like position at a weight you set by how far you lean.',
+    basis: 'consensus',
+  },
+  {
+    title: 'Parallettes change the wrist angle',
+    body: 'A neutral grip takes the wrists out of end-range extension, which many people find more comfortable. It is not a fix for pain: if a wrist hurts, stop and get it looked at.',
+    basis: 'consensus',
+  },
+  {
+    title: 'Visit the skill often',
+    body: 'Coaches generally prefer three or four focused sessions a week to one exhausting one — a skill is practised best fresh. Nobody has run that comparison for planche.',
+    basis: 'consensus',
+  },
+  {
+    title: 'Easy weeks are a convention',
+    body: 'Half the volume, easy targets, same movements. Coaches schedule one every 4–6 weeks; the trials have not shown it adds strength, so treat it as a pressure valve for fatigue and busy weeks.',
+    basis: 'consensus',
+  },
+  {
+    title: 'Bands are for positions',
+    body: 'Band assistance lets you rehearse the straddle shape before you can hold it free. The same form rules apply, and banded holds count as training — never toward an unlock.',
+    basis: 'consensus',
+  },
+  {
+    title: 'Width shortens the lever',
+    body: 'Spreading the legs brings their weight closer to your shoulders, so a wider straddle is a lighter planche. That is why straddle flexibility — pancake work — shows up on the plan.',
+    basis: 'mechanics',
+  },
+  {
+    title: 'Squeeze everything',
+    body: 'Glutes, quads, pointed toes. Coaches cue full-body tension so the body moves as one piece; a loose body tends to drift out of line without you noticing.',
+    basis: 'consensus',
+  },
+  {
+    title: 'Seconds are streaky',
+    body: 'A 12s day after a 16s day is usually just a day. Judge progress on trends over a couple of weeks — the forecast here does the same, and one lucky hold cannot swing it.',
+    basis: 'app',
+  },
+  {
+    title: 'Test on a rested day',
+    body: 'Plan max tests for days you have slept and recovered. Poor sleep tends to cost performance, and a test on a bad day measures the day, not you.',
+    basis: 'consensus',
+  },
+  {
+    title: 'Own the step before you leave it',
+    body: 'The unlock bars are convention, not measured thresholds — credible coaches’ standards differ several-fold. Many would rather you hold the current step cleanly with seconds to spare than scrape past the bar.',
+    basis: 'consensus',
+  },
+  {
+    title: 'Do not diagnose pain by location',
+    body: 'If elbow, wrist or shoulder pain is new or worsening, stop the provoking movement and seek qualified help when it is severe or persistent.',
+    basis: 'safety',
+  },
 ]
 
 export function tipOfTheDay(now = Date.now()): Tip {

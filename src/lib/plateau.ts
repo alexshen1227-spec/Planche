@@ -132,7 +132,7 @@ export function diagnosePlateau(
       // The companion claim that tendon is "the slowest tissue to recover" is
       // also unsupported: on detraining, muscle size decayed sooner.
       intervention:
-        'An easy week now rather than later. Backing off is not proven to make you stronger — the handful of trials on planned deloads found no benefit either way — but it reliably costs nothing, and continuing to grind a stalled hold under this much accumulated load has a real cost. Drop the volume, keep the movements.',
+        'An easy week now rather than later. Backing off is not proven to make you stronger — the handful of trials on planned deloads found no benefit — and none detected a cost either, whereas adding load to a stalled hold under this much accumulated fatigue is the one prescription this app treats as actively harmful. Drop the volume, keep the movements.',
       suggestDeload: true,
       suggestStrategy: 'technique',
     }
