@@ -138,6 +138,21 @@ describe('every way of starting a workout goes through the same final decision',
   })
 })
 
+describe('a low-energy day removes every maximal effort', () => {
+  it('an athlete within reach of the bar gets no queued attempt when tired', () => {
+    const near = athlete('tuck', {
+      sessions: [9, 6, 3].map((d) => trainingDay(d, [hold('tuck-planche', 18, at(d), { form: verified() })])),
+    })
+    const fresh = buildPlan(near, NOW, { joints: 'good', energy: 'fresh', at: NOW })
+    const tired = buildPlan(near, NOW, { joints: 'good', energy: 'tired', at: NOW })
+    expect(fresh.challengeAllowed).toBe(true)
+    expect(tired.challengeAllowed).toBe(false)
+    expect(tired.queueUnlockAttempt).toBe(false)
+    expect(tired.suggestMaxTest).toBe(false)
+    expect(tired.dayType).not.toBe('push')
+  })
+})
+
 describe('missing logs are missing evidence', () => {
   it('weeks with nothing logged are not banked rest: no push day and no unlock attempt', () => {
     const old = athlete('tuck', {

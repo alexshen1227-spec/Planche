@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { addDays, dayKey, fmtDuration, fmtHold, fmtShortDay, weekStart } from '../lib/time'
+import { useToday } from '../lib/useToday'
 import type { WeekVolume } from '../lib/stats'
 import type { Session } from '../types'
 
@@ -208,6 +209,9 @@ export function HoldLineChart({
  */
 export function TrainingHeatmap({ sessions, weeks = 16 }: { sessions: Session[]; weeks?: number }) {
   const [tip, setTip] = useState<TipState | null>(null)
+  // Keyed on the date too: a screen left open past midnight kept the old week
+  // as its last column and never marked the new day.
+  const today = useToday()
   const { byDay, start } = useMemo(() => {
     const map = new Map<string, { sec: number; count: number }>()
     for (const s of sessions) {
@@ -218,7 +222,8 @@ export function TrainingHeatmap({ sessions, weeks = 16 }: { sessions: Session[];
       map.set(k, cur)
     }
     return { byDay: map, start: addDays(weekStart(Date.now()), -7 * (weeks - 1)) }
-  }, [sessions, weeks])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, weeks, today])
 
   const cell = 13
   const gap = 3
@@ -226,7 +231,6 @@ export function TrainingHeatmap({ sessions, weeks = 16 }: { sessions: Session[];
   const labelH = 16
   const w = labelW + weeks * (cell + gap)
   const h = labelH + 7 * (cell + gap)
-  const today = dayKey(Date.now())
 
   const level = (sec: number, count: number) => {
     if (count === 0) return 0
