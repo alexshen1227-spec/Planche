@@ -175,9 +175,9 @@ export function diagnosePlateau(
       confidence: 'good',
       evidence: `You have averaged ${sig.sessionsPerWeek.toFixed(
         1,
-      )} sessions a week over the last month. Straight-arm strength responds to repeated exposure, and this is below the frequency that reliably produces it.`,
+      )} sessions a week over the last month. Coaches generally expect straight-arm strength to need repeated exposure, and this is below what they would usually prescribe.`,
       intervention:
-        'Nothing about your programming needs fixing before the frequency does. Two or three sessions a week — even short ones — will move this number more than any change the coach could make to the sets themselves.',
+        'Nothing about your programming needs fixing before the frequency does. Two or three sessions a week — even short ones — are more likely to move this number than any change the coach could make to the sets themselves.',
     }
   }
 
@@ -196,7 +196,7 @@ export function diagnosePlateau(
       confidence: 'moderate',
       evidence: `Your last ${recentStrategies.length} sessions all ran the same shape, and the hold has been flat for ${weeksFlat} weeks.`,
       intervention:
-        'The coach deliberately rotates to an untested session shape. A stimulus your body has fully adapted to is maintenance, however hard it feels.',
+        'The coach deliberately rotates to an untested session shape. The reasoning rather than a measured rule: a stimulus your body has fully adapted to tends to maintain rather than build, however hard it feels.',
     }
   }
 
@@ -211,7 +211,7 @@ export function diagnosePlateau(
       evidence:
         'Your pressing numbers have flattened alongside the hold, which points at the engine rather than the position or the recovery.',
       intervention:
-        'Pressing volume goes up and max-hold attempts stay controlled. When both the isometric and the dynamic work stall together, more max attempts is the one thing that reliably does not help.',
+        'Pressing volume goes up and max-hold attempts stay controlled. When both the isometric and the dynamic work stall together, more max attempts is the least promising response.',
       suggestStrategy: 'volume',
     }
   }

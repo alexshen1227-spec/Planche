@@ -41,7 +41,8 @@ const RULES: Rule[] = [
   },
   {
     id: 'strength-in-recovery',
-    pattern: /\binto strength\b|\bstrength (is built|lands|arrives|appears) (during|in) (recovery|rest|the deload)\b/i,
+    pattern:
+      /\binto strength\b|\bstrength (is built|lands|arrives|appears) (during|in) (recovery|rest|the deload)\b|\bstrength is (expressed|realised|realized) after recovery\b/i,
     why: 'CLAUDE.md, measured #2: do not reintroduce "strength lands during recovery".',
     // "Strength is built during recovery, not during the hard sessions" holds
     // a "not" too, so only an explicit "rather than claiming …" lets it pass.
@@ -87,6 +88,12 @@ const RULES: Rule[] = [
     id: 'injury-prediction',
     pattern: /\b(predicts?|predicting|forecasts?)\b.{0,30}\binjur/i,
     why: 'Ledger §must-not-claim 5 and CLAUDE.md measured #3: load ratios may describe load, never predict injury.',
+    unlessNegated: true,
+  },
+  {
+    id: 'load-spike-injury',
+    pattern: /\b(spikes?|load)\b.{0,60}\bjoints? (complain|get hurt|break down)\b/i,
+    why: 'CLAUDE.md measured #3: a load ratio may describe load, never forecast joint trouble.',
     unlessNegated: true,
   },
   {
@@ -205,6 +212,8 @@ describe('claims the app must not make', () => {
       'Spend the first weeks earning the basics, and everything after them arrives faster.',
       'The full warm-up costs three minutes and protects the wrists that all of this runs on.',
       'Today recovers it into strength instead of stacking more on top.',
+      'Take a Deload Flow week at roughly half volume. Strength is expressed after recovery, not during accumulation.',
+      'Spikes like this are where progress stalls and joints complain.',
     ]
     for (const sentence of removed) {
       expect(breaches(sentence).length, sentence).toBeGreaterThan(0)

@@ -219,7 +219,9 @@ function MeasureForm({ onSaved, onDismiss }: { onSaved: () => void; onDismiss: (
           </div>
         )}
         <span className="mt-1 block text-[12px] text-ink3">
-          {lastH ? `Leave blank to keep ${fmtHeight(lastH.value, units)}.` : 'Optional.'}
+          {lastH
+            ? `Leave blank to keep ${fmtHeight(lastH.value, units)}.`
+            : 'Kept for your own record — nothing in the plan uses it.'}
         </span>
       </div>
 

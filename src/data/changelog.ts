@@ -19,6 +19,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-05',
+    title: 'Fast progress is no longer mistaken for noise',
+    area: 'coach',
+    notes: [
+      'If your holds were climbing quickly — common in the first weeks — the coach could read the climb itself as “measurement noise”. It then held your targets still and skipped the unlock attempt and max test you were ready for. Swing is now measured around your own trend rather than around your average, so steady progress reads as progress, and genuinely scattered numbers are still caught.',
+      'Progress → “Why am I stuck?” now gives the same answer as Home, because it uses the same diagnosis. It says “too early to call” until there is enough verified history, and “too noisy to call” rather than quoting a rate through scatter.',
+      'The “What is holding you back” card is gone. Its targets — a 45-second hollow hold, 8 pseudo planche push-ups, a 45-second pancake — were not measured standards, and holding a pancake for 45 seconds says nothing about how wide it is.',
+      'Progress now describes the stop allowance the way your settings apply it: with the phone within reach, main holds lose only your calibrated delay, not 5 seconds.',
+    ],
+  },
+  {
+    date: '2026-10-05',
     title: 'Tips that say what they rest on',
     area: 'app',
     notes: [

@@ -224,6 +224,12 @@ more certain than its basis.
    they were given makes the log echo the target back and it compounds
    downward. The `to-target` compliance mode in `simulateSeason` pins this; the
    max-test suggestion is the corrective and the eval asserts it engages.
+4. **Noise is spread around the trend, not around the median.** `sig.noisy`
+   once used MAD/median of the last six bests, so a steady 6→17.5s climb read
+   as ±25% "noise": targets froze and the earned unlock attempt was withheld —
+   from fast-improving beginners above all. `spreadAroundTrend` measures
+   residuals from a Theil–Sen line; scrambling the same values is still noisy
+   (`v2.test.ts`, "a fast, steady climb is progress, not noise").
 
 ## Camera lifecycle
 

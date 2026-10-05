@@ -1066,7 +1066,7 @@ export const TEMPLATES: Workout[] = [
     id: 'wrist-armor',
     name: 'Wrist Prep',
     focus:
-      'Ten-odd minutes of wrist preparation: controlled range, then light loading. Preparation, not treatment — it does not make a sore wrist safe to load.',
+      'Wrist preparation: controlled range, then light loading. Preparation, not treatment — it does not make a sore wrist safe to load.',
     purpose: 'Prepare wrists for straight-arm loading.',
     blocks: [
       { exerciseId: 'wrist-circles', sets: 2, target: reps(10), restSec: 15, section: 'main' },

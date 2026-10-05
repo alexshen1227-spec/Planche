@@ -13,7 +13,9 @@ import {
   sessionDurationSec,
 } from '../lib/stats'
 import { armStats, STRATEGY_BY_ID, formatStrategyEvidence, buildPlan } from '../lib/coach'
-import { diagnose, weakLinks } from '../lib/diagnose'
+import { diagnose } from '../lib/diagnose'
+import { PLATEAU_LABEL } from '../lib/plateau'
+import { PROGRESSION_STOP_LATENCY_SEC } from '../lib/sessionTiming'
 import { fmtWeight } from '../lib/units'
 import { lastOf } from '../components/MeasurePrompt'
 import { fmtDate, fmtTime, fmtDuration, fmtHold, fmtClock } from '../lib/time'
@@ -358,8 +360,7 @@ export function Stats({
   const coachPick = useMemo(() => buildPlan(state), [state])
   const bestArm = useMemo(() => [...arms].filter((a) => a.n > 0).sort((a, b) => b.mean - a.mean)[0], [arms])
   const maxArmRate = useMemo(() => Math.max(0.001, ...arms.map((a) => Math.abs(a.secPerWeek ?? 0))), [arms])
-  const diag = useMemo(() => diagnose(state), [state])
-  const links = useMemo(() => weakLinks(state), [state])
+  const diag = useMemo(() => diagnose(state, Date.now(), coachPick.plateau), [state, coachPick])
   const weightNow = useMemo(() => lastOf(state, 'weightKg'), [state])
   const volume = useMemo(() => weeklyVolume(state, 12), [state])
   const sessions = useMemo(() => [...state.sessions].sort((a, b) => b.startedAt - a.startedAt), [state.sessions])
@@ -533,19 +534,52 @@ export function Stats({
         </div>
       </div>
 
-      {/* Plateau diagnostic */}
+      {/* Where the key hold stands — the coach's own plateau verdict, so this
+          screen and Home can never disagree about whether you are stuck. */}
       <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-card">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="font-display text-[16px] font-semibold text-ink">Why am I stuck?</div>
-          {diag.plateaued ? (
-            <span className="rounded-full bg-danger-soft px-3 py-1 text-[12.5px] font-semibold text-danger-text">
-              Flat ~{diag.weeksFlat} weeks
-            </span>
-          ) : (
-            <span className="rounded-full bg-ok-soft px-3 py-1 text-[12.5px] font-semibold text-ok-text">Progressing</span>
-          )}
+          <span
+            className={`rounded-full px-3 py-1 text-[12.5px] font-semibold ${
+              diag.status === 'progressing'
+                ? 'bg-ok-soft text-ok-text'
+                : diag.status === 'stalled' || diag.status === 'regressing'
+                  ? 'bg-danger-soft text-danger-text'
+                  : 'bg-line text-ink2'
+            }`}
+          >
+            {diag.status === 'progressing'
+              ? 'Progressing'
+              : diag.status === 'stalled'
+                ? `Flat ~${diag.plateau?.weeksFlat ?? 0} week${diag.plateau?.weeksFlat === 1 ? '' : 's'}`
+                : diag.status === 'regressing'
+                  ? 'Going backwards'
+                  : diag.status === 'noisy'
+                    ? 'Too noisy to call'
+                    : 'Too early to call'}
+          </span>
         </div>
         <p className="mt-1 max-w-2xl text-[13.5px] leading-relaxed text-ink2">{diag.summary}</p>
+        {diag.plateau ? (
+          <div className="mt-3 rounded-2xl border border-line bg-raised p-3.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[14px] font-semibold text-ink">{PLATEAU_LABEL[diag.plateau.cause]}</span>
+              <span className="text-[12.5px] text-ink3">
+                {diag.plateau.confidence === 'good'
+                  ? 'confident read'
+                  : diag.plateau.confidence === 'moderate'
+                    ? 'likely cause'
+                    : 'best guess'}
+              </span>
+            </div>
+            <p className="mt-1 text-[13px] leading-relaxed text-ink2">{diag.plateau.evidence}</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-ink">
+              {coachPick.loadPermission === 'none'
+                ? 'Worth fixing, but not today — what you reported in your check-in comes first.'
+                : diag.plateau.intervention}
+            </p>
+          </div>
+        ) : null}
         {diag.causes.length > 0 ? (
           <div className="mt-3 space-y-2">
             {diag.causes.map((c) => (
@@ -566,54 +600,6 @@ export function Stats({
             ))}
           </div>
         ) : null}
-      </div>
-
-      {/* Weak links */}
-      <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-card">
-        <div className="font-display text-[16px] font-semibold text-ink">What is holding you back</div>
-        <div className="max-w-2xl text-[13px] leading-relaxed text-ink2">
-          The four qualities that most often cap a planche. Anything marked limiting is probably costing you more than
-          extra planche practice would gain.
-        </div>
-        <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
-          {links.map((l) => (
-            <div key={l.id} className="rounded-2xl border border-line bg-raised p-3.5">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[14px] font-semibold text-ink">{l.name}</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
-                    l.status === 'limiting'
-                      ? 'bg-danger-soft text-danger-text'
-                      : l.status === 'strong'
-                        ? 'bg-ok-soft text-ok-text'
-                        : l.status === 'adequate'
-                          ? 'bg-accent-soft text-accent-text'
-                          : 'bg-line text-ink3'
-                  }`}
-                >
-                  {l.status}
-                </span>
-              </div>
-              <div className="mt-1 text-[12.5px] text-ink2 tnum">
-                {l.best === null ? 'Not tested yet' : `${Math.round(l.best)}${l.unit === 's' ? 's' : ' reps'}`}
-                <span className="text-ink3">
-                  {' '}
-                  / {l.benchmark}
-                  {l.unit === 's' ? 's' : ' reps'} target
-                </span>
-              </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-line">
-                <div
-                  className={`h-full rounded-full ${
-                    l.status === 'limiting' ? 'bg-danger' : l.status === 'strong' ? 'bg-ok' : 'bg-accent'
-                  }`}
-                  style={{ width: `${Math.min(100, (l.ratio ?? 0) * 100)}%` }}
-                />
-              </div>
-              <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink3">{l.what}</p>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* Bodyweight */}
@@ -709,10 +695,17 @@ export function Stats({
           </p>
           <p>
             Noise is handled deliberately: averages are pulled toward the overall mean until a strategy has real
-            evidence behind it, targets anchor on your typical hold rather than your single best, and swings above ~22%
-            pause changes instead of driving them.
-            {' '}Main Path holds remove a 5.0s stop reaction; Planche Lean and other timed holds remove your{' '}
-            {state.settings.stopLatencySec.toFixed(1)}s calibrated delay.
+            evidence behind it, targets anchor on your typical hold rather than your single best, and session-to-session
+            swings of more than ~22% around your own trend pause changes instead of driving them.
+            {' '}
+            {state.settings.phoneWithinReach
+              ? `Timed holds have your ${state.settings.stopLatencySec.toFixed(1)}s calibrated stop delay taken off`
+              : `Main Path holds have ${Math.max(PROGRESSION_STOP_LATENCY_SEC, state.settings.stopLatencySec).toFixed(
+                  1,
+                )}s taken off for getting back to the phone, and other timed holds your ${state.settings.stopLatencySec.toFixed(
+                  1,
+                )}s calibrated delay`}
+            {' '}— each set can be corrected on the rest screen, and a hold timed from its video has nothing taken off.
           </p>
         </div>
       </div>

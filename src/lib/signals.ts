@@ -170,6 +170,25 @@ export function robustSlopePerWeek(points: { at: number; value: number }[]): num
   return median(slopes)
 }
 
+/**
+ * Spread of points around their own robust trend line, in their own units.
+ *
+ * Around the trend, not the median: a steady climb from 4s to 12s has a wide
+ * spread around its median and none around its line. Measured the first way,
+ * a beginner improving fast was told their progress was "measurement noise" —
+ * targets froze, and the unlock attempt and max test were held back from the
+ * athletes closest to needing them. The line is the median pairwise slope, so
+ * one wild session cannot tilt it and hide the scatter it should expose.
+ */
+export function spreadAroundTrend(points: { at: number; value: number }[]): number | null {
+  if (points.length < 3) return null
+  const perMs = (robustSlopePerWeek(points) ?? 0) / (7 * DAY)
+  const t0 = points[0].at
+  const intercept = median(points.map((p) => p.value - perMs * (p.at - t0)))
+  if (intercept === null) return null
+  return mad(points.map((p) => p.value - (intercept + perMs * (p.at - t0))))
+}
+
 export interface SideGap {
   exerciseId: string
   weakSide: 'left' | 'right'
@@ -294,7 +313,7 @@ export interface Signals {
   mainSetCount: number
   /** Robust centre of recent session bests on the key hold, on the comparable surface. */
   mainMedian: number | null
-  /** Spread of recent bests as a fraction of the median. */
+  /** Spread of recent bests around their own trend, as a fraction of the median. */
   variability: number | null
   /** True when session-to-session numbers are too noisy to steer on. */
   noisy: boolean
@@ -441,7 +460,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const withKey = series.points
   const recentBests = withKey.slice(-6).map((p) => p.value)
   const mainMedian = median(recentBests)
-  const spread = mad(recentBests)
+  const spread = spreadAroundTrend(withKey.slice(-6))
   const variability = mainMedian && mainMedian > 0 && spread !== null ? spread / mainMedian : null
   // Isometrics swing day to day; past ~22% deviation the signal is mostly noise.
   const noisy = variability !== null && variability > 0.22 && recentBests.length >= 3

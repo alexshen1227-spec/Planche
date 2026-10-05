@@ -39,6 +39,7 @@ import {
   placeFromAssessment,
   type AssessmentAnswers,
 } from './assessment'
+import { diagnose as diagnoseProgress } from './diagnose'
 
 const DAY = 86_400_000
 const NOW = Date.UTC(2026, 7, 4)
@@ -667,6 +668,152 @@ describe('diagnosePlateau', () => {
 
   it('requires the documented minimum span', () => {
     expect(PLATEAU_MIN_DAYS).toBeGreaterThanOrEqual(21)
+  })
+})
+
+describe('a fast, steady climb is progress, not noise', () => {
+  // 6 → 17.5s in five sessions: the beginner's early climb. Its spread around
+  // the median is ±25%, which the old variability measure read as noise —
+  // freezing targets and withholding the unlock attempt it had earned.
+  const climb = () =>
+    stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 14, value: 6 },
+        { daysAgo: 11, value: 9 },
+        { daysAgo: 8, value: 12 },
+        { daysAgo: 5, value: 15 },
+        { daysAgo: 2, value: 17.5 },
+      ]),
+    )
+
+  it('is not flagged as noisy', () => {
+    const sig = readSignals(climb(), NOW)
+    expect(sig.noisy).toBe(false)
+    expect(sig.variability!).toBeLessThan(0.05)
+    expect(sig.trendPerWeek!).toBeGreaterThan(5)
+  })
+
+  it('earns the unlock attempt it is within reach of', () => {
+    const plan = buildPlan(climb(), NOW)
+    expect(plan.dayType).toBe('push')
+    expect(plan.queueUnlockAttempt).toBe(true)
+  })
+
+  it('still calls a flat history with the same swing noisy', () => {
+    // Same values, no order: the swing is the whole story here.
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 14, value: 15 },
+        { daysAgo: 11, value: 6 },
+        { daysAgo: 8, value: 17.5 },
+        { daysAgo: 5, value: 9 },
+        { daysAgo: 2, value: 12 },
+      ]),
+    )
+    const sig = readSignals(state, NOW)
+    expect(sig.noisy).toBe(true)
+    expect(buildPlan(state, NOW).queueUnlockAttempt).toBe(false)
+  })
+})
+
+describe('the Progress screen reads the same verdict the coach acts on', () => {
+  it('says it is too early on thin verified history, and claims no rate', () => {
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 6, value: 8 },
+        { daysAgo: 3, value: 9 },
+        { daysAgo: 1, value: 10 },
+      ]),
+    )
+    const d = diagnoseProgress(state, NOW)
+    expect(d.status).toBe('insufficient')
+    expect(d.gainPerWeek).toBeNull()
+    expect(d.plateau).toBeNull()
+  })
+
+  it('reports a rate when steady history supports one', () => {
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 56, value: 4 },
+        { daysAgo: 42, value: 6 },
+        { daysAgo: 28, value: 8 },
+        { daysAgo: 14, value: 10 },
+        { daysAgo: 3, value: 12 },
+      ]),
+    )
+    const d = diagnoseProgress(state, NOW)
+    expect(d.status).toBe('progressing')
+    expect(d.gainPerWeek).toBeGreaterThan(FLAT_RATE)
+  })
+
+  it('withholds the rate when the swing is wider than the trend', () => {
+    // Rising on a least-squares line (~1s/week) but swinging about ±36%: the
+    // old card called this "progressing at 1.1s per week".
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 36, value: 6 },
+        { daysAgo: 29, value: 14 },
+        { daysAgo: 22, value: 7 },
+        { daysAgo: 15, value: 15 },
+        { daysAgo: 8, value: 8 },
+        { daysAgo: 1, value: 16 },
+      ]),
+    )
+    const sig = readSignals(state, NOW)
+    expect(sig.noisy).toBe(true)
+    expect(sig.trendPerWeek!).toBeGreaterThan(FLAT_RATE)
+    const d = diagnoseProgress(state, NOW)
+    expect(d.status).toBe('noisy')
+    expect(d.gainPerWeek).toBeNull()
+  })
+
+  it('calls a stall exactly as the plan does', () => {
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 56, value: 8 },
+        { daysAgo: 42, value: 8 },
+        { daysAgo: 28, value: 8 },
+        { daysAgo: 14, value: 8 },
+        { daysAgo: 3, value: 8 },
+      ]),
+    )
+    const plan = buildPlan(state, NOW)
+    const d = diagnoseProgress(state, NOW, plan.plateau)
+    expect(plan.plateau).not.toBeNull()
+    expect(d.status).toBe('stalled')
+    expect(d.plateau).toBe(plan.plateau)
+    expect(d.gainPerWeek).toBeNull()
+    // Computed independently, it still agrees with the plan.
+    expect(diagnoseProgress(state, NOW).plateau).toEqual(plan.plateau)
+  })
+
+  it('does not list the plateau cause a second time as a habit', () => {
+    // Weekly RPE 9.5 sessions on a flat hold, the last one yesterday: the
+    // plateau names recovery, so "training hard on short rest" is its job.
+    const sessions: Session[] = [49, 42, 35, 28, 21, 14, 7, 1].map((daysAgo) => {
+      const at = NOW - daysAgo * DAY
+      return {
+        id: `hard-${daysAgo}`,
+        startedAt: at,
+        endedAt: at + 30 * 60_000,
+        workoutName: 'Session',
+        workoutKind: 'auto' as const,
+        stepId: 'tuck' as StepId,
+        rpe: 9.5,
+        sets: Array.from({ length: 6 }, (_, i) => holdSet('tuck-planche', 8, at + i * 60_000)),
+      }
+    })
+    const state = stateWith('tuck', sessions)
+    const d = diagnoseProgress(state, NOW)
+    expect(d.plateau?.cause).toBe('under-recovered')
+    expect(d.causes.map((c) => c.id)).not.toContain('recovery')
+    expect(d.causes.map((c) => c.id)).not.toContain('overload')
   })
 })
 
