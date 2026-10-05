@@ -104,10 +104,14 @@ became a no-op — and nothing failed.
 **Advice written before the rails run must not survive them.** The plan is
 assembled top-to-bottom but the rails decide last, so anything that prescribes
 loaded work has to be reconsidered afterwards. Lines are tagged
-(`CoachDecision.source`) and filtered: `load-advice` is dropped outright when
-`loadPermission === 'none'`, and the plateau line is composed *after* the rails
-so it can defer instead of telling a sore athlete to train more. Three separate
-bugs of this shape were found in review; assume a fourth if you add a decision.
+(`CoachDecision.source`) and filtered: `load-advice` and `loaded-session` are
+dropped outright when `loadPermission === 'none'`, `deload` when a rail turned
+the day into something else, and the plateau line is composed *after* the rails
+so it can defer instead of telling a sore athlete to train more (or to "keep
+training normally" on a scheduled easy week). Three bugs of this shape were
+found in the V2 review and three more on 2026-10-05 — found by printing the
+plan for simulated athletes and reading it, which is worth repeating whenever a
+decision is added.
 
 ### Evidence tiers
 

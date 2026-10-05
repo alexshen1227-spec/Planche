@@ -1,7 +1,7 @@
 import type { AppState } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { forecastUnlock } from './forecast'
+import { forecastUnlock, MIN_FORECAST_POINTS, qualifyingSeries } from './forecast'
 import { readSignals } from './signals'
 import { diagnosePlateau, PLATEAU_MIN_DAYS, type PlateauVerdict } from './plateau'
 import { fmtWeight } from './units'
@@ -61,6 +61,13 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
   // recent pace — so Progress never says "too early to call" while Home quotes
   // a range from the same log, or quotes a different pace for the same climb.
   const forecast = forecastUnlock(state, state.stepId, now)
+  // "Too early" is the wrong reason for an athlete with a month of sessions and
+  // nothing verified: the evidence is missing, not young.
+  const keySessions = state.sessions.filter((s) =>
+    s.sets.some((set) => set.exerciseId === step.keyExerciseId && set.section === 'main' && set.value > 0),
+  ).length
+  const verified = qualifyingSeries(state, state.stepId).length
+  const unverified = keySessions >= MIN_FORECAST_POINTS && verified < MIN_FORECAST_POINTS
 
   const status: ProgressStatus = verdict
     ? verdict.status
@@ -179,9 +186,13 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
                 causes.length === 0 ? ' Nothing here needs tightening.' : tighten
               }`
           : forecast.kind === 'insufficient'
-            ? `Too early to call — progress is read from verified ${keyName} holds, and this needs ${forecast.need}${
-                forecast.need.endsWith('.') ? '' : '.'
-              }${tighten}`
+            ? unverified
+              ? `Not measurable yet. Progress here is read from verified ${keyName} holds — a filmed set you rate Clean that passes the camera check — and ${
+                  verified === 0 ? 'none' : `only ${verified}`
+                } of your ${keySessions} sessions with it ${verified === 1 ? 'has' : 'have'} one. Film a set from the side next session to start the record.${tighten}`
+              : `Too early to call — progress is read from verified ${keyName} holds, and this needs ${forecast.need}${
+                  forecast.need.endsWith('.') ? '' : '.'
+                }${tighten}`
             : `${
                 forecast.kind === 'not-trending' && forecast.ratePerWeek > 0.01
                   ? 'Climbing, but too slowly to put a pace on yet'

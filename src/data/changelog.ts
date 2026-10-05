@@ -24,6 +24,8 @@ export const CHANGELOG: ChangeEntry[] = [
     notes: [
       'The rep screen starts at your target, so most sets are logged at exactly the prescribed number. The coach read that as your pressing strength having flattened — and could then call a plateau a strength ceiling and add pressing volume, just because you did what you were asked. Only sets taken past their target, or that fell short of it, now count as pressing evidence; with too few of those, it says it does not know.',
       'On a scheduled easy week, the plateau note no longer tells you to “keep training normally” in the same breath, and it no longer repeats how long you have been flat.',
+      'On a day an elbow turns into rest, the plan no longer also tells you it is a scheduled easy week where “the movements stay”, that today has “slightly less volume”, or that the warm-up prepares you “before loading” — none of which happens on a rest day. The elbow note now says plainly that keeping it out of loading is experienced opinion rather than established fact.',
+      'If you have never filmed a set, Progress now says your progress is not measurable yet and how to start — rather than “too early to call” after a month of training.',
       'Home and Progress now read your pace the same way. Before, three weeks in, Home could quote “11+ weeks” while Progress said it was too early to call — they used different evidence and different rates. Progress now uses the same verified holds and recent pace as the unlock estimate, and says plainly when something is flat but not yet long enough to call a plateau.',
     ],
   },

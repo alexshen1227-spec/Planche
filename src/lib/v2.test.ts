@@ -1427,6 +1427,49 @@ describe('pressing evidence is what was measured, not what was prescribed', () =
   })
 })
 
+describe('lines written before the rails do not outlive them', () => {
+  // Six even weeks, no warm-up sets logged, no easy week: a deload is
+  // scheduled and the skipped-warm-up note fires before any rail has run.
+  const evenWeeks = (lastSets?: (at: number) => SetLog[]) => {
+    const sessions = historyOf(
+      'tuck',
+      [41, 38, 34, 31, 27, 24, 20, 17, 13, 10, 6, 3].map((daysAgo) => ({ daysAgo, value: 8 })),
+      { rpe: 7 },
+    )
+    if (lastSets) {
+      const last = sessions[sessions.length - 1]
+      sessions[sessions.length - 1] = { ...last, sets: lastSets(last.startedAt) }
+    }
+    return stateWith('tuck', sessions)
+  }
+
+  it('drops the easy-week and loaded-session lines when an elbow turns the day into rest', () => {
+    const baseline = buildPlan(evenWeeks(), NOW)
+    // Preconditions: without the elbow, both lines are in the plan.
+    expect(baseline.decisions.map((d) => d.source)).toContain('deload')
+    expect(baseline.decisions.map((d) => d.source)).toContain('loaded-session')
+
+    const plan = buildPlan(evenWeeks(), NOW, { joints: 'niggle', energy: 'ok', at: NOW, regions: ['elbow'] })
+    expect(plan.dayType).toBe('recovery')
+    expect(plan.loadPermission).toBe('none')
+    const sources = plan.decisions.map((d) => d.source)
+    expect(sources).not.toContain('deload')
+    expect(sources).not.toContain('loaded-session')
+  })
+
+  it('does not quote a hit-rate cut that the easy week has already overtaken', () => {
+    // The last session fell short on every main set.
+    const state = evenWeeks((at) =>
+      Array.from({ length: 4 }, (_, i) => holdSet('tuck-planche', 5, at + i * 60_000, { target: 8 })),
+    )
+    const plan = buildPlan(state, NOW)
+    expect(plan.dayType).toBe('deload')
+    const fellShort = plan.decisions.find((d) => /fell short/i.test(d.text))
+    expect(fellShort).toBeDefined()
+    expect(fellShort!.text).not.toMatch(/\d+%/)
+  })
+})
+
 describe('the plateau line on a scheduled easy week', () => {
   // Twelve flat sessions, two a week for six weeks at an even load: no easy
   // week in the log (so one is scheduled) and a plateau with no visible cause.

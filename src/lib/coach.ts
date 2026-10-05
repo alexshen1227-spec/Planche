@@ -534,9 +534,13 @@ export interface CoachDecision {
    * the duplicate bullet. `load-advice` marks lines that prescribe *more*
    * loaded work — they are removed outright on a day the rails have forbidden
    * it, because "add pressing volume" beside "no loaded pressing today" is the
-   * plan contradicting itself.
+   * plan contradicting itself. `loaded-session` lines only make sense when
+   * loaded work happens ("slightly less volume", a warm-up "before loading")
+   * and go the same way. `deload`
+   * is the scheduled-easy-week note, dropped if a rail turned the day into
+   * something else.
    */
-  source?: 'plateau' | 'load-advice'
+  source?: 'plateau' | 'load-advice' | 'loaded-session' | 'deload'
 }
 
 export interface CoachLimiter {
@@ -813,6 +817,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     decisions.push({
       text: 'Scheduled easy week. Worth knowing this one is convention rather than proven: the two controlled trials of planned deloads found no performance benefit, and the one that reduced the dose did not detect a cost in what it measured — not proof that there is none. Backing off periodically is what almost every strength athlete does. Volume drops, the movements stay.',
       kind: 'info',
+      source: 'deload',
     })
   }
 
@@ -1129,6 +1134,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     decisions.push({
       text: 'Warm-ups have been getting skipped. Today includes the full one so wrists, elbows and shoulders are prepared before loading.',
       kind: 'warn',
+      source: 'loaded-session',
     })
   } else if (sig.totalSessions > 0 && sig.restDays >= 4) {
     warmup = 'extended'
@@ -1240,7 +1246,11 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     // "No max-intensity work" was said here while a max-test suggestion could
     // survive from earlier in the plan — the plan arguing with itself again.
     suggestMaxTest = false
-    decisions.push({ text: 'You flagged a niggle — no max-intensity work today, longer warm-up, slightly less volume.', kind: 'warn' })
+    decisions.push({
+      text: 'You flagged a niggle — no max-intensity work today, longer warm-up, slightly less volume.',
+      kind: 'warn',
+      source: 'loaded-session',
+    })
     for (const region of painRegions) {
       const note = REGION_NIGGLE_NOTE[region]
       if (note) decisions.push({ text: note, kind: 'warn' })
@@ -1252,8 +1262,11 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     if (painRegions.includes('elbow')) {
       loadPermission = 'none'
       dayType = 'recovery'
+      // Hedged like the elbow pain note: near-unanimous among coaches,
+      // almost unstudied. There is no elbow niggle note, so this line is the
+      // only place an athlete reads the reasoning.
       dayReason =
-        'You flagged an elbow. Straight-arm loading is off today — this is the one complaint where training through it reliably turns weeks into months.'
+        'You flagged an elbow. Straight-arm loading is off today. Coaches treat the elbow as the one complaint not to train through — experienced opinion rather than established fact, but the cautious reading costs you days and the other can cost months.'
       volumeFactor = Math.min(volumeFactor, 0.5)
       suggestMaxTest = false
     }
@@ -1490,7 +1503,12 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   } else if (targetIntent === 'down') {
     decisions.push({
-      text: `Most sets fell short last time — easing the target back ${Math.round((1 - targetFactor) * 100)}% to rebuild quality.`,
+      // On an easy or recovery day the day itself sets the target, and the
+      // hit-rate number ("easing back 30%") sat beside a target cut by 40%.
+      text:
+        dayType === 'deload' || dayType === 'recovery'
+          ? 'Most sets fell short last time — today is already lighter than that would ask for, so the target follows the day.'
+          : `Most sets fell short last time — easing the target back ${Math.round((1 - targetFactor) * 100)}% to rebuild quality.`,
       kind: 'info',
     })
   }
@@ -1582,7 +1600,12 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // limiter chip with them — on a day like this the limiter is the complaint,
   // not a training quality.
   const loadForbidden = loadPermission === 'none'
-  const finalDecisions = loadForbidden ? decisions.filter((d) => d.source !== 'load-advice') : decisions
+  const finalDecisions = decisions.filter(
+    (d) =>
+      !(loadForbidden && (d.source === 'load-advice' || d.source === 'loaded-session')) &&
+      // "Scheduled easy week … the movements stay" beside an elbow rest day.
+      !(d.source === 'deload' && dayType !== 'deload'),
+  )
   const finalLimiter = loadForbidden ? null : limiter
 
   if (finalDecisions.length === 0) {
