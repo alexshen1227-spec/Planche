@@ -44,7 +44,10 @@ so. See "Evidence tiers" below.
 - `src/lib/forecast.ts` — `forecastUnlock` returns `ready | range |
   not-trending | insufficient`. The interval is the interquartile spread of
   *pairwise* rates (Theil–Sen-ish), not a least-squares line: one lucky hold
-  must not rotate the estimate. `goalOutlook` measures only from completed
+  must not rotate the estimate. Rates come from the last 8 weeks whenever that
+  window alone meets the minimums — the same reasoning *within* a step: a fast
+  first month kept promising ~7 weeks when the current pace said ~26.
+  `goalOutlook` measures only from completed
   steps at Tuck or above — extrapolating the quick early steps onto the hard
   ones produced "1–14 weeks to a straddle", which is wrong rather than wide.
 - `src/lib/plateau.ts` — `diagnosePlateau` separates *is it stalled* from

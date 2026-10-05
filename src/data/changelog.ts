@@ -19,6 +19,14 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-05',
+    title: 'Unlock estimates use your current pace',
+    area: 'coach',
+    notes: [
+      'The “weeks to unlock” range is now measured from your last eight weeks whenever they hold enough evidence. Progress on a step is usually fastest at the start, and measuring from the very beginning let a quick first month keep promising an unlock in a few weeks long after the climb had slowed — in one test history, about 7 weeks when the current pace said closer to 26.',
+    ],
+  },
+  {
+    date: '2026-10-05',
     title: 'Opens faster',
     area: 'app',
     notes: [

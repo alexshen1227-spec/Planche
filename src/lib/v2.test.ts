@@ -206,6 +206,38 @@ describe('v5 and older data surviving the V2 upgrade', () => {
 
 // ————————————————————————————— Forecast —————————————————————————————
 
+describe('forecastUnlock reads the current rate, not the beginner month', () => {
+  it('does not let a fast first month promise an early unlock after the climb has slowed', () => {
+    // 2s → 12s in four weeks (the neural phase), then about 0.25s a week for
+    // eight. Over the whole history the pairwise rates promised ~5 weeks to
+    // the 20s bar; at the current rate it is closer to six months.
+    const state = stateWith(
+      'tuck',
+      historyOf('tuck', [
+        { daysAgo: 98, value: 2 },
+        { daysAgo: 91, value: 4.5 },
+        { daysAgo: 84, value: 7 },
+        { daysAgo: 77, value: 9.5 },
+        { daysAgo: 70, value: 12 },
+        { daysAgo: 56, value: 12.2 },
+        { daysAgo: 49, value: 12.4 },
+        { daysAgo: 42, value: 12.7 },
+        { daysAgo: 35, value: 12.9 },
+        { daysAgo: 28, value: 13.1 },
+        { daysAgo: 21, value: 13.4 },
+        { daysAgo: 14, value: 13.6 },
+        { daysAgo: 7, value: 13.8 },
+        { daysAgo: 1, value: 14 },
+      ]),
+    )
+    const f = forecastUnlock(state, 'tuck', NOW)
+    expect(f.kind).toBe('range')
+    if (f.kind !== 'range') return
+    expect(f.ratePerWeek).toBeLessThan(0.3)
+    expect(f.lowWeeks).toBeGreaterThanOrEqual(12)
+  })
+})
+
 describe('forecastUnlock', () => {
   it('refuses a forecast below the minimum number of measured points', () => {
     const state = stateWith(

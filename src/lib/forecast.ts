@@ -29,6 +29,13 @@ export const MIN_FORECAST_POINTS = 4
 export const MIN_FORECAST_SPAN_DAYS = 14
 /** Past this the honest phrasing is "longer than a year", not a number. */
 export const MAX_FORECAST_WEEKS = 52
+/**
+ * The rate that predicts the coming weeks is the recent one. Progress on a
+ * step decelerates — the first weeks are largely the nervous system learning
+ * the position — and pairwise rates over the whole history let a fast first
+ * month keep promising "1–3 weeks" long after the climb had slowed.
+ */
+export const FORECAST_WINDOW_DAYS = 56
 
 export type ForecastConfidence = 'low' | 'moderate' | 'good'
 
@@ -92,6 +99,20 @@ export function qualifyingSeries(state: Pick<AppState, 'sessions'>, stepId: Step
 }
 
 /**
+ * The stretch of history a rate is measured from: the last
+ * `FORECAST_WINDOW_DAYS` when that alone meets the evidence minimums, and the
+ * whole history otherwise — sparse training has no "recent rate" to prefer,
+ * and dropping points from it only makes the estimate thinner.
+ */
+function forecastWindow(all: Point[], now: number): Point[] {
+  const recent = all.filter((p) => now - p.at <= FORECAST_WINDOW_DAYS * DAY)
+  const enough =
+    recent.length >= MIN_FORECAST_POINTS &&
+    recent[recent.length - 1].at - recent[0].at >= MIN_FORECAST_SPAN_DAYS * DAY
+  return enough ? recent : all
+}
+
+/**
  * Weeks to the unlock bar on the athlete's current step.
  *
  * The interval comes from the interquartile spread of pairwise rates rather
@@ -106,7 +127,7 @@ export function forecastUnlock(state: AppState, stepId: StepId = state.stepId, n
   const best = qualifyingProgress(state, stepId).value
   if (best >= step.unlockSec) return { kind: 'ready' }
 
-  const series = qualifyingSeries(state, stepId)
+  const series = forecastWindow(qualifyingSeries(state, stepId), now)
   if (series.length < MIN_FORECAST_POINTS) {
     const missing = MIN_FORECAST_POINTS - series.length
     return {
