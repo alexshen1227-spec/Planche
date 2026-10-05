@@ -1,5 +1,6 @@
 import { CURRENT_STATE_VERSION, type AutoForm, type FormIssue, type FormRating } from '../types'
 import type { JudgeInput, PoseFormResult } from './poseForm'
+import { JUDGE_VERSION } from './poseForm'
 import { dayKey } from './time'
 
 const DB_NAME = 'planchelab-problem-reports'
@@ -11,6 +12,8 @@ export const PROBLEM_REPORT_VERSION = 1 as const
 export interface ProblemReportRuntime {
   buildId: string
   stateVersion: number
+  /** Verdict-rule version the report's analysis was produced under. */
+  judgeVersion?: number
   userAgent: string
   language: string
   platform: string
@@ -155,6 +158,7 @@ function runtimeInfo(): ProblemReportRuntime {
   return {
     buildId: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'development',
     stateVersion: CURRENT_STATE_VERSION,
+    judgeVersion: JUDGE_VERSION,
     userAgent: typeof navigator === 'undefined' ? 'unknown' : navigator.userAgent,
     language: typeof navigator === 'undefined' ? 'unknown' : navigator.language,
     platform: typeof navigator === 'undefined' ? 'unknown' : navigator.platform,
