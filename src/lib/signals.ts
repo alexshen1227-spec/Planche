@@ -656,6 +656,9 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // work. Counting every session meant a one-set Quick Log, the Wrist Prep
   // routine or a core session — none of which has a warm-up block — made the
   // next plan announce that warm-ups were being skipped.
+  // Loaded means planche work or this step's key hold (Foundations' key hold
+  // is a scapula exercise). Wrist preparation done before it counts as the
+  // warm-up: the Wrist Prep routine opens with exactly that, in its main block.
   const hadLoadedPlanche = (s: Session) =>
     s.workoutName !== 'Quick Log' &&
     s.sets.some(
@@ -663,13 +666,17 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
         x.section !== 'warmup' &&
         x.section !== 'cooldown' &&
         x.value > 0 &&
-        EXERCISE_BY_ID[x.exerciseId]?.category === 'planche',
+        (x.exerciseId === keyId || EXERCISE_BY_ID[x.exerciseId]?.category === 'planche'),
+    )
+  const warmedUp = (s: Session) =>
+    s.sets.some(
+      (x) => x.section === 'warmup' || (x.section !== 'cooldown' && EXERCISE_BY_ID[x.exerciseId]?.category === 'wrist'),
     )
   const recentLoadedTen = sessions.filter(hadLoadedPlanche).slice(-10)
-  const withWarmup = recentLoadedTen.filter((s) => s.sets.some((x) => x.section === 'warmup'))
+  const withWarmup = recentLoadedTen.filter(warmedUp)
   const warmupRate = recentLoadedTen.length ? withWarmup.length / recentLoadedTen.length : 1
   const lastPlancheSession = recentLoadedTen[recentLoadedTen.length - 1]
-  const skippedLastWarmup = lastPlancheSession ? !lastPlancheSession.sets.some((x) => x.section === 'warmup') : false
+  const skippedLastWarmup = lastPlancheSession ? !warmedUp(lastPlancheSession) : false
 
   const fourWeeksAgo = now - 28 * DAY
   const recentCount = sessions.filter((s) => s.startedAt >= fourWeeksAgo).length

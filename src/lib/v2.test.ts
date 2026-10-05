@@ -1462,6 +1462,32 @@ describe('a warm-up is skipped only where one belonged', () => {
     const plan = buildPlan(state, NOW)
     expect(plan.decisions.some((d) => /warm-ups have been getting skipped/i.test(d.text))).toBe(false)
   })
+
+  it('still notices a Foundations athlete going straight into their key hold', () => {
+    // The pseudo planche plank is a scapula exercise, not a planche one.
+    const state = stateWith('foundations', historyOf('foundations', [9, 6, 3].map((daysAgo) => ({ daysAgo, value: 20 }))))
+    const sig = readSignals(state, NOW)
+    expect(sig.skippedLastWarmup).toBe(true)
+    expect(sig.warmupRate).toBe(0)
+  })
+
+  it('counts the Wrist Prep routine as warmed up — it opens with the wrist work', () => {
+    const at = NOW - 2 * DAY
+    const wristPrep: Session = {
+      id: 'wp',
+      startedAt: at,
+      endedAt: at + 60_000,
+      workoutName: 'Wrist Prep',
+      workoutKind: 'template',
+      stepId: 'foundations',
+      sets: [
+        { ...holdSet('wrist-rocks', 0, at), kind: 'reps', value: 10, target: 10, section: 'main' },
+        holdSet('ppp-hold', 15, at + 60_000, { target: 15 }),
+      ],
+    }
+    const sig = readSignals(stateWith('foundations', [wristPrep]), NOW)
+    expect(sig.skippedLastWarmup).toBe(false)
+  })
 })
 
 describe('a plateau is not called on a fresh best', () => {
