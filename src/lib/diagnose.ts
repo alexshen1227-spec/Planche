@@ -1,9 +1,9 @@
 import type { AppState } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { qualifyingSeries } from './forecast'
+import { forecastUnlock } from './forecast'
 import { readSignals } from './signals'
-import { diagnosePlateau, FLAT_RATE, PLATEAU_MIN_DAYS, PLATEAU_MIN_SESSIONS, type PlateauVerdict } from './plateau'
+import { diagnosePlateau, PLATEAU_MIN_DAYS, type PlateauVerdict } from './plateau'
 import { fmtWeight } from './units'
 
 /**
@@ -46,8 +46,6 @@ export interface Diagnosis {
   summary: string
 }
 
-const DAY = 86_400_000
-
 /**
  * @param plateau the verdict already computed for this state (the coach's
  *   `plan.plateau`), so the screen shows exactly what the plan acted on. Left
@@ -59,22 +57,23 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
   const step = STEP_BY_ID[state.stepId]
   const keyName = (EXERCISE_BY_ID[step.keyExerciseId]?.name ?? step.name).toLowerCase()
 
-  const series = qualifyingSeries(state, state.stepId)
-  const spanDays = series.length > 1 ? (series[series.length - 1].at - series[0].at) / DAY : 0
-  const enough = series.length >= PLATEAU_MIN_SESSIONS && spanDays >= PLATEAU_MIN_DAYS && sig.trendPerWeek !== null
+  // The rate and its evidence gates are the unlock forecast's — verified holds,
+  // recent pace — so Progress never says "too early to call" while Home quotes
+  // a range from the same log, or quotes a different pace for the same climb.
+  const forecast = forecastUnlock(state, state.stepId, now)
 
   const status: ProgressStatus = verdict
     ? verdict.status
-    : !enough
+    : forecast.kind === 'insufficient'
       ? 'insufficient'
       : sig.noisy
         ? 'noisy'
-        : (sig.trendPerWeek ?? 0) > FLAT_RATE
+        : forecast.kind === 'ready' || forecast.kind === 'range'
           ? 'progressing'
-          : // Not reachable while diagnosePlateau owns every flat case, but a
-            // flat rate with no verdict must never be reported as progress.
+          : // Flat or barely moving, but not yet long enough for a plateau to be
+            // called: say that, rather than either "progressing" or "stuck".
             'insufficient'
-  const gainPerWeek = status === 'progressing' ? sig.trendPerWeek : null
+  const gainPerWeek = status === 'progressing' && forecast.kind === 'range' ? forecast.ratePerWeek : null
   const named = verdict?.cause
 
   const causes: Cause[] = []
@@ -174,18 +173,20 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
             (sig.variability ?? 0) * 100,
           )}% from session to session — wider than any trend, so whether you are progressing cannot be read yet. The same setup every time is the cheapest fix.${tighten}`
         : status === 'progressing'
-          ? `Your ${keyName} is moving at about ${(gainPerWeek ?? 0).toFixed(1)}s a week.${
-              causes.length === 0 ? ' Nothing here needs tightening.' : tighten
-            }`
-          : `Too early to call. Progress is read from verified ${keyName} holds — at least ${PLATEAU_MIN_SESSIONS} sessions across ${Math.round(
-              PLATEAU_MIN_DAYS / 7,
-            )} weeks — ${
-              series.length < PLATEAU_MIN_SESSIONS
-                ? `and you have ${series.length} so far.`
-                : spanDays < PLATEAU_MIN_DAYS
-                  ? `and yours span ${Math.floor(spanDays)} day${Math.floor(spanDays) === 1 ? '' : 's'} so far.`
-                  : 'and there is not yet a comparable run of sessions to measure a rate from.'
-            }${tighten}`
+          ? forecast.kind === 'ready'
+            ? `You have already held the unlock bar on verified evidence — test it and take the step.${tighten}`
+            : `Your verified ${keyName} is moving at about ${(gainPerWeek ?? 0).toFixed(1)}s a week.${
+                causes.length === 0 ? ' Nothing here needs tightening.' : tighten
+              }`
+          : forecast.kind === 'insufficient'
+            ? `Too early to call — progress is read from verified ${keyName} holds, and this needs ${forecast.need}${
+                forecast.need.endsWith('.') ? '' : '.'
+              }${tighten}`
+            : `${
+                forecast.kind === 'not-trending' && forecast.ratePerWeek > 0.01
+                  ? 'Climbing, but too slowly to put a pace on yet'
+                  : 'Flat across your recent verified holds'
+              } — a plateau is only called after ${Math.round(PLATEAU_MIN_DAYS / 7)} weeks of them, so this is not one yet.${tighten}`
 
   return { status, plateau: verdict, gainPerWeek, causes, summary }
 }

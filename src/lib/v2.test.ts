@@ -40,6 +40,7 @@ import {
   type AssessmentAnswers,
 } from './assessment'
 import { diagnose as diagnoseProgress } from './diagnose'
+import { synthesizeAthleteState } from './athleteSynth'
 
 const DAY = 86_400_000
 const NOW = Date.UTC(2026, 7, 4)
@@ -858,6 +859,33 @@ describe('the Progress screen reads the same verdict the coach acts on', () => {
     expect(d.gainPerWeek).toBeNull()
     // Computed independently, it still agrees with the plan.
     expect(diagnoseProgress(state, NOW).plateau).toEqual(plan.plateau)
+  })
+
+  it('never says "too early" while Home quotes a range from the same log, or the reverse', () => {
+    // Home's forecast and this card used different evidence gates and
+    // different rates; a beginner three weeks in read "11+ weeks" on one
+    // screen and "too early to call" on the other.
+    let ranges = 0
+    let refusals = 0
+    for (const weeks of [1, 2, 3, 4, 6, 10]) {
+      for (const seed of [1, 2, 3, 4, 5]) {
+        const state = synthesizeAthleteState({ weeks, seed, startSec: 3 + seed, filmedRate: 0.7, now: NOW })
+        const f = forecastUnlock(state, state.stepId, NOW)
+        const d = diagnoseProgress(state, NOW)
+        if (f.kind === 'range') {
+          ranges++
+          expect(d.status, `weeks=${weeks} seed=${seed}`).not.toBe('insufficient')
+          if (d.status === 'progressing') expect(d.gainPerWeek).toBe(f.ratePerWeek)
+        }
+        if (f.kind === 'insufficient') {
+          refusals++
+          expect(['insufficient', 'stalled', 'regressing'], `weeks=${weeks} seed=${seed}`).toContain(d.status)
+        }
+      }
+    }
+    // Both sides of the agreement were actually exercised.
+    expect(ranges).toBeGreaterThan(3)
+    expect(refusals).toBeGreaterThan(3)
   })
 
   it('does not list the plateau cause a second time as a habit', () => {
