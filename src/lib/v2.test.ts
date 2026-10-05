@@ -1427,6 +1427,43 @@ describe('pressing evidence is what was measured, not what was prescribed', () =
   })
 })
 
+describe('a warm-up is skipped only where one belonged', () => {
+  it('does not count a core session or a Quick Log as skipping it', () => {
+    const planche = historyOf(
+      'tuck',
+      [20, 17, 13, 10, 6].map((daysAgo) => ({ daysAgo, value: 8 })),
+    ).map((s) => ({
+      ...s,
+      sets: [{ ...holdSet('wrist-circles', 0, s.startedAt), kind: 'reps' as const, value: 10, target: 10, section: 'warmup' as const }, ...s.sets],
+    }))
+    const at = (d: number) => NOW - d * DAY
+    const core: Session = {
+      id: 'core',
+      startedAt: at(3),
+      endedAt: at(3) + 60_000,
+      workoutName: 'Core & Compression',
+      workoutKind: 'template',
+      stepId: 'tuck',
+      sets: [holdSet('hollow-hold', 30, at(3), { target: 30 })],
+    }
+    const quick: Session = {
+      id: 'quick',
+      startedAt: at(1),
+      endedAt: at(1) + 60_000,
+      workoutName: 'Quick Log',
+      workoutKind: 'auto',
+      stepId: 'tuck',
+      sets: [holdSet('tuck-planche', 8, at(1))],
+    }
+    const state = stateWith('tuck', [...planche, core, quick])
+    const sig = readSignals(state, NOW)
+    expect(sig.skippedLastWarmup).toBe(false)
+    expect(sig.warmupRate).toBe(1)
+    const plan = buildPlan(state, NOW)
+    expect(plan.decisions.some((d) => /warm-ups have been getting skipped/i.test(d.text))).toBe(false)
+  })
+})
+
 describe('a plateau is not called on a fresh best', () => {
   it('stays silent when the best was set last week, whatever the dip since', () => {
     const state = stateWith(

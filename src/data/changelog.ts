@@ -28,6 +28,7 @@ export const CHANGELOG: ChangeEntry[] = [
       'If you have never filmed a set, Progress now says your progress is not measurable yet and how to start — rather than “too early to call” after a month of training.',
       'A plateau is no longer called within a fortnight of your best hold. One dip after a record read as “going backwards for about 1 week”, in red, to someone who had just set it.',
       'Your very first plan says it starts from your placement answers, instead of “everything looks steady” with nothing logged yet.',
+      'A Quick Log, the Wrist Prep routine or a core session no longer counts as skipping your warm-up — they have no warm-up to skip. The reminder now only looks at sessions with loaded planche work.',
       'Home and Progress now read your pace the same way. Before, three weeks in, Home could quote “11+ weeks” while Progress said it was too early to call — they used different evidence and different rates. Progress now uses the same verified holds and recent pace as the unlock estimate, and says plainly when something is flat but not yet long enough to call a plateau.',
     ],
   },

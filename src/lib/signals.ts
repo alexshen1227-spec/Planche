@@ -652,10 +652,24 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   )
 
   // ——— Adherence ———
-  const recentTen = sessions.slice(-10)
-  const withWarmup = recentTen.filter((s) => s.sets.some((x) => x.section === 'warmup'))
-  const warmupRate = recentTen.length ? withWarmup.length / recentTen.length : 1
-  const skippedLastWarmup = last ? !last.sets.some((x) => x.section === 'warmup') : false
+  // A warm-up is skipped only where one belonged: before loaded straight-arm
+  // work. Counting every session meant a one-set Quick Log, the Wrist Prep
+  // routine or a core session — none of which has a warm-up block — made the
+  // next plan announce that warm-ups were being skipped.
+  const hadLoadedPlanche = (s: Session) =>
+    s.workoutName !== 'Quick Log' &&
+    s.sets.some(
+      (x) =>
+        x.section !== 'warmup' &&
+        x.section !== 'cooldown' &&
+        x.value > 0 &&
+        EXERCISE_BY_ID[x.exerciseId]?.category === 'planche',
+    )
+  const recentLoadedTen = sessions.filter(hadLoadedPlanche).slice(-10)
+  const withWarmup = recentLoadedTen.filter((s) => s.sets.some((x) => x.section === 'warmup'))
+  const warmupRate = recentLoadedTen.length ? withWarmup.length / recentLoadedTen.length : 1
+  const lastPlancheSession = recentLoadedTen[recentLoadedTen.length - 1]
+  const skippedLastWarmup = lastPlancheSession ? !lastPlancheSession.sets.some((x) => x.section === 'warmup') : false
 
   const fourWeeksAgo = now - 28 * DAY
   const recentCount = sessions.filter((s) => s.startedAt >= fourWeeksAgo).length
