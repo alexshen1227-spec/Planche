@@ -119,10 +119,13 @@ comparative, and before quoting any pose-estimation accuracy figure.
 
 When writing athlete-facing copy, keep these distinguishable:
 STRONG (meta-analysis/RCT) · MODERATE · CONSENSUS (coaches agree, no trial) ·
-INFERENCE (mechanics) · OPEN. Notably **there is no peer-reviewed research on
-planche training itself** — zero PubMed results — so almost everything
+INFERENCE (mechanics) · OPEN. Notably, **direct planche research is thin and
+validates none of the app's specifics** (modelling, one acute EMG study, small
+uncontrolled elite-rings interventions — ledger §11), so almost everything
 progression-specific is CONSENSUS or INFERENCE and must not be phrased as
-science. `docs/research-ledger.md` holds the sources and their tiers.
+science. Do not write "there is no research": that narrow-search zero was
+corrected in the 2026-10-05 audit. Likewise a nonsignificant result is "no
+difference detected", never equivalence or "costs nothing". `docs/research-ledger.md` holds the sources and their tiers.
 
 ## The camera form judge (the part most work touches)
 
@@ -168,6 +171,21 @@ science. `docs/research-ledger.md` holds the sources and their tiers.
 5. Two refuted "improvements" — median-smoothing metrics over time, and
    measuring lean along the torso axis — made accuracy worse. The reasons are
    documented inline; re-measure before resurrecting either.
+6. **Evidence the camera did not have cannot become a pass** (2026-10 audit).
+   The side-view gate runs per moment — a front-on moment is not measured, and
+   a far side too faint for the precise bar is checked at the looser one, so a
+   weaker prerequisite cannot flip a refusal into a pass. Filled-in joints
+   (`Kp.origin`) are never bridged across more than `MAX_BRIDGE_SPAN_SEC`, and
+   count toward coverage only while they are the minority. A seek that never
+   delivers a decoded frame is a missing moment (`seekTo` returns `timeout`),
+   never a pose labelled with the requested time. One arm's hyperextension
+   cannot numerically cancel a resolved bend in the other.
+7. **Persistence is roughly a second, in time.** `minimumBadSamplesFor(gap)`
+   keeps three samples at normal spacing and two when the spacing alone exceeds
+   the duration; sampling is three a second up to `MAX_SAMPLES`, and wider
+   spacing is disclosed with the verdict. Bump `JUDGE_VERSION` whenever a
+   verdict on the same detections can change — it is stored on every reading
+   with the model id (the model URL is pinned to `float16/1`).
 
 ## The coach
 
@@ -220,6 +238,37 @@ them. Real-hardware behaviour is still unproven.
 - For real photos in an automated browser: `commons.wikimedia.org` blocks
   CORS; resolve direct `upload.wikimedia.org` URLs via the Commons API with
   `origin=*`, and send a User-Agent when downloading outside the browser.
+
+## Data and session contracts (2026-10 audit)
+
+- **Every workout starts from a `WorkoutRequest`** through `finalizeWorkout`
+  (or `finalizeFromPlan` for a screen previewing many). Views never build a
+  workout to start; a re-plan after a check-in rebuilds from `requestFor(w)`, so
+  a 15-minute version stays one. `plan.challengeAllowed` is the only gate for a
+  max test or a queued unlock attempt — nothing may recreate one after it.
+- **Joint reports are a timeline** (`state.symptoms`, read through
+  `readinessTimeline`): onboarding answers, check-ins (recorded the moment they
+  are given, so a discarded session cannot lose one) and mid-session reports.
+  Future-dated reports are ignored; a correction withdraws, it is not recovery.
+- **Attempts keep their provenance.** `SetLog.raw` survives edits and
+  interruptions; `timing.method` says stopwatch / interrupted / edited;
+  `endReason` and `assist` are optional and absent means unknown. Assisted or
+  import-repaired sets never qualify; endings the athlete called an
+  interruption or timing problem are kept out of the working dose.
+- **A session's end is when training ended** (`endedAt`, stamped as the
+  summary opens); `savedAt` is separate, and `completion: 'partial'` marks
+  skipped or unstarted work. Every unsaved exit goes through one
+  save / discard / keep prompt.
+- **The store converges.** Every change bumps `rev`; deletions leave
+  tombstones; settings/profile merge per field (`fieldTimes`); a reset, import
+  or sample load starts a new `epoch`, and a tab holding a retired epoch cannot
+  merge back. `IMPORT_REPLACE` refuses a stale `expectedRev`. Unreadable saved
+  data is quarantined byte for byte and writes are held until the athlete
+  chooses. Reset retires the epoch first, then `eraseRecoveryCopies`.
+- **The recorder reports capture, not intent**: `off | starting | live |
+  recording | denied | unavailable | busy | unsupported`. `start()` records
+  only from a live stream — it never opens a camera mid-hold — and every
+  recording owns its own chunk buffer.
 
 ## Conventions
 

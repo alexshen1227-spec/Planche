@@ -16,12 +16,21 @@ athlete should be traceable to a row here, or should not be made.
 
 ## The single most important finding
 
-**There is no peer-reviewed research on planche training.** PubMed returns zero
-results for "planche" as a training intervention. Every progression standard,
-every hold-time bar, and every timeline in this app — and in every competing
-product — is coaching consensus, inference, or anecdote. The science that does
-exist is about isometrics, tendons, frequency and motor learning in general,
-and it is genuinely useful, but it validates none of the specifics.
+**Direct planche research is thin, and none of it validates this app's
+specifics.** It exists — biomechanical modelling, an acute muscle-activation
+study, small uncontrolled rings-training interventions in elite gymnasts, and a
+small controlled rings comparison (see §11) — but a targeted review did not
+identify robust evidence validating a novice floor-planche dose, these unlock
+gates, or any timeline. Every progression standard, every hold-time bar, and
+every timeline in this app — and in every competing product — is coaching
+consensus, inference, or anecdote. The science that does exist is mostly about
+isometrics, tendons, frequency and motor learning in general; it is genuinely
+useful, but it validates none of the specifics.
+
+*Corrected 2026-10-05:* this section used to say "there is no peer-reviewed
+research on planche training — PubMed returns zero results". That was a
+narrow-search zero turned into "no literature". The conclusion for the app is
+unchanged; the claim is now the accurate one.
 
 The app's copy must reflect that asymmetry.
 
@@ -62,7 +71,7 @@ muscle length. The app does not quote a number.
 
 | Source | Type | Finding | Tier | Used for |
 |---|---|---|---|---|
-| Hickmott, Chilibeck, Shaw, Butcher. Sports Med Open 8:9, 2022. PMC8762534 | Meta-analysis | Autoregulation vs standardized: **MD 2.07 kg, p = 0.09, SMD 0.21 — ns** | MODERATE–STRONG | Framed as *equivalence*, never superiority |
+| Hickmott, Chilibeck, Shaw, Butcher. Sports Med Open 8:9, 2022. PMC8762534 | Meta-analysis | Autoregulation vs standardized 1RM: **MD 2.07 kg, 95% CI −0.32 to 4.46, p = 0.09, SMD 0.21 — ns** | MODERATE–STRONG | Framed as *no difference detected* — **not** equivalence (corrected 2026-10-05: a nonsignificant test does not establish equality), and not evidence for the app's bandit |
 | Halperin et al. *Accuracy in predicting reps to failure.* Sports Med 52(2), 2022. PMID 34542869 | Meta-analysis, 414 pts | **Underprediction 0.95 reps; between-person SD 1.45.** Training status β = −0.006 (no effect) | STRONG | Why RPE is treated as noisy input, not truth |
 
 **Correction recorded:** Greig et al. 2020 is a *narrative* review with no pooled
@@ -78,12 +87,17 @@ holds. RPE-clamp work suggests perceived effort and remaining capacity
 | Source | Type | Finding | Tier |
 |---|---|---|---|
 | Coleman et al. PeerJ 12:e16777, 2024. PMID 38274324 | RCT, n=39 | A 1-week **cessation** mid-programme: all credible intervals cross zero; posterior favoured *continuous* training | LIMITED |
-| Pancar et al. Sci Rep 16(1):10299, 2026. PMID 41730991 | Within-subject RCT, n=19 | **Reduced-volume** deloads cost nothing (p = 0.239–0.955) | LIMITED |
+| Pancar et al. Sci Rep 16(1):10299, 2026. PMID 41730991 | Within-subject RCT, n=19 untrained men, unilateral curls / leg extensions | **Reduced-volume** weeks: no between-condition difference *detected* in the selected hypertrophy/10RM outcomes (p = 0.239–0.955). Corrected 2026-10-05 from "cost nothing": this does not show no cost, injury prevention, or a planche schedule | LIMITED |
 | Rogerson et al. Sports Med Open 10(1):26, 2024. PMID 38499934 | Survey, n=246 | All athletes deload; **6.4 ± 1.7 days every 5.6 ± 2.3 weeks**; volume cut, frequency kept | STRONG *as practice*, zero as efficacy |
+
+Coleman's deload *stopped* resistance training for a week (other activity was
+allowed); Pancar's *reduced* the dose. They are different interventions and
+neither validates the app's five-week rule.
 
 **Product implication, applied:** the app schedules easy weeks and says plainly
 that this is convention rather than proven. The previous copy — "strength lands
-during recovery" — was removed.
+during recovery" — was removed, and two surviving copies of it in Learn and the
+tips were removed on 2026-10-05.
 
 ## 6. Injury and load
 
@@ -108,7 +122,7 @@ almost no literature (1 of 19 studies in a 2025 tendon-loading scoping review).
 | Source | Type | Finding | Tier |
 |---|---|---|---|
 | Silbernagel et al. Am J Sports Med 35(6), 2007. PMID 17307888 | RCT, n=38 | Continuing to load under a pain-monitoring model did **not** impair recovery | MODERATE |
-| Sprague et al. Pilot Feasibility Stud 7(1):58, 2021. PMID 33632313 | Pilot RCT | Verbatim rule: pain **≤5/10 during or immediately after**, and **back to pre-activity level by the following morning** | STRONG for the rule text; LIMITED for efficacy |
+| Sprague et al. Pilot Feasibility Stud 7(1):58, 2021. PMID 33632313 | Pilot RCT, 15 randomised, diagnosed patellar tendinopathy, ages 16–40, clinician-led with periodic supervision | Verbatim rule: pain **≤5/10 during or immediately after**, and **back to pre-activity level by the following morning** | STRONG for the rule text; LIMITED for efficacy. Feasibility only — it does **not** clear undiagnosed wrist/elbow pain for planche work, and is not paediatric wrist evidence |
 | Silbernagel, Hanlon, Sprague. J Athl Train 55(5), 2020. PMC7249277 | Clinical review | Recovery days by pain band: 0–1 daily, 2–3 → 2 days, 4–5 → 3 days | CONSENSUS |
 
 **Applied:** `signals.persistentComplaint` implements the week-on-week clause,
@@ -332,3 +346,42 @@ Emerald/Kybernetes gamification study is paywalled; only abstract-level
 direction of effect was visible. Neither Rode et al. nor Cabuk et al. could be
 cross-checked on the publisher's own site (auth walls); both were confirmed real
 via PMC/PubMed/Europe PMC and DOI landings.
+
+---
+
+## 11. Third pass — 2026-10-05 audit corrections
+
+Recorded from the 2026-10-05 external audit's research review, as that review
+reported them (its own access notes are kept; these rows were not independently
+re-fetched in this pass). They change wording, not the app's conclusions.
+
+### Direct planche-related evidence that exists
+
+| Source | Type | Finding | Tier | Limit |
+|---|---|---|---|---|
+| Rosaci et al. JSCR 39(6):680–686, 2025. DOI 10.1519/JSC.0000000000005074 | Acute EMG, n=7 high-level adult ring specialists | Muscle activation in support scale/planche vs five preparatory exercises | LIMITED | Activation differences do not establish faster learning or transfer to floor athletes |
+| Bioengineering 10(7):761, 2023. DOI 10.3390/bioengineering10070761 | Nine-segment biomechanical model | Anthropometry changes planche mechanics | INFERENCE | Not a training outcome; never a body-type ceiling or weight-loss advice |
+| Schärer et al. IJERPH 16:4571, 2019 | Uncontrolled 4-week intervention, 9 elite men (8 analysed) | Support-scale resistance up ~3.6%; pairwise p = .06/.08 printed as significant | LIMITED | No comparator; nothing about novices, dose or injury |
+| Schärer et al. Sports 10:49, 2022 | Uncontrolled, 10 elite men (9 post-tested), 6 sessions | Max resistance +8.32%; endurance contrast p = .06 | LIMITED | No fastest-acquisition or safety conclusion |
+| Correa, UAI undergraduate thesis, 2023 | 10 participants, 5 per group, 5 weeks | Assisted-progression group had smaller duration penalties | OPEN (very low confidence) | Not peer reviewed; posture penalties remained; no retention test |
+| Sukdee 2014; Alhenawy 2024; Eshtayev et al. 2025 | Small rings/gymnastics comparisons | Judged scores, not floor-planche acquisition | LIMITED | Reporting inconsistencies noted by the audit |
+
+Excluded as direct evidence: Bernasconi 2009 (the "support scale" is the
+swallow/Maltese) and Kravchuk 2020 (a bent-arm, elbow-supported task).
+
+### Symptom guidance behind the athlete copy
+
+| Source | Type | Used for |
+|---|---|---|
+| American Academy of Pediatrics gymnastics guidance, updated 2024-07-01 | Official clinical education | Wrist/elbow swelling or pain the next day warrants medical review — the threshold now used in onboarding, the check-in and the mid-session report |
+| NHS wrist pain guidance, reviewed 2025-11-05 | Official symptom guidance | Severity distinctions; not copied as country-specific instructions |
+
+**Applied:** onboarding no longer says parallettes or fists "usually remove the
+problem entirely", and no copy waits for pain "that persists for weeks". A grip
+change alters the wrist's angle; it does not diagnose or clear pain.
+
+### Assistance is not a number
+
+| Source | Type | Finding | Used for |
+|---|---|---|---|
+| Uchida et al. J Phys Ther Sci 28:1266–1271, 2016 | Lab measurement, 8 band colours × 10 elongations | Tension depends on stretch and often differs from manufacturer references | Why the remembered setup records *where* a band acts, and why assisted holds never count toward an unassisted unlock — colour is not a percentage of bodyweight removed |

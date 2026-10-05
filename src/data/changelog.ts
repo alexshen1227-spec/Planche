@@ -18,6 +18,30 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-10-05',
+    title: 'Safer sessions, honest saves and a stricter camera',
+    area: 'app',
+    major: {
+      version: 'V2.1',
+      blurb:
+        'An independent audit went through the whole app looking for places where it said more than it knew, lost something you did, or let a bad day slip past a safety check. This release fixes what it found.',
+    },
+    notes: [
+      'When you say something hurts, the app now remembers — whether you said it at setup, in a check-in before a session you then cancelled, or in the middle of a set. Before, a wrist that hurt at setup could still be followed by loaded planche work, and a pain answer before a discarded session simply vanished.',
+      'Every way of starting a session now gets the same final check against today’s answers, your equipment and what you can actually hold. A focused session or a max test picked on a bad day becomes the safe version and says why, instead of running as planned. A 15-minute version stays 15 minutes after the check-in.',
+      'You can finish early. The exit button now offers to stop and review what you did, saving only the work you actually performed. Unsaved sets are never thrown away without asking, and time spent reviewing clips or writing notes no longer counts as training time.',
+      'After a set you can say why it ended — at target, balance, technique, effort, an interruption — and separately report pain or discomfort. The report reaches the coach straight away, and if something hurts, ending the session is one tap and never held against you. Skipping these questions is always fine.',
+      'Assisted holds: tell the app once that you use a band, toe support or a partner for an exercise and it remembers. Assisted holds count as training but never toward unlocking the unassisted skill, and changing the setup never relabels sets you already logged.',
+      'The camera is honest about what it is doing. A set says “filming” only once the camera is actually live; a refused, missing or busy camera says which, with a one-tap way to train on the timer instead. A camera that opens late no longer records a clip that starts halfway through your hold.',
+      'The form check is stricter about evidence it does not have. Moments where you turned toward the camera, joints guessed across long gaps, frames your phone could not decode, and one arm’s lockout hiding the other arm’s bend no longer count toward a clean verdict. Long holds are checked more densely, and when the spacing still limits what can be caught, the result says so.',
+      'A form check that timed out can be finished later: open the clip in Learn, review the set, and your answer is saved to that set with your records recalculated.',
+      'Your weaker side now sets one-arm and one-leg targets. Weeks with nothing logged are treated as unknown rather than banked rest — the app asks what the gap was, and does not send you to a max test on your first session back.',
+      'Saving is safer. Data that cannot be read is kept aside untouched instead of being overwritten; two open tabs no longer undo each other’s deletions or settings; an import shows exactly what the file would lose and refuses to replace anything saved after you picked it; and Reset now erases every copy, including the recovery ones.',
+      'Wording fixes: parallettes change your wrist angle but do not fix wrist pain, and the app no longer suggests they do. Pain that is still there the next day, or any swelling, is the cue to get it looked at. Deload weeks are described as the convention they are, not as the week strength appears.',
+      'The Progress chart now plots the credit that counts toward unlocking — clean seconds, and the weaker side for one-sided holds — instead of the stopwatch. A single qualified session shows as one, not “none yet”. History marks finished-early sessions, sides, assistance and why sets ended.',
+    ],
+  },
+  {
     date: '2026-08-22',
     title: 'Coach sessions now have their own shape',
     area: 'coach',
