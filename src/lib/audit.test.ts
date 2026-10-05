@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, FormCheck, Session, SetLog, StepId } from '../types'
 import { STEP_BY_ID, STEPS } from '../data/progressions'
-import { finalizeWorkout, finalizeWorkoutWithPlan, requestFor, TEMPLATE_BY_ID } from '../data/workouts'
+import { adaptiveTarget, finalizeWorkout, finalizeWorkoutWithPlan, requestFor, TEMPLATE_BY_ID } from '../data/workouts'
 import { ACHIEVEMENTS } from '../data/achievements'
 import { initialState, mergeExternalState, normalizeStateWithReport, reducer, reportHasLosses } from './store'
 import { buildPlan, rewardFor } from './coach'
@@ -461,5 +461,27 @@ describe('a hold can be timed from its video', () => {
     const [a, b] = state.sessions[0].sets
     expect(a.timing).toEqual({ method: 'video', videoStartSec: 1, videoEndSec: 6 })
     expect(b.timing).toEqual({ method: 'video' })
+  })
+})
+
+describe('stopping at the target does not shrink the next target', () => {
+  const daySession = (daysAgo: number, value: number, target: number) =>
+    trainingDay(daysAgo, [0, 1, 2].map((i) => hold('tuck-planche', value, at(daysAgo) + i * 60_000, { target })), {
+      baseTargetSec: 8,
+    })
+
+  it('a prescription completed as asked holds the next base up', () => {
+    const state = athlete('tuck', { sessions: [daySession(2, 8.3, 8)] })
+    expect(adaptiveTarget(state, 'tuck', NOW)).toBeGreaterThanOrEqual(8)
+  })
+
+  it('a missed prescription is a real reading and lifts nothing', () => {
+    const state = athlete('tuck', { sessions: [daySession(2, 5, 8)] })
+    expect(adaptiveTarget(state, 'tuck', NOW)).toBeLessThan(8)
+  })
+
+  it('an old completed prescription does not hold anything up after a long gap', () => {
+    const state = athlete('tuck', { sessions: [daySession(30, 8.3, 8)] })
+    expect(adaptiveTarget(state, 'tuck', NOW)).toBeLessThan(8)
   })
 })

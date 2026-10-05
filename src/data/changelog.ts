@@ -26,6 +26,7 @@ export const CHANGELOG: ChangeEntry[] = [
       'Tapped “pain” by mistake? A report made during a set has an Undo, and Settings now lists the joint reports the coach is reading, each with “That was a mistake”. The report stays in your history but stops counting — so one mis-tap no longer costs a week of loading.',
       'After saving, “See it in your history” opens that exact session in Progress.',
       'On a phone, Start and Save now stay on screen instead of sitting below the cues and camera preview.',
+      'If you stop each set when the target chimes — as the hold screen suggests — your next targets no longer shrink. Completing a target counts as evidence it was within reach, so it is not read as your limit; a max test is still what moves your numbers up, and a set you genuinely could not hold still lowers them.',
     ],
   },
   {
