@@ -471,7 +471,16 @@ export default function App() {
             <span className="font-display text-[16px] font-bold text-ink">Planche Lab</span>
           </div>
 
-          {tab === 'home' ? <Dashboard startWorkout={startWorkout} go={setTab} /> : null}
+          {tab === 'home' ? (
+            <Dashboard
+              startWorkout={startWorkout}
+              go={setTab}
+              viewSession={(sessionId) => {
+                setFocusSessionId(sessionId)
+                setTab('stats')
+              }}
+            />
+          ) : null}
           {tab === 'train' ? <Train startWorkout={startWorkout} /> : null}
           {tab === 'path' ? <Path startWorkout={startWorkout} /> : null}
           {tab === 'library' ? <Library /> : null}

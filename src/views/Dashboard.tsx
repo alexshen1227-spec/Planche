@@ -56,9 +56,11 @@ function WeekStrip({ trainedDays }: { trainedDays: Set<string> }) {
 export function Dashboard({
   startWorkout,
   go,
+  viewSession,
 }: {
   startWorkout: (request: WorkoutRequest) => void
   go: (t: Tab) => void
+  viewSession: (sessionId: string) => void
 }) {
   const { state, dispatch } = useStore()
   // Everything date-dependent is keyed on today too: a screen left open
@@ -80,7 +82,14 @@ export function Dashboard({
   const goal = state.settings.weeklyGoal
   const streak = weekStreak(state)
   const tut = totalHoldSec(state)
-  const trainedToday = state.sessions.some((s) => dayKey(s.startedAt) === today)
+  const todaysLatest = useMemo(
+    () =>
+      state.sessions
+        .filter((s) => dayKey(s.startedAt) === today)
+        .sort((a, b) => b.startedAt - a.startedAt)[0] ?? null,
+    [state.sessions, today],
+  )
+  const trainedToday = todaysLatest !== null
   const tip = tipOfTheDay()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const forecast = useMemo(() => forecastUnlock(state), [state, today])
@@ -346,20 +355,22 @@ export function Dashboard({
         </div>
       ) : null}
 
-      {/* Recovery nudge on trained days */}
-      {trainedToday ? (
+      {/* Trained today: point at what was logged. This used to offer a loaded
+          wrist routine as "recovery", under a name ("Armor") that promised
+          protection no routine provides. */}
+      {todaysLatest ? (
         <div className="animate-rise mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ok/25 bg-ok-soft px-5 py-3.5" style={{ animationDelay: '40ms' }}>
           <div className="flex items-center gap-2.5 text-[14px] text-ink">
             <Icon name="check" size={16} className="text-ok-text" />
             <span>
-              <span className="font-semibold">Today is banked.</span> Recovery counts too — happy wrists hold longer.
+              <span className="font-semibold">Today is banked.</span> The next plan builds on what you logged.
             </span>
           </div>
           <button
-            onClick={() => startWorkout({ source: 'template', templateId: 'wrist-armor' })}
+            onClick={() => viewSession(todaysLatest.id)}
             className="rounded-lg border border-line bg-surface px-3.5 py-2 text-[13px] font-medium text-ink2 transition hover:text-ink"
           >
-            10-min Wrist Armor →
+            See today’s session →
           </button>
         </div>
       ) : null}

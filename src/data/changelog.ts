@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-05',
+    title: 'Gentler wrist and core instructions',
+    area: 'training',
+    notes: [
+      'Wrist rocks no longer ask for every hand position. Fingers forward is the drill; turned out and turned back toward the knees are optional, and the whole palm stays on the floor.',
+      'Hollow rocks are marked optional — for once a still hollow hold is under control, and a tucked shape counts — with a clear stop for neck, back or hip discomfort.',
+      'On a day you have trained, Home now links straight to that session instead of offering more wrist loading as “recovery”. The old “Wrist Armor” name is gone everywhere: it promised protection no routine provides.',
+    ],
+  },
+  {
+    date: '2026-10-05',
     title: 'Time a hold from its video, and take back a mis-tap',
     area: 'training',
     notes: [
