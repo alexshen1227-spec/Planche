@@ -19,6 +19,15 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-05',
+    title: 'Two more claims taken back',
+    area: 'app',
+    notes: [
+      'When the coach trims a session because your weekly load climbed fast, it now says the 20%-a-week limit is its own cautious choice rather than a proven safety line — the 10%-a-week rule it resembles did not reduce injuries when it was tested.',
+      'Jumping jacks no longer promise that everything after them is “safer”, and the pancake stretch no longer promises a cheaper straddle — it works toward a wider one, which is a shorter lever.',
+    ],
+  },
+  {
+    date: '2026-10-05',
     title: 'Form trends follow each position’s own rules',
     area: 'camera',
     notes: [

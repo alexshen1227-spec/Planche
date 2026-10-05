@@ -63,7 +63,7 @@ const RULES: Rule[] = [
   {
     id: 'warm-up-prevents-injury',
     pattern:
-      /\b(warm[- ]?ups?|warming up|warm wrists|preparation|prehab)\b.{0,60}\b(prevents?|protects?|bulletproof|injury[- ]proof|long career)\b|\bhow people end up taking\b/i,
+      /\b(warm[- ]?ups?|warming up|warm wrists|preparation|prehab|everything that follows)\b.{0,60}\b(prevents?|protects?|bulletproof|injury[- ]proof|long career|safer)\b|\bhow people end up taking\b/i,
     why: 'Ledger §must-not-claim 7: no trial shows warming up prevents injury in resistance training.',
     unlessNegated: true,
   },
@@ -214,6 +214,7 @@ describe('claims the app must not make', () => {
       'Today recovers it into strength instead of stacking more on top.',
       'Take a Deload Flow week at roughly half volume. Strength is expressed after recovery, not during accumulation.',
       'Spikes like this are where progress stalls and joints complain.',
+      'Raises body temperature and heart rate so everything that follows is safer.',
     ]
     for (const sentence of removed) {
       expect(breaches(sentence).length, sentence).toBeGreaterThan(0)

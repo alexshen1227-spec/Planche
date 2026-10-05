@@ -1432,7 +1432,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
         ramp.ratio * 100,
       )}% of your own recent normal — a steeper climb than the ${Math.round(
         (MAX_WEEKLY_LOAD_RAMP - 1) * 100,
-      )}% a week this app will encourage. Today is trimmed to bring it back in line. Load here is weighted by how hard each position is, so a long easy lean does not count the same as a short advanced tuck.`,
+      )}% a week this app allows. That limit is a cautious design choice, not a proven safety threshold — the 10%-a-week rule it resembles did not reduce injuries in its trial. Today is trimmed to bring it back in line. Load here is weighted by how hard each position is, so a long easy lean does not count the same as a short advanced tuck.`,
       kind: 'warn',
     })
   }

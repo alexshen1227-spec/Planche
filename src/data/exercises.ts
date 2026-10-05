@@ -528,7 +528,7 @@ export const EXERCISES: Exercise[] = [
     type: 'reps',
     difficulty: 1,
     equipment: ['None'],
-    blurb: 'Raises body temperature and heart rate so everything that follows is safer.',
+    blurb: 'Raises body temperature and heart rate before the main work.',
     howTo: [
       'Stand tall, arms at your sides.',
       'Jump the feet wide while the arms sweep overhead.',
@@ -654,7 +654,7 @@ export const EXERCISES: Exercise[] = [
     type: 'hold',
     difficulty: 2,
     equipment: ['Floor'],
-    blurb: 'Wide straddle sit, chest toward the floor. Buys you a wider, cheaper straddle planche.',
+    blurb: 'Wide straddle sit, chest toward the floor. Works toward a wider straddle — and a wider straddle is a shorter, lighter lever.',
     howTo: [
       'Sit with legs wide, knees and toes pointing up.',
       'Hinge at the hips, walking the hands forward.',
@@ -671,7 +671,7 @@ export const EXERCISES: Exercise[] = [
     type: 'hold',
     difficulty: 1,
     equipment: ['Floor'],
-    blurb: 'Hands behind you on the floor, walk the hips forward. Antidote to lean volume.',
+    blurb: 'Hands behind you on the floor, walk the hips forward. A counter-stretch after lean work.',
     howTo: [
       'Sit with hands on the floor behind you, fingers pointing back.',
       'Walk the hips forward away from the hands.',
