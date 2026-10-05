@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AppState, EquipmentId, Settings as SettingsShape, Tab, TrainingSurface } from '../types'
-import { useStore, normalizeState, rebuildDerivedState } from '../lib/store'
+import {
+  clearQuarantine,
+  eraseRecoveryCopies,
+  normalizeStateWithReport,
+  quarantinedData,
+  rebuildDerivedState,
+  reportHasLosses,
+  useStore,
+  type NormalizeReport,
+} from '../lib/store'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
 import { defaultSurface, EQUIPMENT_OPTIONS, TRAINING_SURFACES } from '../data/equipment'
 import { exportData, readImportFile, validateImport } from '../lib/exportImport'
@@ -11,7 +20,7 @@ import {
   exportProblemReports,
   listProblemReports,
 } from '../lib/problemReports'
-import { downloadPoseModel, poseModelReady } from '../lib/poseBackend'
+import { downloadPoseModel, poseModelReady, verifyOfflineReady } from '../lib/poseBackend'
 import { fmtDate } from '../lib/time'
 import { fmtWeight } from '../lib/units'
 import { MeasurePrompt, lastOf } from '../components/MeasurePrompt'
@@ -235,12 +244,21 @@ function LatencyCalibrator({ onDone }: { onDone: (sec: number) => void }) {
 }
 
 export function Settings({ go }: { go: (t: Tab) => void }) {
-  const { state, dispatch } = useStore()
+  const { state, dispatch, getState } = useStore()
   const s = state.settings
   const fileRef = useRef<HTMLInputElement | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
   const [confirmDeleteReports, setConfirmDeleteReports] = useState(false)
-  const [pendingImport, setPendingImport] = useState<{ state: AppState; incoming: number } | null>(null)
+  const [pendingImport, setPendingImport] = useState<{
+    state: AppState
+    report: NormalizeReport
+    /** The dataset revision the file was reviewed against. */
+    stagedRev: number
+  } | null>(null)
+  const [importBusy, setImportBusy] = useState(false)
+  const [acceptLosses, setAcceptLosses] = useState(false)
+  const [resetBusy, setResetBusy] = useState(false)
+  const [quarantine, setQuarantine] = useState(() => quarantinedData())
   const [confirmSample, setConfirmSample] = useState(false)
   const [name, setName] = useState(state.name)
   const [injuryNote, setInjuryNote] = useState(state.profile.injuryNote ?? '')
@@ -257,6 +275,21 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   const [modelState, setModelState] = useState<'idle' | 'loading' | 'ready' | 'error'>(() =>
     poseModelReady() ? 'ready' : 'idle',
   )
+  /**
+   * Whether the checker's files are actually cached right now. The ready flag
+   * only remembers a past download — browsers evict storage — so offline use
+   * is promised only when the files are confirmed present.
+   */
+  const [offline, setOffline] = useState<'ready' | 'missing' | 'unknown' | 'checking'>('checking')
+  useEffect(() => {
+    let live = true
+    void verifyOfflineReady().then((result) => {
+      if (live) setOffline(result)
+    })
+    return () => {
+      live = false
+    }
+  }, [modelState])
 
   useEffect(() => {
     void listClips().then((c) => {
@@ -309,33 +342,116 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
     try {
       const raw = await readImportFile(file)
       validateImport(raw)
-      const normalized = normalizeState(raw)
-      const rawSessionCount = raw.sessions.length
-      if (normalized.sessions.length !== rawSessionCount) {
-        throw new Error(
-          `${rawSessionCount - normalized.sessions.length} invalid session(s) were found. Nothing was imported.`,
-        )
-      }
-      setPendingImport({ state: rebuildDerivedState(normalized), incoming: rawSessionCount })
+      // Everything the file would lose is counted and shown — a matching
+      // session count used to hide sets that were silently dropped.
+      const { state: normalized, report } = normalizeStateWithReport(raw)
+      setAcceptLosses(false)
+      setPendingImport({
+        state: rebuildDerivedState(normalized),
+        report,
+        stagedRev: getState().rev ?? 0,
+      })
     } catch (err) {
       pushToast(err instanceof Error ? err.message : 'Import failed.', 'danger')
     }
   }
 
+  /**
+   * Replace the data as one transaction.
+   *
+   * The dialog stays open and owns the operation until it finishes. The file
+   * was reviewed against a specific revision of the data; if anything was
+   * saved since (here, or in another tab), the replacement is refused rather
+   * than silently erasing that newer work — checked before anything is
+   * touched, and again by the store at the moment of commit. Old clips are
+   * removed only after the new data is in place, so a refusal destroys
+   * nothing.
+   */
   const applyImport = async () => {
     const staged = pendingImport
-    if (!staged) return
-    setPendingImport(null)
+    if (!staged || importBusy) return
+    setImportBusy(true)
     try {
-      // Clips belong to the history being replaced; keeping them would surface
-      // the previous data's videos under the imported sessions.
-      if (!(await clearAllClips())) throw new Error('Could not clear existing clips. Nothing was imported.')
-      setClipCount(0)
-      setClipBytes(0)
-      dispatch({ type: 'REPLACE', state: staged.state })
-      pushToast('Data imported.', 'success')
+      const before = getState()
+      if ((before.rev ?? 0) !== staged.stagedRev) {
+        setPendingImport(null)
+        pushToast(
+          'Something was saved after you picked the file, so nothing was imported. Pick the file again to review it against what is here now.',
+          'danger',
+          8000,
+        )
+        return
+      }
+      dispatch({ type: 'IMPORT_REPLACE', state: staged.state, expectedRev: staged.stagedRev })
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+      if (getState().epoch === before.epoch) {
+        setPendingImport(null)
+        pushToast('Newer data arrived while importing, so nothing was replaced. Try the import again.', 'danger', 8000)
+        return
+      }
+      setPendingImport(null)
+      // The previous history's clips would otherwise surface under the
+      // imported sessions.
+      const cleared = await clearAllClips()
+      if (cleared) {
+        setClipCount(0)
+        setClipBytes(0)
+        pushToast('Data imported.', 'success')
+      } else {
+        pushToast(
+          'Data imported, but some old form clips could not be removed — delete them under Saved form clips.',
+          'info',
+          8000,
+        )
+      }
     } catch (err) {
       pushToast(err instanceof Error ? err.message : 'Import failed.', 'danger')
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
+  /**
+   * Erase everything the confirmation promises, in an order a stale tab cannot
+   * undo: the dataset is retired first, then every copy is erased, and any
+   * copy that could not be erased is named rather than hidden.
+   */
+  const resetEverything = async () => {
+    if (resetBusy) return
+    setResetBusy(true)
+    try {
+      dispatch({ type: 'RESET' })
+      const [clipsCleared, reportsCleared, recovery] = await Promise.all([
+        clearAllClips(),
+        clearAllProblemReports(),
+        eraseRecoveryCopies(),
+      ])
+      const left = [
+        ...(clipsCleared ? [] : ['form clips']),
+        ...(reportsCleared ? [] : ['problem reports']),
+        ...recovery.failed,
+      ]
+      if (clipsCleared) {
+        setClipCount(0)
+        setClipBytes(0)
+      }
+      if (reportsCleared) {
+        setReportCount(0)
+        setReportBytes(0)
+      }
+      setQuarantine(quarantinedData())
+      setConfirmReset(false)
+      if (left.length) {
+        pushToast(
+          `Training data was reset, but these could not be erased: ${left.join(', ')}. Reset again to retry.`,
+          'danger',
+          9000,
+        )
+      } else {
+        pushToast('Everything reset. Fresh start!', 'info')
+      }
+    } finally {
+      setResetBusy(false)
     }
   }
 
@@ -356,7 +472,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           />
           <button
             onClick={() => {
-              dispatch({ type: 'REPLACE', state: { ...state, name: name.trim() } })
+              dispatch({ type: 'SET_NAME', name: name.trim() })
               pushToast('Saved.', 'success')
             }}
             aria-label="Save athlete name"
@@ -587,7 +703,13 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           label="Camera checker download"
           hint={
             modelState === 'ready'
-              ? 'Downloaded and cached on this device — form checks now work offline.'
+              ? offline === 'ready'
+                ? 'Downloaded, and its files are confirmed cached on this device — form checks work offline.'
+                : offline === 'missing'
+                  ? 'Downloaded before, but its files are no longer cached (browsers clear storage). Download again to use it offline.'
+                  : offline === 'checking'
+                    ? 'Previously downloaded. Checking whether its files are still cached…'
+                    : 'Previously downloaded. This browser cannot confirm the files are still cached, so offline use is not guaranteed.'
               : 'The form checker is a one-off multi-megabyte download. Fetch it here on a connection you trust instead of mid-workout on gym wi-fi; afterwards it works offline.'
           }
         >
@@ -605,12 +727,14 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 },
               )
             }}
-            disabled={modelState === 'loading' || modelState === 'ready'}
+            disabled={modelState === 'loading' || (modelState === 'ready' && offline === 'ready')}
             aria-busy={modelState === 'loading'}
             className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
             {modelState === 'ready'
-              ? 'Downloaded'
+              ? offline === 'ready'
+                ? 'Cached'
+                : 'Download again'
               : modelState === 'loading'
                 ? 'Downloading…'
                 : modelState === 'error'
@@ -838,9 +962,9 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         >
           <button
             onClick={() => {
-              const stamped = { ...state, lastBackupAt: Date.now() }
-              exportData(stamped)
-              dispatch({ type: 'REPLACE', state: stamped })
+              const at = Date.now()
+              exportData({ ...state, lastBackupAt: at })
+              dispatch({ type: 'STAMP_BACKUP', at })
             }}
             className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
           >
@@ -874,6 +998,38 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             Load sample
           </button>
         </Row>
+        {quarantine ? (
+          <Row
+            label="Unreadable data kept aside"
+            hint={`Saved data that could not be read on ${fmtDate(quarantine.at)} was kept exactly as it was, instead of being overwritten. Download it for a support request, or delete it.`}
+          >
+            <button
+              onClick={() => {
+                const url = URL.createObjectURL(new Blob([quarantine.raw], { type: 'application/json' }))
+                const a = document.createElement('a')
+                a.href = url
+                a.download = 'planche-lab-unreadable-data.json'
+                document.body.appendChild(a)
+                a.click()
+                a.remove()
+                window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
+              }}
+              className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+            >
+              Download
+            </button>
+            <button
+              onClick={() => {
+                clearQuarantine()
+                setQuarantine(quarantinedData())
+                pushToast('The unreadable copy was deleted.', 'info')
+              }}
+              className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+            >
+              Delete
+            </button>
+          </Row>
+        ) : null}
         <Row label="Reset everything" hint="Deletes all local data. There is no undo (export first!).">
           <button
             onClick={() => setConfirmReset(true)}
@@ -984,7 +1140,11 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             <button
               onClick={() => {
                 const sample = buildSampleState()
-                dispatch({ type: 'REPLACE', state: { ...sample, settings: state.settings, name: state.name || sample.name } })
+                dispatch({
+                  type: 'REPLACE',
+                  state: { ...sample, settings: state.settings, name: state.name || sample.name },
+                  reason: 'sample',
+                })
                 setConfirmSample(false)
                 pushToast('Sample data loaded.', 'success')
               }}
@@ -996,79 +1156,136 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </div>
       </Modal>
 
-      <Modal open={pendingImport !== null} onClose={() => setPendingImport(null)} label="Confirm import">
-        <div className="p-6">
-          <h2 className="font-display text-[19px] font-semibold text-ink">Replace everything with this file?</h2>
-          <p className="mt-1.5 text-[14px] leading-relaxed text-ink2">
-            The file checks out and holds{' '}
-            <span className="font-semibold text-ink">
-              {pendingImport?.incoming ?? 0} session{pendingImport?.incoming === 1 ? '' : 's'}
-            </span>
-            . Importing replaces the{' '}
-            <span className="font-semibold text-ink">
-              {state.sessions.length} session{state.sessions.length === 1 ? '' : 's'}
-            </span>{' '}
-            on this device, along with every record, achievement and saved form clip. There is no undo.
-          </p>
-          {state.sessions.length > 0 ? (
-            <p className="mt-2 text-[13px] leading-relaxed text-ink3">
-              If you have not exported what is here yet, cancel and do that first.
+      <Modal
+        open={pendingImport !== null}
+        onClose={() => {
+          if (!importBusy) setPendingImport(null)
+        }}
+        label="Confirm import"
+      >
+        {pendingImport ? (
+          <div className="p-6">
+            <h2 className="pr-10 font-display text-[19px] font-semibold text-ink">Replace everything with this file?</h2>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-ink2">
+              The file holds{' '}
+              <span className="font-semibold text-ink">
+                {pendingImport.report.sessionsKept} usable session{pendingImport.report.sessionsKept === 1 ? '' : 's'}
+              </span>
+              . Importing replaces the{' '}
+              <span className="font-semibold text-ink">
+                {state.sessions.length} session{state.sessions.length === 1 ? '' : 's'}
+              </span>{' '}
+              on this device, along with every record, achievement and saved form clip. There is no undo.
             </p>
-          ) : null}
-          <div className="mt-5 flex gap-2.5">
-            <button
-              onClick={() => setPendingImport(null)}
-              className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14.5px] font-medium text-ink"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => void applyImport()}
-              className="flex-1 rounded-xl bg-danger py-3 text-[14.5px] font-semibold text-white"
-            >
-              Replace my data
-            </button>
+            {reportHasLosses(pendingImport.report) || pendingImport.report.futureSessions > 0 ? (
+              <div className="mt-3 rounded-xl border border-accent/30 bg-accent-soft px-3.5 py-3 text-[13px] leading-relaxed text-ink">
+                <div className="font-semibold">Not everything in the file can be imported as it is:</div>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                  {pendingImport.report.rejectedSessions.length ? (
+                    <li>
+                      {pendingImport.report.rejectedSessions.length} session
+                      {pendingImport.report.rejectedSessions.length === 1 ? '' : 's'} left out (
+                      {[...new Set(pendingImport.report.rejectedSessions.map((r) => r.reason))].join('; ')})
+                    </li>
+                  ) : null}
+                  {pendingImport.report.duplicateSessions ? (
+                    <li>{pendingImport.report.duplicateSessions} exact duplicate session copies merged into one</li>
+                  ) : null}
+                  {pendingImport.report.conflictingSessions ? (
+                    <li>
+                      {pendingImport.report.conflictingSessions} session
+                      {pendingImport.report.conflictingSessions === 1 ? '' : 's'} sharing an id with different content
+                      set aside
+                    </li>
+                  ) : null}
+                  {pendingImport.report.droppedSets.map((d) => (
+                    <li key={d.reason}>
+                      {d.count} set{d.count === 1 ? '' : 's'} dropped: {d.reason}
+                    </li>
+                  ))}
+                  {pendingImport.report.repairedSets ? (
+                    <li>
+                      {pendingImport.report.repairedSets} set{pendingImport.report.repairedSets === 1 ? '' : 's'} kept as
+                      history with a field repaired — {pendingImport.report.repairedSets === 1 ? 'it' : 'they'} will not
+                      count toward unlocking
+                    </li>
+                  ) : null}
+                  {pendingImport.report.futureSessions ? (
+                    <li>
+                      {pendingImport.report.futureSessions} session
+                      {pendingImport.report.futureSessions === 1 ? ' is' : 's are'} dated in the future and will be
+                      ignored by goals and readiness until that date
+                    </li>
+                  ) : null}
+                </ul>
+                {reportHasLosses(pendingImport.report) ? (
+                  <label className="mt-2 flex items-start gap-2 text-[13px]">
+                    <input
+                      type="checkbox"
+                      checked={acceptLosses}
+                      onChange={(event) => setAcceptLosses(event.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-[var(--t-accent)]"
+                    />
+                    I understand these will not be imported as they are in the file.
+                  </label>
+                ) : null}
+              </div>
+            ) : null}
+            {state.sessions.length > 0 ? (
+              <p className="mt-2 text-[13px] leading-relaxed text-ink3">
+                If you have not exported what is here yet, cancel and do that first.
+              </p>
+            ) : null}
+            <div className="mt-5 flex gap-2.5">
+              <button
+                onClick={() => setPendingImport(null)}
+                disabled={importBusy}
+                className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14.5px] font-medium text-ink disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void applyImport()}
+                disabled={importBusy || (reportHasLosses(pendingImport.report) && !acceptLosses)}
+                aria-busy={importBusy}
+                className="flex-1 rounded-xl bg-danger py-3 text-[14.5px] font-semibold text-white disabled:opacity-50"
+              >
+                {importBusy ? 'Importing…' : 'Replace my data'}
+              </button>
+            </div>
           </div>
-        </div>
+        ) : null}
       </Modal>
 
-      <Modal open={confirmReset} onClose={() => setConfirmReset(false)} label="Reset all data">
+      <Modal
+        open={confirmReset}
+        onClose={() => {
+          if (!resetBusy) setConfirmReset(false)
+        }}
+        label="Reset all data"
+      >
         <div className="p-6">
-          <h2 className="font-display text-[19px] font-semibold text-ink">Reset all data?</h2>
+          <h2 className="pr-10 font-display text-[19px] font-semibold text-ink">Reset all data?</h2>
           <p className="mt-1.5 text-[14px] text-ink2">
-            Sessions, records, unlocks, achievements, form clips and problem reports will be permanently deleted
-            from this browser.
+            Sessions, records, unlocks, achievements, joint reports, form clips, problem reports, an unfinished
+            workout and every recovery copy will be permanently deleted from this browser. Your app settings (theme,
+            sound, timers) are kept.
           </p>
           <div className="mt-5 flex gap-2.5">
             <button
               onClick={() => setConfirmReset(false)}
-              className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14.5px] font-medium text-ink"
+              disabled={resetBusy}
+              className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14.5px] font-medium text-ink disabled:opacity-50"
             >
               Cancel
             </button>
             <button
-              onClick={async () => {
-                // Both video collections live outside app state. A reset that
-                // left either one on the device would contradict the copy.
-                const [clipsCleared, reportsCleared] = await Promise.all([
-                  clearAllClips(),
-                  clearAllProblemReports(),
-                ])
-                if (!clipsCleared || !reportsCleared) {
-                  pushToast('Some local videos could not be deleted, so training data was not reset.', 'danger')
-                  return
-                }
-                setClipCount(0)
-                setClipBytes(0)
-                setReportCount(0)
-                setReportBytes(0)
-                dispatch({ type: 'RESET' })
-                setConfirmReset(false)
-                pushToast('Everything reset. Fresh start!', 'info')
-              }}
-              className="flex-1 rounded-xl bg-danger py-3 text-[14.5px] font-semibold text-white"
+              onClick={() => void resetEverything()}
+              disabled={resetBusy}
+              aria-busy={resetBusy}
+              className="flex-1 rounded-xl bg-danger py-3 text-[14.5px] font-semibold text-white disabled:opacity-60"
             >
-              Delete everything
+              {resetBusy ? 'Deleting…' : 'Delete everything'}
             </button>
           </div>
         </div>

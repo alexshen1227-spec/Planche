@@ -1,5 +1,6 @@
 import type { AppState, StepId } from '../types'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
+import { EXERCISE_BY_ID } from '../data/exercises'
 import { qualifyingProgress, qualifyingSessionValue } from './progression'
 import { median } from './signals'
 
@@ -201,8 +202,9 @@ export function forecastUnlock(state: AppState, stepId: StepId = state.stepId, n
   }
 }
 
+/** The exercise's own name, lower-cased — the id read "verified ppp hold hold". */
 function EX_LABEL(exerciseId: string): string {
-  return exerciseId.replace(/-/g, ' ')
+  return (EXERCISE_BY_ID[exerciseId]?.name ?? exerciseId.replace(/-/g, ' ')).toLowerCase()
 }
 
 /** Human phrasing for a forecast, so every screen says it the same way. */

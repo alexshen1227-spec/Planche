@@ -17,7 +17,7 @@ import {
   type Rotation,
 } from '../lib/poseForm'
 import { getBackend, trackingScore, type Kp } from '../lib/poseBackend'
-import { buildTruePose, IDEAL, synthesizeClip, type SynthParams } from '../lib/poseSynth'
+import { buildTruePose, IDEAL, SYNTH_DEFAULTS, synthesizeClip, type SynthParams } from '../lib/poseSynth'
 import { fixtureFromPoses, selfTestJudge, type SelfTestReport } from '../lib/benchTools'
 import { Icon } from '../components/Icon'
 
@@ -637,8 +637,11 @@ export function DevLab({ onClose }: { onClose: () => void }) {
             <Row label="shrug" value={`${truth.shrugRatio.toFixed(3)} → ${result.shrugRatio?.toFixed(3) ?? '—'}`} />
           </div>
           {CONTROLS.map((c) => {
+            // What the generator will actually use: an override, the
+            // position's preset, else the generator's own default — never a
+            // stand-in zero, which made the first nudge jump the scenario.
             const value = overrides[c.key] ?? (params as Record<string, unknown>)[c.key]
-            const current = typeof value === 'number' ? value : c.key === 'seed' ? 1 : Number(value ?? 0)
+            const current = typeof value === 'number' ? value : SYNTH_DEFAULTS[c.key]
             return (
               <label key={c.key} className="block">
                 <span className="flex items-baseline justify-between text-[11.5px] text-ink3">

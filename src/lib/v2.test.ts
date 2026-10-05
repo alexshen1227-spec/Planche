@@ -866,13 +866,16 @@ describe('rails that a mutation test proved were unpinned', () => {
         ),
       )
     const rested = flat(4)
-    expect(buildPlan(rested, NOW).plateau?.suggestMaxTest).toBe(true)
+    // A plateau with no visible cause no longer queues a test on its own
+    // (2026-10 audit: an unknown is not fixed by a maximal attempt)...
+    expect(buildPlan(rested, NOW).plateau?.cause).toBe('unclear')
+    expect(buildPlan(rested, NOW).plateau?.suggestMaxTest).toBeFalsy()
+    // ...but a rested athlete who is due one is still offered it.
     expect(readSignals(rested, NOW).restDays).toBeGreaterThanOrEqual(2)
     expect(buildPlan(rested, NOW).suggestMaxTest).toBe(true)
 
-    // Same plateau, trained today: the freshness gate has to override it.
+    // Same history, trained today: the freshness gate has to override it.
     const tired = flat(0)
-    expect(buildPlan(tired, NOW).plateau?.suggestMaxTest).toBe(true)
     expect(readSignals(tired, NOW).restDays).toBeLessThan(2)
     expect(buildPlan(tired, NOW).suggestMaxTest).toBe(false)
   })

@@ -9,7 +9,7 @@ import {
   SHRUG_MIN_RATIO,
 } from './poseForm'
 import { REAL_POSES, realClip } from './realPoses.fixture'
-import { buildTruePose, IDEAL, PROPORTIONS, synthesizeClip, type SynthParams } from './poseSynth'
+import { buildTruePose, IDEAL, PROPORTIONS, SYNTH_DEFAULTS, synthesizeClip, type SynthParams } from './poseSynth'
 
 /**
  * Accuracy eval for the camera form judge.
@@ -799,5 +799,23 @@ describe('form judge — evidence it does not have cannot become a pass', () => 
         expect(plain.details.some((line) => /sampled about every/.test(line))).toBe(true)
       }
     }
+  })
+})
+
+describe('the bench shows what the generator uses', () => {
+  it('every default the sliders display is the value a clip is generated with', () => {
+    // An absent knob must generate exactly as its displayed default does.
+    const absent = synthesizeClip({ ...IDEAL['tuck-planche'], noise: 0 })
+    const explicit = synthesizeClip({
+      ...IDEAL['tuck-planche'],
+      noise: 0,
+      rollDeg: SYNTH_DEFAULTS.rollDeg,
+      bodyWidth: IDEAL['tuck-planche'].bodyWidth ?? SYNTH_DEFAULTS.bodyWidth,
+      nearScore: IDEAL['tuck-planche'].nearScore ?? SYNTH_DEFAULTS.nearScore,
+      farScore: IDEAL['tuck-planche'].farScore ?? SYNTH_DEFAULTS.farScore,
+      dropoutRate: SYNTH_DEFAULTS.dropoutRate,
+      seed: SYNTH_DEFAULTS.seed,
+    })
+    expect(explicit.tracked).toEqual(absent.tracked)
   })
 })

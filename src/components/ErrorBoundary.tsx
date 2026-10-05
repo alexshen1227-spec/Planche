@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { previousBackup } from '../lib/store'
+import { previousBackup, quarantinedData } from '../lib/store'
 
 /**
  * Last line of defence. Without this, one bad render (a corrupt import, an
@@ -18,18 +18,29 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
     console.error('Planche Lab crashed:', error, info.componentStack)
   }
 
-  private download = () => {
+  private save = (raw: string, filename: string) => {
     try {
-      const raw = localStorage.getItem('planchelab.v1') ?? '{}'
       const url = URL.createObjectURL(new Blob([raw], { type: 'application/json' }))
       const a = document.createElement('a')
       a.href = url
-      a.download = 'planche-lab-rescue.json'
+      a.download = filename
+      document.body.appendChild(a)
       a.click()
-      URL.revokeObjectURL(url)
+      a.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
     } catch {
       /* nothing recoverable */
     }
+  }
+
+  private download = () => {
+    let raw = '{}'
+    try {
+      raw = localStorage.getItem('planchelab.v1') ?? '{}'
+    } catch {
+      /* storage blocked — the empty file still says so */
+    }
+    this.save(raw, 'planche-lab-rescue.json')
   }
 
   /** Roll back to the snapshot taken before the last version upgrade. */
@@ -48,6 +59,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
   render() {
     if (!this.state.error) return this.props.children
     const prev = previousBackup()
+    // Saved data that failed to load is kept aside byte for byte. It is the
+    // copy that matters most when the current one is the problem.
+    const kept = quarantinedData()
     return (
       <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-10">
         <h1 className="font-display text-[24px] font-bold text-ink">Something went wrong</h1>
@@ -65,6 +79,14 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
         >
           Download a rescue copy
         </button>
+        {kept ? (
+          <button
+            onClick={() => this.save(kept.raw, 'planche-lab-unreadable-data.json')}
+            className="mt-2 rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink"
+          >
+            Download the original data kept aside on {new Date(kept.at).toLocaleDateString()}
+          </button>
+        ) : null}
         <button
           onClick={() => window.location.reload()}
           className="mt-2 rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink"

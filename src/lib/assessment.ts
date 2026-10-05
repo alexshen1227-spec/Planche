@@ -364,7 +364,10 @@ export function placeFromAssessment(answers: AssessmentAnswers): Placement {
   const wrist = answers.wrist
   if (wrist === 0) {
     caveats.push(
-      'You reported wrist pain in a plain push-up position. Wrist prep comes before loaded planche work in every session the app builds, and parallettes (or fists) usually remove the problem entirely. Pain that persists for weeks is worth a physio rather than a workaround.',
+      // Copy per the 2026-10 audit (PL-013): a grip change alters the wrist's
+      // angle but does not diagnose or clear pain, and "see someone if it
+      // lasts weeks" was too long a wait — next-day pain or swelling is the cue.
+      'You reported wrist pain in a plain push-up position, so loaded planche work stays off until a check-in says otherwise. Stop any test that hurts — do not keep loading a painful wrist or elbow to finish a session. Parallettes change the wrist angle but do not diagnose the cause. If pain returns, is still there the next day, or there is swelling, get qualified medical advice, and follow any return-to-training plan you already have.',
     )
     gaps.push({
       id: 'wrist',

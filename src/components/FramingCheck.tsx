@@ -40,6 +40,8 @@ const REGIONS: Region[] = [
 ]
 
 const MIN_SCORE = 0.3
+/** A joint this close to the frame edge is about to leave it. */
+const EDGE_MARGIN = 0.02
 
 interface Reading {
   kps: Kp[]
@@ -47,11 +49,28 @@ interface Reading {
   height: number
   person: boolean
   missing: string[]
-  notSideOn: boolean
+  /** Same validity contract as the judge: side-on, not side-on, or cannot tell. */
+  view: 'side' | 'not-side' | 'unknown'
 }
 
-function isNotSideOn(kps: Kp[]): boolean {
-  return (apparentBodyWidthRatio(kps) ?? 0) > MAX_SIDE_VIEW_RATIO
+/**
+ * The judge's side-view gate, applied live. An unmeasurable span used to read
+ * as zero — "side view" — so a far side too faint to measure was announced as
+ * a confirmed side-on shot. Now it is checked at the looser bar too, and what
+ * still cannot be measured is said to be unknown.
+ */
+export function viewOf(kps: Kp[]): Reading['view'] {
+  const ratio = apparentBodyWidthRatio(kps) ?? apparentBodyWidthRatio(kps, MIN_SCORE)
+  if (ratio === undefined) return 'unknown'
+  return ratio > MAX_SIDE_VIEW_RATIO ? 'not-side' : 'side'
+}
+
+/** Seen with confidence *and* actually inside the frame — models place joints off-screen too. */
+function inFrame(k: Kp | undefined, width: number, height: number): boolean {
+  if (!k || (k.score ?? 0) < MIN_SCORE) return false
+  const mx = width * EDGE_MARGIN
+  const my = height * EDGE_MARGIN
+  return k.x >= mx && k.x <= width - mx && k.y >= my && k.y <= height - my
 }
 
 export function FramingCheck({
@@ -83,15 +102,17 @@ export function FramingCheck({
         const backend = await getBackend('mediapipe')
         const kps = await backend.estimate(video)
         if (cancelled) return
+        const width = video.videoWidth
+        const height = video.videoHeight
         const seen = (names: [string, string]) =>
-          names.some((n) => (kps.find((k) => k.name === n)?.score ?? 0) >= MIN_SCORE)
+          names.some((n) => inFrame(kps.find((k) => k.name === n), width, height))
         setReading({
           kps,
-          width: video.videoWidth,
-          height: video.videoHeight,
+          width,
+          height,
           person: trackingScore(kps) > 0.15,
           missing: REGIONS.filter((r) => !seen(r.joints)).map((r) => r.label),
-          notSideOn: isNotSideOn(kps),
+          view: viewOf(kps),
         })
       } catch {
         // Offline or model failure: the check just stays quiet.
@@ -135,7 +156,8 @@ export function FramingCheck({
 
   if (!active || !available || !reading) return null
 
-  const good = reading.person && reading.missing.length === 0 && !reading.notSideOn
+  const inShot = reading.person && reading.missing.length === 0
+  const good = inShot && reading.view === 'side'
   return (
     <>
       <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
@@ -146,13 +168,15 @@ export function FramingCheck({
         }`}
       >
         <Icon name={good ? 'check' : 'monitor'} size={13} />
-        {good
-          ? 'Side view · whole body ready'
-          : reading.person
-            ? reading.notSideOn
-              ? 'Turn fully side-on to the camera'
-              : `Out of shot: ${reading.missing.join(', ')}`
-            : 'Step back until your whole body fits'}
+        {!reading.person
+          ? 'Step back until your whole body fits'
+          : reading.view === 'not-side'
+            ? 'Turn fully side-on to the camera'
+            : reading.missing.length
+              ? `Out of shot: ${reading.missing.join(', ')}`
+              : good
+                ? 'Side-on · whole body in frame'
+                : 'Whole body in frame · side-on view not confirmed'}
       </div>
     </>
   )

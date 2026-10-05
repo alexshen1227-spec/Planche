@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { AppState } from '../types'
 import { useStore } from '../lib/store'
 import { displayToKg, weightUnitLabel, CM_PER_IN, fmtHeight } from '../lib/units'
@@ -51,9 +51,34 @@ export function measurementDue(state: AppState, now = Date.now()): { weight: boo
 export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { state, dispatch } = useStore()
   const units = state.settings.units
+
+  // Any dismissal counts as "not now", including the close button and the
+  // backdrop — otherwise those routes still re-asked on every refresh.
+  const dismiss = () => {
+    dispatch({ type: 'SNOOZE_MEASURE' })
+    onClose()
+  }
+
+  return (
+    <Modal open={open} onClose={dismiss} label="Weekly bodyweight and height check">
+      {/* The form lives only while the dialog is open, and is keyed on the
+          unit system. A value typed and abandoned used to survive closing,
+          and after a unit change "70" typed as kilograms was saved as 70
+          pounds — a number silently relabelled into a different measurement. */}
+      <MeasureForm key={units} onSaved={onClose} onDismiss={dismiss} />
+    </Modal>
+  )
+}
+
+function MeasureForm({ onSaved, onDismiss }: { onSaved: () => void; onDismiss: () => void }) {
+  const { state, dispatch } = useStore()
+  const units = state.settings.units
   const due = measurementDue(state)
   const lastW = lastOf(state, 'weightKg')
   const lastH = lastOf(state, 'heightCm')
+  const ids = useId()
+  const errorId = `${ids}-error`
+  const weightHintId = `${ids}-weight-hint`
 
   const [weight, setWeight] = useState('')
   const [heightCm, setHeightCm] = useState('')
@@ -94,7 +119,7 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
       return
     }
     if (weightKg === undefined && newHeight === undefined) {
-      dismiss()
+      onDismiss()
       return
     }
     dispatch({ type: 'LOG_MEASUREMENT', weightKg, heightCm: newHeight })
@@ -102,116 +127,112 @@ export function MeasurePrompt({ open, onClose }: { open: boolean; onClose: () =>
     // the weekly weight check due, so it reappeared on every launch.
     dispatch({ type: 'SNOOZE_MEASURE' })
     pushToast('Logged as progress context.', 'success')
-    onClose()
-  }
-
-  // Any dismissal counts as "not now", including the close button and the
-  // backdrop — otherwise those routes still re-asked on every refresh.
-  const dismiss = () => {
-    dispatch({ type: 'SNOOZE_MEASURE' })
-    onClose()
+    onSaved()
   }
 
   return (
-    <Modal open={open} onClose={dismiss} label="Weekly bodyweight and height check">
-      <div className="p-6">
-        <div className="pr-10">
-          <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
-            <Icon name="chart" size={14} /> Weekly check
-          </div>
-          <h2 className="mt-1 font-display text-[20px] font-bold text-ink">Where are you at?</h2>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">
-            Planche is strength-to-weight, so bodyweight helps you interpret the same hold over time. Skip it any
-            time — it is never a target, just context.
-          </p>
+    <div className="p-6">
+      <div className="pr-10">
+        <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
+          <Icon name="chart" size={14} /> Weekly check
         </div>
+        <h2 className="mt-1 font-display text-[20px] font-bold text-ink">Where are you at?</h2>
+        <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">
+          Planche is strength-to-weight, so bodyweight helps you interpret the same hold over time. Skip it any
+          time — it is never a target, just context.
+        </p>
+      </div>
 
-        <label className="mt-4 block">
-          <span className="text-[13px] font-medium text-ink2">Bodyweight ({weightUnitLabel(units)})</span>
-          <input
-            value={weight}
-            onChange={(e) => {
-              setWeight(e.target.value)
-              setError(null)
-            }}
-            inputMode="decimal"
-            autoFocus
-            placeholder={weightUnitLabel(units)}
-            // Without this the accessible name is just the placeholder — a
-            // screen reader announced "kg" with no clue what it was asking.
-            aria-label={`Bodyweight in ${units === 'metric' ? 'kilograms' : 'pounds'}`}
-            aria-invalid={error !== null}
-            className={`mt-1.5 w-full rounded-xl border bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent ${
-              error ? 'border-danger' : 'border-line'
-            }`}
-          />
-          {error ? <span className="mt-1 block text-[12.5px] text-danger-text">{error}</span> : null}
-          {lastW ? (
-            <span className="mt-1 block text-[12px] text-ink3">
-              Last logged {new Date(lastW.at).toLocaleDateString()} — leave blank to skip.
+      <label className="mt-4 block">
+        <span className="text-[13px] font-medium text-ink2">Bodyweight ({weightUnitLabel(units)})</span>
+        <input
+          value={weight}
+          onChange={(e) => {
+            setWeight(e.target.value)
+            setError(null)
+          }}
+          inputMode="decimal"
+          autoFocus
+          placeholder={weightUnitLabel(units)}
+          // Without this the accessible name is just the placeholder — a
+          // screen reader announced "kg" with no clue what it was asking.
+          aria-label={`Bodyweight in ${units === 'metric' ? 'kilograms' : 'pounds'}`}
+          aria-invalid={error !== null}
+          aria-describedby={[error ? errorId : null, lastW ? weightHintId : null].filter(Boolean).join(' ') || undefined}
+          className={`mt-1.5 w-full rounded-xl border bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent ${
+            error ? 'border-danger' : 'border-line'
+          }`}
+        />
+        {error ? (
+          <span id={errorId} role="alert" className="mt-1 block text-[12.5px] text-danger-text">
+            {error}
+          </span>
+        ) : null}
+        {lastW ? (
+          <span id={weightHintId} className="mt-1 block text-[12px] text-ink3">
+            Last logged {new Date(lastW.at).toLocaleDateString()} — leave blank to skip.
+          </span>
+        ) : null}
+      </label>
+
+      <div className="mt-4">
+        <span className="text-[13px] font-medium text-ink2">
+          Height{' '}
+          {lastH ? (
+            <span className="text-ink3">(currently {fmtHeight(lastH.value, units)})</span>
+          ) : (
+            <span className="text-ink3">(optional)</span>
+          )}
+          {due.height && lastH ? (
+            <span className="ml-1.5 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-text">
+              worth a check
             </span>
           ) : null}
-        </label>
-
-        <div className="mt-4">
-          <span className="text-[13px] font-medium text-ink2">
-            Height{' '}
-            {lastH ? (
-              <span className="text-ink3">(currently {fmtHeight(lastH.value, units)})</span>
-            ) : (
-              <span className="text-ink3">(optional)</span>
-            )}
-            {due.height && lastH ? (
-              <span className="ml-1.5 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-text">
-                worth a check
-              </span>
-            ) : null}
-          </span>
-          {units === 'metric' ? (
+        </span>
+        {units === 'metric' ? (
+          <input
+            value={heightCm}
+            onChange={(e) => setHeightCm(e.target.value)}
+            inputMode="decimal"
+            placeholder={lastH ? String(Math.round(lastH.value)) : 'cm'}
+            aria-label="Height in centimetres"
+            className="mt-1.5 w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+          />
+        ) : (
+          <div className="mt-1.5 flex gap-2">
             <input
-              value={heightCm}
-              onChange={(e) => setHeightCm(e.target.value)}
-              inputMode="decimal"
-              placeholder={lastH ? String(Math.round(lastH.value)) : 'cm'}
-              aria-label="Height in centimetres"
-              className="mt-1.5 w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+              value={heightFt}
+              onChange={(e) => setHeightFt(e.target.value)}
+              inputMode="numeric"
+              placeholder="ft"
+              aria-label="Height, feet"
+              className="w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
             />
-          ) : (
-            <div className="mt-1.5 flex gap-2">
-              <input
-                value={heightFt}
-                onChange={(e) => setHeightFt(e.target.value)}
-                inputMode="numeric"
-                placeholder="ft"
-                aria-label="Height, feet"
-                className="w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
-              />
-              <input
-                value={heightIn}
-                onChange={(e) => setHeightIn(e.target.value)}
-                inputMode="numeric"
-                placeholder="in"
-                aria-label="Height, inches"
-                className="w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
-              />
-            </div>
-          )}
-          <span className="mt-1 block text-[12px] text-ink3">
-            {lastH ? `Leave blank to keep ${fmtHeight(lastH.value, units)}.` : 'Optional.'}
-          </span>
-        </div>
-
-        <button
-          onClick={save}
-          className="mt-5 w-full rounded-2xl px-6 py-3.5 font-display text-[16px] font-semibold text-on-accent shadow-card transition hover:brightness-105"
-          style={{ background: 'var(--t-btn-accent)' }}
-        >
-          Save
-        </button>
-        <button onClick={dismiss} className="mt-2 w-full py-2 text-[13px] font-medium text-ink3 hover:text-ink">
-          Not now — ask me in a few days
-        </button>
+            <input
+              value={heightIn}
+              onChange={(e) => setHeightIn(e.target.value)}
+              inputMode="numeric"
+              placeholder="in"
+              aria-label="Height, inches"
+              className="w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[16px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+            />
+          </div>
+        )}
+        <span className="mt-1 block text-[12px] text-ink3">
+          {lastH ? `Leave blank to keep ${fmtHeight(lastH.value, units)}.` : 'Optional.'}
+        </span>
       </div>
-    </Modal>
+
+      <button
+        onClick={save}
+        className="mt-5 w-full rounded-2xl px-6 py-3.5 font-display text-[16px] font-semibold text-on-accent shadow-card transition hover:brightness-105"
+        style={{ background: 'var(--t-btn-accent)' }}
+      >
+        Save
+      </button>
+      <button onClick={onDismiss} className="mt-2 w-full py-2 text-[13px] font-medium text-ink3 hover:text-ink">
+        Not now — ask me in a few days
+      </button>
+    </div>
   )
 }

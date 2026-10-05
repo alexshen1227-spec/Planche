@@ -336,3 +336,30 @@ describe('goals and streaks only count what has happened', () => {
     expect(weekStreak(state, NOW).weeks).toBe(0)
   })
 })
+
+describe('what a session claims is what was done', () => {
+  it('saving only the warm-ups of a skipped max test does not count as a test', () => {
+    const warmupsOnly = trainingDay(2, [{ ...hold('wrist-circles', 10, at(2)), kind: 'reps', section: 'warmup' }], {
+      workoutKind: 'test',
+      workoutName: 'Max Test',
+    })
+    const state = athlete('tuck', { sessions: [warmupsOnly] })
+    expect(readSignals(state, NOW).daysSinceMaxTest).toBeNull()
+    expect(readSignals(state, NOW).lastLoadedWasTest).toBe(false)
+  })
+
+  it('an unreviewed machine "broke" does not rewrite what the coach thinks happened', () => {
+    const machineOnly: FormCheck = {
+      rating: 'broke',
+      confirmed: false,
+      issues: ['arms', 'sag'],
+      auto: { issues: ['arms', 'sag'], confidence: 0.9, cleanSeconds: 1, cleanRatio: 0.1 },
+    }
+    const day = trainingDay(1, [hold('tuck-planche', 10, at(1), { form: machineOnly })])
+    expect(sessionLearningValue(day, 'tuck')).toBe(10)
+    const confirmedBroke = trainingDay(1, [
+      hold('tuck-planche', 10, at(1), { form: { ...machineOnly, confirmed: true } }),
+    ])
+    expect(sessionLearningValue(confirmedBroke, 'tuck')).toBe(0)
+  })
+})

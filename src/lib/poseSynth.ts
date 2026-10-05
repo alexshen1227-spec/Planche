@@ -53,6 +53,29 @@ export const PROPORTIONS = {
 /** A parameter that may hold steady or move across the hold. */
 export type Track = number | ((progress: number) => number)
 
+/**
+ * What the generator uses for every numeric knob that is not given. One
+ * table, read by both the generator and the bench's sliders: the bench used
+ * to show an absent knob as zero while the generator quietly used something
+ * else, so the first nudge of a slider jumped the scenario.
+ */
+export const SYNTH_DEFAULTS = {
+  elbowBendDeg: 0,
+  kneeBendDeg: 0,
+  hipAngleDeg: 180,
+  hipOffset: 0,
+  leanRatio: 0.4,
+  shrugGap: PROPORTIONS.earGap,
+  noise: 0.012,
+  rollDeg: 0,
+  bodyWidth: PROPORTIONS.bodyWidth,
+  nearScore: 0.88,
+  farScore: 0.45,
+  dropoutRate: 0,
+  foreshorten: 1,
+  seed: 1,
+} as const
+
 const at = (value: Track | undefined, progress: number, fallback: number): number =>
   value === undefined ? fallback : typeof value === 'function' ? value(progress) : value
 
@@ -219,10 +242,10 @@ function angleAt(a: Vec, b: Vec, c: Vec): number {
 export function buildTruePose(params: SynthParams, progress = 0): TruePose {
   const torso = params.torso ?? 220
   const facing = params.facing ?? 1
-  const bend = at(params.elbowBendDeg, progress, 0)
-  const hipOffset = at(params.hipOffset, progress, 0)
-  const leanRatio = at(params.leanRatio, progress, 0.4)
-  const shrugGap = at(params.shrugGap, progress, PROPORTIONS.earGap)
+  const bend = at(params.elbowBendDeg, progress, SYNTH_DEFAULTS.elbowBendDeg)
+  const hipOffset = at(params.hipOffset, progress, SYNTH_DEFAULTS.hipOffset)
+  const leanRatio = at(params.leanRatio, progress, SYNTH_DEFAULTS.leanRatio)
+  const shrugGap = at(params.shrugGap, progress, SYNTH_DEFAULTS.shrugGap)
 
   const upperArm = PROPORTIONS.upperArm * torso
   const forearm = PROPORTIONS.forearm * torso
@@ -284,9 +307,9 @@ export function buildTruePose(params: SynthParams, progress = 0): TruePose {
   })()
 
   const leg = (spec: SynthLeg) => {
-    const hipAngle = at(spec.hipAngleDeg, progress, 180)
-    const kneeBend = at(spec.kneeBendDeg, progress, 0)
-    const shorten = Math.max(0.2, Math.min(1, at(spec.foreshorten, progress, 1)))
+    const hipAngle = at(spec.hipAngleDeg, progress, SYNTH_DEFAULTS.hipAngleDeg)
+    const kneeBend = at(spec.kneeBendDeg, progress, SYNTH_DEFAULTS.kneeBendDeg)
+    const shorten = Math.max(0.2, Math.min(1, at(spec.foreshorten, progress, SYNTH_DEFAULTS.foreshorten)))
     const thigh = PROPORTIONS.thigh * torso * shorten
     const shank = PROPORTIONS.shank * torso * shorten
     // Rotating the hip→shoulder direction by the hip angle puts the knee
@@ -358,10 +381,10 @@ export function synthesizeClip(params: SynthParams = {}): JudgeInput & { truth: 
   const height = params.height ?? 720
   const side = params.side ?? 'left'
   const far = side === 'left' ? 'right' : 'left'
-  const noise = params.noise ?? 0.012
+  const noise = params.noise ?? SYNTH_DEFAULTS.noise
   const correlation = params.noiseCorrelation ?? 0.7
-  const dropoutRate = params.dropoutRate ?? 0
-  const rand = mulberry32(params.seed ?? 1)
+  const dropoutRate = params.dropoutRate ?? SYNTH_DEFAULTS.dropoutRate
+  const rand = mulberry32(params.seed ?? SYNTH_DEFAULTS.seed)
 
   // Correlated error: one persistent offset per joint per axis, nudged each
   // frame. Independent per-frame noise is far kinder than a real tracker.
@@ -388,14 +411,14 @@ export function synthesizeClip(params: SynthParams = {}): JudgeInput & { truth: 
     const pose = buildTruePose(params, progress)
     truth.push(pose)
 
-    const spread = at(params.bodyWidth, progress, PROPORTIONS.bodyWidth) * torso
+    const spread = at(params.bodyWidth, progress, SYNTH_DEFAULTS.bodyWidth) * torso
     const kps: Kp[] = []
     const place = (name: JointName, point: Vec, which: 'near' | 'far') => {
       const key = `${which}_${name}`
       const jitter = step(key)
       // The far side sits a little deeper in the image and is guessed at more.
       const depth = which === 'far' ? spread : 0
-      const rolled = rotate({ x: point.x + depth * 0.25, y: point.y + depth }, params.rollDeg ?? 0)
+      const rolled = rotate({ x: point.x + depth * 0.25, y: point.y + depth }, params.rollDeg ?? SYNTH_DEFAULTS.rollDeg)
       const scoreTrack =
         params.jointScores?.[`${which === 'near' ? side : far}_${name}`] ??
         params.jointScores?.[name]
@@ -403,8 +426,8 @@ export function synthesizeClip(params: SynthParams = {}): JudgeInput & { truth: 
         scoreTrack !== undefined
           ? at(scoreTrack, progress, 0.9)
           : which === 'near'
-            ? at(params.nearScore, progress, 0.88)
-            : at(params.farScore, progress, 0.45)
+            ? at(params.nearScore, progress, SYNTH_DEFAULTS.nearScore)
+            : at(params.farScore, progress, SYNTH_DEFAULTS.farScore)
       const dropped = dropoutRate > 0 && rand() < dropoutRate
       kps.push({
         name: `${which === 'near' ? side : far}_${name}`,

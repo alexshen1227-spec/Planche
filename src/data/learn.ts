@@ -67,7 +67,7 @@ export const GUIDES: Guide[] = [
         heading: 'Pain rules',
         body: 'Muscle burn and shaking are fine. Joint pain is not.',
         bullets: [
-          'Sharp wrist pain: stop, switch to parallettes, reduce lean depth.',
+          'Sharp wrist pain: stop the hold. Do not keep loading a painful wrist to finish the session — parallettes change the wrist angle, but they do not explain or clear the pain.',
           'New or worsening joint pain: stop the movement that reproduces it rather than trying to diagnose the tissue from location alone.',
           'Shoulder pinching or elbow/wrist pain: unload it, note what provokes it, and avoid coaching yourself through a painful range.',
           'Severe, worsening or persistent pain deserves assessment by a qualified clinician rather than a fixed app protocol.',
@@ -191,7 +191,7 @@ export const GUIDES: Guide[] = [
       },
       {
         heading: 'Steps 3+: parallettes (highly recommended)',
-        body: 'A low pair of parallettes puts your wrists in a neutral grip instead of deep extension. Most people gain seconds immediately and stop having wrist pain. Cheap wooden ones are fine; low ones (15–30cm) are more useful than tall ones for planche work.',
+        body: 'A low pair of parallettes puts your wrists in a neutral grip instead of deep extension. Many people find them easier on the wrists and gain seconds straight away — but a grip change does not explain or clear wrist pain; if a hold hurts, stop it. Cheap wooden ones are fine; low ones (15–30cm) are more useful than tall ones for planche work.',
       },
       {
         heading: 'Straddle work: a resistance band',
@@ -276,7 +276,7 @@ export const GLOSSARY: GlossaryTerm[] = [
     term: 'Deload',
     short: 'A deliberately easy week',
     detail:
-      'Roughly half your normal volume at easy targets, taken every 4–6 weeks. Adaptation lands during easy weeks — deloads make you faster, not slower.',
+      'Roughly half your normal volume at easy targets, taken every 4–6 weeks by coaching convention. The two controlled trials of deloads found no strength benefit, so treat it as a pressure valve for fatigue and busy weeks — not as the week strength appears.',
   },
   {
     term: 'Straddle',

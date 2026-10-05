@@ -152,8 +152,19 @@ export function Onboarding() {
           confidence: placement.confidence,
           gapIds: placement.gaps.map((g) => g.id),
         }
+    // The wrist answer is a joint report, not just a placement input: it has
+    // to reach the first session's safety rails. It used to shape only the
+    // placement copy, so "it hurts" at setup was followed by loaded planche work.
+    const wristAnswer = skippedInterview ? undefined : answers.wrist
+    const reportedAt = Date.now()
     dispatch({
       type: 'COMPLETE_ONBOARDING',
+      symptoms:
+        wristAnswer === 0
+          ? [{ at: reportedAt, joints: 'pain', regions: ['wrist'], source: 'onboarding' }]
+          : wristAnswer === 1
+            ? [{ at: reportedAt, joints: 'niggle', regions: ['wrist'], source: 'onboarding' }]
+            : [],
       name: name.trim(),
       stepId: placedStepId,
       weeklyGoal: goal,
@@ -619,7 +630,9 @@ export function Onboarding() {
                 className="mt-1.5 w-full rounded-xl border border-line bg-raised px-3 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
               />
               <span className="mt-1 block text-[12px] text-ink3">
-                Kept as a note so it is in front of you. Persistent joint pain deserves a physio, not a workaround.
+                Kept as a note so it is in front of you. If something hurts on a training day, say so in the check-in —
+                that is what changes the plan. Pain that is still there the next day, or swelling, needs qualified
+                medical advice.
               </span>
             </label>
 

@@ -238,9 +238,11 @@ export function diagnosePlateau(
     evidence: `Your key hold has been ${
       status === 'regressing' ? 'drifting down' : 'flat'
     } for about ${weeksFlat} weeks, and none of the usual causes — recovery, form quality, frequency, pressing strength — stands out in your log.`,
+    // No cause means no prescription. A max test is not a fix for an unknown
+    // — a normal session's best hold is a fresh reference too — so it is not
+    // queued here; the ordinary rested-and-due rule still offers one.
     intervention:
-      'A fresh max test recalibrates every target from a real number rather than an ageing one, and plateaus of this kind are often a measurement that drifted rather than a body that stopped adapting. Sleep and eating enough are the two inputs the app cannot see.',
-    suggestMaxTest: true,
+      'Keep training normally: a plateau with no visible cause is often a measurement that drifted rather than a body that stopped adapting, and your next sessions are fresh evidence either way. Sleep and eating enough are the two inputs the app cannot see.',
   }
 }
 
