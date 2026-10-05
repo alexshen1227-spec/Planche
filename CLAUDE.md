@@ -227,6 +227,9 @@ more certain than its basis.
    they were given makes the log echo the target back and it compounds
    downward. The `to-target` compliance mode in `simulateSeason` pins this; the
    max-test suggestion is the corrective and the eval asserts it engages.
+   Accessory reps echo the same way — the rep screen starts at the target —
+   so the pressing trend reads only sessions whose best set went past or fell
+   short of its target; a run of exact hits is "unknown", never "flat".
 4. **Noise is spread around the trend, not around the median.** `sig.noisy`
    once used MAD/median of the last six bests, so a steady 6→17.5s climb read
    as ±25% "noise": targets froze and the earned unlock attempt was withheld —

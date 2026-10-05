@@ -511,10 +511,19 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
       .sort((a, b) => b.count - a.count)[0]?.id ?? pressIds[0]
   // Compare one repeated movement with itself. Raw reps from push-ups, dips
   // and PPPUs are not interchangeable strength units.
+  //
+  // And only sessions that measured something. The rep screen starts at the
+  // prescribed number, so a session whose best set is exactly its target says
+  // "at least this many" — the prescription echoed back. Read as data, a run of
+  // target hits was a flat pressing trend: the coach then diagnosed a strength
+  // ceiling and added pressing volume for anyone who simply did what they were
+  // asked. With too few real readings the trend is unknown, not flat.
   const pressPoints = recentPressSessions
     .map((s) => {
-      const best = bestIn(s, pressId)
-      return best > 0 ? { at: s.startedAt, value: best } : null
+      const sets = s.sets.filter((x) => x.exerciseId === pressId && x.value > 0)
+      if (sets.length === 0) return null
+      const top = sets.reduce((a, b) => (b.value > a.value ? b : a))
+      return top.value === top.target ? null : { at: s.startedAt, value: top.value }
     })
     .filter((p): p is { at: number; value: number } => p !== null)
   const pressSlope = slopePerWeek(pressPoints)

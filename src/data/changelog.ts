@@ -19,6 +19,15 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-05',
+    title: 'Doing exactly your reps is no longer read as a stall',
+    area: 'coach',
+    notes: [
+      'The rep screen starts at your target, so most sets are logged at exactly the prescribed number. The coach read that as your pressing strength having flattened — and could then call a plateau a strength ceiling and add pressing volume, just because you did what you were asked. Only sets taken past their target, or that fell short of it, now count as pressing evidence; with too few of those, it says it does not know.',
+      'On a scheduled easy week, the plateau note no longer tells you to “keep training normally” in the same breath, and it no longer repeats how long you have been flat.',
+    ],
+  },
+  {
+    date: '2026-10-05',
     title: 'Unlock estimates use your current pace',
     area: 'coach',
     notes: [

@@ -1083,7 +1083,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       prescription: 'Planche-specific pressing volume increases while max attempts stay controlled.',
     }
     decisions.push({
-      text: 'Your holds and your pressing numbers have both flattened — adding pressing volume, which usually unblocks the hold.',
+      text: 'Your holds and your pressing numbers have both flattened — adding pressing volume, a common coaching response when both stall rather than a proven fix.',
       kind: 'info',
       source: 'load-advice',
     })
@@ -1455,7 +1455,11 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       text:
         loadPermission === 'none'
           ? `${stalled} That is worth fixing, but not today — what you reported comes first, and the plan returns to it once you are training loaded again.`
-          : `${stalled} ${plateau.intervention}`,
+          : dayType === 'deload' && !plateau.suggestDeload
+            ? // A scheduled easy week beside "keep training normally" (or
+              // "targets stay where they are") is two instructions at once.
+              `${stalled} This is a scheduled easy week, so nothing changes for the plateau until it is done — then it is read again from fresh sessions.`
+            : `${stalled} ${plateau.intervention}`,
     })
   }
 

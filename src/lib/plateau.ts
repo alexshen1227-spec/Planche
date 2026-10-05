@@ -235,9 +235,11 @@ export function diagnosePlateau(
     weeksFlat,
     cause: 'unclear',
     confidence: 'low',
-    evidence: `Your key hold has been ${
-      status === 'regressing' ? 'drifting down' : 'flat'
-    } for about ${weeksFlat} weeks, and none of the usual causes — recovery, form quality, frequency, pressing strength — stands out in your log.`,
+    // The duration is the heading wherever this is shown, so the evidence does
+    // not repeat it: the plan line read "flat for about 3 weeks. Your key hold
+    // has been flat for about 3 weeks, and none of…".
+    evidence:
+      'None of the usual causes — recovery, form quality, frequency, pressing strength — stands out in your log.',
     // No cause means no prescription. A max test is not a fix for an unknown
     // — a normal session's best hold is a fresh reference too — so it is not
     // queued here; the ordinary rested-and-due rule still offers one.

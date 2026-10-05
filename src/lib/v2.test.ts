@@ -1359,6 +1359,80 @@ describe('hard limits actually permit the reductions the rails ask for', () => {
   })
 })
 
+describe('pressing evidence is what was measured, not what was prescribed', () => {
+  // Flat key holds, with a PPPU block every session. The rep screen starts at
+  // the target, so an athlete who does what they are asked logs it exactly.
+  const withPressing = (reps: (i: number) => { value: number; target: number }) =>
+    stateWith(
+      'tuck',
+      historyOf('tuck', [36, 31, 27, 22, 17, 13, 8, 3].map((daysAgo) => ({ daysAgo, value: 8 }))).map((s, i) => ({
+        ...s,
+        sets: [
+          ...s.sets,
+          ...Array.from({ length: 3 }, () => ({
+            exerciseId: 'pppu',
+            kind: 'reps' as const,
+            ...reps(i),
+            section: 'strength' as const,
+            at: s.startedAt,
+          })),
+        ],
+      })),
+    )
+
+  it('reads a run of exact target hits as unknown, not as a flat pressing trend', () => {
+    const state = withPressing(() => ({ value: 6, target: 6 }))
+    const sig = readSignals(state, NOW)
+    expect(sig.accessoryTrend).toBeNull()
+    expect(sig.pressingLags).toBe(false)
+    const plan = buildPlan(state, NOW)
+    expect(plan.plateau?.cause).not.toBe('strength-ceiling')
+    expect(plan.accessoryEmphasis).not.toBe('pressing')
+  })
+
+  it('still reads pressing that genuinely stalled past its target', () => {
+    // Sets taken beyond the target are measurements, and these are flat.
+    const state = withPressing(() => ({ value: 9, target: 6 }))
+    const sig = readSignals(state, NOW)
+    expect(sig.accessoryTrend).toBe('flat')
+    expect(sig.pressingLags).toBe(true)
+  })
+})
+
+describe('the plateau line on a scheduled easy week', () => {
+  // Twelve flat sessions, two a week for six weeks at an even load: no easy
+  // week in the log (so one is scheduled) and a plateau with no visible cause.
+  const flatSixWeeks = () =>
+    stateWith(
+      'tuck',
+      historyOf(
+        'tuck',
+        [41, 38, 34, 31, 27, 24, 20, 17, 13, 10, 6, 3].map((daysAgo) => ({ daysAgo, value: 8 })),
+        { rpe: 7 },
+      ),
+    )
+
+  it('reaches the case it is about', () => {
+    const plan = buildPlan(flatSixWeeks(), NOW)
+    expect(plan.dayType).toBe('deload')
+    expect(plan.plateau?.cause).toBe('unclear')
+    expect(plan.plateau?.suggestDeload).toBeUndefined()
+  })
+
+  it('does not say "keep training normally" beside a deliberately light week', () => {
+    const plan = buildPlan(flatSixWeeks(), NOW)
+    const line = plan.decisions.find((d) => d.source === 'plateau')!.text
+    expect(line).not.toMatch(/keep training normally/i)
+    expect(line).toMatch(/scheduled easy week/i)
+  })
+
+  it('states the duration once', () => {
+    const plan = buildPlan(flatSixWeeks(), NOW)
+    const line = plan.decisions.find((d) => d.source === 'plateau')!.text
+    expect(line.match(/flat for about/gi)?.length).toBe(1)
+  })
+})
+
 describe('the coach never argues with itself', () => {
   it('does not tell an infrequent athlete both to train more and to trim', () => {
     // A rarely-training athlete has a tiny baseline, so one ordinary session
