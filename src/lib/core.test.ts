@@ -813,7 +813,7 @@ describe('keypoint dropout repair', () => {
     // Reduced score so a bridged point cannot inflate tracking confidence,
     // and marked, so it never counts as observed coverage.
     expect(filled.score).toBeLessThan(0.9)
-    expect(filled.origin).toBe('interpolated')
+    expect((filled as { origin?: string }).origin).toBe('interpolated')
   })
 
   it('never fills a joint across a long gap', () => {
