@@ -1572,46 +1572,23 @@ export function SessionPlayer({
                   className="mt-1.5 rounded-xl border border-danger/30 bg-danger-soft px-3 py-2 text-left text-[12.5px] leading-relaxed text-ink"
                   role="alert"
                 >
-                  {cameraFailure}
+                  <p>{cameraFailure}</p>
                   {recorder.status !== 'unsupported' ? (
                     <button
                       onClick={() => void recorder.prepare()}
-                      className="ml-1 min-h-9 font-semibold text-accent-text underline underline-offset-2"
+                      className="mt-1.5 min-h-9 rounded-lg border border-line bg-surface px-3 py-1 text-[12.5px] font-semibold text-ink hover:border-line-strong"
                     >
-                      Try again
+                      Try the camera again
                     </button>
                   ) : null}
                 </div>
               ) : null}
             </div>
           ) : null}
-          <button
-            onClick={() => beginSet(filmingThis)}
-            disabled={startWaitsForCamera}
-            className="mt-6 inline-flex w-full max-w-sm items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
-            style={{ background: 'var(--t-btn-accent)' }}
-          >
-            <Icon name="play" size={18} />
-            {!isHold
-              ? 'Begin set'
-              : startWaitsForCamera
-                ? 'Waiting for the camera…'
-                : wantsFilm && !cameraLive
-                  ? `Start without filming · ${leadSec}s lead-in`
-                  : `Start · ${leadSec}s lead-in`}
-          </button>
-          {startWaitsForCamera ? (
-            <button
-              onClick={() => beginSet(false)}
-              className="mx-auto mt-1 block px-2 py-2 text-[13px] font-medium text-ink2 underline-offset-2 hover:text-ink hover:underline"
-            >
-              Start without filming
-            </button>
-          ) : null}
           {/* Bare text buttons measured 20px tall, under the 24px minimum, on
               the one screen where taps are one-handed and mid-workout. The
               padding buys a real target without changing how the row looks. */}
-          <div className="mt-2 flex flex-wrap justify-center gap-x-4 text-[13px]">
+          <div className="mt-4 flex flex-wrap justify-center gap-x-4 text-[13px]">
             <button onClick={() => setShowDemo(true)} className="px-1 py-2 text-accent-text underline-offset-2 hover:underline">
               How do I do this?
             </button>
@@ -1621,6 +1598,33 @@ export function SessionPlayer({
             <button onClick={skipBlock} className="px-1 py-2 text-ink3 underline-offset-2 hover:text-ink hover:underline">
               Skip exercise
             </button>
+          </div>
+          {/* The one action this screen exists for stays on screen: the cues
+              and camera block used to push it below the fold on a phone. */}
+          <div className="sticky bottom-0 z-10 mx-auto mt-3 w-full max-w-sm bg-bg/85 pb-[max(env(safe-area-inset-bottom),14px)] pt-3 backdrop-blur-sm">
+            <button
+              onClick={() => beginSet(filmingThis)}
+              disabled={startWaitsForCamera}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
+              style={{ background: 'var(--t-btn-accent)' }}
+            >
+              <Icon name="play" size={18} />
+              {!isHold
+                ? 'Begin set'
+                : startWaitsForCamera
+                  ? 'Waiting for the camera…'
+                  : wantsFilm && !cameraLive
+                    ? `Start without filming · ${leadSec}s lead-in`
+                    : `Start · ${leadSec}s lead-in`}
+            </button>
+            {startWaitsForCamera ? (
+              <button
+                onClick={() => beginSet(false)}
+                className="mx-auto mt-1 block px-2 py-2 text-[13px] font-medium text-ink2 underline-offset-2 hover:text-ink hover:underline"
+              >
+                Start without filming
+              </button>
+            ) : null}
           </div>
         </div>
       )
@@ -1977,27 +1981,29 @@ export function SessionPlayer({
             camera flag may pass; two or more flags do not.
           </p>
         ) : null}
-        {waiting ? (
-          <p className="mt-3 text-center text-[12.5px] text-ink3" role="status">
-            {clipsFinalizing > 0 ? 'Finishing your clip…' : 'Finishing the form check…'}
-          </p>
-        ) : null}
-        <button
-          onClick={save}
-          disabled={logs.length === 0 || waiting}
-          className="mt-4 w-full rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
-          style={{ background: 'var(--t-btn-accent)' }}
-        >
-          Save session
-        </button>
-        {waiting && logs.length > 0 ? (
+        <div className="sticky bottom-0 z-10 mt-4 bg-bg/85 pb-[max(env(safe-area-inset-bottom),14px)] pt-3 backdrop-blur-sm">
+          {waiting ? (
+            <p className="mb-2 text-center text-[12.5px] text-ink3" role="status">
+              {clipsFinalizing > 0 ? 'Finishing your clip…' : 'Finishing the form check…'}
+            </p>
+          ) : null}
           <button
             onClick={save}
-            className="mt-2 w-full rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink"
+            disabled={logs.length === 0 || waiting}
+            className="w-full rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+            style={{ background: 'var(--t-btn-accent)' }}
           >
-            Save without waiting
+            Save session
           </button>
-        ) : null}
+          {waiting && logs.length > 0 ? (
+            <button
+              onClick={save}
+              className="mt-2 w-full rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink"
+            >
+              Save without waiting
+            </button>
+          ) : null}
+        </div>
         {waiting && logs.length > 0 ? (
           <p className="mt-1 text-center text-[11.5px] leading-relaxed text-ink3">
             A check or clip still finishing attaches to the saved set if the app stays open; otherwise the clip stays in
