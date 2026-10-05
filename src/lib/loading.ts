@@ -132,7 +132,13 @@ export function weeklyLoads(state: Pick<AppState, 'sessions'>, weeks = 8, now = 
 }
 
 /**
- * Fastest weekly increase in planche-specific load this app will encourage.
+ * The most last week's planche-specific load may exceed the athlete's typical
+ * week (the median of the four complete weeks before it): 1.2 = 20% above.
+ *
+ * Not a per-week growth rate, and it must not be described as one. The
+ * baseline sits about two and a half weeks back, so steady growth of roughly
+ * 8% a week already reaches it — conservative on purpose, and the copy says
+ * "of your typical week over the month before" rather than "20% a week".
  *
  * INFERENCE, and labelled as such wherever it reaches an athlete. It is a
  * conservative reading of the tissue-adaptation literature rather than a measured

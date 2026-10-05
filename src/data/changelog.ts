@@ -30,7 +30,7 @@ export const CHANGELOG: ChangeEntry[] = [
     title: 'Two more claims taken back',
     area: 'app',
     notes: [
-      'When the coach trims a session because your weekly load climbed fast, it now says the 20%-a-week limit is its own cautious choice rather than a proven safety line — the 10%-a-week rule it resembles did not reduce injuries when it was tested.',
+      'When the coach trims a session because your load climbed fast, it now says what it actually measured — last week against your typical week over the month before, not a weekly growth rate — and that its 120% limit is its own cautious choice rather than a proven safety line. The 10%-a-week rule it resembles did not reduce injuries when it was tested.',
       'Jumping jacks no longer promise that everything after them is “safer”, and the pancake stretch no longer promises a cheaper straddle — it works toward a wider one, which is a shorter lever.',
     ],
   },

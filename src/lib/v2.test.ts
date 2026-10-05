@@ -1125,7 +1125,7 @@ describe('rails that a mutation test proved were unpinned', () => {
     expect(ramp?.rampingFast).toBe(true)
     const plan = buildPlan(state, NOW)
     expect(plan.signals.sessionsPerWeek).toBeLessThan(2)
-    expect(plan.decisions.map((d) => d.text).join(' ')).not.toMatch(/steeper climb/i)
+    expect(plan.decisions.map((d) => d.text).join(' ')).not.toMatch(/trimmed to bring it back/i)
   })
 
   it('needs two credible completed steps before quoting a goal duration', () => {
@@ -1346,7 +1346,7 @@ describe('the coach never argues with itself', () => {
     const saysMore = /too little exposure|below the frequency|sessions a week will move/i.test(
       `${text} ${plan.plateau?.intervention ?? ''}`,
     )
-    const saysTrim = /steeper climb|trimmed to bring it back/i.test(text)
+    const saysTrim = /trimmed to bring it back/i.test(text)
     expect(saysMore && saysTrim).toBe(false)
   })
 
@@ -1371,7 +1371,7 @@ describe('the coach never argues with itself', () => {
     const text = `${plan.dayReason} ${plan.decisions.map((d) => d.text).join(' ')}`
     expect(text).toMatch(/off today|off until it settles/i)
     // The plateau line must defer rather than prescribe more training.
-    expect(text).not.toMatch(/sessions a week will move this number/i)
+    expect(text).not.toMatch(/sessions a week[^.]*move this number/i)
     expect(text).toMatch(/not today|comes first/i)
   })
 
