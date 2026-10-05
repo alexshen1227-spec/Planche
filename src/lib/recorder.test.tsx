@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ownsCameraAttempt, useFormRecorder } from './recorder'
+import { classifyCameraError, ownsCameraAttempt, pickRearUltraWide, useFormRecorder } from './recorder'
 
 /**
  * Camera lifecycle, against a simulated device.
@@ -287,5 +287,180 @@ describe('request ownership', () => {
     expect(ownsCameraAttempt(a, b, 3, 3)).toBe(false)
     // Superseded: a newer generation exists.
     expect(ownsCameraAttempt(a, a, 2, 3)).toBe(false)
+  })
+})
+
+describe('capture is reported as it is, not as intended', () => {
+  it('never opens a camera from start(): no live stream means a timer-only attempt', async () => {
+    const { result } = renderHook(() => useFormRecorder())
+    let started = true
+    await act(async () => {
+      started = await result.current.start()
+    })
+    expect(started).toBe(false)
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled()
+    expect(liveTracks()).toHaveLength(0)
+  })
+
+  it('does not record from a camera whose track has ended', async () => {
+    const { result } = renderHook(() => useFormRecorder())
+    await act(async () => {
+      await result.current.prepare()
+    })
+    liveTracks()[0].track.stop()
+    let started = true
+    await act(async () => {
+      started = await result.current.start()
+    })
+    expect(started).toBe(false)
+    expect(result.current.status).not.toBe('recording')
+  })
+
+  it('names why the camera failed, so the advice fits', async () => {
+    const fail = (name: string) =>
+      vi.fn(async () => {
+        throw Object.assign(new Error('camera error'), { name })
+      }) as never
+    for (const [name, expected] of [
+      ['NotAllowedError', 'denied'],
+      ['NotFoundError', 'unavailable'],
+      ['OverconstrainedError', 'unavailable'],
+      ['NotReadableError', 'busy'],
+      ['AbortError', 'busy'],
+    ] as const) {
+      navigator.mediaDevices.getUserMedia = fail(name)
+      const { result, unmount } = renderHook(() => useFormRecorder())
+      await act(async () => {
+        await result.current.prepare()
+      })
+      expect(result.current.status).toBe(expected)
+      unmount()
+    }
+    expect(classifyCameraError(new Error('Permission denied'))).toBe('denied')
+  })
+})
+
+describe('each recording owns its own footage', () => {
+  /** A recorder whose final chunk and stop event arrive later, as the spec allows. */
+  class SlowRecorder extends FakeRecorder {
+    static pending: (() => void)[] = []
+    private label = `rec-${Math.random().toString(36).slice(2, 6)}`
+    start() {
+      this.state = 'recording'
+      this.ondataavailable?.({ data: new Blob([`${this.label}-first`], { type: 'video/webm' }) })
+    }
+    requestData() {}
+    stop() {
+      this.state = 'inactive'
+      SlowRecorder.pending.push(() => {
+        this.ondataavailable?.({ data: new Blob([`${this.label}-last`], { type: 'video/webm' }) })
+        this.onstop?.()
+      })
+    }
+  }
+
+  it('a slow finalisation keeps its whole clip and cannot touch the next recording', async () => {
+    SlowRecorder.pending = []
+    vi.stubGlobal('MediaRecorder', SlowRecorder)
+    const { result } = renderHook(() => useFormRecorder())
+    await act(async () => {
+      await result.current.prepare()
+      await result.current.start()
+    })
+    let first!: Promise<Blob | null>
+    act(() => {
+      first = result.current.stop()
+    })
+    // The next set starts before the first clip has finished finalising.
+    await act(async () => {
+      await result.current.start()
+    })
+    expect(result.current.status).toBe('recording')
+    // Now the first recorder delivers its last chunk and stops.
+    await act(async () => {
+      SlowRecorder.pending.shift()!()
+    })
+    const firstBlob = await first
+    const firstText = await firstBlob!.text()
+    expect(firstText).toMatch(/-first.*-last/)
+    // The second recording is untouched: still recording, still on a live camera.
+    expect(result.current.status).toBe('recording')
+    expect(liveTracks()).toHaveLength(1)
+    let second!: Promise<Blob | null>
+    act(() => {
+      second = result.current.stop()
+    })
+    await act(async () => {
+      SlowRecorder.pending.shift()!()
+    })
+    const secondText = await (await second)!.text()
+    expect(secondText).not.toContain(firstText.slice(0, 8))
+    expect(secondText).toMatch(/-first.*-last/)
+  })
+
+  it('a release while a clip finalises stops only that camera, later', async () => {
+    SlowRecorder.pending = []
+    vi.stubGlobal('MediaRecorder', SlowRecorder)
+    const { result } = renderHook(() => useFormRecorder())
+    await act(async () => {
+      await result.current.prepare()
+      await result.current.start()
+    })
+    const oldTrack = liveTracks()[0].track
+    let first!: Promise<Blob | null>
+    act(() => {
+      first = result.current.stop()
+      result.current.release()
+    })
+    // The old camera stays live until its clip is complete.
+    expect(oldTrack.readyState).toBe('live')
+    await act(async () => {
+      SlowRecorder.pending.shift()!()
+      await first
+    })
+    expect(oldTrack.readyState).toBe('ended')
+    expect(await first).toBeInstanceOf(Blob)
+  })
+})
+
+describe('the rear ultra-wide, and only the rear', () => {
+  it('never picks a front-facing "ultra wide" camera', () => {
+    expect(
+      pickRearUltraWide([
+        { kind: 'videoinput', deviceId: 'front', label: 'Front Ultra Wide Camera' },
+        { kind: 'videoinput', deviceId: 'back', label: 'Back Camera' },
+      ]),
+    ).toBeNull()
+    expect(
+      pickRearUltraWide([
+        { kind: 'videoinput', deviceId: 'back', label: 'Back Camera' },
+        { kind: 'videoinput', deviceId: 'uw', label: 'Back Ultra Wide Camera' },
+      ]),
+    ).toBe('uw')
+    // Blank labels (no permission yet) identify nothing.
+    expect(pickRearUltraWide([{ kind: 'videoinput', deviceId: 'x', label: '' }])).toBeNull()
+  })
+
+  it('moves to the rear ultra-wide once permission reveals the labels', async () => {
+    let granted = false
+    navigator.mediaDevices.enumerateDevices = vi.fn(async () =>
+      granted
+        ? [
+            { kind: 'videoinput', deviceId: 'back-1', label: 'Back Camera' },
+            { kind: 'videoinput', deviceId: 'uw-1', label: 'Back Ultra Wide Camera' },
+          ]
+        : [{ kind: 'videoinput', deviceId: '', label: '' }],
+    ) as never
+    navigator.mediaDevices.getUserMedia = vi.fn(async (c: { video: { deviceId?: { exact: string } } }) => {
+      granted = true
+      return makeStream(c.video.deviceId?.exact === 'uw-1' ? 'Back Ultra Wide Camera' : 'Back Camera')
+    }) as never
+    const { result } = renderHook(() => useFormRecorder())
+    await act(async () => {
+      await result.current.prepare()
+    })
+    expect(result.current.lens).toBe('ultra-wide')
+    expect(liveTracks()).toHaveLength(1)
+    expect(liveTracks()[0].track.label).toBe('Back Ultra Wide Camera')
   })
 })
