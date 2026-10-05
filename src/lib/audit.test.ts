@@ -324,6 +324,14 @@ describe('imported data is repaired honestly', () => {
     expect(state.sessions).toHaveLength(1)
     expect(report.duplicateSessions).toBe(2)
   })
+
+  it('a bad set inside a duplicated session is reported once', () => {
+    const s = trainingDay(1, [hold('tuck-planche', 8, at(1)), hold('no-such-move', 5, at(1) + 1)])
+    const { report } = normalizeStateWithReport({ ...athlete(), sessions: [s, s] }, NOW)
+    expect(report.droppedSets).toEqual([{ reason: 'unknown exercise', count: 1 }])
+    expect(report.setsIn).toBe(2)
+    expect(report.setsKept).toBe(1)
+  })
 })
 
 describe('goals and streaks only count what has happened', () => {

@@ -662,8 +662,8 @@ export function Onboarding() {
               How often will you train?
             </h1>
             <p className="mx-auto mt-1 max-w-md text-[14px] leading-relaxed text-ink2">
-              Sessions per week. Three is the number most coaching sources land on for straight-arm work, and rest days
-              are where the strength actually arrives.
+              Sessions per week. Three is the number most coaching sources land on for straight-arm work — but with
+              total work equal, frequency itself makes little measured difference, so pick the number you will keep.
             </p>
             <div className="mt-7 flex justify-center gap-2.5" role="group" aria-label="Sessions per week">
               {[2, 3, 4, 5].map((n) => (

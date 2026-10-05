@@ -3,7 +3,15 @@ import { useStore } from '../lib/store'
 import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID, STEPS } from '../data/progressions'
 import { ACHIEVEMENTS, type AchievementProgress } from '../data/achievements'
-import { bestSeries, weeklyVolume, totalHoldSec, totalSets, sessionHoldSec, sessionDurationSec } from '../lib/stats'
+import {
+  bestSeries,
+  plotsProgressionCredit,
+  weeklyVolume,
+  totalHoldSec,
+  totalSets,
+  sessionHoldSec,
+  sessionDurationSec,
+} from '../lib/stats'
 import { armStats, STRATEGY_BY_ID, formatStrategyEvidence, buildPlan } from '../lib/coach'
 import { diagnose, weakLinks } from '../lib/diagnose'
 import { fmtWeight } from '../lib/units'
@@ -283,6 +291,8 @@ export function Stats() {
   const [achievementFilter, setAchievementFilter] = useState<'all' | 'earned' | 'next' | 'locked'>('next')
 
   const chartIsPlanche = EXERCISE_BY_ID[chartEx]?.category === 'planche'
+  /** The line plots unlock credit, not the timer — every label must say so. */
+  const chartIsCredit = plotsProgressionCredit(chartEx)
   const series = useMemo(
     () => bestSeries(state, chartEx, chartIsPlanche && chartSurface !== 'all' ? chartSurface : undefined),
     [state, chartEx, chartIsPlanche, chartSurface],
@@ -302,7 +312,7 @@ export function Stats() {
     // own verified hold.
     if (series.length === 1) {
       const only = series[0]
-      return `One ${chartIsPlanche ? 'form-qualified ' : ''}session so far: ${fmtHold(only.value)} on ${fmtDate(
+      return `One ${chartIsCredit ? 'form-qualified ' : ''}session so far: ${fmtHold(only.value)} on ${fmtDate(
         only.at,
       )}. A trend needs a second one.`
     }
@@ -311,14 +321,14 @@ export function Stats() {
       0,
     )
     if (logged === 0) return undefined
-    if (!chartIsPlanche) return undefined
-    if (chartSurface !== 'all') {
+    if (!chartIsCredit) return undefined
+    if (chartIsPlanche && chartSurface !== 'all') {
       return `No form-qualified ${surfaceLabel(chartSurface).toLowerCase()} sets yet. Try “All surfaces”, or film a set on this surface.`
     }
     return `${logged} set${logged === 1 ? '' : 's'} of this hold logged, but none is form-qualified yet. This chart plots the credit that counts toward unlocking — sets you rated Clean that also passed a filmed check, up to the camera's clean window${
       EXERCISE_BY_ID[chartEx]?.perSide ? ', and the weaker side when both were trained' : ''
     }. Your records and totals still count everything.`
-  }, [series, state.sessions, chartEx, chartIsPlanche, chartSurface])
+  }, [series, state.sessions, chartEx, chartIsPlanche, chartIsCredit, chartSurface])
 
   const arms = useMemo(() => armStats(state), [state])
   const triedArms = useMemo(() => arms.filter((arm) => arm.attempts > 0).length, [arms])
@@ -431,7 +441,7 @@ export function Stats() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="font-display text-[16px] font-semibold text-ink">
-              {chartIsPlanche ? 'Form-qualified credit per session' : 'Best hold per session'}
+              {chartIsCredit ? 'Form-qualified credit per session' : 'Best hold per session'}
             </div>
             <div className="text-[13px] text-ink2">
               {EXERCISE_BY_ID[chartEx]?.name}
@@ -484,7 +494,7 @@ export function Stats() {
             points={series}
             goal={chartStep?.unlockSec}
             emptyHint={chartEmptyHint}
-            label={chartIsPlanche ? 'Form-qualified credit per session' : 'Best hold per session'}
+            label={chartIsCredit ? 'Form-qualified credit per session' : 'Best hold per session'}
           />
         </div>
       </div>

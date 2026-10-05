@@ -1189,7 +1189,11 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                     </li>
                   ) : null}
                   {pendingImport.report.duplicateSessions ? (
-                    <li>{pendingImport.report.duplicateSessions} exact duplicate session copies merged into one</li>
+                    <li>
+                      {pendingImport.report.duplicateSessions} exact duplicate{' '}
+                      {pendingImport.report.duplicateSessions === 1 ? 'copy' : 'copies'} of a session left out — the
+                      session itself is kept once
+                    </li>
                   ) : null}
                   {pendingImport.report.conflictingSessions ? (
                     <li>

@@ -51,6 +51,16 @@ export function weekStreak(state: AppState, now = Date.now()): { weeks: number; 
  *
  * Other holds plot their best timer value.
  */
+/**
+ * Whether a hold's chart plots unlock credit rather than the timer: the
+ * planche line, plus Foundations' key hold. One rule, read by the series and
+ * by every label describing it, so the heading cannot name a different
+ * quantity from the line.
+ */
+export function plotsProgressionCredit(exerciseId: string): boolean {
+  return EXERCISE_BY_ID[exerciseId]?.category === 'planche' || exerciseId === 'ppp-hold'
+}
+
 export function bestSeries(
   state: AppState,
   exerciseId: string,
@@ -58,7 +68,7 @@ export function bestSeries(
 ): { at: number; value: number }[] {
   const out: { at: number; value: number }[] = []
   const exercise = EXERCISE_BY_ID[exerciseId]
-  const progressionExercise = exercise?.category === 'planche' || exerciseId === 'ppp-hold'
+  const progressionExercise = plotsProgressionCredit(exerciseId)
   for (const s of [...state.sessions].sort((a, b) => a.startedAt - b.startedAt)) {
     const sets = s.sets.filter((set) => set.exerciseId === exerciseId && (!surface || set.surface === surface))
     let value = 0

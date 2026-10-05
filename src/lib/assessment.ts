@@ -217,7 +217,9 @@ export const ASSESSMENT_ITEMS: AssessmentItem[] = [
   {
     id: 'experience',
     question: 'How long have you been training straight-arm strength — leans, planche work, levers?',
-    standard: 'Tendons and connective tissue adapt far more slowly than muscle, so this changes the sensible starting dose.',
+    // Not "tendons adapt far more slowly than muscle": the time-course data
+    // behind that folk claim does not support it (see CLAUDE.md, rule 1).
+    standard: 'Early strength gains are largely your nervous system learning the position, ahead of the structures carrying the load — so this changes the sensible starting dose.',
     unit: 'months',
     options: [
       { label: 'Just starting', value: 0 },

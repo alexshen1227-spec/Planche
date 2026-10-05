@@ -540,14 +540,17 @@ function sanitizeSessions(
     }
     const startedAt = c.startedAt
     const sets: SetLog[] = []
+    // Set-level findings are held per session and counted only if the
+    // session is kept: a duplicate copy's bad set is one problem, not two.
+    const setReport = emptyReport()
     if (Array.isArray(c.sets)) {
-      report.setsIn += c.sets.length
+      setReport.setsIn += c.sets.length
       for (const rawSet of c.sets) {
-        const set = sanitizeSet(rawSet, startedAt, report)
+        const set = sanitizeSet(rawSet, startedAt, setReport)
         if (set) sets.push(set)
       }
     }
-    report.setsKept += sets.length
+    setReport.setsKept += sets.length
     const checkIn = sanitizeCheckIn(c.checkIn)
     const endedAt = isTime(c.endedAt) && c.endedAt >= startedAt ? c.endedAt : startedAt
     const session: Session = {
@@ -585,6 +588,14 @@ function sanitizeSessions(
     }
     byId.set(session.id, fingerprint)
     if (startedAt > now + CLOCK_SKEW_MS) report.futureSessions += 1
+    report.setsIn += setReport.setsIn
+    report.setsKept += setReport.setsKept
+    report.repairedSets += setReport.repairedSets
+    for (const dropped of setReport.droppedSets) {
+      const existing = report.droppedSets.find((d) => d.reason === dropped.reason)
+      if (existing) existing.count += dropped.count
+      else report.droppedSets.push({ ...dropped })
+    }
     out.push(session)
   })
   report.sessionsKept = out.length

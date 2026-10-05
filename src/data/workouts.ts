@@ -247,8 +247,8 @@ function accessoryCapacity(
 
 const PLACEMENT_BAND: Record<string, (v: number) => string> = {
   pushup: (v) => (v < 5 ? 'fewer than 5 push-ups' : `about ${v} push-ups`),
-  pppu: () => 'your push-up answer',
-  'pike-pushup': () => 'your push-up answer',
+  pppu: () => 'push-up count',
+  'pike-pushup': () => 'push-up count',
   'hollow-hold': (v) => (v < 15 ? 'a hollow hold under 15s' : `a hollow hold of about ${v}s`),
 }
 
@@ -270,7 +270,7 @@ export function capacityAdjustBlocks(
   const basisFor = (exerciseId: string, capacity: { value: number; source: 'log' | 'placement' }) =>
     capacity.source === 'log'
       ? 'your recent sessions'
-      : `your placement answer (${PLACEMENT_BAND[exerciseId]?.(capacity.value) ?? 'what you reported'})`
+      : `your setup answer (${PLACEMENT_BAND[exerciseId]?.(capacity.value) ?? 'what you reported'})`
 
   // 1. Swap in an easier version where the placement says the default is out
   //    of reach. Only placement answers do this: logged history is real
@@ -285,7 +285,7 @@ export function capacityAdjustBlocks(
     if (!tooHard || !regression || !EXERCISE_BY_ID[regression]) return block
     const reg = EXERCISE_BY_ID[regression]
     const basis = basisFor(block.exerciseId, capacity)
-    notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} swapped for ${reg.name.toLowerCase()} (from ${basis}).`)
+    notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} swapped for ${reg.name.toLowerCase()}, from ${basis}.`)
     return {
       ...block,
       exerciseId: regression,
@@ -317,12 +317,12 @@ export function capacityAdjustBlocks(
     if (block.target.kind === 'reps') {
       const dose = Math.max(1, Math.floor(capacity.value * 0.7))
       if (dose >= block.target.reps) return block
-      notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} set to ${dose} reps (from ${basis}).`)
+      notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} set to ${dose} reps, from ${basis}.`)
       return { ...block, target: reps(dose), note: block.note ?? `Sized from ${basis}.` }
     }
     const dose = Math.max(1, Math.round(capacity.value * 0.6))
     if (dose >= block.target.sec) return block
-    notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} set to ${dose}s (from ${basis}).`)
+    notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} set to ${dose}s, from ${basis}.`)
     return { ...block, target: hold(dose), note: block.note ?? `Sized from ${basis}.` }
   })
   return { blocks: out, notes }
