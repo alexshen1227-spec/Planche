@@ -27,21 +27,21 @@ export const GUIDES: Guide[] = [
       },
       {
         heading: 'How long it takes (honestly)',
-        body: 'A tuck planche usually takes 3–9 months from an untrained start. A straddle planche is often 1.5–3 years. A full planche can take 3+ years, and plenty of dedicated people never get one. That is not discouragement — it is the reason this app measures progress in seconds gained per week rather than in weeks to the finish line. If you want a target that arrives soon, aim at the next unlock, not at the summit.',
+        body: 'Coaches commonly report that a tuck planche takes 3–9 months from an untrained start, a straddle planche 1.5–3 years, and a full planche 3+ years — and plenty of dedicated people never get one. Those are coaching estimates; no study has measured them. That is not discouragement — it is the reason this app measures progress in seconds gained per week rather than in weeks to the finish line, and only puts a range on your own timeline once your log can support one. If you want a target that arrives soon, aim at the next unlock, not at the summit.',
       },
       {
         heading: 'Your first four weeks',
         body: 'Do not chase the hardest position you can wobble into. Spend the first weeks earning the basics, and everything after them arrives faster.',
         bullets: [
           'Train 3 days a week with at least one rest day between sessions.',
-          'Every session starts with the wrist warm-up. Non-negotiable — wrist pain is the #1 reason people quit.',
+          'Every session starts with the wrist warm-up. Non-negotiable — wrist pain is the most common complaint in hand-support sports.',
           'Finish each hold about 2 seconds before you would collapse. Grinding to failure teaches bad positions.',
           'Film yourself from the side once a week. Video can reveal what you cannot feel, but automated estimates can be wrong — confirm the position yourself.',
         ],
       },
       {
         heading: 'What you need',
-        body: 'For the first two steps: nothing but floor space. Once you reach tuck planche work, a pair of parallettes is the single best purchase you can make — the neutral grip takes your wrists out of extreme extension and usually buys you extra seconds immediately. A resistance band becomes useful around straddle work.',
+        body: 'For the first two steps: nothing but floor space. Once you reach tuck planche work, a pair of parallettes is the single most useful purchase — the neutral grip takes your wrists out of extreme extension, and many people find it easier and stronger. A resistance band becomes useful around straddle work.',
       },
       {
         heading: 'How to use this app',
@@ -200,6 +200,52 @@ export const GUIDES: Guide[] = [
       {
         heading: 'Nice to have',
         body: 'A phone tripod (for the side-view videos that keep you honest) and chalk if your hands sweat. That is genuinely the whole list. You do not need rings, weights, or a gym membership for any of this.',
+      },
+    ],
+  },
+  {
+    id: 'free-references',
+    icon: '🎬',
+    title: 'Free references worth watching',
+    summary: 'Six screened free videos for specific questions — what each is good for, and what not to take from it.',
+    sections: [
+      {
+        heading: 'How these were chosen',
+        body: 'Each answers one specific question. Titles and creators were checked, and each creator’s own description or written companion was read — the footage itself was not reviewed frame by frame, so none of these is an app lesson or a programme to follow in order. Links open a search, because availability differs by region. Nothing here changes your plan or your unlock bars.',
+      },
+      {
+        heading: 'Keep your lean comparable — FitnessFAQs, “The Worst Planche Problem (FIXED!)” (5:30)',
+        body: 'A wall reference for keeping forward lean the same from set to set, so a longer hold is not quietly bought by leaning less. Use it as a comparison aid, not a rule: no wall distance or maximum lean follows from it, and never support bodyweight through your head against the wall.',
+        link: { href: 'https://www.youtube.com/results?search_query=FitnessFAQs+The+Worst+Planche+Problem+%28FIXED%21%29', label: 'Find it on YouTube' },
+      },
+      {
+        heading: 'A repeatable setup toward the tuck — GMB Fitness, “Planche Progression: Step by Step” (5:00)',
+        body: 'Setup and progression overview with a written companion. Useful for describing one repeatable starting position. Its knee-on-arm crane is a different, supported skill from an unsupported straight-arm tuck, and its own hold targets and extra training days are not part of this app’s plan.',
+        link: { href: 'https://www.youtube.com/results?search_query=GMB+Fitness+Planche+Progression+Step+by+Step+Wrists+and+Shoulders+Included', label: 'Find it on YouTube' },
+      },
+      {
+        heading: 'Options after a controlled tuck — GMB Fitness, “Straddle Planche Tutorial” (1:13)',
+        body: 'A short demonstration of open-tuck, partial-straddle and leg-extension options. Vocabulary for later stages, once a tuck is genuinely under control — not a programme, and not a reason to try an unfamiliar unsupported shape.',
+        link: { href: 'https://www.youtube.com/results?search_query=GMB+Fitness+Straddle+Planche+Tutorial', label: 'Find it on YouTube' },
+      },
+      {
+        heading: 'Planche push-ups are not one exercise — FitnessFAQs, “How To Planche Push-Up (BEST PROGRESSIONS)” (7:16)',
+        body: 'Covers feet-supported pseudo planche push-ups through band-assisted and advanced variations. The beginner-to-advanced range is what the video spans, not permission to do every variation; the band options need equipment and a safe anchor.',
+        link: { href: 'https://www.youtube.com/results?search_query=FitnessFAQs+How+To+Planche+Push-Up+BEST+PROGRESSIONS', label: 'Find it on YouTube' },
+      },
+      {
+        heading: 'Advanced examples, on a separate shelf — GMB Fitness, “Planche and Tuck Variations” (2:09)',
+        body: 'Advanced transitions such as handstand lowering and L-sit to planche. Later-stage context for someone already working with appropriate instruction — not a warm-up and not a challenge to attempt.',
+        link: { href: 'https://www.youtube.com/results?search_query=GMB+Fitness+Planche+and+Tuck+Variations', label: 'Find it on YouTube' },
+      },
+      {
+        heading: 'Before adding more drills — Steven Low, Overcoming Gravity Online Part 28 (bonus): programming isometric holds after a plateau',
+        body: 'A free, readable programming discussion that separates specific isometric work, related dynamic strength and supplementary work. Aimed at advanced learners. Its sample volumes and some older mechanistic explanations are not universal defaults or current scientific consensus, and a plateau discussion is not a diagnosis of yours.',
+        link: { href: 'https://www.youtube.com/results?search_query=Steven+Low+Overcoming+Gravity+Online+Part+28+Bonus+Programming+for+Advanced+Isometric+Holds+after+a+Plateau', label: 'Find it on YouTube' },
+      },
+      {
+        heading: 'What these do not cover',
+        body: 'Scapular regressions, hollow-body options, a supported L-sit and wrist preparation are better learned from the exercise cards here. Watching a video never establishes readiness — your own controlled, filmed holds do.',
       },
     ],
   },
