@@ -19,6 +19,15 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-10-05',
+    title: 'Form trends follow each position’s own rules',
+    area: 'camera',
+    notes: [
+      'Form over time no longer trends knee extension for the tuck positions, where bent knees are the point. A tuck opening up could have shown as “legs straighter — improving”.',
+      'When a measurement is missing because an older form check never stored it, the trend now says so, instead of telling you to fix a camera position that was never the problem.',
+    ],
+  },
+  {
+    date: '2026-10-05',
     title: 'Fast progress is no longer mistaken for noise',
     area: 'coach',
     notes: [

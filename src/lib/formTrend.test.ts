@@ -358,3 +358,49 @@ describe('failure messages wait to be read', () => {
     stop()
   })
 })
+
+describe('readFormTrends — only what the position is judged on', () => {
+  it('never trends knee extension for a tuck, whose knees are meant to be bent', () => {
+    // The judge records a knee angle on every clip; a tuck opening up reads as
+    // "legs straighter", which is the wrong lesson for the position.
+    const sets = series('tuck-planche', 8, (i) => ({ elbowDeg: 178, kneeDeg: 60 + i * 8, score: 80 }))
+    const r = readFormTrends(stateOf(sets), 'tuck-planche', NOW)
+    expect(r.kind).toBe('trends')
+    if (r.kind !== 'trends') return
+    expect(r.trends.map((t) => t.criterion)).not.toContain('knees')
+    expect(r.skipped.map((s) => s.label)).not.toContain('Knee extension')
+    expect(r.trends.map((t) => t.criterion)).toContain('elbow')
+  })
+
+  it('does trend knee extension where straight legs are the standard', () => {
+    const sets = series('straddle-planche', 8, (i) => ({ elbowDeg: 178, kneeDeg: 150 + i * 4, score: 80 }))
+    const r = readFormTrends(stateOf(sets), 'straddle-planche', NOW)
+    expect(r.kind).toBe('trends')
+    if (r.kind === 'trends') expect(r.trends.map((t) => t.criterion)).toContain('knees')
+  })
+
+  it('does not blame framing for a measurement the record never stored', () => {
+    // Older form checks kept fewer measurements: no shrug reading, no unseen label.
+    const sets = series('planche-lean', 8, () => ({ elbowDeg: 178, leanRatio: 0.5, hipOffset: 0.05, score: 85 }))
+    const r = readFormTrends(stateOf(sets), 'planche-lean', NOW)
+    expect(r.kind).toBe('trends')
+    if (r.kind !== 'trends') return
+    const shrug = r.skipped.find((s) => s.label === 'Shoulders down')
+    expect(shrug?.cause).toBe('unrecorded')
+    expect(shrug?.reason).not.toMatch(/in shot/)
+  })
+
+  it('still names framing when the judge reported the criterion unseen', () => {
+    const sets = series('planche-lean', 8, () => ({
+      elbowDeg: 178,
+      leanRatio: 0.5,
+      hipOffset: 0.05,
+      shrugRatio: undefined,
+      unseen: ['shoulder-to-ear line'],
+      score: 85,
+    }))
+    const r = readFormTrends(stateOf(sets), 'planche-lean', NOW)
+    expect(r.kind).toBe('trends')
+    if (r.kind === 'trends') expect(r.skipped.find((s) => s.label === 'Shoulders down')?.cause).toBe('framing')
+  })
+})

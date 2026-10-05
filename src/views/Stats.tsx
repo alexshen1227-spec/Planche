@@ -162,7 +162,10 @@ function FormTrendCard() {
                   <span className="font-medium text-ink2">{s.label}</span> — {s.reason}
                 </span>
               ))}
-              . Framing is the usual cause; the live guide on the ready screen catches it before you start.
+              .
+              {result.skipped.some((s) => s.cause === 'framing')
+                ? ' For anything out of shot, framing is the usual cause; the live guide on the ready screen catches it before you start.'
+                : ''}
             </p>
           ) : null}
           <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">

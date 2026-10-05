@@ -1,6 +1,6 @@
 import type { AppState, AutoForm } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { MATERIAL_TOLERANCE } from './poseForm'
+import { MATERIAL_TOLERANCE, POSE_PROFILES } from './poseForm'
 import { robustSlopePerWeek } from './signals'
 
 /**
@@ -151,13 +151,21 @@ export interface FormTrend {
   higherIsBetter: boolean
 }
 
+/** A criterion that could not be trended, and which kind of gap it was. */
+export interface SkippedCriterion {
+  label: string
+  reason: string
+  /** Out of shot, never stored by the form check that made the record, or too bunched in time. */
+  cause: 'framing' | 'unrecorded' | 'spacing'
+}
+
 export type FormTrendResult =
   | {
       kind: 'trends'
       exerciseId: string
       trends: FormTrend[]
       /** Criteria that exist for this position but could not be trended. */
-      skipped: { label: string; reason: string }[]
+      skipped: SkippedCriterion[]
       filmedSets: number
       /**
        * Oldest and newest surviving recordings, when there are two worth
@@ -202,15 +210,44 @@ function filmedSetsFor(state: Pick<AppState, 'sessions'>, exerciseId: string): F
  * start of the trend would usually reach for a file that no longer exists.
  * The dates are shown so the window is never implied to be longer than it is.
  */
-function buildComparison(filmed: FilmedSet[]): FormComparison | null {
+/**
+ * The criteria the judge actually grades for this position.
+ *
+ * The judge reports a knee angle for every clip, but a tuck's knees are meant
+ * to be bent: trending their "extension" would report the shape of the
+ * position as if it were progress, and pairing it with "legs straighter" as
+ * the better direction would point a tuck athlete the wrong way.
+ */
+function criteriaFor(exerciseId: string): CriterionSpec[] {
+  const profile = POSE_PROFILES[exerciseId]
+  return CRITERIA.filter((spec) => {
+    if (!profile || profile.noChecks) return spec.id === 'score' || spec.id === 'clean'
+    switch (spec.id) {
+      case 'elbow':
+        return profile.minElbowDeg !== undefined
+      case 'lean':
+        return profile.minLeanRatio !== undefined
+      case 'line':
+        return profile.levelTolerance !== undefined
+      case 'shrug':
+        return profile.checkShrug
+      case 'knees':
+        return profile.minKneeDeg !== undefined
+      default:
+        return true
+    }
+  })
+}
+
+function buildComparison(filmed: FilmedSet[], criteria: CriterionSpec[]): FormComparison | null {
   const withClips = filmed.filter((f) => f.clipKey)
   if (withClips.length < 2) return null
   const from = withClips[0]
   const to = withClips[withClips.length - 1]
   if (from.clipKey === to.clipKey || to.at - from.at < 3 * DAY) return null
 
-  const criteria: FormComparison['criteria'] = []
-  for (const spec of CRITERIA) {
+  const rows: FormComparison['criteria'] = []
+  for (const spec of criteria) {
     // Both ends must have genuinely measured it, or the row would compare a
     // reading against a blank and call the difference progress.
     const unseenEitherEnd =
@@ -221,7 +258,7 @@ function buildComparison(filmed: FilmedSet[]): FormComparison | null {
     const b = to.auto[spec.field]
     if (typeof a !== 'number' || typeof b !== 'number') continue
     const change = b - a
-    criteria.push({
+    rows.push({
       label: spec.label,
       unit: spec.unit,
       from: a,
@@ -234,11 +271,11 @@ function buildComparison(filmed: FilmedSet[]): FormComparison | null {
             : 'declining',
     })
   }
-  if (criteria.length === 0) return null
+  if (rows.length === 0) return null
   return {
     from: { at: from.at, clipKey: from.clipKey! },
     to: { at: to.at, clipKey: to.clipKey! },
-    criteria,
+    criteria: rows,
   }
 }
 
@@ -290,10 +327,17 @@ export function readFormTrends(
   }
 
   const trends: FormTrend[] = []
-  const skipped: { label: string; reason: string }[] = []
+  const skipped: SkippedCriterion[] = []
+  const criteria = criteriaFor(exerciseId)
 
-  for (const spec of CRITERIA) {
+  for (const spec of criteria) {
+    // Two different reasons a set says nothing about a criterion, kept apart
+    // because they need different advice: the judge saw too little of it
+    // (framing), or the record never stored it (older form checks kept fewer
+    // measurements). Blaming framing for the second sent athletes to fix a
+    // camera position that was never the problem.
     let unseen = 0
+    let unrecorded = 0
     const points: FormTrendPoint[] = []
     for (const f of filmed) {
       // Excluded, not averaged: the judge said it could not see this.
@@ -303,28 +347,32 @@ export function readFormTrends(
       }
       const raw = f.auto[spec.field]
       if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        unseen++
+        unrecorded++
         continue
       }
       points.push({ at: f.at, value: raw })
     }
 
     if (points.length < MIN_TREND_POINTS) {
-      // Only worth mentioning if the camera was genuinely trying and failing.
-      if (unseen > 0) {
+      if (unseen > 0 || unrecorded > 0) {
         skipped.push({
           label: spec.label,
+          cause: unseen > 0 ? 'framing' : 'unrecorded',
           reason:
-            points.length === 0
-              ? `the camera never had this in shot`
-              : `only ${points.length} of ${filmed.length} filmed sets had this in shot`,
+            points.length > 0
+              ? `only ${points.length} of ${filmed.length} filmed sets measured this`
+              : unrecorded === 0
+                ? 'the camera never had this in shot'
+                : unseen === 0
+                  ? 'none of these form checks recorded it — older checks stored fewer measurements'
+                  : `out of shot in ${unseen} set${unseen === 1 ? '' : 's'} and not recorded in ${unrecorded}`,
         })
       }
       continue
     }
     const pointSpanDays = (points[points.length - 1].at - points[0].at) / DAY
     if (pointSpanDays < MIN_TREND_SPAN_DAYS) {
-      skipped.push({ label: spec.label, reason: 'the sets it was visible in are too close together' })
+      skipped.push({ label: spec.label, cause: 'spacing', reason: 'the sets it was measured in are too close together' })
       continue
     }
 
@@ -384,7 +432,7 @@ export function readFormTrends(
     trends,
     skipped,
     filmedSets: filmed.length,
-    comparison: buildComparison(filmed),
+    comparison: buildComparison(filmed, criteria),
   }
 }
 
