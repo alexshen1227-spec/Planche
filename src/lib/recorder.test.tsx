@@ -121,7 +121,7 @@ describe('camera lifecycle', () => {
       await result.current.prepare()
     })
     expect(result.current.supported).toBe(true)
-    expect(result.current.status).toBe('idle')
+    expect(result.current.status).toBe('live')
     expect(liveTracks()).toHaveLength(1)
   })
 
@@ -189,7 +189,7 @@ describe('camera lifecycle', () => {
       await second
     })
 
-    await waitFor(() => expect(result.current.status).toBe('idle'))
+    await waitFor(() => expect(result.current.status).toBe('live'))
     // Exactly one camera is live, and it is the replacement.
     expect(liveTracks()).toHaveLength(1)
     expect(liveTracks()[0].track.label).toBe('replacement')
@@ -223,7 +223,7 @@ describe('camera lifecycle', () => {
       pendingOpens[0].reject(new Error('NotAllowedError'))
       await first
     })
-    await waitFor(() => expect(result.current.status).toBe('idle'))
+    await waitFor(() => expect(result.current.status).toBe('live'))
     expect(liveTracks()).toHaveLength(1)
   })
 
@@ -250,7 +250,7 @@ describe('camera lifecycle', () => {
       blob = await result.current.stop()
     })
     expect(blob).toBeInstanceOf(Blob)
-    expect(result.current.status).toBe('idle')
+    expect(result.current.status).toBe('live')
     // Stopping the recorder must not stop the camera — the next set reuses it.
     expect(liveTracks()).toHaveLength(1)
     act(() => {

@@ -1878,7 +1878,7 @@ describe('coach learning', () => {
     // panel shows "not tested yet" for every one of them, learning is broken.
     const stats = armStats(buildSampleState())
     expect(stats.filter((arm) => arm.attempts > 0).length).toBe(5)
-    expect(stats.some((arm) => arm.n > 0 && arm.secPerWeek > 0)).toBe(true)
+    expect(stats.some((arm) => arm.n > 0 && (arm.secPerWeek ?? 0) > 0)).toBe(true)
   })
 
   it('offers kit advice only when it would change something today', () => {

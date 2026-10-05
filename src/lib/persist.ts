@@ -41,8 +41,15 @@ async function withMirrorDb<T>(fn: (db: IDBDatabase) => Promise<T>): Promise<T> 
   }
 }
 
-/** Write the serialized state to the IndexedDB mirror. Never throws. */
-export async function writeMirror(json: string): Promise<void> {
+/**
+ * Write the serialized state to the IndexedDB mirror. Never throws.
+ *
+ * Resolves whether the write committed. The mirror is a secondary copy, but
+ * "secondary" is not "irrelevant": when localStorage is full the mirror is the
+ * only durable copy left, and reporting its failure is what lets the app say
+ * "not saved" instead of implying everything is fine.
+ */
+export async function writeMirror(json: string): Promise<boolean> {
   try {
     await withMirrorDb(
       (db) =>
@@ -54,8 +61,28 @@ export async function writeMirror(json: string): Promise<void> {
           tx.onerror = () => reject(tx.error ?? new Error('mirror write failed'))
         }),
     )
+    return true
   } catch {
-    /* mirror is best-effort */
+    return false
+  }
+}
+
+/** Remove the mirrored copy entirely, for a full erase. Resolves whether it succeeded. */
+export async function clearMirror(): Promise<boolean> {
+  try {
+    await withMirrorDb(
+      (db) =>
+        new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(STORE, 'readwrite')
+          tx.objectStore(STORE).delete(KEY)
+          tx.oncomplete = () => resolve()
+          tx.onabort = () => reject(tx.error ?? new Error('mirror delete aborted'))
+          tx.onerror = () => reject(tx.error ?? new Error('mirror delete failed'))
+        }),
+    )
+    return true
+  } catch {
+    return false
   }
 }
 

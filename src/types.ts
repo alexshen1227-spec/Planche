@@ -18,10 +18,17 @@ export type Category = 'planche' | 'push' | 'scapula' | 'core' | 'wrist' | 'mobi
 
 export type Units = 'metric' | 'imperial'
 
-export type EquipmentId = 'floor' | 'parallettes' | 'band' | 'pullup-bar' | 'dip-bars'
+export type EquipmentId = 'floor' | 'parallettes' | 'band' | 'pullup-bar' | 'dip-bars' | 'box'
 export type TrainingSurface = 'floor' | 'parallettes'
 
-export const CURRENT_STATE_VERSION = 6 as const
+/**
+ * v7 adds attempt provenance (timing, assistance, end reasons, repaired
+ * fields), independent symptom events, and the revision/epoch pair that keeps
+ * tabs and imports from overwriting newer work. Every addition is optional, so
+ * a v6 save loads unchanged; the bump exists for the pre-upgrade snapshot and
+ * so stricter evidence rules cannot silently demote an earned step.
+ */
+export const CURRENT_STATE_VERSION = 7 as const
 
 export interface Measurement {
   at: number
@@ -108,6 +115,24 @@ export interface AutoForm {
    * verdict still stands; these were simply not checked.
    */
   unseen?: string[]
+  /**
+   * Seconds of the hold the analysis actually covered. When the credited
+   * value is corrected later (the walk-back tap), evidence that only covered
+   * the old, shorter window must not be read as covering the new one.
+   */
+  analysedSec?: number
+  /** Widest gap between sampled moments; a break shorter than this can hide between them. */
+  samplingGapSec?: number
+  /** Which detector produced the reading, so results stay attributable to model bytes. */
+  model?: string
+  /** Version of the verdict rules that produced it. */
+  judge?: number
+  /**
+   * An import found this reading structurally malformed (a string where a list
+   * belongs, a null duration). It stays visible but can never steer coaching
+   * or count toward progression: a repair must not manufacture evidence.
+   */
+  malformed?: boolean
 }
 
 export interface FormCheck {
@@ -128,6 +153,13 @@ export interface FormCheck {
    * verified window. A side-on 2D pose cannot reliably infer floor contact.
    */
   flightConfirmed?: boolean
+  /**
+   * The athlete confirmed the part of the shape that defines this variant —
+   * the extended leg, the open hips, the lean — when the camera could not see
+   * it. Without this, an unseen variant-critical criterion cannot earn credit:
+   * a camera that lost the extended leg has not verified a one-leg planche.
+   */
+  variantConfirmed?: boolean
   issues?: FormIssue[]
   /** Key of the recorded clip in the clip store, when one was kept. */
   clipKey?: string
@@ -165,6 +197,34 @@ export interface CheckIn {
    * 'poor' — absence of evidence is not evidence of bad recovery.
    */
   sleep?: 'good' | 'ok' | 'poor'
+  /**
+   * Asked only after a long logging gap: weeks with nothing logged are not
+   * evidence of rest. Someone who kept training elsewhere and someone coming
+   * back from a real break need different first sessions. Absent = not asked
+   * or skipped, which stays unknown.
+   */
+  gap?: 'trained-elsewhere' | 'break' | 'unsure'
+}
+
+/**
+ * A joint report kept on its own, not only inside a saved session.
+ *
+ * Check-ins used to live solely on the session they preceded, so a pain answer
+ * followed by a discarded session vanished — and the onboarding "it hurts"
+ * answer never reached the rails at all. These events are the durable record
+ * the rails read alongside session check-ins.
+ */
+export interface SymptomEvent {
+  id: string
+  at: number
+  joints: CheckIn['joints']
+  regions?: BodyRegion[]
+  /** Where the report came from, so a correction or onboarding answer is never mistaken for a check-in. */
+  source: 'onboarding' | 'check-in' | 'attempt' | 'manual'
+  /** Energy from the same check-in, when there was one. */
+  energy?: CheckIn['energy']
+  /** True when this entry corrects an accidental report rather than claiming recovery. */
+  correction?: boolean
 }
 
 /**
@@ -193,7 +253,19 @@ export interface Exercise {
   category: Category
   type: ExerciseType
   difficulty: 1 | 2 | 3 | 4 | 5
+  /** Human-readable kit description, shown in Learn. */
   equipment: string[]
+  /**
+   * Kit this movement genuinely cannot be done without. Absent means floor
+   * space is enough. Session assembly checks it, so a plan never quietly
+   * assumes dip bars or a band the athlete does not own.
+   */
+  requires?: EquipmentId[]
+  /**
+   * Catalogue-only movements the planner never schedules on its own — later
+   * dynamic or supported options that need their setup reviewed first.
+   */
+  catalogueOnly?: boolean
   blurb: string
   howTo: string[]
   cues: string[]
@@ -232,6 +304,22 @@ export interface Block {
   note?: string
 }
 
+/**
+ * What the athlete asked for, kept beside the workout built from it.
+ *
+ * The workout is the *result* of a request plus today's rails; storing only
+ * the result meant a readiness answer rebuilt "today's session" from scratch
+ * and silently dropped the 15-minute version the athlete had chosen. Anything
+ * that rebuilds a workout rebuilds it from this.
+ */
+export interface WorkoutRequest {
+  source: 'auto' | 'template' | 'test'
+  templateId?: string
+  stepId?: StepId
+  /** One-off shorter budget for today. Absent = the profile default. */
+  minutes?: number
+}
+
 export interface Workout {
   id: string
   name: string
@@ -240,6 +328,33 @@ export interface Workout {
   kind: 'auto' | 'template' | 'test'
   blocks: Block[]
   strategy?: StrategyId
+  /** The request this was built from; absent on drafts saved by older versions. */
+  request?: WorkoutRequest
+  /** One-line statement of what the session is for. */
+  purpose?: string
+  /**
+   * What the final safety, equipment and capacity checks changed, in plain
+   * words, so the brief can say it instead of hiding it.
+   */
+  adjustments?: string[]
+}
+
+/** Why an attempt ended, when the athlete chose to say. Unanswered stays unknown. */
+export type EndReason = 'target' | 'balance' | 'technique' | 'effort' | 'interruption' | 'timing' | 'unsure'
+
+/** Assistance the athlete reported for a hold. Absent = unknown (older records). */
+export type AssistType = 'none' | 'band' | 'feet' | 'partner' | 'other'
+
+/**
+ * How a timed value was measured. The credited value alone could not say
+ * whether a 5s hold was a stopwatch reading, an interrupted attempt, or a
+ * number the athlete typed in — and those are not the same evidence.
+ */
+export interface SetTiming {
+  method: 'stopwatch' | 'interrupted' | 'edited'
+  /** Seconds taken off the raw reading, when any were. */
+  allowanceSec?: number
+  allowance?: 'walk-back' | 'reaction' | 'interruption'
 }
 
 export interface SetLog {
@@ -262,6 +377,23 @@ export interface SetLog {
   surface?: TrainingSurface
   /** Actual setup countdown used, so learned rest is not distorted if skipped. */
   leadInSec?: number
+  /** Measurement provenance for timed holds. Absent on older records. */
+  timing?: SetTiming
+  /** Optional athlete-reported reason the attempt ended. */
+  endReason?: EndReason
+  /** Assistance reported for this hold; absent means unknown. */
+  assist?: AssistType
+  /**
+   * Seconds of the hold that passed before the camera was actually recording.
+   * A late start means the clip's first frame is not the hold's first second.
+   */
+  recordingOffsetSec?: number
+  /**
+   * Fields an import had to repair (an unknown section, a malformed camera
+   * reading). The timer value is kept as history; the set can no longer
+   * qualify for progression, because a repair must not create evidence.
+   */
+  repaired?: string[]
 }
 
 export type StrategyId = 'balanced' | 'volume' | 'intensity' | 'density' | 'technique'
@@ -269,6 +401,7 @@ export type StrategyId = 'balanced' | 'volume' | 'intensity' | 'density' | 'tech
 export interface Session {
   id: string
   startedAt: number
+  /** When training actually stopped — not when the summary was saved. */
   endedAt: number
   /** Time the app was backgrounded or closed during this session. */
   pausedMs?: number
@@ -282,6 +415,14 @@ export interface Session {
   strategy?: StrategyId
   /** Pre-session readiness answers, when the coach asked. */
   checkIn?: CheckIn
+  /** When the athlete pressed Save; review time on the summary lives here, not in the duration. */
+  savedAt?: number
+  /** Last edit after saving, e.g. a camera check attached later from the gallery. */
+  updatedAt?: number
+  /** 'partial' when the athlete finished early; planned work they skipped is not adherence. */
+  completion?: 'full' | 'partial'
+  /** Raw rounds the plan contained. */
+  plannedRounds?: number
 }
 
 export interface PRMark {
@@ -370,6 +511,39 @@ export interface AppState {
    */
   assessment?: AssessmentRecord
   settings: Settings
+  /**
+   * Increments on every change. Long operations (an import waiting on clip
+   * cleanup, a late mirror restore) record it first and refuse to commit if a
+   * newer write landed in the meantime.
+   */
+  rev?: number
+  /**
+   * Identifies this dataset. A reset, import or sample load starts a new one,
+   * so another tab still holding the old dataset can never merge back into it.
+   */
+  epoch?: string
+  /** Earlier epochs this dataset replaced; a write from one of them is stale. */
+  retiredEpochs?: string[]
+  /**
+   * When each user-editable field (a setting, a profile entry, the selected
+   * step) was last changed here. Two tabs editing different settings then
+   * merge per field instead of the later write silently reverting the other.
+   */
+  fieldTimes?: Record<string, number>
+  /** Deleted session ids, so a stale tab cannot resurrect them. Capped. */
+  deletedSessionIds?: string[]
+  /** Joint reports kept independently of sessions. Oldest first, capped. */
+  symptoms?: SymptomEvent[]
+  /** Remembered per-exercise setup, so assistance is asked once rather than every set. */
+  setups?: Record<string, ExerciseSetup>
+}
+
+/** A remembered setup for one exercise. Changing it never relabels earlier sets. */
+export interface ExerciseSetup {
+  assist: AssistType
+  /** Optional nickname or anchor description, e.g. "red band, top of the bar". */
+  note?: string
+  updatedAt: number
 }
 
 /** Everything noteworthy that a saved session produced. */

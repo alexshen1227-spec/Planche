@@ -210,7 +210,9 @@ export function synthesizeAthlete(params: AthleteParams = {}): Session[] {
       sets,
       rpe: typeof rpe === 'function' ? rpe(week) : rpe,
       strategy,
-      ...(checkIn ? { checkIn } : {}),
+      // Each session's answer is its own report, stamped when it was given —
+      // one shared object would read as a single report repeated.
+      ...(checkIn ? { checkIn: { ...checkIn, at: startedAt } } : {}),
     })
 
     // Capacity answers only the stimulus this athlete responds to.

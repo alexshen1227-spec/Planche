@@ -1,13 +1,26 @@
-import type { AppState, Block, BlockTarget, BodyRegion, CheckIn, StepId, Workout } from '../types'
+import type {
+  AppState,
+  Block,
+  BlockTarget,
+  BodyRegion,
+  CheckIn,
+  EquipmentId,
+  StepId,
+  Workout,
+  WorkoutRequest,
+} from '../types'
 import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID, stepBefore } from './progressions'
+import { defaultSurface, equipmentLabel } from './equipment'
 import { buildPlan, STRATEGY_BY_ID, type CoachPlan, type WarmupLevel } from '../lib/coach'
 import { median } from '../lib/signals'
-import { qualifyingProgress, sessionLearningValue } from '../lib/progression'
+import { learningSeries, qualifyingProgress } from '../lib/progression'
 import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
 
 const hold = (sec: number): BlockTarget => ({ kind: 'hold', sec })
 const reps = (n: number): BlockTarget => ({ kind: 'reps', reps: n })
+
+const DAY = 86_400_000
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, v))
@@ -104,38 +117,283 @@ export function estimateMinutes(
  * median of recent session bests — immune to one bad value — and the all-time
  * best is only allowed to pull it up a little. The coach applies the one
  * evidence-scaled hit-rate nudge later; doing it here as well caused swings.
+ *
+ * Read from one comparable task: the surface the athlete trains on now, with a
+ * unilateral hold's weaker side setting the value. With nothing comparable
+ * logged, the placement answer for this exact hold is the next-best evidence,
+ * then the timer PR as a ceiling, then the step's conventional start.
  */
 export function adaptiveTarget(state: AppState, stepId: StepId): number {
   const step = STEP_BY_ID[stepId]
-  const verifiedBest = qualifyingProgress(state, stepId).value
-  const recentBests = [...state.sessions]
-    .sort((a, b) => a.startedAt - b.startedAt)
-    .map((s) => sessionLearningValue(s, stepId))
-    .filter((v) => v > 0)
-    .slice(-6)
+  const surface = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
+  const series = learningSeries(state, stepId, surface)
+  const recentBests = series.points.map((p) => p.value).slice(-6)
 
   if (recentBests.length === 0) {
     // A standalone unverified PR must never raise a target or unlock a step,
     // but it is still useful as a safety ceiling. A beginner with a real 3s
     // tuck should not receive generic 5s working sets merely because the clip
-    // failed. Repeated in-session performance is handled above as the more
-    // useful (but still non-unlocking) training signal.
+    // failed.
     const timerBest = state.prs[step.keyExerciseId]?.value ?? 0
     if (timerBest > 0) return clamp(Math.round(timerBest * 0.6), 1, step.startSec)
+    const answered = state.assessment?.answers[step.keyExerciseId]
+    if (answered !== undefined) {
+      // "Can't hold it yet" is not a reason to prescribe the conventional
+      // start anyway. A short hold at an easier lean is the honest dose; the
+      // block note says how to make it easier.
+      return answered > 0 ? clamp(Math.round(answered * 0.6), 1, step.startSec) : Math.min(step.startSec, 5)
+    }
     return step.startSec
   }
 
+  const verifiedBest = qualifyingProgress(state, stepId).value
   const typical = median(recentBests)
-  // Blend: mostly what you can repeat, with a nod to your peak.
-  const observedBest = Math.max(verifiedBest, ...recentBests)
+  // Blend: mostly what you can repeat, with a nod to your peak. A verified best
+  // on another surface is not this task's peak.
+  const peak = series.transferred || series.surface === null ? 0 : verifiedBest
+  const observedBest = Math.max(peak, ...recentBests)
   const anchor =
     typical === null
       ? observedBest
       : typical * 0.75 + Math.min(observedBest, typical * 1.5) * 0.25
   const t = anchor * 0.6
-  return clamp(Math.round(t), 1, step.unlockSec)
+  const target = clamp(Math.round(t), 1, step.unlockSec)
+  // Nothing on this surface yet: another surface's numbers are an uncertain
+  // transfer, so they may only lower the conventional start, never raise it.
+  return series.transferred ? Math.min(target, step.startSec) : target
 }
 
+/**
+ * The most the athlete has shown they can hold on this step's key exercise,
+ * on the comparable surface — or undefined when nothing has been measured.
+ * Working targets may be scaled by strategy, but never past this.
+ */
+export function observedCapacity(state: AppState, stepId: StepId): number | undefined {
+  const step = STEP_BY_ID[stepId]
+  const surface = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
+  const series = learningSeries(state, stepId, surface)
+  const recent = series.points.slice(-6).map((p) => p.value)
+  if (recent.length) return Math.max(...recent)
+  const timerBest = state.prs[step.keyExerciseId]?.value
+  if (timerBest !== undefined && timerBest > 0) return timerBest
+  const answered = state.assessment?.answers[step.keyExerciseId]
+  return answered !== undefined && answered > 0 ? answered : undefined
+}
+
+/**
+ * Easier versions the planner may swap in when an athlete's *reported*
+ * capacity is below what the default block asks for. A regression is a
+ * different exercise with its own records, never the same one at a lower
+ * number dressed up as progress.
+ */
+function regressionFor(exerciseId: string, state: AppState): string | undefined {
+  const pushups = state.assessment?.answers.pushups
+  switch (exerciseId) {
+    case 'pushup':
+      return 'knee-pushup'
+    case 'pppu':
+      // Someone with a solid set of push-ups regresses to push-ups; someone
+      // without one regresses further.
+      return pushups !== undefined && pushups >= 5 ? 'pushup' : 'knee-pushup'
+    case 'hollow-hold':
+      return 'tuck-hollow-hold'
+    default:
+      return undefined
+  }
+}
+
+/** Best recent value logged on one exercise (median of the last few sessions' bests). */
+function recentBest(state: AppState, exerciseId: string, now: number): number | undefined {
+  const bests = [...state.sessions]
+    .filter((s) => s.startedAt <= now && now - s.startedAt <= 42 * DAY)
+    .sort((a, b) => a.startedAt - b.startedAt)
+    .map((s) => s.sets.reduce((b, set) => (set.exerciseId === exerciseId && set.value > b ? set.value : b), 0))
+    .filter((v) => v > 0)
+    .slice(-3)
+  return median(bests) ?? undefined
+}
+
+/**
+ * What the athlete can currently do on an accessory, from their own log first
+ * and their placement answers second. Undefined means unknown — and unknown
+ * leaves the default dose alone rather than guessing either way.
+ */
+function accessoryCapacity(
+  state: AppState,
+  exerciseId: string,
+  now: number,
+): { value: number; source: 'log' | 'placement' } | undefined {
+  const logged = recentBest(state, exerciseId, now)
+  if (logged !== undefined) return { value: logged, source: 'log' }
+  const a = state.assessment?.answers
+  if (!a) return undefined
+  const pushups = a.pushups
+  const fromPlacement = (v: number | undefined) => (v === undefined ? undefined : { value: v, source: 'placement' as const })
+  switch (exerciseId) {
+    case 'pushup':
+      return fromPlacement(pushups)
+    case 'pppu':
+      // A pseudo planche push-up is far harder than a push-up; a third of
+      // the push-up answer is a deliberately cautious starting read.
+      return fromPlacement(pushups === undefined ? undefined : Math.floor(pushups / 3))
+    case 'pike-pushup':
+      return fromPlacement(pushups === undefined ? undefined : Math.floor(pushups / 2))
+    case 'hollow-hold':
+      return fromPlacement(a.hollow)
+    default:
+      return undefined
+  }
+}
+
+const PLACEMENT_BAND: Record<string, (v: number) => string> = {
+  pushup: (v) => (v < 5 ? 'fewer than 5 push-ups' : `about ${v} push-ups`),
+  pppu: () => 'your push-up answer',
+  'pike-pushup': () => 'your push-up answer',
+  'hollow-hold': (v) => (v < 15 ? 'a hollow hold under 15s' : `a hollow hold of about ${v}s`),
+}
+
+/**
+ * Bring accessory doses down to what this athlete can actually do.
+ *
+ * Accessory targets were fixed: someone who answered "fewer than 5 push-ups"
+ * and "under 15 seconds of hollow hold" was handed 2×10 push-ups and 2×30s
+ * hollow holds on day one. This only ever lowers a dose or swaps in an easier
+ * version, and every change says what it was based on.
+ */
+export function capacityAdjustBlocks(
+  state: AppState,
+  blocks: Block[],
+  now = Date.now(),
+): { blocks: Block[]; notes: string[] } {
+  const notes: string[] = []
+  const adjustable = (b: Block) => b.section === 'strength' || b.section === 'core'
+  const basisFor = (exerciseId: string, capacity: { value: number; source: 'log' | 'placement' }) =>
+    capacity.source === 'log'
+      ? 'your recent sessions'
+      : `your placement answer (${PLACEMENT_BAND[exerciseId]?.(capacity.value) ?? 'what you reported'})`
+
+  // 1. Swap in an easier version where the placement says the default is out
+  //    of reach. Only placement answers do this: logged history is real
+  //    performance, and sizing the dose (step 3) is the right response to it.
+  const swapped: Block[] = blocks.map((block) => {
+    if (!adjustable(block)) return block
+    const capacity = accessoryCapacity(state, block.exerciseId, now)
+    if (!capacity || capacity.source !== 'placement') return block
+    const regression = regressionFor(block.exerciseId, state)
+    const tooHard =
+      block.target.kind === 'reps' ? capacity.value < Math.min(5, block.target.reps) : capacity.value < Math.min(10, block.target.sec / 2)
+    if (!tooHard || !regression || !EXERCISE_BY_ID[regression]) return block
+    const reg = EXERCISE_BY_ID[regression]
+    const basis = basisFor(block.exerciseId, capacity)
+    notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} swapped for ${reg.name.toLowerCase()} (from ${basis}).`)
+    return {
+      ...block,
+      exerciseId: regression,
+      target: reg.type === 'hold' ? hold(Math.min(10, block.target.kind === 'hold' ? block.target.sec : 10)) : reps(5),
+      note: `${reg.name} instead of ${EXERCISE_BY_ID[block.exerciseId].name.toLowerCase()}, from ${basis}. Move up when these feel controlled.`,
+    }
+  })
+
+  // 2. Two blocks that became the same exercise are one block: keep the first
+  //    position, the larger set count and the smaller target.
+  const merged: Block[] = []
+  for (const block of swapped) {
+    const twin = adjustable(block) ? merged.find((b) => adjustable(b) && b.exerciseId === block.exerciseId) : undefined
+    if (!twin) {
+      merged.push({ ...block })
+      continue
+    }
+    twin.sets = Math.max(twin.sets, block.sets)
+    if (twin.target.kind === 'reps' && block.target.kind === 'reps') twin.target = reps(Math.min(twin.target.reps, block.target.reps))
+    if (twin.target.kind === 'hold' && block.target.kind === 'hold') twin.target = hold(Math.min(twin.target.sec, block.target.sec))
+  }
+
+  // 3. Size what remains to measured or reported capacity. Only ever lowers.
+  const out = merged.map((block) => {
+    if (!adjustable(block)) return block
+    const capacity = accessoryCapacity(state, block.exerciseId, now)
+    if (!capacity) return block
+    const basis = basisFor(block.exerciseId, capacity)
+    if (block.target.kind === 'reps') {
+      const dose = Math.max(1, Math.floor(capacity.value * 0.7))
+      if (dose >= block.target.reps) return block
+      notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} set to ${dose} reps (from ${basis}).`)
+      return { ...block, target: reps(dose), note: block.note ?? `Sized from ${basis}.` }
+    }
+    const dose = Math.max(1, Math.round(capacity.value * 0.6))
+    if (dose >= block.target.sec) return block
+    notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} set to ${dose}s (from ${basis}).`)
+    return { ...block, target: hold(dose), note: block.note ?? `Sized from ${basis}.` }
+  })
+  return { blocks: out, notes }
+}
+
+/**
+ * Swaps for movements that need kit the athlete has not got, in order of
+ * preference. A substitute must itself be doable with what they own; nothing
+ * here ever suggests an improvised support.
+ */
+const EQUIPMENT_SUBSTITUTES: Record<string, { id: string; repsFactor: number }[]> = {
+  dip: [
+    { id: 'pushup', repsFactor: 1.5 },
+    { id: 'pppu', repsFactor: 0.75 },
+  ],
+  'tuck-planche-pushup': [{ id: 'pppu', repsFactor: 2 }],
+  'band-straddle-planche': [],
+  'supported-tuck-lean': [],
+}
+
+/** Whether every piece of kit this exercise needs is in the profile. */
+export function hasEquipmentFor(exerciseId: string, equipment: EquipmentId[]): boolean {
+  return (EXERCISE_BY_ID[exerciseId]?.requires ?? []).every((id) => equipment.includes(id))
+}
+
+/**
+ * Resolve every block against the athlete's equipment.
+ *
+ * Templates used to prescribe dips to an athlete who had told onboarding they
+ * train on the floor only. A catalogue can list movements someone cannot do;
+ * a session they are about to start must not quietly assume kit they lack.
+ */
+export function resolveEquipment(
+  blocks: Block[],
+  equipment: EquipmentId[],
+): { blocks: Block[]; notes: string[] } {
+  const notes: string[] = []
+  const out: Block[] = []
+  for (const block of blocks) {
+    if (hasEquipmentFor(block.exerciseId, equipment)) {
+      out.push(block)
+      continue
+    }
+    const exercise = EXERCISE_BY_ID[block.exerciseId]
+    const missing = (exercise?.requires ?? []).filter((id) => !equipment.includes(id)).map(equipmentLabel)
+    const substitute = (EQUIPMENT_SUBSTITUTES[block.exerciseId] ?? []).find(
+      ({ id }) =>
+        hasEquipmentFor(id, equipment) && !blocks.some((b) => b.exerciseId === id) && !out.some((b) => b.exerciseId === id),
+    )
+    if (substitute) {
+      const sub = EXERCISE_BY_ID[substitute.id]
+      out.push({
+        ...block,
+        exerciseId: substitute.id,
+        target:
+          sub.type === 'reps' && block.target.kind === 'reps'
+            ? reps(Math.max(1, Math.round(block.target.reps * substitute.repsFactor)))
+            : sub.type === 'hold'
+              ? hold(15)
+              : reps(6),
+        note: `${missing.join(' and ')} not in your equipment — ${sub.name.toLowerCase()} instead.`,
+      })
+      notes.push(
+        `${exercise?.name ?? block.exerciseId} needs ${missing.join(' and ')}, so ${sub.name.toLowerCase()} is used instead.`,
+      )
+    } else {
+      notes.push(`${exercise?.name ?? block.exerciseId} was left out — it needs ${missing.join(' and ')}.`)
+    }
+  }
+  return { blocks: out, notes }
+}
 
 /**
  * Trim a session to the athlete's time budget, sacrificing least-important
@@ -228,8 +486,9 @@ function fitToBudget(
 
 /**
  * Warm-up scales with what the coach observed: cold, achy, or warm-up-skipping
- * athletes get general prep first. Wrists are in every version — they are the
- * most common reason people stop training.
+ * athletes get general prep first. Wrist preparation is in every version —
+ * as preparation, not as protection; no warm-up has been shown to prevent
+ * injury in this kind of training.
  */
 function warmupFor(stepId: StepId, level: WarmupLevel): Block[] {
   const step = STEP_BY_ID[stepId]
@@ -287,10 +546,11 @@ const REGION_CONFLICTS: Record<BodyRegion, string[]> = {
   // harmless but is on hands and knees — its own description says it loads the
   // wrists, and a recovery session is exactly where that matters.
   wrist: ['cat-cow'],
-  // Nothing in the recovery set loads a straight arm — kept explicit so a
-  // future addition has to make the same judgement rather than inherit a gap.
-  elbow: [],
-  shoulder: ['jumping-jacks'],
+  // The pain session promises "no loaded planche, pressing or wrist work";
+  // Cat–Cow is a straight-arm support on all fours, so an elbow session that
+  // kept it contradicted its own heading.
+  elbow: ['cat-cow'],
+  shoulder: ['jumping-jacks', 'cat-cow'],
   // The default recovery block was three straight lumbar/hip-flexor exercises,
   // handed to the one athlete who should not be doing any of them.
   'lower-back': ['arch-hold', 'leg-lifts', 'hollow-hold'],
@@ -352,6 +612,7 @@ export function painSafeRecoveryWorkout(regions: BodyRegion[] = []): Workout {
     kind: 'auto',
     blocks,
     strategy: 'technique',
+    purpose: 'Gentle movement on a day something hurts — not treatment, and not a test of whether it still hurts.',
   }
 }
 
@@ -360,34 +621,58 @@ function joinWords(words: string[]): string {
   return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`
 }
 
-/** Apply a readiness answer to a user-selected template before it can start. */
-export function adjustedTemplateWorkout(workout: Workout, checkIn: CheckIn): Workout {
-  if (checkIn.joints === 'pain') return painSafeRecoveryWorkout(checkIn.regions ?? [])
-  if (workout.kind !== 'template' || (checkIn.joints === 'good' && checkIn.energy !== 'tired')) return workout
+/** Movements that put load through the upper body, for template scaling. */
+function upperLoaded(exerciseId: string): boolean {
+  const category = EXERCISE_BY_ID[exerciseId]?.category
+  return category === 'planche' || category === 'push' || category === 'scapula' || category === 'wrist'
+}
 
-  const jointScale = checkIn.joints === 'niggle' ? 0.8 : 1
-  const volumeScale = checkIn.energy === 'tired' ? 0.8 : checkIn.joints === 'niggle' ? 0.8 : 1
+/**
+ * Apply today's final decision to a template the athlete chose.
+ *
+ * This used to read the raw check-in answer and short-circuit only on
+ * "pain" — so an elbow niggle, which the planner itself turns into "no
+ * loading today", reached Push Strength as pseudo planche push-ups, pike
+ * push-ups and dips at 80%, and a persistent complaint with a reassuring
+ * answer today reached it unscaled. Choosing a template is choosing *what* to
+ * train; it is never a second authority on *whether* to load.
+ */
+export function restrictTemplate(workout: Workout, plan: CoachPlan): Workout {
+  if (plan.loadPermission === 'none') return painSafeRecoveryWorkout(plan.signals.lastCheckIn?.regions ?? [])
+  const reduced = plan.loadPermission === 'reduced'
+  const volume = Math.min(1, plan.volumeFactor)
+  if (!reduced && volume >= 0.999) return workout
+
   const blocks = workout.blocks.map((block) => {
     if (block.section === 'warmup' || block.section === 'cooldown') return block
-    const category = EXERCISE_BY_ID[block.exerciseId]?.category
-    const upperLoaded = category === 'planche' || category === 'push' || category === 'scapula' || category === 'wrist'
-    const targetFactor = upperLoaded ? jointScale : 1
+    const loaded = upperLoaded(block.exerciseId)
+    const targetFactor = reduced && loaded ? 0.8 : 1
+    // Only ever lowers: a 2s hold must not become a 3s one on a reduced day.
     const target =
       block.target.kind === 'hold'
-        ? hold(Math.max(3, Math.round(block.target.sec * targetFactor)))
-        : reps(Math.max(1, Math.round(block.target.reps * targetFactor)))
+        ? hold(Math.min(block.target.sec, Math.max(1, Math.round(block.target.sec * targetFactor))))
+        : reps(Math.min(block.target.reps, Math.max(1, Math.round(block.target.reps * targetFactor))))
     return {
       ...block,
-      sets: Math.max(1, Math.round(block.sets * volumeScale)),
+      sets: Math.max(1, Math.round(block.sets * volume)),
       target,
-      restSec: upperLoaded ? Math.max(block.restSec, 90) : block.restSec,
+      restSec: reduced && loaded ? Math.max(block.restSec, 90) : block.restSec,
     }
   })
+  const why = reduced
+    ? plan.signals.persistentComplaint
+      ? `a ${plan.signals.persistentComplaint.region.replace('-', ' ')} complaint that keeps coming back`
+      : plan.signals.lastCheckIn?.joints === 'niggle'
+        ? 'today’s joint niggle'
+        : plan.openConcern
+          ? 'a joint report that has not been updated'
+          : 'today’s readiness'
+    : 'low energy'
   return {
     ...workout,
     id: `${workout.id}-readiness-adjusted`,
     name: `${workout.name} · Adjusted`,
-    focus: `${workout.focus} Scaled for today's ${checkIn.joints === 'niggle' ? 'joint niggle' : 'low energy'}; stop any set that worsens symptoms.`,
+    focus: `${workout.focus} Scaled for ${why}; stop any set that worsens symptoms.`,
     minutes: estimateMinutes(blocks),
     blocks,
   }
@@ -414,41 +699,65 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   const vol = plan.volumeFactor
   const scale = (n: number) => Math.max(1, Math.round(n * vol))
   const blocks: Block[] = []
+  const adjustments: string[] = []
 
   // An extended warm-up is a coach safety rail and cannot be disabled by the
   // convenience preference.
   if (state.settings.warmup || plan.warmup === 'extended') blocks.push(...warmupFor(stepId, plan.warmup))
 
-  // Fresh and within reach → attempt the unlock while at your best.
-  if (plan.queueUnlockAttempt) {
+  // Fresh and within reach → attempt the unlock while at your best. The plan
+  // only sets this when today's challenge permission allows it.
+  if (plan.queueUnlockAttempt && plan.challengeAllowed) {
     blocks.push({
       exerciseId: step.keyExerciseId,
       sets: 1,
       target: hold(step.unlockSec),
       restSec: 180,
       section: 'main',
-      note: `Unlock attempt — you're within reach. Hold ${step.unlockSec}s clean, film it, and pass both form confirmations.`,
+      note: `Unlock attempt — you're within reach. Hold ${step.unlockSec}s clean, film it, and pass both form confirmations. Stop the moment the shape goes; a stopped attempt is still useful.`,
     })
   }
 
-  // Main isometrics, shaped by the strategy the coach measured as fastest.
+  // Main isometrics, shaped by the strategy the coach measured.
+  //
+  // The floor is one second, not three. A three-second floor silently raised a
+  // capacity-capped one-second target back above what the athlete had shown,
+  // and contradicted Full Planche's own two-second start. And no strategy may
+  // push a working target past the best this athlete has actually held.
   const baseTarget = adaptiveTarget(state, stepId)
-  const target = clamp(Math.round(baseTarget * plan.targetFactor), 3, step.unlockSec)
-  const baseSets = plan.queueUnlockAttempt ? 3 : 4
+  const capacity = observedCapacity(state, stepId)
+  let target = clamp(Math.round(baseTarget * plan.targetFactor), 1, step.unlockSec)
+  if (capacity !== undefined) target = Math.min(target, Math.max(1, Math.floor(capacity)))
+  const surface = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
+  const transferred = plan.signals.keySeriesTransferred
+  const strategyNote =
+    plan.strategy === 'technique'
+      ? 'Easy targets today — careful positions, no grinding.'
+      : plan.strategy === 'intensity'
+        ? 'Harder clean holds. Rest fully and stop the instant elbow lock or body line goes.'
+        : plan.strategy === 'density'
+          ? 'Short rests on purpose, but never chase the timer past the first loss of shape.'
+          : 'Stop each set about 2s before failure or at the first loss of shape. Quality over seconds.'
+  const shortNote =
+    target < 3
+      ? ` Your recent holds are short, so these are too — that is a real dose, not a failure. If getting into the position or balancing is the struggle rather than strength, practising ${
+          stepBefore(stepId) ? EXERCISE_BY_ID[stepBefore(stepId)!.keyExerciseId].name.toLowerCase() : 'an easier lean'
+        } or using a smaller lean is worth reviewing with your replay.`
+      : ''
+  const placementNote =
+    plan.signals.totalSessions === 0 && state.assessment?.answers[step.keyExerciseId] === 0
+      ? ' You said you cannot hold this yet: use a smaller lean — shoulders only just past the wrists — so the target is holdable, and build the lean as it gets controlled.'
+      : ''
+  const transferNote = transferred
+    ? ` No ${surface} holds are logged yet, so this target comes conservatively from your other surface — expect the first sets to tell you more.`
+    : ''
   blocks.push({
     exerciseId: step.keyExerciseId,
-    sets: clamp(scale(baseSets + plan.setsDelta), 2, 8),
+    sets: clamp(scale((plan.queueUnlockAttempt && plan.challengeAllowed ? 3 : 4) + plan.setsDelta), 2, 8),
     target: hold(target),
     restSec: rMain,
     section: 'main',
-    note:
-      plan.strategy === 'technique'
-        ? 'Easy targets today — perfect positions, zero grinding.'
-        : plan.strategy === 'intensity'
-          ? 'Heavy clean holds. Rest fully and stop the instant elbow lock or body line goes.'
-          : plan.strategy === 'density'
-            ? 'Short rests on purpose, but never chase the timer past the first loss of shape.'
-            : 'Stop each set ~2s before failure or at the first loss of shape. Quality over seconds.',
+    note: `${strategyNote}${shortNote}${placementNote}${transferNote}`,
   })
 
   // Balanced and volume sessions keep an owned position in the session;
@@ -505,7 +814,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
           section: 'strength',
           note:
             stepId === 'tuck'
-              ? 'Straight-arm strength work — lean farther with locked elbows instead of chasing a longer stopwatch.'
+              ? 'Straight-arm strength work — lean farther with locked elbows instead of chasing a longer stopwatch. Keep the same hand and foot position every set so the sets compare.'
               : 'Maintenance volume — keep the lean sharp, but save your best strength for Advanced Tuck.',
         }
       : null
@@ -543,12 +852,12 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     )
   } else if (plan.accessoryEmphasis === 'balance') {
     blocks.push(
-      { exerciseId: 'frog-stand', sets: scale(3), target: hold(20), restSec: rAcc, section: 'strength', note: 'Balance is the limiter right now, not raw strength.' },
+      { exerciseId: 'frog-stand', sets: scale(3), target: hold(20), restSec: rAcc, section: 'strength', note: 'Balance practice gets the extra time today.' },
       { exerciseId: 'pppu', sets: scale(2), target: reps(6), restSec: rAcc, section: 'strength' },
     )
   } else if (plan.accessoryEmphasis === 'pressing') {
     blocks.push(
-      { exerciseId: 'pppu', sets: scale(4), target: reps(6), restSec: rAcc, section: 'strength', note: 'Extra pressing volume — this is what unblocks a stalled hold.' },
+      { exerciseId: 'pppu', sets: scale(4), target: reps(6), restSec: rAcc, section: 'strength', note: 'Extra bent-arm pressing — a supporting option for a stalled hold, not a guaranteed fix.' },
       { exerciseId: 'pike-pushup', sets: scale(3), target: reps(8), restSec: rAcc, section: 'strength' },
     )
   } else if (easy) {
@@ -558,7 +867,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
       target: hold(15),
       restSec: rAcc,
       section: 'strength',
-      note: 'Balance practice — cheap on tendons, great for skill.',
+      note: 'Balance practice — a lower-load skill drill, though not a free one for wrists.',
     })
   } else if (plan.strategy === 'volume') {
     blocks.push({
@@ -608,22 +917,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     )
   } else {
     blocks.push(
-      state.profile.equipment.includes('parallettes')
-        ? {
-            exerciseId: 'tuck-planche-pushup',
-            sets: scale(3),
-            target: reps(4),
-            restSec: rMain,
-            section: 'strength',
-          }
-        : {
-            exerciseId: 'pppu',
-            sets: scale(3),
-            target: reps(8),
-            restSec: rMain,
-            section: 'strength',
-            note: 'Floor-friendly pressing substitute; parallettes are not in your equipment profile.',
-          },
+      { exerciseId: 'tuck-planche-pushup', sets: scale(3), target: reps(4), restSec: rMain, section: 'strength' },
       { exerciseId: 'pike-pushup', sets: scale(2), target: reps(8), restSec: rAcc, section: 'strength' },
     )
   }
@@ -649,7 +943,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     }
   }
 
-  // Cooldown: give back what the lean took.
+  // Cooldown.
   blocks.push(
     { exerciseId: 'wrist-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
     { exerciseId: 'shoulder-extension-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
@@ -664,17 +958,22 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
       section: 'cooldown',
       note:
         step.order < 5
-          ? `${goal.name} goal — build the hip range now so the later lever is cheaper.`
+          ? `${goal.name} goal — range now makes a wider straddle available later. Practice time, not a measure of straddle strength.`
           : undefined,
     })
   }
+
+  // Kit first (so a substitute is sized like everything else), then capacity.
+  const kit = resolveEquipment(blocks, state.profile.equipment)
+  const sized = capacityAdjustBlocks(state, kit.blocks)
+  adjustments.push(...kit.notes, ...sized.notes)
 
   const baseBudget = easy ? Math.min(22, state.settings.sessionMinutes) : state.settings.sessionMinutes
   const budget = minutesOverride !== undefined ? Math.min(baseBudget, Math.max(8, minutesOverride)) : baseBudget
   // Sides are expanded before trimming, so the budget accounts for the fact
   // that unilateral work costs twice as long.
   const fitted = fitToBudget(
-    withSides(blocks),
+    withSides(sized.blocks),
     budget,
     plan.accessoryEmphasis === 'core',
     state.settings.stopLatencySec,
@@ -706,44 +1005,56 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     kind: 'auto',
     blocks: fitted,
     strategy: plan.strategy,
+    purpose: `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at a working dose, with supporting work around it.`,
+    ...(adjustments.length ? { adjustments } : {}),
   }
 }
 
-/** A short max-effort test on the current step's key hold. */
+/** A short max-effort test on a step's key hold. */
 export function maxTestWorkout(stepId: StepId): Workout {
   const step = STEP_BY_ID[stepId]
   // Unilateral tests must be even, or one side gets an extra attempt and the
   // unlock could be earned off the strong side alone.
   const perSide = EXERCISE_BY_ID[step.keyExerciseId]?.perSide
   const attempts = perSide ? 4 : 3
+  const blocks: Block[] = [
+    { exerciseId: 'wrist-circles', sets: 1, target: reps(10), restSec: 15, section: 'warmup' },
+    { exerciseId: 'wrist-rocks', sets: 1, target: reps(8), restSec: 20, section: 'warmup' },
+    {
+      exerciseId: step.keyExerciseId,
+      sets: attempts,
+      target: hold(step.unlockSec),
+      restSec: 180,
+      section: 'main',
+      note: 'Film the attempt. Hold only while the shape stays clean, then confirm your rating and form check. Stopping early for pain or a lost position is the right call, not a failed test.',
+    },
+  ]
   return {
     id: `test-${stepId}`,
     name: `Max Test · ${step.name}`,
     focus: `${perSide ? 'Two fresh max attempts per side' : 'Three fresh max attempts'} at the ${EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. Hit ${step.unlockSec}s with athlete + filmed form confirmation to unlock the next step.`,
-    minutes: 15,
+    minutes: estimateMinutes(blocks),
     kind: 'test',
-    blocks: [
-      { exerciseId: 'wrist-circles', sets: 1, target: reps(10), restSec: 15, section: 'warmup' },
-      { exerciseId: 'wrist-rocks', sets: 1, target: reps(8), restSec: 20, section: 'warmup' },
-      {
-        exerciseId: step.keyExerciseId,
-        sets: attempts,
-        target: hold(step.unlockSec),
-        restSec: 180,
-        section: 'main',
-        note: 'Film the attempt. Hold only while the shape stays clean, then confirm your rating and form check.',
-      },
-    ],
+    blocks,
+    purpose: 'Answer one question — what you can hold today, cleanly — at a fresh, planned opportunity.',
   }
 }
 
+function template(w: Omit<Workout, 'minutes' | 'kind'> & { kind?: Workout['kind'] }): Workout {
+  // Minutes come from the blocks, not a hand-typed label: "Quick Ten" must not
+  // claim ten minutes it does not fit in.
+  return { ...w, kind: 'template', minutes: estimateMinutes(w.blocks) }
+}
+
 export const TEMPLATES: Workout[] = [
-  {
+  template({
+    // Id kept so history and links still resolve; the old name ("Armor") and
+    // "your future self says thanks" promised protection no routine provides.
     id: 'wrist-armor',
-    name: 'Wrist Armor',
-    focus: 'Ten minutes of wrist conditioning. Do it on rest days; your future self says thanks.',
-    minutes: 10,
-    kind: 'template',
+    name: 'Wrist Prep',
+    focus:
+      'Ten-odd minutes of wrist preparation: controlled range, then light loading. Preparation, not treatment — it does not make a sore wrist safe to load.',
+    purpose: 'Prepare wrists for straight-arm loading.',
     blocks: [
       { exerciseId: 'wrist-circles', sets: 2, target: reps(10), restSec: 15, section: 'main' },
       { exerciseId: 'wrist-rocks', sets: 3, target: reps(10), restSec: 30, section: 'main' },
@@ -751,13 +1062,12 @@ export const TEMPLATES: Workout[] = [
       { exerciseId: 'ppp-hold', sets: 2, target: hold(15), restSec: 60, section: 'main' },
       { exerciseId: 'wrist-stretch', sets: 2, target: hold(30), restSec: 20, section: 'cooldown' },
     ],
-  },
-  {
+  }),
+  template({
     id: 'push-strength',
     name: 'Push Strength',
-    focus: 'Pressing volume for the days you want to build the engine, not test the skill.',
-    minutes: 35,
-    kind: 'template',
+    focus: 'Bent-arm pressing volume for the days you want to build supporting strength, not test the skill.',
+    purpose: 'Bent-arm pressing support, kept separate from straight-arm skill time.',
     blocks: [
       { exerciseId: 'wrist-circles', sets: 1, target: reps(10), restSec: 15, section: 'warmup' },
       { exerciseId: 'scap-pushup', sets: 2, target: reps(10), restSec: 30, section: 'warmup' },
@@ -767,13 +1077,40 @@ export const TEMPLATES: Workout[] = [
       { exerciseId: 'pushup', sets: 2, target: reps(15), restSec: 90, section: 'strength' },
       { exerciseId: 'shoulder-extension-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
     ],
-  },
-  {
+  }),
+  template({
+    id: 'setup-practice',
+    name: 'Setup Practice',
+    focus:
+      'Learn one repeatable lean setup: the same hand position, foot position and lean every set, entered and left under control. Success is a setup you can reproduce, not a longer hold.',
+    purpose: 'Learn a repeatable setup, so later sets are comparable.',
+    blocks: [
+      { exerciseId: 'wrist-circles', sets: 1, target: reps(10), restSec: 15, section: 'warmup' },
+      { exerciseId: 'wrist-rocks', sets: 1, target: reps(8), restSec: 20, section: 'warmup' },
+      {
+        exerciseId: 'scap-pushup',
+        sets: 2,
+        target: reps(8),
+        restSec: 45,
+        section: 'main',
+        note: 'Teaching reps — on your knees is fine. Elbows and trunk stay still; only the shoulder blades move.',
+      },
+      {
+        exerciseId: 'planche-lean',
+        sets: 4,
+        target: hold(6),
+        restSec: 75,
+        section: 'main',
+        note: 'Mark your hand and foot positions. Lean only as far as you can return from with straight arms, and film one set side-on.',
+      },
+      { exerciseId: 'wrist-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
+    ],
+  }),
+  template({
     id: 'balance-skill',
     name: 'Balance & Skill',
-    focus: 'Low-fatigue hand-balance practice: frog stand, wall line work, easy leans.',
-    minutes: 25,
-    kind: 'template',
+    focus: 'Lower-fatigue hand-balance practice: frog stand, wall line work, easy leans.',
+    purpose: 'Balance and position practice.',
     blocks: [
       { exerciseId: 'wrist-circles', sets: 1, target: reps(10), restSec: 15, section: 'warmup' },
       { exerciseId: 'wrist-rocks', sets: 2, target: reps(8), restSec: 20, section: 'warmup' },
@@ -782,13 +1119,12 @@ export const TEMPLATES: Workout[] = [
       { exerciseId: 'planche-lean', sets: 3, target: hold(10), restSec: 90, section: 'strength' },
       { exerciseId: 'wrist-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
     ],
-  },
-  {
+  }),
+  template({
     id: 'core-compression',
     name: 'Core & Compression',
-    focus: 'Hollow, L-sit and pike compression — the tension that keeps a planche flat.',
-    minutes: 25,
-    kind: 'template',
+    focus: 'Hollow, L-sit and pike compression — trunk and compression support for holding a flat line.',
+    purpose: 'Trunk and compression support.',
     blocks: [
       { exerciseId: 'hollow-hold', sets: 3, target: hold(30), restSec: 60, section: 'main' },
       { exerciseId: 'hollow-rocks', sets: 3, target: reps(12), restSec: 60, section: 'main' },
@@ -797,13 +1133,13 @@ export const TEMPLATES: Workout[] = [
       { exerciseId: 'arch-hold', sets: 3, target: hold(20), restSec: 60, section: 'strength' },
       { exerciseId: 'pancake-stretch', sets: 2, target: hold(40), restSec: 30, section: 'cooldown' },
     ],
-  },
-  {
+  }),
+  template({
     id: 'deload',
     name: 'Deload Flow',
-    focus: 'Half volume, easy targets. Take one of these weeks every 4–6 — that’s where adaptation lands.',
-    minutes: 20,
-    kind: 'template',
+    focus:
+      'Lower volume and easy targets for a lighter week. Periodic easy weeks are common practice; trials have not shown they add strength, so treat this as a choice rather than a requirement.',
+    purpose: 'A deliberately lighter session.',
     blocks: [
       { exerciseId: 'wrist-circles', sets: 2, target: reps(10), restSec: 20, section: 'warmup' },
       { exerciseId: 'wrist-rocks', sets: 2, target: reps(8), restSec: 30, section: 'warmup' },
@@ -813,18 +1149,131 @@ export const TEMPLATES: Workout[] = [
       { exerciseId: 'wrist-stretch', sets: 2, target: hold(30), restSec: 20, section: 'cooldown' },
       { exerciseId: 'shoulder-extension-stretch', sets: 1, target: hold(40), restSec: 10, section: 'cooldown' },
     ],
-  },
-  {
+  }),
+  template({
     id: 'quick-ten',
     name: 'Quick Ten',
-    focus: 'No time? Ten focused minutes that still move the needle.',
-    minutes: 10,
-    kind: 'template',
+    focus: 'A short session: brief preparation and a small amount of familiar main work. Shortened by removing work, never by cutting rest short.',
+    purpose: 'A genuinely short session.',
     blocks: [
       { exerciseId: 'wrist-circles', sets: 1, target: reps(10), restSec: 10, section: 'warmup' },
-      { exerciseId: 'planche-lean', sets: 3, target: hold(12), restSec: 75, section: 'main' },
-      { exerciseId: 'pppu', sets: 2, target: reps(6), restSec: 75, section: 'main' },
-      { exerciseId: 'hollow-hold', sets: 2, target: hold(25), restSec: 45, section: 'core' },
+      { exerciseId: 'planche-lean', sets: 3, target: hold(10), restSec: 60, section: 'main' },
+      { exerciseId: 'pppu', sets: 2, target: reps(5), restSec: 60, section: 'main' },
     ],
-  },
+  }),
 ]
+
+export const TEMPLATE_BY_ID: Record<string, Workout> = Object.fromEntries(TEMPLATES.map((t) => [t.id, t]))
+
+/**
+ * Why a maximal test is not on today, in the athlete's words — or null when it is.
+ */
+export function challengeBlockedReason(plan: CoachPlan): string | null {
+  if (plan.challengeAllowed) return null
+  if (plan.loadPermission === 'none') return 'what you reported means no loaded work today'
+  if (plan.signals.persistentComplaint) return 'a joint complaint keeps coming back'
+  if (plan.openConcern && plan.loadPermission === 'reduced') {
+    return plan.signals.lastCheckIn?.source === 'fresh' ? 'you flagged a joint today' : 'a joint report has not been updated'
+  }
+  if (plan.loadPermission === 'reduced') return 'today’s readiness calls for reduced loading'
+  return 'you reported low energy'
+}
+
+/**
+ * The one way a workout is built for an athlete to start.
+ *
+ * Every entry point — today's session, a short version, a template, a max test,
+ * and the rebuild after a readiness answer — comes through here, so the final
+ * decision is made once, with the latest answers, the current date, the
+ * athlete's equipment and their measured capacity:
+ *
+ * - no-load days become the pain-safe session whatever was requested;
+ * - a max test needs today's challenge permission, otherwise it becomes an
+ *   ordinary session and says why;
+ * - a template is scaled by the plan's decision, never by the raw answer;
+ * - a requested short version survives the readiness re-plan.
+ *
+ * Nothing may widen what this allows; later steps can only choose within it.
+ */
+export function finalizeWorkout(
+  state: AppState,
+  request: WorkoutRequest,
+  freshCheckIn?: CheckIn,
+  now = Date.now(),
+): Workout {
+  return finalizeWorkoutWithPlan(state, request, freshCheckIn, now).workout
+}
+
+/** `finalizeWorkout`, plus the plan it was decided from (for the check-in question). */
+export function finalizeWorkoutWithPlan(
+  state: AppState,
+  request: WorkoutRequest,
+  freshCheckIn?: CheckIn,
+  now = Date.now(),
+): { workout: Workout; plan: CoachPlan } {
+  const plan = buildPlan(state, now, freshCheckIn)
+  const adjustments: string[] = []
+  let workout: Workout
+
+  if (plan.loadPermission === 'none') {
+    workout = painSafeRecoveryWorkout(plan.signals.lastCheckIn?.regions ?? [])
+    if (request.source !== 'auto') {
+      adjustments.push(
+        `You asked for ${
+          request.source === 'test' ? 'a max test' : (TEMPLATE_BY_ID[request.templateId ?? '']?.name ?? 'a session')
+        }, but no loaded work is appropriate today — this is the pain-safe session instead.`,
+      )
+    }
+  } else if (request.source === 'test') {
+    const blocked = challengeBlockedReason(plan)
+    if (blocked) {
+      workout = todaysSession(state, plan, request.minutes)
+      adjustments.push(`No max test today because ${blocked} — this is an ordinary session instead, with no maximal attempt.`)
+    } else {
+      workout = maxTestWorkout(request.stepId ?? state.stepId)
+    }
+  } else if (request.source === 'template') {
+    const chosen = TEMPLATE_BY_ID[request.templateId ?? '']
+    if (!chosen) {
+      workout = todaysSession(state, plan, request.minutes)
+    } else {
+      const restricted = restrictTemplate(chosen, plan)
+      if (restricted.id === 'pain-safe-recovery' || restricted.id.startsWith('pain-safe-recovery-')) {
+        workout = restricted
+      } else {
+        const kit = resolveEquipment(restricted.blocks, state.profile.equipment)
+        const sized = capacityAdjustBlocks(state, kit.blocks, now)
+        const blocks = withSides(sized.blocks.map((b) => ({ ...b })))
+        adjustments.push(...kit.notes, ...sized.notes)
+        workout = {
+          ...restricted,
+          blocks,
+          minutes: estimateMinutes(blocks, state.settings.stopLatencySec, state.settings.phoneWithinReach),
+        }
+      }
+    }
+  } else {
+    workout = todaysSession(state, plan, request.minutes)
+  }
+
+  const all = [...(workout.adjustments ?? []), ...adjustments]
+  return { workout: { ...workout, request, ...(all.length ? { adjustments: all } : {}) }, plan }
+}
+
+/**
+ * The request a workout came from. Drafts saved before requests existed carry
+ * none, so it is reconstructed from the workout — never a time budget, which
+ * an old fitted estimate cannot honestly supply.
+ */
+export function requestFor(workout: Workout): WorkoutRequest {
+  if (workout.request) return workout.request
+  if (workout.kind === 'test') {
+    const stepId = workout.id.replace(/^test-/, '') as StepId
+    return { source: 'test', ...(STEP_BY_ID[stepId] ? { stepId } : {}) }
+  }
+  if (workout.kind === 'template') {
+    const id = workout.id.replace(/-readiness-adjusted$/, '')
+    return TEMPLATE_BY_ID[id] ? { source: 'template', templateId: id } : { source: 'auto' }
+  }
+  return { source: 'auto' }
+}

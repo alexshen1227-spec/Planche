@@ -1,12 +1,14 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
-import type { Tab, Workout } from './types'
-import { useStore } from './lib/store'
+import type { CheckIn, Tab, Workout, WorkoutRequest } from './types'
+import { quarantinedData, useStore } from './lib/store'
 import { loadDraft } from './lib/draft'
-import { buildPlan } from './lib/coach'
-import { adjustedTemplateWorkout, painSafeRecoveryWorkout, todaysSession } from './data/workouts'
+import { finalizeWorkout, finalizeWorkoutWithPlan, requestFor } from './data/workouts'
+import { LONG_GAP_DAYS } from './lib/signals'
+import type { CoachPlan } from './lib/coach'
 import { MeasurePrompt, measurementDue } from './components/MeasurePrompt'
 import { pruneClips } from './lib/clips'
+import { exportData } from './lib/exportImport'
 import { Icon, type IconName } from './components/Icon'
 import { Toasts } from './components/Toasts'
 import { Dashboard } from './views/Dashboard'
@@ -17,7 +19,7 @@ import { Stats } from './views/Stats'
 import { Settings } from './views/Settings'
 import { Updates } from './views/Updates'
 import { Onboarding } from './views/Onboarding'
-import { SessionPlayer } from './views/SessionPlayer'
+import { SessionPlayer, type CheckInContext } from './views/SessionPlayer'
 
 /**
  * A bench for the camera form judge, reached at #devlab.
@@ -130,9 +132,52 @@ function UpdateBanner({ defer = false }: { defer?: boolean }) {
         <button
           onClick={() => setDismissed(true)}
           aria-label="Dismiss update notice"
-          className="grid h-7 w-7 place-items-center rounded-lg text-ink3 transition hover:text-ink"
+          className="grid h-9 w-9 place-items-center rounded-lg text-ink3 transition hover:text-ink"
         >
           <Icon name="x" size={14} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Said when the latest changes are not reaching storage.
+ *
+ * Both writes used to fail silently — a full disk, a blocked private window —
+ * so an athlete could finish a session, see "Saved ✓", close the app and lose
+ * it. This stays until saving works again, and offers the one thing that
+ * protects the data in the meantime.
+ */
+function PersistenceBanner() {
+  const { state, persist, dispatch, retrySave } = useStore()
+  if (persist.primary !== 'failed') return null
+  return (
+    <div className="fixed inset-x-0 top-0 z-[70] flex justify-center px-3 pt-[max(env(safe-area-inset-top),8px)]">
+      <div
+        role="alert"
+        className="flex max-w-xl flex-wrap items-center gap-2 rounded-2xl border border-danger/40 bg-danger-soft px-4 py-2.5 shadow-pop"
+      >
+        <Icon name="info" size={16} className="shrink-0 text-danger-text" />
+        <span className="min-w-0 flex-1 text-[13px] leading-snug text-ink">
+          Your latest changes are not being saved on this device
+          {persist.error ? ` (${persist.error})` : ''}. Export a backup now, then free up storage.
+        </span>
+        <button
+          onClick={() => {
+            const at = Date.now()
+            exportData({ ...state, lastBackupAt: at })
+            dispatch({ type: 'STAMP_BACKUP', at })
+          }}
+          className="rounded-lg bg-danger px-3 py-1.5 text-[12.5px] font-semibold text-white"
+        >
+          Export
+        </button>
+        <button
+          onClick={retrySave}
+          className="rounded-lg border border-line bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink"
+        >
+          Try again
         </button>
       </div>
     </div>
@@ -154,9 +199,80 @@ function AppShell({ children, deferUpdate = false }: { children: ReactNode; defe
   return (
     <>
       {children}
+      <PersistenceBanner />
       <UpdateBanner defer={deferUpdate} />
       <Toasts />
     </>
+  )
+}
+
+/** Shown while boot looks for the on-device backup — usually for a few milliseconds. */
+function BootSplash() {
+  return (
+    <div className="app-ambient grid min-h-screen place-items-center px-6" role="status">
+      <div className="text-center text-[13px] text-ink3">Checking for saved data…</div>
+    </div>
+  )
+}
+
+/**
+ * The saved data could not be read and there was no usable backup.
+ *
+ * The old behaviour started an empty app and saved it over the unreadable
+ * data on the first render. Now the original bytes are kept aside and nothing
+ * is written until the athlete chooses.
+ */
+function BootRecovery() {
+  const { boot, startFresh } = useStore()
+  const download = () => {
+    const kept = quarantinedData()
+    if (!kept) return
+    const url = URL.createObjectURL(new Blob([kept.raw], { type: 'application/json' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'planche-lab-unreadable-data.json'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
+  }
+  return (
+    <div className="app-ambient min-h-screen">
+      <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-10">
+        <h1 className="font-display text-[24px] font-bold text-ink">Your saved data could not be read</h1>
+        <p className="mt-2 text-[14px] leading-relaxed text-ink2">
+          Nothing has been overwritten. The original is kept aside on this device, exactly as it was, and there was no
+          on-device backup to restore from.
+        </p>
+        {boot.failure ? (
+          <pre className="mt-3 overflow-x-auto rounded-xl border border-line bg-raised p-3 text-[11.5px] text-ink3">
+            {boot.failure.reason}
+          </pre>
+        ) : null}
+        <button
+          onClick={download}
+          className="mt-4 rounded-2xl px-6 py-3.5 font-display text-[15px] font-semibold text-on-accent"
+          style={{ background: 'var(--t-btn-accent)' }}
+        >
+          Download the unreadable data
+        </button>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-2 rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink"
+        >
+          Try again
+        </button>
+        <button
+          onClick={startFresh}
+          className="mt-2 rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink2"
+        >
+          Start fresh (the unreadable copy stays aside)
+        </button>
+        <p className="mt-4 text-center text-[12.5px] text-ink3">
+          If you have an exported backup file, start fresh and import it from Settings → Data.
+        </p>
+      </div>
+    </div>
   )
 }
 
@@ -169,8 +285,31 @@ const NAV: { tab: Tab; label: string; icon: IconName }[] = [
   { tab: 'settings', label: 'Settings', icon: 'sliders' },
 ]
 
+/** What the readiness question should remind the athlete of, from today's plan. */
+function checkInContextFor(plan: CoachPlan): CheckInContext {
+  const concern = plan.openConcern
+  const where = (concern?.regions ?? []).filter((r) => r !== 'other').map((r) => r.replace('-', ' '))
+  const what = concern ? `${where.length ? `${where.join(' and ')} ` : ''}${concern.joints === 'pain' ? 'pain' : 'a niggle'}` : ''
+  const days = plan.signals.daysSinceCheckIn
+  return {
+    ...(concern
+      ? {
+          concern:
+            concern.source === 'onboarding'
+              ? `At setup you reported ${what}. Answer for today — the plan leaves out what loads a painful area.`
+              : concern.source === 'attempt'
+                ? `You reported ${what} during your last session. How is it now?`
+                : `Your last report${days ? ` (${days} day${days === 1 ? '' : 's'} ago)` : ''} was ${what}. How is it now?`,
+        }
+      : {}),
+    ...(plan.signals.totalSessions > 0 && plan.signals.restDays >= LONG_GAP_DAYS
+      ? { gapDays: plan.signals.restDays }
+      : {}),
+  }
+}
+
 export default function App() {
-  const { state } = useStore()
+  const { state, dispatch, boot } = useStore()
   const [tab, setTab] = useState<Tab>('home')
   const devLab = useDevLabRoute()
   // An interrupted session (phone slept, tab discarded) is picked back up
@@ -180,6 +319,7 @@ export default function App() {
   const [resuming, setResuming] = useState(resumeDraft !== null)
 
   const [askCheckIn, setAskCheckIn] = useState(false)
+  const [checkInContext, setCheckInContext] = useState<CheckInContext>({})
 
   // Updates has no nav entry of its own; it lives under Settings, so Settings
   // stays lit while you are reading it rather than nothing being selected.
@@ -210,20 +350,22 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.onboarded, activeWorkout])
 
-  const startWorkout = (w: Workout) => {
+  /**
+   * Start what the athlete asked for, decided *now*.
+   *
+   * Screens pass a request, not a workout they built earlier: a plan memoised
+   * yesterday, or a preview opened before a check-in, must not be what runs.
+   */
+  const startWorkout = (request: WorkoutRequest) => {
     setResuming(false)
-    const plan = buildPlan(state)
-    let nextWorkout = w
-    if (plan.loadPermission === 'none') {
-      nextWorkout = painSafeRecoveryWorkout(plan.signals.lastCheckIn?.regions ?? [])
-    } else if (w.kind === 'template' && plan.loadPermission === 'reduced' && plan.signals.lastCheckIn) {
-      nextWorkout = adjustedTemplateWorkout(w, plan.signals.lastCheckIn)
-    }
+    const now = Date.now()
+    const { workout, plan } = finalizeWorkoutWithPlan(state, request, undefined, now)
     // Asked on every kind of session when due — a check-in before a template
-    // still feeds the rails and the record, even though only generated
-    // sessions get reshaped by the answer.
-    setAskCheckIn(w.kind === 'test' || plan.askCheckIn)
-    setActiveWorkout(nextWorkout)
+    // still feeds the rails and the record. A test always asks: a maximal
+    // effort needs today's answer, not last week's.
+    setAskCheckIn(request.source === 'test' || plan.askCheckIn)
+    setCheckInContext(checkInContextFor(plan))
+    setActiveWorkout(workout)
   }
 
   // Ahead of both branches so the bench is reachable from a fresh install as
@@ -237,6 +379,21 @@ export default function App() {
             <DevLab onClose={() => { window.location.hash = '' }} />
           </Suspense>
         </div>
+      </AppShell>
+    )
+  }
+
+  if (boot.phase === 'checking-backup') {
+    return (
+      <AppShell>
+        <BootSplash />
+      </AppShell>
+    )
+  }
+  if (boot.phase === 'unreadable') {
+    return (
+      <AppShell>
+        <BootRecovery />
       </AppShell>
     )
   }
@@ -353,23 +510,24 @@ export default function App() {
           workout={activeWorkout}
           resumeFrom={resuming ? resumeDraft : null}
           askCheckIn={askCheckIn}
-          onCheckInAnswered={(c) => {
+          checkInContext={checkInContext}
+          onCheckInAnswered={(c: CheckIn) => {
+            // Recorded the moment it is given, not only on the saved session:
+            // a pain answer followed by a discarded session used to vanish.
+            dispatch({
+              type: 'RECORD_SYMPTOM',
+              event: {
+                at: c.at,
+                joints: c.joints,
+                ...(c.regions?.length ? { regions: c.regions } : {}),
+                energy: c.energy,
+                source: 'check-in',
+              },
+            })
             // Nothing is logged yet at this point, so the session can be
-            // safely rebuilt around what the athlete just reported.
-            const plan = buildPlan(state, Date.now(), c)
-            if (c.joints === 'pain') {
-              setActiveWorkout(painSafeRecoveryWorkout(c.regions ?? []))
-            } else if (activeWorkout.kind === 'auto') {
-              setActiveWorkout(todaysSession(state, plan))
-            } else if (
-              activeWorkout.kind === 'test' &&
-              (c.joints !== 'good' || c.energy === 'tired')
-            ) {
-              // Any joint concern or low energy cancels an all-out test.
-              setActiveWorkout(todaysSession(state, plan))
-            } else {
-              setActiveWorkout(adjustedTemplateWorkout(activeWorkout, c))
-            }
+            // safely rebuilt — from the same request, so a 15-minute version
+            // stays a 15-minute version after the answer.
+            setActiveWorkout(finalizeWorkout(state, requestFor(activeWorkout), c))
           }}
           onExit={() => {
             setResuming(false)

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { getClipBlob } from '../lib/clips'
 import { replayKeypointsAtTime, type PoseTrack } from '../lib/poseForm'
@@ -16,6 +16,8 @@ interface ClipPlayerProps {
   className?: string
   label?: string
   onAvailabilityChange?: (available: boolean) => void
+  /** The fullscreen reviewer opened or closed. */
+  onReviewOpenChange?: (open: boolean) => void
   /** Sampled poses from the analysis, drawn over the replay when present. */
   overlay?: PoseTrack | null
   /** Faults found — the joints involved are drawn in the warning colour. */
@@ -150,15 +152,36 @@ export function ClipPlayer({
   className = 'h-40 w-full rounded-lg',
   label = 'Form-check clip',
   onAvailabilityChange,
+  onReviewOpenChange,
   overlay,
   overlayIssues,
 }: ClipPlayerProps) {
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpandedState] = useState(false)
   const [showSkeleton, setShowSkeleton] = useState(true)
   const inlineRef = useRef<HTMLVideoElement | null>(null)
+  const reviewButtonRef = useRef<HTMLButtonElement | null>(null)
   const hasOverlay = Boolean(overlay && overlay.frames.length)
+  const reviewChangeRef = useRef(onReviewOpenChange)
+  reviewChangeRef.current = onReviewOpenChange
+  const setExpanded = useCallback((open: boolean) => {
+    setExpandedState(open)
+    reviewChangeRef.current?.(open)
+  }, [])
+  // A reviewer that unmounts while open (the clip was deleted, the row went
+  // away) must not leave its owner believing review is still in progress.
+  useEffect(
+    () => () => {
+      reviewChangeRef.current?.(false)
+    },
+    [],
+  )
+  /** Stable for the overlay's effects; closing returns focus to the opener. */
+  const closeReview = useCallback(() => {
+    setExpanded(false)
+    window.setTimeout(() => reviewButtonRef.current?.focus(), 0)
+  }, [setExpanded])
 
   useEffect(() => {
     let cancelled = false
@@ -225,10 +248,11 @@ export function ClipPlayer({
           <PoseOverlay videoRef={inlineRef} track={overlay!} issues={overlayIssues ?? []} />
         ) : null}
         <button
+          ref={reviewButtonRef}
           onClick={() => setExpanded(true)}
           aria-label="Review clip fullscreen"
           title="Review fullscreen"
-          className="absolute right-2 top-2 flex items-center gap-1 rounded-lg border border-white/20 bg-black/75 px-2.5 py-1.5 text-[11.5px] font-semibold text-white shadow-lg backdrop-blur hover:bg-black/90"
+          className="absolute right-1.5 top-1.5 flex min-h-10 items-center gap-1 rounded-lg border border-white/20 bg-black/75 px-3 py-2 text-[12px] font-semibold text-white shadow-lg backdrop-blur hover:bg-black/90"
         >
           <Icon name="monitor" size={13} /> Review
         </button>
@@ -238,7 +262,7 @@ export function ClipPlayer({
             aria-pressed={showSkeleton}
             aria-label="Toggle tracked skeleton"
             title="What the form checker saw"
-            className={`absolute left-2 top-2 flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11.5px] font-semibold shadow-lg backdrop-blur ${
+            className={`absolute left-1.5 top-1.5 flex min-h-10 items-center gap-1 rounded-lg border px-3 py-2 text-[12px] font-semibold shadow-lg backdrop-blur ${
               showSkeleton
                 ? 'border-accent/50 bg-black/75 text-accent-text'
                 : 'border-white/20 bg-black/75 text-white hover:bg-black/90'
@@ -276,7 +300,7 @@ export function ClipPlayer({
               initialTime={inlineRef.current?.currentTime ?? 0}
               overlay={hasOverlay && showSkeleton ? overlay! : null}
               overlayIssues={overlayIssues ?? []}
-              onClose={() => setExpanded(false)}
+              onClose={closeReview}
             />,
             document.body,
           )
@@ -284,6 +308,9 @@ export function ClipPlayer({
     </>
   )
 }
+
+/** The frame step the buttons use. Captures ask for ~24fps and files vary, so it is approximate. */
+const FRAME_STEP_SEC = 1 / 30
 
 function ClipReviewOverlay({
   url,
@@ -304,29 +331,70 @@ function ClipReviewOverlay({
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const closeRef = useRef<HTMLButtonElement | null>(null)
   const [speed, setSpeed] = useState(1)
+  /**
+   * Read through a ref, never a dependency. The session player re-renders ten
+   * times a second, and with `onClose` in the dependency list this effect
+   * re-ran on every tick — refocusing Close each time, so a keyboard user
+   * could never stay on the speed or frame controls.
+   */
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     closeRef.current?.focus()
+    const step = (direction: 1 | -1) => {
+      const video = videoRef.current
+      if (!video) return
+      video.pause()
+      video.currentTime = Math.min(video.duration || Infinity, Math.max(0, video.currentTime + direction * FRAME_STEP_SEC))
+    }
+    // Capture phase, and the event stops here: this is the top layer. The
+    // session's own shortcuts used to see the same key — Escape closed the
+    // review *and* opened "Leave training session" underneath it.
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-      if (event.key === 'ArrowLeft' && videoRef.current) {
-        videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 1 / 30)
+      event.stopPropagation()
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseRef.current()
+        return
       }
-      if (event.key === 'ArrowRight' && videoRef.current) {
-        videoRef.current.currentTime = Math.min(
-          videoRef.current.duration || Infinity,
-          videoRef.current.currentTime + 1 / 30,
-        )
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        step(-1)
+        return
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        step(1)
+        return
+      }
+      if (event.key === 'Tab' && shellRef.current) {
+        const focusable = [
+          ...shellRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), video[controls], [tabindex]:not([tabindex="-1"])'),
+        ]
+        if (!focusable.length) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (!shellRef.current.contains(document.activeElement)) {
+          event.preventDefault()
+          first.focus()
+        } else if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
       }
     }
-    window.addEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
     return () => {
       document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keydown', onKey, true)
     }
-  }, [onClose])
+  }, [])
 
   const enterDeviceFullscreen = async () => {
     const shell = shellRef.current
@@ -347,25 +415,25 @@ function ClipReviewOverlay({
       aria-label={`Fullscreen review: ${label}`}
       className="fixed inset-0 z-[200] flex flex-col bg-black"
     >
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-3 py-2 text-white">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-3 pb-2 pt-[max(env(safe-area-inset-top),8px)] text-white">
         <div className="min-w-0">
           <div className="truncate text-[13px] font-semibold">{label}</div>
-          <div className="text-[10.5px] text-white/55">Arrow keys step one frame while paused</div>
+          <div className="text-[10.5px] text-white/55">Arrow keys step about 1/30 s — roughly one frame</div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
             onClick={() => void enterDeviceFullscreen()}
-            className="rounded-lg border border-white/20 px-2.5 py-1.5 text-[11.5px] font-semibold"
+            className="min-h-11 rounded-lg border border-white/20 px-3 py-2 text-[12px] font-semibold"
           >
             Device fullscreen
           </button>
           <button
             ref={closeRef}
-            onClick={onClose}
+            onClick={() => onCloseRef.current()}
             aria-label="Close fullscreen review"
-            className="grid h-8 w-8 place-items-center rounded-lg border border-white/20"
+            className="grid h-11 w-11 place-items-center rounded-lg border border-white/20"
           >
-            <Icon name="x" size={16} />
+            <Icon name="x" size={18} />
           </button>
         </div>
       </div>
@@ -388,16 +456,17 @@ function ClipReviewOverlay({
           <PoseOverlay videoRef={videoRef} track={overlay} issues={overlayIssues ?? []} />
         ) : null}
       </div>
-      <div className="flex shrink-0 items-center justify-center gap-2 border-t border-white/10 px-3 py-2 text-white">
+      <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 border-t border-white/10 px-3 pb-[max(env(safe-area-inset-bottom),8px)] pt-2 text-white">
         <button
           onClick={() => {
             if (!videoRef.current) return
             videoRef.current.pause()
-            videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 1 / 30)
+            videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - FRAME_STEP_SEC)
           }}
-          className="rounded-lg border border-white/20 px-3 py-1.5 text-[12px] font-semibold"
+          aria-label="Step back about one frame"
+          className="min-h-11 rounded-lg border border-white/20 px-3 py-2 text-[12px] font-semibold"
         >
-          − frame
+          − ~1/30 s
         </button>
         {[0.25, 0.5, 1].map((value) => (
           <button
@@ -407,7 +476,7 @@ function ClipReviewOverlay({
               if (videoRef.current) videoRef.current.playbackRate = value
             }}
             aria-pressed={speed === value}
-            className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold ${
+            className={`min-h-11 rounded-lg border px-3 py-2 text-[12px] font-semibold ${
               speed === value ? 'border-accent bg-accent text-on-accent' : 'border-white/20'
             }`}
           >
@@ -418,14 +487,12 @@ function ClipReviewOverlay({
           onClick={() => {
             if (!videoRef.current) return
             videoRef.current.pause()
-            videoRef.current.currentTime = Math.min(
-              videoRef.current.duration || Infinity,
-              videoRef.current.currentTime + 1 / 30,
-            )
+            videoRef.current.currentTime = Math.min(videoRef.current.duration || Infinity, videoRef.current.currentTime + FRAME_STEP_SEC)
           }}
-          className="rounded-lg border border-white/20 px-3 py-1.5 text-[12px] font-semibold"
+          aria-label="Step forward about one frame"
+          className="min-h-11 rounded-lg border border-white/20 px-3 py-2 text-[12px] font-semibold"
         >
-          + frame
+          + ~1/30 s
         </button>
       </div>
     </div>

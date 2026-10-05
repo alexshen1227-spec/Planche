@@ -1,8 +1,9 @@
-import type { AppState, BodyRegion, CheckIn, Session, SetLog } from '../types'
+import type { AppState, BodyRegion, CheckIn, Session, SetLog, TrainingSurface } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { addDays, dayKey, weekStart } from './time'
-import { sessionLearningValue, trainingSetValue } from './progression'
+import { defaultSurface } from '../data/equipment'
+import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
+import { learningSeries, testWasAttempted, trainingSetValue } from './progression'
 import { trustedCameraEvidence } from './formEvidence'
 import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
 
@@ -26,6 +27,13 @@ const DAY = 86_400_000
  * after they trained.
  */
 export const NEVER_DAYS = 99
+
+/**
+ * Past this many days without a log, the gap is not "rest". Nothing logged can
+ * mean a break, an injury, or training somewhere the app cannot see — the coach
+ * has to ask rather than call it banked recovery. A convention, not biology.
+ */
+export const LONG_GAP_DAYS = 14
 
 export function median(xs: number[]): number | null {
   if (xs.length === 0) return null
@@ -111,6 +119,26 @@ export function strainOf(session: Session): number {
 /** Below this a session is upkeep, not training — it should not block a push day. */
 export const LOADED_STRAIN = 60
 
+/**
+ * Whether a session was hard, by what is known about it rather than by volume
+ * alone.
+ *
+ * Volume was the only test, so three five-second full-planche max attempts at
+ * RPE 10 summed to less "strain" than a long easy warm-up — and the next day's
+ * plan said nothing logged had reached hard-training load and pushed. A
+ * completed test attempt, or main planche work the athlete rated 9+, is hard
+ * whatever its seconds add up to. RPE is reported effort, not tissue load; it
+ * is used here only to stop short maximal work disappearing.
+ */
+export function isHardSession(session: Session): boolean {
+  if (strainOf(session) >= LOADED_STRAIN) return true
+  if (testWasAttempted(session)) return true
+  const mainPlanche = session.sets.some(
+    (set) => set.section === 'main' && EXERCISE_BY_ID[set.exerciseId]?.category === 'planche' && set.value > 0,
+  )
+  return mainPlanche && (session.rpe ?? 0) >= 9
+}
+
 /** Linear slope (units per week) over timestamped points. */
 function slopePerWeek(points: { at: number; value: number }[]): number | null {
   if (points.length < 3) return null
@@ -151,13 +179,79 @@ export interface SideGap {
   gapPct: number
 }
 
+/** One joint report, from wherever it was made. */
+export interface ReadinessAnswer {
+  joints: CheckIn['joints']
+  /** Present only when the report came with a full check-in. */
+  energy?: CheckIn['energy']
+  at: number
+  regions?: BodyRegion[]
+  sleep?: CheckIn['sleep']
+  gap?: CheckIn['gap']
+  source: 'session' | 'fresh' | 'onboarding' | 'check-in' | 'attempt' | 'manual'
+}
+
+/**
+ * Every joint report the athlete has made, oldest first.
+ *
+ * Session check-ins, independent symptom events (onboarding, a check-in before
+ * a session that was then discarded, a mid-session report) and an answer given
+ * moments ago are one timeline. Reports stamped past this device's clock are
+ * left out: a future record cannot outrank a real past pain report. A
+ * correction removes the report it corrects instead of counting as recovery.
+ */
+export function readinessTimeline(state: AppState, now = Date.now(), fresh?: CheckIn): ReadinessAnswer[] {
+  const byAt = new Map<number, ReadinessAnswer>()
+  const corrections: number[] = []
+  const add = (answer: ReadinessAnswer) => {
+    if (answer.at > now + CLOCK_SKEW_MS) return
+    const existing = byAt.get(answer.at)
+    // The same answer stored twice (on the session and as an event) is one
+    // report; keep whichever copy carries the most.
+    if (!existing || (existing.energy === undefined && answer.energy !== undefined)) byAt.set(answer.at, answer)
+  }
+  for (const session of state.sessions) {
+    const c = session.checkIn
+    if (c) add({ joints: c.joints, energy: c.energy, at: c.at, regions: c.regions, sleep: c.sleep, gap: c.gap, source: 'session' })
+  }
+  for (const event of state.symptoms ?? []) {
+    if (event.correction) {
+      if (event.at <= now + CLOCK_SKEW_MS) corrections.push(event.at)
+      continue
+    }
+    add({ joints: event.joints, energy: event.energy, at: event.at, regions: event.regions, source: event.source })
+  }
+  if (fresh) {
+    add({
+      joints: fresh.joints,
+      energy: fresh.energy,
+      at: fresh.at,
+      regions: fresh.regions,
+      sleep: fresh.sleep,
+      gap: fresh.gap,
+      source: 'fresh',
+    })
+  }
+  const timeline = [...byAt.values()].sort((a, b) => a.at - b.at)
+  // Each correction withdraws the most recent complaint made before it.
+  for (const at of corrections.sort((a, b) => a - b)) {
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      if (timeline[i].at <= at && timeline[i].joints !== 'good') {
+        timeline.splice(i, 1)
+        break
+      }
+    }
+  }
+  return timeline
+}
+
 export interface Signals {
   /** Days since the last logged session of any kind. */
   restDays: number
   lastRpe?: number
   /**
-   * Days since the last session with meaningful training load, or
-   * `NEVER_DAYS` when no session has ever reached that bar.
+   * Days since the last hard session, or `NEVER_DAYS` when none has ever been
+   * logged.
    *
    * The sentinel keeps every "long enough ago" comparison working without a
    * null check, which is why it is a large number rather than null — but it is
@@ -165,10 +259,12 @@ export interface Signals {
    * `hasLoadedSession` before putting it in a sentence.
    */
   daysSinceLoaded: number
-  /** False when nothing logged has reached a hard-training load yet. */
+  /** False when nothing logged has been hard yet. */
   hasLoadedSession: boolean
-  /** RPE of that loaded session — a light prehab day can't mask it. */
+  /** RPE of that hard session — a light prehab day can't mask it. */
   lastLoadedRpe?: number
+  /** That hard session was a max test with an attempt. */
+  lastLoadedWasTest: boolean
   /**
    * Recent decayed load against the athlete's own 4-week normal.
    * ~1 = typical, >1.5 = piling up, <0.6 = well rested. Null without history.
@@ -178,7 +274,8 @@ export interface Signals {
   chronicDailyStrain: number | null
   /** Left/right imbalance on unilateral work, when both sides have data. */
   sideGap: SideGap | null
-  lastCheckIn?: AppState['sessions'][number]['checkIn']
+  /** The most recent joint report from any source. */
+  lastCheckIn?: ReadinessAnswer
   daysSinceCheckIn: number | null
   /**
    * A complaint that keeps coming back rather than settling.
@@ -195,16 +292,22 @@ export interface Signals {
   mainHitRate: number | null
   /** How many main sets that rate is based on — thin evidence gets less say. */
   mainSetCount: number
-  /** Robust centre of recent session bests on the key hold. */
+  /** Robust centre of recent session bests on the key hold, on the comparable surface. */
   mainMedian: number | null
   /** Spread of recent bests as a fraction of the median. */
   variability: number | null
   /** True when session-to-session numbers are too noisy to steer on. */
   noisy: boolean
-  /** Seconds per week gained on the key hold. */
+  /** Seconds per week gained on the key hold, within one comparable surface. */
   trendPerWeek: number | null
   /** Last session's key-hold best sat far outside the recent range. */
   lastWasOutlier: boolean
+  /** Which surface's history the key-hold signals were read from. */
+  keySurface: TrainingSurface | null
+  /** True when no history exists on the requested surface and another surface stood in. */
+  keySeriesTransferred: boolean
+  /** Days since the most recent comparable key-hold evidence, or null with none. */
+  daysSinceKeyEvidence: number | null
 
   /** Direction of pressing accessories (PPPU / pike push-ups). */
   accessoryTrend: 'up' | 'flat' | 'down' | null
@@ -248,12 +351,15 @@ export interface Signals {
   weightTrendPerWeek: number | null
 
   sessionsPerWeek: number
+  /** Days since the last max test that actually contained an attempt. */
   daysSinceMaxTest: number | null
   /** Weeks since the last deliberately easy week. */
   weeksSinceDeload: number
   /** True during the seven-day block started by the latest deload session. */
   deloadActive: boolean
   totalSessions: number
+  /** Sessions stamped past this device's clock, left out of every signal above. */
+  futureSessions: number
 }
 
 /**
@@ -261,20 +367,22 @@ export interface Signals {
  * logged — they take precedence so the plan responds immediately.
  */
 export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: CheckIn): Signals {
-  const sessions = [...state.sessions].sort((a, b) => a.startedAt - b.startedAt)
+  // A record stamped tomorrow is not recent training. It used to count toward
+  // this week's goal and, worse, outrank a real pain report from yesterday.
+  const all = [...state.sessions].sort((a, b) => a.startedAt - b.startedAt)
+  const sessions = all.filter((s) => s.startedAt <= now + CLOCK_SKEW_MS)
+  const futureSessions = all.length - sessions.length
   const step = STEP_BY_ID[state.stepId]
   const keyId = step.keyExerciseId
   const last = sessions[sessions.length - 1]
+  const daysBetween = (from: number) =>
+    Math.max(0, Math.round((new Date(dayKey(now)).getTime() - new Date(dayKey(from)).getTime()) / DAY))
 
-  const restDays = last
-    ? Math.max(0, Math.round((new Date(dayKey(now)).getTime() - new Date(dayKey(last.startedAt)).getTime()) / DAY))
-    : NEVER_DAYS
+  const restDays = last ? daysBetween(last.startedAt) : NEVER_DAYS
 
   // ——— Training load: what recovery actually depends on ———
-  const lastLoaded = [...sessions].reverse().find((s) => strainOf(s) >= LOADED_STRAIN)
-  const daysSinceLoaded = lastLoaded
-    ? Math.max(0, Math.round((new Date(dayKey(now)).getTime() - new Date(dayKey(lastLoaded.startedAt)).getTime()) / DAY))
-    : NEVER_DAYS
+  const lastLoaded = [...sessions].reverse().find(isHardSession)
+  const daysSinceLoaded = lastLoaded ? daysBetween(lastLoaded.startedAt) : NEVER_DAYS
   const lastLoadedRpe = lastLoaded?.rpe
 
   const monthAgo = now - 28 * DAY
@@ -288,8 +396,6 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const chronicDailyStrain = monthSessions.length >= 4 ? chronicTotal / chronicSpanDays : null
   // Acute load: strain decayed with a 2-day half-life, so yesterday's session
   // weighs on today and last week's barely registers.
-  // Age clamped at 0: a session stamped in the future (a device clock that
-  // was wrong and then corrected) must not decay backwards into a multiplier.
   const acute = sessions
     .filter((s) => s.startedAt >= now - 7 * DAY)
     .reduce((t, s) => t + strainOf(s) * 0.5 ** (Math.max(0, now - s.startedAt) / (2 * DAY)), 0)
@@ -327,19 +433,21 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // ——— Key-hold training performance, measured robustly ———
   // This is deliberately broader than progression credit. Unlocks remain
   // camera-strict; ordinary target and fatigue decisions can learn from a
-  // logged timer result unless trusted camera evidence says to cap it.
-  const withKey = sessions.filter((s) => sessionLearningValue(s, state.stepId) > 0)
-  const recent = withKey.slice(-6)
-  const recentBests = recent.map((s) => sessionLearningValue(s, state.stepId))
+  // logged timer result unless trusted camera evidence says to cap it. It is
+  // read from ONE comparable surface: pooling floor and parallette holds
+  // manufactured trends out of two flat series.
+  const preferred = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
+  const series = learningSeries({ sessions }, state.stepId, preferred)
+  const withKey = series.points
+  const recentBests = withKey.slice(-6).map((p) => p.value)
   const mainMedian = median(recentBests)
   const spread = mad(recentBests)
   const variability = mainMedian && mainMedian > 0 && spread !== null ? spread / mainMedian : null
   // Isometrics swing day to day; past ~22% deviation the signal is mostly noise.
   const noisy = variability !== null && variability > 0.22 && recentBests.length >= 3
-
-  const trendPerWeek = slopePerWeek(
-    withKey.slice(-6).map((s) => ({ at: s.startedAt, value: sessionLearningValue(s, state.stepId) })),
-  )
+  const trendPerWeek = slopePerWeek(withKey.slice(-6))
+  const latestKey = withKey[withKey.length - 1]
+  const daysSinceKeyEvidence = latestKey ? daysBetween(latestKey.at) : null
 
   // Hit rate from the most recent session that actually trained the key hold,
   // not the literal last session — a wrist day in between used to null this
@@ -363,10 +471,10 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // An outlier is a value far outside the robust range of the ones before it.
   let lastWasOutlier = false
   if (withKey.length >= 4) {
-    const prior = withKey.slice(-5, -1).map((s) => sessionLearningValue(s, state.stepId))
+    const prior = withKey.slice(-5, -1).map((p) => p.value)
     const pm = median(prior)
     const pmad = mad(prior)
-    const latest = sessionLearningValue(withKey[withKey.length - 1], state.stepId)
+    const latest = withKey[withKey.length - 1].value
     if (pm !== null && pmad !== null && pmad > 0) {
       lastWasOutlier = Math.abs(latest - pm) > Math.max(3, 3.5 * pmad)
     }
@@ -397,7 +505,6 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const pressingLags =
     accessoryTrend === 'flat' && trendPerWeek !== null && trendPerWeek <= 0.2 && pressPoints.length >= 3
 
-  // ——— Adherence ———
   // ——— Form quality, the only non-numeric signal available ———
   const ratedSets = sessions
     .slice(-8)
@@ -427,7 +534,11 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     .flatMap((s) =>
       s.sets.filter(
         (x) =>
-          x.exerciseId === keyId && x.form?.auto && Array.isArray(x.form.auto.issues) && x.section === 'main',
+          x.exerciseId === keyId &&
+          x.form?.auto &&
+          !x.form.auto.malformed &&
+          Array.isArray(x.form.auto.issues) &&
+          x.section === 'main',
       ),
     )
   const trustedCameraSets = cameraSets.filter(trustedCameraEvidence)
@@ -512,6 +623,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     weights.slice(-8).map((m) => ({ at: m.at, value: m.weightKg! })),
   )
 
+  // ——— Adherence ———
   const recentTen = sessions.slice(-10)
   const withWarmup = recentTen.filter((s) => s.sets.some((x) => x.section === 'warmup'))
   const warmupRate = recentTen.length ? withWarmup.length / recentTen.length : 1
@@ -521,7 +633,9 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const recentCount = sessions.filter((s) => s.startedAt >= fourWeeksAgo).length
   const sessionsPerWeek = recentCount / 4
 
-  const lastTest = [...sessions].reverse().find((s) => s.workoutKind === 'test')
+  // Only a test with an attempt in it counts as a test. Saving the warm-ups of
+  // a skipped test used to reset this clock and hide the next re-test prompt.
+  const lastTest = [...sessions].reverse().find(testWasAttempted)
   const daysSinceMaxTest = lastTest ? Math.round((now - lastTest.startedAt) / DAY) : null
 
   const lastDeload = [...sessions].reverse().find((s) => s.workoutName.toLowerCase().includes('deload'))
@@ -543,11 +657,14 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const currentWeek = weekStart(now)
   // Walk the calendar, not just the weeks that happen to contain sessions: a
   // week off is the most complete deload there is, and it leaves no entry.
+  // Walk it *backwards* from last week. A bounded scan that started at the
+  // oldest week stopped after five years and never reached the newest weeks —
+  // so a light week last month was invisible to anyone with a long history.
   const firstWeek = sessions.length ? weekStart(sessions[0].startedAt) : currentWeek
   const spanned: { week: number; strain: number }[] = []
-  for (let week = firstWeek; week < currentWeek; week = addDays(week, 7)) {
+  for (let week = addDays(currentWeek, -7); week >= firstWeek; week = addDays(week, -7)) {
     spanned.push({ week, strain: weeklyStrain.get(week) ?? 0 })
-    if (spanned.length > 260) break
+    if (spanned.length >= 260) break
   }
   const typicalWeek = median(spanned.map((w) => w.strain).filter((s) => s > 0)) ?? 0
   const lastEasyWeek =
@@ -569,13 +686,10 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     deloadActive = now - blockStart < 7 * DAY
   }
 
-  const lastWithCheckIn = [...sessions].reverse().find((s) => s.checkIn)
-  const lastCheckIn = freshCheckIn ?? lastWithCheckIn?.checkIn
-  const daysSinceCheckIn = freshCheckIn
-    ? 0
-    : lastWithCheckIn
-      ? Math.round((now - lastWithCheckIn.startedAt) / DAY)
-      : null
+  // ——— Joint reports, from every source ———
+  const timeline = readinessTimeline({ ...state, sessions }, now, freshCheckIn)
+  const lastCheckIn = timeline[timeline.length - 1]
+  const daysSinceCheckIn = freshCheckIn ? 0 : lastCheckIn ? Math.round((now - lastCheckIn.at) / DAY) : null
 
   // ——— A complaint that is not settling ———
   //
@@ -584,14 +698,12 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // and more expensive pattern — the same region flagged again and again while
   // the athlete keeps training through it, which is how a niggle becomes three
   // months off. Fresh answers are included so a report made moments ago counts
-  // toward the run immediately.
-  const recentCheckIns = [
-    ...sessions
-      .filter((s) => s.checkIn && now - s.startedAt <= 28 * DAY)
-      .slice(-6)
-      .map((s) => s.checkIn!),
-    ...(freshCheckIn ? [freshCheckIn] : []),
-  ]
+  // toward the run immediately, and reports made outside a saved session (a
+  // discarded session's check-in, onboarding) count like any other.
+  const recentCheckIns = timeline
+    .filter((c) => c.source !== 'fresh' && now - c.at <= 28 * DAY)
+    .slice(-6)
+    .concat(timeline.filter((c) => c.source === 'fresh'))
   let persistentComplaint: Signals['persistentComplaint'] = null
   if (recentCheckIns.length >= 3) {
     const counts = new Map<BodyRegion, number>()
@@ -605,7 +717,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
       const flagged = recentCheckIns.filter((c) => (c.regions ?? []).includes(top[0]))
       const firstHalf = flagged.slice(0, Math.floor(flagged.length / 2))
       const lastHalf = flagged.slice(Math.floor(flagged.length / 2))
-      const painShare = (list: CheckIn[]) =>
+      const painShare = (list: ReadinessAnswer[]) =>
         list.length ? list.filter((c) => c.joints === 'pain').length / list.length : 0
       persistentComplaint = {
         region: top[0],
@@ -622,6 +734,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     daysSinceLoaded,
     hasLoadedSession: lastLoaded !== undefined,
     lastLoadedRpe,
+    lastLoadedWasTest: lastLoaded ? testWasAttempted(lastLoaded) : false,
     readinessLoad,
     chronicDailyStrain,
     sideGap,
@@ -635,6 +748,9 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     noisy,
     trendPerWeek,
     lastWasOutlier,
+    keySurface: series.surface,
+    keySeriesTransferred: series.transferred,
+    daysSinceKeyEvidence,
     accessoryTrend,
     pressingLags,
     formCleanRate,
@@ -658,5 +774,6 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     weeksSinceDeload,
     deloadActive,
     totalSessions: sessions.length,
+    futureSessions,
   }
 }

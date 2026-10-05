@@ -2,10 +2,37 @@ import type { AppState, Session } from '../types'
 import { totalHoldSec, totalSets, weekStreak } from '../lib/stats'
 import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID } from './progressions'
-import { isQualifyingSet, qualifyingProgress } from '../lib/progression'
+import { progressionCredit, qualifyingProgress, testWasAttempted } from '../lib/progression'
 
 /** Bump whenever existing history should be rechecked against the catalog. */
-export const ACHIEVEMENT_VERSION = 2
+export const ACHIEVEMENT_VERSION = 3
+
+/**
+ * Badges whose *rule* was corrected in a catalog version, so an award made
+ * under the old rule is re-derived from history instead of kept.
+ *
+ * Normally an existing timestamp wins on reconcile — a badge is a record of
+ * something that happened. These are the exception: version 3 found that the
+ * "verified N-second" badges read the stopwatch value of a qualifying set
+ * rather than the camera-verified clean seconds, so a 20s timer hold the
+ * camera saw break down at 5s earned "Verified 20-second tuck planche". A
+ * record of something that did not happen is not a record. Replaying gives the
+ * date the corrected rule was genuinely first met, or no award at all.
+ */
+export const REVALIDATED_ACHIEVEMENTS: Record<number, readonly string[]> = {
+  3: [
+    'lean-30',
+    'frog-30',
+    'tuck-5',
+    'tuck-10',
+    'tuck-20',
+    'advtuck-10',
+    'straddle-5',
+    'full-5',
+    'full-10',
+    'tester',
+  ],
+}
 
 export interface AchievementProgress {
   current: number
@@ -24,12 +51,21 @@ export interface AchievementDef {
   progress?: (state: AppState) => AchievementProgress
 }
 
+/**
+ * Best verified duration, measured exactly as an unlock measures it.
+ *
+ * Eligibility is not the same as duration: a set can qualify on its evidence
+ * while the camera watched it break down partway through. `progressionCredit`
+ * caps at the camera-verified clean seconds, so a badge saying "verified 20
+ * seconds" now means twenty verified seconds — one canonical number shared by
+ * badges, the qualified chart and unlocks.
+ */
 const cleanBest = (state: AppState, exerciseId: string) =>
   state.sessions
     .filter((session) => session.workoutName !== 'Quick Log')
     .flatMap((session) => session.sets)
-    .filter((set) => isQualifyingSet(set, exerciseId))
-    .reduce((best, set) => Math.max(best, set.value), 0)
+    .reduce((best, set) => Math.max(best, progressionCredit(set, exerciseId)), 0)
+
 
 const prAtLeast = (state: AppState, exerciseId: string, sec: number) => cleanBest(state, exerciseId) >= sec
 const stepMastered = (state: AppState, stepId: 'tuck' | 'oneleg' | 'straddle') =>
@@ -93,10 +129,13 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'early-bird', name: 'Early Bird', desc: 'Train before 7am.', icon: '🌅', check: (_s, last) => new Date(last.startedAt).getHours() < 7 },
   { id: 'night-owl', name: 'Night Owl', desc: 'Train after 10pm.', icon: '🦉', check: (_s, last) => new Date(last.startedAt).getHours() >= 22 },
   {
+    // Id kept so earned history is untouched. The name is a record of what
+    // was done; "Guardian" implied the routine protects the wrist, which no
+    // preparation routine has been shown to do.
     id: 'wrist-guardian',
-    name: 'Wrist Guardian',
-    desc: '10 sessions that included wrist work.',
-    icon: '🛡️',
+    name: 'Wrist Prep Habit',
+    desc: '10 sessions that included wrist preparation.',
+    icon: '🔄',
     check: (s) =>
       s.sessions.filter((ss) => ss.sets.some((set) => EXERCISE_BY_ID[set.exerciseId]?.category === 'wrist')).length >= 10,
     progress: (s) => ({
@@ -107,8 +146,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
       target: 10,
     }),
   },
-  { id: 'tester', name: 'Moment of Truth', desc: 'Complete a max test.', icon: '🔬', check: (_s, last) => last.workoutKind === 'test' },
-  { id: 'deload-disciple', name: 'Restraint', desc: 'Complete a Deload Flow. Recovery is training.', icon: '🧘', check: (_s, last) => last.workoutName === 'Deload Flow' },
+  { id: 'tester', name: 'Moment of Truth', desc: 'Make an attempt in a max test.', icon: '🔬', check: (_s, last) => testWasAttempted(last) },
+  { id: 'deload-disciple', name: 'Restraint', desc: 'Complete a Deload Flow.', icon: '🧘', check: (_s, last) => last.workoutName === 'Deload Flow' },
   {
     id: 'film-study',
     name: 'Film Study',
@@ -167,8 +206,10 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     progress: (s) => ({ current: Math.min(250, totalSets(s)), target: 250 }),
   },
   {
+    // Planche-line holds include leans with the feet down, so "airborne"
+    // claimed something most of those seconds were not.
     id: 'big-day',
-    name: 'Two Minutes Airborne',
+    name: 'Two Minutes on the Line',
     desc: '120+ seconds of planche-line holds in one session.',
     icon: '💪',
     check: (_s, last) => {

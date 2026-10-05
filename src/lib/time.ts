@@ -1,3 +1,10 @@
+/**
+ * How far past this device's clock a record may be stamped before it counts
+ * as "in the future". A few minutes covers clocks that disagree; a session
+ * dated tomorrow is not recent training and cannot outrank today's answers.
+ */
+export const CLOCK_SKEW_MS = 10 * 60_000
+
 export function fmtHold(sec: number): string {
   const v = Math.round(sec * 10) / 10
   return `${Number.isInteger(v) ? v : v.toFixed(1)}s`

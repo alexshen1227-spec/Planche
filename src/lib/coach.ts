@@ -1,4 +1,4 @@
-import type { AppState, BodyRegion, CheckIn, EquipmentId, Session, StepId, StrategyId } from '../types'
+import type { AppState, BodyRegion, CheckIn, EquipmentId, Session, StepId, StrategyId, SymptomEvent } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { defaultSurface } from '../data/equipment'
 import { diagnosePlateau, type PlateauVerdict } from './plateau'
@@ -17,9 +17,17 @@ import {
   strainOf,
   trustedCameraEvidence,
   LOADED_STRAIN,
+  LONG_GAP_DAYS,
+  type ReadinessAnswer,
   type Signals,
 } from './signals'
-import { qualifyingProgress, qualifyingSessionValue, sessionLearningValue } from './progression'
+import {
+  qualifyingProgress,
+  qualifyingSessionValue,
+  sessionLearningValue,
+  sessionSurface,
+  type LearningScope,
+} from './progression'
 
 /**
  * The coach is an on-device optimizer, not a chatbot.
@@ -52,9 +60,11 @@ export const STRATEGIES: StrategyDef[] = [
     restFactor: 1,
   },
   {
+    // Not "builds tendon capacity": the tendon-loading evidence points at
+    // intensity, not accumulated easy time, so that claim had it backwards.
     id: 'volume',
     name: 'High volume',
-    blurb: 'More sets at a slightly easier hold. Builds tendon capacity.',
+    blurb: 'More sets at a slightly easier hold — more practice of the position at a dose you can repeat.',
     setsDelta: 2,
     targetFactor: 0.85,
     restFactor: 1,
@@ -78,7 +88,9 @@ export const STRATEGIES: StrategyDef[] = [
   {
     id: 'technique',
     name: 'Technique',
-    blurb: 'Easy targets, perfect positions. Cheap on joints, big on skill.',
+    // "Cheap on joints" was a claim; an easy hold is a smaller dose, which is
+    // all that can honestly be said — a novice's easy tuck can still be hard.
+    blurb: 'Easier targets and careful positions — a smaller dose per set, spent practising the shape.',
     setsDelta: 1,
     targetFactor: 0.7,
     restFactor: 0.85,
@@ -99,13 +111,23 @@ export interface ArmStats {
   id: StrategyId
   /** Sessions in which this strategy was actually attempted on this step. */
   attempts: number
+  /** Attempts with an evaluated outcome (a comparable session followed in time). */
   n: number
-  /** Shrunk toward the overall average — see armStats. */
+  /**
+   * Selection utility, shrunk toward the overall average — see armStats. A
+   * unitless score that includes effort and complaint penalties and an unlock
+   * bonus. It ranks; it is not a rate and must never be shown as seconds.
+   */
   mean: number
-  /** Unshrunk average, for honest display of what was measured. */
+  /** Unshrunk utility average. */
   rawMean: number
-  /** Mean expressed as seconds gained per week on the step's key hold. */
-  secPerWeek: number
+  /**
+   * Observed change in the key hold around these sessions, seconds per week,
+   * measured from timestamped observations — or null when none could be
+   * measured. This is what the athlete sees. It is an observation, not an
+   * estimate of what the strategy caused.
+   */
+  secPerWeek: number | null
 }
 
 /**
@@ -127,29 +149,102 @@ export interface CoachPick {
  * technique days, so comparing each arm to itself created regression-to-mean
  * bias rather than learning.
  */
-export function rewardFor(sessions: Session[], session: Session): number | null {
-  const step = STEP_BY_ID[session.stepId]
-  if (!step) return null
-  // Measured on learning value, not unlock credit — see sessionLearningValue.
-  const qualifyingBest = (candidate: Session) => sessionLearningValue(candidate, session.stepId)
-  if (qualifyingBest(session) <= 0) return null
+/**
+ * The comparable observations around one strategy session.
+ *
+ * Comparable means the same step and the same surface: a floor session
+ * followed by a parallette session is a change of task, not a result, and
+ * pooling them was enough to manufacture gains from two flat series. A
+ * session that mixed surfaces on its key hold has no single task to compare
+ * and is left unevaluated.
+ */
+function comparableWindow(
+  sessions: Session[],
+  session: Session,
+): { prior: { at: number; value: number }[]; follow: { at: number; value: number }[] } | null {
+  const surface = sessionSurface(session, session.stepId)
+  if (surface === 'mixed') return null
+  const scope: LearningScope = { surface }
+  const value = (candidate: Session) => sessionLearningValue(candidate, session.stepId, scope)
+  if (value(session) <= 0) return null
   const prior = sessions
-    .filter((s) => s.startedAt < session.startedAt && qualifyingBest(s) > 0)
+    .filter((s) => s.startedAt < session.startedAt && s.stepId === session.stepId && value(s) > 0)
     .slice(-3)
-    .map(qualifyingBest)
+    .map((s) => ({ at: s.startedAt, value: value(s) }))
   const follow = sessions
     .filter(
       (s) =>
         s.startedAt > session.startedAt &&
         s.startedAt <= session.startedAt + ATTRIBUTION_DAYS * DAY &&
-        qualifyingBest(s) > 0,
+        s.stepId === session.stepId &&
+        value(s) > 0,
     )
     .slice(0, 2)
-  const before = median(prior)
-  const after = median(follow.map(qualifyingBest))
-  if (prior.length < 2 || before === null || after === null || follow.length === 0) return null
+    .map((s) => ({ at: s.startedAt, value: value(s) }))
+  return { prior, follow }
+}
 
-  const days = Math.max(1, (follow[follow.length - 1].startedAt - session.startedAt) / DAY)
+/**
+ * Observed key-hold change around one strategy session, in seconds per week.
+ *
+ * The utility below mixed two different things into the number athletes saw:
+ * its time base divided a change measured across ~10 days by the ~6 days from
+ * the session to the last follow-up (a true +1.0s/week read as +1.75), and it
+ * multiplied effort and complaint penalties by the unlock bar, so a perfectly
+ * flat history displayed "−0.6s/week". This measures only the hold: the median
+ * of the comparable sessions before against the median of those after, divided
+ * by the time between those two medians. Null when nothing comparable exists.
+ */
+export function observedRateFor(sessions: Session[], session: Session): number | null {
+  const window = comparableWindow(sessions, session)
+  if (!window || window.prior.length < 2 || window.follow.length === 0) return null
+  const before = median(window.prior.map((p) => p.value))
+  const after = median(window.follow.map((p) => p.value))
+  const beforeAt = median(window.prior.map((p) => p.at))
+  const afterAt = median(window.follow.map((p) => p.at))
+  if (before === null || after === null || beforeAt === null || afterAt === null) return null
+  const weeks = (afterAt - beforeAt) / (7 * DAY)
+  if (weeks <= 0) return null
+  return (after - before) / weeks
+}
+
+/**
+ * Joint complaints reported in a session's attribution window — from any
+ * source, on any kind of day.
+ *
+ * The complaint search used to run over the *follow-up key-hold sessions*
+ * only, so pain reported on a recovery day — the most likely day to report it,
+ * and one with no key hold by design — simply disappeared from the strategy's
+ * record. A temporal association, not proof the strategy caused it; still a
+ * cost the optimizer should see.
+ */
+function complaintsAfter(sessions: Session[], session: Session, symptoms: SymptomEvent[]): CheckIn['joints'][] {
+  const from = session.startedAt
+  const to = session.startedAt + ATTRIBUTION_DAYS * DAY
+  const reports = new Map<number, CheckIn['joints']>()
+  for (const s of sessions) {
+    if (s.checkIn && s.checkIn.at > from && s.checkIn.at <= to) reports.set(s.checkIn.at, s.checkIn.joints)
+  }
+  for (const e of symptoms) {
+    if (!e.correction && e.at > from && e.at <= to) reports.set(e.at, e.joints)
+  }
+  return [...reports.values()].filter((joints) => joints !== 'good')
+}
+
+export function rewardFor(sessions: Session[], session: Session, symptoms: SymptomEvent[] = []): number | null {
+  const step = STEP_BY_ID[session.stepId]
+  if (!step) return null
+  // Measured on learning value, not unlock credit — see sessionLearningValue.
+  const window = comparableWindow(sessions, session)
+  if (!window) return null
+  const before = median(window.prior.map((p) => p.value))
+  const after = median(window.follow.map((p) => p.value))
+  const follow = window.follow
+  if (window.prior.length < 2 || before === null || after === null || follow.length === 0) return null
+
+  // The utility's own time base, kept as it was: it ranks strategies and is
+  // never displayed. The displayed rate is observedRateFor.
+  const days = Math.max(1, (follow[follow.length - 1].at - session.startedAt) / DAY)
   let reward = ((after - before) / days) * 7 / step.unlockSec
 
   // Clearing the bar is the whole point — weight it.
@@ -171,9 +266,10 @@ export function rewardFor(sessions: Session[], session: Session): number | null 
   }
 
   // A strategy that precedes joint complaints is expensive whatever the
-  // stopwatch says — the next check-in in the window gets a vote.
-  const echo = follow.find((s) => s.checkIn && s.checkIn.joints !== 'good')?.checkIn
-  if (echo) reward -= echo.joints === 'pain' ? 0.1 : 0.04
+  // stopwatch says — the worst report in the window gets a vote, wherever and
+  // on whatever kind of day it was made.
+  const complaints = complaintsAfter(sessions, session, symptoms)
+  if (complaints.length) reward -= complaints.includes('pain') ? 0.1 : 0.04
 
   return Math.max(-0.2, Math.min(0.6, reward))
 }
@@ -203,7 +299,7 @@ export function equipmentAdvice(state: AppState, joints?: CheckIn['joints']): Co
 
   if (!has('parallettes') && wristSensitive && (wristNote || jointsUnhappy)) {
     out.push({
-      text: 'Floor holds put your wrists in deep extension, which is the usual source of this complaint at this stage. Parallettes are the single highest-value purchase on the road — a neutral grip usually removes the pain and adds seconds the same week. Until then, work on your fists or push-up handles and keep the lean shallower.',
+      text: 'Floor holds put your wrists in deep extension at this stage. Parallettes or push-up handles change that angle, and many athletes find them easier on the wrists — but a grip change does not explain or clear wrist pain. If a hold hurts, stop it; on the floor, keep the lean shallower.',
       kind: 'warn',
     })
   } else if (
@@ -213,7 +309,7 @@ export function equipmentAdvice(state: AppState, joints?: CheckIn['joints']): Co
     (wristNote || jointsUnhappy)
   ) {
     out.push({
-      text: 'You own parallettes but your main holds are set to the floor. Switch today\'s surface in the set screen — the neutral wrist angle is the fastest fix for this, and parallette records are tracked separately so nothing you have earned on the floor is disturbed.',
+      text: 'You own parallettes but your main holds are set to the floor. A parallette grip changes the wrist angle, which some people find more comfortable — switch it in the set screen if you want to try. Parallette records are tracked separately, so nothing earned on the floor is disturbed. It is not a reason to keep loading a wrist that hurts.',
       kind: 'info',
     })
   }
@@ -234,23 +330,25 @@ export function equipmentAdvice(state: AppState, joints?: CheckIn['joints']): Co
 /** Per-strategy performance, derived fresh from history. */
 export function armStats(state: AppState, forStep: StepId = state.stepId): ArmStats[] {
   const sessions = [...state.sessions].sort((a, b) => a.startedAt - b.startedAt)
-  const acc: Record<StrategyId, { attempts: number; n: number; total: number }> = {
-    balanced: { attempts: 0, n: 0, total: 0 },
-    volume: { attempts: 0, n: 0, total: 0 },
-    intensity: { attempts: 0, n: 0, total: 0 },
-    density: { attempts: 0, n: 0, total: 0 },
-    technique: { attempts: 0, n: 0, total: 0 },
+  const acc: Record<StrategyId, { attempts: number; n: number; total: number; rates: number[] }> = {
+    balanced: { attempts: 0, n: 0, total: 0, rates: [] },
+    volume: { attempts: 0, n: 0, total: 0, rates: [] },
+    intensity: { attempts: 0, n: 0, total: 0, rates: [] },
+    density: { attempts: 0, n: 0, total: 0, rates: [] },
+    technique: { attempts: 0, n: 0, total: 0, rates: [] },
   }
+  const symptoms = state.symptoms ?? []
   for (const s of sessions) {
     if (!s.strategy || !acc[s.strategy] || s.stepId !== forStep) continue
     if (sessionLearningValue(s, forStep) <= 0) continue
     acc[s.strategy].attempts += 1
-    const r = rewardFor(sessions, s)
+    const r = rewardFor(sessions, s, symptoms)
     if (r === null) continue
     acc[s.strategy].n += 1
     acc[s.strategy].total += r
+    const observed = observedRateFor(sessions, s)
+    if (observed !== null) acc[s.strategy].rates.push(observed)
   }
-  const unlockSec = STEP_BY_ID[forStep]?.unlockSec ?? 20
 
   // Isometric results are noisy, so a strategy with one lucky session must not
   // outrank one with five solid ones. Each arm's average is pulled toward the
@@ -264,7 +362,7 @@ export function armStats(state: AppState, forStep: StepId = state.stepId): ArmSt
     const a = acc[def.id]
     const rawMean = a.n > 0 ? a.total / a.n : 0
     const mean = a.n > 0 ? (a.total + SHRINKAGE_K * grandMean) / (a.n + SHRINKAGE_K) : 0
-    return { id: def.id, attempts: a.attempts, n: a.n, mean, rawMean, secPerWeek: rawMean * unlockSec }
+    return { id: def.id, attempts: a.attempts, n: a.n, mean, rawMean, secPerWeek: median(a.rates) }
   })
 }
 
@@ -348,23 +446,34 @@ export function pickStrategy(state: AppState): CoachPick {
   const runnerUp = ranked.find((arm) => arm.id !== best.id)
   const leadSecPerWeek = runnerUp ? (best.mean - runnerUp.mean) * unlockSec : Infinity
   const decided = leadSecPerWeek >= 0.5
+  const evaluated = stats.reduce((t, s) => t + s.n, 0)
 
   return {
     strategy: best.id,
-    reason: exploring
-      ? `Re-testing ${name.toLowerCase()} to keep its read on you current.`
-      : best.secPerWeek <= 0.05
-        ? `${name} is holding up best while your numbers are flat — keeping the stimulus steady.`
-        : decided
-          ? `${name} has produced your fastest gains: ${formatRate(best.secPerWeek)}.`
-          : `${name} and ${STRATEGY_BY_ID[runnerUp!.id].name.toLowerCase()} are running neck and neck (${formatRate(
-              best.secPerWeek,
-            )}). Staying on ${name.toLowerCase()} while the difference is still inside the noise.`,
+    // Every branch describes what was actually measured. "Holding up best while
+    // your numbers are flat" was once printed when nothing had been measured at
+    // all — every approach tried once, none with a later session to compare —
+    // which is a claim of superiority made from zero evaluated outcomes.
+    reason:
+      evaluated === 0
+        ? `Every approach has been tried, but none has a later comparable session to measure it against yet. Staying on ${name.toLowerCase()} until results come in.`
+        : best.n === 0
+          ? `${name} has been tried but not measured yet — it gets another turn before the coach leans on any one approach.`
+          : exploring
+            ? `Re-testing ${name.toLowerCase()} to keep its read on you current.`
+            : best.secPerWeek === null || best.secPerWeek <= 0.05
+              ? `${name} is holding up best while your numbers are flat — keeping the stimulus steady.`
+              : decided
+                ? `${name} has the best measured result so far: ${formatRate(best.secPerWeek)} observed in the sessions after it. That is an observation from your log, not proof it caused the gain.`
+                : `${name} and ${STRATEGY_BY_ID[runnerUp!.id].name.toLowerCase()} are running neck and neck (${formatRate(
+                    best.secPerWeek,
+                  )} observed). Staying on ${name.toLowerCase()} while the difference is still inside the noise.`,
     exploring,
   }
 }
 
-export function formatRate(secPerWeek: number): string {
+export function formatRate(secPerWeek: number | null): string {
+  if (secPerWeek === null) return 'not measurable yet'
   if (secPerWeek < -0.05) return `${secPerWeek.toFixed(1)}s/week`
   if (secPerWeek <= 0.05) return 'no measurable gain'
   return `+${secPerWeek.toFixed(1)}s/week`
@@ -373,7 +482,7 @@ export function formatRate(secPerWeek: number): string {
 /** Athlete-facing evidence state for one strategy in the Progress panel. */
 export function formatStrategyEvidence(arm: Pick<ArmStats, 'attempts' | 'n' | 'secPerWeek'>): string {
   if (arm.n > 0) {
-    return `${formatRate(arm.secPerWeek)} · ${arm.n}/${arm.attempts} result${arm.attempts === 1 ? '' : 's'} measured`
+    return `${formatRate(arm.secPerWeek)} observed · ${arm.n}/${arm.attempts} result${arm.attempts === 1 ? '' : 's'} measured`
   }
   if (arm.attempts > 0) {
     return `tried ${arm.attempts}× · waiting for a later session`
@@ -449,6 +558,24 @@ export interface CoachPlan {
   volumeFactor: number
   /** Whether loaded upper-body planche work is appropriate today. */
   loadPermission: 'normal' | 'reduced' | 'none'
+  /**
+   * Whether a maximal effort — a max test or a queued unlock attempt — is
+   * appropriate today. Separate from load permission because ordinary work
+   * can be fine on a day a maximal attempt is not (low energy, a complaint
+   * that keeps recurring, a concern nobody has updated). Every route that
+   * starts a test or queues an attempt reads this; none may recreate one.
+   */
+  challengeAllowed: boolean
+  /**
+   * After a long logging gap, what the athlete said it was. 'unknown' means
+   * not asked or skipped — and stays unknown rather than becoming "rest".
+   */
+  gap: 'none' | 'trained-elsewhere' | 'break' | 'unknown'
+  /**
+   * The latest joint report when it was a complaint nobody has updated since.
+   * A stale concern is asked about rather than silently forgotten.
+   */
+  openConcern: ReadinessAnswer | null
   askCheckIn: boolean
   decisions: CoachDecision[]
   signals: Signals
@@ -457,15 +584,18 @@ export interface CoachPlan {
 /**
  * What a specific region changes about today, beyond "rest it".
  *
- * Written per region because the useful advice genuinely differs: a wrist has
- * a mechanical fix available this afternoon, an elbow needs time and nothing
- * else, and a lower back changes which "safe" core work is actually safe.
- * Empty strings are deliberate for regions with nothing extra worth saying —
- * padding these out would train athletes to skip them.
+ * Written per region because the useful advice genuinely differs: an elbow
+ * needs time and nothing else, and a lower back changes which "safe" core work
+ * is actually safe. Empty strings are deliberate for regions with nothing extra
+ * worth saying — padding these out would train athletes to skip them.
+ *
+ * None of these may read as a diagnosis or a clearance. A different grip
+ * changes the wrist's angle; it does not establish why the wrist hurts, and it
+ * is not permission to keep loading a painful one.
  */
 const REGION_PAIN_NOTE: Partial<Record<BodyRegion, string>> = {
   wrist:
-    'Wrist pain specifically: the usual cause is deep extension under load, and the usual fix is mechanical rather than rest. Parallettes, push-up handles or even fists put the joint in a neutral position and often remove the problem the same day.',
+    'Wrist pain: do not keep loading it to finish the session. Parallettes or fists change the wrist angle, which some people find more comfortable later — but they do not diagnose the cause and are not a reason to train through pain. If it is still sore the next day, keeps coming back, or there is swelling, get it checked by a qualified clinician.',
   // Hedged to match the ledger: coaches agree on this almost universally, and
   // there is essentially no literature on it — a 2025 review of tendon-loading
   // studies found one touching the distal biceps against six each for Achilles
@@ -489,7 +619,7 @@ const REGION_NOUN: Record<BodyRegion, string> = {
 
 const REGION_NIGGLE_NOTE: Partial<Record<BodyRegion, string>> = {
   wrist:
-    'For the wrist niggle: switch today\'s main holds to parallettes or fists if you have them, and keep the lean shallower than usual. A neutral wrist angle is the fastest fix there is for this.',
+    'For the wrist niggle: keep the lean shallower than usual, and if you have parallettes, a more neutral grip may feel better — a change of angle, not a fix. Stop any set that makes it worse, and if it is still there tomorrow, treat it as pain rather than a niggle.',
   shoulder:
     'For the shoulder: keep the lean conservative and stop any set where the position drifts, rather than pushing to the target.',
   'lower-back':
@@ -592,6 +722,21 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   let loadPermission: CoachPlan['loadPermission'] = 'normal'
   let strategyOverrideReason: string | null = null
 
+  // ——— A long logging gap is not rest ———
+  //
+  // Ninety days without a log used to read as "90 rest days banked — you're
+  // fresh, so today pushes", followed by an unlock attempt anchored on
+  // three-month-old results. Silence in the log is not observed rest: it can be
+  // a break, an injury, or training the app never saw. The check-in asks which,
+  // and an unanswered question stays unknown rather than becoming either.
+  const longGap = sig.totalSessions > 0 && sig.restDays >= LONG_GAP_DAYS
+  const answeredGap = freshCheckIn?.gap
+  const gap: CoachPlan['gap'] = !longGap
+    ? 'none'
+    : answeredGap === 'break' || answeredGap === 'trained-elsewhere'
+      ? answeredGap
+      : 'unknown'
+
   // ——— Recovery state sets the day's character ———
   // Judged on training LOAD, not on whether any session existed: a ten-minute
   // wrist routine yesterday neither blocks a push day nor grants one, and a
@@ -599,6 +744,14 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   if (sig.totalSessions === 0) {
     dayType = 'build'
     dayReason = 'Baseline session — start controlled so the coach can learn your current capacity.'
+  } else if (longGap) {
+    dayType = 'build'
+    dayReason =
+      gap === 'break'
+        ? `Back after about ${sig.restDays} days away — today re-establishes your current working level rather than testing it. Everything you earned before still stands.`
+        : gap === 'trained-elsewhere'
+          ? `Nothing logged here for ${sig.restDays} days, but you kept training elsewhere — an ordinary session today, with no unlock attempt queued off results this old.`
+          : `Nothing logged for ${sig.restDays} days. That could be a break or training the app could not see, so today is an ordinary session rather than a push day, and old results are not treated as today's capacity.`
   } else if (sig.daysSinceLoaded === 0) {
     dayType = 'technique'
     dayReason = 'Second loaded session today — skill work only, tendons keep score.'
@@ -606,6 +759,12 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     dayType = 'technique'
     dayReason =
       'Your recent training load is running well above your own four-week normal — today recovers it into strength instead of stacking more on top.'
+  } else if (sig.daysSinceLoaded === 1 && sig.lastLoadedWasTest) {
+    // A max test is maximal whatever its seconds add up to. Three five-second
+    // attempts used to fall below the volume bar and leave the next day
+    // claiming nothing hard had been logged.
+    dayType = 'technique'
+    dayReason = 'Yesterday was a max test — a maximal effort however short it was — so today is skill work rather than another push.'
   } else if (sig.daysSinceLoaded === 1 && (sig.lastLoadedRpe ?? 0) >= 9) {
     dayType = 'technique'
     dayReason = 'Your last hard session hit RPE 9+ — today turns that into strength instead of fatigue.'
@@ -632,10 +791,11 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     // Deliberately not "strength lands during recovery". Only two controlled
     // trials of planned deloads exist and neither found a benefit; what is
     // well-established is what athletes *do* (about a week off every five or
-    // six), and that a reduced week costs nothing. Say that instead of
-    // asserting a mechanism the evidence does not support.
+    // six). The reduced-dose trial also did not detect a cost in the outcomes
+    // it measured — which is not the same as proving there is none, so the
+    // copy must not say "costs nothing" either.
     decisions.push({
-      text: 'Scheduled easy week. Worth knowing this one is convention rather than proven: the handful of trials on planned deloads have not shown a performance benefit — but they have not shown a cost either, and backing off periodically is what almost every strength athlete does. Volume drops, the movements stay.',
+      text: 'Scheduled easy week. Worth knowing this one is convention rather than proven: the two controlled trials of planned deloads found no performance benefit, and the one that reduced the dose did not detect a cost in what it measured — not proof that there is none. Backing off periodically is what almost every strength athlete does. Volume drops, the movements stay.',
       kind: 'info',
     })
   }
@@ -970,15 +1130,16 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     !sig.noisy &&
     !formRepairNeeded
   ) {
+    // Announced only once the rails have run (below): a pain, low-energy or
+    // complaint day cancels the attempt, and the sentence used to survive it.
     queueUnlockAttempt = true
-    decisions.push({
-      text: `You're within reach of the ${step.unlockSec}s bar — an unlock attempt is queued first, while you're freshest.`,
-      kind: 'good',
-    })
   }
+  // Not on the first session back from a long gap: re-establishing working
+  // evidence comes before a maximal test, and old numbers are not today's.
   let suggestMaxTest =
     (sig.daysSinceMaxTest === null ? sig.totalSessions >= 8 : sig.daysSinceMaxTest >= 21) &&
     sig.restDays >= 2 &&
+    !longGap &&
     !sig.noisy &&
     dayType !== 'deload' &&
     !formRepairNeeded
@@ -1025,17 +1186,28 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const checkInFresh = checkInAge !== null && checkInAge <= 7
 
   const painRegions = sig.lastCheckIn?.regions ?? []
+  const fromSetup = sig.lastCheckIn?.source === 'onboarding'
+  const profileAge = state.profile.birthYear ? new Date(now).getFullYear() - state.profile.birthYear : null
+  const youthNote =
+    profileAge !== null && profileAge < 18
+      ? ' If you are under 18, tell a parent, guardian or coach as well.'
+      : ''
   if (checkInFresh && joints === 'pain') {
     dayType = 'recovery'
-    dayReason = 'You reported joint pain — loaded planche work is off today. Use only pain-free recovery movement.'
+    dayReason = fromSetup
+      ? 'At setup you said a plain push-up position hurts your wrists, so loaded planche work is off until a check-in says otherwise. Use only pain-free recovery movement.'
+      : 'You reported joint pain — loaded planche work is off today. Use only pain-free recovery movement.'
     strategy = 'technique'
     targetFactor = 0.6
     volumeFactor = 0.5
     loadPermission = 'none'
     queueUnlockAttempt = false
     suggestMaxTest = false
+    // Proportionate escalation rather than a diagnosis: next-day pain or
+    // swelling in a wrist or elbow is the point where professional guidance
+    // says to get it looked at, and that is what this says.
     decisions.push({
-      text: 'Joint pain reported — no loaded planche, pressing or wrist work today. Stop any recovery movement that reproduces symptoms and seek a qualified clinician for severe, worsening or persistent pain.',
+      text: `Joint pain reported — no loaded planche, pressing or wrist work today. Stop any movement that reproduces it. If it is still there the next day, keeps coming back, or there is swelling, get it checked by a qualified clinician; severe pain, numbness or a joint you cannot use normally needs prompt care.${youthNote}`,
       kind: 'warn',
     })
     for (const region of painRegions) {
@@ -1049,6 +1221,9 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     warmup = 'extended'
     loadPermission = 'reduced'
     queueUnlockAttempt = false
+    // "No max-intensity work" was said here while a max-test suggestion could
+    // survive from earlier in the plan — the plan arguing with itself again.
+    suggestMaxTest = false
     decisions.push({ text: 'You flagged a niggle — no max-intensity work today, longer warm-up, slightly less volume.', kind: 'warn' })
     for (const region of painRegions) {
       const note = REGION_NIGGLE_NOTE[region]
@@ -1109,7 +1284,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     decisions.push({
       text: `Your ${label} has come up in ${persistent.count} of your last ${persistent.of} check-ins${
         persistent.worsening ? ', and more of those were pain rather than a niggle than at the start' : ''
-      }. A single sore day is normal; the same area not settling across weeks is the signal that the current dose is more than it is tolerating. The usable rule from the tendon-rehab literature: discomfort should stay mild during and just after training, be back to normal by the next morning, and not build week on week. Yours is not doing that. ${
+      }. A single sore day is normal; the same area not settling across weeks is the signal that the current dose is more than it is tolerating. A rule borrowed from supervised tendon rehabilitation (studied in knees and ankles, not wrists or elbows): discomfort should stay mild during and just after training, be back to normal by the next morning, and not build week on week. Yours is not doing that. ${
         persistent.worsening
           ? 'Please get it looked at by a clinician rather than working around it.'
           : 'Back the load off until it does, or get it looked at.'
@@ -1118,10 +1293,68 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   }
 
-  if (checkInFresh && sig.lastCheckIn?.energy === 'tired') {
+  // ——— A complaint nobody has updated is still a complaint ———
+  //
+  // The fresh-answer rails above only look back a week, so an unresolved pain
+  // report used to lapse silently on day eight — and skipping the check-in was
+  // enough to make it disappear. It is not a lockout: one check-in resolves it.
+  // Until then the coach asks, and a reported *pain* keeps the day reduced and
+  // free of maximal attempts.
+  const openConcern = sig.lastCheckIn && sig.lastCheckIn.joints !== 'good' ? sig.lastCheckIn : null
+  const staleConcern = openConcern !== null && !checkInFresh
+  if (staleConcern && openConcern) {
+    const where = (openConcern.regions ?? []).filter((r) => r !== 'other').map((r) => REGION_NOUN[r])
+    const what = `${where.length ? `${where.join(' and ')} ` : ''}${openConcern.joints === 'pain' ? 'pain' : 'niggle'}`
+    if (openConcern.joints === 'pain') {
+      loadPermission = loadPermission === 'normal' ? 'reduced' : loadPermission
+      volumeFactor = Math.min(volumeFactor, 0.85)
+      targetFactor = Math.min(targetFactor, 1)
+      queueUnlockAttempt = false
+      suggestMaxTest = false
+      if (dayType === 'push') {
+        dayType = 'build'
+        dayReason = `Your last report was ${what}, and nothing since has said how it is now — so today builds rather than pushes until a check-in updates it.`
+      }
+    }
+    decisions.push({
+      text: `Your last joint report (${checkInAge} days ago) was ${what}, and it has not been updated since. The check-in asks how it is now${
+        openConcern.joints === 'pain' ? '; until then today stays reduced, with no maximal attempts' : ''
+      }.`,
+      kind: openConcern.joints === 'pain' ? 'warn' : 'info',
+    })
+  }
+
+  // ——— Low energy: ordinary work, no maximal effort ———
+  //
+  // Tired used to trim volume and nothing else, so a tired athlete who had
+  // started a max test was rerouted to a session that still queued an unlock
+  // attempt — and still explained itself as "you're fresh, so today pushes".
+  const tiredToday = checkInFresh && sig.lastCheckIn?.energy === 'tired'
+  if (tiredToday) {
     volumeFactor = Math.min(volumeFactor, 0.85)
     targetFactor = Math.min(targetFactor, 1)
-    decisions.push({ text: 'You reported low energy — trimming volume so today still counts without digging a hole.', kind: 'info' })
+    queueUnlockAttempt = false
+    suggestMaxTest = false
+    if (dayType === 'push') {
+      dayType = 'build'
+      dayReason = 'You reported low energy, so today builds rather than pushes — ordinary sets, no maximal attempt.'
+    }
+    decisions.push({ text: 'You reported low energy — trimming volume and leaving out any maximal attempt so today still counts without digging a hole.', kind: 'info' })
+  }
+
+  // ——— Back after a break ———
+  if (gap === 'break') {
+    targetFactor = Math.min(targetFactor, 0.85)
+    volumeFactor = Math.min(volumeFactor, 0.85)
+    decisions.push({
+      text: 'Coming back from a break: targets sit a little under your last numbers so the first sessions measure where you are now. No catch-up work, and no max test until you have a couple of sessions back under you.',
+      kind: 'info',
+    })
+  } else if (gap === 'unknown') {
+    decisions.push({
+      text: `Your targets come from sessions ${sig.restDays} days ago. Treat the first sets as a check of where you are today rather than a promise of the old numbers.`,
+      kind: 'info',
+    })
   }
 
   if (dayType === 'technique') {
@@ -1262,21 +1495,37 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const injuryCheckDue = Boolean(
     state.profile.injuryNote?.trim() && (checkInAge === null || checkInAge >= 2),
   )
-  const profileAge = state.profile.birthYear
-    ? new Date(now).getFullYear() - state.profile.birthYear
-    : null
   // Younger athletes recover well, but joint feedback matters while they are
   // growing. Ask the same two quick questions a little more often; do not
   // lower earned performance or progression credit based on age.
   const routineCheckInterval = profileAge !== null && profileAge < 16 ? 2 : 3
+  // A complaint made outside a pre-session check-in — at setup, or at the end
+  // of an attempt — is asked about before the next session, including the
+  // very first one. So is a complaint nobody has updated in over a week.
+  const concernNeedsUpdate =
+    openConcern !== null &&
+    !freshCheckIn &&
+    (staleConcern || openConcern.source === 'onboarding' || openConcern.source === 'attempt')
   const askCheckIn =
     injuryCheckDue ||
+    concernNeedsUpdate ||
     (sig.totalSessions >= 1 &&
       (checkInAge === null ||
         checkInAge >= routineCheckInterval ||
         (sig.lastRpe ?? 0) >= 9 ||
         sig.restDays >= 5 ||
         (checkInFresh && joints !== 'good' && checkInAge >= 2)))
+
+  // One permission for maximal effort, applied to everything that creates it.
+  const challengeAllowed = loadPermission === 'normal' && !tiredToday
+  queueUnlockAttempt = queueUnlockAttempt && challengeAllowed
+  suggestMaxTest = suggestMaxTest && challengeAllowed
+  if (queueUnlockAttempt) {
+    decisions.push({
+      text: `You're within reach of the ${step.unlockSec}s bar — an unlock attempt is queued first, while you're freshest.`,
+      kind: 'good',
+    })
+  }
 
   if (state.profile.injuryNote?.trim() && (checkInAge === null || checkInAge >= 2)) {
     decisions.push({
@@ -1318,7 +1567,9 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
 
   if (finalDecisions.length === 0) {
     finalDecisions.push({
-      text: 'Everything looks steady — running your best-performing setup unchanged.',
+      // Not "your best-performing setup": with nothing measured yet that was a
+      // claim of superiority the log could not support.
+      text: 'Everything looks steady — today runs the plan as set.',
       kind: 'good',
     })
   }
@@ -1341,6 +1592,9 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     capabilityJump,
     volumeFactor: clampTo(volumeFactor, LIMITS.volume),
     loadPermission,
+    challengeAllowed,
+    gap,
+    openConcern,
     askCheckIn,
     decisions: finalDecisions,
     signals: sig,

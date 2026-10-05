@@ -1,6 +1,6 @@
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
-import type { AppState, AutoForm, FormIssue, Session, SetLog, StepId } from '../types'
+import type { AppState, AutoForm, FormCheck, FormIssue, FormRating, Session, SetLog, StepId, TrainingSurface } from '../types'
 import { trustedCameraEvidence } from './formEvidence'
 
 export interface Qualification {
@@ -27,6 +27,64 @@ export function requiresFlightConfirmation(exerciseId: string): boolean {
 }
 
 /**
+ * The criteria that make a variant *that* variant, per exercise.
+ *
+ * Partial grading lets the camera judge what it saw and report the rest as
+ * unseen — but some criteria are not secondary. A one-leg planche whose
+ * extended leg dropped out of tracking scored 100 with twelve clean seconds,
+ * while the same clip with the leg visibly bent scored 78 and earned nothing:
+ * less evidence produced more credit. When one of these is unseen, the camera
+ * has not verified the variant, so the athlete must confirm it explicitly —
+ * the same way true flight is confirmed.
+ */
+export const VARIANT_CRITICAL: Record<string, { criteria: string[]; prompt: string }> = {
+  'ppp-hold': {
+    criteria: ['forward lean'],
+    prompt:
+      'The camera could not see your lean. Confirm your shoulders stayed ahead of your wrists — with the shoulders over the hands it is a plank, a different exercise.',
+  },
+  'planche-lean': {
+    criteria: ['forward lean'],
+    prompt: 'The camera could not see your lean. Confirm your shoulders stayed clearly past your hands for the counted time.',
+  },
+  'one-leg-lean': {
+    criteria: ['forward lean'],
+    prompt: 'The camera could not see your lean. Confirm your shoulders stayed clearly past your hands for the counted time.',
+  },
+  'tuck-planche': {
+    criteria: ['body line'],
+    prompt:
+      'The camera could not see your hip height. Confirm your hips stayed up near shoulder height rather than sinking into a supported crouch.',
+  },
+  'adv-tuck-planche': {
+    criteria: ['hips', 'body line'],
+    prompt:
+      'The camera could not see your back and hips well enough. Confirm your back stayed flat and your hips open — a rounded back is a tuck, not an advanced tuck.',
+  },
+  'one-leg-planche': {
+    criteria: ['knees', 'hips'],
+    prompt:
+      'The camera could not see your extended leg well enough. Confirm it stayed straight and in line with your body for the counted time.',
+  },
+  'straddle-planche': {
+    criteria: ['knees', 'hips'],
+    prompt: 'The camera could not see your legs well enough. Confirm both legs stayed straight and your hips stayed open.',
+  },
+  'full-planche': {
+    criteria: ['knees', 'hips'],
+    prompt:
+      'The camera could not see your legs well enough. Confirm your legs stayed straight and together and your hips stayed open.',
+  },
+}
+
+/** Variant-defining criteria this reading could not see, in the camera's own words. */
+export function unseenVariantCriteria(exerciseId: string, auto: AutoForm | undefined): string[] {
+  const critical = VARIANT_CRITICAL[exerciseId]
+  if (!critical || !auto?.unseen?.length) return []
+  return critical.criteria.filter((criterion) => auto.unseen!.includes(criterion))
+}
+
+/**
  * The camera now grades whatever it can see and reports the rest as unseen,
  * so a knee out of shot no longer voids an otherwise good check. Locked arms
  * are the exception: they are what makes a straight-arm skill that skill, so
@@ -50,6 +108,28 @@ export function progressionRelevantIssues(
 }
 
 /**
+ * The athlete's own rating, or nothing.
+ *
+ * A camera suggestion is stored in the same `rating` field so the rest screen
+ * can pre-fill it — which made it easy for code to read a model guess as if
+ * the athlete had said it. An unreviewed "broke" from the model was zeroing
+ * the coach's record of a set no person had judged. Ratings written before
+ * the camera existed carry neither `confirmed` nor a reading: those were
+ * always the athlete's own tap.
+ */
+export function humanRating(form: FormCheck | undefined): FormRating | undefined {
+  if (!form) return undefined
+  if (form.confirmed === true) return form.rating
+  if (form.confirmed === undefined && !form.auto) return form.rating
+  return undefined
+}
+
+/** Reported assistance makes it a different task; unknown (older records) does not block. */
+export function isAssisted(set: Pick<SetLog, 'assist'>): boolean {
+  return set.assist !== undefined && set.assist !== 'none'
+}
+
+/**
  * The second half of the mastery gate. Most skills need a successful camera
  * check with at most one isolated secondary flag. A bent-arm flag is never
  * tolerated because straight arms define every graded planche progression.
@@ -63,7 +143,8 @@ export function passesProgressionFormCheck(form: SetLog['form'], exerciseId: str
     return form.visualReviewPassed === true
   }
   if (requiresFlightConfirmation(exerciseId) && form.flightConfirmed !== true) return false
-  if (!form.auto) return false
+  if (!form.auto || form.auto.malformed) return false
+  if (unseenVariantCriteria(exerciseId, form.auto).length > 0 && form.variantConfirmed !== true) return false
   const issues = progressionRelevantIssues(form.auto)
   return Boolean(
     form.auto.confidence >= MIN_PROGRESSION_FORM_CONFIDENCE &&
@@ -78,7 +159,8 @@ export function passesProgressionFormCheck(form: SetLog['form'], exerciseId: str
  * - it must be the step's main hold, not a warm-up/accessory/quick-log number;
  * - it must have an athlete-confirmed clean rating;
  * - its filmed form check must show no bent-arm fault and at most one isolated
- *   secondary flag;
+ *   secondary flag, and any unseen variant-defining criterion confirmed;
+ * - it must be unassisted, and not a record an import had to repair;
  * - unilateral steps are limited by the weaker side.
  *
  * Old/unrated numbers remain honest PRs but cannot unlock a harder skill
@@ -90,6 +172,8 @@ export function isQualifyingSet(set: SetLog, exerciseId: string): boolean {
     set.kind === 'hold' &&
     set.section === 'main' &&
     set.value > 0 &&
+    !set.repaired?.length &&
+    !isAssisted(set) &&
     Boolean(set.form && set.form.confirmed === true && set.form.rating === 'clean') &&
     passesProgressionFormCheck(set.form, exerciseId)
   )
@@ -143,12 +227,39 @@ export function qualifyingSessionValue(session: Session, stepId: StepId): number
  * Performance credit for day-to-day coaching, deliberately separate from the
  * stricter progression gate. An athlete-confirmed camera result can cap a
  * stopwatch value when athlete and camera agree; an unreviewed or disputed
- * model guess cannot silently rewrite what the coach thinks the athlete did.
+ * model guess cannot silently rewrite what the coach thinks the athlete did —
+ * including a pending "broke" suggestion, which no longer zeroes the set.
  */
 export function trainingSetValue(set: SetLog): number {
-  if (set.value <= 0 || set.form?.rating === 'broke') return 0
+  if (set.value <= 0 || humanRating(set.form) === 'broke') return 0
   const cleanSeconds = trustedCameraEvidence(set) ? set.form?.auto?.cleanSeconds : undefined
   return cleanSeconds === undefined ? set.value : Math.min(set.value, Math.max(0, cleanSeconds))
+}
+
+/**
+ * Which comparable task a set belongs to.
+ *
+ * A floor hold and a parallette hold are different tasks; so is a hold with a
+ * band under the hips. Pooling them turned two flat series — eight seconds on
+ * the floor, eighteen on parallettes — into an apparent six-seconds-a-week
+ * improvement, and anchored floor targets on parallette numbers. `undefined`
+ * surface is a legacy record whose task is unknown, kept as its own series.
+ */
+export interface LearningScope {
+  /** Only sets on this surface; `null` means only untagged (legacy) sets. */
+  surface?: TrainingSurface | null
+  /** Only this side of a unilateral hold. */
+  side?: 'left' | 'right'
+}
+
+function inScope(set: SetLog, scope: LearningScope | undefined): boolean {
+  if (isAssisted(set)) return false
+  if (!scope) return true
+  if (scope.surface !== undefined) {
+    if (scope.surface === null ? set.surface !== undefined : set.surface !== scope.surface) return false
+  }
+  if (scope.side && set.side !== scope.side) return false
+  return true
 }
 
 /**
@@ -165,26 +276,118 @@ export function trainingSetValue(set: SetLog): number {
  *
  * So this asks only what it needs to — the best main-set hold of the step's
  * key exercise — minus the parts the athlete or trusted camera evidence said
- * were not real. A set rated as broken down is not evidence a strategy worked;
- * an athlete-confirmed camera result can cap the stopwatch, while a disputed
- * model guess cannot. Quick Log is excluded like everywhere else: it is a
- * number typed in afterwards, not a session the coach shaped.
+ * were not real. A set the *athlete* rated as broken down is not evidence a
+ * strategy worked; an athlete-confirmed camera result can cap the stopwatch,
+ * while a disputed or unreviewed model guess cannot. Quick Log is excluded like
+ * everywhere else: it is a number typed in afterwards, not a session the coach
+ * shaped. Assisted holds are a different task and never count.
+ *
+ * For a unilateral hold, a session's value is its *weaker* side when both
+ * sides were trained: a coach that anchored on the stronger side prescribed
+ * 2.5× the weaker side's best while promising to cap at the weaker dose.
  */
-export function sessionLearningValue(session: Session, stepId: StepId): number {
+export function sessionLearningValue(session: Session, stepId: StepId, scope?: LearningScope): number {
   const step = STEP_BY_ID[stepId]
   if (!step || session.workoutName === 'Quick Log') return 0
-  return session.sets.reduce((best, set) => {
-    if (
-      set.exerciseId !== step.keyExerciseId ||
-      set.kind !== 'hold' ||
-      set.section !== 'main' ||
-      set.value <= 0 ||
-      set.form?.rating === 'broke'
-    ) {
-      return best
-    }
-    return Math.max(best, trainingSetValue(set))
-  }, 0)
+  const bestOf = (sideScope: LearningScope | undefined) =>
+    session.sets.reduce((best, set) => {
+      if (
+        set.exerciseId !== step.keyExerciseId ||
+        set.kind !== 'hold' ||
+        set.section !== 'main' ||
+        set.value <= 0 ||
+        humanRating(set.form) === 'broke' ||
+        !inScope(set, sideScope)
+      ) {
+        return best
+      }
+      return Math.max(best, trainingSetValue(set))
+    }, 0)
+  if (EXERCISE_BY_ID[step.keyExerciseId]?.perSide && !scope?.side) {
+    const left = bestOf({ ...scope, side: 'left' })
+    const right = bestOf({ ...scope, side: 'right' })
+    // Both sides trained: the weaker one sets the dose. One side only (or the
+    // other side failed at zero): the session says nothing about the pair, so
+    // it contributes no bilateral value — the missing side is unknown, not
+    // permission to inherit the stronger side's number.
+    if (left > 0 && right > 0) return Math.min(left, right)
+    const sided = session.sets.some((set) => set.exerciseId === step.keyExerciseId && set.side)
+    return sided ? 0 : bestOf(scope)
+  }
+  return bestOf(scope)
+}
+
+/** The surface a session's key-hold work was done on, when it is unambiguous. */
+export function sessionSurface(session: Session, stepId: StepId): TrainingSurface | null | 'mixed' {
+  const step = STEP_BY_ID[stepId]
+  if (!step) return null
+  const surfaces = new Set(
+    session.sets
+      .filter((set) => set.exerciseId === step.keyExerciseId && set.section === 'main' && set.value > 0)
+      .map((set) => set.surface ?? null),
+  )
+  if (surfaces.size === 0) return null
+  if (surfaces.size > 1) return 'mixed'
+  return [...surfaces][0]
+}
+
+export interface LearningPoint {
+  at: number
+  value: number
+}
+
+export interface LearningSeries {
+  /** Which task the points came from. `null` = untagged legacy history. */
+  surface: TrainingSurface | null
+  points: LearningPoint[]
+  /**
+   * True when nothing comparable to the requested surface exists and the
+   * series comes from the other one — an uncertain transfer, to be said
+   * aloud and used only conservatively, never as measured progress.
+   */
+  transferred: boolean
+}
+
+/**
+ * The comparable training history for one step, oldest first.
+ *
+ * Prefers the requested surface; falls back to untagged legacy history, then
+ * — flagged as a transfer — to the other surface. Never pools two tasks.
+ */
+export function learningSeries(
+  state: Pick<AppState, 'sessions'>,
+  stepId: StepId,
+  preferred: TrainingSurface,
+  now = Number.POSITIVE_INFINITY,
+): LearningSeries {
+  const sorted = [...state.sessions]
+    .filter((s) => s.startedAt <= now)
+    .sort((a, b) => a.startedAt - b.startedAt)
+  const seriesFor = (surface: TrainingSurface | null): LearningPoint[] =>
+    sorted
+      .map((s) => ({ at: s.startedAt, value: sessionLearningValue(s, stepId, { surface }) }))
+      .filter((p) => p.value > 0)
+  const own = seriesFor(preferred)
+  if (own.length) return { surface: preferred, points: own, transferred: false }
+  const legacy = seriesFor(null)
+  if (legacy.length) return { surface: null, points: legacy, transferred: false }
+  const other: TrainingSurface = preferred === 'floor' ? 'parallettes' : 'floor'
+  const transfer = seriesFor(other)
+  return { surface: transfer.length ? other : preferred, points: transfer, transferred: transfer.length > 0 }
+}
+
+/**
+ * A max test counts once something was attempted in its main block.
+ *
+ * Saving the warm-ups of a test whose attempts were all skipped used to award
+ * "Complete a max test" and reset the coach's re-test clock, for a test that
+ * never happened. A zero-second logged attempt still counts — that is a real,
+ * failed attempt, which is information. Any main-section set qualifies: a
+ * test's main block is its key hold, and a test can be run for a step other
+ * than the one currently selected.
+ */
+export function testWasAttempted(session: Session): boolean {
+  return session.workoutKind === 'test' && session.sets.some((set) => set.section === 'main')
 }
 
 export function setNeedsProgressionFormEvidence(set: SetLog, state: Pick<AppState, 'stepId'>): boolean {
