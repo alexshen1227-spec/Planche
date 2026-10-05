@@ -1414,7 +1414,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   if (capabilityJump && loadedDay) {
     volumeFactor = Math.min(volumeFactor, 0.85)
     decisions.push({
-      text: `Your verified hold jumped ${capabilityJump.fromSec}s → ${capabilityJump.toSec}s inside a fortnight. Volume is being held rather than raised to match. A jump that fast is mostly your nervous system learning the position rather than new tissue — measured strength can climb by a third while muscle and tendon are both still unchanged — so the structures carrying the load have not caught up with what the stopwatch says. Reasoning rather than a measured rule, and it costs you almost nothing to respect.`,
+      text: `Your verified hold has gone from about ${capabilityJump.fromSec}s — typical before the last two weeks — to ${capabilityJump.toSec}s within them. Volume is being held rather than raised to match. A climb that fast is mostly your nervous system learning the position rather than new tissue — measured strength can climb by a third while muscle and tendon are both still unchanged — so the structures carrying the load have not caught up with what the stopwatch says. Reasoning rather than a measured rule, and it costs you almost nothing to respect.`,
       kind: 'info',
     })
   }
