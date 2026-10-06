@@ -11,6 +11,7 @@ import {
   SHRUG_MIN_RATIO,
 } from './poseForm'
 import { REAL_POSES, realClip } from './realPoses.fixture'
+import { REAL_CLIPS } from './realClips.fixture'
 import { buildTruePose, IDEAL, PROPORTIONS, SYNTH_DEFAULTS, synthesizeClip, type SynthParams } from './poseSynth'
 
 /**
@@ -911,6 +912,42 @@ describe('a phone on its side', () => {
         expect(turned.reason).toBe(upright.reason)
         expect([...turned.issues].sort()).toEqual([...upright.issues].sort())
       }
+    }
+  })
+
+  // Two of the athlete's own clips (landmark numbers only, shared with
+  // permission), checked by drawing the landmarks over the original frames.
+  it('turns the real clip filmed sideways and keeps only the fault it really had', () => {
+    const { input, exerciseId } = REAL_CLIPS.sidewaysTuck
+    expect(floorEdge(input.tracked)).toBe('right')
+    const verdict = judgeTrackedFrames(input, exerciseId)
+    expect(verdict.ok).toBe(true)
+    expect(verdict.frameTurned).toBe('right')
+    // The soft elbow is real; judge v2's sag and backward lean were the picture.
+    expect(verdict.issues).toEqual(['arms'])
+    expect(verdict.leanRatio!).toBeGreaterThan(0.4)
+    expect(Math.abs(verdict.hipOffset!)).toBeLessThan(0.3)
+  })
+
+  it('flags the visibly bent elbow in the upright real clip, and turns nothing', () => {
+    const { input, exerciseId } = REAL_CLIPS.bentArmTuck
+    const verdict = judgeTrackedFrames(input, exerciseId)
+    expect(verdict.frameTurned).toBeUndefined()
+    expect(verdict.issues).toEqual(['arms'])
+    expect(verdict.elbowDeg!).toBeLessThan(180 - MATERIAL_TOLERANCE.elbowDeg - 5)
+  })
+
+  it('reads the same athlete alike filmed upright or on its side', () => {
+    const sideways = judgeTrackedFrames(REAL_CLIPS.sidewaysTuck.input, 'tuck-planche')
+    const upright = judgeTrackedFrames(REAL_CLIPS.bentArmTuck.input, 'tuck-planche')
+    expect(Math.abs(sideways.leanRatio! - upright.leanRatio!)).toBeLessThan(0.15)
+    expect(Math.abs(sideways.hipOffset! - upright.hipOffset!)).toBeLessThan(0.2)
+    // And the upright clip turned on its side by hand comes back identical.
+    for (const how of ['cw', 'ccw', 'flip'] as const) {
+      const turned = judgeTrackedFrames(turn(REAL_CLIPS.bentArmTuck.input, how), 'tuck-planche')
+      expect(turned.issues).toEqual(upright.issues)
+      expect(turned.score).toBe(upright.score)
+      expect(turned.cleanSeconds).toBe(upright.cleanSeconds)
     }
   })
 

@@ -158,6 +158,13 @@ more certain than its basis.
   measured off real BlazePose output — not an anatomy table.
 - `src/lib/realPoses.fixture.ts` — real BlazePose landmarks from real photos,
   including negative controls that must be refused or never pass clean.
+- `src/lib/realClips.fixture.ts` — whole real holds from an athlete's phone
+  (shared via problem report, kept with permission; landmark numbers only, the
+  14 joints the judge reads, no video or face points): a tuck filmed sideways
+  under rotation lock, and the same athlete upright with a visibly bent elbow.
+  Their truth was checked by drawing the landmarks over the original frames.
+  To add one: replay the report's `poses` through `judgeTrackedFrames`, strip
+  and round, and assert the stripped copy judges identically to the full one.
 - `src/lib/formJudge.eval.test.ts` — the accuracy eval: every position × every
   fault × seeds, robustness, asymmetric arms, real photos.
 - `src/lib/benchTools.ts` — `selfTestJudge()` (in-bundle accuracy smoke test)
