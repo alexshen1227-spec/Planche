@@ -1009,8 +1009,27 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     sig.cameraReviewedCount >= 3
   ) {
     const usable = Math.round(sig.cameraAgreementRate * sig.cameraReviewedCount)
+    // Say which way they disagree. The old line blamed the side view and the
+    // lighting outright — but on real footage the usual story was the camera
+    // seeing bent elbows on holds the athlete felt were locked, and either of
+    // them can be the one that is wrong. The replay is the tiebreaker.
+    const d = sig.cameraDisagreement
+    const leaning = !d
+      ? 'mixed'
+      : d.cameraStricter >= 2 * Math.max(1, d.athleteStricter)
+        ? 'camera'
+        : d.athleteStricter >= 2 * Math.max(1, d.cameraStricter)
+          ? 'athlete'
+          : 'mixed'
+    const what = d?.topCameraIssue ? FORM_LABEL[d.topCameraIssue] ?? 'a fault' : 'a fault'
+    const opening = `Only ${usable} of ${sig.cameraReviewedCount} reviewed clips matched your own rating`
     decisions.push({
-      text: `Only ${usable} of ${sig.cameraReviewedCount} reviewed clips were confident and consistent with your rating. The coach is leaving those camera trends out of today's prescription; use the skeleton replay to improve the side view and lighting first.`,
+      text:
+        leaning === 'camera'
+          ? `${opening} — mostly the camera saw ${what} on holds you rated Clean (${d!.cameraStricter} of them). A position can feel right and still be a few degrees off, and the camera can also misread a poor angle: watch one replay with the skeleton on to see which it is. Until you and the camera agree more often, the coach leaves its readings out of today's plan.`
+          : leaning === 'athlete'
+            ? `${opening} — mostly you rated a hold lower than the camera did (${d!.athleteStricter} of them), which can mean it missed something it cannot see from the side. Your rating stands; the coach leaves the camera's readings out of today's plan until the two agree more often.`
+            : `${opening}. Watch a replay with the skeleton on to see whether the feel or the camera is off; until the two agree more often, the coach leaves the camera's readings out of today's plan.`,
       kind: 'info',
     })
   }
@@ -1567,7 +1586,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
 
   if (state.profile.injuryNote?.trim() && (checkInAge === null || checkInAge >= 2)) {
     decisions.push({
-      text: `Your profile notes a prior or current issue (“${state.profile.injuryNote.trim().slice(0, 80)}”). The check-in gets the final say before loading today.`,
+      text: `Your profile notes a prior or current issue (“${state.profile.injuryNote.trim().slice(0, 80)}”). The check-in gets the final say before loading today — and it is where to clear the note once it has settled.`,
       kind: 'warn',
     })
   }

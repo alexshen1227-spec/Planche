@@ -2069,7 +2069,12 @@ describe('coach learning', () => {
     expect(signals.cameraReviewedCount).toBe(3)
     expect(signals.cameraAgreementRate).toBe(0)
     expect(signals.meanCleanRatio).toBeNull()
-    expect(plan.decisions.some((decision) => decision.text.includes('leaving those camera trends out'))).toBe(true)
+    // Which way they disagree is measured, not assumed: three holds rated
+    // Clean that the camera flagged for the elbows.
+    expect(signals.cameraDisagreement).toEqual({ cameraStricter: 3, athleteStricter: 0, topCameraIssue: 'arms' })
+    const line = plan.decisions.find((decision) => decision.text.includes('matched your own rating'))
+    expect(line?.text).toMatch(/elbows bending on holds you rated Clean/)
+    expect(line?.text).toMatch(/leaves its readings out of today's plan/)
   })
 
   it('flags a chronically unseen criterion as a placement problem, not a form fault', () => {

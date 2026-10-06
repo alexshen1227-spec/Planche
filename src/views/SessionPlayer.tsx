@@ -232,6 +232,12 @@ export function SessionPlayer({
   const [problemReportOpen, setProblemReportOpen] = useState(false)
   /** Fullscreen clip review is open: the session holds its rest clock and keyboard for it. */
   const [reviewOpen, setReviewOpen] = useState(false)
+  /**
+   * The live preview shows the scene on its side: the phone has been turned as
+   * asked, but rotation lock kept the frame portrait. The judge turns such a
+   * clip back, so the "turn the phone" prompt stands down.
+   */
+  const [previewOnItsSide, setPreviewOnItsSide] = useState(false)
   const [checkIn, setCheckIn] = useState<CheckIn | null>(resumeFrom?.checkIn ?? null)
   const [cameraOn, setCameraOn] = useState(restoredSetup.cameraOn)
   /**
@@ -1568,7 +1574,11 @@ export function SessionPlayer({
                       a clip comes back ungradeable, for everyone who films.
                       FramingCheck's own model-ready guard still prevents any
                       unwanted model download. */}
-                  <FramingCheck videoRef={recorder.videoRef} active={recorder.status === 'live'} />
+                  <FramingCheck
+                    videoRef={recorder.videoRef}
+                    active={recorder.status === 'live'}
+                    onFloorChange={(floor) => setPreviewOnItsSide(floor === 'left' || floor === 'right')}
+                  />
                   {!cameraLive ? (
                     <div className="absolute inset-0 grid place-items-center text-[13px] text-white/80">
                       Opening the camera…
@@ -1602,7 +1612,7 @@ export function SessionPlayer({
                   </button>
                 </div>
               ) : null}
-              {cameraOn && cameraLive && recorder.portrait ? (
+              {cameraOn && cameraLive && recorder.portrait && !previewOnItsSide ? (
                 <p className="mt-1.5 flex items-start gap-1.5 text-left text-[12.5px] leading-relaxed text-accent-text">
                   <Icon name="rotate" size={14} className="mt-0.5 shrink-0" />
                   Turn the phone on its side. A planche is a wide shape, and an upright frame cuts off your hands or
@@ -2197,6 +2207,8 @@ export function SessionPlayer({
       <Modal open={showCheckIn} onClose={() => setShowCheckIn(false)} label="Readiness check-in">
         <CheckInForm
           context={checkInContext}
+          injuryNote={state.profile.injuryNote}
+          onClearInjuryNote={() => dispatch({ type: 'SET_PROFILE', patch: { injuryNote: undefined } })}
           onDone={(c) => {
             setCheckIn(c)
             setShowCheckIn(false)

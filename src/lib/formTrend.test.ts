@@ -404,3 +404,36 @@ describe('readFormTrends — only what the position is judged on', () => {
     if (r.kind === 'trends') expect(r.skipped.find((s) => s.label === 'Shoulders down')?.cause).toBe('framing')
   })
 })
+
+describe('readFormTrends — camera-verified clean time', () => {
+  const cleanTrend = (auto: (i: number) => Partial<AutoForm>) => {
+    const r = readFormTrends(stateOf(series('tuck-planche', 8, auto)), 'tuck-planche', NOW)
+    return r.kind === 'trends' ? r.trends.find((t) => t.criterion === 'clean') : undefined
+  }
+
+  it('does not call a hold clean when bent arms sat inside its window', () => {
+    // A soft elbow held at one angle never "breaks down", so the envelope kept
+    // the whole hold — and the trend read 100% clean beside "bent arms".
+    const clean = cleanTrend(() => ({
+      elbowDeg: 166,
+      cleanRatio: 1,
+      cleanSeconds: 7,
+      issues: ['arms'],
+      heldIssues: ['arms'],
+      score: 70,
+    }))
+    expect(clean).toBeDefined()
+    expect(Math.max(...clean!.points.map((p) => p.value))).toBe(0)
+  })
+
+  it('keeps the clean seconds before a late breakdown', () => {
+    // Bent arms only after the window ended: the time before still counts.
+    const clean = cleanTrend(() => ({ elbowDeg: 177, cleanRatio: 0.6, cleanSeconds: 4, issues: ['arms'], heldIssues: [], score: 75 }))
+    expect(clean!.points.every((p) => p.value === 0.6)).toBe(true)
+  })
+
+  it('reads older readings without held issues from their full issue list', () => {
+    const clean = cleanTrend(() => ({ elbowDeg: 166, cleanRatio: 1, cleanSeconds: 7, issues: ['arms'], score: 70 }))
+    expect(clean!.points.every((p) => p.value === 0)).toBe(true)
+  })
+})

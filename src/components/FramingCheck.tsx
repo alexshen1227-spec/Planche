@@ -7,6 +7,7 @@ import {
   trackingScore,
   type Kp,
 } from '../lib/poseBackend'
+import { floorEdge, type FloorEdge } from '../lib/poseForm'
 import { Icon } from './Icon'
 
 /**
@@ -51,7 +52,12 @@ interface Reading {
   missing: string[]
   /** Same validity contract as the judge: side-on, not side-on, or cannot tell. */
   view: 'side' | 'not-side' | 'unknown'
+  /** Where the floor is in the preview, over the last few readings; null until known. */
+  floor: FloorEdge | null
 }
+
+/** Readings the floor decision is taken over — the judge's own rule needs a few moments. */
+const FLOOR_WINDOW = 5
 
 /**
  * The judge's side-view gate, applied live. An unmeasurable span used to read
@@ -76,12 +82,22 @@ function inFrame(k: Kp | undefined, width: number, height: number): boolean {
 export function FramingCheck({
   videoRef,
   active,
+  onFloorChange,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>
   active: boolean
+  /**
+   * Where the floor sits in the live picture, once known. The player uses it
+   * to stop asking for the phone to be turned on its side after it has been:
+   * with rotation lock on, the preview stays portrait even then.
+   */
+  onFloorChange?: (floor: FloorEdge | null) => void
 }) {
   const [reading, setReading] = useState<Reading | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const recent = useRef<Kp[][]>([])
+  const onFloorRef = useRef(onFloorChange)
+  onFloorRef.current = onFloorChange
   // The model is only borrowed when it is already on the device — this check
   // must never be the thing that triggers a multi-megabyte download.
   const [available] = useState(() => poseModelReady())
@@ -89,6 +105,8 @@ export function FramingCheck({
   useEffect(() => {
     if (!active || !available) {
       setReading(null)
+      recent.current = []
+      onFloorRef.current?.(null)
       return
     }
     let cancelled = false
@@ -106,13 +124,20 @@ export function FramingCheck({
         const height = video.videoHeight
         const seen = (names: [string, string]) =>
           names.some((n) => inFrame(kps.find((k) => k.name === n), width, height))
+        const person = trackingScore(kps) > 0.15
+        if (person) recent.current = [...recent.current, kps].slice(-FLOOR_WINDOW)
+        // The judge's own rule, over the last few readings — one frame of a
+        // live preview is too little to say which way the floor is.
+        const floor = floorEdge(recent.current.map((points) => ({ kps: points })))
+        onFloorRef.current?.(floor)
         setReading({
           kps,
           width,
           height,
-          person: trackingScore(kps) > 0.15,
+          person,
           missing: REGIONS.filter((r) => !seen(r.joints)).map((r) => r.label),
           view: viewOf(kps),
+          floor,
         })
       } catch {
         // Offline or model failure: the check just stays quiet.
@@ -126,6 +151,7 @@ export function FramingCheck({
     return () => {
       cancelled = true
       window.clearInterval(timer)
+      recent.current = []
     }
   }, [active, available, videoRef])
 
@@ -158,6 +184,7 @@ export function FramingCheck({
 
   const inShot = reading.person && reading.missing.length === 0
   const good = inShot && reading.view === 'side'
+  const onItsSide = reading.floor === 'left' || reading.floor === 'right'
   return (
     <>
       <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
@@ -175,7 +202,9 @@ export function FramingCheck({
             : reading.missing.length
               ? `Out of shot: ${reading.missing.join(', ')}`
               : good
-                ? 'Side-on · whole body in frame'
+                ? onItsSide
+                  ? 'Side-on · whole body in frame · phone on its side is fine'
+                  : 'Side-on · whole body in frame'
                 : 'Whole body in frame · side-on view not confirmed'}
       </div>
     </>

@@ -108,6 +108,29 @@ export function progressionRelevantIssues(
 }
 
 /**
+ * How much of a hold the camera can vouch for as clean.
+ *
+ * `cleanRatio` is the time before a sustained breakdown, measured against the
+ * tolerant momentary envelope — the right number for training dose, where a
+ * hold that stayed together counts whatever its shape. But when bent arms sat
+ * *inside* that window (`heldIssues`), none of it was clean for the criterion
+ * that blocks progression outright: a soft elbow held at the same angle for
+ * the whole set never "breaks down", and the result read "bent arms" beside a
+ * green "clean window 7.4s of 7.4s" — and the form trend reported 100% clean
+ * holds for an athlete whose camera flagged their arms on most sets.
+ */
+export function verifiedCleanRatio(auto: AutoForm | undefined): number | undefined {
+  if (!auto || auto.cleanRatio === undefined) return undefined
+  return progressionRelevantIssues(auto).includes('arms') ? 0 : auto.cleanRatio
+}
+
+/** `verifiedCleanRatio`, in seconds. */
+export function verifiedCleanSeconds(auto: AutoForm | undefined): number | undefined {
+  if (!auto || auto.cleanSeconds === undefined) return undefined
+  return progressionRelevantIssues(auto).includes('arms') ? 0 : auto.cleanSeconds
+}
+
+/**
  * The athlete's own rating, or nothing.
  *
  * A camera suggestion is stored in the same `rating` field so the rest screen

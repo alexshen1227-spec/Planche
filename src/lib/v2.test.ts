@@ -888,6 +888,39 @@ describe('the Progress screen reads the same verdict the coach acts on', () => {
     expect(refusals).toBeGreaterThan(3)
   })
 
+  it('tells an athlete who films every set why none pass, rather than to film one', () => {
+    // Every main set filmed and rated Clean, every one flagged for the elbows:
+    // nothing qualifies, and "film a set to start the record" was the advice.
+    const flagged = (at: number) =>
+      holdSet('tuck-planche', 7, at, {
+        target: 5,
+        form: {
+          rating: 'clean',
+          confirmed: true,
+          auto: { issues: ['arms'], heldIssues: ['arms'], confidence: 0.9, cleanRatio: 1, cleanSeconds: 7 },
+        },
+      })
+    const sessions = historyOf('tuck', [24, 20, 16, 12, 8, 4].map((daysAgo) => ({ daysAgo, value: 7 }))).map((s) => ({
+      ...s,
+      sets: [flagged(s.startedAt), flagged(s.startedAt + 60_000)],
+    }))
+    const d = diagnoseProgress(stateWith('tuck', sessions), NOW)
+    expect(d.status).toBe('insufficient')
+    expect(d.summary).toMatch(/You film your sets/)
+    expect(d.summary).toMatch(/elbows not fully locked \(12 of 12 filmed sets\)/)
+    expect(d.summary).not.toMatch(/Film a set from the side/)
+  })
+
+  it('keeps the bodyweight card away from athletes still growing', () => {
+    const rising = [28, 21, 14, 7, 1].map((daysAgo, i) => ({ at: NOW - daysAgo * DAY, weightKg: 60 + i }))
+    const history = historyOf('tuck', [24, 20, 16, 12, 8, 4].map((daysAgo, i) => ({ daysAgo, value: 8 + i * 0.6 })))
+    const withAge = (birthYear: number) =>
+      stateWith('tuck', history, { measurements: rising, profile: { ...initialState().profile, birthYear } })
+    const year = new Date(NOW).getFullYear()
+    expect(diagnoseProgress(withAge(year - 14), NOW).causes.map((c) => c.id)).not.toContain('weight')
+    expect(diagnoseProgress(withAge(year - 30), NOW).causes.map((c) => c.id)).toContain('weight')
+  })
+
   it('does not list the plateau cause a second time as a habit', () => {
     // Weekly RPE 9.5 sessions on a flat hold, the last one yesterday: the
     // plateau names recovery, so "training hard on short rest" is its job.

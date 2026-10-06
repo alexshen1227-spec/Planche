@@ -19,6 +19,7 @@ import {
   requiresFlightConfirmation,
   unseenVariantCriteria,
   VARIANT_CRITICAL,
+  verifiedCleanSeconds,
 } from '../lib/progression'
 import { Icon } from './Icon'
 import { Modal } from './ui'
@@ -803,7 +804,7 @@ function SavedReading({ auto, creditedHoldSec }: { auto: AutoForm; creditedHoldS
       <div className="mt-1">
         {auto.score !== undefined ? <span className="font-semibold text-ink">Form score {auto.score}. </span> : null}
         {auto.cleanSeconds !== undefined
-          ? `Clean window ${auto.cleanSeconds.toFixed(1)}s of ${creditedHoldSec.toFixed(1)}s. `
+          ? `Clean window ${(verifiedCleanSeconds(auto) ?? 0).toFixed(1)}s of ${creditedHoldSec.toFixed(1)}s. `
           : ''}
         {auto.issues.length
           ? `Flagged: ${auto.issues.map((i) => FORM_ISSUE_LABEL[i].toLowerCase()).join(', ')}.`
@@ -866,7 +867,19 @@ function AnalysisPanel({ analysis, creditedHoldSec }: { analysis: PoseFormResult
               <div className="mt-0.5 text-[12.5px] font-medium leading-snug text-ink">{analysis.fixFirst.cue}</div>
             </div>
           ) : null}
-          {analysis.cleanSeconds !== undefined ? (
+          {analysis.cleanSeconds !== undefined && (analysis.heldIssues ?? analysis.issues).includes('arms') ? (
+            // Bent arms inside the window: none of it was clean, whatever the
+            // breakdown timing says. A green "7.4s of 7.4s" here sat beside
+            // "lock the elbows" on the same panel.
+            <div className="mb-2 rounded-lg bg-accent-soft px-2.5 py-2 text-accent-text">
+              <span className="font-semibold">Camera-verified clean window: none</span>
+              <span className="text-[11.5px]">
+                {' '}
+                — the elbows were bent through the hold rather than breaking at one moment, so none of these{' '}
+                {creditedHoldSec.toFixed(1)}s count as camera-verified clean.
+              </span>
+            </div>
+          ) : analysis.cleanSeconds !== undefined ? (
             <div
               className={`mb-2 rounded-lg px-2.5 py-2 ${
                 analysis.cleanSeconds + 0.05 >= creditedHoldSec ? 'bg-ok-soft text-ok-text' : 'bg-accent-soft text-accent-text'
@@ -907,6 +920,17 @@ function AnalysisPanel({ analysis, creditedHoldSec }: { analysis: PoseFormResult
           {/* Stated on the face of the panel, not folded into detail: everything
               above is a verdict on what the camera could judge reliably, and
               skipped criteria must stay obvious. */}
+          {analysis.frameTurned ? (
+            <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-raised px-2.5 py-1.5 text-[11.5px] text-ink3">
+              <Icon name="rotate" size={13} className="mt-[1px] shrink-0" />
+              <span>
+                {analysis.frameTurned === 'top'
+                  ? 'The picture was upside down'
+                  : 'Filmed with the phone on its side'}{' '}
+                — it was turned the right way up before your hip height and lean were judged.
+              </span>
+            </div>
+          ) : null}
           {analysis.unseen.length ? (
             <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-raised px-2.5 py-1.5 text-[11.5px] text-ink3">
               <Icon name="monitor" size={13} className="mt-[1px] shrink-0" />

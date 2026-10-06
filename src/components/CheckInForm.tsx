@@ -30,11 +30,21 @@ export function CheckInForm({
   onDone,
   onSkip,
   context = {},
+  injuryNote,
+  onClearInjuryNote,
 }: {
   onDone: (c: CheckIn) => void
   onSkip: () => void
   context?: CheckInContext
+  /**
+   * The athlete's own profile note. It makes the coach ask for a check-in
+   * every couple of days, so the check-in is where it can be retired — it used
+   * to live on until someone found it in Settings, long after the arm was fine.
+   */
+  injuryNote?: string
+  onClearInjuryNote?: () => void
 }) {
+  const [noteAnswer, setNoteAnswer] = useState<'still' | 'cleared' | null>(null)
   const [joints, setJoints] = useState<CheckIn['joints'] | null>(null)
   const [energy, setEnergy] = useState<CheckIn['energy'] | null>(null)
   const [regions, setRegions] = useState<BodyRegion[]>([])
@@ -79,6 +89,45 @@ export function CheckInForm({
           </p>
         ) : null}
       </div>
+
+      {injuryNote?.trim() && onClearInjuryNote ? (
+        <div className="mt-3 rounded-xl border border-line bg-raised px-3 py-2.5" aria-live="polite">
+          {noteAnswer === 'cleared' ? (
+            <p className="flex items-start gap-1.5 text-[13px] leading-relaxed text-ink2">
+              <Icon name="check" size={14} className="mt-0.5 shrink-0 text-ok-text" />
+              Note cleared — the coach stops asking about it. You can add a new one in Settings any time.
+            </p>
+          ) : (
+            <>
+              <p className="text-[13px] leading-relaxed text-ink">
+                Your profile note says “{injuryNote.trim()}”. Is that still true?
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <button
+                  aria-pressed={noteAnswer === 'still'}
+                  onClick={() => setNoteAnswer('still')}
+                  className={`min-h-10 rounded-full border px-3.5 py-2 text-[13px] font-medium transition ${
+                    noteAnswer === 'still'
+                      ? 'border-transparent bg-accent text-on-accent'
+                      : 'border-line bg-surface text-ink2 hover:text-ink'
+                  }`}
+                >
+                  Still there
+                </button>
+                <button
+                  onClick={() => {
+                    onClearInjuryNote()
+                    setNoteAnswer('cleared')
+                  }}
+                  className="min-h-10 rounded-full border border-line bg-surface px-3.5 py-2 text-[13px] font-medium text-ink2 transition hover:text-ink"
+                >
+                  It’s gone — clear the note
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
 
       <div className="mt-4">
         <div className="text-[13px] font-semibold text-ink" id="ci-joints">

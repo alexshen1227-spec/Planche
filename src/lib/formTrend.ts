@@ -2,6 +2,7 @@ import type { AppState, AutoForm } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { MATERIAL_TOLERANCE, POSE_PROFILES } from './poseForm'
 import { robustSlopePerWeek } from './signals'
+import { verifiedCleanRatio } from './progression'
 
 /**
  * What the camera has measured about one position, over weeks.
@@ -51,6 +52,8 @@ interface CriterionSpec {
   deadband: number
   /** What a rising number means, in the athlete's language. */
   betterMeans: string
+  /** Read the value some other way than the raw field — for a derived reading. */
+  read?: (auto: AutoForm) => number | undefined
 }
 
 const CRITERIA: CriterionSpec[] = [
@@ -122,6 +125,8 @@ const CRITERIA: CriterionSpec[] = [
     label: 'Share of the hold that stayed clean',
     unit: 'percent',
     field: 'cleanRatio',
+    // Camera-verified: a hold with bent arms inside its window was not clean.
+    read: verifiedCleanRatio,
     higherIsBetter: true,
     deadband: 0.1,
     betterMeans: 'holding the shape for more of the set before it breaks down',
@@ -254,8 +259,8 @@ function buildComparison(filmed: FilmedSet[], criteria: CriterionSpec[]): FormCo
       spec.unseenLabel !== undefined &&
       (from.auto.unseen?.includes(spec.unseenLabel) || to.auto.unseen?.includes(spec.unseenLabel))
     if (unseenEitherEnd) continue
-    const a = from.auto[spec.field]
-    const b = to.auto[spec.field]
+    const a = spec.read ? spec.read(from.auto) : from.auto[spec.field]
+    const b = spec.read ? spec.read(to.auto) : to.auto[spec.field]
     if (typeof a !== 'number' || typeof b !== 'number') continue
     const change = b - a
     rows.push({
@@ -345,7 +350,7 @@ export function readFormTrends(
         unseen++
         continue
       }
-      const raw = f.auto[spec.field]
+      const raw = spec.read ? spec.read(f.auto) : f.auto[spec.field]
       if (typeof raw !== 'number' || !Number.isFinite(raw)) {
         unrecorded++
         continue

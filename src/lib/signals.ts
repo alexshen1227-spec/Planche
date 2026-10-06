@@ -3,7 +3,7 @@ import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { defaultSurface } from '../data/equipment'
 import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
-import { learningSeries, testWasAttempted, trainingSetValue } from './progression'
+import { learningSeries, testWasAttempted, trainingSetValue, verifiedCleanRatio } from './progression'
 import { trustedCameraEvidence } from './formEvidence'
 import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
 
@@ -355,6 +355,13 @@ export interface Signals {
   cameraReviewedCount: number
   /** Share of reviewed clips safe enough for the coach to learn from. */
   cameraAgreementRate: number | null
+  /**
+   * Which way the disagreements go, among confident reviewed clips: the camera
+   * finding a fault on a hold the athlete rated Clean, or the athlete rating a
+   * hold lower than the camera did — and the camera's most common complaint in
+   * the first case. Null when nothing disagrees.
+   */
+  cameraDisagreement: { cameraStricter: number; athleteStricter: number; topCameraIssue: string | null } | null
   /** Typical camera form score (0–100) across recent filmed sets. */
   meanFormScore: number | null
   /** Form-score points gained per week — quality progress the timer can't see. */
@@ -575,6 +582,28 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     reviewedCameraSets.length >= 3
       ? reviewedCameraSets.filter(trustedCameraEvidence).length / reviewedCameraSets.length
       : null
+  // Low-confidence and repaired readings are not disagreements, just weak
+  // evidence; count only clips where both sides gave a real answer.
+  let cameraStricter = 0
+  let athleteStricter = 0
+  const strictIssues = new Map<string, number>()
+  for (const set of reviewedCameraSets) {
+    const auto = set.form!.auto!
+    if (auto.confidence < 0.5 || set.repaired?.some((field) => field.startsWith('form'))) continue
+    const athleteClean = set.form!.rating === 'clean'
+    const cameraClean = auto.issues.length === 0 && (auto.cleanRatio ?? 1) >= 0.8
+    if (athleteClean && !cameraClean) {
+      cameraStricter++
+      for (const issue of auto.issues) strictIssues.set(issue, (strictIssues.get(issue) ?? 0) + 1)
+    } else if (!athleteClean && cameraClean) {
+      athleteStricter++
+    }
+  }
+  const topStrict = [...strictIssues.entries()].sort((a, b) => b[1] - a[1])[0]
+  const cameraDisagreement =
+    cameraStricter + athleteStricter > 0
+      ? { cameraStricter, athleteStricter, topCameraIssue: topStrict ? topStrict[0] : null }
+      : null
   for (const s of cameraSets) {
     // Never count the same fault twice. Athlete-reported issues are strongest;
     // camera-only issues join coaching only after the athlete reviewed the set
@@ -611,7 +640,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     .filter((w): w is number => w !== undefined)
   const meanWobble = wobbles.length >= 3 ? median(wobbles) : null
   const cleanRatios = trustedCameraSets
-    .map((s) => s.form!.auto!.cleanRatio)
+    .map((s) => verifiedCleanRatio(s.form!.auto))
     .filter((ratio): ratio is number => ratio !== undefined)
   const meanCleanRatio = cleanRatios.length >= 3 ? median(cleanRatios) : null
 
@@ -816,6 +845,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     cameraSetCount: trustedCameraSets.length,
     cameraReviewedCount: reviewedCameraSets.length,
     cameraAgreementRate,
+    cameraDisagreement,
     meanFormScore,
     formScoreTrend,
     chronicUnseen,

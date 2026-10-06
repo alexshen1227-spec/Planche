@@ -201,6 +201,21 @@ more certain than its basis.
    spacing is disclosed with the verdict. Bump `JUDGE_VERSION` whenever a
    verdict on the same detections can change — it is stored on every reading
    with the model id (the model URL is pinned to `float16/1`).
+8. **The floor is where the body says it is** (judge v3). The camera screen
+   asks for the phone on its side, and with rotation lock on the recording
+   stays portrait with the scene lying sideways — a real clip read a level tuck
+   as sagging and leaning backwards. `floorEdge` decides from the trunk (≥68°
+   from the picture's horizontal = on its side; measured: upright never above
+   61° across 3,780 synthetic stress holds, real turned frames 72–85°) and the
+   arms (≥120° from the picture's down = upside down), then `turnUpright`
+   rotates the *measured* landmarks; the replay track stays as recorded. The arm
+   direction alone cannot decide this — synthetic overlap was 1°–97°.
+9. **"Clean" in the UI means camera-verified clean** (`verifiedCleanRatio`):
+   `cleanRatio` is time before a sustained breakdown and stays the training-dose
+   number (`trainingSetValue` caps on it — zeroing it would turn a 7s soft-elbow
+   hold into 0s of training). But bent arms *inside* the window (`heldIssues`)
+   mean none of it was verified clean, so trends, the coach's form signal and
+   the result panel read 0 there.
 
 ## The coach
 

@@ -46,6 +46,17 @@ export interface Diagnosis {
   summary: string
 }
 
+/** How each camera flag reads in a sentence. */
+const FLAG_PHRASE: Record<string, string> = {
+  arms: 'elbows not fully locked',
+  sag: 'hips dropping below the line',
+  pike: 'hips riding high',
+  lean: 'not enough forward lean',
+  knees: 'bent knees',
+  closed: 'hips not opening',
+  shrug: 'shrugged shoulders',
+}
+
 /**
  * @param plateau the verdict already computed for this state (the coach's
  *   `plan.plateau`), so the screen shows exactly what the plan acted on. Left
@@ -68,6 +79,17 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
   ).length
   const verified = qualifyingSeries(state, state.stepId).length
   const unverified = keySessions >= MIN_FORECAST_POINTS && verified < MIN_FORECAST_POINTS
+  // Missing evidence has two very different causes. Someone who has never
+  // filmed needs telling to film; someone who films every set and is told to
+  // "film a set" is being told the wrong thing — what they need is the reason
+  // their filmed sets are not passing.
+  const filmedKeySets = state.sessions.flatMap((s) =>
+    s.sets.filter((set) => set.exerciseId === step.keyExerciseId && set.section === 'main' && set.form?.auto),
+  )
+  const flagCounts = new Map<string, number>()
+  for (const set of filmedKeySets)
+    for (const issue of set.form!.auto!.issues) flagCounts.set(issue, (flagCounts.get(issue) ?? 0) + 1)
+  const topFlag = [...flagCounts.entries()].sort((a, b) => b[1] - a[1])[0]
 
   const status: ProgressStatus = verdict
     ? verdict.status
@@ -131,7 +153,12 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
     })
   }
 
-  if (sig.weightTrendPerWeek !== null && sig.weightTrendPerWeek > 0.15 && sig.weightKg) {
+  // Not for athletes still growing: gaining weight then is growth, and a
+  // "worth tightening" card about bodyweight is the wrong thing to show a
+  // teenager.
+  const age = state.profile.birthYear ? new Date(now).getFullYear() - state.profile.birthYear : null
+  const stillGrowing = age !== null && age < 18
+  if (!stillGrowing && sig.weightTrendPerWeek !== null && sig.weightTrendPerWeek > 0.15 && sig.weightKg) {
     const monthly = fmtWeight(sig.weightTrendPerWeek * 4, state.settings.units)
     causes.push({
       id: 'weight',
@@ -189,7 +216,15 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
             ? unverified
               ? `Not measurable yet. Progress here is read from verified ${keyName} holds — a filmed set you rate Clean that passes the camera check — and ${
                   verified === 0 ? 'none' : `only ${verified}`
-                } of your ${keySessions} sessions with it ${verified === 1 ? 'has' : 'have'} one. Film a set from the side next session to start the record.${tighten}`
+                } of your ${keySessions} sessions with it ${verified === 1 ? 'has' : 'have'} one. ${
+                  filmedKeySets.length >= 3
+                    ? `You film your sets, so the gap is the check itself${
+                        topFlag
+                          ? `: the camera most often flags ${FLAG_PHRASE[topFlag[0]] ?? 'a form fault'} (${topFlag[1]} of ${filmedKeySets.length} filmed sets)`
+                          : ''
+                      }. That is the thing to fix, and the record starts with the first hold that passes.`
+                    : 'Film a set from the side next session to start the record.'
+                }${tighten}`
               : `Too early to call — progress is read from verified ${keyName} holds, and this needs ${forecast.need}${
                   forecast.need.endsWith('.') ? '' : '.'
                 }${tighten}`

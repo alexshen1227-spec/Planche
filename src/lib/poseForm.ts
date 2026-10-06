@@ -22,8 +22,12 @@ export { poseModelReady, warmDetector } from './poseBackend'
  * 2 - per-moment side-view gate, observed-only coverage, bounded gap filling,
  *     decode misses as missing evidence, a resolved bend is not cancelled by
  *     the other arm's hyperextension, density-aware persistence.
+ * 3 - a picture on its side or upside down is turned the right way up before
+ *     hip height and lean are measured (`floorEdge`); before, a phone turned
+ *     sideways as the app suggests read a level hold as sagging and leaning
+ *     backwards.
  */
-export const JUDGE_VERSION = 2
+export const JUDGE_VERSION = 3
 
 /**
  * Automatic form analysis from a recorded clip.
@@ -102,6 +106,12 @@ export interface PoseFormResult {
    * not part of it.
    */
   unseen: string[]
+  /**
+   * The picture was on its side (or upside down) and was turned the right way
+   * up before hip height and lean were measured — see `floorEdge`. Transient,
+   * for the result screen; never persisted.
+   */
+  frameTurned?: Exclude<FloorEdge, 'bottom'>
   /**
    * The working the verdict was built from, present only when explicitly
    * requested. A headline like "arms" is either right or wrong about a body
@@ -1251,6 +1261,93 @@ export function drawRotated(
   return true
 }
 
+/** Which edge of the picture the floor runs along. */
+export type FloorEdge = 'bottom' | 'right' | 'left' | 'top'
+
+/**
+ * Past this, the trunk runs closer to the picture's sides than to its bottom:
+ * the phone was on its side. Every graded position is a support hold whose
+ * trunk lies across gravity, so a trunk running up the picture means the
+ * picture, not the athlete, is turned.
+ *
+ * Measured, not chosen. Across 3,780 synthetic holds — every graded position
+ * and fault, phone roll up to ±15°, two noise levels — an upright trunk never
+ * sat more than 61° from horizontal, and that only in an extreme pike filmed on
+ * a 15°-tilted phone; real holds sit under 18°. Turned 90°, the real photos
+ * read 72–85°, and the sideways clip an athlete reported read 80.5°. The
+ * arm direction alone cannot do this job: a leaning arm in a turned frame can
+ * line up with the bottom edge (synthetic overlap 1°–97°).
+ */
+export const SIDEWAYS_TRUNK_DEG = 68
+/**
+ * Past this, the shoulder→wrist line points up the picture: it is upside down.
+ * Upright synthetic holds never exceeded 97° (a deep lean on a tilted phone);
+ * the real photos turned upside down read 137–171°.
+ */
+export const UPSIDE_DOWN_ARM_DEG = 120
+
+/**
+ * Where the floor is in the picture, read from the body itself.
+ *
+ * The app suggests turning the phone on its side, and with rotation lock on a
+ * phone does not turn the recording with it: the clip stays portrait with the
+ * scene lying sideways. Elbow, knee and hip angles do not care, but hip height
+ * and forward lean are measured against the picture's bottom edge, and on such
+ * a clip they reported a hold as sagging and leaning backwards. The hands are
+ * always below the shoulders in these holds, so once the picture is known to
+ * be on its side, which way the arms point says which side the floor is on.
+ * `null` when too few moments resolve shoulder, wrist and hip to say.
+ */
+export function floorEdge(frames: { kps: Kp[] }[]): FloorEdge | null {
+  const trunks: number[] = []
+  const arms: number[] = []
+  const armAcross: number[] = []
+  for (const { kps } of frames) {
+    let best: { s: Kp; w: Kp; h: Kp; q: number } | undefined
+    for (const side of ['left', 'right'] as const) {
+      const s = byName(kps, `${side}_shoulder`, MIN_PRECISE_KP_SCORE)
+      const w = byName(kps, `${side}_wrist`, MIN_PRECISE_KP_SCORE)
+      const h = byName(kps, `${side}_hip`, MIN_PRECISE_KP_SCORE)
+      if (!s || !w || !h) continue
+      const q = (s.score ?? 0) + (w.score ?? 0) + (h.score ?? 0)
+      if (!best || q > best.q) best = { s, w, h, q }
+    }
+    if (!best) continue
+    const ax = best.w.x - best.s.x
+    const ay = best.w.y - best.s.y
+    const tx = best.h.x - best.s.x
+    const ty = best.h.y - best.s.y
+    const armLength = Math.hypot(ax, ay)
+    if (armLength < 1 || Math.hypot(tx, ty) < 1) continue
+    // Degrees from straight down the picture (0) to straight up it (180).
+    arms.push((Math.atan2(Math.abs(ax), ay) * 180) / Math.PI)
+    // Degrees from the picture's horizontal (0) to its vertical (90).
+    trunks.push((Math.atan2(Math.abs(ty), Math.abs(tx)) * 180) / Math.PI)
+    armAcross.push(ax / armLength)
+  }
+  if (trunks.length < MIN_FRAMES) return null
+  if (median(trunks)! >= SIDEWAYS_TRUNK_DEG) return median(armAcross)! >= 0 ? 'right' : 'left'
+  if (median(arms)! >= UPSIDE_DOWN_ARM_DEG) return 'top'
+  return 'bottom'
+}
+
+/**
+ * Turn keypoints so the floor runs along the bottom. A pure rotation: every
+ * measurement downstream is an angle or a ratio of lengths, so no frame size is
+ * needed — and the replay track is never turned, because it is drawn over the
+ * video as recorded.
+ */
+export function turnUpright<T extends { x: number; y: number }>(kps: T[], floor: FloorEdge): T[] {
+  if (floor === 'bottom') return kps
+  return kps.map((k) =>
+    floor === 'right'
+      ? { ...k, x: -k.y, y: k.x }
+      : floor === 'left'
+        ? { ...k, x: k.y, y: -k.x }
+        : { ...k, x: -k.x, y: -k.y },
+  )
+}
+
 /** Map keypoints from rotated-canvas space back into original frame space. */
 export function unrotateKeypoints<T extends { x: number; y: number }>(
   kps: T[],
@@ -1503,6 +1600,12 @@ export function judgeTrackedFrames(
           })),
         }
       : undefined
+
+  // Measure in a picture whose floor runs along the bottom. The track above
+  // keeps the frame as recorded, because it is drawn over the video.
+  const floor = floorEdge(tracked)
+  const frameTurned = floor && floor !== 'bottom' ? floor : undefined
+  if (frameTurned) for (const frame of tracked) frame.kps = turnUpright(frame.kps, frameTurned)
 
   const isObserved = (...points: (Kp | undefined)[]) => points.every((point) => point !== undefined && !point.origin)
   for (const { t, kps } of tracked) {
@@ -2291,6 +2394,13 @@ export function judgeTrackedFrames(
   } else {
     details.push('No sustained material breakdown was found across the credited hold.')
   }
+  if (frameTurned) {
+    details.push(
+      frameTurned === 'top'
+        ? 'The picture was upside down, so it was turned the right way up before hip height and lean were measured.'
+        : `The phone was on its side — the floor ran along the ${frameTurned} edge of the picture — so the picture was turned the right way up before hip height and lean were measured.`,
+    )
+  }
   if (glitchStats.metricsIgnored > 0) {
     details.push(
       `Ignored ${glitchStats.metricsIgnored} isolated tracking ${glitchStats.metricsIgnored === 1 ? 'jump' : 'jumps'} that disagreed with the frames around them.`,
@@ -2425,6 +2535,7 @@ export function judgeTrackedFrames(
     good,
     details,
     unseen,
+    ...(frameTurned ? { frameTurned } : {}),
   }
 }
 

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { FormIssue } from '../types'
 import {
   chooseSampleCount,
+  floorEdge,
   judgeTrackedFrames,
+  type JudgeInput,
   MATERIAL_TOLERANCE,
   minimumBadSamplesFor,
   POSE_PROFILES,
@@ -829,5 +831,91 @@ describe('a verdict over a marked stretch of the clip', () => {
     const plain = judgeTrackedFrames(clip, 'tuck-planche')
     expect(shifted.cleanSeconds).toBe(plain.cleanSeconds)
     expect(shifted.issues).toEqual(plain.issues)
+  })
+})
+
+describe('a phone on its side', () => {
+  // The app suggests turning the phone sideways, and with rotation lock on the
+  // recording stays portrait with the scene lying on its side. A real clip
+  // filmed that way read a level tuck as sagging and leaning backwards.
+  const turn = (clip: JudgeInput, how: 'cw' | 'ccw' | 'flip'): JudgeInput => ({
+    ...clip,
+    width: how === 'flip' ? clip.width : clip.height,
+    height: how === 'flip' ? clip.height : clip.width,
+    tracked: clip.tracked.map((frame) => ({
+      t: frame.t,
+      kps: frame.kps.map((k) =>
+        how === 'cw'
+          ? { ...k, x: clip.height - k.y, y: k.x }
+          : how === 'ccw'
+            ? { ...k, x: k.y, y: clip.width - k.x }
+            : { ...k, x: clip.width - k.x, y: clip.height - k.y },
+      ),
+    })),
+  })
+  const floorFor = { cw: 'left', ccw: 'right', flip: 'top' } as const
+
+  it('gives a turned clip the verdict it gives the same clip upright', () => {
+    for (const id of GRADED) {
+      const base = IDEAL[id]
+      const shapes: SynthParams[] = [base, { ...base, hipOffset: -0.35 }, { ...base, leanRatio: 0.1 }, { ...base, elbowBendDeg: 25 }]
+      for (const params of shapes) {
+        for (const seed of [1, 2]) {
+          const clip = synthesizeClip({ ...params, seed, noise: 0.015 })
+          const upright = judgeTrackedFrames(clip, id)
+          expect(upright.frameTurned).toBeUndefined()
+          for (const how of ['cw', 'ccw', 'flip'] as const) {
+            const turned = judgeTrackedFrames(turn(clip, how), id)
+            expect(turned.frameTurned, `${id} ${how}`).toBe(floorFor[how])
+            expect([...turned.issues].sort(), `${id} ${how} seed ${seed}`).toEqual([...upright.issues].sort())
+            expect(turned.leanRatio).toBeCloseTo(upright.leanRatio!, 6)
+            expect(turned.hipOffset).toBeCloseTo(upright.hipOffset!, 6)
+          }
+        }
+      }
+    }
+  })
+
+  it('never turns an upright hold, however extreme the shape or the phone tilt', () => {
+    for (const id of GRADED) {
+      const base = IDEAL[id]
+      const shapes: SynthParams[] = [
+        base,
+        { ...base, leanRatio: 1.2 },
+        { ...base, hipOffset: 0.7, hipAngleDeg: 120 },
+        { ...base, hipOffset: -0.35 },
+      ]
+      for (const params of shapes)
+        for (const rollDeg of [-15, 0, 15])
+          for (const facing of [1, -1] as const) {
+            const clip = synthesizeClip({ ...params, rollDeg, facing, seed: 3, noise: 0.025 })
+            expect(floorEdge(clip.tracked), `${id} roll ${rollDeg}`).toBe('bottom')
+          }
+    }
+  })
+
+  it('turns the real photographs back and keeps their verdicts', () => {
+    const exerciseFor = { plancheLean: 'planche-lean', plank: 'ppp-hold', straddleOffAxis: 'straddle-planche' } as const
+    for (const key of ['plancheLean', 'plank', 'straddleOffAxis'] as const) {
+      const clip = realClip(key, { jitter: 0.015 })
+      const exerciseId = exerciseFor[key]
+      const upright = judgeTrackedFrames(clip, exerciseId)
+      expect(upright.frameTurned).toBeUndefined()
+      for (const how of ['cw', 'ccw', 'flip'] as const) {
+        const turnedClip = turn(clip, how)
+        expect(floorEdge(turnedClip.tracked), `${key} ${how}`).toBe(floorFor[how])
+        const turned = judgeTrackedFrames(turnedClip, exerciseId)
+        // A refusal carries no measurements, so only a graded clip reports the turn.
+        expect(turned.frameTurned).toBe(upright.ok ? floorFor[how] : undefined)
+        expect(turned.ok).toBe(upright.ok)
+        expect(turned.reason).toBe(upright.reason)
+        expect([...turned.issues].sort()).toEqual([...upright.issues].sort())
+      }
+    }
+  })
+
+  it('does not decide from a couple of moments', () => {
+    const clip = synthesizeClip({ ...IDEAL['tuck-planche'], frames: 2 })
+    expect(floorEdge(turn(clip, 'cw').tracked)).toBeNull()
   })
 })
