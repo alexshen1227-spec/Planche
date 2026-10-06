@@ -25,7 +25,7 @@ export const CHANGELOG: ChangeEntry[] = [
       'Filming with the phone on its side — as the camera screen suggests — no longer reads a level hold as sagging and leaning backwards. With rotation lock on, a phone keeps recording upright while the picture lies sideways; the form check now notices that from your body and turns the picture the right way up before judging hip height and lean. The “turn the phone on its side” hint also stops showing once you have.',
       'When your elbows sit slightly bent through a whole hold, the result no longer shows a green “clean window” next to “lock the elbows”. A hold that never fully locked has no camera-verified clean time, and Progress no longer reports such holds as 100% clean. Your training record is unchanged — the seconds still count as work done.',
       'When your ratings and the camera keep disagreeing, the coach now says which way — usually the camera seeing bent elbows on holds you rated Clean — and suggests checking one replay. Before, it blamed the side view and the lighting by default.',
-      'If you film every set but none pass the check, Progress now names the most common reason instead of telling you to start filming.',
+      'If you film every set but none pass the check, Progress now names the flag the camera raises most often in your own sets, instead of telling you to start filming.',
       'The check-in now shows your profile note — say, an irritated forearm — and lets you clear it once it has settled, so the coach stops asking about it.',
       'For athletes under 18, the bodyweight-trend card is gone: putting on weight while growing is not something to fix.',
     ],
