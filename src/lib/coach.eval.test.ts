@@ -283,8 +283,8 @@ describe('the coach never says anything untrue', () => {
       for (const seed of [1, 3, 5]) {
         for (const cleanRate of [0.2, 1]) {
           const text = allText(synthesizeAthleteState({ weeks, seed, cleanRate }))
-          const up = /nudging the target up/.test(text)
-          const down = /easing the target back/.test(text)
+          const up = /hit nearly every set last time/.test(text)
+          const down = /fell short last time/.test(text)
           expect(`${weeks}/${seed}/${cleanRate} up=${up} down=${down}`).not.toBe(
             `${weeks}/${seed}/${cleanRate} up=true down=true`,
           )

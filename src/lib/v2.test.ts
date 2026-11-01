@@ -1165,7 +1165,7 @@ describe('rails that a mutation test proved were unpinned', () => {
       expect(plan.targetFactor).toBeLessThanOrEqual(1)
       expect(plan.dayType).not.toBe('push')
       const text = plan.decisions.map((d) => d.text).join(' ')
-      expect(text).not.toMatch(/max test today would calibrate|nudging the target up/i)
+      expect(text).not.toMatch(/one max clean hold|hit nearly every set/i)
     }
   })
 

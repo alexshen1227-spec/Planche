@@ -264,7 +264,11 @@ more certain than its basis.
    keep no role, so `isBarAttempt` (a key hold targeted at the bar) is how a
    max effort is told from a working set: the hit rate skips them — it once
    read a max test's attempts as misses, and every test was followed by "most
-   sets fell short — easing the target back".
+   sets fell short — easing the target back". The working target lives in
+   `lib/workingTarget.ts` (`adaptiveTarget`, `workingTarget`), shared by the
+   session and the coach, so the nudge line quotes the real whole seconds —
+   and names the capacity cap when that is what held the target (for a
+   to-target athlete the longest hold on record *is* the last target).
    Accessory reps echo the same way — the rep screen starts at the target —
    so the pressing trend reads only sessions whose best set went past or fell
    short of its target; a run of exact hits is "unknown", never "flat".

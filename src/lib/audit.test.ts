@@ -613,7 +613,6 @@ describe('next-shape attempts are reported as they stand', () => {
       value,
       target: 10,
       section: 'main' as const,
-      role: 'bridge' as const,
       at: at + i * 60_000,
     })),
   }
@@ -703,5 +702,45 @@ describe('a max effort at the bar is not a missed working set', () => {
     const sig = readSignals(state, NOW)
     expect(sig.mainHitRate).toBe(1)
     expect(sig.mainSetCount).toBe(3)
+  })
+})
+
+describe('what the coach says about the target is the target', () => {
+  // "You hit nearly every set last time — nudging the target up 7%" sat beside
+  // the same 5s, session after session: the coach spoke from its factor, and
+  // at five seconds 7% is a third of a second that rounding took.
+  // The session reads the real clock, so this history is relative to it.
+  const now = Date.now()
+  const ago = (daysAgo: number) => now - daysAgo * DAY
+  const hitEvery = (sec: number, lastSet = sec) =>
+    athlete('tuck', {
+      sessions: [6, 4, 2].map((daysAgo) => ({
+        ...trainingDay(
+          daysAgo,
+          [sec, sec, sec, lastSet].map((v, i) => hold('tuck-planche', v, ago(daysAgo) + i * 60_000, { target: sec })),
+          { baseTargetSec: sec },
+        ),
+        startedAt: ago(daysAgo),
+        endedAt: ago(daysAgo) + 30 * 60_000,
+      })),
+    })
+
+  it.each([
+    [5, 5],
+    [10, 10],
+    [5, 9], // a last set taken past the call: the record moves
+    [10, 16],
+  ])('quotes the working target the session prescribes (%ss sets, last %ss)', (sec, lastSet) => {
+    const state = hitEvery(sec, lastSet)
+    const plan = buildPlan(state, now)
+    const line = plan.decisions.find((d) => /hit nearly every set/.test(d.text))?.text
+    expect(line).toBeDefined()
+    const today = todaysSession(state, plan).blocks.find((b) => b.section === 'main' && b.role === 'skill')
+    const sec_ = today?.target.kind === 'hold' ? today.target.sec : NaN
+    // The number it ends on is today's target, and no percentage is promised.
+    const quoted = [...line!.matchAll(/(\d+)s/g)].map((m) => Number(m[1]))
+    expect(quoted[quoted.length - 1]).toBe(sec_)
+    expect(line).not.toMatch(/%/)
+    if (sec_ === sec) expect(line).not.toMatch(/→/)
   })
 })

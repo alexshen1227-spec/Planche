@@ -17,15 +17,9 @@ import { PRESS_LADDER, pressingChoiceFor } from './pressing'
 import { bridgeStatus, capacityOn } from '../lib/bridge'
 import { buildPlan, STRATEGY_BY_ID, type CoachPlan, type WarmupLevel } from '../lib/coach'
 import { median } from '../lib/signals'
-import {
-  capacityReading,
-  completedBaseTarget,
-  endedForNonCapacityReason,
-  isAssisted,
-  learningSeries,
-  qualifyingProgress,
-} from '../lib/progression'
+import { capacityReading, endedForNonCapacityReason, isAssisted } from '../lib/progression'
 import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
+import { adaptiveTarget, workingTargetSec } from '../lib/workingTarget'
 
 const hold = (sec: number): BlockTarget => ({ kind: 'hold', sec })
 const reps = (n: number): BlockTarget => ({ kind: 'reps', reps: n })
@@ -121,72 +115,7 @@ export function estimateMinutes(
 // Day type, rest, warm-up level and emphasis all come from the coach's plan
 // (src/lib/coach.ts). This module only assembles blocks from that plan.
 
-/**
- * Working-set target, anchored robustly.
- *
- * Anchoring on the all-time best is tempting but fragile: a single
- * mis-measured or lucky hold would permanently inflate every future target
- * and quietly set the athlete up to fail every set. Instead the anchor is the
- * median of recent session bests — immune to one bad value — and the all-time
- * best is only allowed to pull it up a little. The coach applies the one
- * evidence-scaled hit-rate nudge later; doing it here as well caused swings.
- *
- * Read from one comparable task: the surface the athlete trains on now, with a
- * unilateral hold's weaker side setting the value. With nothing comparable
- * logged, the placement answer for this exact hold is the next-best evidence,
- * then the timer PR as a ceiling, then the step's conventional start.
- */
-export function adaptiveTarget(state: AppState, stepId: StepId, now = Date.now()): number {
-  const step = STEP_BY_ID[stepId]
-  const surface = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
-  const series = learningSeries(state, stepId, surface, now)
-  // Sessions stopped at their targets are right-censored: they say "at least
-  // this much". They may not pull the estimate below what the athlete has
-  // actually been measured at — the last sessions that went past or fell
-  // short of their targets (a max test, a set taken to the limit).
-  const measured = median(series.points.filter((p) => p.cappedAt === undefined).slice(-3).map((p) => p.value))
-  const recentBests = series.points
-    .slice(-6)
-    .map((p) => (p.cappedAt !== undefined && measured !== null ? Math.max(p.value, measured) : p.value))
-
-  if (recentBests.length === 0) {
-    // A standalone unverified PR must never raise a target or unlock a step,
-    // but it is still useful as a safety ceiling. A beginner with a real 3s
-    // tuck should not receive generic 5s working sets merely because the clip
-    // failed.
-    const timerBest = state.prs[step.keyExerciseId]?.value ?? 0
-    if (timerBest > 0) return clamp(Math.round(timerBest * 0.6), 1, step.startSec)
-    const answered = state.assessment?.answers[step.keyExerciseId]
-    if (answered !== undefined) {
-      // "Can't hold it yet" is not a reason to prescribe the conventional
-      // start anyway. A short hold at an easier lean is the honest dose; the
-      // block note says how to make it easier.
-      return answered > 0 ? clamp(Math.round(answered * 0.6), 1, step.startSec) : Math.min(step.startSec, 5)
-    }
-    return step.startSec
-  }
-
-  const verifiedBest = qualifyingProgress(state, stepId).value
-  const typical = median(recentBests)
-  // Blend: mostly what you can repeat, with a nod to your peak. A verified best
-  // on another surface is not this task's peak.
-  const peak = series.transferred || series.surface === null ? 0 : verifiedBest
-  const observedBest = Math.max(peak, ...recentBests)
-  const anchor =
-    typical === null
-      ? observedBest
-      : typical * 0.75 + Math.min(observedBest, typical * 1.5) * 0.25
-  const t = anchor * 0.6
-  // A prescription completed as asked is evidence it was within capacity: the
-  // next base does not fall below it (strategy and rail factors still apply).
-  // Without this, an athlete who stopped every set at its target — as the
-  // hold screen invites — saw each target come out at a fraction of the last.
-  const floor = series.transferred ? null : completedBaseTarget(state, stepId, series.surface, now)
-  const target = clamp(Math.max(Math.round(t), floor ?? 0), 1, step.unlockSec)
-  // Nothing on this surface yet: another surface's numbers are an uncertain
-  // transfer, so they may only lower the conventional start, never raise it.
-  return series.transferred ? Math.min(target, step.startSec) : target
-}
+export { adaptiveTarget }
 
 /**
  * The most the athlete has shown they can hold on this step's key exercise,
@@ -1079,8 +1008,8 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   // push a working target past the best this athlete has actually held.
   const baseTarget = adaptiveTarget(state, stepId)
   const capacity = observedCapacity(state, stepId)
-  let target = clamp(Math.round(baseTarget * plan.targetFactor), 1, step.unlockSec)
-  if (capacity !== undefined) target = Math.min(target, Math.max(1, Math.floor(capacity)))
+  // Shared with the coach, so what it says about the target is what it is.
+  const target = workingTargetSec(state, stepId, plan.targetFactor)
   const surface = defaultSurface(equipment, state.profile.preferredSurface)
   const transferred = plan.signals.keySeriesTransferred
   const strategyNote =

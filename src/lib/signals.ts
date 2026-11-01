@@ -309,6 +309,8 @@ export interface Signals {
 
   /** Fraction of last session's main sets that reached their target. */
   mainHitRate: number | null
+  /** The working target the hit rate was read against (its highest), in seconds. */
+  lastWorkingTarget: number | null
   /** How many main sets that rate is based on — thin evidence gets less say. */
   mainSetCount: number
   /** Robust centre of recent session bests on the key hold, on the comparable surface. */
@@ -497,9 +499,12 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
         // A max test's sets all target the bar, so it has none and is passed.
         workingSetsOf(s).length > 0,
     )
+  let lastWorkingTarget: number | null = null
   if (lastRelevant) {
     const mains = workingSetsOf(lastRelevant)
     mainSetCount = mains.length
+    const targets = mains.map((set) => set.target).filter((t) => t > 0)
+    lastWorkingTarget = targets.length ? Math.max(...targets) : null
     // A hold stopped at its target call reached the target, even when the fixed
     // walk-back allowance logs it a little under.
     mainHitRate = mains.filter((s) => capacityReading(s) >= s.target).length / mains.length
@@ -841,6 +846,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     daysSinceCheckIn,
     persistentComplaint,
     mainHitRate,
+    lastWorkingTarget,
     mainSetCount,
     mainMedian,
     variability,

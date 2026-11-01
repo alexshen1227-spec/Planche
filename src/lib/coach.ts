@@ -3,6 +3,7 @@ import { STEP_BY_ID, stepAfter } from '../data/progressions'
 import { EXERCISE_BY_ID as EXERCISE_BY_ID_COACH } from '../data/exercises'
 import { defaultSurface } from '../data/equipment'
 import { diagnosePlateau, type PlateauVerdict } from './plateau'
+import { workingTarget } from './workingTarget'
 import { emphasisFromGaps } from './assessment'
 import {
   MAX_WEEKLY_LOAD_RAMP,
@@ -1561,10 +1562,29 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const shape = STRATEGY_BY_ID[strategy]
   const finalTarget = clampTo(targetFactor * shape.targetFactor, LIMITS.targetFactor)
 
-  // Explain the target only in terms of what actually happened to it.
+  // Explain the target only in terms of what actually happened to it — in the
+  // whole seconds the session shows. From the factor alone it said "nudging
+  // the target up 7%" beside the same 5s: at that length 7% is a third of a
+  // second, and rounding took it.
+  const today = workingTarget(state, state.stepId, finalTarget, now)
+  const todaySec = today.sec
+  const lastSec = sig.lastWorkingTarget
   if (targetIntent === 'up' && targetFactor > 1.02) {
     decisions.push({
-      text: `You hit nearly every set last time — nudging the target up ${Math.round((targetFactor - 1) * 100)}%.`,
+      text:
+        lastSec === null || todaySec > lastSec
+          ? `You hit nearly every set last time — the working target ${
+              lastSec === null ? `is ${todaySec}s` : `moves ${lastSec}s → ${todaySec}s`
+            }.`
+          : today.heldByCapacity
+            ? // Every set stopped at its call, so the longest hold on record is
+              // the last target — and a target never goes past that.
+              `You hit nearly every set last time. The target stays ${todaySec}s: it never goes past the longest hold on record, and every set stopped at the call — your next max clean hold is what lifts it.`
+            : shape.targetFactor < 1
+              ? `You hit nearly every set last time. ${shape.name} works at an easier hold on purpose, so today's is ${todaySec}s.`
+              : todaySec === lastSec
+                ? `You hit nearly every set last time. At ${lastSec}s the step up is under a second, so the target stays ${todaySec}s until your hold is next measured.`
+                : `You hit nearly every set last time; today's working target is ${todaySec}s.`,
       kind: 'good',
     })
   } else if (targetIntent === 'up' && targetFactor <= 1.02) {
@@ -1579,7 +1599,9 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       text:
         dayType === 'deload' || dayType === 'recovery'
           ? 'Most sets fell short last time — today is already lighter than that would ask for, so the target follows the day.'
-          : `Most sets fell short last time — easing the target back ${Math.round((1 - targetFactor) * 100)}% to rebuild quality.`,
+          : lastSec !== null && todaySec < lastSec
+            ? `Most sets fell short last time — the target eases ${lastSec}s → ${todaySec}s to rebuild quality.`
+            : `Most sets fell short last time — today's target is eased to ${todaySec}s to rebuild quality.`,
       kind: 'info',
     })
   }
