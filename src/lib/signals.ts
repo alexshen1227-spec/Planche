@@ -740,8 +740,10 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
 
   // Only a test with an attempt in it counts as a test. Saving the warm-ups of
   // a skipped test used to reset this clock and hide the next re-test prompt.
-  // A max test, or a max hold at the bar inside a session: either measured it.
-  const lastTest = [...sessions].reverse().find(measuredMaxIn)
+  // A max test, or a max hold at the bar inside a session: either measured it —
+  // on this step. The test that unlocked a step measured the old hold, and
+  // counted, it left the new one on its conservative start for three weeks.
+  const lastTest = [...sessions].reverse().find((s) => s.stepId === state.stepId && measuredMaxIn(s))
   const daysSinceMaxTest = lastTest ? Math.round((now - lastTest.startedAt) / DAY) : null
   const lastSkippedRetest = [...sessions].reverse().find((s) => s.retestOffered === true && !measuredMaxIn(s))
   const daysSinceSkippedRetest = lastSkippedRetest ? Math.round((now - lastSkippedRetest.startedAt) / DAY) : null

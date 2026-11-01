@@ -259,7 +259,9 @@ more certain than its basis.
    took it held 5s of lean for twelve weeks while the simulated hold grew from
    8s to 30s. A due re-test is now `plan.queueRetest`: one max clean hold at
    the bar, first in the main work (the attempt block, its own note), and
-   `measuredMaxIn` counts it — like an unlock attempt — on the re-test clock.
+   `measuredMaxIn` counts it — like an unlock attempt — on the re-test clock,
+   which reads the *current* step only (the test that unlocked a step measured
+   the old hold).
    The season eval asserts the obedient athlete's targets now climb. Set logs
    keep no role, so `isBarAttempt` (a key hold targeted at the bar) is how a
    max effort is told from a working set: the hit rate skips them — it once

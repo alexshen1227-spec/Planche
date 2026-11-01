@@ -679,6 +679,18 @@ describe('a due re-test happens inside the session', () => {
     expect(readSignals(obedient([done]), NOW).daysSinceSkippedRetest).toBeNull()
   })
 
+  it('measures a newly opened step soon, not three weeks after the test that opened it', () => {
+    // The max test that unlocked advanced tuck measured the tuck.
+    const unlockTest = trainingDay(4, [hold('tuck-planche', 21, at(4), { target: STEP_BY_ID.tuck.unlockSec })], {
+      workoutKind: 'test',
+      workoutName: 'Max test',
+    })
+    const promoted = { ...obedient([unlockTest]), stepId: 'advtuck' as const, unlocked: [...STEPS.filter((s) => s.order <= STEP_BY_ID.advtuck.order).map((s) => s.id)] }
+    expect(readSignals(obedient([unlockTest]), NOW).daysSinceMaxTest).toBe(4)
+    expect(readSignals(promoted, NOW).daysSinceMaxTest).toBeNull()
+    expect(buildPlan(promoted, NOW).queueRetest).toBe(true)
+  })
+
   it('never on a day a max effort is not allowed', () => {
     const plan = buildPlan(obedient(), NOW, { joints: 'good', energy: 'tired', at: NOW })
     expect(plan.challengeAllowed).toBe(false)
