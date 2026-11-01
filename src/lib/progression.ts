@@ -121,13 +121,51 @@ export function progressionRelevantIssues(
  */
 export function verifiedCleanRatio(auto: AutoForm | undefined): number | undefined {
   if (!auto || auto.cleanRatio === undefined) return undefined
-  return progressionRelevantIssues(auto).includes('arms') ? 0 : auto.cleanRatio
+  if (progressionRelevantIssues(auto).includes('arms')) return 0
+  return cleanTimeVerifiable(auto) ? auto.cleanRatio : undefined
 }
 
 /** `verifiedCleanRatio`, in seconds. */
 export function verifiedCleanSeconds(auto: AutoForm | undefined): number | undefined {
   if (!auto || auto.cleanSeconds === undefined) return undefined
-  return progressionRelevantIssues(auto).includes('arms') ? 0 : auto.cleanSeconds
+  if (progressionRelevantIssues(auto).includes('arms')) return 0
+  return cleanTimeVerifiable(auto) ? auto.cleanSeconds : undefined
+}
+
+/** Below this share of the hold seen in full, clean time is not verified. */
+export const MIN_VERIFIED_COVERAGE = 0.6
+
+/**
+ * Whether a reading's clean time can be called camera-verified at all.
+ *
+ * The 2026-10 camera audit found two ways "unknown" was being reported as
+ * "verified": a reading whose elbows were never judged showed a full green
+ * clean window (straight arms define the skill, so clean time without them is
+ * not clean time), and a hold the camera mostly did not see could still certify
+ * every second of it. Either way the honest answer is "unknown" — not zero,
+ * which would claim a fault nobody measured. Readings from before coverage was
+ * recorded keep their judged value; a malformed one is never verified.
+ */
+export function cleanTimeVerifiable(auto: AutoForm): boolean {
+  if (auto.malformed) return false
+  if (auto.unseen?.includes('elbows')) return false
+  return auto.coverage === undefined || auto.coverage >= MIN_VERIFIED_COVERAGE
+}
+
+/** The three answers a camera reading can give about clean time. */
+export type CleanEvidence =
+  | { state: 'verified'; seconds: number; ratio: number }
+  | { state: 'fault'; seconds: 0 }
+  | { state: 'unknown'; reason: 'elbows' | 'coverage' | 'malformed' | 'missing' }
+
+/** One canonical reading of clean time, for every badge, panel and coach line. */
+export function cleanEvidence(auto: AutoForm | undefined): CleanEvidence {
+  if (!auto || auto.cleanSeconds === undefined || auto.cleanRatio === undefined) return { state: 'unknown', reason: 'missing' }
+  if (auto.malformed) return { state: 'unknown', reason: 'malformed' }
+  if (progressionRelevantIssues(auto).includes('arms')) return { state: 'fault', seconds: 0 }
+  if (auto.unseen?.includes('elbows')) return { state: 'unknown', reason: 'elbows' }
+  if (auto.coverage !== undefined && auto.coverage < MIN_VERIFIED_COVERAGE) return { state: 'unknown', reason: 'coverage' }
+  return { state: 'verified', seconds: auto.cleanSeconds, ratio: auto.cleanRatio }
 }
 
 /**
@@ -173,7 +211,11 @@ export function passesProgressionFormCheck(form: SetLog['form'], exerciseId: str
     form.auto.confidence >= MIN_PROGRESSION_FORM_CONFIDENCE &&
       issues.length <= MAX_PROGRESSION_FORM_ISSUES &&
       !issues.includes('arms') &&
-      formEvidenceCoversArms(form.auto),
+      formEvidenceCoversArms(form.auto) &&
+      // A hold the camera mostly did not see is not a verified one, however
+      // clean the moments it did see were (judge v4+; older readings carry no
+      // coverage and keep their judged value).
+      (form.auto.coverage === undefined || form.auto.coverage >= MIN_VERIFIED_COVERAGE),
   )
 }
 
@@ -209,8 +251,52 @@ export function isQualifyingSet(set: SetLog, exerciseId: string): boolean {
  */
 export function progressionCredit(set: SetLog, exerciseId: string): number {
   if (!isQualifyingSet(set, exerciseId)) return 0
-  const cameraClean = set.form?.auto?.cleanSeconds
-  return cameraClean === undefined ? set.value : Math.min(set.value, Math.max(0, cameraClean))
+  const auto = set.form?.auto
+  const cameraClean = auto?.cleanSeconds
+  if (cameraClean === undefined) return set.value
+  // The camera vouches for a stretch of the clip, not for a number of
+  // seconds. Credit is the part of the hold's counted stretch that the
+  // verified stretch covers: a hold re-timed to a disjoint stretch of the clip
+  // (2–8 s analysed, now marked 20–26 s) kept its six seconds of credit while
+  // the panel warned it was stale — now it earns nothing until it is checked
+  // again, and a same-start extension stays capped at what was verified.
+  const verifiedFrom = auto?.analysedFromSec ?? 0
+  const verifiedTo = verifiedFrom + Math.max(0, cameraClean)
+  const counted = countedClipWindow(set)
+  const overlap = Math.max(
+    0,
+    Math.min(verifiedTo, counted.startSec + counted.lengthSec) - Math.max(verifiedFrom, counted.startSec),
+  )
+  return Math.min(set.value, overlap)
+}
+
+/**
+ * Where a set's hold sits on its clip, in clip seconds: the marked stretch for
+ * a hold timed from the video, otherwise from the clip's start for the
+ * credited hold less any time that passed before recording began.
+ */
+export function countedClipWindow(
+  set: Pick<SetLog, 'value' | 'timing' | 'recordingOffsetSec'>,
+): { startSec: number; lengthSec: number } {
+  const timing = set.timing
+  if (timing?.method === 'video' && timing.videoStartSec !== undefined && timing.videoEndSec !== undefined) {
+    return { startSec: timing.videoStartSec, lengthSec: Math.max(0, timing.videoEndSec - timing.videoStartSec) }
+  }
+  return { startSec: 0, lengthSec: Math.max(0, set.value - (set.recordingOffsetSec ?? 0)) }
+}
+
+/**
+ * Whether a camera reading was taken over the stretch of the clip a set's hold
+ * occupies *now*. A check started before the hold was re-timed finishes for
+ * the old stretch; applied anyway, it relabelled the new one with evidence
+ * about the old. Start-matched readings that cover less than the hold are
+ * fine — credit is already capped at what they verified.
+ */
+export function readingFitsWindow(
+  auto: Pick<AutoForm, 'analysedFromSec'>,
+  window: { startSec: number },
+): boolean {
+  return Math.abs((auto.analysedFromSec ?? 0) - window.startSec) <= 0.1
 }
 
 export function qualifyingProgress(
@@ -255,8 +341,23 @@ export function qualifyingSessionValue(session: Session, stepId: StepId): number
  */
 export function trainingSetValue(set: SetLog): number {
   if (set.value <= 0 || humanRating(set.form) === 'broke') return 0
-  const cleanSeconds = trustedCameraEvidence(set) ? set.form?.auto?.cleanSeconds : undefined
-  return cleanSeconds === undefined ? set.value : Math.min(set.value, Math.max(0, cleanSeconds))
+  const auto = trustedCameraEvidence(set) ? set.form?.auto : undefined
+  const cleanSeconds = auto?.cleanSeconds
+  if (auto === undefined || cleanSeconds === undefined) return set.value
+  return Math.min(set.value, Math.max(0, cleanSeconds) + unfilmedAfterCleanFilm(auto))
+}
+
+/**
+ * The unfilmed tail of a hold whose footage stayed clean to its last frame.
+ * The cap above is time before a breakdown; a recording that stopped early
+ * saw none, so the seconds it missed are not taken off the training dose.
+ * (They still earn no progression credit — that runs on what was verified.)
+ */
+function unfilmedAfterCleanFilm(auto: AutoForm): number {
+  const unfilmed = auto.unfilmedSec ?? 0
+  if (unfilmed <= 0 || auto.analysedSec === undefined || auto.cleanSeconds === undefined) return 0
+  // Three numbers each rounded to a tenth.
+  return auto.cleanSeconds >= auto.analysedSec - unfilmed - 0.15 ? unfilmed : 0
 }
 
 /**

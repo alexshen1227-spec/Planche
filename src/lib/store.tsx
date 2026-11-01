@@ -67,7 +67,10 @@ export const DEFAULT_SETTINGS: Settings = {
   weeklyGoal: 3,
   warmup: true,
   beeps: true,
-  sessionMinutes: 30,
+  // Long enough for a complete session — key holds, the push-up version of
+  // the step, pseudo planche push-ups, leans and core — at a typical dose.
+  // Thirty minutes trimmed the strength work away at almost every level.
+  sessionMinutes: 45,
   // Regular-hold calibration. Main Path holds use their longer fixed allowance
   // unless the athlete says the phone is within reach.
   stopLatencySec: 2.3,
@@ -75,6 +78,7 @@ export const DEFAULT_SETTINGS: Settings = {
   units: 'metric',
   recordForm: true,
   autoAnalyze: true,
+  liveCues: false,
 }
 
 /**
@@ -212,7 +216,7 @@ function sanitizeAuto(a: unknown, repairs: string[]): AutoForm | undefined {
 
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
   /** A measurement that gates credit: present but unusable is malformed, not absent. */
-  const gating = (field: 'cleanSeconds' | 'cleanRatio' | 'confidence', lo: number, hi: number) => {
+  const gating = (field: 'cleanSeconds' | 'cleanRatio' | 'confidence' | 'coverage', lo: number, hi: number) => {
     const v = c[field]
     if (v === undefined) return undefined
     if (typeof v !== 'number' || !Number.isFinite(v)) {
@@ -232,6 +236,9 @@ function sanitizeAuto(a: unknown, repairs: string[]): AutoForm | undefined {
     score: clampOptional(c.score, 0, 100),
     cleanSeconds: gating('cleanSeconds', 0, 3600),
     cleanRatio: gating('cleanRatio', 0, 1),
+    ...(c.coverage !== undefined ? { coverage: gating('coverage', 0, 1) ?? 0 } : {}),
+    // Absent is the conservative reading (the dose stays capped at clean time).
+    ...(clampOptional(c.unfilmedSec, 0, 3600) !== undefined ? { unfilmedSec: clampOptional(c.unfilmedSec, 0, 3600) } : {}),
     elbowDeg: num(c.elbowDeg),
     kneeDeg: num(c.kneeDeg),
     hipAngleDeg: num(c.hipAngleDeg),
@@ -240,6 +247,7 @@ function sanitizeAuto(a: unknown, repairs: string[]): AutoForm | undefined {
     shrugRatio: num(c.shrugRatio),
     asymmetry: num(c.asymmetry),
     wobble: num(c.wobble),
+    ...(num(c.drift) !== undefined ? { drift: num(c.drift) } : {}),
     analysedSec: clampOptional(c.analysedSec, 0, 3600),
     analysedFromSec: clampOptional(c.analysedFromSec, 0, 3600),
     samplingGapSec: clampOptional(c.samplingGapSec, 0, 60),
@@ -707,6 +715,7 @@ export function normalizeStateWithReport(
     beeps: typeof rawSettings.beeps === 'boolean' ? rawSettings.beeps : DEFAULT_SETTINGS.beeps,
     recordForm: typeof rawSettings.recordForm === 'boolean' ? rawSettings.recordForm : DEFAULT_SETTINGS.recordForm,
     autoAnalyze: typeof rawSettings.autoAnalyze === 'boolean' ? rawSettings.autoAnalyze : DEFAULT_SETTINGS.autoAnalyze,
+    liveCues: typeof rawSettings.liveCues === 'boolean' ? rawSettings.liveCues : DEFAULT_SETTINGS.liveCues,
     phoneWithinReach:
       typeof rawSettings.phoneWithinReach === 'boolean'
         ? rawSettings.phoneWithinReach
@@ -1052,6 +1061,8 @@ export type Action =
       name: string
       stepId: StepId
       weeklyGoal: number
+      /** Minutes per session; absent keeps the default. */
+      sessionMinutes?: number
       profile: Profile
       units: Units
       weightKg?: number
@@ -1315,12 +1326,20 @@ function reduceAction(state: AppState, action: Action): AppState {
           action.weightKg !== undefined || action.heightCm !== undefined
             ? [{ at: Date.now(), weightKg: action.weightKg, heightCm: action.heightCm }]
             : [],
-        settings: { ...state.settings, weeklyGoal: action.weeklyGoal, units: action.units },
+        settings: {
+          ...state.settings,
+          weeklyGoal: action.weeklyGoal,
+          units: action.units,
+          ...(action.sessionMinutes !== undefined && Number.isFinite(action.sessionMinutes)
+            ? { sessionMinutes: Math.min(120, Math.max(5, Math.round(action.sessionMinutes))) }
+            : {}),
+        },
         fieldTimes: stamp(state, [
           'name',
           'step',
           'settings.weeklyGoal',
           'settings.units',
+          ...(action.sessionMinutes !== undefined ? ['settings.sessionMinutes'] : []),
           ...Object.keys(action.profile).map((k) => `profile.${k}`),
         ]),
       }

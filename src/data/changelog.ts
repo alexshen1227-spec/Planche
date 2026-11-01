@@ -18,6 +18,49 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-11-01',
+    title: 'The fastest honest path to the next step',
+    area: 'training',
+    major: {
+      version: '3.0',
+      blurb:
+        'Complete sessions at every level, the push-up version of every step, next-shape practice that can open a step early, set-to-set targets, a weekly work view, and a camera judge rebuilt around an independent audit.',
+    },
+    notes: [
+      'Every recommended session now has the same complete shape at every level: your key holds, then the push-up version of your step, pseudo planche push-ups and planche leans, then core. Before, a 30-minute budget quietly trimmed the pressing work away at almost every step — and Advanced Tuck sessions had none at all.',
+      'New exercises: advanced tuck, straddle and full planche push-ups. Each step now has its own push-up version, pressed one step behind until your hold is halfway to its bar (tuck planche push-ups once your tuck reaches about 10s).',
+      'Next-shape practice: once your hold is halfway to its bar, sessions open with a few short attempts at the next step while you are fresh, plus the drill that teaches the change — tuck open-and-close and arch holds before the advanced tuck, one-leg leans before the one-leg, band and compression work before the straddle. The frog stand is practised from day one at the lean.',
+      'A step can now open early: hold the next shape’s opening dose clean on camera — advanced tuck 5s, for example — while your current hold is verified past half its bar. The bars are convention; holding the next shape is the readiness they stand in for. The usual route still works exactly as before.',
+      'Home has a “Next shape” card with how close the early opening is, and at the tuck, the hip angle the camera measures on your filmed tucks moving toward the advanced tuck’s. At the lean, a lean-depth meter shows how far your shoulders travel past your hands.',
+      'Targets follow you set by set: a hold that blew past its target raises the next one a little, two short holds bring it down, and a big drop-off from your best set suggests moving on (your call).',
+      'Accessories progress on their own: every set at target means a rep or a few seconds more next time. This also fixes a slow slide where a 30-second hollow hold became 18, then 11, for athletes doing exactly what was asked.',
+      'This week’s work: Home shows your key-hold seconds, pressing reps and straight-arm work against an estimate of the week’s plan.',
+      'New installs plan 45-minute sessions, and setup asks how long you have. If yours is shorter, Home offers to switch once. When a session has to be trimmed, it now says what it left out — and no longer describes exercises it removed.',
+      'Brief holds rest a little less (never under 90 seconds), so a beginner with three-second holds is not left waiting two and a half minutes after each one.',
+      'If you have been training about once a week, the coach now points out that a second, shorter session is the cheapest extra practice there is.',
+      'When the camera keeps seeing soft elbows, the fix is now lockout practice — an extra lean set at the deepest lean your elbows stay locked in, and main holds that end the moment the lock goes — instead of extra bent-arm pressing, which does not teach a lockout.',
+      'On a day you flag a joint, planche push-ups step down to pseudo planche push-ups until it is updated.',
+      'Progress has a pressing ladder: every push-up version from knee push-ups to full planche push-ups, your best on each, and which one you are on.',
+      'The bodyweight check no longer pops up the moment setup finishes, and athletes under 18 are not prompted about bodyweight on a schedule.',
+    ],
+  },
+  {
+    date: '2026-11-01',
+    title: 'Camera judge: fixes from an independent audit',
+    area: 'camera',
+    notes: [
+      '“Held clean” is now “Verified clean” and means exactly that. A bend held inside the hold reads none, and a clip where the elbows were not judged — or where the camera saw too little of the hold — reads unknown instead of a green 100. Your seconds still count as training either way.',
+      'A late softening is caught: elbows that hold their lock and then stay a little bent for the last seconds end verified time where the softening started, and the seconds before it still count. Before, a 15° bend over the final three seconds usually passed as a perfect hold.',
+      'A clearly bent elbow lowering out of a hold is now read as bent. The camera used to mistake it for impossible hyperextension and leave the elbows unjudged.',
+      'Joints the model places outside the picture are no longer treated as seen, and a far arm that alone reads bent can no longer be averaged into a certified straight-arm hold.',
+      'Steadiness is now measured against your planted hands, so a phone that moves mostly cancels out — on the audit’s real footage, the same hold filmed still, panning and shaking now reads the same. It describes how much you moved, and no longer claims you were “slipping as you tired”.',
+      'Re-timing a hold to a different stretch of its clip no longer keeps the old clip stretch’s credit, and a check that finishes after you re-timed the hold is not applied to the new timing — run it again.',
+      'New, in beta and off by default: a live elbow cue. During a filmed hold the camera listens for elbows that stay bent for about a second and says “lock your elbows” once — using the same cautious rule the after-set check uses to name a fault, so it stays quiet over straight arms. Turn it on in Settings; it uses more battery while it runs.',
+      'A recording that stops before your hold ends is now read for what it filmed and says so — the unfilmed seconds earn no camera credit but are not taken off your training — and a recording with under a second of the hold on it is no longer graded at all. Before, a clip that captured almost nothing could be scored as a whole hold and blamed on your position.',
+      'The “not enough lean” note now says what lean does: it puts your weight over your hands and makes the hold harder. It used to call the position “lighter”, which was backwards.',
+    ],
+  },
+  {
     date: '2026-10-05',
     title: 'Fixes from real clips and problem reports',
     area: 'camera',

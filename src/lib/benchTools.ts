@@ -93,6 +93,30 @@ export function selfTestJudge(seeds = 3): SelfTestReport {
     )
   }
 
+  // The 2026-10 audit's late bend: straight for seven seconds, then a 15° bend
+  // for the last three. The whole-hold reading alone called it perfect.
+  // Verified time must end near where the bend starts, keeping the seconds
+  // before it, and the bend must be named.
+  {
+    const v = judgeSynth('tuck-planche', { noise: 0, frames: 31, elbowBendDeg: (p) => (p >= 0.7 ? 15 : -2) }, 1)
+    const clean = v.cleanSeconds ?? 0
+    add(
+      'A late elbow softening ends verified time where it starts',
+      v.ok && v.issues.includes('arms') && clean > 6.5 && clean < 8,
+      `clean ${clean.toFixed(1)}s of 10s, issues [${v.issues.join(', ')}]`,
+    )
+  }
+  // A held bend can never sit beside a full "Verified clean" score.
+  {
+    const v = judgeSynth('tuck-planche', { noise: 0, elbowBendDeg: 15 }, 1)
+    const verified = v.subscores?.find((subscore) => subscore.key === 'cleanTime')?.score
+    add(
+      'A held elbow bend reads zero verified clean time',
+      v.ok && verified === 0,
+      `verified-clean subscore ${verified ?? 'missing'}`,
+    )
+  }
+
   // 2. Each fault family is still named where the position checks it.
   const faults: { name: string; id: string; extra: SynthParams; issue: string }[] = [
     { name: 'Bent arms are named', id: 'tuck-planche', extra: { elbowBendDeg: 20 }, issue: 'arms' },

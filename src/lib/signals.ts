@@ -633,12 +633,13 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
       ? { issue: topEntry[0], count: topIssueCount, of: reviewedEvidenceCount }
       : null
 
-  // Shakiness the camera saw, averaged over recent filmed sets: consistently
-  // high means the prescribed holds are sitting at the very limit.
-  const wobbles = trustedCameraSets
-    .map((s) => s.form!.auto!.wobble)
+  // Movement against the hands the camera saw, across recent filmed sets.
+  // Only judge-v4 `drift` counts: the older picture-frame `wobble` mixed the
+  // phone's own movement into the athlete's and sits on a different scale.
+  const drifts = trustedCameraSets
+    .map((s) => s.form!.auto!.drift)
     .filter((w): w is number => w !== undefined)
-  const meanWobble = wobbles.length >= 3 ? median(wobbles) : null
+  const meanWobble = drifts.length >= 3 ? median(drifts) : null
   const cleanRatios = trustedCameraSets
     .map((s) => verifiedCleanRatio(s.form!.auto))
     .filter((ratio): ratio is number => ratio !== undefined)

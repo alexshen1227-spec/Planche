@@ -98,8 +98,47 @@ export const GUIDES: Guide[] = [
         body: 'When you clear the unlock bar on the step key exercise with two signals: you explicitly rate the hold Clean, and its filmed form check passes with no more than one isolated flag. Frog Stand uses an explicit replay-and-checklist review because its balance shape is not honest for the pose model to grade. The bars themselves are convention, not measured thresholds — credible coaches’ standards differ several-fold — so many would rather you own a step with clean seconds to spare than scrape past it.',
       },
       {
+        heading: 'The next step can open early',
+        body: 'Once your current hold is past half its bar, sessions start with a few short attempts at the next shape. Hold that next shape’s opening dose clean — your Clean rating, a passing camera check and, for flight skills, both feet off confirmed — and the next step opens without waiting for the full bar. The bar is a convention; holding the next shape is the readiness it was standing in for.',
+      },
+      {
         heading: 'Little and often',
-        body: 'Coaches generally prefer three focused 30-minute sessions a week to one exhausting weekly marathon: planche is a skill as much as a strength feat, and skills are practised best fresh. That is coaching consensus — no trial has compared the two for planche.',
+        body: 'Coaches generally prefer three focused sessions a week to one exhausting weekly marathon: planche is a skill as much as a strength feat, and skills are practised best fresh. That is coaching consensus — no trial has compared the two for planche. With total work equal, how it is split has made little measured difference in strength research; the real gain from a second session is the extra practice it adds.',
+      },
+    ],
+  },
+  {
+    id: 'fastest-path',
+    icon: '🚀',
+    title: 'The fastest honest path',
+    summary:
+      'How every session is built, why the next shape is practised early, and what the app does at each transition — lean to frog, frog to tuck, tuck to advanced tuck and on to full.',
+    sections: [
+      {
+        heading: 'Every session, every level',
+        body: 'Each recommended session has the same shape so nothing important depends on the clock: warm-up, your key holds, the push-up version of your step, pseudo planche push-ups, planche leans, then core and a cooldown. When time is short the app trims generic core and mobility first and keeps at least two sets of each strength block; it tells you what it left out.',
+        bullets: [
+          'The push-up version of each step — tuck planche push-ups at the tuck, and so on — trains the bent-arm half of the position a hold never visits. Until your hold is halfway to its bar, you press one step behind.',
+          'Accessories progress on their own: every set at target means a little more next time; most sets short means the next session matches what you did.',
+          'Inside a session, the next set follows the last: a hold that blew past its target raises the next one a little, two short holds bring it down, and a big drop-off suggests moving on.',
+        ],
+      },
+      {
+        heading: 'Practise the next shape early',
+        body: 'Strength from holding a position is largely specific to that position, so the fastest way to a new shape is to practise that shape. Once your current hold is halfway to its bar, sessions open with a few short attempts at the next step while you are fresh — one to three clean seconds is a real attempt — followed by the drill that teaches the change. The frog stand starts from day one at the lean: it is balance more than strength.',
+        bullets: [
+          'Tuck → advanced tuck adds the open-and-close drill and arch holds for the flat back, and the Home screen shows the hip angle the camera measures on your filmed tucks moving toward the advanced tuck’s.',
+          'Advanced tuck → one-leg swaps in one-leg leans; one-leg → straddle adds band-assisted straddle work and compression; straddle → full narrows the legs a little at a time.',
+          'Next-shape attempts only happen on days that allow a maximal effort, never beside an unlock attempt and never on an easy day.',
+        ],
+      },
+      {
+        heading: 'What it will not do to go faster',
+        body: 'It will not add volume because you got stronger quickly — fast gains are mostly your nervous system, and the tissue carrying the load has not caught up. It will not let a sore elbow or a wrist complaint that keeps coming back ride along with next-shape attempts. And it will not count a hold the camera saw bent, or did not see, as clean.',
+      },
+      {
+        heading: 'How sure is any of this?',
+        body: 'Practising the next position early, the push-up versions, the drills and the trimming order are coaching consensus and this app’s design — sensible, widely used, and never compared in a trial. The lever percentages are the app’s mechanical model. No timeline is promised, because none is known.',
       },
     ],
   },
@@ -152,6 +191,8 @@ export const GUIDES: Guide[] = [
           'Every tolerance was set by measurement, not taste: synthetic holds of known angle were swept through the checker to find where real faults are always caught and clean holds are never accused.',
           'Verified clean time ends when the position breaks down and stays broken — or when the camera simply loses the evidence. A quick drop cannot bank extra seconds.',
           'When the camera and your own rating disagree, your word stands. The camera files its reading alongside, and the coach only learns from clips where you both broadly agree.',
+          'A late softening counts: if the elbows hold their lock and then stay softer for the rest of the hold, verified time ends where the softening started and the seconds before it still count.',
+          '"Verified clean" has three answers, not two — the verified seconds, none (a bend held inside the hold), or unknown (the elbows were not judged, or the camera saw too little of the hold).',
         ],
       },
       {
@@ -159,6 +200,9 @@ export const GUIDES: Guide[] = [
         body: 'One camera sees a flat picture, and this app would rather admit that than bluff. Anything it cannot measure honestly is said out loud rather than silently skipped.',
         bullets: [
           'Front-on or strongly angled clips are refused outright — elbow, hip and lean angles are foreshortened and would be misleading.',
+          'A joint the model places outside the picture is not treated as seen, however confident the model is about it.',
+          'Steadiness is measured against your planted hands, so a phone that moves mostly cancels out — and it describes how much you moved, never why.',
+          'The live elbow cue (beta, in Settings) speaks during a filmed hold only after every reading for about a second has shown a clear bend, and never in the first second while you settle in.',
           'A body part without enough clear frames is reported as “unseen”, not guessed. An unseen elbow blocks progression credit; an unseen knee only costs the knee verdict.',
           'Scapular protraction, true depth, and elbows flared toward the camera are physically invisible from the side — which is why a Clean rating and true-flight confirmation stay yours to give.',
         ],

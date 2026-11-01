@@ -49,6 +49,12 @@ export interface SessionDraft {
   cameraOn?: boolean
   rpe?: number
   notes?: string
+  /**
+   * Timestamps of the sets logged in each block, by block index. The next
+   * set's adjusted target is derived from them, so a reload resumes with the
+   * same targets the athlete was being given.
+   */
+  blockLogAts?: Record<number, number[]>
 }
 
 export type DraftInput = Omit<SessionDraft, 'v' | 'savedAt'>

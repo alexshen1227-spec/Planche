@@ -385,3 +385,18 @@ change alters the wrist's angle; it does not diagnose or clear pain.
 | Source | Type | Finding | Used for |
 |---|---|---|---|
 | Uchida et al. J Phys Ther Sci 28:1266–1271, 2016 | Lab measurement, 8 band colours × 10 elongations | Tension depends on stretch and often differs from manufacturer references | Why the remembered setup records *where* a band acts, and why assisted holds never count toward an unassisted unlock — colour is not a percentage of bodyweight removed |
+
+## 12. Where the 2026-11 features sit
+
+No new sources were added; this records how the upgrade leans on the rows
+above, so its copy can be checked against them.
+
+| Feature | Basis | Tier as stated to athletes |
+|---|---|---|
+| Next-shape practice (the bridge) | Isometric gains concentrate at the trained angle (§1, Weir; Lanza); short hard holds were the stronger tendon stimulus in the one trial comparing lengths (§2, Bohm 2014) | Coaching consensus / the app's design |
+| Early promotion (next shape's opening dose, full evidence, current past half its bar) | Unlock bars are convention (§9); the next shape held clean is direct evidence | The app's design — copy says the bars are convention |
+| Push-up versions, pressed one step behind | Coaching practice only | Coaching consensus |
+| Accessory double progression, set-to-set targets, drop-off suggestion | Autoregulation research (§4) is about dynamic lifts; the isometric thresholds are chosen | Design choice; the drop-off copy names its velocity-loss origin and says "your call" |
+| A second, shorter session for once-a-week athletes | §3: volume-equated frequency made little measured difference — the gain is the extra work | Stated exactly that way |
+| Weekly work view | Planning arithmetic | "A planning aid — no study sets these numbers" |
+| Hand-relative steadiness | Measured on the 2026-10-10 audit's real footage (fixed / pan / oscillation) | Describes movement, never its cause |

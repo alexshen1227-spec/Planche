@@ -1,6 +1,7 @@
 import type {
   AppState,
   Block,
+  BlockRole,
   BlockTarget,
   BodyRegion,
   CheckIn,
@@ -12,9 +13,17 @@ import type {
 import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID, stepBefore } from './progressions'
 import { defaultSurface, equipmentLabel } from './equipment'
+import { PRESS_LADDER, pressingChoiceFor } from './pressing'
+import { bridgeStatus, capacityOn } from '../lib/bridge'
 import { buildPlan, STRATEGY_BY_ID, type CoachPlan, type WarmupLevel } from '../lib/coach'
 import { median } from '../lib/signals'
-import { completedBaseTarget, learningSeries, qualifyingProgress } from '../lib/progression'
+import {
+  completedBaseTarget,
+  endedForNonCapacityReason,
+  isAssisted,
+  learningSeries,
+  qualifyingProgress,
+} from '../lib/progression'
 import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
 
 const hold = (sec: number): BlockTarget => ({ kind: 'hold', sec })
@@ -49,7 +58,10 @@ export function describeBlock(b: Block): string {
 
 /** The single work target worth surfacing before a session starts. */
 export function primaryTargetBlock(workout: Workout): Block | undefined {
+  // The key hold, not merely the first main block: next-shape attempts and an
+  // unlock attempt come first in the session but are not today's target.
   return (
+    workout.blocks.find((block) => block.role === 'skill') ??
     workout.blocks.find((block) => block.section === 'main') ??
     workout.blocks.find((block) => block.section === 'strength') ??
     workout.blocks.find((block) => block.section !== 'warmup' && block.section !== 'cooldown') ??
@@ -181,15 +193,7 @@ export function adaptiveTarget(state: AppState, stepId: StepId, now = Date.now()
  * Working targets may be scaled by strategy, but never past this.
  */
 export function observedCapacity(state: AppState, stepId: StepId): number | undefined {
-  const step = STEP_BY_ID[stepId]
-  const surface = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
-  const series = learningSeries(state, stepId, surface)
-  const recent = series.points.slice(-6).map((p) => p.value)
-  if (recent.length) return Math.max(...recent)
-  const timerBest = state.prs[step.keyExerciseId]?.value
-  if (timerBest !== undefined && timerBest > 0) return timerBest
-  const answered = state.assessment?.answers[step.keyExerciseId]
-  return answered !== undefined && answered > 0 ? answered : undefined
+  return capacityOn(state, stepId)
 }
 
 /**
@@ -212,6 +216,104 @@ function regressionFor(exerciseId: string, state: AppState): string | undefined 
     default:
       return undefined
   }
+}
+
+/**
+ * Most an accessory progresses to before the next harder variation is the
+ * better use of the time. Reps for rep work, seconds for holds. Coaching
+ * convention: past these, add difficulty (a deeper lean, the next press on the
+ * ladder) rather than more of the same.
+ */
+const ACCESSORY_CEILING: Record<string, number> = {
+  'knee-pushup': 20,
+  pushup: 20,
+  pppu: 12,
+  'pike-pushup': 12,
+  dip: 12,
+  'tuck-planche-pushup': 8,
+  'adv-tuck-planche-pushup': 6,
+  'straddle-planche-pushup': 5,
+  'full-planche-pushup': 3,
+  'scap-pushup': 15,
+  // A transition drill: past a handful of controlled reps, open further instead.
+  'tuck-open-close': 6,
+  'planche-lean': 20,
+  'one-leg-lean': 20,
+  'frog-stand': 30,
+  'band-straddle-planche': 15,
+  'hollow-hold': 45,
+  'tuck-hollow-hold': 40,
+  'arch-hold': 40,
+  'l-sit': 20,
+  'hollow-rocks': 20,
+  'leg-lifts': 15,
+}
+
+export interface AccessoryProgression {
+  target: number
+  /** 'repeat' covers both a partial session and a capped one. */
+  change: 'up' | 'repeat' | 'down'
+  /** The target the last session prescribed. */
+  lastTarget: number
+}
+
+/**
+ * Double progression for supporting work, read from the last session that
+ * trained the exercise: every set reached its target → a little more next
+ * time; at least half did → the same again; most fell short → what was
+ * actually achieved.
+ *
+ * This replaced sizing from "the median of recent bests × 0.6", which only ever
+ * lowered a dose — and because an accessory is usually stopped at its target,
+ * the logged best *was* the last target, so every session's dose came out at
+ * 60% of the one before: a 30-second hollow hold became 18, then 11. Finishing
+ * the prescription is evidence it was within capacity, not a measurement of
+ * capacity.
+ *
+ * Interrupted, assisted and timing-problem attempts are left out like
+ * everywhere else. Undefined when nothing comparable is logged in six weeks.
+ */
+export function accessoryProgression(
+  state: Pick<AppState, 'sessions'>,
+  exerciseId: string,
+  kind: 'hold' | 'reps',
+  now = Date.now(),
+): AccessoryProgression | undefined {
+  const recent = state.sessions
+    .filter((s) => s.startedAt <= now && now - s.startedAt <= 42 * DAY && s.workoutName !== 'Quick Log')
+    .sort((a, b) => b.startedAt - a.startedAt)
+  for (const s of recent) {
+    const sets = s.sets.filter(
+      (x) =>
+        x.exerciseId === exerciseId &&
+        x.kind === kind &&
+        x.section !== 'warmup' &&
+        x.section !== 'cooldown' &&
+        x.value > 0 &&
+        x.target > 0 &&
+        !isAssisted(x) &&
+        !endedForNonCapacityReason(x),
+    )
+    if (!sets.length) continue
+    const lastTarget = Math.max(...sets.map((x) => x.target))
+    const ceiling = ACCESSORY_CEILING[exerciseId] ?? (kind === 'reps' ? 15 : 45)
+    const tolerance = kind === 'reps' ? 0 : Math.max(0.5, lastTarget * 0.05)
+    const hits = sets.filter((x) => x.value >= x.target - tolerance).length
+    if (hits === sets.length) {
+      const next = lastTarget + (kind === 'reps' ? 1 : Math.max(1, Math.round(lastTarget * 0.1)))
+      return next <= ceiling
+        ? { target: next, change: 'up', lastTarget }
+        : { target: Math.min(ceiling, lastTarget), change: 'repeat', lastTarget }
+    }
+    if (hits * 2 >= sets.length) return { target: Math.min(ceiling, lastTarget), change: 'repeat', lastTarget }
+    const achieved = median(sets.map((x) => x.value)) ?? lastTarget
+    return {
+      target: Math.min(ceiling, Math.max(1, kind === 'reps' ? Math.floor(achieved) : Math.round(achieved))),
+      change: 'down',
+      lastTarget,
+    }
+  }
+  return undefined
 }
 
 /** Best recent value logged on one exercise (median of the last few sessions' bests). */
@@ -276,8 +378,10 @@ export function capacityAdjustBlocks(
   state: AppState,
   blocks: Block[],
   now = Date.now(),
-): { blocks: Block[]; notes: string[] } {
+): { blocks: Block[]; notes: string[]; about: string[] } {
   const notes: string[] = []
+  /** The exercise each note describes, so a note can leave with its block. */
+  const about: string[] = []
   const adjustable = (b: Block) => b.section === 'strength' || b.section === 'core'
   const basisFor = (exerciseId: string, capacity: { value: number; source: 'log' | 'placement' }) =>
     capacity.source === 'log'
@@ -298,6 +402,7 @@ export function capacityAdjustBlocks(
     const reg = EXERCISE_BY_ID[regression]
     const basis = basisFor(block.exerciseId, capacity)
     notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} swapped for ${reg.name.toLowerCase()}, from ${basis}.`)
+    about.push(regression)
     return {
       ...block,
       exerciseId: regression,
@@ -320,24 +425,49 @@ export function capacityAdjustBlocks(
     if (twin.target.kind === 'hold' && block.target.kind === 'hold') twin.target = hold(Math.min(twin.target.sec, block.target.sec))
   }
 
-  // 3. Size what remains to measured or reported capacity. Only ever lowers.
+  // 3. Size what remains. With a logged history the last session decides
+  //    (double progression, below); without one, the placement answers may
+  //    only lower the default.
   const out = merged.map((block) => {
     if (!adjustable(block)) return block
+    if (block.role !== 'backoff') {
+      const kind = block.target.kind
+      const progression = accessoryProgression(state, block.exerciseId, kind, now)
+      if (progression) {
+        const current = kind === 'reps' ? (block.target as { reps: number }).reps : (block.target as { sec: number }).sec
+        if (progression.target === current) return block
+        const name = EXERCISE_BY_ID[block.exerciseId].name
+        const unit = (n: number) => (kind === 'reps' ? `${n} rep${n === 1 ? '' : 's'}` : `${n}s`)
+        if (progression.change === 'up') {
+          notes.push(`${name} up to ${unit(progression.target)} — every set reached ${unit(progression.lastTarget)} last time.`)
+          about.push(block.exerciseId)
+        } else if (progression.change === 'down') {
+          notes.push(`${name} at ${unit(progression.target)} — most sets fell short of ${unit(progression.lastTarget)} last time.`)
+          about.push(block.exerciseId)
+        }
+        return {
+          ...block,
+          target: kind === 'reps' ? reps(progression.target) : hold(progression.target),
+        }
+      }
+    }
     const capacity = accessoryCapacity(state, block.exerciseId, now)
-    if (!capacity) return block
+    if (!capacity || capacity.source === 'log') return block
     const basis = basisFor(block.exerciseId, capacity)
     if (block.target.kind === 'reps') {
       const dose = Math.max(1, Math.floor(capacity.value * 0.7))
       if (dose >= block.target.reps) return block
       notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} set to ${dose} reps, from ${basis}.`)
+      about.push(block.exerciseId)
       return { ...block, target: reps(dose), note: block.note ?? `Sized from ${basis}.` }
     }
     const dose = Math.max(1, Math.round(capacity.value * 0.6))
     if (dose >= block.target.sec) return block
     notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} set to ${dose}s, from ${basis}.`)
+    about.push(block.exerciseId)
     return { ...block, target: hold(dose), note: block.note ?? `Sized from ${basis}.` }
   })
-  return { blocks: out, notes }
+  return { blocks: out, notes, about }
 }
 
 /**
@@ -350,7 +480,14 @@ const EQUIPMENT_SUBSTITUTES: Record<string, { id: string; repsFactor: number }[]
     { id: 'pushup', repsFactor: 1.5 },
     { id: 'pppu', repsFactor: 0.75 },
   ],
-  'tuck-planche-pushup': [{ id: 'pppu', repsFactor: 2 }],
+  'tuck-planche-pushup': [
+    { id: 'pppu', repsFactor: 2 },
+    { id: 'pike-pushup', repsFactor: 2 },
+  ],
+  'adv-tuck-planche-pushup': [
+    { id: 'pppu', repsFactor: 2 },
+    { id: 'pike-pushup', repsFactor: 2 },
+  ],
   'band-straddle-planche': [],
   'supported-tuck-lean': [],
 }
@@ -370,8 +507,10 @@ export function hasEquipmentFor(exerciseId: string, equipment: EquipmentId[]): b
 export function resolveEquipment(
   blocks: Block[],
   equipment: EquipmentId[],
-): { blocks: Block[]; notes: string[] } {
+): { blocks: Block[]; notes: string[]; about: (string | undefined)[] } {
   const notes: string[] = []
+  /** The substitute each note introduced; undefined for a note about something left out. */
+  const about: (string | undefined)[] = []
   const out: Block[] = []
   for (const block of blocks) {
     if (hasEquipmentFor(block.exerciseId, equipment)) {
@@ -400,100 +539,116 @@ export function resolveEquipment(
       notes.push(
         `${exercise?.name ?? block.exerciseId} needs ${missing.join(' and ')}, so ${sub.name.toLowerCase()} is used instead.`,
       )
+      about.push(substitute.id)
     } else {
       notes.push(`${exercise?.name ?? block.exerciseId} was left out — it needs ${missing.join(' and ')}.`)
+      about.push(undefined)
     }
   }
-  return { blocks: out, notes }
+  return { blocks: out, notes, about }
 }
 
 /**
- * Trim a session to the athlete's time budget, sacrificing least-important
- * work first: accessory sets → whole accessory blocks → a main back-off set.
- * Warm-up, the key main work and the cooldown are never cut below minimums.
+ * The role a block plays, for blocks built before roles existed (templates,
+ * older drafts). Generated sessions always set it explicitly.
  */
-function fitToBudget(
+function roleOf(b: Block): BlockRole | undefined {
+  if (b.role) return b.role
+  if (b.section === 'main') return 'skill'
+  if (b.section === 'core') return 'core'
+  if (b.section === 'strength') return 'pressing'
+  return undefined
+}
+
+/**
+ * Trim a session to the athlete's time budget, giving up the least
+ * planche-specific work first.
+ *
+ * The order is the point. The skill holds are the most specific thing in the
+ * session and keep their sets longest. Behind them the strength work an
+ * athlete asked to see at every level — the push-up version of the step,
+ * pseudo planche push-ups, leans — keeps a minimum of two sets each before any
+ * of it is dropped, and generic core and mobility go first. The old trimmer
+ * worked by section, so at a thirty-minute budget it deleted the pressing
+ * work at almost every step while keeping a second core exercise.
+ *
+ * Warm-up and cooldown are never trimmed. Unilateral blocks lose sets in pairs
+ * so a side never goes untrained. Returns what was dropped so the session can
+ * say so instead of quietly being smaller.
+ */
+export function fitToBudget(
   blocks: Block[],
   budgetMin: number,
   preserveCorePair = false,
   calibratedStopLatencySec = 2.3,
   phoneWithinReach = false,
-): Block[] {
+): { blocks: Block[]; dropped: string[] } {
   const out = blocks.map((b) => ({ ...b }))
-  for (
-    let guard = 0;
-    guard < 40 && estimateMinutes(out, calibratedStopLatencySec, phoneWithinReach) > budgetMin;
-    guard++
-  ) {
-    let changed = false
-    // 1. Shave sets off strength/core blocks (from the back), floor 2.
-    //    Unilateral blocks come off in pairs so a side never goes untrained.
+  const dropped: string[] = []
+  const over = () => estimateMinutes(out, calibratedStopLatencySec, phoneWithinReach) > budgetMin
+  const stepOf = (b: Block) => (EXERCISE_BY_ID[b.exerciseId]?.perSide ? 2 : 1)
+  const isAccessory = (b: Block) => {
+    const role = roleOf(b)
+    return (
+      role === 'backoff' ||
+      role === 'assisted' ||
+      role === 'balance' ||
+      role === 'press' ||
+      role === 'pressing' ||
+      role === 'straight-arm' ||
+      role === 'core'
+    )
+  }
+  /** Remove the last block matching, newest-first so earlier work survives. */
+  const dropLast = (match: (b: Block) => boolean): boolean => {
+    for (let i = out.length - 1; i >= 0; i--) {
+      if (!match(out[i])) continue
+      dropped.push(out[i].exerciseId)
+      out.splice(i, 1)
+      return true
+    }
+    return false
+  }
+  /** Take a set off the last block matching, down to `floor`. */
+  const shaveLast = (match: (b: Block) => boolean, floor: number): boolean => {
     for (let i = out.length - 1; i >= 0; i--) {
       const b = out[i]
-      const stepSize = EXERCISE_BY_ID[b.exerciseId]?.perSide ? 2 : 1
-      if ((b.section === 'strength' || b.section === 'core') && b.sets - stepSize >= 2) {
-        b.sets -= stepSize
-        changed = true
-        break
+      if (match(b) && b.sets - stepOf(b) >= floor) {
+        b.sets -= stepOf(b)
+        return true
       }
     }
-    if (changed) continue
-    // 2. Drop the last strength block while more than one remains.
-    const strengthIdx = out.map((b, i) => (b.section === 'strength' ? i : -1)).filter((i) => i >= 0)
-    if (strengthIdx.length > 1) {
-      out.splice(strengthIdx[strengthIdx.length - 1], 1)
-      continue
-    }
-    // A remaining generic strength block is supporting work, not more
-    // important than the two separate core blocks the coach explicitly chose
-    // for a measured body-line limiter.
-    const coreCount = out.filter((b) => b.section === 'core').length
-    if (preserveCorePair && strengthIdx.length === 1 && coreCount > 1) {
-      out.splice(strengthIdx[0], 1)
-      continue
-    }
-    if (preserveCorePair && coreCount > 1) {
-      const main = out.find((b) => {
-        const stepSize = EXERCISE_BY_ID[b.exerciseId]?.perSide ? 2 : 1
-        return b.section === 'main' && b.sets - stepSize >= 3
-      })
-      if (main) {
-        main.sets -= EXERCISE_BY_ID[main.exerciseId]?.perSide ? 2 : 1
-        continue
-      }
-      const optionalGoalMobility = out.findIndex(
-        (b) => b.exerciseId === 'pancake-stretch' && b.note?.includes('goal'),
-      )
-      if (optionalGoalMobility >= 0) {
-        out.splice(optionalGoalMobility, 1)
-        continue
-      }
-    }
-    // 3. Drop a core block while more than one remains.
-    const coreIdx = out.map((b, i) => (b.section === 'core' ? i : -1)).filter((i) => i >= 0)
-    if (coreIdx.length > (preserveCorePair ? 2 : 1)) {
-      out.splice(coreIdx[coreIdx.length - 1], 1)
-      continue
-    }
-    // 4. The final supporting block is still less important than the key
-    //    planche dose. Drop it before cutting the work the strategy selected.
-    const lastStrength = out.findIndex((b) => b.section === 'strength')
-    if (lastStrength >= 0) {
-      out.splice(lastStrength, 1)
-      continue
-    }
-    // 5. Reduce main sets, floor 3 (again in pairs for unilateral work).
-    const main = out.find((b) => {
-      const stepSize = EXERCISE_BY_ID[b.exerciseId]?.perSide ? 2 : 1
-      return b.section === 'main' && b.sets - stepSize >= 3
-    })
-    if (main) {
-      main.sets -= EXERCISE_BY_ID[main.exerciseId]?.perSide ? 2 : 1
-      continue
-    }
-    break
+    return false
   }
-  return out
+  const coreProtected = (b: Block) => preserveCorePair && roleOf(b) === 'core' && b.emphasis === true
+  const steps: (() => boolean)[] = [
+    // 1. Optional goal mobility and the second compression hold.
+    () => dropLast((b) => roleOf(b) === 'mobility' && b.section !== 'warmup' && Boolean(b.note?.includes('goal'))),
+    () => dropLast((b) => b.exerciseId === 'l-sit' && !b.emphasis),
+    // 2. Sets before blocks: core first, then accessories, each to two.
+    () => shaveLast((b) => roleOf(b) === 'core' && !coreProtected(b), 2),
+    () => shaveLast((b) => isAccessory(b) && roleOf(b) !== 'core' && !b.emphasis, 2),
+    // 3. Whole blocks, least specific first.
+    () => dropLast((b) => roleOf(b) === 'backoff'),
+    () => dropLast((b) => roleOf(b) === 'balance' && !b.emphasis),
+    () => dropLast((b) => roleOf(b) === 'core' && !b.emphasis),
+    () => dropLast((b) => roleOf(b) === 'straight-arm' && !b.emphasis),
+    () => dropLast((b) => roleOf(b) === 'pressing' && !b.emphasis),
+    () => dropLast((b) => roleOf(b) === 'assisted'),
+    () => dropLast((b) => roleOf(b) === 'press' && !b.emphasis),
+    // 4. The coach's limiter work, the bridge drill, the next-shape attempts,
+    //    then — last of all — main sets, floor 3.
+    () => shaveLast((b) => Boolean(b.emphasis) && isAccessory(b), 2),
+    () => dropLast((b) => Boolean(b.emphasis) && isAccessory(b) && !coreProtected(b)),
+    () => dropLast((b) => roleOf(b) === 'bridge' && b.section !== 'main'),
+    () => shaveLast((b) => roleOf(b) === 'bridge' && b.section === 'main', 2),
+    () => dropLast((b) => roleOf(b) === 'bridge'),
+    () => shaveLast((b) => b.section === 'main' && roleOf(b) !== 'attempt' && roleOf(b) !== 'bridge', 3),
+  ]
+  for (let guard = 0; guard < 80 && over(); guard++) {
+    if (!steps.some((step) => step())) break
+  }
+  return { blocks: out, dropped }
 }
 
 /**
@@ -691,13 +846,101 @@ export function restrictTemplate(workout: Workout, plan: CoachPlan): Workout {
 }
 
 /**
+ * Main-hold sets for a working target, before the plan's volume factor.
+ *
+ * A hold dose is the time practised, not the number of sets: four sets of two
+ * seconds is eight seconds of practice, four of eight is thirty-two. A fixed
+ * four sets therefore handed a beginner with a two-second tuck a quarter of an
+ * intermediate's practice. Short targets get more sets instead — the common
+ * coaching pattern of many short, fresh, clean attempts when a position can
+ * only be held briefly. A convention, not a measured dose-response, and the
+ * strategy's own set delta still shapes it either way.
+ */
+export function mainHoldSets(
+  targetSec: number,
+  setsDelta: number,
+  volumeFactor: number,
+  unlockQueued = false,
+): number {
+  const base = targetSec <= 2 ? 6 : targetSec <= 4 ? 5 : 4
+  return clamp(Math.max(1, Math.round(((unlockQueued ? base - 1 : base) + setsDelta) * volumeFactor)), 2, 8)
+}
+
+/**
+ * Rest after a main hold, scaled to how long the hold is.
+ *
+ * The planned rest suits a hold of ten seconds or more. A three-second hold is
+ * a far smaller effort, and two and a half minutes after each one made a
+ * beginner's session — the athlete with the shortest holds and the most to
+ * gain from showing up again — the longest and slowest in the app. Short holds
+ * keep at least ninety seconds. A design choice, not a measured recovery time;
+ * the short-rest strategy still tests shorter rests on its own.
+ */
+export function restAfterHold(restMainSec: number, targetSec: number): number {
+  const factor = targetSec <= 5 ? 0.8 : targetSec < 10 ? 0.9 : 1
+  return Math.max(Math.min(90, restMainSec), Math.round((restMainSec * factor) / 5) * 5)
+}
+
+/** Default reps for a press when nothing is logged yet: a few, done well. */
+const PRESS_DEFAULT_REPS: Record<string, number> = {
+  'knee-pushup': 8,
+  pushup: 8,
+  pppu: 6,
+  'tuck-planche-pushup': 3,
+  'adv-tuck-planche-pushup': 3,
+  'straddle-planche-pushup': 2,
+  'full-planche-pushup': 1,
+}
+
+const PLANCHE_PRESS = new Set([
+  'tuck-planche-pushup',
+  'adv-tuck-planche-pushup',
+  'straddle-planche-pushup',
+  'full-planche-pushup',
+])
+
+/** Step down the pressing ladder until the athlete owns the kit for it. */
+function pressWithinKit(exerciseId: string, equipment: EquipmentId[]): string {
+  let at = PRESS_LADDER.indexOf(exerciseId)
+  let id = exerciseId
+  while (at > 0 && !hasEquipmentFor(id, equipment)) {
+    at -= 1
+    id = PRESS_LADDER[at]
+  }
+  return id
+}
+
+/** How a lean reads as an accessory at each stage of the road. */
+function leanAccessoryNote(stepId: StepId): string {
+  if (stepId === 'frog' || stepId === 'tuck') {
+    return 'Straight-arm strength work — lean farther with locked elbows instead of chasing a longer stopwatch. Keep the same hand and foot position every set so the sets compare.'
+  }
+  return 'Straight-arm conditioning at a deep lean — shoulders well past the fingertips, elbows locked, the lean you can return from under control. It keeps feeding the position after the main work, at a load you can repeat.'
+}
+
+/**
  * The recommended session, assembled from the coach's plan for today.
+ *
+ * Every level gets the same shape, because the user-facing promise is a
+ * complete planche session at every step rather than a key hold with whatever
+ * survives the clock:
+ *
+ * 1. warm-up;
+ * 2. the step's key hold (with an unlock attempt first when one is earned);
+ * 3. the push-up version of the step — tuck planche push-ups at Tuck, and so
+ *    on — pressed one step behind until the hold is solid enough to press in;
+ * 4. pseudo planche push-ups (or pike push-ups when the press already is one);
+ * 5. planche leans as straight-arm work, at every level from the frog stand up;
+ * 6. core, then cooldown.
+ *
+ * The coach's measured limiter adds or reshapes accessory work, the strategy
+ * shapes the dose, and easy days drop the loaded accessories. A short time
+ * budget trims generic work first (see `fitToBudget`) and says what it cut.
  *
  * @param minutesOverride a smaller time budget for today only. The realistic
  * alternative to "I have twenty minutes" is skipping entirely, and a skipped
  * session teaches the coach nothing — so re-scoping today beats re-planning
- * the week. The trimming order in `fitToBudget` already protects the warm-up,
- * the key main work and the cooldown, so a short session is a real session.
+ * the week.
  */
 export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverride?: number): Workout {
   const stepId = state.stepId
@@ -706,12 +949,14 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   if (plan.loadPermission === 'none') {
     return painSafeRecoveryWorkout(plan.signals.lastCheckIn?.regions ?? [])
   }
+  const now = Date.now()
   const rMain = plan.restMainSec
   const rAcc = plan.restAccessorySec
   const vol = plan.volumeFactor
   const scale = (n: number) => Math.max(1, Math.round(n * vol))
   const blocks: Block[] = []
   const adjustments: string[] = []
+  const equipment = state.profile.equipment
 
   // An extended warm-up is a coach safety rail and cannot be disabled by the
   // convenience preference.
@@ -719,18 +964,20 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
 
   // Fresh and within reach → attempt the unlock while at your best. The plan
   // only sets this when today's challenge permission allows it.
-  if (plan.queueUnlockAttempt && plan.challengeAllowed) {
+  const attemptQueued = plan.queueUnlockAttempt && plan.challengeAllowed
+  if (attemptQueued) {
     blocks.push({
       exerciseId: step.keyExerciseId,
       sets: 1,
       target: hold(step.unlockSec),
       restSec: 180,
       section: 'main',
+      role: 'attempt',
       note: `Unlock attempt — you're within reach. Hold ${step.unlockSec}s clean, film it, and pass both form confirmations. Stop the moment the shape goes; a stopped attempt is still useful.`,
     })
   }
 
-  // Main isometrics, shaped by the strategy the coach measured.
+  // ——— 2. The key hold ———
   //
   // The floor is one second, not three. A three-second floor silently raised a
   // capacity-capped one-second target back above what the athlete had shown,
@@ -740,7 +987,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   const capacity = observedCapacity(state, stepId)
   let target = clamp(Math.round(baseTarget * plan.targetFactor), 1, step.unlockSec)
   if (capacity !== undefined) target = Math.min(target, Math.max(1, Math.floor(capacity)))
-  const surface = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
+  const surface = defaultSurface(equipment, state.profile.preferredSurface)
   const transferred = plan.signals.keySeriesTransferred
   const strategyNote =
     plan.strategy === 'technique'
@@ -763,29 +1010,126 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   const transferNote = transferred
     ? ` No ${surface} holds are logged yet, so this target comes conservatively from your other surface — expect the first sets to tell you more.`
     : ''
+  const easyDay = plan.strategy === 'technique' || plan.dayType === 'technique' || plan.dayType === 'deload'
+  // ——— The bridge to the next step ———
+  //
+  // Once the current hold is halfway to its bar, the next shape is practised
+  // directly: a few short attempts first, while fresh, then the drill that
+  // teaches the change between the two shapes. Only on a day that allows a
+  // maximal effort (it is one), never beside an unlock attempt (one maximal
+  // focus per day), never on an easy day. Logged as main work on the next
+  // step's own exercise, so it is filmed, judged by the camera, and — held
+  // clean at its opening dose — opens the next step early (lib/bridge).
+  const bridge = bridgeStatus(state, stepId)
+  const bridging = Boolean(bridge?.open) && !easyDay && plan.challengeAllowed && !attemptQueued
+  if (bridging && bridge) {
+    const next = bridge.next
+    const nextEx = EXERCISE_BY_ID[next.keyExerciseId]
+    const shown = capacityOn(state, next.id)
+    const balance = next.keyExerciseId === 'frog-stand'
+    // Short attempts sized from what the athlete has shown on the next shape;
+    // with nothing shown, about 40% of its opening dose — two seconds of a
+    // tuck, five of a lean. A balance skill gets longer practice.
+    const opening = Math.max(2, Math.round(next.startSec * 0.4))
+    const bridgeTarget = balance
+      ? clamp(shown !== undefined ? Math.round(shown * 0.7) : 10, 5, 20)
+      : clamp(shown !== undefined ? Math.round(shown * 0.7) : opening, 1, next.startSec)
+    blocks.push({
+      exerciseId: next.keyExerciseId,
+      sets: nextEx.perSide ? 2 : 3,
+      target: hold(bridgeTarget),
+      // Brief maximal attempts: full recovery between them, but a two-second
+      // hold does not need the rest a twenty-second one does.
+      restSec: balance ? rAcc : restAfterHold(Math.max(rMain, 120), bridgeTarget),
+      section: 'main',
+      role: 'bridge',
+      note: balance
+        ? `Next shape: ${nextEx.name.toLowerCase()} practice, first while you are fresh. Balance comes from the fingertips — lean until the feet get light rather than jumping. Film one and review it against the checklist: ${next.startSec}s reviewed opens the step early once your lean reaches ${Math.round(bridge.promotionCurrentSec)}s.`
+        : `Next shape, first while you are fresh: short, fresh attempts at the ${nextEx.name.toLowerCase()} — stop at the first loss of shape; a one-second clean hold beats five ugly ones. Held clean on camera for ${next.startSec}s${nextEx.perSide ? ' each side' : ''}, it opens the step early once your ${step.name.toLowerCase()} is verified past ${Math.round(bridge.promotionCurrentSec)}s.`,
+    })
+  }
+
+  // A per-side hold is two rounds a set, so it starts a set lighter: one-leg
+  // sessions otherwise spent their whole budget on the key hold and every
+  // accessory was trimmed away.
+  const mainSets = Math.max(
+    2,
+    mainHoldSets(target, plan.setsDelta, vol, attemptQueued || bridging) -
+      (EXERCISE_BY_ID[step.keyExerciseId]?.perSide ? 1 : 0),
+  )
+  // While bridging, the main holds lean toward the next shape too: the change
+  // between two steps is a dial, not a switch.
+  const lockoutCue =
+    plan.accessoryEmphasis === 'lockout'
+      ? ' Lock the elbows before the feet leave the floor; the moment they soften, the set is over.'
+      : ''
+  const bridgeCue = !bridging
+    ? ''
+    : stepId === 'tuck'
+      ? ' Bridge open: hold each tuck with the back a little flatter than last week — the hip meter on Home tracks the opening.'
+      : stepId === 'straddle'
+        ? ' Bridge open: narrow the legs a few degrees at a time, keeping the line level.'
+        : stepId === 'advtuck'
+          ? ' Bridge open: keep the back flat while you lean a little further each week — the one-leg shape needs both.'
+          : ''
   blocks.push({
     exerciseId: step.keyExerciseId,
-    sets: clamp(scale((plan.queueUnlockAttempt && plan.challengeAllowed ? 3 : 4) + plan.setsDelta), 2, 8),
+    sets: mainSets,
     target: hold(target),
-    restSec: rMain,
+    restSec: restAfterHold(rMain, target),
     section: 'main',
-    note: `${strategyNote}${shortNote}${placementNote}${transferNote}`,
+    role: 'skill',
+    note: `${strategyNote}${lockoutCue}${shortNote}${placementNote}${transferNote}${bridgeCue}`,
   })
+
+  const easy = easyDay
+
+  // The transition drill comes after the key holds, so the main volume is
+  // practised fresh and the drill still lands while the arms are warm.
+  if (bridging && stepId === 'tuck') {
+    blocks.push({
+      exerciseId: 'tuck-open-close',
+      sets: 2,
+      target: reps(3),
+      restSec: rAcc,
+      section: 'strength',
+      role: 'bridge',
+      note: 'The transition itself: from your tuck, open a little toward the flat back and return. Small range, locked arms, controlled landing.',
+    })
+  }
+
+  // Band-assisted straddle: the full shape rehearsed with help, long before it
+  // can be held free. At the straddle, and from the one-leg step once its
+  // bridge opens; only with the kit to anchor it.
+  if (
+    (stepId === 'straddle' || (stepId === 'oneleg' && bridging)) &&
+    hasEquipmentFor('band-straddle-planche', equipment) &&
+    plan.strategy !== 'intensity'
+  ) {
+    blocks.push({
+      exerciseId: 'band-straddle-planche',
+      sets: easy ? 2 : 3,
+      target: hold(10),
+      restSec: rAcc,
+      section: 'strength',
+      role: 'assisted',
+      note: 'Assisted practice in the real shape — same form rules as the free hold, same band and anchor every time so sessions compare. Never counts toward the unassisted unlock.',
+    })
+  }
 
   // Balanced and volume sessions keep an owned position in the session;
   // intensity protects freshness, while density protects the short-rest
-  // identity. Tuck deliberately uses loaded leans below instead of Frog Stand
-  // as its back-off — the exported history showed that generic previous-step
-  // rule was making nearly every Tuck session look the same without adding
-  // useful straight-arm capacity.
+  // identity. Tuck uses loaded leans below instead of Frog Stand as its
+  // back-off — the exported history showed that generic previous-step rule was
+  // making nearly every Tuck session look the same without adding useful
+  // straight-arm capacity.
   const prev = stepBefore(stepId)
   if (
     prev &&
-    prev.order >= 0 &&
     stepId !== 'tuck' &&
+    stepId !== 'frog' &&
     (plan.strategy === 'balanced' || plan.strategy === 'volume') &&
-    plan.dayType !== 'technique' &&
-    plan.dayType !== 'deload'
+    !easy
   ) {
     blocks.push({
       exerciseId: prev.keyExerciseId,
@@ -793,6 +1137,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
       target: hold(clamp(Math.round(prev.unlockSec * 0.6), 5, prev.unlockSec)),
       restSec: rAcc,
       section: 'strength',
+      role: 'backoff',
       note:
         plan.strategy === 'volume'
           ? 'Capacity work on a position you already own — clean accumulation, not a second max effort.'
@@ -800,57 +1145,204 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     })
   }
 
-  const easy = plan.strategy === 'technique' || plan.dayType === 'technique' || plan.dayType === 'deload'
-
-  // Leans remain strength work when an athlete first earns Tuck, then taper
-  // to maintenance at Advanced Tuck. Longer-lever steps keep only the warm-up
-  // primer above so their best energy still goes to the specific progression.
-  const leanStrength: Block | null =
-    !easy && (stepId === 'tuck' || stepId === 'advtuck')
-      ? {
-          exerciseId: 'planche-lean',
-          sets:
-            stepId === 'tuck'
-              ? plan.strategy === 'volume'
-                ? clamp(scale(4), 3, 5)
-                : plan.strategy === 'density'
-                  ? 0
-                  : plan.strategy === 'intensity'
-                    ? 2
-                    : clamp(scale(3), 3, 4)
-              : plan.strategy === 'density'
-                ? 0
-                : 2,
-          target: hold(stepId === 'tuck' ? 12 : 10),
-          restSec: rAcc,
-          section: 'strength',
-          note:
-            stepId === 'tuck'
-              ? 'Straight-arm strength work — lean farther with locked elbows instead of chasing a longer stopwatch. Keep the same hand and foot position every set so the sets compare.'
-              : 'Maintenance volume — keep the lean sharp, but save your best strength for Advanced Tuck.',
-        }
-      : null
-
-  // With no measured limiter, this is the first accessory and survives before
-  // generic pressing work when a short time budget needs trimming.
-  if (leanStrength && leanStrength.sets > 0 && plan.accessoryEmphasis === 'none') {
-    blocks.push(leanStrength)
-  }
-
-  // Accessories: the coach decides what is actually limiting you.
-  if (plan.accessoryEmphasis === 'scapula') {
+  // ——— Easy days: practise, do not load ———
+  if (easy) {
     blocks.push(
       {
+        exerciseId: 'frog-stand',
+        sets: 2,
+        target: hold(15),
+        restSec: rAcc,
+        section: 'strength',
+        role: 'balance',
+        note: 'Balance practice — a lower-load skill drill, though not a free one for wrists.',
+      },
+      {
         exerciseId: 'scap-pushup',
-        sets: scale(4),
+        sets: 2,
+        target: reps(8),
+        restSec: Math.min(60, rAcc),
+        section: 'strength',
+        role: 'straight-arm',
+        note: 'Light protraction practice — crisp reps, nowhere near failure. No loaded pressing or lean volume today.',
+      },
+    )
+  } else {
+    // ——— 3. The push-up version of the step ———
+    const choice = pressingChoiceFor(stepId, capacity)
+    // A day with a joint complaint keeps its pressing but not the hardest of
+    // it: a planche push-up is a maximal, deep-wrist press, so it steps down
+    // to the pseudo planche push-up until the complaint is updated.
+    const easedForJoints = plan.loadPermission === 'reduced' && PLANCHE_PRESS.has(choice.exerciseId)
+    const pressId = easedForJoints ? 'pppu' : pressWithinKit(choice.exerciseId, equipment)
+    const pressKitNote = easedForJoints
+      ? ` ${EXERCISE_BY_ID[choice.exerciseId].name} is set aside today for the joint you flagged — stop any set that makes it worse.`
+      : pressId !== choice.exerciseId
+        ? ` ${EXERCISE_BY_ID[choice.exerciseId].name} needs parallettes, so this is the closest press your kit allows.`
+        : ''
+    const planchePress = PLANCHE_PRESS.has(pressId)
+    const pressSets =
+      plan.strategy === 'volume' ? 4 : plan.strategy === 'intensity' || plan.strategy === 'density' ? 3 : 3
+    const pressDefault = PRESS_DEFAULT_REPS[pressId] ?? 5
+    const pressTargetReps =
+      plan.strategy === 'intensity' ? Math.max(1, pressDefault - (planchePress ? 1 : 2)) : pressDefault
+    blocks.push({
+      exerciseId: pressId,
+      sets: scale(pressSets + (plan.accessoryEmphasis === 'pressing' ? 1 : 0)),
+      target: reps(pressTargetReps),
+      restSec: planchePress || plan.strategy === 'intensity' ? Math.max(rAcc, Math.round(rMain * 0.8)) : plan.strategy === 'density' ? Math.min(60, rAcc) : rAcc,
+      section: 'strength',
+      role: 'press',
+      ...(plan.accessoryEmphasis === 'pressing' ? { emphasis: true } : {}),
+      note: `Push-up version of this step. ${choice.reason}${pressKitNote}${
+        planchePress
+          ? ' Can’t press back up yet? Lower slowly over about three seconds, step out, reset at the top — log the reps you completed.'
+          : ''
+      }`,
+    })
+
+    // ——— 4. Pressing accessory ———
+    // Pseudo planche push-ups after the planche press; when the press already
+    // is the pseudo planche push-up (or a plain push-up at Foundations), a
+    // different pressing angle instead of the same exercise twice. Intensity
+    // keeps one press and stops, for freshness; density keeps one press so the
+    // session stays compact.
+    if ((plan.strategy !== 'intensity' && plan.strategy !== 'density') || plan.accessoryEmphasis === 'pressing') {
+      const accessoryId = pressId === 'pppu' ? 'pike-pushup' : 'pppu'
+      blocks.push({
+        exerciseId: accessoryId,
+        sets: scale(plan.strategy === 'volume' ? 3 : plan.strategy === 'density' ? 2 : 3),
+        target: reps(accessoryId === 'pike-pushup' ? 8 : 6),
+        restSec: plan.strategy === 'density' ? Math.min(45, rAcc) : rAcc,
+        section: 'strength',
+        role: 'pressing',
+        ...(plan.accessoryEmphasis === 'pressing' ? { emphasis: true } : {}),
+        note:
+          accessoryId === 'pppu'
+            ? 'Bent-arm pressing in the lean — the same lean every rep, shoulders past the hands at the top and the bottom.'
+            : accessoryId === 'pike-pushup'
+              ? 'A second pressing angle — overhead-leaning strength that supports the press above.'
+              : undefined,
+      })
+    }
+
+    // ——— 5. Straight-arm accessory ———
+    // Leans at every level from the frog stand up. At Foundations and the
+    // lean itself the main work already is a lean, so protraction strength
+    // takes the slot instead.
+    const scapulaLimiter = plan.accessoryEmphasis === 'scapula'
+    if (step.order <= STEP_BY_ID.lean.order || scapulaLimiter) {
+      blocks.push({
+        exerciseId: 'scap-pushup',
+        sets: scale(scapulaLimiter ? 4 : 3),
+        target: reps(10),
+        restSec: plan.strategy === 'density' ? Math.min(45, rAcc) : rAcc,
+        section: 'strength',
+        role: 'straight-arm',
+        ...(scapulaLimiter ? { emphasis: true } : {}),
+        note: scapulaLimiter
+          ? 'Scapular control is the limiter — finish every rep by pushing the floor fully away.'
+          : 'Protraction strength — the push-away every straight-arm hold depends on. Finish each rep with the upper back gently rounded.',
+      })
+    }
+    if (step.order >= STEP_BY_ID.frog.order && stepId === 'advtuck' && bridging) {
+      // Bridging to the one-leg: the lean with one foot lifted trains the
+      // square hips the next shape needs, and shows any side difference.
+      blocks.push({
+        exerciseId: 'one-leg-lean',
+        sets: scale(2),
+        target: hold(8),
+        restSec: rAcc,
+        section: 'strength',
+        role: 'straight-arm',
+        note: 'Bridge to the one-leg: a deep lean with one foot lifted, hips square. Same time each side; the weaker side goes first.',
+      })
+    } else if (step.order >= STEP_BY_ID.frog.order) {
+      const lockout = plan.accessoryEmphasis === 'lockout'
+      blocks.push({
+        exerciseId: 'planche-lean',
+        sets: scale(
+          (plan.strategy === 'intensity' || plan.strategy === 'density' ? 2 : plan.strategy === 'volume' && stepId === 'tuck' ? 4 : 3) +
+            (lockout ? 1 : 0),
+        ),
+        target: hold(stepId === 'frog' || stepId === 'tuck' ? 12 : 10),
+        restSec: plan.strategy === 'density' ? Math.min(45, rAcc) : rAcc,
+        section: 'strength',
+        role: 'straight-arm',
+        ...(lockout ? { emphasis: true } : {}),
+        note: lockout
+          ? 'Lockout practice — your camera keeps seeing soft elbows. Lock first, then lean: find the deepest lean your elbows stay fully locked in and hold there. Squeeze the triceps; a shallower locked lean beats a deep bent one.'
+          : leanAccessoryNote(stepId),
+      })
+    }
+
+    // The coach's other measured limiters.
+    if (plan.accessoryEmphasis === 'balance' && stepId !== 'frog') {
+      blocks.splice(blocks.findIndex((b) => b.role === 'skill') + 1, 0, {
+        exerciseId: 'frog-stand',
+        sets: scale(3),
+        target: hold(20),
+        restSec: rAcc,
+        section: 'strength',
+        role: 'balance',
+        emphasis: true,
+        note: 'Balance practice gets the extra time today.',
+      })
+    }
+    if (plan.accessoryEmphasis === 'pressing' && pressId !== 'pppu') {
+      // Already has a second press; pike push-ups add the overhead angle.
+      blocks.push({
+        exerciseId: 'pike-pushup',
+        sets: scale(3),
+        target: reps(8),
+        restSec: rAcc,
+        section: 'strength',
+        role: 'pressing',
+        emphasis: true,
+        note: 'Extra bent-arm pressing — a supporting option for a stalled hold, not a guaranteed fix.',
+      })
+    }
+    if (plan.strategy === 'volume' && step.order > STEP_BY_ID.lean.order && !scapulaLimiter) {
+      blocks.push({
+        exerciseId: 'scap-pushup',
+        sets: scale(3),
         target: reps(10),
         restSec: rAcc,
         section: 'strength',
-        note: 'Scapular control is the limiter — finish every rep by pushing the floor fully away.',
-      },
-      { exerciseId: 'pppu', sets: scale(2), target: reps(6), restSec: rAcc, section: 'strength' },
-    )
-  } else if (plan.accessoryEmphasis === 'core') {
+        role: 'straight-arm',
+        note: 'Capacity support — repeat crisp protraction without turning the session into another max-strength day.',
+      })
+    }
+  }
+
+  // ——— 6. Core ———
+  // Transition-specific trunk work while bridging: the flat back of the
+  // advanced tuck is held by the posterior chain, and the straddle's straight,
+  // raised legs by compression.
+  if (bridging && plan.accessoryEmphasis !== 'core') {
+    if (stepId === 'tuck') {
+      blocks.push({
+        exerciseId: 'arch-hold',
+        sets: 2,
+        target: hold(20),
+        restSec: 45,
+        section: 'core',
+        role: 'core',
+        note: 'For the flat back the advanced tuck needs: glutes and back extensors hold the line the tuck never asked for.',
+      })
+    } else if (stepId === 'oneleg') {
+      blocks.push({
+        exerciseId: 'leg-lifts',
+        sets: 2,
+        target: reps(8),
+        restSec: 45,
+        section: 'core',
+        role: 'core',
+        note: 'Compression for the straddle: straight legs that lift and stay lifted.',
+      })
+    }
+  }
+  if (plan.accessoryEmphasis === 'core') {
     blocks.push(
       {
         exerciseId: 'hollow-hold',
@@ -858,100 +1350,25 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
         target: hold(25),
         restSec: 60,
         section: 'core',
+        role: 'core',
+        emphasis: true,
         note: 'Body line is the limiter — lock ribs, pelvis and legs into one unit.',
       },
-      { exerciseId: 'arch-hold', sets: scale(3), target: hold(20), restSec: 60, section: 'core' },
+      { exerciseId: 'arch-hold', sets: scale(3), target: hold(20), restSec: 60, section: 'core', role: 'core', emphasis: true },
     )
-  } else if (plan.accessoryEmphasis === 'balance') {
-    blocks.push(
-      { exerciseId: 'frog-stand', sets: scale(3), target: hold(20), restSec: rAcc, section: 'strength', note: 'Balance practice gets the extra time today.' },
-      { exerciseId: 'pppu', sets: scale(2), target: reps(6), restSec: rAcc, section: 'strength' },
-    )
-  } else if (plan.accessoryEmphasis === 'pressing') {
-    blocks.push(
-      { exerciseId: 'pppu', sets: scale(4), target: reps(6), restSec: rAcc, section: 'strength', note: 'Extra bent-arm pressing — a supporting option for a stalled hold, not a guaranteed fix.' },
-      { exerciseId: 'pike-pushup', sets: scale(3), target: reps(8), restSec: rAcc, section: 'strength' },
-    )
-  } else if (easy) {
-    blocks.push({
-      exerciseId: 'frog-stand',
-      sets: 2,
-      target: hold(15),
-      restSec: rAcc,
-      section: 'strength',
-      note: 'Balance practice — a lower-load skill drill, though not a free one for wrists.',
-    })
-  } else if (plan.strategy === 'volume') {
-    blocks.push({
-      exerciseId: 'scap-pushup',
-      sets: scale(3),
-      target: reps(10),
-      restSec: rAcc,
-      section: 'strength',
-      note: 'Capacity support — repeat crisp protraction without turning the session into another max-strength day.',
-    })
-  } else if (plan.strategy === 'intensity') {
-    blocks.push({
-      exerciseId: 'pppu',
-      sets: 2,
-      target: reps(step.order <= 2 ? 5 : 6),
-      restSec: rMain,
-      section: 'strength',
-      note: 'One specific strength accessory, then stop — freshness is part of the high-intensity dose.',
-    })
   } else if (plan.strategy === 'density') {
-    blocks.push(
-      {
-        exerciseId: 'scap-pushup',
-        sets: 3,
-        target: reps(8),
-        restSec: Math.min(45, rAcc),
-        section: 'strength',
-        note: 'Fast, clean support work. The session stays dense by limiting exercise changes.',
-      },
-      {
-        exerciseId: 'hollow-rocks',
-        sets: 3,
-        target: reps(10),
-        restSec: Math.min(40, rAcc),
-        section: 'core',
-      },
-    )
-  } else if (step.order <= 2) {
-    blocks.push(
-      { exerciseId: 'pppu', sets: scale(3), target: reps(5), restSec: rAcc, section: 'strength' },
-      { exerciseId: 'pushup', sets: scale(2), target: reps(10), restSec: rAcc, section: 'strength' },
-    )
-  } else if (step.order <= 4) {
-    blocks.push(
-      { exerciseId: 'pppu', sets: scale(3), target: reps(6), restSec: rAcc, section: 'strength' },
-      { exerciseId: 'pike-pushup', sets: scale(2), target: reps(8), restSec: rAcc, section: 'strength' },
-    )
+    blocks.push({ exerciseId: 'hollow-rocks', sets: 3, target: reps(10), restSec: Math.min(40, rAcc), section: 'core', role: 'core' })
   } else {
-    blocks.push(
-      { exerciseId: 'tuck-planche-pushup', sets: scale(3), target: reps(4), restSec: rMain, section: 'strength' },
-      { exerciseId: 'pike-pushup', sets: scale(2), target: reps(8), restSec: rAcc, section: 'strength' },
-    )
-  }
-
-  // A personalized limiter takes priority in a tight session, so its blocks
-  // are inserted first and the supporting lean becomes the first thing cut.
-  if (leanStrength && leanStrength.sets > 0 && plan.accessoryEmphasis !== 'none') {
-    blocks.push(leanStrength)
-  }
-
-  if (plan.accessoryEmphasis !== 'core') {
-    if (plan.strategy !== 'density') {
-      blocks.push({
-        exerciseId: 'hollow-hold',
-        sets: plan.strategy === 'volume' ? scale(3) : scale(2),
-        target: hold(easy ? 20 : 30),
-        restSec: 45,
-        section: 'core',
-      })
-    }
-    if (step.order >= 3 && !easy && plan.strategy === 'balanced') {
-      blocks.push({ exerciseId: 'l-sit', sets: 2, target: hold(12), restSec: 60, section: 'core' })
+    blocks.push({
+      exerciseId: 'hollow-hold',
+      sets: plan.strategy === 'volume' ? scale(3) : scale(2),
+      target: hold(easy ? 20 : 30),
+      restSec: 45,
+      section: 'core',
+      role: 'core',
+    })
+    if (step.order >= STEP_BY_ID.tuck.order && !easy && plan.strategy === 'balanced') {
+      blocks.push({ exerciseId: 'l-sit', sets: 2, target: hold(12), restSec: 60, section: 'core', role: 'core' })
     }
   }
 
@@ -968,6 +1385,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
       target: hold(step.order >= 5 ? 40 : 30),
       restSec: 10,
       section: 'cooldown',
+      role: 'mobility',
       note:
         step.order < 5
           ? `${goal.name} goal — range now makes a wider straddle available later. Practice time, not a measure of straddle strength.`
@@ -976,21 +1394,47 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   }
 
   // Kit first (so a substitute is sized like everything else), then capacity.
-  const kit = resolveEquipment(blocks, state.profile.equipment)
-  const sized = capacityAdjustBlocks(state, kit.blocks)
-  adjustments.push(...kit.notes, ...sized.notes)
+  const kit = resolveEquipment(blocks, equipment)
+  const sized = capacityAdjustBlocks(state, kit.blocks, now)
 
   const baseBudget = easy ? Math.min(22, state.settings.sessionMinutes) : state.settings.sessionMinutes
   const budget = minutesOverride !== undefined ? Math.min(baseBudget, Math.max(8, minutesOverride)) : baseBudget
   // Sides are expanded before trimming, so the budget accounts for the fact
   // that unilateral work costs twice as long.
-  const fitted = fitToBudget(
+  const fit = fitToBudget(
     withSides(sized.blocks),
     budget,
     plan.accessoryEmphasis === 'core',
     state.settings.stopLatencySec,
     state.settings.phoneWithinReach,
   )
+  const fitted = fit.blocks
+
+  // Notes about blocks the budget then removed would describe a session the
+  // athlete is not getting — "pseudo planche push-ups set to 4 reps" above a
+  // list with no pseudo planche push-ups in it. Warm-up primers do not count
+  // as the block being present: an 8-second primer lean is not the lean work.
+  const present = new Set(fitted.filter((b) => b.section !== 'warmup').map((b) => b.exerciseId))
+  kit.notes.forEach((note, i) => {
+    const subject = kit.about[i]
+    if (subject === undefined || present.has(subject)) adjustments.push(note)
+  })
+  sized.notes.forEach((note, i) => {
+    if (present.has(sized.about[i])) adjustments.push(note)
+  })
+  const droppedNames = [...new Set(fit.dropped)]
+    .filter((id) => !present.has(id))
+    .map((id) => EXERCISE_BY_ID[id]?.name.toLowerCase())
+    .filter((name): name is string => Boolean(name))
+  if (droppedNames.length) {
+    adjustments.push(
+      `Left out to fit ${budget} minutes: ${joinWords(droppedNames)}. ${
+        minutesOverride !== undefined
+          ? 'They come back on a full-length day.'
+          : 'A longer session length in Settings keeps them.'
+      }`,
+    )
+  }
 
   // The *fitted* length, not the requested one. `fitToBudget` protects the
   // warm-up, the key main work and a floor of sets, so a session that is
@@ -1018,7 +1462,9 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     blocks: fitted,
     strategy: plan.strategy,
     baseTargetSec: baseTarget,
-    purpose: `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at a working dose, with supporting work around it.`,
+    purpose: easy
+      ? `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at an easy dose, with light skill work around it.`
+      : `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at a working dose, then build the pressing and straight-arm strength behind it.`,
     ...(adjustments.length ? { adjustments } : {}),
   }
 }

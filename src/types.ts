@@ -99,6 +99,19 @@ export interface AutoForm {
   cleanSeconds?: number
   /** Clean seconds divided by the athlete's credited hold. */
   cleanRatio?: number
+  /**
+   * Share of the requested moments across the hold in which the camera saw
+   * every criterion it judged (judge v4+). Below 0.6 the clean time is a
+   * training-dose estimate, not camera verification. Older readings omit it
+   * and stay as they were judged.
+   */
+  coverage?: number
+  /**
+   * Seconds at the end of the hold the recording never reached (a camera that
+   * stopped sending pictures). Clean time describes the filmed part only; this
+   * part is unknown, so it is never verified and never a breakdown.
+   */
+  unfilmedSec?: number
   elbowDeg?: number
   kneeDeg?: number
   hipAngleDeg?: number
@@ -108,8 +121,16 @@ export interface AutoForm {
   shrugRatio?: number
   /** Legacy pre-side-view camera field, kept so older logs still import. */
   asymmetry?: number
-  /** Keypoint jitter across frames — high means the hold was shaky. */
+  /**
+   * Picture-frame drift speed from judge v1–3. It mixed camera movement into
+   * the athlete's, so it is kept for old readings only and no longer written.
+   */
   wobble?: number
+  /**
+   * Spread of shoulder and hip positions measured against the planted hand,
+   * over torso length (judge v4+). Movement, not its cause.
+   */
+  drift?: number
   /**
    * Criteria the camera could not see well enough to grade. The rest of the
    * verdict still stands; these were simply not checked.
@@ -297,6 +318,25 @@ export type BlockTarget = { kind: 'hold'; sec: number } | { kind: 'reps'; reps: 
 
 export type Section = 'warmup' | 'main' | 'strength' | 'core' | 'cooldown'
 
+/**
+ * What a block is *for* inside a generated session. The section says where it
+ * sits; the role says why it is there — which is what decides what a short
+ * session gives up first, and what the preview calls it. Absent on templates
+ * and on workouts saved before roles existed.
+ */
+export type BlockRole =
+  | 'attempt'
+  | 'bridge'
+  | 'skill'
+  | 'backoff'
+  | 'assisted'
+  | 'balance'
+  | 'press'
+  | 'pressing'
+  | 'straight-arm'
+  | 'core'
+  | 'mobility'
+
 export interface Block {
   exerciseId: string
   sets: number
@@ -304,6 +344,12 @@ export interface Block {
   restSec: number
   section: Section
   note?: string
+  role?: BlockRole
+  /**
+   * Chosen by the coach for a measured limiter. A short session keeps it
+   * longer than the default accessories it would otherwise be trimmed with.
+   */
+  emphasis?: boolean
 }
 
 /**
@@ -472,6 +518,11 @@ export interface Settings {
   /** Run the form check on each clip automatically once the model is cached. */
   autoAnalyze: boolean
   /**
+   * Beta: speak "lock your elbows" during a filmed hold when the live camera
+   * sees a sustained bend. Off by default — it runs the model while recording.
+   */
+  liveCues?: boolean
+  /**
    * Seconds between actually coming out of a hold and the stop button being
    * pressed. Used for regular timed holds; main Path holds have a dedicated
    * longer allowance unless `phoneWithinReach` says otherwise.
@@ -569,4 +620,9 @@ export interface SessionEvents {
   prs: { exerciseId: string; value: number; previous?: number; surface?: TrainingSurface }[]
   achievements: string[]
   unlockedStep?: StepId
+  /**
+   * How the step opened: its bar was met, or the next shape's opening dose
+   * was shown with full evidence while the current hold was past half its bar.
+   */
+  unlockedVia?: 'bar' | 'next-shape'
 }

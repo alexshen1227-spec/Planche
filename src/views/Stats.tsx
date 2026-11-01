@@ -35,6 +35,8 @@ import { pushToast } from '../lib/toast'
 import type { TrainingSurface } from '../types'
 import { surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 import { ASSIST_LABEL } from '../components/SetupRow'
+import { PRESS_LADDER, PUSHUP_VERSION, pressingChoiceFor } from '../data/pressing'
+import { capacityOn } from '../lib/bridge'
 import { END_REASON_LABEL } from '../components/AttemptEnd'
 
 /**
@@ -46,6 +48,61 @@ import { END_REASON_LABEL } from '../components/AttemptEnd'
  * the camera said it could not see that criterion — so the coverage line
  * ("seen in 4 of 11") is part of the answer, not a footnote.
  */
+/**
+ * The push-up versions as a ladder: where your press is now, your best reps on
+ * each rung, and what opens the next one. Reps are the athlete's own logged
+ * bests (any section), never a verified measure — the card says so.
+ */
+function PressingLadder() {
+  const { state } = useStore()
+  const current = useMemo(
+    () => pressingChoiceFor(state.stepId, capacityOn(state, state.stepId)),
+    [state],
+  )
+  const own = PUSHUP_VERSION[state.stepId]
+  return (
+    <section id="pressing" className="scroll-mt-5">
+      <SectionTitle>Pressing ladder</SectionTitle>
+      <div className="rounded-2xl border border-line bg-surface p-4 shadow-card">
+        <ol className="space-y-1.5">
+          {PRESS_LADDER.map((id) => {
+            const ex = EXERCISE_BY_ID[id]
+            const best = state.prs[id]?.value
+            const isCurrent = id === current.exerciseId
+            const isOwn = id === own
+            return (
+              <li
+                key={id}
+                className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-[13.5px] ${
+                  isCurrent ? 'border border-accent/40 bg-accent-soft' : 'bg-raised'
+                }`}
+              >
+                <span className="min-w-0">
+                  <span className={`font-medium ${isCurrent ? 'text-ink' : 'text-ink2'}`}>{ex.name}</span>
+                  {isCurrent ? (
+                    <span className="ml-2 rounded-full bg-accent px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-on-accent">
+                      now
+                    </span>
+                  ) : isOwn ? (
+                    <span className="ml-2 text-[11.5px] text-ink3">your step’s version</span>
+                  ) : null}
+                </span>
+                <span className="shrink-0 tnum text-ink3">{best ? `best ${best}` : '—'}</span>
+              </li>
+            )
+          })}
+        </ol>
+        <p className="mt-2.5 text-[12px] leading-relaxed text-ink3">
+          {current.atLevel
+            ? `You press in your step’s own shape. Reps grow by one when every set hits its target.`
+            : `${current.reason} Reps grow by one when every set hits its target.`}{' '}
+          Bests are your logged reps, not camera-verified.
+        </p>
+      </div>
+    </section>
+  )
+}
+
 function FormTrendCard() {
   const { state } = useStore()
   const filmed = useMemo(() => filmedExercises(state), [state])
@@ -721,6 +778,9 @@ export function Stats({
           <TrainingHeatmap sessions={state.sessions} />
         </div>
       </div>
+
+      {/* The pressing ladder: the push-up versions as a road of their own */}
+      <PressingLadder />
 
       {/* PR board */}
       <section id="records" className="scroll-mt-5">

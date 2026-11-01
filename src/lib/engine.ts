@@ -2,6 +2,7 @@ import type { AppState, PR, Session, SessionEvents, StepId, TrainingSurface } fr
 import { ACHIEVEMENTS } from '../data/achievements'
 import { STEP_BY_ID, stepAfter } from '../data/progressions'
 import { isQualifyingSet, qualifyingProgress } from './progression'
+import { earlyPromotionEarned } from './bridge'
 
 /**
  * Pure state transition for saving a session: updates history and PRs,
@@ -59,26 +60,31 @@ export function applySession(state: AppState, session: Session): { next: AppStat
   // athlete rating and a passing filmed form review. PRs remain an honest
   // record of best effort, but a weak-evidence/accessory/one-sided number is
   // not mastery.
+  //
+  // Two routes, the same evidence chain: the current step's bar, or the next
+  // shape itself — its opening dose held with full evidence while the current
+  // hold is past half its bar (see lib/bridge). The bar is a convention; the
+  // next shape held clean is the readiness it stands in for.
   const unlocked = [...state.unlocked]
   let stepId: StepId = state.stepId
   let unlockedStep: StepId | undefined
+  let unlockedVia: SessionEvents['unlockedVia']
   for (let guard = 0; guard < 10; guard++) {
     const cur = STEP_BY_ID[stepId]
     const following = stepAfter(stepId)
     if (!following) break
     // Saving unrelated work must not snap an athlete back up after they
     // deliberately selected a lower unlocked step.
-    if (
-      session.workoutName === 'Quick Log' ||
-      !session.sets.some((set) => isQualifyingSet(set, cur.keyExerciseId))
-    ) {
-      break
-    }
+    const showsCurrent = session.sets.some((set) => isQualifyingSet(set, cur.keyExerciseId))
+    const showsNext = session.sets.some((set) => isQualifyingSet(set, following.keyExerciseId))
+    if (session.workoutName === 'Quick Log' || (!showsCurrent && !showsNext)) break
     const qualified = qualifyingProgress(state, stepId, [session])
-    if (qualified.value < cur.unlockSec) break
+    const viaBar = showsCurrent && qualified.value >= cur.unlockSec
+    if (!viaBar && !earlyPromotionEarned(state, stepId, [session])) break
     if (!unlocked.includes(following.id)) unlocked.push(following.id)
     stepId = following.id
     unlockedStep = following.id
+    unlockedVia = viaBar ? 'bar' : 'next-shape'
   }
   next = { ...next, unlocked, stepId }
 
@@ -91,6 +97,9 @@ export function applySession(state: AppState, session: Session): { next: AppStat
     }
   }
   next = { ...next, achievements }
-  if (unlockedStep) events.unlockedStep = unlockedStep
+  if (unlockedStep) {
+    events.unlockedStep = unlockedStep
+    if (unlockedVia) events.unlockedVia = unlockedVia
+  }
   return { next, events }
 }

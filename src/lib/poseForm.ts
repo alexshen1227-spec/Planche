@@ -10,7 +10,10 @@ import {
   type PoseBackend,
 } from './poseBackend'
 
+import { MIN_VERIFIED_COVERAGE } from './progression'
+
 export { poseModelReady, warmDetector } from './poseBackend'
+export { MIN_VERIFIED_COVERAGE }
 
 /**
  * Version of the verdict rules, stored on every camera reading.
@@ -26,8 +29,18 @@ export { poseModelReady, warmDetector } from './poseBackend'
  *     hip height and lean are measured (`floorEdge`); before, a phone turned
  *     sideways as the app suggests read a level hold as sagging and leaning
  *     backwards.
+ * 4 - the 2026-10-10 camera audit: a sustained late softening of the elbows
+ *     ends clean time where it starts (`sustainedSofteningStart`); a
+ *     "hyperextension" larger than any elbow can make is read as the bend it
+ *     is; joints placed outside the picture are not observations; a far arm
+ *     that alone reads bent can no longer be averaged into a certified lockout;
+ *     coverage counts every requested moment of the hold, not only the ones
+ *     where a body was found; steadiness is measured against the planted
+ *     hands, so a moving phone mostly cancels; and "Held clean" means
+ *     camera-verified clean — a held arm fault reads zero, unjudged elbows
+ *     read unknown.
  */
-export const JUDGE_VERSION = 3
+export const JUDGE_VERSION = 4
 
 /**
  * Automatic form analysis from a recorded clip.
@@ -77,6 +90,17 @@ export interface PoseFormResult {
   cleanSeconds?: number
   /** Clean seconds divided by the timer's credited hold. */
   cleanRatio?: number
+  /**
+   * Share of the moments requested across the credited hold in which the
+   * camera saw every criterion it judged. Below `MIN_VERIFIED_COVERAGE` the
+   * clean time is a training-dose estimate, not a verification.
+   */
+  coverage?: number
+  /**
+   * Seconds at the end of the credited hold the recording never reached.
+   * Clean time and its ratio describe the filmed part only; this is unknown.
+   */
+  unfilmedSec?: number
   /** Representative sustained elbow angle, degrees (180 = locked). */
   elbowDeg?: number
   /** Shoulder→hip→knee angle: how open the hips are. */
@@ -90,8 +114,11 @@ export interface PoseFormResult {
   leanRatio?: number
   /** Shoulder-to-ear gap over torso length; small means shrugged. */
   shrugRatio?: number
-  /** Positional drift per second — high means the hold was slipping. */
-  wobble?: number
+  /**
+   * Robust spread of shoulder and hip positions measured from the planted
+   * hand, over torso length (judge v4+). Describes movement, not its cause.
+   */
+  drift?: number
   issues: FormIssue[]
   /** Faults measured inside the clean window that can receive progression credit. */
   heldIssues?: FormIssue[]
@@ -146,6 +173,12 @@ const MIN_PRECISE_KP_SCORE = 0.42
 const MIN_FAR_KP_SCORE = 0.6
 const MIN_FRAMES = 3
 export const MIN_VERIFIABLE_HOLD_SEC = 1
+/**
+ * A recording this much shorter than its credited hold is disclosed. Chosen,
+ * not measured: the recorder starts with the hold and the timer rounds to a
+ * tenth, so a shorter gap is start-up and rounding, not a stalled camera.
+ */
+export const UNFILMED_DISCLOSURE_SEC = 0.3
 
 /** Tracked poses mapped back to source-frame pixels, for replay overlays. */
 export interface PoseTrack {
@@ -379,6 +412,126 @@ export const MOMENTARY_MATERIAL_TOLERANCE = {
 
 /** Past this robust spread, a borderline elbow aggregate is detector drift. */
 export const MAX_STABLE_ELBOW_IQR_DEG = 7
+
+/**
+ * A sustained late softening of the elbows.
+ *
+ * Two existing rules both missed it: the whole-hold median describes the
+ * typical shape, so seven straight seconds outvote three bent ones; and the
+ * momentary envelope needs 16° in single samples, because one sample carries
+ * a lot of landmark error. A 15° bend for the last three seconds of a ten-second
+ * tuck passed with "Straight arms 100" and full clean time.
+ *
+ * Pooling the readings in a short window removes most of that per-sample
+ * error, so a window's median can be held to a tighter bar than one sample.
+ * Swept on synthetic tuck, advanced tuck and full planche holds of known angle
+ * (300 seeds per cell, 24 and 31 samples over 10 s, AR(1) landmark noise):
+ * with a 1.5 s window, a bar 5° past the aggregate deadband (a 13° bend), a
+ * 1 s persistence, and arms that read locked before it, exactly straight arms
+ * were never flagged at 2% torso noise — the top of the measured range of real
+ * jitter — in 1,800 holds, and about 1% of the time at 2.5%. A late 15° bend
+ * over the final 3 s was caught 76–83% of the time (the old rules: 37–40%), a
+ * late 20° bend 96%, a 15° bend mid-hold 72%, a gradual 0→15° fade 33%.
+ * Without the "locked before" rule a constant 10° bend drifting with the noise
+ * could pass for straight-then-soft and keep its early seconds; with it, 1 in
+ * 300 at 2% noise and none at 1%. Detection lands ~0.4 s after the true start,
+ * so the clean seconds before it are kept rather than discarded.
+ */
+export const SOFTENING_WINDOW_SEC = 1.5
+export const SOFTENING_MARGIN_DEG = 5
+export const SOFTENING_PERSIST_SEC = 1
+/**
+ * A softening must follow this much holding. A bend from the very start is the
+ * held shape, which the whole-hold reading already judges — treating it as a
+ * breakdown at 0.7 s would wipe out the hold's training dose (invariant 9).
+ */
+export const SOFTENING_MIN_LEAD_SEC = 1.5
+
+/**
+ * Past this, a "hyperextension" is not something an elbow can do: the sign of
+ * the reading is wrong, not the joint. Elbows extend a few degrees past
+ * straight and a hypermobile one perhaps 15–20°; the hip-direction sign rule
+ * breaks down during a collapse (an athlete lowering out of a planche read as
+ * 125° of hyperextension and the elbows went unjudged). A reading beyond this
+ * is counted as the bend its magnitude says it is. Set well clear of any real
+ * hyperextension plus landmark error; medium sign confusions still widen the
+ * angle spread enough for the uncertainty gate to leave the elbows unjudged.
+ */
+export const MAX_PLAUSIBLE_HYPEREXTENSION_DEG = 45
+
+/** Drift at or below this is landmark noise on a still hold (measured ~0.02). */
+export const DRIFT_STILL = 0.025
+/** Above this the body moved a fair amount against the hands (synthetic sway: 0.043). */
+export const DRIFT_MOVED = 0.05
+/** Where the steadiness score bottoms out (a real lowering read 0.104). */
+export const DRIFT_FLOOR = 0.1
+
+/**
+ * Robust spread of hand-relative shoulder and hip positions, in torso lengths:
+ * the median absolute deviation of each, combined. Needs five moments with the
+ * hand seen; otherwise there is no fixed reference and nothing is reported.
+ */
+export function robustPositionSpread(
+  points: { sx: number; sy: number; hx: number; hy: number; torso: number }[],
+): number | undefined {
+  if (points.length < 5) return undefined
+  const torso = median(points.map((p) => p.torso))
+  if (torso === undefined || torso < 1) return undefined
+  const mad = (xs: number[]) => {
+    const m = median(xs)!
+    return median(xs.map((x) => Math.abs(x - m)))!
+  }
+  const shoulder = Math.hypot(mad(points.map((p) => p.sx)), mad(points.map((p) => p.sy)))
+  const hip = Math.hypot(mad(points.map((p) => p.hx)), mad(points.map((p) => p.hy)))
+  return (shoulder + hip) / 2 / torso
+}
+
+/**
+ * Two resolved arms that disagree by this much are not two noisy looks at one
+ * lockout. When only the far arm reads bent and averaging would pass the hold,
+ * the camera cannot certify straight arms — but nor can it convict on the arm
+ * it sees least well — so elbows go unjudged (and earn no credit).
+ */
+export const ARM_DISAGREEMENT_DEG = 15
+
+
+/**
+ * Earliest start of a sustained elbow softening inside the credited hold, or
+ * null. Exported so the swept parameters stay pinned by tests.
+ */
+export function sustainedSofteningStart(
+  frames: FrameReading[],
+  minElbowDeg: number,
+  creditedSec: number,
+): number | null {
+  const bar = minElbowDeg - MATERIAL_TOLERANCE.elbowDeg - SOFTENING_MARGIN_DEG
+  const seen = frames
+    .filter((frame) => frame.elbowDeg !== undefined && frame.t <= creditedSec + 0.05)
+    .sort((a, b) => a.t - b.t)
+  let runStart: number | null = null
+  for (const frame of seen) {
+    const window = seen.filter((other) => Math.abs(other.t - frame.t) <= SOFTENING_WINDOW_SEC / 2)
+    const soft = window.length >= 3 && (median(window.map((other) => other.elbowDeg!)) ?? 180) < bar
+    if (!soft) {
+      runStart = null
+      continue
+    }
+    if (runStart === null) runStart = frame.t
+    // A run that began before the lead time is the shape being entered or
+    // held, not a breakdown; keep scanning past it for a later one. And a
+    // softening has to soften *from* a lockout: the arms before it must read
+    // locked by the judge's own definition (inside half the deadband), or this
+    // is a constant bend wandering with the noise — which the whole-hold
+    // reading judges, and which must not keep its early seconds as "clean".
+    if (frame.t - runStart >= SOFTENING_PERSIST_SEC && runStart >= SOFTENING_MIN_LEAD_SEC) {
+      const before = seen.filter((other) => other.t < runStart!).map((other) => other.elbowDeg!)
+      const lockedBefore =
+        before.length >= 3 && (median(before) ?? 0) >= minElbowDeg - MATERIAL_TOLERANCE.elbowDeg / 2
+      if (lockedBefore) return runStart
+    }
+  }
+  return null
+}
 
 export const POSE_PROFILES: Record<string, PoseProfile> = {
   'ppp-hold': {
@@ -895,7 +1048,13 @@ export function signedElbowBend(
   const towardHips =
     ((elbow.x - onLineX) * torsoX + (elbow.y - onLineY) * torsoY) / torsoMag / bodyScale
 
-  return towardHips >= 0 ? 180 - angle : -(180 - angle)
+  const departure = 180 - angle
+  // The hip-direction rule is a posture assumption, and it fails in a
+  // collapse: a clearly bent elbow lowering out of a hold can sit on the far
+  // side of the torso line. No elbow hyperextends this far, so the magnitude
+  // is trusted over the sign.
+  if (towardHips < 0 && departure > MAX_PLAUSIBLE_HYPEREXTENSION_DEG) return departure
+  return towardHips >= 0 ? departure : -departure
 }
 
 /**
@@ -1518,6 +1677,18 @@ export function judgeTrackedFrames(
         'That attempt was too brief for the camera to verify a held position. Stay in the hold for at least 1 second — a quick touch-and-drop cannot be graded clean.',
     }
   }
+  // The verdict speaks for the credited hold, so the footage has to cover it.
+  // A camera stream that delivered almost no frames once made a 0.015s clip
+  // of a 2.9s hold: its 18 sampled moments were one picture, graded as the
+  // whole hold, and the rounding turned "the clip ended" into "the position
+  // left the envelope". Under a second of footage is a refusal; a recording
+  // that stops partway is read for what it filmed and says so (below).
+  if (creditedHoldSec !== undefined && !hasVerifiableHoldDuration(Math.min(duration, creditedHoldSec))) {
+    return {
+      ...empty,
+      reason: `The recording holds under a second of this ${creditedHoldSec.toFixed(1)}s hold — the camera stopped sending pictures, so there is nothing to judge. Your set is saved either way.`,
+    }
+  }
   const srcW = input.width
   const srcH = input.height
   const n = times.length
@@ -1529,6 +1700,23 @@ export function judgeTrackedFrames(
     t: frame.t,
     kps: frame.kps.map((point) => ({ ...point })),
   }))
+  // A joint the model placed outside the picture — or at a non-number — was
+  // not observed, however confident the model sounds about it: a wrist cropped
+  // out of the frame came back at visibility 0.95. It becomes a missing point
+  // rather than being clamped into frame or used as found. (A guess *inside*
+  // the frame, over something hidden, is beyond what any bounds check can see.)
+  let outOfFrameJoints = 0
+  if (srcW > 0 && srcH > 0) {
+    for (const frame of tracked) {
+      for (const point of frame.kps) {
+        const inside =
+          Number.isFinite(point.x) && Number.isFinite(point.y) && point.x >= 0 && point.x <= srcW && point.y >= 0 && point.y <= srcH
+        if (inside || (point.score ?? 0) < MIN_KP_SCORE) continue
+        point.score = 0
+        outOfFrameJoints++
+      }
+    }
+  }
 
   const elbows: number[] = []
   const knees: number[] = []
@@ -1537,7 +1725,8 @@ export function judgeTrackedFrames(
   const leans: number[] = []
   const shrugs: number[] = []
   const confidences: number[] = []
-  const drifts: number[] = []
+  /** Shoulder and hip positions measured from the visible wrist, per moment. */
+  const handRelative: { sx: number; sy: number; hx: number; hy: number; torso: number }[] = []
   const frameReadings: FrameReading[] = []
   // Timestamped copies of the metrics that fatigue visibly, so the hold can
   // be compared against itself: early third vs final third.
@@ -1556,8 +1745,11 @@ export function judgeTrackedFrames(
    * criterion is graded at all — counts only what the camera actually saw.
    */
   const frameObserved = new Map<number, Partial<Record<ReadingMetric, boolean>>>()
+  /** Moments where both arms were resolved as separate limbs, for the disagreement check. */
+  const armPairs: { t: number; near: number; far: number }[] = []
+  /** The near (best-seen) arm's own signed bend, by moment. */
+  const nearArm = new Map<number, number>()
   let trackedSide: 'left' | 'right' | null = null
-  let prevAnchor: { sx: number; sy: number; hx: number; hy: number; torso: number; t: number } | null = null
 
   /** Frames where a person was found at all, however partially. */
   let posesSeen = 0
@@ -1685,6 +1877,8 @@ export function judgeTrackedFrames(
         if (far !== undefined) armBends.push(far)
       }
     }
+    if (armBends.length === 2) armPairs.push({ t, near: armBends[0], far: armBends[1] })
+    if (armBends.length) nearArm.set(t, armBends[0])
     let frameElbowDeg: number | undefined
     if (armBends.length) {
       // Keep the sign until the whole-hold aggregate is built. Clamping every
@@ -1819,20 +2013,49 @@ export function judgeTrackedFrames(
       shrugRatio: frameShrugRatio,
     })
 
-    // How far the position travels per second. Samples are seconds apart, so
-    // this is positional drift, not tremor — dividing by the real gap keeps
-    // it comparable between a 10s hold and a 40s one.
-    const anchor = { sx: shoulder.x, sy: shoulder.y, hx: hip.x, hy: hip.y, torso, t }
-    if (prevAnchor) {
-      const dt = Math.max(0.25, t - prevAnchor.t)
-      const moved =
-        (Math.hypot(anchor.sx - prevAnchor.sx, anchor.sy - prevAnchor.sy) +
-          Math.hypot(anchor.hx - prevAnchor.hx, anchor.hy - prevAnchor.hy)) /
-        2 /
-        torso
-      push(drifts, moved / dt)
+    // Where the shoulders and hips sit *relative to the hands*. In a planche
+    // the hands are planted, so measuring against the wrist cancels the
+    // camera's own movement. Kept as positions, not as frame-to-frame speed:
+    // a speed divides wrist jitter by a third of a second and amplifies it.
+    const handRef = preciseWrist && !preciseWrist.origin ? preciseWrist : undefined
+    if (handRef && t <= (creditedHoldSec ?? Infinity) + 0.05) {
+      handRelative.push({
+        sx: shoulder.x - handRef.x,
+        sy: shoulder.y - handRef.y,
+        hx: hip.x - handRef.x,
+        hy: hip.y - handRef.y,
+        torso,
+      })
     }
-    prevAnchor = anchor
+  }
+
+  // ——— Two resolved arms that read differently ———
+  //
+  // Averaging two looks at one lockout halves the landmark error, which is why
+  // it is the default. But two arms that disagree by a wide, consistent margin
+  // are not one lockout. A bent near arm — the limb the camera sees best — is
+  // graded on its own rather than diluted by a straight-reading far arm. A
+  // far arm that alone reads bent is the opposite case: averaging would turn
+  // it into a certified straight hold, and convicting on the least-seen limb
+  // is no better, so unless the average already names the bend, the elbows
+  // go unjudged.
+  let farArmContradicts = false
+  let nearArmOnly = false
+  if (armPairs.length >= Math.max(MIN_FRAMES, Math.ceil(confidences.length * 0.55))) {
+    const nearMedian = median(armPairs.map((pair) => pair.near))!
+    const farMedian = median(armPairs.map((pair) => pair.far))!
+    if (nearMedian - farMedian >= ARM_DISAGREEMENT_DEG && nearMedian > MATERIAL_TOLERANCE.elbowDeg) {
+      nearArmOnly = true
+      for (const frame of frameReadings) {
+        const near = nearArm.get(frame.t)
+        if (near !== undefined && frame.elbowDeg !== undefined) frame.elbowDeg = 180 - near
+      }
+    } else if (
+      farMedian - nearMedian >= ARM_DISAGREEMENT_DEG &&
+      farMedian > MATERIAL_TOLERANCE.elbowDeg + SOFTENING_MARGIN_DEG
+    ) {
+      farArmContradicts = true
+    }
   }
 
   const glitchStats = suppressIsolatedMetricSpikes(frameReadings)
@@ -1961,6 +2184,13 @@ export function judgeTrackedFrames(
     elbowIqr !== undefined &&
     elbowIqr > MAX_STABLE_ELBOW_IQR_DEG &&
     !strongElbowRun
+  // Only the far arm reads bent and the average would pass the hold.
+  const farArmUnjudged =
+    farArmContradicts &&
+    profile.minElbowDeg !== undefined &&
+    wholeClipElbow !== undefined &&
+    wholeClipElbow >= profile.minElbowDeg - MATERIAL_TOLERANCE.elbowDeg &&
+    !strongElbowRun
 
   // Coverage may lean on filled-in points only while they are the minority.
   // An isolated dropout bridged from neighbours a third of a second either
@@ -1975,7 +2205,7 @@ export function judgeTrackedFrames(
   const { judged, unseen } = gradeCoverage(
     profile,
     {
-      elbows: elbowTrackingUncertain ? 0 : observedCount('elbowDeg'),
+      elbows: elbowTrackingUncertain || farArmUnjudged ? 0 : observedCount('elbowDeg'),
       knees: observedCount('kneeDeg'),
       hipAngles: observedCount('hipAngleDeg'),
       hipOffsets: observedCount('hipOffset'),
@@ -2007,10 +2237,15 @@ export function judgeTrackedFrames(
     }
   }
 
+  // The filmed part of the credited hold — everything below is measured over it.
   const creditedSeconds =
     creditedHoldSec !== undefined && Number.isFinite(creditedHoldSec) && creditedHoldSec > 0
       ? Math.min(duration, creditedHoldSec)
       : duration
+  // What the recording never reached is unknown: not clean, not a breakdown.
+  const unfilmedSeconds =
+    creditedHoldSec !== undefined && Number.isFinite(creditedHoldSec) ? Math.max(0, creditedHoldSec - creditedSeconds) : 0
+  const unfilmedSec = unfilmedSeconds > UNFILMED_DISCLOSURE_SEC ? Math.round(unfilmedSeconds * 10) / 10 : undefined
   const readingAt = new Map(frameReadings.map((frame) => [frame.t, frame]))
   const envelopeSamples = times.map((t) => {
     const frame = readingAt.get(t)
@@ -2027,8 +2262,28 @@ export function judgeTrackedFrames(
   // clean-time number is rounded to a tenth for display; using that rounded
   // value as a cutoff could round the first bad frame back into the supposedly
   // clean window and let one criterion manufacture a fault in another.
-  const cleanCutoffSeconds = sustainedBreakdownStart(observableEnvelope, creditedSeconds, minBadSamples)
+  const envelopeCutoff = sustainedBreakdownStart(observableEnvelope, creditedSeconds, minBadSamples)
+  // A late softening the momentary envelope is too coarse to see ends clean
+  // time where it starts; the seconds before it stay verified.
+  const softeningAt =
+    judged.elbow && profile.minElbowDeg !== undefined
+      ? sustainedSofteningStart(frameReadings, profile.minElbowDeg, creditedSeconds)
+      : null
+  const cleanCutoffSeconds = softeningAt !== null ? Math.min(envelopeCutoff, softeningAt) : envelopeCutoff
   const cleanSeconds = Math.round(cleanCutoffSeconds * 10) / 10
+  // The share of the verified window the camera actually saw in full: of the
+  // moments requested before clean time ended, those that carried every
+  // criterion it judged. A run of missing moments already ends clean time;
+  // this catches the other shape — short gaps scattered through the hold,
+  // each too brief to end it — under which 8 poses out of 31 requested could
+  // certify every second. Measured over the window being certified, so a
+  // hold that turns front-on halfway still keeps the half that was seen.
+  const windowSamples = envelopeSamples.filter((sample) => sample.t <= cleanCutoffSeconds + 0.05)
+  // Too short a window to say anything about: nothing is certified there anyway.
+  const coverage =
+    windowSamples.length >= MIN_FRAMES
+      ? windowSamples.filter((sample) => sample.bad !== null).length / windowSamples.length
+      : undefined
   const cleanRatio = creditedSeconds > 0 ? Math.min(1, cleanSeconds / creditedSeconds) : 0
   const sustainedFaults = new Set(
     sustainedMaterialIssues(
@@ -2048,6 +2303,7 @@ export function judgeTrackedFrames(
       minBadSamples,
     ),
   )
+  if (softeningAt !== null && softeningAt + 0.05 < creditedSeconds) sustainedFaults.add('arms')
 
   // Judge the hold, not the dismount.
   //
@@ -2097,7 +2353,14 @@ export function judgeTrackedFrames(
   const hipOffset = median(pick('hipOffset')) ?? median(hipOffsets)
   const leanRatio = median(pick('leanRatio')) ?? median(leans)
   const shrugRatio = median(pick('shrugRatio')) ?? median(shrugs)
-  const wobble = median(drifts)
+  // Steadiness: the robust spread of the body's position against the planted
+  // hands, over torso length. Replayed on the audit's real footage - one hold
+  // re-framed fixed, panning and oscillating - the old picture-frame speed read
+  // 0.048 / 0.077 / 0.238 for identical body motion; this reads 0.020 / 0.023
+  // / 0.022, while a genuine lowering reads 0.104 and synthetic sway 0.043. A
+  // still hold at measured landmark noise sits near 0.02. It describes how much
+  // the body moved, never why.
+  const drift = robustPositionSpread(handRelative)
 
   // Median of the first and final thirds of the sampled window, for the
   // "clean early, broke down late" comparisons. Needs a hold long enough to
@@ -2256,7 +2519,9 @@ export function judgeTrackedFrames(
   if (judged.lean && profile.minLeanRatio !== undefined && reportedLeanRatio !== undefined) {
     if (namedFaults.has('lean')) {
       issues.push('lean')
-      notes.push('Your shoulders stayed close to your hands — more forward lean is what makes this position lighter.')
+      notes.push(
+        'Your shoulders stayed close to your hands — lean further forward until they pass your hands. That lean is what puts your weight over your hands; it makes the hold harder, which is the point.',
+      )
     } else {
       good.push(reportedLeanRatio >= profile.minLeanRatio ? 'Good forward lean' : 'Lean within camera tolerance')
     }
@@ -2279,12 +2544,45 @@ export function judgeTrackedFrames(
       : 'Side-view mode graded the stable visible-side arm, leg and hip height; overlapped rear-side landmarks were not treated as separate evidence.',
   )
 
-  if (wobble !== undefined) {
-    if (wobble > 0.05) {
-      details.push('Your position drifted a fair amount through the hold — it was slipping as you tired.')
-    } else if (wobble < 0.015) {
-      details.push('Position held very steady.')
+  // Said as what was measured — movement of the body against the hands — and
+  // never as a cause. Drift cannot tell fatigue from a deliberate adjustment
+  // or from the tracker wandering, and the old "it was slipping as you tired"
+  // was a diagnosis the measurement could not support.
+  if (drift !== undefined) {
+    if (drift > DRIFT_MOVED) {
+      details.push(
+        'Shoulders and hips moved a fair amount relative to your hands during the hold. That is what was measured — not why: settling in, a small adjustment and the tracker wandering all read the same.',
+      )
+    } else if (drift <= DRIFT_STILL) {
+      details.push('Shoulders and hips stayed very still relative to your hands.')
     }
+  } else if (judged.elbow || judged.lean) {
+    details.push('Steadiness was not measured: it needs your hands in view as the fixed reference.')
+  }
+  if (softeningAt !== null && softeningAt + 0.05 < creditedSeconds) {
+    details.push(
+      `The elbows held their lock until about ${softeningAt.toFixed(1)}s and then stayed softer for the rest of the hold — clean time ends there, and the seconds before it still count.`,
+    )
+  }
+  if (nearArmOnly) {
+    details.push(
+      'The arm nearest the camera read bent while the far arm read straight, so the near arm — the one the camera sees best — was graded on its own instead of being averaged away.',
+    )
+  }
+  if (farArmUnjudged) {
+    details.push(
+      'The far arm read bent while the near arm read straight. One camera cannot settle which is right, so straight arms were not judged rather than certified — film the other side once to check.',
+    )
+  }
+  if (outOfFrameJoints > 0) {
+    details.push(
+      `Ignored ${outOfFrameJoints} joint ${outOfFrameJoints === 1 ? 'estimate' : 'estimates'} the model placed outside the picture — a joint the camera could not see is not evidence.`,
+    )
+  }
+  if (coverage !== undefined && coverage < MIN_VERIFIED_COVERAGE) {
+    details.push(
+      `The camera saw the whole position in only ${Math.round(coverage * 100)}% of the moments it sampled across the hold, so clean time here is not camera-verified.`,
+    )
   }
 
   // ——— Early vs late: did the shape survive the fatigue? ———
@@ -2377,13 +2675,17 @@ export function judgeTrackedFrames(
   if (!fadeSeen && holdWindow >= 8 && (elbowTrend || kneeTrend || hipAngleTrend || lineTrend || leanTrend)) {
     details.push('Shape held up through the whole hold — no visible fade from start to finish.')
   }
-  if (cleanSeconds < creditedSeconds) {
+  // Compared unrounded: the shown number is rounded to a tenth, and a window
+  // a few hundredths long used to round to 0.0 and read as a breakdown.
+  if (cleanCutoffSeconds < creditedSeconds) {
     details.push(
-      `The clean window ended near ${cleanSeconds.toFixed(1)}s after the position stayed outside the tolerant form envelope for roughly a second.`,
+      softeningAt !== null && softeningAt <= envelopeCutoff
+        ? `The clean window ended near ${cleanSeconds.toFixed(1)}s, where the elbows began to stay soft.`
+        : `The clean window ended near ${cleanSeconds.toFixed(1)}s after the position stayed outside the tolerant form envelope for roughly a second.`,
     )
     if (notes.length === 0) {
       const incompleteAfterCutoff = envelopeSamples.some(
-        (sample) => sample.t >= cleanSeconds && sample.bad === null,
+        (sample) => sample.t >= cleanCutoffSeconds && sample.bad === null,
       )
       notes.push(
         incompleteAfterCutoff
@@ -2392,7 +2694,16 @@ export function judgeTrackedFrames(
       )
     }
   } else {
-    details.push('No sustained material breakdown was found across the credited hold.')
+    details.push(
+      unfilmedSec !== undefined
+        ? 'No sustained material breakdown was found in the filmed part of the hold.'
+        : 'No sustained material breakdown was found across the credited hold.',
+    )
+  }
+  if (unfilmedSec !== undefined) {
+    notes.push(
+      `The recording stopped ${unfilmedSec.toFixed(1)}s before your hold ended, so only the first ${creditedSeconds.toFixed(1)}s was checked — the rest was not filmed and cannot count as camera-verified.`,
+    )
   }
   if (frameTurned) {
     details.push(
@@ -2454,7 +2765,8 @@ export function judgeTrackedFrames(
       rotation === 0 ? '' : `, reading the frame rotated ${rotation}° so your body sat upright to the model`
     }.`,
   )
-  const outOfView = elbowTrackingUncertain ? unseen.filter((criterion) => criterion !== 'elbows') : unseen
+  const outOfView =
+    elbowTrackingUncertain || farArmUnjudged ? unseen.filter((criterion) => criterion !== 'elbows') : unseen
   if (outOfView.length) {
     // Said plainly rather than buried: a verdict that quietly skipped a
     // criterion would read as a clean bill of health for it.
@@ -2470,6 +2782,15 @@ export function judgeTrackedFrames(
 
   const uniqueIssues = [...new Set(issues)]
   const fix = pickFixFirst(uniqueIssues)
+  // "Held clean" is the camera-verified share, never the raw envelope time:
+  // a held arm fault means none of it was verified, and elbows the camera did
+  // not judge — or a hold it mostly did not see — mean it does not know. The
+  // raw `cleanRatio` stays on the result as the training-dose number.
+  const verifiedCleanShare = aggregateFaults.has('arms')
+    ? 0
+    : (profile.minElbowDeg !== undefined && !judged.elbow) || (coverage !== undefined && coverage < MIN_VERIFIED_COVERAGE)
+      ? undefined
+      : cleanRatio
   const scored = computeFormScore({
     profile,
     judged,
@@ -2479,8 +2800,8 @@ export function judgeTrackedFrames(
     hipOffset: reportedHipOffset,
     leanRatio: reportedLeanRatio,
     shrugRatio: reportedShrugRatio,
-    wobble,
-    cleanRatio,
+    drift,
+    cleanRatio: verifiedCleanShare,
   })
 
   return {
@@ -2517,13 +2838,15 @@ export function judgeTrackedFrames(
     track,
     cleanSeconds,
     cleanRatio,
+    ...(coverage !== undefined ? { coverage: Math.round(coverage * 100) / 100 } : {}),
+    ...(unfilmedSec !== undefined ? { unfilmedSec } : {}),
     elbowDeg: reportedElbowDeg,
     kneeDeg: reportedKneeDeg,
     hipAngleDeg: reportedHipAngleDeg,
     hipOffset: reportedHipOffset,
     leanRatio: reportedLeanRatio,
     shrugRatio: reportedShrugRatio,
-    wobble,
+    ...(drift !== undefined ? { drift: Math.round(drift * 1000) / 1000 } : {}),
     issues: uniqueIssues,
     // Aggregate faults are computed from `verdictFrames`, which ends at the
     // first sustained breakdown. Keep them separate from the full issue list:
@@ -2768,6 +3091,13 @@ async function analyseClipNow(
 // WebViews, so run checks one at a time instead of letting several clips fight
 // over the same detector and GPU context.
 let analysisQueue: Promise<void> = Promise.resolve()
+/** Checks queued or running; a live reader stays off the detector while any are. */
+let analysesPending = 0
+
+/** Whether a form check is queued or running right now. */
+export function analysisInFlight(): boolean {
+  return analysesPending > 0
+}
 
 export interface AnalyseOptions {
   /**
@@ -2787,13 +3117,17 @@ export function analyseClipDetailed(
   creditedHoldSec?: number,
   options: AnalyseOptions = {},
 ): Promise<ClipAnalysis> {
+  analysesPending += 1
   const analysis = analysisQueue.then(() => {
     options.onStart?.()
     return analyseClipNow(blob, exerciseId, sampleCount, creditedHoldSec, options.windowStartSec ?? 0)
   })
+  const settle = () => {
+    analysesPending = Math.max(0, analysesPending - 1)
+  }
   analysisQueue = analysis.then(
-    () => undefined,
-    () => undefined,
+    () => settle(),
+    () => settle(),
   )
   return analysis
 }
@@ -2890,8 +3224,8 @@ const SUBSCORE_LABELS: Record<FormSubscore['key'], string> = {
   line: 'Hip height',
   lean: 'Forward lean',
   shrug: 'Shoulders down',
-  steadiness: 'Steadiness',
-  cleanTime: 'Held clean',
+  steadiness: 'Steady over hands',
+  cleanTime: 'Verified clean',
 }
 
 /**
@@ -2908,7 +3242,7 @@ export function computeFormScore(parts: {
   hipOffset?: number
   leanRatio?: number
   shrugRatio?: number
-  wobble?: number
+  drift?: number
   cleanRatio?: number
 }): { score: number; subscores: FormSubscore[] } | null {
   const { profile, judged } = parts
@@ -2937,10 +3271,15 @@ export function computeFormScore(parts: {
   if (judged.shrug && profile.checkShrug && parts.shrugRatio !== undefined) {
     add('shrug', bandedScore((SHRUG_MIN_RATIO - parts.shrugRatio) * RATIO_TO_DEG.shrug))
   }
-  if (parts.wobble !== undefined) {
-    // Not a FIG criterion: drift is graded on its own scale, where the
-    // existing "very steady" and "slipping" thresholds anchor the ends.
-    add('steadiness', parts.wobble <= 0.015 ? 100 : Math.max(40, 100 - ((parts.wobble - 0.015) * 60) / 0.065))
+  if (parts.drift !== undefined) {
+    // Not a FIG criterion: graded on its own scale, from a still hold at
+    // landmark-noise level (full marks) down to a genuine lowering (40).
+    add(
+      'steadiness',
+      parts.drift <= DRIFT_STILL
+        ? 100
+        : Math.max(40, 100 - ((parts.drift - DRIFT_STILL) * 60) / (DRIFT_FLOOR - DRIFT_STILL)),
+    )
   }
   if (parts.cleanRatio !== undefined) {
     add('cleanTime', Math.max(0, Math.min(1, parts.cleanRatio)) * 100)

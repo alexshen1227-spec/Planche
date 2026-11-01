@@ -10,6 +10,7 @@ import { Icon } from './Icon'
 import { Modal } from './ui'
 import { ClipPlayer } from './ClipPlayer'
 import { FormCheckRow, mergeHumanReview, mergeModelReading } from './FormCheckRow'
+import { countedClipWindow, readingFitsWindow } from '../lib/progression'
 
 /** The saved set a clip was recorded for, when it is still in history. */
 interface ClipOwner {
@@ -205,12 +206,8 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
               clipKey={reviewing}
               exerciseId={reviewOwner.set.exerciseId}
               creditedHoldSec={reviewOwner.set.value}
-              analysisWindowSec={
-                videoInterval
-                  ? reviewOwner.set.value
-                  : Math.max(0, reviewOwner.set.value - (reviewOwner.set.recordingOffsetSec ?? 0))
-              }
-              analysisWindowStartSec={videoInterval?.startSec ?? 0}
+              analysisWindowSec={countedClipWindow(reviewOwner.set).lengthSec}
+              analysisWindowStartSec={countedClipWindow(reviewOwner.set).startSec}
               videoInterval={videoInterval}
               onVideoInterval={(interval) => {
                 const latest = getState()
@@ -232,7 +229,18 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
               }}
               value={reviewOwner.set.form}
               onHuman={(review) => commit(reviewOwner, (current) => mergeHumanReview(current, review))}
-              onModel={(reading) => commit(reviewOwner, (current) => mergeModelReading(current, reading))}
+              onModel={(reading) => {
+                // Read the set as it is *now*: a check started before a
+                // re-time finishes for the old stretch of the clip.
+                const latest = getState()
+                  .sessions.find((s) => s.id === reviewOwner.session.id)
+                  ?.sets.find((set) => set.at === reviewOwner.set.at)
+                if (latest && !readingFitsWindow(reading.auto, countedClipWindow(latest))) {
+                  pushToast('That check was for this hold’s earlier timing and was not saved — run it again.', 'info', 5000)
+                  return
+                }
+                commit(reviewOwner, (current) => mergeModelReading(current, reading))
+              }}
             />
           </div>
         ) : null}

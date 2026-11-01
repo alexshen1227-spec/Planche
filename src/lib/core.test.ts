@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog, Workout } from '../types'
 import { BODY_REGIONS } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
+import { STEP_BY_ID } from '../data/progressions'
 import { initialState, normalizeState, rebuildDerivedState, reconcileAchievements, skipToStep } from './store'
 import { applySession } from './engine'
 import {
@@ -1326,7 +1327,7 @@ describe('form scoring', () => {
       hipOffset: 0.05,
       leanRatio: 0.4,
       shrugRatio: 0.45,
-      wobble: 0.01,
+      drift: 0.01,
       cleanRatio: 1,
     })
     expect(scored?.score).toBe(100)
@@ -1622,29 +1623,42 @@ describe('stage-specific planche lean programming', () => {
     expect(leans.some((block) => block.section === 'strength')).toBe(true)
   })
 
-  it('tapers lean strength work to maintenance at Advanced Tuck', () => {
-    const leans = generatedWorkout('advtuck').blocks.filter(
-      (block) => block.exerciseId === 'planche-lean',
-    )
-
-    expect(leans).toEqual([
-      expect.objectContaining({ section: 'warmup', sets: 1, target: { kind: 'hold', sec: 8 } }),
-      expect.objectContaining({ section: 'strength', sets: 2, target: { kind: 'hold', sec: 10 } }),
-    ])
-  })
-
-  it.each(['oneleg', 'straddle', 'full'] as const)(
-    'keeps leans as a primer only at %s',
+  it.each(['advtuck', 'oneleg', 'straddle', 'full'] as const)(
+    'keeps lean strength work after the main holds at %s, not only a primer',
     (stepId) => {
+      // Changed on the athlete's request (2026-11-01): accessory leans belong
+      // at every level, including the long-lever steps, after the main work.
       const leans = generatedWorkout(stepId).blocks.filter(
         (block) => block.exerciseId === 'planche-lean',
       )
 
-      expect(leans).toHaveLength(1)
-      expect(leans[0]).toEqual(
+      expect(leans).toEqual([
         expect.objectContaining({ section: 'warmup', sets: 1, target: { kind: 'hold', sec: 8 } }),
-      )
-      expect(leans[0].note).toContain('Primer only')
+        expect.objectContaining({ section: 'strength', role: 'straight-arm', sets: 3, target: { kind: 'hold', sec: 10 } }),
+      ])
+      if (stepId !== 'advtuck') expect(leans[0].note).toContain('Primer only')
+    },
+  )
+
+  it.each(['foundations', 'lean', 'frog', 'tuck', 'advtuck', 'oneleg', 'straddle', 'full'] as const)(
+    'builds a complete session at %s: key hold, its push-up version, pressing and straight-arm work',
+    (stepId) => {
+      const workout = generatedWorkout(stepId)
+      const roles = workout.blocks.map((block) => block.role)
+      const key = workout.blocks.find((block) => block.role === 'skill')!
+      const press = workout.blocks.find((block) => block.role === 'press')!
+
+      expect(key.exerciseId).toBe(STEP_BY_ID[stepId].keyExerciseId)
+      expect(press).toBeDefined()
+      expect(press.target.kind).toBe('reps')
+      expect(roles).toContain('pressing')
+      expect(roles).toContain('straight-arm')
+      // Order: the skill comes first, the strength work after it.
+      expect(roles.indexOf('skill')).toBeLessThan(roles.indexOf('press'))
+      expect(roles.indexOf('press')).toBeLessThan(roles.indexOf('pressing'))
+      // Never the same exercise as both the press and the pressing accessory.
+      const pressing = workout.blocks.find((block) => block.role === 'pressing')!
+      expect(pressing.exerciseId).not.toBe(press.exerciseId)
     },
   )
 

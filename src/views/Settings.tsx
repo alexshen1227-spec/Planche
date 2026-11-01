@@ -707,6 +707,12 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           <Toggle label="Auto form check" on={s.autoAnalyze} onChange={(v) => set({ autoAnalyze: v })} />
         </Row>
         <Row
+          label="Live elbow cue (beta)"
+          hint="During a filmed hold, says “lock your elbows” once if the camera sees them stay bent for about a second. Runs the pose model while recording, so it uses more battery and may slow older phones; the verdict after the set is unchanged."
+        >
+          <Toggle label="Live elbow cue (beta)" on={s.liveCues === true} onChange={(v) => set({ liveCues: v })} />
+        </Row>
+        <Row
           label="Camera checker download"
           hint={
             modelState === 'ready'

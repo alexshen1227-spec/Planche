@@ -14,12 +14,13 @@ import {
 import { saveProblemReport } from '../lib/problemReports'
 import { pushToast } from '../lib/toast'
 import {
+  cleanEvidence,
   passesProgressionFormCheck,
   progressionRelevantIssues,
   requiresFlightConfirmation,
   unseenVariantCriteria,
   VARIANT_CRITICAL,
-  verifiedCleanSeconds,
+  type CleanEvidence,
 } from '../lib/progression'
 import { Icon } from './Icon'
 import { Modal } from './ui'
@@ -156,13 +157,15 @@ export function autoFromResult(res: PoseFormResult, analysedSec: number, analyse
     score: res.score,
     cleanSeconds: res.cleanSeconds,
     cleanRatio: res.cleanRatio,
+    ...(res.coverage !== undefined ? { coverage: res.coverage } : {}),
+    ...(res.unfilmedSec !== undefined ? { unfilmedSec: res.unfilmedSec } : {}),
     elbowDeg: res.elbowDeg,
     kneeDeg: res.kneeDeg,
     hipAngleDeg: res.hipAngleDeg,
     hipOffset: res.hipOffset,
     leanRatio: res.leanRatio,
     shrugRatio: res.shrugRatio,
-    wobble: res.wobble,
+    ...(res.drift !== undefined ? { drift: res.drift } : {}),
     analysedSec: Math.round(analysedSec * 10) / 10,
     ...(analysedFromSec > 0 ? { analysedFromSec: Math.round(analysedFromSec * 100) / 100 } : {}),
     ...(res.samplingGapSec !== undefined ? { samplingGapSec: Math.round(res.samplingGapSec * 100) / 100 } : {}),
@@ -256,6 +259,9 @@ export function FormCheckRow({
   const handleClipAvailability = useCallback((available: boolean) => setClipAvailable(available), [])
   const analysing = status !== 'idle'
   const windowSec = Math.max(0, analysisWindowSec ?? creditedHoldSec)
+  /** The window as it is now, readable when an older check finishes. */
+  const currentWindowRef = useRef({ startSec: analysisWindowStartSec, lengthSec: windowSec })
+  currentWindowRef.current = { startSec: analysisWindowStartSec, lengthSec: windowSec }
 
   // A newer form arriving from the owner (a merged late result, or a review
   // made in another row for the same set) updates what this row shows.
@@ -272,6 +278,7 @@ export function FormCheckRow({
 
   const runAnalysis = async () => {
     if (!clipKey) return
+    const requestedStartSec = analysisWindowStartSec
     const opId = `${clipKey}#${++opCounter}`
     onBusyChange?.(opId, true)
     setStatus('loading')
@@ -335,6 +342,15 @@ export function FormCheckRow({
         ? { ...judgeTrackedFrames(diagnostic.poses, exerciseId, { explain: true }), model: diagnostic.result.model }
         : diagnostic.result
       diagnosticRef.current = { ...diagnostic, result: res }
+      // Re-timed while this check ran: its verdict is about a stretch of the
+      // clip this hold no longer occupies, so it is neither shown as the
+      // hold's reading nor saved.
+      if (Math.abs(currentWindowRef.current.startSec - requestedStartSec) > 0.1) {
+        setAnalysis(
+          emptyResult('This check ran on the hold’s earlier timing, so it was not applied. Run it again to check the marked stretch.'),
+        )
+        return
+      }
       setAnalysis(friendlyResult(res))
       if (res.ok) {
         const reading: ModelReading = {
@@ -802,10 +818,13 @@ function SavedReading({ auto, creditedHoldSec }: { auto: AutoForm; creditedHoldS
     <div className="mt-2 rounded-xl border border-line bg-raised p-3 text-[12.5px] leading-relaxed text-ink2">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-ink3">Camera reading on file</div>
       <div className="mt-1">
-        {auto.score !== undefined ? <span className="font-semibold text-ink">Form score {auto.score}. </span> : null}
-        {auto.cleanSeconds !== undefined
-          ? `Clean window ${(verifiedCleanSeconds(auto) ?? 0).toFixed(1)}s of ${creditedHoldSec.toFixed(1)}s. `
-          : ''}
+        {auto.score !== undefined ? (
+          <span className="font-semibold text-ink">
+            Form score {auto.score}
+            {auto.unseen?.length ? ' (partial)' : ''}.{' '}
+          </span>
+        ) : null}
+        {auto.cleanSeconds !== undefined ? `${cleanEvidenceLine(cleanEvidence(auto), creditedHoldSec)} ` : ''}
         {auto.issues.length
           ? `Flagged: ${auto.issues.map((i) => FORM_ISSUE_LABEL[i].toLowerCase()).join(', ')}.`
           : 'No measured issue.'}
@@ -839,7 +858,14 @@ function AnalysisPanel({ analysis, creditedHoldSec }: { analysis: PoseFormResult
                 {analysis.score}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-[12px] font-semibold uppercase tracking-wide text-ink3">Form score</div>
+                <div className="text-[12px] font-semibold uppercase tracking-wide text-ink3">
+                  Form score{analysis.unseen.length ? ' · partial' : ''}
+                </div>
+                {analysis.unseen.length ? (
+                  <div className="text-[11px] leading-snug text-ink3">
+                    Only what the camera judged — {analysis.unseen.join(', ')} not included.
+                  </div>
+                ) : null}
                 {analysis.subscores?.length ? (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {analysis.subscores.map((s) => (
@@ -867,31 +893,8 @@ function AnalysisPanel({ analysis, creditedHoldSec }: { analysis: PoseFormResult
               <div className="mt-0.5 text-[12.5px] font-medium leading-snug text-ink">{analysis.fixFirst.cue}</div>
             </div>
           ) : null}
-          {analysis.cleanSeconds !== undefined && (analysis.heldIssues ?? analysis.issues).includes('arms') ? (
-            // Bent arms inside the window: none of it was clean, whatever the
-            // breakdown timing says. A green "7.4s of 7.4s" here sat beside
-            // "lock the elbows" on the same panel.
-            <div className="mb-2 rounded-lg bg-accent-soft px-2.5 py-2 text-accent-text">
-              <span className="font-semibold">Camera-verified clean window: none</span>
-              <span className="text-[11.5px]">
-                {' '}
-                — the elbows were bent through the hold rather than breaking at one moment, so none of these{' '}
-                {creditedHoldSec.toFixed(1)}s count as camera-verified clean.
-              </span>
-            </div>
-          ) : analysis.cleanSeconds !== undefined ? (
-            <div
-              className={`mb-2 rounded-lg px-2.5 py-2 ${
-                analysis.cleanSeconds + 0.05 >= creditedHoldSec ? 'bg-ok-soft text-ok-text' : 'bg-accent-soft text-accent-text'
-              }`}
-            >
-              <span className="font-semibold">Camera-verified clean window: {analysis.cleanSeconds.toFixed(1)}s</span>
-              <span className="text-[11.5px]">
-                {' '}
-                of {creditedHoldSec.toFixed(1)}s. Isolated joint-tracking jumps are ignored; a material miss has to
-                persist for roughly a second before it stops progression credit.
-              </span>
-            </div>
+          {analysis.cleanSeconds !== undefined ? (
+            <CleanWindow evidence={cleanEvidence(readingOf(analysis))} creditedHoldSec={creditedHoldSec} />
           ) : null}
           {analysis.notes.length > 0 ? (
             <div className="space-y-1">
@@ -957,6 +960,87 @@ function AnalysisPanel({ analysis, creditedHoldSec }: { analysis: PoseFormResult
       ) : (
         (analysis.reason ?? 'Could not analyse that clip.')
       )}
+    </div>
+  )
+}
+
+/** The fields `cleanEvidence` reads, from a fresh result. */
+function readingOf(analysis: PoseFormResult): AutoForm {
+  return {
+    issues: analysis.issues,
+    heldIssues: analysis.heldIssues ?? analysis.issues,
+    confidence: analysis.confidence,
+    cleanSeconds: analysis.cleanSeconds,
+    cleanRatio: analysis.cleanRatio,
+    ...(analysis.coverage !== undefined ? { coverage: analysis.coverage } : {}),
+    ...(analysis.unseen.length ? { unseen: analysis.unseen } : {}),
+  }
+}
+
+/** One sentence per answer the camera can give about clean time. */
+function cleanEvidenceLine(evidence: CleanEvidence, creditedHoldSec: number): string {
+  switch (evidence.state) {
+    case 'verified':
+      return `Camera-verified clean ${evidence.seconds.toFixed(1)}s of ${creditedHoldSec.toFixed(1)}s.`
+    case 'fault':
+      return 'Camera-verified clean: none — the elbows were bent inside the hold.'
+    case 'unknown':
+      return evidence.reason === 'elbows'
+        ? 'Clean time not verified — the elbows were not judged.'
+        : evidence.reason === 'coverage'
+          ? 'Clean time not verified — the camera saw too little of the hold.'
+          : 'Clean time not verified.'
+  }
+}
+
+/**
+ * The clean-window badge. Three answers, never two: verified seconds, none
+ * (a bend held inside the window), or unknown (elbows not judged, or too
+ * little of the hold seen). The audit found the panel reading "Held clean 100"
+ * for both of the last two.
+ */
+function CleanWindow({ evidence, creditedHoldSec }: { evidence: CleanEvidence; creditedHoldSec: number }) {
+  if (evidence.state === 'fault') {
+    return (
+      <div className="mb-2 rounded-lg bg-accent-soft px-2.5 py-2 text-accent-text">
+        <span className="font-semibold">Camera-verified clean window: none</span>
+        <span className="text-[11.5px]">
+          {' '}
+          — the elbows were bent inside the hold rather than breaking at one moment, so none of these{' '}
+          {creditedHoldSec.toFixed(1)}s count as camera-verified clean. They still count as training.
+        </span>
+      </div>
+    )
+  }
+  if (evidence.state === 'unknown') {
+    return (
+      <div className="mb-2 rounded-lg bg-raised px-2.5 py-2 text-ink2">
+        <span className="font-semibold">Camera-verified clean window: unknown</span>
+        <span className="text-[11.5px]">
+          {' '}
+          —{' '}
+          {evidence.reason === 'elbows'
+            ? 'the elbows were not judged, and locked arms are what make this skill. Nothing here was counted as clean or as bent.'
+            : evidence.reason === 'coverage'
+              ? 'the camera saw the whole position in too few of the sampled moments to vouch for the time between them.'
+              : 'this reading cannot verify clean time.'}{' '}
+          Your {creditedHoldSec.toFixed(1)}s still count as training.
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div
+      className={`mb-2 rounded-lg px-2.5 py-2 ${
+        evidence.seconds + 0.05 >= creditedHoldSec ? 'bg-ok-soft text-ok-text' : 'bg-accent-soft text-accent-text'
+      }`}
+    >
+      <span className="font-semibold">Camera-verified clean window: {evidence.seconds.toFixed(1)}s</span>
+      <span className="text-[11.5px]">
+        {' '}
+        of {creditedHoldSec.toFixed(1)}s. Isolated joint-tracking jumps are ignored; a material miss has to persist for
+        roughly a second before it stops progression credit.
+      </span>
     </div>
   )
 }

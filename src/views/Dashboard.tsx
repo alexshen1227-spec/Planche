@@ -1,9 +1,11 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { Tab, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
 import { STEP_BY_ID, stepAfter } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { challengeBlockedReason } from '../data/workouts'
+import { challengeBlockedReason, finalizeFromPlan } from '../data/workouts'
+import { weekPlan, weekWork } from '../lib/volume'
+import { BridgeCard } from '../components/BridgeCard'
 import { BASIS_LABEL, tipOfTheDay } from '../data/tips'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { sessionsInWeekOf, weekStreak, totalHoldSec, sessionHighlight } from '../lib/stats'
@@ -18,6 +20,51 @@ import { pushToast } from '../lib/toast'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { ProgressRing, Stat, SectionTitle } from '../components/ui'
+
+/** Per-device memory of the complete-sessions notice; never state that matters. */
+const SESSIONS_NOTICE_KEY = 'planchelab.notice.complete-sessions'
+
+function noticeSeen(): boolean {
+  try {
+    return localStorage.getItem(SESSIONS_NOTICE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function markNoticeSeen() {
+  try {
+    localStorage.setItem(SESSIONS_NOTICE_KEY, '1')
+  } catch {
+    /* private mode: the notice simply returns next launch */
+  }
+}
+
+/** One row of the weekly work card: done against about-planned. */
+function WorkBar({ label, done, planned, unit }: { label: string; done: number; planned: number; unit: 's' | ' reps' }) {
+  const share = planned > 0 ? Math.min(1, done / planned) : 0
+  const met = planned > 0 && done >= planned
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2 text-[12.5px]">
+        <span className="min-w-0 truncate font-medium text-ink2">{label}</span>
+        <span className="shrink-0 text-ink3 tnum">
+          <span className={`font-semibold ${met ? 'text-ok-text' : 'text-ink'}`}>
+            {done}
+            {unit}
+          </span>
+          {planned > 0 ? ` of ~${planned}${unit}` : ''}
+        </span>
+      </div>
+      <div className="mt-1 h-2 overflow-hidden rounded-full bg-raised" aria-hidden="true">
+        <div
+          className={`h-full rounded-full ${met ? 'bg-ok' : 'bg-accent'}`}
+          style={{ width: `${Math.round(share * 100)}%` }}
+        />
+      </div>
+    </div>
+  )
+}
 
 function WeekStrip({ trainedDays }: { trainedDays: Set<string> }) {
   const start = weekStart(Date.now())
@@ -100,6 +147,28 @@ export function Dashboard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const breakthrough = useMemo(() => recentBreakthrough(state), [state, today])
   const confidence = useMemo(() => coachConfidence(state), [state])
+  // Derived from the current state on every render: decided once at mount,
+  // it never appeared for someone whose first session was saved on this screen.
+  const [noticeClosed, setNoticeClosed] = useState(noticeSeen)
+  const showSessionsNotice = !noticeClosed && state.sessions.length > 0 && state.settings.sessionMinutes < 40
+  const closeSessionsNotice = () => {
+    markNoticeSeen()
+    setNoticeClosed(true)
+  }
+  // The week in the currencies that move a planche, against today's plan times
+  // the sessions the athlete means to train. Only a loaded day's plan stands
+  // for a normal week; on a recovery day the targets are left out.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const work = useMemo(() => weekWork(state), [state, today])
+  const loadedDay = plan.loadPermission !== 'none' && plan.dayType !== 'recovery' && plan.dayType !== 'deload'
+  const planned = useMemo(
+    () =>
+      loadedDay
+        ? weekPlan(finalizeFromPlan(state, { source: 'auto' }, plan).workout, step.keyExerciseId, goal)
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state, plan, loadedDay, goal],
+  )
   const testBlocked = challengeBlockedReason(plan)
   // Only three decisions fit the card. Warnings are picked first — a safety
   // rail's "joint pain reported" must never be squeezed out by an FYI that
@@ -249,6 +318,33 @@ export function Dashboard({
           <p className="relative mt-2 text-[12.5px] leading-relaxed text-ink3">
             No max test today — {testBlocked}.
           </p>
+        ) : null}
+        {showSessionsNotice ? (
+          <div className="relative mt-3 rounded-xl border border-accent/30 bg-accent-soft p-3 text-[13px] leading-relaxed text-ink">
+            <div className="font-semibold">Sessions are complete at every level now</div>
+            <p className="mt-0.5 text-ink2">
+              After the main holds: the push-up version of your step, pseudo planche push-ups, then leans. At your{' '}
+              {state.settings.sessionMinutes}-minute length some of that gets trimmed — 45 minutes fits all of it.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  dispatch({ type: 'SET_SETTINGS', patch: { sessionMinutes: 45 } })
+                  closeSessionsNotice()
+                  pushToast('Sessions are now planned for about 45 minutes.', 'success')
+                }}
+                className="min-h-10 rounded-lg bg-accent px-3 py-1.5 font-semibold text-on-accent"
+              >
+                Use 45 minutes
+              </button>
+              <button
+                onClick={closeSessionsNotice}
+                className="min-h-10 rounded-lg border border-line bg-surface px-3 py-1.5 font-medium text-ink2 hover:text-ink"
+              >
+                Keep {state.settings.sessionMinutes}
+              </button>
+            </div>
+          </div>
         ) : null}
         {state.settings.sessionMinutes > 18 ? (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
@@ -414,6 +510,33 @@ export function Dashboard({
           value={<span className="tnum">{state.sessions.length}</span>}
           sub={fmtDate(state.startedAt) === 'Today' ? 'started today' : `since ${fmtDate(state.startedAt)}`}
         />
+      </div>
+
+      {/* The bridge to the next step — the part of the road that sets the pace */}
+      {state.sessions.length > 0 ? (
+        <div className="animate-rise mt-4" style={{ animationDelay: '90ms' }}>
+          <BridgeCard state={state} stepId={state.stepId} compact />
+        </div>
+      ) : null}
+
+      {/* The week's work — volume made visible */}
+      <div className="animate-rise mt-4 rounded-2xl border border-line bg-surface p-5 shadow-card" style={{ animationDelay: '95ms' }}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[13px] font-semibold uppercase tracking-wide text-ink3">This week’s work</div>
+          <div className="text-[12px] text-ink3 tnum">
+            {work.sessions}/{goal} sessions
+          </div>
+        </div>
+        <div className="mt-3 space-y-3">
+          <WorkBar label={`${keyEx.name} practice`} done={work.skillSec} planned={planned?.skillSec ?? 0} unit="s" />
+          <WorkBar label="Pressing — push-up versions, PPPU" done={work.pressReps} planned={planned?.pressReps ?? 0} unit=" reps" />
+          <WorkBar label="Straight-arm work — leans and holds" done={work.straightArmSec} planned={planned?.straightArmSec ?? 0} unit="s" />
+        </div>
+        <p className="mt-3 text-[11.5px] leading-relaxed text-ink3">
+          {planned
+            ? `About: today’s plan × your ${goal} sessions a week, and each day re-plans from what you did. A planning aid — no study sets these numbers.`
+            : 'Weekly targets come back with your next loaded session; today is planned light.'}
+        </p>
       </div>
 
       {/* Coach */}

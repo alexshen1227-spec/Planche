@@ -189,7 +189,7 @@ function Verdict({ result }: { result: PoseFormResult }) {
           <Row label="hip offset" value={round(result.hipOffset, 3)} />
           <Row label="lean" value={round(result.leanRatio, 3)} />
           <Row label="shrug" value={round(result.shrugRatio, 3)} />
-          <Row label="wobble" value={round(result.wobble, 4)} />
+          <Row label="drift" value={round(result.drift, 4)} />
           <Row label="confidence" value={round(result.confidence, 2)} />
           <Row label="frames" value={`${result.framesUsed}/${result.framesSampled ?? '?'}`} />
           <Row label="unseen" value={result.unseen.join(', ') || 'none'} tone={result.unseen.length ? 'warn' : 'ok'} />

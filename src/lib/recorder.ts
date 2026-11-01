@@ -590,9 +590,13 @@ export function useFormRecorder() {
     [prepare, dropStream, stopTracks],
   )
 
+  /** The live camera stream, for a reader that must not touch the recording. */
+  const getStream = useCallback(() => streamRef.current, [])
+
   // Stable identity — consumers use this in effect dependency lists.
   return useMemo(
     () => ({
+      getStream,
       status,
       supported,
       videoRef,
@@ -609,6 +613,6 @@ export function useFormRecorder() {
       stop,
       release,
     }),
-    [status, supported, previewRef, frame, portrait, wide, setWide, lens, onWideLens, lensLabel, prepare, start, stop, release],
+    [getStream, status, supported, previewRef, frame, portrait, wide, setWide, lens, onWideLens, lensLabel, prepare, start, stop, release],
   )
 }

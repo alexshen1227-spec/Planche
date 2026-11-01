@@ -1,5 +1,6 @@
 import type { AppState, BodyRegion, CheckIn, EquipmentId, Session, StepId, StrategyId, SymptomEvent } from '../types'
-import { STEP_BY_ID } from '../data/progressions'
+import { STEP_BY_ID, stepAfter } from '../data/progressions'
+import { EXERCISE_BY_ID as EXERCISE_BY_ID_COACH } from '../data/exercises'
 import { defaultSurface } from '../data/equipment'
 import { diagnosePlateau, type PlateauVerdict } from './plateau'
 import { emphasisFromGaps } from './assessment'
@@ -22,10 +23,13 @@ import {
   type Signals,
 } from './signals'
 import {
+  humanRating,
+  requiresFlightConfirmation as requiresFlight,
   qualifyingProgress,
   qualifyingSessionValue,
   sessionLearningValue,
   sessionSurface,
+  verifiedCleanSeconds,
   type LearningScope,
 } from './progression'
 
@@ -561,7 +565,7 @@ export interface CoachPlan {
   warmup: WarmupLevel
   queueUnlockAttempt: boolean
   suggestMaxTest: boolean
-  accessoryEmphasis: 'pressing' | 'scapula' | 'balance' | 'core' | 'none'
+  accessoryEmphasis: 'pressing' | 'scapula' | 'balance' | 'core' | 'lockout' | 'none'
   /** Best-supported current bottleneck, if enough history exists to name one. */
   limiter: CoachLimiter | null
   /**
@@ -871,10 +875,15 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       prescription: string
     }
   > = {
+    // Bent-arm pressing used to be the answer here, and it does not teach a
+    // lockout. Soft elbows in a straight-arm hold are usually a lean the arms
+    // cannot yet hold locked, so the fix is practising the lock at a lean
+    // where it holds — coaching consensus, stated as such.
     arms: {
       label: 'Straight-arm strength',
-      emphasis: 'pressing',
-      prescription: 'Straight-arm pressing strength gets the extra work; every main hold still ends before elbow lock goes.',
+      emphasis: 'lockout',
+      prescription:
+        'Lockout practice gets the extra work: leans at the deepest lean your elbows stay fully locked in, and every main hold ends the moment the lock goes. Pressing stays in the session, but it is not the fix for a soft elbow.',
     },
     scapula: {
       label: 'Scapular control',
@@ -1495,6 +1504,30 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   }
 
+  // ——— Frequency: the cheapest extra practice there is ———
+  //
+  // Once a week leaves most of the week's possible practice on the table.
+  // With total work equal, how often it is split has made little measured
+  // difference (ledger §3) — the gain from a second session is the extra
+  // work, and a short one keeps the key holds. Said only when the log shows
+  // it for long enough to be a habit, not a busy week, and never beside a
+  // plateau verdict that already says it or a day with no loaded work.
+  const firstAt = state.sessions.length ? Math.min(...state.sessions.map((s) => s.startedAt)) : now
+  const trainedWeeks = (now - firstAt) / (7 * DAY)
+  if (
+    trainedWeeks >= 3 &&
+    sig.sessionsPerWeek < 1.75 &&
+    sig.totalSessions >= 3 &&
+    loadPermission !== 'none' &&
+    plateau?.cause !== 'under-stimulated'
+  ) {
+    decisions.push({
+      text: `You have averaged ${sig.sessionsPerWeek.toFixed(1)} sessions a week lately. A second, shorter session is the cheapest extra practice of the position you can get — the 20-minute version keeps the key holds and the push-up version. With total work equal, how it is split matters little; the gain is the extra work.`,
+      kind: 'info',
+      source: 'load-advice',
+    })
+  }
+
   // Progress that came from the shape rather than the strength.
   const drift = readDifficultyDrift(state, state.stepId, now)
   if (drift && drift.deltaPct < 0) {
@@ -1711,19 +1744,18 @@ export function debriefSession(
   }
 
   // Verified clean-hold growth against the last filmed session — the realest
-  // progress number this app has, said when it moves.
+  // progress number this app has, said when it moves. Only verified time on a
+  // set the athlete rated Clean: the audit replayed two holds both rated
+  // Slipped (camera and athlete *agreeing* the shape broke) through this line
+  // and it announced "camera-verified clean hold grew 0.1s → 6s".
   const round1 = (n: number) => Math.round(n * 10) / 10
   const cleanBest = (s: Session) =>
-    s.sets.reduce(
-      (b, x) =>
-        x.exerciseId === step.keyExerciseId &&
-        x.section === 'main' &&
-        trustedCameraEvidence(x) &&
-        x.form?.auto?.cleanSeconds !== undefined
-          ? Math.max(b, x.form.auto.cleanSeconds)
-          : b,
-      0,
-    )
+    s.sets.reduce((b, x) => {
+      if (x.exerciseId !== step.keyExerciseId || x.section !== 'main') return b
+      if (!trustedCameraEvidence(x) || humanRating(x.form) !== 'clean') return b
+      const verified = verifiedCleanSeconds(x.form?.auto)
+      return verified !== undefined ? Math.max(b, verified) : b
+    }, 0)
   const thisClean = cleanBest(session)
   const prevFilmed = [...prev.sessions].reverse().find((s) => cleanBest(s) > 0)
   if (thisClean > 0 && prevFilmed && thisClean >= cleanBest(prevFilmed) + 1) {
@@ -1754,6 +1786,28 @@ export function debriefSession(
       text: `Working target moves ${targets.before}s → ${targets.after}s next session${up ? '' : ' — rebuilding quality before pushing again'}.`,
       kind: up ? 'good' : 'info',
     })
+  }
+
+  // Next-shape attempts: say where they stand against early promotion, so the
+  // two or three seconds they were feel like the step they are.
+  const nextStep = stepAfter(session.stepId)
+  if (nextStep && next.stepId === session.stepId) {
+    const nextKey = nextStep.keyExerciseId
+    const attempts = session.sets.filter((x) => x.exerciseId === nextKey && x.section === 'main' && x.value > 0)
+    if (attempts.length) {
+      const best = attempts.reduce((b, x) => Math.max(b, x.value), 0)
+      const verified = qualifyingProgress({ sessions: [session] }, nextStep.id).value
+      out.push({
+        text: `${nextStep.name} attempts: best ${round1(best)}s${
+          verified > 0 ? `, ${round1(verified)}s of it clean on camera` : ''
+        }. Held clean for ${nextStep.startSec}s${
+          EXERCISE_BY_ID_COACH[nextKey]?.perSide ? ' each side' : ''
+        } — rated Clean, camera pass${requiresFlight(nextKey) ? ', both feet off confirmed' : ''} — it opens the step early once your ${step.name.toLowerCase()} is verified past ${Math.round(
+          step.unlockSec * 0.5,
+        )}s.`,
+        kind: verified >= nextStep.startSec ? 'good' : 'info',
+      })
+    }
   }
 
   // A max test that missed the bar: name the gap instead of leaving silence.

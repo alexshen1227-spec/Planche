@@ -11,6 +11,8 @@ import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { Modal } from '../components/ui'
 import { qualifyingProgress } from '../lib/progression'
+import { BridgeCard } from '../components/BridgeCard'
+import { PUSHUP_VERSION } from '../data/pressing'
 
 /** Destinations worth aiming at; the early steps are waypoints, not goals. */
 const GOAL_CHOICES: StepId[] = ['tuck', 'advtuck', 'straddle', 'full']
@@ -288,7 +290,18 @@ function StepDetail({
         <div className="mt-2.5 text-[13px] text-ink2">
           <span className="font-semibold text-ink">Suggested dose:</span> {step.scheme}
         </div>
+        <div className="mt-1.5 text-[13px] text-ink2">
+          <span className="font-semibold text-ink">Its push-up version:</span>{' '}
+          {EXERCISE_BY_ID[PUSHUP_VERSION[step.id]]?.name}
+          {' — '}trained after the main holds at every level, alongside pseudo planche push-ups and leans.
+        </div>
       </div>
+
+      {isCurrent ? (
+        <div className="mt-4">
+          <BridgeCard state={state} stepId={step.id} />
+        </div>
+      ) : null}
 
       <div className="mt-5 flex flex-wrap gap-2.5">
         {isCurrent ? (

@@ -37,11 +37,22 @@ export function measurementDue(state: AppState, now = Date.now()): { weight: boo
   // Without this, saying "not now" meant being asked again on every single
   // refresh, because nothing about the state had actually changed.
   const snoozed = state.measureSnoozedAt !== undefined && now - state.measureSnoozedAt < SNOOZE_DAYS * DAY
+  // Not on the way in: the onboarding step that offered these fields was
+  // skipped seconds earlier, and a modal over the first look at the plan read
+  // as the app ignoring that answer. Not before any training either.
+  const settledIn = state.sessions.length > 0 && now - state.startedAt >= SETTLE_IN_DAYS * DAY
+  // A growing athlete is not nudged about bodyweight on a schedule — it stays
+  // one tap away in Settings, never a recurring prompt.
+  const birthYear = state.profile.birthYear
+  const minor = birthYear !== undefined && new Date(now).getFullYear() - birthYear < 18
   return {
-    weight: !snoozed && (!w || now - w.at >= WEIGHT_EVERY_DAYS * DAY),
+    weight: settledIn && !minor && !snoozed && (!w || now - w.at >= WEIGHT_EVERY_DAYS * DAY),
     height: !h || now - h.at >= HEIGHT_EVERY_DAYS * DAY,
   }
 }
+
+/** The first prompt waits for a few days and at least one session. */
+const SETTLE_IN_DAYS = 3
 
 /**
  * Periodic bodyweight (and occasional height) check-in. Weight is the biggest

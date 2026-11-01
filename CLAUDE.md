@@ -325,6 +325,68 @@ them. Real-hardware behaviour is still unproven.
   only from a live stream — it never opens a camera mid-hold — and every
   recording owns its own chunk buffer.
 
+## Sessions, the bridge and judge v4 (2026-11 upgrade)
+
+- **Every generated session has one shape** (`todaysSession`): warm-up →
+  next-shape attempts (when the bridge is open) → key hold → transition drill →
+  the step's push-up version (`role: 'press'`, `data/pressing.ts`) → pressing
+  accessory (PPPU, or pike when the press already is one) → straight-arm work
+  (leans from the frog stand up; scap push-ups below) → core → cooldown. Blocks
+  carry a `role`; `fitToBudget` trims by role — goal mobility and generic core
+  first, accessory sets to two before any strength block goes, the push-up
+  version last among accessories, main sets only after every accessory — and
+  returns what it dropped, which the session states. Notes about a block that
+  was trimmed away are dropped with it (`about` arrays).
+- **The press trails the hold** until the hold reaches half its bar
+  (`PRESS_AT_LEVEL_SHARE`), steps down the ladder for missing kit, and steps
+  down to the PPPU on a `loadPermission === 'reduced'` day.
+- **Accessories use double progression** (`accessoryProgression`): every set at
+  target → +1 rep / +10%; at least half → repeat; most short → what was
+  achieved. It replaced "60% of recent bests", which ratcheted a completed
+  dose downward each session. Placement answers may still only *lower* a
+  default when nothing is logged.
+- **Short holds get more sets** (`mainHoldSets`) and slightly shorter rest
+  (`restAfterHold`, floor 90s). Per-side key holds start a set lighter.
+- **Set-to-set targets** (`lib/autoregulate.ts`) are *derived*, not stored:
+  the player keeps which logs belong to which block (`blockLogAts`, persisted
+  in the draft) and recomputes the next target from them, so edits, ratings
+  and "interrupted" end reasons feed back. Logs record the target actually
+  given. Never for warm-ups, cooldowns, attempts, tests or per-side blocks.
+- **The bridge** (`lib/bridge.ts`): at half the current bar (from day one at
+  the lean) sessions open with short attempts at the next step's key hold —
+  section `main`, `role: 'bridge'`, so they are filmed and judged — only when
+  `plan.challengeAllowed`, never beside an unlock attempt, never on easy days.
+  **Early promotion** (`earlyPromotionEarned`, used by `applySession`): the next
+  shape's `startSec` held with the full evidence chain while the current step
+  is verified past half its bar opens the next step (`events.unlockedVia`).
+  Deterministic from history like every other unlock.
+- **Judge v4** (`JUDGE_VERSION = 4`): `sustainedSofteningStart` (pooled 1.5s
+  windows, 13° bar, 1s persistence, locked-before rule — swept to zero false
+  accusations at 2% noise in 1,800 holds); a "hyperextension" past
+  `MAX_PLAUSIBLE_HYPEREXTENSION_DEG` is read as flexion; joints outside the
+  picture are unobserved; a bent near arm is graded alone, a far arm that alone
+  reads bent leaves elbows unjudged unless the average already names it;
+  `coverage` is the share of the *verified window's* requested moments seen in
+  full; steadiness is `drift` — the robust spread of hand-relative shoulder and
+  hip positions (camera motion cancels; `wobble` is legacy and no longer
+  written). Never say why the body moved.
+- **One clean-time contract**: `cleanEvidence(auto)` is verified / fault /
+  unknown. Unjudged elbows or coverage below `MIN_VERIFIED_COVERAGE` are
+  unknown — never zero, never verified — and block progression credit. The
+  "Verified clean" subscore uses the same rule; raw `cleanSeconds` stays the
+  training dose.
+- **Live elbow cue (beta, `settings.liveCues`, off by default)**:
+  `lib/liveCue.ts` decides, `components/useLiveElbowCue.ts` reads the
+  recorder's stream through a detached video element during a filmed hold.
+  Same bar as a sustained momentary fault (every reading in ~1.2s beyond 16°,
+  ≥3 readings, nothing in the first second), one cue per hold, never while
+  `analysisInFlight()`. It only speaks; the verdict after the set is unchanged.
+  Verified on the real model with a live canvas stream; not yet on a phone.
+- **Credit is bound to the clip window** (`countedClipWindow`): progression
+  credit is the overlap of the verified stretch and the hold's counted stretch,
+  and a late reading whose start no longer matches the hold's
+  (`readingFitsWindow`) is refused at every merge boundary.
+
 ## Conventions
 
 - User-facing changes get an entry in `src/data/changelog.ts`, written in the

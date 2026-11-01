@@ -80,6 +80,7 @@ export function Onboarding() {
   const [skippedInterview, setSkippedInterview] = useState(false)
   const [manualPlacement, setManualPlacement] = useState<StepId>('foundations')
   const [goal, setGoal] = useState(3)
+  const [minutes, setMinutes] = useState(45)
   const [units, setUnits] = useState<Units>('metric')
   const [weight, setWeight] = useState('')
   const [heightCm, setHeightCm] = useState('')
@@ -168,6 +169,7 @@ export function Onboarding() {
       name: name.trim(),
       stepId: placedStepId,
       weeklyGoal: goal,
+      sessionMinutes: minutes,
       units,
       weightKg: parsedWeight,
       heightCm: parsedHeight,
@@ -683,6 +685,33 @@ export function Onboarding() {
             </div>
             <div className="mt-2 text-[13px] text-ink3" aria-live="polite">
               {goal <= 3 ? 'Sustainable. Good call.' : goal === 4 ? 'Solid — watch your elbows.' : 'Spicy. Keep two easy days.'}
+            </div>
+            <h2 className="mt-7 font-display text-[18px] font-semibold text-ink">How long can a session be?</h2>
+            <div className="mt-3 flex justify-center gap-2" role="group" aria-label="Minutes per session">
+              {[20, 30, 45, 60].map((m) => (
+                <button
+                  key={m}
+                  aria-pressed={minutes === m}
+                  onClick={() => setMinutes(m)}
+                  className={`h-12 min-w-14 rounded-xl border px-3 font-display text-[16px] font-bold transition ${
+                    minutes === m
+                      ? 'border-transparent bg-accent text-on-accent shadow-card'
+                      : 'border-line bg-surface text-ink2 hover:border-line-strong hover:text-ink'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+            <div className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-ink3" aria-live="polite">
+              {minutes <= 20
+                ? 'Key holds plus the most important strength work. Short sessions you actually do beat long ones you skip.'
+                : minutes <= 30
+                  ? 'Key holds, the push-up version and some accessory work — leans or core may come off on full days.'
+                  : minutes <= 45
+                    ? 'The full session: key holds, the push-up version of your step, pseudo planche push-ups, leans and core.'
+                    : 'Everything, with room for extra sets on volume days.'}{' '}
+              Change it any time in Settings.
             </div>
             <div className="mx-auto mt-7 max-w-md rounded-2xl border border-line bg-surface p-4 text-left">
               <div className="text-[13px] font-semibold uppercase tracking-wide text-ink3">Your plan</div>

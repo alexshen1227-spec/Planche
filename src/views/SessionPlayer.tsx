@@ -54,10 +54,18 @@ import { CheckInForm, type CheckInContext } from '../components/CheckInForm'
 import { AttemptEnd, type AttemptSymptom } from '../components/AttemptEnd'
 import { SetupRow } from '../components/SetupRow'
 import {
+  countedClipWindow,
+  endedForNonCapacityReason,
+  humanRating,
+  readingFitsWindow,
   requiresFlightConfirmation,
   setNeedsProgressionFormEvidence,
   unseenVariantCriteria,
 } from '../lib/progression'
+import { adviseNextHold, adviseNextReps, type NextSetAdvice, type SetOutcome } from '../lib/autoregulate'
+import { useLiveElbowCue } from '../components/useLiveElbowCue'
+import { POSE_PROFILES } from '../lib/poseForm'
+import type { Block } from '../types'
 
 export type { CheckInContext } from '../components/CheckInForm'
 
@@ -69,6 +77,26 @@ const SECTION_LABEL: Record<Section, string> = {
   strength: 'Strength',
   core: 'Core',
   cooldown: 'Cooldown',
+}
+
+/**
+ * What a strength block is for, said beside it. The section alone called the
+ * push-up version, the pressing accessory and the leans all "Strength", which
+ * hid the structure every session now follows.
+ */
+const ROLE_LABEL: Partial<Record<NonNullable<Block['role']>, string>> = {
+  attempt: 'Unlock attempt',
+  bridge: 'Next shape',
+  backoff: 'Back-off hold',
+  assisted: 'Assisted shape',
+  balance: 'Balance',
+  press: 'Push-up version',
+  pressing: 'Pressing',
+  'straight-arm': 'Straight-arm',
+}
+
+function blockLabel(block: Block): string | undefined {
+  return block.role && block.section !== 'warmup' && block.section !== 'cooldown' ? ROLE_LABEL[block.role] : undefined
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10
@@ -190,6 +218,14 @@ export function SessionPlayer({
   const [logs, setLogs] = useState<SetLog[]>(resumeFrom?.logs ?? [])
   const logsRef = useRef(logs)
   logsRef.current = logs
+  /**
+   * Which logged sets belong to which block, by timestamp. The next set's
+   * target is derived from them (see lib/autoregulate), so an edited value, a
+   * rating or an "interrupted" end reason feeds straight back into it.
+   */
+  const [blockLogAts, setBlockLogAts] = useState<Record<number, number[]>>(() => resumeFrom?.blockLogAts ?? {})
+  /** Move-on suggestions the athlete waved away, by block and set count. */
+  const [keptGoing, setKeptGoing] = useState<Set<string>>(() => new Set())
   const [now, setNow] = useState(() => Date.now())
   const [leadEnd, setLeadEnd] = useState(0)
   const [holdStart, setHoldStart] = useState(0)
@@ -335,7 +371,62 @@ export function SessionPlayer({
     sessionRef.current?.focus()
   }, [])
 
-  const block = workout.blocks[bi]
+  /**
+   * Set-to-set advice for a block: the next target and why, read from the
+   * sets already logged in it. Never for warm-ups, cooldowns, unlock attempts,
+   * max tests, single-set blocks or per-side work (two sides, one target).
+   */
+  const adviceFor = useCallback(
+    (blockIndex: number, current: SetLog[]): NextSetAdvice | null => {
+      const planned = workout.blocks[blockIndex]
+      if (
+        !planned ||
+        workout.kind === 'test' ||
+        planned.role === 'attempt' ||
+        planned.section === 'warmup' ||
+        planned.section === 'cooldown' ||
+        planned.sets <= 1 ||
+        EXERCISE_BY_ID[planned.exerciseId]?.perSide
+      ) {
+        return null
+      }
+      const ats = blockLogAts[blockIndex] ?? []
+      if (!ats.length) return null
+      const done: SetOutcome[] = ats
+        .map((at) => current.find((log) => log.at === at))
+        .filter((log): log is SetLog => log !== undefined)
+        .map((log) => ({
+          value: log.value,
+          target: log.target,
+          rating: humanRating(log.form),
+          nonCapacity: endedForNonCapacityReason(log),
+        }))
+      if (!done.length) return null
+      if (planned.target.kind === 'hold') {
+        const step = STEP_BY_ID[state.stepId]
+        const ceiling = step && planned.exerciseId === step.keyExerciseId ? step.unlockSec : Infinity
+        return adviseNextHold(planned.target.sec, done, ceiling)
+      }
+      return adviseNextReps(planned.target.reps, done)
+    },
+    [workout, blockLogAts, state.stepId],
+  )
+  /** A block as it stands now: the plan, with the target the session has moved it to. */
+  const blockAt = useCallback(
+    (blockIndex: number, current: SetLog[]): Block | undefined => {
+      const planned = workout.blocks[blockIndex]
+      const advice = planned ? adviceFor(blockIndex, current) : null
+      if (!planned || !advice) return planned
+      const plannedValue = planned.target.kind === 'hold' ? planned.target.sec : planned.target.reps
+      if (advice.target === plannedValue) return planned
+      return {
+        ...planned,
+        target: planned.target.kind === 'hold' ? { kind: 'hold', sec: advice.target } : { kind: 'reps', reps: advice.target },
+      }
+    },
+    [workout, adviceFor],
+  )
+  const block = blockAt(bi, logs)
   const exercise = block ? EXERCISE_BY_ID[block.exerciseId] : undefined
   /** Raw rounds, which is what the progress bar and the "n/N sets" counter track. */
   const totalSets = useMemo(() => workout.blocks.reduce((n, b) => n + b.sets, 0), [workout])
@@ -453,6 +544,7 @@ export function SessionPlayer({
           : {}),
         ...(endedAtRef.current ? { endedAt: endedAtRef.current } : {}),
         ...(finishedEarly ? { finishedEarly: true } : {}),
+        ...(Object.keys(blockLogAts).length ? { blockLogAts } : {}),
         rpe,
         notes,
       })
@@ -553,6 +645,7 @@ export function SessionPlayer({
     walkedBack,
     cameraOn,
     finishedEarly,
+    blockLogAts,
   ])
 
   // Say what was recovered, not that nothing was lost — an interrupted hold
@@ -638,6 +731,24 @@ export function SessionPlayer({
       setPhase('ready')
     }
   }, [phase, restRemaining, problemReportOpen, reviewOpen, state.settings.voice])
+
+  // The live elbow cue (beta): only on a filmed hold of a position whose
+  // profile checks the elbows, and only when the athlete turned it on.
+  const liveCue = useLiveElbowCue({
+    active:
+      phase === 'hold' &&
+      state.settings.liveCues === true &&
+      recorder.status === 'recording' &&
+      exercise !== undefined &&
+      POSE_PROFILES[exercise.id]?.minElbowDeg !== undefined,
+    getStream: recorder.getStream,
+    minElbowDeg: exercise ? POSE_PROFILES[exercise.id]?.minElbowDeg : undefined,
+    onCue: () => {
+      buzz([60, 40, 60])
+      if (state.settings.voice) speak('Lock your elbows')
+      else if (state.settings.beeps) sfx.tick()
+    },
+  })
 
   // Chime + announce when the target is reached mid-hold.
   useEffect(() => {
@@ -745,7 +856,9 @@ export function SessionPlayer({
   /** One set's record, built for an explicit block and round. */
   const buildLog = useCallback(
     (blockIndex: number, setIndex: number, value: number, extra: LogExtra = {}): SetLog | null => {
-      const b = workout.blocks[blockIndex]
+      // The target this set was actually given, which may differ from the
+      // plan once the session has adjusted it.
+      const b = blockAt(blockIndex, logsRef.current)
       const ex = b ? EXERCISE_BY_ID[b.exerciseId] : undefined
       if (!b || !ex) return null
       // A snapshot of the remembered setup, so changing it later never
@@ -770,7 +883,7 @@ export function SessionPlayer({
         at: extra.at ?? Date.now(),
       }
     },
-    [workout, sideFor, surface, state.setups],
+    [blockAt, sideFor, surface, state.setups],
   )
 
   const logSet = useCallback(
@@ -778,6 +891,7 @@ export function SessionPlayer({
       const entry = buildLog(bi, si, value, { leadInSec: leadUsedRef.current, ...extra })
       if (!entry) return
       setLogs((l) => [...l, entry])
+      setBlockLogAts((m) => ({ ...m, [bi]: [...(m[bi] ?? []), entry.at] }))
       if (then === 'finish') enterSummary(true)
       else advance(true)
     },
@@ -909,7 +1023,17 @@ export function SessionPlayer({
     [commitForm],
   )
   const applyModel = useCallback(
-    (at: number, reading: ModelReading) => commitForm(at, (current) => mergeModelReading(current, reading)),
+    (at: number, reading: ModelReading) => {
+      // The merge boundary refuses a reading taken over a stretch of the clip
+      // this hold no longer occupies — a check that was still running when the
+      // hold was re-timed. The newer timing needs its own check.
+      const log = logsRef.current.find((candidate) => candidate.at === at)
+      if (log && !readingFitsWindow(reading.auto, countedClipWindow(log))) {
+        pushToast('A form check finished for this hold’s earlier timing and was not applied — run it again.', 'info', 5000)
+        return
+      }
+      commitForm(at, (current) => mergeModelReading(current, reading))
+    },
     [commitForm],
   )
   const onBusyChange = useCallback((opId: string, busy: boolean) => {
@@ -1066,6 +1190,7 @@ export function SessionPlayer({
     clearInterrupted()
     if (!entry) return
     setLogs((l) => [...l, entry])
+    setBlockLogAts((m) => ({ ...m, [where.bi]: [...(m[where.bi] ?? []), entry.at] }))
     if (phaseRef.current === 'ready' && where.bi === bi && where.si === si) advance(true)
   }, [interrupted, interruptedRaw, buildLog, clearInterrupted, advance, bi, si])
 
@@ -1320,8 +1445,8 @@ export function SessionPlayer({
         creditedHoldSec={log.value}
         // A video-timed hold is analysed over exactly its marked stretch; a
         // stopwatch hold from the clip's start, less any late recording start.
-        analysisWindowSec={video ? log.value : Math.max(0, log.value - (log.recordingOffsetSec ?? 0))}
-        analysisWindowStartSec={video?.startSec ?? 0}
+        analysisWindowSec={countedClipWindow(log).lengthSec}
+        analysisWindowStartSec={countedClipWindow(log).startSec}
         videoInterval={video}
         onVideoInterval={(interval) => applyVideoInterval(log.at, interval)}
         value={log.form}
@@ -1426,9 +1551,17 @@ export function SessionPlayer({
                       .filter((b) => b.section === sec)
                       .map((b, i) => {
                         const ex = EXERCISE_BY_ID[b.exerciseId]
+                        const label = blockLabel(b)
                         return (
                           <div key={i} className="flex items-baseline justify-between gap-3 text-[14px]">
-                            <span className="text-ink">{ex.name}</span>
+                            <span className="min-w-0 text-ink">
+                              {ex.name}
+                              {label ? (
+                                <span className="ml-2 whitespace-nowrap rounded-full bg-raised px-2 py-0.5 text-[11px] font-medium text-ink3">
+                                  {label}
+                                </span>
+                              ) : null}
+                            </span>
                             <span className="shrink-0 text-ink2 tnum">{describeBlock(b)}</span>
                           </div>
                         )
@@ -1453,7 +1586,7 @@ export function SessionPlayer({
       return (
         <div className="mx-auto w-full max-w-lg px-5 pb-10 text-center">
           <div className="mt-4 text-[13px] font-semibold uppercase tracking-wide text-accent-text">
-            {SECTION_LABEL[block.section]} · Set {displaySet} of {displayTotal}
+            {blockLabel(block) ?? SECTION_LABEL[block.section]} · Set {displaySet} of {displayTotal}
           </div>
           <h1 className="mt-1 font-display text-[30px] font-bold leading-tight text-ink">{exercise.name}</h1>
           {perSide ? (
@@ -1735,6 +1868,12 @@ export function SessionPlayer({
           {filmAttemptRef.current ? (
             <div className="mt-1 inline-flex items-center gap-1.5 text-[12px] font-medium text-danger-text">
               <span className="h-2 w-2 rounded-full bg-danger" aria-hidden="true" /> Filming
+              {liveCue === 'watching' ? <span className="text-ink3">· live elbow cue on</span> : null}
+            </div>
+          ) : null}
+          {liveCue === 'cued' ? (
+            <div className="mt-1.5 rounded-full bg-accent-soft px-3 py-1 text-[13px] font-semibold text-accent-text" role="status">
+              Elbows softening — lock them
             </div>
           ) : null}
           <div className="relative mt-4">
@@ -1823,8 +1962,11 @@ export function SessionPlayer({
     }
 
     if (phase === 'rest') {
-      const nb = workout.blocks[bi]
+      const nb = block ?? workout.blocks[bi]
       const nx = EXERCISE_BY_ID[nb.exerciseId]
+      const advice = lastLog && (blockLogAts[bi] ?? []).includes(lastLog.at) ? adviceFor(bi, logs) : null
+      const moveOnKey = `${bi}:${(blockLogAts[bi] ?? []).length}`
+      const showMoveOn = Boolean(advice?.suggestMoveOn) && !keptGoing.has(moveOnKey) && si < nb.sets
       const total = restTotal || nb.restSec
       const note = lastLog ? timingNote(lastLog) : null
       return (
@@ -1889,7 +2031,43 @@ export function SessionPlayer({
               </>
             ) : null}{' '}
             · set {Math.floor(si / (nx.perSide ? 2 : 1)) + 1}/{Math.ceil(nb.sets / (nx.perSide ? 2 : 1))}
+            {' '}
+            · <span className="font-medium text-ink tnum">{nb.target.kind === 'hold' ? `${nb.target.sec}s` : `${nb.target.reps} reps`}</span>
+            {advice && advice.change !== 'same' ? (
+              <span
+                className={`ml-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-semibold tnum ${
+                  advice.change === 'up' ? 'bg-ok-soft text-ok-text' : 'bg-accent-soft text-accent-text'
+                }`}
+              >
+                {advice.change === 'up' ? 'raised' : 'eased'}
+              </span>
+            ) : null}
           </div>
+          {advice?.reason ? (
+            <p className="mx-auto mt-1.5 max-w-sm text-[12.5px] leading-relaxed text-ink3" role="status">
+              {advice.reason}
+            </p>
+          ) : null}
+          {showMoveOn ? (
+            <div className="mx-auto mt-3 w-full max-w-sm rounded-2xl border border-accent/30 bg-accent-soft p-3 text-left">
+              <p className="text-[12.5px] leading-relaxed text-ink">{advice!.suggestMoveOn}</p>
+              <p className="mt-1 text-[11.5px] text-ink3">A design choice borrowed from velocity-loss training — your call.</p>
+              <div className="mt-2.5 flex gap-2">
+                <button
+                  onClick={() => skipBlock()}
+                  className="min-h-11 flex-1 rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-on-accent"
+                >
+                  Move on
+                </button>
+                <button
+                  onClick={() => setKeptGoing((s) => new Set(s).add(moveOnKey))}
+                  className="min-h-11 flex-1 rounded-xl border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+                >
+                  Keep going
+                </button>
+              </div>
+            </div>
+          ) : null}
           <div className="mt-5 flex gap-3">
             <button
               onClick={() => setRestEnd((e) => Math.max(e, Date.now()) + 30_000)}
@@ -2086,6 +2264,12 @@ export function SessionPlayer({
             <Figure step={unlocked.id} className="mx-auto mt-2 h-32 w-40 text-ink" />
             <div className="font-display text-[26px] font-bold text-ink">{unlocked.name}</div>
             <p className="mt-1 text-[14px] text-ink2">{unlocked.tagline}</p>
+            {events.unlockedVia === 'next-shape' ? (
+              <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-ink2">
+                Opened early: you held its opening dose clean on camera while your last step was past half its bar.
+                That is the readiness the bar only predicts — keep the previous step in your sessions for a while.
+              </p>
+            ) : null}
           </div>
         ) : (
           <h1 className="mt-8 font-display text-[26px] font-bold text-ink">
