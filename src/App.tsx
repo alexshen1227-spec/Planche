@@ -8,6 +8,7 @@ import { LONG_GAP_DAYS } from './lib/signals'
 import type { CoachPlan } from './lib/coach'
 import { MeasurePrompt, measurementDue } from './components/MeasurePrompt'
 import { pruneClips } from './lib/clips'
+import { syncMilestonePins } from './lib/highlights'
 import { exportData } from './lib/exportImport'
 import { Icon, type IconName } from './components/Icon'
 import { Toasts } from './components/Toasts'
@@ -373,11 +374,21 @@ export default function App() {
     document.body.scrollTop = 0
   }, [tab])
 
-  // Sweep expired footage once per launch, so storage does not creep up over
-  // months even if a session never finishes.
+  // Keep each step's milestone clips pinned (lib/highlights), then sweep
+  // expired footage once per launch so storage does not creep up over months.
+  // Only once saved history is loaded: a sync against a still-empty state would
+  // unpin every milestone, and the sweep straight after would delete them.
+  const historyReady = boot.phase === 'ready'
+  const swept = useRef(false)
   useEffect(() => {
-    void pruneClips()
-  }, [])
+    if (!historyReady) return
+    const sync = syncMilestonePins(state).catch(() => undefined)
+    if (!swept.current) {
+      swept.current = true
+      void sync.then(() => pruneClips())
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyReady, state.sessions])
   // Asked once on open when it comes due, never mid-workout.
   const [showMeasure, setShowMeasure] = useState(false)
   useEffect(() => {

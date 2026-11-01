@@ -416,6 +416,13 @@ them. Real-hardware behaviour is still unproven.
   `rebuildDerivedState`: the session that opened each step, days and sessions
   per step. A step that was placed or jumped to has no date — never a guessed
   one.
+- `lib/highlights.ts`: per step, the first filmed hold the camera could read
+  and the best verified hold are pinned, exempt from the 30-day sweep. Pins
+  are owned: only pins this made are removed (when a better hold replaces
+  one), a pin set or cleared by hand is never touched again
+  (`releaseMilestonePin`), and the launch sweep runs after the sync and only
+  once history has loaded — a sync against a still-empty state would unpin
+  every milestone and the sweep would delete them.
 - `lib/shareCard.ts`: card data and copy are pure and tested; drawing reuses
   the figure geometry via `Path2D`. Only numbers the app already shows, each
   able to be absent (no verified hold → "—"). Made and shared on the device.

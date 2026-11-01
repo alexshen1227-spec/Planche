@@ -15,6 +15,7 @@ import { BridgeCard } from '../components/BridgeCard'
 import { PUSHUP_VERSION } from '../data/pressing'
 import { readJourney, type JourneyStop } from '../lib/journey'
 import { ShareProgress } from '../components/ShareProgress'
+import { MilestoneClips } from '../components/MilestoneClips'
 
 /** Names that fit under a small figure. */
 const SHORT_NAME: Record<StepId, string> = {
@@ -368,6 +369,8 @@ function StepDetail({
           <span className="font-medium text-ink">{pr ? `${fmtHold(pr.value)} (${fmtDate(pr.at)})` : '—'}</span>
         </span>
       </div>
+
+      <MilestoneClips stepId={step.id} />
 
       <p className="mt-4 text-[14.5px] leading-relaxed text-ink2">{step.description}</p>
 

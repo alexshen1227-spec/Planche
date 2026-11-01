@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormCheck, Session, SetLog } from '../types'
 import { listClips, getClipBlob, deleteClip, setPinned, type ClipMeta } from '../lib/clips'
+import { releaseMilestonePin } from '../lib/highlights'
 import { analyseClip, emptyResult, friendlyResult, type PoseFormResult } from '../lib/poseForm'
 import { useStore } from '../lib/store'
 import { EXERCISE_BY_ID } from '../data/exercises'
@@ -153,7 +154,10 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
                   </button>
                 )}
                 <button
-                  onClick={() =>
+                  onClick={() => {
+                    // A pin set or cleared by hand is the athlete's from now on;
+                    // milestone pinning (lib/highlights) leaves it alone.
+                    releaseMilestonePin(c.key)
                     void setPinned(c.key, !c.pinned).then((ok) => {
                       if (ok) {
                         load()
@@ -162,7 +166,7 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
                         pushToast('That clip could not be updated.', 'danger')
                       }
                     })
-                  }
+                  }}
                   aria-label={c.pinned ? 'Unpin clip' : 'Pin as reference'}
                   aria-pressed={c.pinned}
                   title={c.pinned ? 'Unpin' : 'Pin as reference — never auto-deleted'}
