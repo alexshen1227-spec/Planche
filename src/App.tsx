@@ -204,7 +204,7 @@ function PersistenceBanner() {
             exportData({ ...state, lastBackupAt: at })
             dispatch({ type: 'STAMP_BACKUP', at })
           }}
-          className="rounded-lg bg-danger px-3 py-1.5 text-[12.5px] font-semibold text-white"
+          className="rounded-lg bg-danger-solid px-3 py-1.5 text-[12.5px] font-semibold text-white"
         >
           Export
         </button>

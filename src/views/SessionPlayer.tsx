@@ -1954,7 +1954,7 @@ export function SessionPlayer({
           <div className="sticky bottom-0 z-10 mt-6 w-full max-w-sm bg-bg/80 pb-[max(env(safe-area-inset-bottom),16px)] pt-3 backdrop-blur-sm">
             <button
               onClick={() => stopHold()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-danger px-6 py-5 font-display text-[18px] font-semibold text-white shadow-card transition active:scale-[0.99]"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-danger-solid px-6 py-5 font-display text-[18px] font-semibold text-white shadow-card transition active:scale-[0.99]"
             >
               <Icon name="stop" size={18} /> Stop hold
             </button>
@@ -2532,7 +2532,7 @@ export function SessionPlayer({
                 <button
                   onClick={discard}
                   className={`min-h-12 rounded-xl px-4 py-3 text-[14.5px] font-semibold ${
-                    logs.length ? 'bg-danger text-white' : 'border border-line bg-surface text-ink2'
+                    logs.length ? 'bg-danger-solid text-white' : 'border border-line bg-surface text-ink2'
                   }`}
                 >
                   {logs.length ? `Discard ${logs.length} set${logs.length === 1 ? '' : 's'}` : 'Close'}
@@ -2568,7 +2568,7 @@ export function SessionPlayer({
                 <button
                   onClick={discard}
                   className={`min-h-12 rounded-xl px-4 py-3 text-[14.5px] font-semibold ${
-                    canFinishEarly ? 'bg-danger text-white' : 'border border-line bg-surface text-ink2'
+                    canFinishEarly ? 'bg-danger-solid text-white' : 'border border-line bg-surface text-ink2'
                   }`}
                 >
                   {canFinishEarly

@@ -1035,7 +1035,7 @@ export function Stats({
                 setExpanded(null)
                 pushToast('Session deleted.', 'info')
               }}
-              className="flex-1 rounded-xl bg-danger py-3 text-[14.5px] font-semibold text-white"
+              className="flex-1 rounded-xl bg-danger-solid py-3 text-[14.5px] font-semibold text-white"
             >
               Delete
             </button>

@@ -39,6 +39,9 @@
      error copy actually sits. The fill colour stays as it was — it is used for
      solid destructive buttons, where the white sits on top of it. */
   --t-danger-text: #c02b36;
+  /* Fill for buttons with white text: 5.8:1. Plain --t-danger is 4.35:1 with
+     white, which the Stop hold button failed by a hair. */
+  --t-danger-solid: #c02b36;
   --t-danger-soft: rgba(214, 69, 80, 0.1);
   --t-info: #2a78d6;
   /* 5.09:1 on --t-info-soft, where the 11px type badges sit. */
@@ -79,6 +82,9 @@
   --t-ok-soft: rgba(74, 222, 128, 0.12);
   --t-danger: #fb7185;
   --t-danger-text: #fb7185;
+  /* The dark theme's danger is a light pink that white text sits on at 2.7:1;
+     solid buttons use a deeper rose instead (4.7:1 with white). */
+  --t-danger-solid: #e11d48;
   --t-danger-soft: rgba(251, 113, 133, 0.12);
   --t-info: #5b9be6;
   --t-info-text: #5b9be6;
@@ -115,6 +121,7 @@
   --color-danger: var(--t-danger);
   --color-danger-text: var(--t-danger-text);
   --color-danger-soft: var(--t-danger-soft);
+  --color-danger-solid: var(--t-danger-solid);
   --color-info: var(--t-info);
   --color-info-text: var(--t-info-text);
   --color-info-soft: var(--t-info-soft);

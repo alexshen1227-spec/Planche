@@ -861,7 +861,8 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             value={s.volume}
             onChange={(e) => set({ volume: Number(e.target.value) })}
             aria-label="Sound volume"
-            className="w-32"
+            // Tall enough to grab on a phone: a bare range input is 16px high.
+            className="h-8 w-36 cursor-pointer"
           />
           <button
             onClick={() => sfx.pr()}
@@ -1118,7 +1119,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                   pushToast('Problem reports deleted.', 'info')
                 })
               }}
-              className="flex-1 rounded-xl bg-danger py-3 text-[14.5px] font-semibold text-white"
+              className="flex-1 rounded-xl bg-danger-solid py-3 text-[14.5px] font-semibold text-white"
             >
               Delete reports
             </button>
@@ -1265,7 +1266,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 onClick={() => void applyImport()}
                 disabled={importBusy || (reportHasLosses(pendingImport.report) && !acceptLosses)}
                 aria-busy={importBusy}
-                className="flex-1 rounded-xl bg-danger py-3 text-[14.5px] font-semibold text-white disabled:opacity-50"
+                className="flex-1 rounded-xl bg-danger-solid py-3 text-[14.5px] font-semibold text-white disabled:opacity-50"
               >
                 {importBusy ? 'Importing…' : 'Replace my data'}
               </button>
@@ -1300,7 +1301,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               onClick={() => void resetEverything()}
               disabled={resetBusy}
               aria-busy={resetBusy}
-              className="flex-1 rounded-xl bg-danger py-3 text-[14.5px] font-semibold text-white disabled:opacity-60"
+              className="flex-1 rounded-xl bg-danger-solid py-3 text-[14.5px] font-semibold text-white disabled:opacity-60"
             >
               {resetBusy ? 'Deleting…' : 'Delete everything'}
             </button>

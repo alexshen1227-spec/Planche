@@ -150,7 +150,7 @@ export function AttemptEnd({
                 {onEndSession ? (
                   <button
                     onClick={onEndSession}
-                    className="min-h-11 flex-1 rounded-xl bg-danger px-3 py-2 text-[13px] font-semibold text-white"
+                    className="min-h-11 flex-1 rounded-xl bg-danger-solid px-3 py-2 text-[13px] font-semibold text-white"
                   >
                     End the session here
                   </button>
