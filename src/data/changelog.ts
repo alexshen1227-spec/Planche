@@ -23,6 +23,8 @@ export const CHANGELOG: ChangeEntry[] = [
     area: 'app',
     notes: [
       'The pressing ladder now marks the press your sessions actually give you. Swapped to push-ups at setup, it marked pseudo planche push-ups as “now” and said you pressed in your step’s own shape; it now marks push-ups and says what brings the step’s press back.',
+      'Next-shape attempts now aim at the hold that opens the step early — five seconds of advanced tuck from the tuck, ten of frog stand from the lean — and you hold each one as long as it stays clean; the call comes when the hold will count. They were sized at 70% of your last attempt, so coming down at each call walked them from two seconds to one and kept them there.',
+      'If you skip the max clean hold, it waits a week before it is offered again, instead of taking the place of your next-shape attempts every session.',
       'Personal records show your training movements, planche line first. Warm-up drills, wrist prep and stretches are logged at the counts they ask for, so the board was filling up with “records” of ten arm circles.',
       'Learn and the Path describe the re-measure that now happens inside a session, and a few lines that stated coaching convention as fact now say it is convention — weekly frequency, rest between holds, how long the road takes.',
       'The Frog Stand step is summed up as what you do in it — hand balance with your knees on your elbows — not “straight(ish) arms”.',
@@ -47,7 +49,6 @@ export const CHANGELOG: ChangeEntry[] = [
     notes: [
       'The warm-up lean at the Planche Lean step is now half your working hold. It was a fixed eight seconds, so a new athlete who placed at “up to 12s” warmed up with what was their whole max, and then worked at five.',
       'Frog stand practice no longer costs a lean set. Next-shape attempts take one set off the key hold because they are hard straight-arm efforts; the frog stand is a bent-arm balance drill, and it was taking a quarter of a beginner’s lean practice.',
-      'Answered “not yet” on the frog stand? Practice now opens at five seconds instead of ten.',
       'Swapped to an easier version at setup — push-ups for pseudo planche push-ups, knee push-ups, a tuck hollow hold? It now moves you back up by itself, and the exercise note says when: pseudo planche push-ups return once your push-up sets reach about 15 reps. Before, the swap re-read your setup answer every session, so it never ended however many push-ups you logged.',
       'Next-shape attempts keep their target for the whole session. Coming down at the call and walking back quickly logs a little under the target, and two of those in a row used to cut the next attempt.',
       'After next-shape attempts, the coach’s note says what is verified and what would open the step early. It used to read “held clean for 10s — rated Clean, camera pass” after attempts nobody had filmed or rated.',

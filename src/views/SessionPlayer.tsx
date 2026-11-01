@@ -517,8 +517,9 @@ export function SessionPlayer({
     latency,
     phase === 'hold' && block?.target.kind === 'hold' ? block.target.sec : 0,
     bestBefore,
-    // An unlock attempt or max test is a bar the logged value must clear.
-    block?.role === 'attempt' || workout.kind === 'test',
+    // An unlock attempt, a next-shape attempt or a max test is a bar the
+    // logged value must clear.
+    block?.role === 'attempt' || block?.role === 'bridge' || workout.kind === 'test',
   )
   const restRemaining = Math.max(0, (restEnd - now) / 1000)
 
@@ -1285,6 +1286,7 @@ export function SessionPlayer({
       completion: partial ? 'partial' : 'full',
       plannedRounds: totalSets,
       ...(workout.baseTargetSec !== undefined ? { baseTargetSec: workout.baseTargetSec } : {}),
+      ...(workout.blocks.some((b) => b.retest) ? { retestOffered: true } : {}),
     }
     const { next, events: raw } = applySession(state, session)
     // The coach reacts to every finished session, whatever kind it was.

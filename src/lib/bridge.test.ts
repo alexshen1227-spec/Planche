@@ -179,3 +179,27 @@ describe('transition guides', () => {
     }
   })
 })
+
+describe('next-shape attempts keep their bar in sight', () => {
+  // Simulated: an athlete who came down at every call was given advanced tuck
+  // attempts of 2s, then 1s, for good — sized at 70% of the last attempt,
+  // which was the last target. The early-promotion hold was 5s.
+  it('aims every attempt at the next shape’s opening dose, however short the last ones were', () => {
+    const short = (daysAgo: number) =>
+      session(
+        'tuck',
+        [
+          { exerciseId: 'adv-tuck-planche', value: 1, target: 1 },
+          { exerciseId: 'adv-tuck-planche', value: 1, target: 1 },
+          { value: 12, target: 12 },
+          { value: 11, target: 11 },
+        ],
+        daysAgo,
+      )
+    const state = athlete('tuck', [short(7), short(5), short(3)])
+    const plan = { ...buildPlan(state, NOW), strategy: 'balanced' as const, dayType: 'build' as const, queueRetest: false }
+    const attempt = todaysSession(state, plan).blocks.find((b) => b.role === 'bridge')!
+    expect(attempt.exerciseId).toBe('adv-tuck-planche')
+    expect(attempt.target).toEqual({ kind: 'hold', sec: STEP_BY_ID.advtuck.startSec })
+  })
+})

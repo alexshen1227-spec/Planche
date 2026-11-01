@@ -1080,19 +1080,15 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   if (bridging && bridge) {
     const next = bridge.next
     const nextEx = EXERCISE_BY_ID[next.keyExerciseId]
-    const shown = capacityOn(state, next.id)
     const balance = next.keyExerciseId === 'frog-stand'
-    // Short attempts sized from what the athlete has shown on the next shape;
-    // with nothing shown, about 40% of its opening dose — two seconds of a
-    // tuck, five of a lean. A balance skill gets longer practice.
-    const opening = Math.max(2, Math.round(next.startSec * 0.4))
-    // "Not yet" on the frog stand at placement starts balance practice at the
-    // floor rather than at ten seconds (a positive answer already reads as
-    // capacity in `capacityOn`).
-    const notYet = shown === undefined && state.assessment?.answers[next.keyExerciseId] === 0
-    const bridgeTarget = balance
-      ? clamp(shown !== undefined ? Math.round(shown * 0.7) : notYet ? 5 : 10, 5, 20)
-      : clamp(shown !== undefined ? Math.round(shown * 0.7) : opening, 1, next.startSec)
+    // Attempts, sized like any attempt: the target is the bar they attempt —
+    // the next shape's opening dose, which is also its early-promotion hold —
+    // held as long as it stays clean, with the call on credited time. Sized at
+    // 70% of the best recent attempt instead, an athlete who came down at each
+    // call was given 2s, then 1s, for good: simulated, the advanced tuck
+    // attempts never came within reach of their 5s bar, and frog stand
+    // practice slid from 10s to 5s.
+    const bridgeTarget = next.startSec
     blocks.push({
       exerciseId: next.keyExerciseId,
       sets: nextEx.perSide ? 2 : 3,
@@ -1103,8 +1099,8 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
       section: 'main',
       role: 'bridge',
       note: balance
-        ? `Next shape: ${nextEx.name.toLowerCase()} practice, first while you are fresh. Balance comes from the fingertips — lean until the feet get light rather than jumping. Film one and review it against the checklist: ${next.startSec}s reviewed opens the step early once your lean reaches ${Math.round(bridge.promotionCurrentSec)}s.`
-        : `Next shape, first while you are fresh: short, fresh attempts at the ${nextEx.name.toLowerCase()} — stop at the first loss of shape; a one-second clean hold beats five ugly ones. Held clean on camera for ${next.startSec}s${nextEx.perSide ? ' each side' : ''}, it opens the step early once your ${step.name.toLowerCase()} is verified past ${Math.round(bridge.promotionCurrentSec)}s.`,
+        ? `Next shape: ${nextEx.name.toLowerCase()} practice, first while you are fresh. Balance comes from the fingertips — lean until the feet get light rather than jumping, and stay up as long as you can. Film one and review it against the checklist: ${next.startSec}s reviewed opens the step early once your lean reaches ${Math.round(bridge.promotionCurrentSec)}s.`
+        : `Next shape, first while you are fresh: hold the ${nextEx.name.toLowerCase()} as long as it stays clean and come down at the first loss of shape — a one-second clean hold beats five ugly ones. ${next.startSec}s${nextEx.perSide ? ' each side' : ''} clean on camera opens the step early once your ${step.name.toLowerCase()} is verified past ${Math.round(bridge.promotionCurrentSec)}s; the call comes when it will count.`,
     })
   }
 

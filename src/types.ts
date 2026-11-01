@@ -511,6 +511,12 @@ export interface Session {
    * it — completing a target is evidence it was within capacity.
    */
   baseTargetSec?: number
+  /**
+   * The session opened with a re-test (`plan.queueRetest`). Kept so a skipped
+   * one backs off for a while instead of displacing next-shape practice every
+   * session after.
+   */
+  retestOffered?: boolean
 }
 
 export interface PRMark {

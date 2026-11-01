@@ -1666,7 +1666,10 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // logs only lower bounds, so their target sat on the last measured number
   // until they chose to test: simulated, 5s for twelve weeks while their lean
   // grew from 8s to 30s. The re-test now comes inside the session.
-  const queueRetest = suggestMaxTest && !queueUnlockAttempt
+  // Skipped, it backs off for a week: re-queued at every session it would keep
+  // next-shape attempts (never beside a max effort) out of all of them.
+  const retestSkippedRecently = sig.daysSinceSkippedRetest !== null && sig.daysSinceSkippedRetest < 7
+  const queueRetest = suggestMaxTest && !queueUnlockAttempt && !retestSkippedRecently
   if (queueUnlockAttempt) {
     decisions.push({
       text: `You're within reach of the ${step.unlockSec}s bar — an unlock attempt is queued first, while you're freshest.`,

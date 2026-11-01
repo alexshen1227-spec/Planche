@@ -432,7 +432,13 @@ them. Real-hardware behaviour is still unproven.
   the lean) sessions open with short attempts at the next step's key hold —
   section `main`, `role: 'bridge'`, so they are filmed and judged — only when
   `plan.challengeAllowed`, never beside an unlock attempt, never on easy days.
-  **Early promotion** (`earlyPromotionEarned`, used by `applySession`): the next
+  They are attempts, sized like one: the target is the next shape's
+  `startSec` (its early-promotion hold), held as long as it stays clean, the
+  call on credited time (`holdCues` banking). Sized at 70% of the best recent
+  attempt, an athlete who came down at each call was walked from 2s to 1s for
+  good. A due re-test displaces them for a day; a skipped one
+  (`Session.retestOffered` with no bar attempt) backs off for a week so it
+  cannot displace them every session. **Early promotion** (`earlyPromotionEarned`, used by `applySession`): the next
   shape's `startSec` held with the full evidence chain while the current step
   is verified past half its bar opens the next step (`events.unlockedVia`).
   Deterministic from history like every other unlock.

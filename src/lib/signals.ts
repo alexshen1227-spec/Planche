@@ -381,6 +381,8 @@ export interface Signals {
   sessionsPerWeek: number
   /** Days since the last max test that actually contained an attempt. */
   daysSinceMaxTest: number | null
+  /** Days since a session that was offered a re-test and did not measure the max. */
+  daysSinceSkippedRetest: number | null
   /** Weeks since the last deliberately easy week. */
   weeksSinceDeload: number
   /** True during the seven-day block started by the latest deload session. */
@@ -741,6 +743,8 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // A max test, or a max hold at the bar inside a session: either measured it.
   const lastTest = [...sessions].reverse().find(measuredMaxIn)
   const daysSinceMaxTest = lastTest ? Math.round((now - lastTest.startedAt) / DAY) : null
+  const lastSkippedRetest = [...sessions].reverse().find((s) => s.retestOffered === true && !measuredMaxIn(s))
+  const daysSinceSkippedRetest = lastSkippedRetest ? Math.round((now - lastSkippedRetest.startedAt) / DAY) : null
 
   const lastDeload = [...sessions].reverse().find((s) => s.workoutName.toLowerCase().includes('deload'))
   // An easy week counts whatever it was called.
@@ -877,6 +881,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     skippedLastWarmup,
     sessionsPerWeek,
     daysSinceMaxTest,
+    daysSinceSkippedRetest,
     weeksSinceDeload,
     deloadActive,
     totalSessions: sessions.length,

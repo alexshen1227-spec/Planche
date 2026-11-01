@@ -1668,29 +1668,31 @@ describe('stage-specific planche lean programming', () => {
     expect(lean?.sets).toBe(mainHoldSets(5, 0, 1, false))
   })
 
-  it.each([
-    [undefined, 10],
-    [0, 5], // "Not yet"
-    [15, 11], // a held answer reads as capacity: 70% of it
-  ] as const)('opens frog stand practice from the placement answer (%s)', (answered, sec) => {
-    const answers: Record<string, number> = { 'planche-lean': 18 }
-    if (answered !== undefined) answers['frog-stand'] = answered
-    const athlete: AppState = {
-      ...state('lean'),
-      assessment: { at: 0, answers, placedStepId: 'lean', confidence: 'good', gapIds: [] },
-    }
-    const plan = {
-      ...buildPlan(athlete, Date.now()),
-      dayType: 'build' as const,
-      loadPermission: 'normal' as const,
-      warmup: 'standard' as const,
-      volumeFactor: 1,
-      queueUnlockAttempt: false,
-    }
-    const frog = todaysSession(athlete, plan).blocks.find((block) => block.role === 'bridge')
-    expect(frog?.exerciseId).toBe('frog-stand')
-    expect(frog?.target).toEqual({ kind: 'hold', sec })
-  })
+  it.each([undefined, 0, 15] as const)(
+    'aims frog stand practice at its early-promotion hold, whatever was answered (%s)',
+    (answered) => {
+      // Practice is held as long as balance lasts; the target is the bar it is
+      // attempting, not a fraction of the last attempt.
+      const answers: Record<string, number> = { 'planche-lean': 18 }
+      if (answered !== undefined) answers['frog-stand'] = answered
+      const athlete: AppState = {
+        ...state('lean'),
+        assessment: { at: 0, answers, placedStepId: 'lean', confidence: 'good', gapIds: [] },
+      }
+      const plan = {
+        ...buildPlan(athlete, Date.now()),
+        dayType: 'build' as const,
+        loadPermission: 'normal' as const,
+        warmup: 'standard' as const,
+        volumeFactor: 1,
+        queueUnlockAttempt: false,
+        queueRetest: false,
+      }
+      const frog = todaysSession(athlete, plan).blocks.find((block) => block.role === 'bridge')
+      expect(frog?.exerciseId).toBe('frog-stand')
+      expect(frog?.target).toEqual({ kind: 'hold', sec: STEP_BY_ID.frog.startSec })
+    },
+  )
 
   it('prioritises the Tuck lean over generic accessories in a standard session', () => {
     const leans = generatedWorkout('tuck', 'build', 30).blocks.filter(

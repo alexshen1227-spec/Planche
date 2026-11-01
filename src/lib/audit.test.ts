@@ -667,6 +667,18 @@ describe('a due re-test happens inside the session', () => {
     expect(adaptiveTarget(state, 'tuck', NOW)).toBeGreaterThan(6)
   })
 
+  it('backs off for a week when it was offered and skipped', () => {
+    // Re-queued at every session, a skipped re-test kept next-shape attempts
+    // (never beside a max effort) out of all of them.
+    const skipped = (daysAgo: number) =>
+      trainingDay(daysAgo, [hold('tuck-planche', 6, at(daysAgo), { target: 6 })], { retestOffered: true, baseTargetSec: 6 })
+    expect(buildPlan(obedient([skipped(3)]), NOW).queueRetest).toBe(false)
+    expect(buildPlan(obedient([skipped(8)]), NOW).queueRetest).toBe(true)
+    // Done, it is a measurement like any other.
+    const done = trainingDay(3, [hold('tuck-planche', 14, at(3), { target: STEP_BY_ID.tuck.unlockSec })], { retestOffered: true })
+    expect(readSignals(obedient([done]), NOW).daysSinceSkippedRetest).toBeNull()
+  })
+
   it('never on a day a max effort is not allowed', () => {
     const plan = buildPlan(obedient(), NOW, { joints: 'good', energy: 'tired', at: NOW })
     expect(plan.challengeAllowed).toBe(false)
