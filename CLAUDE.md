@@ -347,6 +347,17 @@ them. Real-hardware behaviour is still unproven.
   default when nothing is logged.
 - **Short holds get more sets** (`mainHoldSets`) and slightly shorter rest
   (`restAfterHold`, floor 90s). Per-side key holds start a set lighter.
+- **Easy days keep the session's shape.** Why the day is easy decides what
+  eases: a fatigue day (`dayType` technique or deload) keeps the press (never
+  a planche push-up), leans and core at `LIGHT_DOSE_SHARE` of the dose
+  capacity chose, inside a 30-minute cap. Those blocks are `light`, their sets
+  are logged `light`, and light sets never move `accessoryProgression` or
+  set-to-set targets (`adjustsSetToSet`). A form-repair day (strategy
+  technique on a push/build day) eases only the key hold — the limiter's work
+  *is* the repair; easy days once dropped every lean and press, so the lockout
+  leans never reached the soft-elbow athletes they were built for. A second
+  loaded session on the same day stays skill only. The old test pinned
+  `strategy`/`dayType` by hand and missed this; assert on `buildPlan`'s plan.
 - **Set-to-set targets** (`lib/autoregulate.ts`) are *derived*, not stored:
   the player keeps which logs belong to which block (`blockLogAts`, persisted
   in the draft) and recomputes the next target from them, so edits, ratings
@@ -370,6 +381,11 @@ them. Real-hardware behaviour is still unproven.
   full; steadiness is `drift` — the robust spread of hand-relative shoulder and
   hip positions (camera motion cancels; `wobble` is legacy and no longer
   written). Never say why the body moved.
+- **The footage must cover the hold**: a recording shorter than its credited
+  hold is judged for what it filmed and says so (`unfilmedSec`, persisted);
+  under a second of footage is refused. The unfilmed tail is never verified
+  and never taken off the training dose (`trainingSetValue`). Found end to end
+  with a fake camera whose static canvas made a 0.015s clip of a 2.9s hold.
 - **One clean-time contract**: `cleanEvidence(auto)` is verified / fault /
   unknown. Unjudged elbows or coverage below `MIN_VERIFIED_COVERAGE` are
   unknown — never zero, never verified — and block progression credit. The

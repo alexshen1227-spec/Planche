@@ -1,4 +1,4 @@
-import type { FormRating } from '../types'
+import type { Block, FormRating, Workout } from '../types'
 
 /**
  * Right difficulty, set by set.
@@ -24,6 +24,28 @@ import type { FormRating } from '../types'
  * numbers are a design choice, and the wording says so where it reaches an
  * athlete.
  */
+
+/**
+ * Whether set-to-set advice may move a block's target at all. Never for
+ * warm-ups, cooldowns, unlock attempts, max tests, single-set blocks,
+ * per-side work (two sides, one target) or an easy day's light dose — which
+ * is meant to stay light however easy its first set felt.
+ */
+export function adjustsSetToSet(
+  block: Pick<Block, 'light' | 'role' | 'section' | 'sets'>,
+  workoutKind: Workout['kind'],
+  perSide: boolean,
+): boolean {
+  return !(
+    workoutKind === 'test' ||
+    block.light ||
+    block.role === 'attempt' ||
+    block.section === 'warmup' ||
+    block.section === 'cooldown' ||
+    block.sets <= 1 ||
+    perSide
+  )
+}
 
 export interface SetOutcome {
   /** Credited seconds for holds, reps for rep work. */

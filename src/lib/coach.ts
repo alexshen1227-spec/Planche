@@ -782,16 +782,16 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   } else if (sig.readinessLoad !== null && sig.readinessLoad > 1.5) {
     dayType = 'technique'
     dayReason =
-      'Your recent training load is running well above your own four-week normal — today is skill work rather than more load stacked on top.'
+      'Your recent training load is running well above your own four-week normal — today is skill practice with light support work, rather than more load stacked on top.'
   } else if (sig.daysSinceLoaded === 1 && sig.lastLoadedWasTest) {
     // A max test is maximal whatever its seconds add up to. Three five-second
     // attempts used to fall below the volume bar and leave the next day
     // claiming nothing hard had been logged.
     dayType = 'technique'
-    dayReason = 'Yesterday was a max test — a maximal effort however short it was — so today is skill work rather than another push.'
+    dayReason = 'Yesterday was a max test — a maximal effort however short it was — so today is skill practice with light support work rather than another push.'
   } else if (sig.daysSinceLoaded === 1 && (sig.lastLoadedRpe ?? 0) >= 9) {
     dayType = 'technique'
-    dayReason = 'Your last hard session hit RPE 9+ — today is skill work, so fatigue does not stack on fatigue.'
+    dayReason = 'Your last hard session hit RPE 9+ — today is skill practice with light support work, so fatigue does not stack on fatigue.'
   } else if (sig.daysSinceLoaded >= 2) {
     dayType = 'push'
     dayReason = !sig.hasLoadedSession
@@ -988,6 +988,13 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     strategy = 'technique'
     strategyOverrideReason =
       'recent form evidence says easier, repeatable positions will move you forward faster than another hard exposure.'
+    // The day's reason was written before this override, and "today pushes,
+    // so the coach can see where your limit actually sits" sat beside a
+    // session of easier key holds.
+    if (dayType === 'push' || dayType === 'build') {
+      dayReason =
+        'Form comes first today: the key holds ease off until the position holds clean again, and the strength work around them stays.'
+    }
     if (!limiter) {
       limiter = {
         label: 'Hold durability',

@@ -521,6 +521,7 @@ function sanitizeSet(rawSet: unknown, sessionStart: number, report: NormalizeRep
     ...(typeof x.recordingOffsetSec === 'number' && Number.isFinite(x.recordingOffsetSec)
       ? { recordingOffsetSec: clampNum(x.recordingOffsetSec, 0, 600, 0) }
       : {}),
+    ...(x.light === true ? { light: true } : {}),
     ...(allRepairs.length ? { repaired: allRepairs } : {}),
   }
 }

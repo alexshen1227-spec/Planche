@@ -350,6 +350,8 @@ export interface Block {
    * longer than the default accessories it would otherwise be trimmed with.
    */
   emphasis?: boolean
+  /** An easy day's lighter dose: its sets are logged `light` (see `SetLog.light`). */
+  light?: boolean
 }
 
 /**
@@ -446,6 +448,12 @@ export interface SetLog {
    * A late start means the clip's first frame is not the hold's first second.
    */
   recordingOffsetSec?: number
+  /**
+   * Logged from an easy day's lighter accessory dose. Real work, so it counts
+   * as volume — but a target chosen to be easy says nothing about capacity, so
+   * it never moves accessory progression either way.
+   */
+  light?: boolean
   /**
    * Fields an import had to repair (an unknown section, a malformed camera
    * reading). The timer value is kept as history; the set can no longer

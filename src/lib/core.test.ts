@@ -1662,14 +1662,23 @@ describe('stage-specific planche lean programming', () => {
     },
   )
 
-  it('does not add loaded lean volume to a Tuck technique day', () => {
-    const leans = generatedWorkout('tuck', 'technique').blocks.filter(
-      (block) => block.exerciseId === 'planche-lean',
-    )
+  it('keeps lean work on a Tuck technique day, at a light dose that stays out of progression', () => {
+    // Technique days once dropped leans and pressing entirely — and the coach
+    // makes every day one while the camera keeps flagging a fault, so those
+    // athletes lost their straight-arm work for as long as the fault lasted.
+    const workout = generatedWorkout('tuck', 'technique')
+    const leans = workout.blocks.filter((block) => block.exerciseId === 'planche-lean')
 
     expect(leans).toEqual([
       expect.objectContaining({ section: 'warmup', sets: 1, target: { kind: 'hold', sec: 8 } }),
+      expect.objectContaining({ section: 'strength', sets: 2, target: { kind: 'hold', sec: 8 }, light: true }),
     ])
+    const press = workout.blocks.find((block) => block.role === 'press')!
+    expect(press.light).toBe(true)
+    expect(press.sets).toBe(2)
+    // One press on a light day, and never a maximal planche push-up.
+    expect(workout.blocks.filter((block) => block.role === 'pressing')).toHaveLength(0)
+    expect(press.exerciseId).not.toMatch(/planche-pushup$/)
   })
 })
 
@@ -1703,10 +1712,12 @@ describe('recognizable coach session archetypes', () => {
 
   it('gives every strategy a distinct support-work identity without changing the key skill', () => {
     const workouts = strategyIds.map((strategy) => workoutFor(strategy))
+    // A technique day keeps the same patterns at a light dose — its identity
+    // is the dose, so the signature carries it.
     const signatures = workouts.map((workout) =>
       workout.blocks
         .filter((block) => block.section !== 'warmup' && block.section !== 'cooldown')
-        .map((block) => block.exerciseId)
+        .map((block) => `${block.exerciseId}${block.light ? ':light' : ''}`)
         .join('|'),
     )
 

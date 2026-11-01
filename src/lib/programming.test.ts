@@ -155,6 +155,143 @@ describe('soft elbows get lockout work, not more bent-arm pressing', () => {
     // No extra pike push-ups for a lockout limiter.
     expect(workout.blocks.filter((b) => b.exerciseId === 'pike-pushup' && b.emphasis)).toHaveLength(0)
   })
+
+  it('keeps that work on the plan the coach actually builds, not only on a hand-picked one', () => {
+    // The test above pins strategy and day type. The real plan for this same
+    // athlete is a form-repair technique day — the camera verified none of
+    // their recent holds — and technique days used to drop every lean and
+    // press, so the lockout work never reached the athlete it was built for.
+    const armFault = (daysAgo: number) =>
+      session(
+        [0, 1, 2].map(() => ({
+          exerciseId: 'tuck-planche',
+          kind: 'hold' as const,
+          value: 8,
+          target: 6,
+          section: 'main' as const,
+          surface: 'parallettes' as const,
+          form: {
+            rating: 'slipped' as const,
+            confirmed: true,
+            issues: ['arms' as const],
+            auto: { issues: ['arms' as const], heldIssues: ['arms' as const], confidence: 0.9, cleanSeconds: 0, cleanRatio: 0 },
+          },
+        })),
+        daysAgo,
+      )
+    const state = athlete('tuck', {
+      settings: { sessionMinutes: 90 } as AppState['settings'],
+      sessions: [armFault(9), armFault(6), armFault(3)],
+    })
+    const plan = buildPlan(state, NOW)
+    expect(plan.strategy).toBe('technique')
+    expect(plan.dayType === 'technique' || plan.dayType === 'deload').toBe(false)
+    const workout = todaysSession(state, plan)
+    const lean = workout.blocks.find((b) => b.exerciseId === 'planche-lean' && b.section === 'strength')!
+    expect(lean.emphasis).toBe(true)
+    expect(lean.sets).toBeGreaterThanOrEqual(4)
+    expect(workout.blocks.some((b) => b.role === 'press')).toBe(true)
+    expect(workout.blocks.some((b) => b.role === 'pressing')).toBe(true)
+    // Not a fatigue day, so nothing is lightened...
+    expect(workout.blocks.some((b) => b.light)).toBe(false)
+    // ...but the key hold is still eased, and the next shape waits.
+    expect(workout.blocks.some((b) => b.role === 'bridge')).toBe(false)
+  })
+})
+
+describe('a fatigue day keeps the session’s shape at a light dose', () => {
+  const pppu = (value: number, target: number, extra: Partial<SetLog> = {}) => ({
+    exerciseId: 'pppu',
+    kind: 'reps' as const,
+    value,
+    target,
+    section: 'strength' as const,
+    ...extra,
+  })
+
+  it('presses once, lighter, after an RPE 9 session yesterday', () => {
+    const yesterday = {
+      ...session(
+        [
+          ...[0, 1, 2, 3].map(() => ({ exerciseId: 'tuck-planche', kind: 'hold' as const, value: 8, target: 8, section: 'main' as const, surface: 'parallettes' as const })),
+          pppu(8, 8),
+          pppu(8, 8),
+          pppu(8, 8),
+        ],
+        1,
+      ),
+      rpe: 9,
+    }
+    const state = athlete('tuck', { settings: { sessionMinutes: 90 } as AppState['settings'], sessions: [yesterday] })
+    const plan = buildPlan(state, NOW)
+    expect(plan.dayType).toBe('technique')
+    const workout = todaysSession(state, plan)
+    const press = workout.blocks.find((b) => b.role === 'press')!
+    const lean = workout.blocks.find((b) => b.exerciseId === 'planche-lean' && b.section === 'strength')!
+    expect(press.light && lean.light).toBe(true)
+    expect(press.sets).toBe(2)
+    expect(lean.sets).toBe(2)
+    expect(workout.blocks.some((b) => b.role === 'pressing')).toBe(false)
+    // The light dose is a share of what progression chose (9 after 3×8 hit),
+    // never the progression's own next step.
+    const pppuBlock = workout.blocks.find((b) => b.exerciseId === 'pppu' && b.section === 'strength')!
+    expect(pppuBlock.target).toEqual({ kind: 'reps', reps: Math.round(9 * 0.7) })
+  })
+
+  it('steps a planche push-up down to the pseudo planche push-up, and only on the light day', () => {
+    // Twelve-second tucks are past half the bar, so a full day presses the
+    // tuck planche push-up; the day after an RPE 9 session presses lighter.
+    const tucks = (daysAgo: number, rpe: number) => ({
+      ...session(
+        [0, 1, 2, 3].map(() => ({ exerciseId: 'tuck-planche', kind: 'hold' as const, value: 12, target: 12, section: 'main' as const, surface: 'parallettes' as const })),
+        daysAgo,
+      ),
+      rpe,
+    })
+    const tired = athlete('tuck', { settings: { sessionMinutes: 90 } as AppState['settings'], sessions: [tucks(1, 9)] })
+    const fresh = athlete('tuck', { settings: { sessionMinutes: 90 } as AppState['settings'], sessions: [tucks(3, 7)] })
+    const tiredPlan = buildPlan(tired, NOW)
+    const freshPlan = buildPlan(fresh, NOW)
+    expect(tiredPlan.dayType).toBe('technique')
+    expect(freshPlan.dayType === 'technique' || freshPlan.dayType === 'deload').toBe(false)
+    expect(todaysSession(fresh, freshPlan).blocks.find((b) => b.role === 'press')!.exerciseId).toBe('tuck-planche-pushup')
+    expect(todaysSession(tired, tiredPlan).blocks.find((b) => b.role === 'press')!.exerciseId).toBe('pppu')
+  })
+
+  it('keeps a second session on the same day to skill work: no pressing at all', () => {
+    // "Today" is the athlete's local calendar day, so both times are local.
+    const evening = new Date(2026, 10, 1, 18, 0).getTime()
+    const morning = new Date(2026, 10, 1, 9, 0).getTime()
+    const earlier = {
+      ...session(
+        [0, 1, 2, 3].map(() => ({ exerciseId: 'tuck-planche', kind: 'hold' as const, value: 8, target: 8, section: 'main' as const, surface: 'parallettes' as const })),
+        0,
+      ),
+      startedAt: morning,
+      endedAt: morning + 40 * 60_000,
+      // Hard enough to count as loaded (main planche work at RPE 9).
+      rpe: 9,
+    }
+    earlier.sets = earlier.sets.map((set, i) => ({ ...set, at: morning + i * 60_000 }))
+    const state = athlete('tuck', { settings: { sessionMinutes: 90 } as AppState['settings'], sessions: [earlier] })
+    const plan = buildPlan(state, evening)
+    expect(plan.dayType).toBe('technique')
+    expect(plan.signals.daysSinceLoaded).toBe(0)
+    const workout = todaysSession(state, plan)
+    expect(workout.blocks.some((b) => b.role === 'press' || b.role === 'pressing')).toBe(false)
+    expect(workout.blocks.some((b) => b.exerciseId === 'frog-stand' && b.role === 'balance')).toBe(true)
+  })
+
+  it('never lets a light day move accessory progression, either way', () => {
+    const normal = session([pppu(8, 8), pppu(8, 8), pppu(8, 8)], 6)
+    // Every light set hit its easy target: read as capacity, that echoed the
+    // light target back and the next full day would ask for 7, not 9.
+    const lightHit = session([pppu(6, 6, { light: true }), pppu(6, 6, { light: true })], 2)
+    expect(accessoryProgression({ sessions: [normal, lightHit] }, 'pppu', 'reps', NOW)).toMatchObject({ target: 9, change: 'up' })
+    // A short light day says nothing about capacity either.
+    const lightShort = session([pppu(3, 6, { light: true }), pppu(2, 6, { light: true })], 2)
+    expect(accessoryProgression({ sessions: [normal, lightShort] }, 'pppu', 'reps', NOW)).toMatchObject({ target: 9 })
+  })
 })
 
 describe('main-hold dose', () => {

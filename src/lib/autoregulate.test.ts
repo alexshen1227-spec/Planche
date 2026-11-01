@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adviseNextHold, adviseNextReps, DROP_OFF_SHARE, MAX_RISE } from './autoregulate'
+import { adjustsSetToSet, adviseNextHold, adviseNextReps, DROP_OFF_SHARE, MAX_RISE } from './autoregulate'
 
 describe('set-to-set hold targets', () => {
   it('changes nothing before the first set or on an ordinary set', () => {
@@ -82,5 +82,27 @@ describe('set-to-set rep targets', () => {
   it('matches a clear miss and leaves a near miss alone', () => {
     expect(adviseNextReps(6, [{ value: 3, target: 6 }])).toMatchObject({ target: 3, change: 'down' })
     expect(adviseNextReps(6, [{ value: 5, target: 6 }]).change).toBe('same')
+  })
+})
+
+describe('which blocks follow the athlete set to set', () => {
+  const block = { section: 'strength' as const, sets: 3 }
+
+  it('adjusts ordinary multi-set work', () => {
+    expect(adjustsSetToSet(block, 'auto', false)).toBe(true)
+    expect(adjustsSetToSet({ ...block, section: 'main', role: 'skill' }, 'auto', false)).toBe(true)
+  })
+
+  it('leaves an easy day’s light dose light, however easy its first set felt', () => {
+    expect(adjustsSetToSet({ ...block, light: true }, 'auto', false)).toBe(false)
+  })
+
+  it('never moves warm-ups, cooldowns, attempts, tests, single sets or per-side work', () => {
+    expect(adjustsSetToSet({ ...block, section: 'warmup' }, 'auto', false)).toBe(false)
+    expect(adjustsSetToSet({ ...block, section: 'cooldown' }, 'auto', false)).toBe(false)
+    expect(adjustsSetToSet({ ...block, section: 'main', role: 'attempt' }, 'auto', false)).toBe(false)
+    expect(adjustsSetToSet(block, 'test', false)).toBe(false)
+    expect(adjustsSetToSet({ ...block, sets: 1 }, 'auto', false)).toBe(false)
+    expect(adjustsSetToSet(block, 'auto', true)).toBe(false)
   })
 })

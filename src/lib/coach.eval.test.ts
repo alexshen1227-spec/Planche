@@ -309,6 +309,21 @@ describe('the coach never says anything untrue', () => {
       }
     }
   })
+
+  it('does not tell an athlete whose form is being repaired that today pushes', () => {
+    let repairs = 0
+    for (const weeks of [3, 9, 18]) {
+      for (const seed of [2, 4, 6]) {
+        const plan = buildPlan(synthesizeAthleteState({ weeks, seed, cleanRate: 0.2 }))
+        if (!/recent form evidence says easier/.test(plan.strategyReason)) continue
+        repairs += 1
+        const text = [plan.dayReason, ...plan.decisions.map((d) => d.text)].join(' ')
+        expect(/so today pushes/.test(text)).toBe(false)
+      }
+    }
+    // Not vacuous: the low clean rate does produce form-repair days.
+    expect(repairs).toBeGreaterThan(0)
+  })
 })
 
 describe('the plan is stable and proportionate', () => {

@@ -19,6 +19,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'Easy days keep the whole session',
+    area: 'training',
+    notes: [
+      'Easy days now keep your push-up version, pseudo planche push-ups and leans — at about 70% of the usual dose — instead of swapping them for a frog stand and scap push-ups. That covers the day after a max test or an RPE 9+ session, a stretch of unusually high load and a scheduled easy week. A light day never asks for a full planche push-up, and its sets never change your accessory targets, up or down.',
+      'When the camera keeps flagging the same fault, the coach now eases only your key holds; the lockout leans and the pressing stay. Before, those days dropped every lean and press, so an athlete with soft elbows lost the work meant to fix them for as long as the fault lasted.',
+      'A second hard session on the same day stays skill practice only, as it says.',
+      'A day that eases your key holds for form no longer also says “today pushes”.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'The fastest honest path to the next step',
     area: 'training',
     major: {

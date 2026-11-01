@@ -258,6 +258,22 @@ export interface AccessoryProgression {
 }
 
 /**
+ * A light day's share of an accessory dose. Convention, like the easy week it
+ * serves: a lower dose of the same patterns, with no claim that it adds
+ * strength — see the deload note in the research ledger.
+ */
+export const LIGHT_DOSE_SHARE = 0.7
+
+/** An accessory block at a light day's share of the dose capacity chose. */
+function lightDose(block: Block): Block {
+  const target =
+    block.target.kind === 'reps'
+      ? reps(Math.max(2, Math.round(block.target.reps * LIGHT_DOSE_SHARE)))
+      : hold(Math.max(3, Math.round(block.target.sec * LIGHT_DOSE_SHARE)))
+  return { ...block, target }
+}
+
+/**
  * Double progression for supporting work, read from the last session that
  * trained the exercise: every set reached its target → a little more next
  * time; at least half did → the same again; most fell short → what was
@@ -291,6 +307,7 @@ export function accessoryProgression(
         x.section !== 'cooldown' &&
         x.value > 0 &&
         x.target > 0 &&
+        !x.light &&
         !isAssisted(x) &&
         !endedForNonCapacityReason(x),
     )
@@ -1083,6 +1100,15 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   })
 
   const easy = easyDay
+  // Why the day is easy decides what eases. A fatigue day — the day after a
+  // max test or an RPE 9+ session, a second session today, a scheduled easy
+  // week — keeps the whole session at a light dose. A form-repair day eases
+  // only the key hold. Easy days used to swap the pressing and leans for a
+  // frog stand and scap push-ups, and the coach turns every day into a
+  // form-repair day while the camera keeps flagging the same fault — so an
+  // athlete with soft elbows lost the lockout leans built for them, and all
+  // their pressing, for as long as the fault lasted.
+  const light = plan.dayType === 'technique' || plan.dayType === 'deload'
 
   // The transition drill comes after the key holds, so the main volume is
   // practised fresh and the drill still lands while the arms are warm.
@@ -1108,11 +1134,12 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   ) {
     blocks.push({
       exerciseId: 'band-straddle-planche',
-      sets: easy ? 2 : 3,
+      sets: light ? 2 : 3,
       target: hold(10),
       restSec: rAcc,
       section: 'strength',
       role: 'assisted',
+      ...(light ? { light: true } : {}),
       note: 'Assisted practice in the real shape — same form rules as the free hold, same band and anchor every time so sessions compare. Never counts toward the unassisted unlock.',
     })
   }
@@ -1145,8 +1172,10 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     })
   }
 
-  // ——— Easy days: practise, do not load ———
-  if (easy) {
+  // A second loaded session on the same day is skill work only, as its day
+  // reason says: balance practice and light protraction, no pressing.
+  const skillOnly = plan.dayType === 'technique' && plan.signals.daysSinceLoaded === 0
+  if (skillOnly) {
     blocks.push(
       {
         exerciseId: 'frog-stand',
@@ -1164,7 +1193,8 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
         restSec: Math.min(60, rAcc),
         section: 'strength',
         role: 'straight-arm',
-        note: 'Light protraction practice — crisp reps, nowhere near failure. No loaded pressing or lean volume today.',
+        light: true,
+        note: 'Light protraction practice — crisp reps, nowhere near failure. No loaded pressing or lean volume in a second session today.',
       },
     )
   } else {
@@ -1172,14 +1202,19 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     const choice = pressingChoiceFor(stepId, capacity)
     // A day with a joint complaint keeps its pressing but not the hardest of
     // it: a planche push-up is a maximal, deep-wrist press, so it steps down
-    // to the pseudo planche push-up until the complaint is updated.
+    // to the pseudo planche push-up until the complaint is updated. A light
+    // day steps down the same way — a planche push-up is maximal however few
+    // reps are asked for.
     const easedForJoints = plan.loadPermission === 'reduced' && PLANCHE_PRESS.has(choice.exerciseId)
-    const pressId = easedForJoints ? 'pppu' : pressWithinKit(choice.exerciseId, equipment)
+    const easedForDay = !easedForJoints && light && PLANCHE_PRESS.has(choice.exerciseId)
+    const pressId = easedForJoints || easedForDay ? 'pppu' : pressWithinKit(choice.exerciseId, equipment)
     const pressKitNote = easedForJoints
       ? ` ${EXERCISE_BY_ID[choice.exerciseId].name} is set aside today for the joint you flagged — stop any set that makes it worse.`
-      : pressId !== choice.exerciseId
-        ? ` ${EXERCISE_BY_ID[choice.exerciseId].name} needs parallettes, so this is the closest press your kit allows.`
-        : ''
+      : easedForDay
+        ? ` ${EXERCISE_BY_ID[choice.exerciseId].name} waits for a full day; today presses lighter.`
+        : pressId !== choice.exerciseId
+          ? ` ${EXERCISE_BY_ID[choice.exerciseId].name} needs parallettes, so this is the closest press your kit allows.`
+          : ''
     const planchePress = PLANCHE_PRESS.has(pressId)
     const pressSets =
       plan.strategy === 'volume' ? 4 : plan.strategy === 'intensity' || plan.strategy === 'density' ? 3 : 3
@@ -1188,12 +1223,12 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
       plan.strategy === 'intensity' ? Math.max(1, pressDefault - (planchePress ? 1 : 2)) : pressDefault
     blocks.push({
       exerciseId: pressId,
-      sets: scale(pressSets + (plan.accessoryEmphasis === 'pressing' ? 1 : 0)),
+      sets: light ? 2 : scale(pressSets + (plan.accessoryEmphasis === 'pressing' ? 1 : 0)),
       target: reps(pressTargetReps),
       restSec: planchePress || plan.strategy === 'intensity' ? Math.max(rAcc, Math.round(rMain * 0.8)) : plan.strategy === 'density' ? Math.min(60, rAcc) : rAcc,
       section: 'strength',
       role: 'press',
-      ...(plan.accessoryEmphasis === 'pressing' ? { emphasis: true } : {}),
+      ...(light ? { light: true } : plan.accessoryEmphasis === 'pressing' ? { emphasis: true } : {}),
       note: `Push-up version of this step. ${choice.reason}${pressKitNote}${
         planchePress
           ? ' Can’t press back up yet? Lower slowly over about three seconds, step out, reset at the top — log the reps you completed.'
@@ -1206,8 +1241,8 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     // is the pseudo planche push-up (or a plain push-up at Foundations), a
     // different pressing angle instead of the same exercise twice. Intensity
     // keeps one press and stops, for freshness; density keeps one press so the
-    // session stays compact.
-    if ((plan.strategy !== 'intensity' && plan.strategy !== 'density') || plan.accessoryEmphasis === 'pressing') {
+    // session stays compact; a light day presses once.
+    if (!light && ((plan.strategy !== 'intensity' && plan.strategy !== 'density') || plan.accessoryEmphasis === 'pressing')) {
       const accessoryId = pressId === 'pppu' ? 'pike-pushup' : 'pppu'
       blocks.push({
         exerciseId: accessoryId,
@@ -1234,12 +1269,13 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     if (step.order <= STEP_BY_ID.lean.order || scapulaLimiter) {
       blocks.push({
         exerciseId: 'scap-pushup',
-        sets: scale(scapulaLimiter ? 4 : 3),
+        sets: light ? (scapulaLimiter ? 3 : 2) : scale(scapulaLimiter ? 4 : 3),
         target: reps(10),
         restSec: plan.strategy === 'density' ? Math.min(45, rAcc) : rAcc,
         section: 'strength',
         role: 'straight-arm',
         ...(scapulaLimiter ? { emphasis: true } : {}),
+        ...(light ? { light: true } : {}),
         note: scapulaLimiter
           ? 'Scapular control is the limiter — finish every rep by pushing the floor fully away.'
           : 'Protraction strength — the push-away every straight-arm hold depends on. Finish each rep with the upper back gently rounded.',
@@ -1261,15 +1297,20 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
       const lockout = plan.accessoryEmphasis === 'lockout'
       blocks.push({
         exerciseId: 'planche-lean',
-        sets: scale(
-          (plan.strategy === 'intensity' || plan.strategy === 'density' ? 2 : plan.strategy === 'volume' && stepId === 'tuck' ? 4 : 3) +
-            (lockout ? 1 : 0),
-        ),
+        // A lockout limiter keeps its extra set even on a light day: a locked
+        // lean at a depth the elbows can hold is the repair, not extra load.
+        sets: light
+          ? 2 + (lockout ? 1 : 0)
+          : scale(
+              (plan.strategy === 'intensity' || plan.strategy === 'density' ? 2 : plan.strategy === 'volume' && stepId === 'tuck' ? 4 : 3) +
+                (lockout ? 1 : 0),
+            ),
         target: hold(stepId === 'frog' || stepId === 'tuck' ? 12 : 10),
         restSec: plan.strategy === 'density' ? Math.min(45, rAcc) : rAcc,
         section: 'strength',
         role: 'straight-arm',
         ...(lockout ? { emphasis: true } : {}),
+        ...(light ? { light: true } : {}),
         note: lockout
           ? 'Lockout practice — your camera keeps seeing soft elbows. Lock first, then lean: find the deepest lean your elbows stay fully locked in and hold there. Squeeze the triceps; a shallower locked lean beats a deep bent one.'
           : leanAccessoryNote(stepId),
@@ -1280,7 +1321,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     if (plan.accessoryEmphasis === 'balance' && stepId !== 'frog') {
       blocks.splice(blocks.findIndex((b) => b.role === 'skill') + 1, 0, {
         exerciseId: 'frog-stand',
-        sets: scale(3),
+        sets: light ? 2 : scale(3),
         target: hold(20),
         restSec: rAcc,
         section: 'strength',
@@ -1289,7 +1330,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
         note: 'Balance practice gets the extra time today.',
       })
     }
-    if (plan.accessoryEmphasis === 'pressing' && pressId !== 'pppu') {
+    if (plan.accessoryEmphasis === 'pressing' && pressId !== 'pppu' && !light) {
       // Already has a second press; pike push-ups add the overhead angle.
       blocks.push({
         exerciseId: 'pike-pushup',
@@ -1362,7 +1403,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     blocks.push({
       exerciseId: 'hollow-hold',
       sets: plan.strategy === 'volume' ? scale(3) : scale(2),
-      target: hold(easy ? 20 : 30),
+      target: hold(light ? 20 : 30),
       restSec: 45,
       section: 'core',
       role: 'core',
@@ -1393,16 +1434,24 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     })
   }
 
-  // Kit first (so a substitute is sized like everything else), then capacity.
+  // Kit first (so a substitute is sized like everything else), then capacity,
+  // then a light day's share of the dose that capacity chose.
   const kit = resolveEquipment(blocks, equipment)
   const sized = capacityAdjustBlocks(state, kit.blocks, now)
+  const lightened = sized.blocks.map((b) => (b.light ? lightDose(b) : b))
+  if (lightened.some((b) => b.light)) {
+    adjustments.push(
+      `Easy day: pressing and leans at about ${Math.round(LIGHT_DOSE_SHARE * 100)}% of your usual dose — keep the pattern, leave the fatigue. These sets do not change your accessory targets.`,
+    )
+  }
 
-  const baseBudget = easy ? Math.min(22, state.settings.sessionMinutes) : state.settings.sessionMinutes
+  // Shorter than a full day, long enough for the whole shape at its light dose.
+  const baseBudget = light ? Math.min(30, state.settings.sessionMinutes) : state.settings.sessionMinutes
   const budget = minutesOverride !== undefined ? Math.min(baseBudget, Math.max(8, minutesOverride)) : baseBudget
   // Sides are expanded before trimming, so the budget accounts for the fact
   // that unilateral work costs twice as long.
   const fit = fitToBudget(
-    withSides(sized.blocks),
+    withSides(lightened),
     budget,
     plan.accessoryEmphasis === 'core',
     state.settings.stopLatencySec,
@@ -1419,8 +1468,11 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     const subject = kit.about[i]
     if (subject === undefined || present.has(subject)) adjustments.push(note)
   })
+  // A progression note about a light block would quote a target the block no
+  // longer has ("up to 9 reps" above a set of six).
+  const lightIds = new Set(lightened.filter((b) => b.light).map((b) => b.exerciseId))
   sized.notes.forEach((note, i) => {
-    if (present.has(sized.about[i])) adjustments.push(note)
+    if (present.has(sized.about[i]) && !lightIds.has(sized.about[i])) adjustments.push(note)
   })
   const droppedNames = [...new Set(fit.dropped)]
     .filter((id) => !present.has(id))
@@ -1462,9 +1514,11 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     blocks: fitted,
     strategy: plan.strategy,
     baseTargetSec: baseTarget,
-    purpose: easy
-      ? `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at an easy dose, with light skill work around it.`
-      : `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at a working dose, then build the pressing and straight-arm strength behind it.`,
+    purpose: light
+      ? `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at an easy dose, with the pressing and lean work kept light.`
+      : easy
+        ? `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at easier targets so the position stays clean, then build the strength behind it as usual.`
+        : `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at a working dose, then build the pressing and straight-arm strength behind it.`,
     ...(adjustments.length ? { adjustments } : {}),
   }
 }

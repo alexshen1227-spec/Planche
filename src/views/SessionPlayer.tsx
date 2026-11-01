@@ -62,7 +62,7 @@ import {
   setNeedsProgressionFormEvidence,
   unseenVariantCriteria,
 } from '../lib/progression'
-import { adviseNextHold, adviseNextReps, type NextSetAdvice, type SetOutcome } from '../lib/autoregulate'
+import { adjustsSetToSet, adviseNextHold, adviseNextReps, type NextSetAdvice, type SetOutcome } from '../lib/autoregulate'
 import { useLiveElbowCue } from '../components/useLiveElbowCue'
 import { POSE_PROFILES } from '../lib/poseForm'
 import type { Block } from '../types'
@@ -373,21 +373,12 @@ export function SessionPlayer({
 
   /**
    * Set-to-set advice for a block: the next target and why, read from the
-   * sets already logged in it. Never for warm-ups, cooldowns, unlock attempts,
-   * max tests, single-set blocks or per-side work (two sides, one target).
+   * sets already logged in it (which blocks qualify: `adjustsSetToSet`).
    */
   const adviceFor = useCallback(
     (blockIndex: number, current: SetLog[]): NextSetAdvice | null => {
       const planned = workout.blocks[blockIndex]
-      if (
-        !planned ||
-        workout.kind === 'test' ||
-        planned.role === 'attempt' ||
-        planned.section === 'warmup' ||
-        planned.section === 'cooldown' ||
-        planned.sets <= 1 ||
-        EXERCISE_BY_ID[planned.exerciseId]?.perSide
-      ) {
+      if (!planned || !adjustsSetToSet(planned, workout.kind, Boolean(EXERCISE_BY_ID[planned.exerciseId]?.perSide))) {
         return null
       }
       const ats = blockLogAts[blockIndex] ?? []
@@ -878,6 +869,7 @@ export function SessionPlayer({
         ...(recordingOffsetSec !== undefined && recordingOffsetSec > 0.25
           ? { recordingOffsetSec: round1(recordingOffsetSec) }
           : {}),
+        ...(b.light ? { light: true } : {}),
         target: b.target.kind === 'hold' ? b.target.sec : b.target.reps,
         section: b.section,
         at: extra.at ?? Date.now(),
