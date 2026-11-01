@@ -3,7 +3,9 @@ import type { AppState, Session, SetLog } from '../types'
 import { holdCues, PROGRESSION_STOP_LATENCY_SEC, stoppedAtTargetCall } from './sessionTiming'
 import { adviseNextHold } from './autoregulate'
 import { initialState } from './store'
-import { adaptiveTarget } from '../data/workouts'
+import { accessoryProgression, adaptiveTarget } from '../data/workouts'
+import { sessionLearningValue } from './progression'
+import { capacityOn } from './bridge'
 import { readSignals } from './signals'
 
 /**
@@ -94,7 +96,14 @@ describe('a hold stopped at its target call', () => {
       // One measured session (bests of 12s), then six coached ones in which
       // every hold stops at the call and the walk back takes 3s, not 5.
       const sessions: Session[] = [sessionAt(0, [{ value: 12, target: 8 }, { value: 11, target: 8 }])]
-      const first = adaptiveTarget(athlete(sessions), 'tuck', START + 1 * DAY)
+      // What the session builder prescribes: the adaptive base, never above
+      // the best the athlete has recently shown (todaysSession's capacity cap).
+      const prescribe = (state: AppState, now: number) => {
+        const capacity = capacityOn(state, 'tuck')
+        const base = adaptiveTarget(state, 'tuck', now)
+        return capacity === undefined ? base : Math.min(base, Math.max(1, Math.floor(capacity)))
+      }
+      const first = prescribe(athlete(sessions), START + 1 * DAY)
       let target = first
       for (let i = 1; i <= 6; i++) {
         const logged = Math.max(0, target - 2)
@@ -105,7 +114,7 @@ describe('a hold stopped at its target call', () => {
             target,
           ),
         )
-        target = adaptiveTarget(athlete(sessions), 'tuck', START + (i * 2 + 1) * DAY)
+        target = prescribe(athlete(sessions), START + (i * 2 + 1) * DAY)
       }
       return { first, last: target }
     }
@@ -122,5 +131,48 @@ describe('a hold stopped at its target call', () => {
     const unflagged = athlete([sessionAt(19, [0, 1, 2, 3].map(() => ({ value: 5, target: 7, raw: 10 })))])
     expect(readSignals(atCall, day).mainHitRate).toBe(1)
     expect(readSignals(unflagged, day).mainHitRate).toBe(0)
+  })
+})
+
+describe('reading a hold stopped at its call', () => {
+  const DAY = 86_400_000
+  const NOW = Date.UTC(2026, 10, 1, 12)
+  const sessionOf = (sets: Partial<SetLog>[], daysAgo = 2): Session => {
+    const at = NOW - daysAgo * DAY
+    return {
+      id: `r${daysAgo}`,
+      startedAt: at,
+      endedAt: at + 1_800_000,
+      workoutName: 'Training Day',
+      workoutKind: 'auto',
+      stepId: 'tuck',
+      sets: sets.map((s, i) => ({ kind: 'hold', section: 'main', surface: 'parallettes', at: at + i * 60_000, ...s })) as SetLog[],
+    }
+  }
+
+  it('counts as reaching the target in accessory progression too', () => {
+    // A lean with the default 2.3s delay, stopped at the call: logs ~2s under.
+    const leans = sessionOf(
+      [0, 1, 2].map(() => ({ exerciseId: 'planche-lean', section: 'strength' as const, value: 10, target: 12, calledAtTarget: true })),
+    )
+    expect(accessoryProgression({ sessions: [leans] }, 'planche-lean', 'hold', NOW)?.change).not.toBe('down')
+    const unflagged = sessionOf([0, 1, 2].map(() => ({ exerciseId: 'planche-lean', section: 'strength' as const, value: 10, target: 12 })))
+    expect(accessoryProgression({ sessions: [unflagged] }, 'planche-lean', 'hold', NOW)?.change).toBe('down')
+  })
+
+  it('reads the target as reached, unless the camera saw it break down earlier', () => {
+    const atCall = sessionOf([{ exerciseId: 'tuck-planche', value: 5, target: 7, calledAtTarget: true }])
+    expect(sessionLearningValue(atCall, 'tuck')).toBe(7)
+    // Athlete-confirmed, camera-trusted: the clean window ended at 3s.
+    const broke = sessionOf([
+      {
+        exerciseId: 'tuck-planche',
+        value: 5,
+        target: 7,
+        calledAtTarget: true,
+        form: { rating: 'slipped', confirmed: true, issues: ['lean'], auto: { issues: ['lean'], confidence: 0.9, cleanSeconds: 3, cleanRatio: 0.6 } },
+      },
+    ])
+    expect(sessionLearningValue(broke, 'tuck')).toBe(3)
   })
 })

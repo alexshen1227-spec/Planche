@@ -315,7 +315,9 @@ export function accessoryProgression(
     const lastTarget = Math.max(...sets.map((x) => x.target))
     const ceiling = ACCESSORY_CEILING[exerciseId] ?? (kind === 'reps' ? 15 : 45)
     const tolerance = kind === 'reps' ? 0 : Math.max(0.5, lastTarget * 0.05)
-    const hits = sets.filter((x) => x.value >= x.target - tolerance).length
+    // A hold stopped at its target call reached it, even when the stop
+    // allowance logs it a little under.
+    const hits = sets.filter((x) => x.value >= x.target - tolerance || x.calledAtTarget === true).length
     if (hits === sets.length) {
       const next = lastTarget + (kind === 'reps' ? 1 : Math.max(1, Math.round(lastTarget * 0.1)))
       return next <= ceiling

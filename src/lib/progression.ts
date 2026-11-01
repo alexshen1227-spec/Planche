@@ -424,6 +424,22 @@ function inScope(set: SetLog, scope: LearningScope | undefined): boolean {
  * An attempt the athlete said was interrupted, or that a hidden screen cut
  * short, is not a capacity reading and is left out.
  */
+/**
+ * One set as a reading of what the athlete can hold.
+ *
+ * A hold stopped at its target call reached the target: the screen asks for
+ * exactly that, and the fixed walk-back allowance can land its log a second
+ * or two under. Read at the logged value, every such hold looked like a
+ * shortfall — and since targets are capped at the best recent reading, a
+ * compliant athlete who walks back faster than the allowance had their target
+ * shaved each session. Trusted camera evidence of an earlier breakdown still
+ * wins: a cap below the logged value is a seen breakdown, not an artifact.
+ */
+function capacityReading(set: SetLog): number {
+  const value = trainingSetValue(set)
+  return set.calledAtTarget === true && value >= set.value ? Math.max(value, set.target) : value
+}
+
 export function sessionLearningValue(session: Session, stepId: StepId, scope?: LearningScope): number {
   const step = STEP_BY_ID[stepId]
   // A minimum dose is a few holds stopped at about three seconds on purpose:
@@ -443,7 +459,7 @@ export function sessionLearningValue(session: Session, stepId: StepId, scope?: L
       ) {
         return best
       }
-      return Math.max(best, trainingSetValue(set))
+      return Math.max(best, capacityReading(set))
     }, 0)
   if (EXERCISE_BY_ID[step.keyExerciseId]?.perSide && !scope?.side) {
     const left = bestOf({ ...scope, side: 'left' })
