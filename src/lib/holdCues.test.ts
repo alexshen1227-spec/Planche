@@ -163,12 +163,16 @@ describe('reading a hold stopped at its call', () => {
   it('only treats a stop near the call as coming down at it for working sets', () => {
     // Maximal efforts fail before the target as a matter of course, and the
     // call can sound during the walk back after the athlete is already down.
-    expect(callMarksCompliance({ role: 'skill' }, 'auto')).toBe(true)
-    expect(callMarksCompliance({ role: 'straight-arm' }, 'auto')).toBe(true)
-    expect(callMarksCompliance({ role: 'attempt' }, 'auto')).toBe(false)
-    expect(callMarksCompliance({ role: 'bridge' }, 'auto')).toBe(false)
-    expect(callMarksCompliance({ role: 'skill' }, 'test')).toBe(false)
-    expect(callMarksCompliance({ role: 'skill' }, 'micro')).toBe(false)
+    expect(callMarksCompliance({ role: 'skill', section: 'main' }, 'auto')).toBe(true)
+    expect(callMarksCompliance({ role: 'straight-arm', section: 'strength' }, 'auto')).toBe(true)
+    expect(callMarksCompliance({ section: 'core' }, 'auto')).toBe(true)
+    expect(callMarksCompliance({ role: 'attempt', section: 'main' }, 'auto')).toBe(false)
+    expect(callMarksCompliance({ role: 'bridge', section: 'main' }, 'auto')).toBe(false)
+    expect(callMarksCompliance({ role: 'skill', section: 'main' }, 'test')).toBe(false)
+    expect(callMarksCompliance({ role: 'skill', section: 'main' }, 'micro')).toBe(false)
+    // A stretch is not "coming down at the call", and its log feeds nothing.
+    expect(callMarksCompliance({ section: 'warmup' }, 'auto')).toBe(false)
+    expect(callMarksCompliance({ section: 'cooldown' }, 'auto')).toBe(false)
   })
 
   it('keeps a call-stopped hold that logged zero in view', () => {

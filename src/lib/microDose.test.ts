@@ -101,6 +101,20 @@ describe('what the minimum dose prescribes', () => {
   it('keeps its holds short: set-to-set targets never lengthen them', () => {
     expect(adjustsSetToSet({ section: 'main', sets: 5, role: 'skill' }, 'micro', false)).toBe(false)
   })
+
+  it('primes a beginner’s lean with half a working hold, not a maximal one', () => {
+    // "Up to 12s" at placement: a working lean of 5s. The fixed 8s primer was
+    // this athlete's whole reported max, ahead of the hard holds.
+    const state: AppState = {
+      ...athlete('lean'),
+      assessment: { at: 0, answers: { 'planche-lean': 8 }, placedStepId: 'lean', confidence: 'good', gapIds: [] },
+    }
+    const primer = microDoseWorkout(state, buildPlan(state, NOW)).blocks.find(
+      (b) => b.section === 'warmup' && b.exerciseId === 'planche-lean',
+    )
+    expect(adaptiveTarget(state, 'lean')).toBe(5)
+    expect(primer?.target).toEqual({ kind: 'hold', sec: 3 })
+  })
 })
 
 describe('when the minimum dose is withheld', () => {

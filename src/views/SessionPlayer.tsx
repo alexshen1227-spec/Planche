@@ -1497,6 +1497,11 @@ export function SessionPlayer({
         onHuman={(review) => applyHuman(log.at, review)}
         onModel={(reading) => applyModel(log.at, reading)}
         onBusyChange={onBusyChange}
+        // The summary lists sets below other sets' lines; "that set" there
+        // read as whichever line sat just above it.
+        {...(rest
+          ? {}
+          : { setLabel: `your ${fmtHold(log.value)} ${EXERCISE_BY_ID[log.exerciseId]?.name.toLowerCase() ?? 'hold'}` })}
       />
     )
   }
@@ -2218,7 +2223,10 @@ export function SessionPlayer({
         ) : null}
         {finalPathHold && finalPathHold.at !== lastLog?.at ? (
           <div className="mt-3 text-center">
-            <div className="text-[12px] text-ink3">Final Path hold: {fmtHold(finalPathHold.value)} credited</div>
+            <div className="text-[12px] text-ink3">
+              Last {EXERCISE_BY_ID[finalPathHold.exerciseId]?.name.toLowerCase() ?? 'Path hold'}:{' '}
+              {fmtHold(finalPathHold.value)} credited
+            </div>
             {stopAllowanceCorrection(finalPathHold)}
           </div>
         ) : null}

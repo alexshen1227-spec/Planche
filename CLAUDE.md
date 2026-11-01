@@ -402,7 +402,9 @@ them. Real-hardware behaviour is still unproven.
   the player keeps which logs belong to which block (`blockLogAts`, persisted
   in the draft) and recomputes the next target from them, so edits, ratings
   and "interrupted" end reasons feed back. Logs record the target actually
-  given. Never for warm-ups, cooldowns, attempts, tests or per-side blocks.
+  given. Never for warm-ups, cooldowns, attempts (unlock *and* bridge), tests
+  or per-side blocks — an attempt has no `calledAtTarget`, so a quick walk
+  back under the 5s allowance read as a short hold and cut the opener.
 - **The bridge** (`lib/bridge.ts`): at half the current bar (from day one at
   the lean) sessions open with short attempts at the next step's key hold —
   section `main`, `role: 'bridge'`, so they are filmed and judged — only when

@@ -161,11 +161,13 @@ export function Dashboard({
     setNoticeClosed(true)
   }
   // The week in the currencies that move a planche, against today's plan times
-  // the sessions the athlete means to train. Only a loaded day's plan stands
-  // for a normal week; on a recovery day the targets are left out.
+  // the sessions the athlete means to train. Only a full day's plan stands for
+  // a normal week. A lighter day is left out too: once today's session is
+  // saved, "today" is a skill-only second session, and a new athlete's weekly
+  // straight-arm target fell from ~198s to ~42s the moment they finished.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const work = useMemo(() => weekWork(state), [state, today])
-  const loadedDay = plan.loadPermission !== 'none' && plan.dayType !== 'recovery' && plan.dayType !== 'deload'
+  const loadedDay = plan.loadPermission === 'normal' && (plan.dayType === 'push' || plan.dayType === 'build')
   const planned = useMemo(
     () =>
       loadedDay
@@ -563,7 +565,9 @@ export function Dashboard({
         <p className="mt-3 text-[11.5px] leading-relaxed text-ink3">
           {planned
             ? `About: today’s plan × your ${goal} sessions a week, and each day re-plans from what you did. A planning aid — no study sets these numbers.`
-            : 'Weekly targets come back with your next loaded session; today is planned light.'}
+            : todaysLatest
+              ? 'Today is done — the weekly targets come back with your next full session.'
+              : 'Weekly targets come back with your next full session; today is planned lighter.'}
         </p>
       </div>
 

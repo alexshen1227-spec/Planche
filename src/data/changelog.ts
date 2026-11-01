@@ -19,6 +19,22 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'A first day at the lean, played through',
+    area: 'training',
+    notes: [
+      'The warm-up lean at the Planche Lean step is now half your working hold. It was a fixed eight seconds, so a new athlete who placed at “up to 12s” warmed up with what was their whole max, and then worked at five.',
+      'Frog stand practice no longer costs a lean set. Next-shape attempts take one set off the key hold because they are hard straight-arm efforts; the frog stand is a bent-arm balance drill, and it was taking a quarter of a beginner’s lean practice.',
+      'Answered “not yet” on the frog stand? Practice now opens at five seconds instead of ten.',
+      'Next-shape attempts keep their target for the whole session. Coming down at the call and walking back quickly logs a little under the target, and two of those in a row used to cut the next attempt.',
+      'After next-shape attempts, the coach’s note says what is verified and what would open the step early. It used to read “held clean for 10s — rated Clean, camera pass” after attempts nobody had filmed or rated.',
+      'On the session summary, the rating question names the set it asks about — “How did your 5s planche lean look?” — instead of “that set”, just under a line about a different exercise.',
+      'Stretches and warm-up holds no longer tell you that you “came down at the target call”.',
+      'This week’s work on Home no longer shrinks right after you train. It multiplied the rest of today — a skill-only second session — by your weekly sessions; it now shows targets only on a full day.',
+      'The coach no longer says a strategy “was selected” when you did not select it: it is the coach’s pick, and the card now says so.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'Max efforts on the right days, called at the right moment',
     area: 'coach',
     notes: [

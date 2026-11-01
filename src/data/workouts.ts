@@ -722,6 +722,18 @@ function warmupFor(stepId: StepId, level: WarmupLevel): Block[] {
 }
 
 /**
+ * A primer is easier than the work it primes. At the lean step the lean *is*
+ * the key hold, and the fixed 8s primer outlasted a beginner's working sets:
+ * "up to 12s" at placement gave 3×5s of work after an 8s warm-up lean — a
+ * maximal effort before the first working set. Half the working hold there.
+ */
+function scaleLeanPrimer(blocks: Block[], stepId: StepId, workingSec: number): void {
+  if (STEP_BY_ID[stepId].keyExerciseId !== 'planche-lean') return
+  const primer = blocks.find((b) => b.section === 'warmup' && b.exerciseId === 'planche-lean')
+  if (primer) primer.target = hold(clamp(Math.round(workingSec / 2), 2, 8))
+}
+
+/**
  * Which reported region makes a given movement a bad idea today.
  *
  * Only movements that genuinely load the region are listed. Being too eager
@@ -1060,8 +1072,12 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     // with nothing shown, about 40% of its opening dose — two seconds of a
     // tuck, five of a lean. A balance skill gets longer practice.
     const opening = Math.max(2, Math.round(next.startSec * 0.4))
+    // "Not yet" on the frog stand at placement starts balance practice at the
+    // floor rather than at ten seconds (a positive answer already reads as
+    // capacity in `capacityOn`).
+    const notYet = shown === undefined && state.assessment?.answers[next.keyExerciseId] === 0
     const bridgeTarget = balance
-      ? clamp(shown !== undefined ? Math.round(shown * 0.7) : 10, 5, 20)
+      ? clamp(shown !== undefined ? Math.round(shown * 0.7) : notYet ? 5 : 10, 5, 20)
       : clamp(shown !== undefined ? Math.round(shown * 0.7) : opening, 1, next.startSec)
     blocks.push({
       exerciseId: next.keyExerciseId,
@@ -1078,12 +1094,17 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     })
   }
 
+  scaleLeanPrimer(blocks, stepId, target)
+
   // A per-side hold is two rounds a set, so it starts a set lighter: one-leg
   // sessions otherwise spent their whole budget on the key hold and every
-  // accessory was trimmed away.
+  // accessory was trimmed away. Next-shape attempts cost a set because they
+  // are maximal straight-arm efforts; frog stand practice is a bent-arm
+  // balance drill, and took a quarter of a beginner's lean practice for nothing.
+  const maximalBridge = bridging && bridge?.next.keyExerciseId !== 'frog-stand'
   const mainSets = Math.max(
     2,
-    mainHoldSets(target, plan.setsDelta, vol, attemptQueued || bridging) -
+    mainHoldSets(target, plan.setsDelta, vol, attemptQueued || maximalBridge) -
       (EXERCISE_BY_ID[step.keyExerciseId]?.perSide ? 1 : 0),
   )
   // While bridging, the main holds lean toward the next shape too: the change
@@ -1638,6 +1659,7 @@ export function microDoseWorkout(state: AppState, plan: CoachPlan): Workout {
     },
     { exerciseId: 'wrist-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
   ]
+  scaleLeanPrimer(blocks, step.id, adaptiveTarget(state, step.id))
   const kit = resolveEquipment(blocks, state.profile.equipment)
   const sided = withSides(kit.blocks)
   return {

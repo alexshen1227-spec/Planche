@@ -1583,7 +1583,8 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const performanceOverrideReason =
     dayType === 'build' || dayType === 'push' ? strategyOverrideReason : null
   const strategyReason = overridden
-    ? `${STRATEGY_BY_ID[pick.strategy].name} was selected, but it is on hold today — ${
+    ? // "was selected" read as the athlete's own choice; the pick is the coach's.
+      `The coach would pick ${STRATEGY_BY_ID[pick.strategy].name.toLowerCase()}, but it is on hold today — ${
         performanceOverrideReason ??
         `${dayReason.charAt(0).toLowerCase()}${dayReason.slice(1)}`
       }`
@@ -1819,15 +1820,26 @@ export function debriefSession(
     if (attempts.length) {
       const best = attempts.reduce((b, x) => Math.max(b, x.value), 0)
       const verified = qualifyingProgress({ sessions: [session] }, nextStep.id).value
+      // Stated as the condition it is. "Held clean for 10s — rated Clean,
+      // camera pass — it opens the step early" read as a report of what had
+      // happened, after attempts nobody filmed or rated. The frog stand is
+      // verified by reviewing its replay, not by the pose check.
+      const review = nextKey === 'frog-stand'
+      const bar = `${nextStep.startSec}s${EXERCISE_BY_ID_COACH[nextKey]?.perSide ? ' each side' : ''}`
+      const evidence = review
+        ? 'filmed, rated Clean and checked against the replay checklist'
+        : `rated Clean with a camera pass${requiresFlight(nextKey) ? ' and both feet off confirmed' : ''}`
+      const when = `once your ${step.name.toLowerCase()} is verified past ${Math.round(step.unlockSec * 0.5)}s`
+      const met = verified >= nextStep.startSec
       out.push({
         text: `${nextStep.name} attempts: best ${round1(best)}s${
-          verified > 0 ? `, ${round1(verified)}s of it clean on camera` : ''
-        }. Held clean for ${nextStep.startSec}s${
-          EXERCISE_BY_ID_COACH[nextKey]?.perSide ? ' each side' : ''
-        } — rated Clean, camera pass${requiresFlight(nextKey) ? ', both feet off confirmed' : ''} — it opens the step early once your ${step.name.toLowerCase()} is verified past ${Math.round(
-          step.unlockSec * 0.5,
-        )}s.`,
-        kind: verified >= nextStep.startSec ? 'good' : 'info',
+          verified > 0 ? `, ${round1(verified)}s of it ${review ? 'reviewed clean' : 'clean on camera'}` : ', none of it verified yet'
+        }. ${
+          met
+            ? `That meets the ${bar} early-promotion hold — the step opens ${when}.`
+            : `A ${bar} hold ${evidence} opens the step early ${when}.`
+        }`,
+        kind: met ? 'good' : 'info',
       })
     }
   }

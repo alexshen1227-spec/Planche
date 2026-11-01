@@ -58,6 +58,7 @@ import {
   adaptiveTarget,
   describeTarget,
   estimateMinutes,
+  mainHoldSets,
   painSafeRecoveryWorkout,
   primaryTargetBlock,
   todaysSession,
@@ -1613,6 +1614,82 @@ describe('stage-specific planche lean programming', () => {
       expect.objectContaining({ section: 'warmup', sets: 1, target: { kind: 'hold', sec: 8 } }),
       expect.objectContaining({ section: 'strength', sets: 3, target: { kind: 'hold', sec: 12 } }),
     ])
+  })
+
+  it.each([
+    // [lean answer at placement, working target, primer]
+    [8, 5, 3], // "Up to 12s": the fixed 8s primer was this athlete's whole max
+    [18, 11, 6],
+    [32, 12, 6],
+  ] as const)(
+    'primes the lean step with less than its working sets (answered %ss)',
+    (answered, workingSec, primerSec) => {
+      const athlete: AppState = {
+        ...state('lean'),
+        assessment: { at: 0, answers: { 'planche-lean': answered }, placedStepId: 'lean', confidence: 'good', gapIds: [] },
+      }
+      const plan = {
+        ...buildPlan(athlete, Date.now()),
+        dayType: 'build' as const,
+        loadPermission: 'normal' as const,
+        warmup: 'standard' as const,
+        volumeFactor: 1,
+        queueUnlockAttempt: false,
+      }
+      const leans = todaysSession(athlete, plan).blocks.filter((block) => block.exerciseId === 'planche-lean')
+      const primer = leans.find((block) => block.section === 'warmup')
+      const working = leans.find((block) => block.section === 'main' && block.role === 'skill')
+      expect(working?.target).toEqual({ kind: 'hold', sec: workingSec })
+      expect(primer?.target).toEqual({ kind: 'hold', sec: primerSec })
+    },
+  )
+
+  it('does not trade a lean set for frog stand practice, only for a maximal attempt', () => {
+    // A bridge costs a key-hold set because next-shape attempts are maximal
+    // straight-arm efforts. The frog stand is a bent-arm balance drill, so at
+    // the lean step it took a quarter of a beginner's lean practice for nothing.
+    const leanAthlete: AppState = {
+      ...state('lean'),
+      assessment: { at: 0, answers: { 'planche-lean': 8 }, placedStepId: 'lean', confidence: 'good', gapIds: [] },
+    }
+    const planFor = (athlete: AppState) => ({
+      ...buildPlan(athlete, Date.now()),
+      dayType: 'build' as const,
+      loadPermission: 'normal' as const,
+      warmup: 'standard' as const,
+      volumeFactor: 1,
+      setsDelta: 0,
+      queueUnlockAttempt: false,
+    })
+    const blocks = todaysSession(leanAthlete, planFor(leanAthlete)).blocks
+    expect(blocks.some((b) => b.role === 'bridge' && b.exerciseId === 'frog-stand')).toBe(true)
+    const lean = blocks.find((b) => b.section === 'main' && b.role === 'skill')
+    expect(lean?.target).toEqual({ kind: 'hold', sec: 5 })
+    expect(lean?.sets).toBe(mainHoldSets(5, 0, 1, false))
+  })
+
+  it.each([
+    [undefined, 10],
+    [0, 5], // "Not yet"
+    [15, 11], // a held answer reads as capacity: 70% of it
+  ] as const)('opens frog stand practice from the placement answer (%s)', (answered, sec) => {
+    const answers: Record<string, number> = { 'planche-lean': 18 }
+    if (answered !== undefined) answers['frog-stand'] = answered
+    const athlete: AppState = {
+      ...state('lean'),
+      assessment: { at: 0, answers, placedStepId: 'lean', confidence: 'good', gapIds: [] },
+    }
+    const plan = {
+      ...buildPlan(athlete, Date.now()),
+      dayType: 'build' as const,
+      loadPermission: 'normal' as const,
+      warmup: 'standard' as const,
+      volumeFactor: 1,
+      queueUnlockAttempt: false,
+    }
+    const frog = todaysSession(athlete, plan).blocks.find((block) => block.role === 'bridge')
+    expect(frog?.exerciseId).toBe('frog-stand')
+    expect(frog?.target).toEqual({ kind: 'hold', sec })
   })
 
   it('prioritises the Tuck lean over generic accessories in a standard session', () => {

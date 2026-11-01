@@ -105,4 +105,12 @@ describe('which blocks follow the athlete set to set', () => {
     expect(adjustsSetToSet({ ...block, sets: 1 }, 'auto', false)).toBe(false)
     expect(adjustsSetToSet(block, 'auto', true)).toBe(false)
   })
+
+  it('leaves next-shape attempts at their opener', () => {
+    // Played through: a 10s frog stand held to the call, a 2s walk back, logged
+    // 7s under the 5s allowance — twice — and the third attempt was cut to 7s.
+    // An attempt's call cannot say "stopped on cue" (the athlete may already
+    // be down), so two quick walks read as two short holds.
+    expect(adjustsSetToSet({ ...block, section: 'main', role: 'bridge' }, 'auto', false)).toBe(false)
+  })
 })

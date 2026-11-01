@@ -27,9 +27,14 @@ import type { Block, FormRating, Workout } from '../types'
 
 /**
  * Whether set-to-set advice may move a block's target at all. Never for
- * warm-ups, cooldowns, unlock attempts, max tests, single-set blocks,
- * per-side work (two sides, one target) or an easy day's light dose — which
- * is meant to stay light however easy its first set felt.
+ * warm-ups, cooldowns, unlock attempts, next-shape attempts, max tests,
+ * single-set blocks, per-side work (two sides, one target) or an easy day's
+ * light dose — which is meant to stay light however easy its first set felt.
+ *
+ * Attempts of either kind have no "stopped at the call" signal
+ * (`callMarksCompliance`), so an athlete who held the target and walked back
+ * faster than the stop allowance logs under it: two quick walks read as two
+ * short holds, and the opener was cut mid-session.
  */
 export function adjustsSetToSet(
   block: Pick<Block, 'light' | 'role' | 'section' | 'sets'>,
@@ -42,6 +47,7 @@ export function adjustsSetToSet(
     workoutKind === 'micro' ||
     block.light ||
     block.role === 'attempt' ||
+    block.role === 'bridge' ||
     block.section === 'warmup' ||
     block.section === 'cooldown' ||
     block.sets <= 1 ||

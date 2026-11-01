@@ -198,6 +198,7 @@ export function FormCheckRow({
   analysisWindowStartSec = 0,
   videoInterval,
   onVideoInterval,
+  setLabel,
 }: {
   clipKey: string | null
   exerciseId: string
@@ -226,6 +227,11 @@ export function FormCheckRow({
   videoInterval?: ClipInterval
   /** Re-time the hold from the clip. Absent where re-timing is not allowed. */
   onVideoInterval?: (interval: ClipInterval) => void
+  /**
+   * Names the set in the question ("your 5.0s planche lean") where "that set"
+   * is ambiguous — on the summary, below other sets' lines.
+   */
+  setLabel?: string
 }) {
   // Whether a *person* has answered for this set. Kept apart from the
   // displayed rating, because the camera's suggestion pre-fills that rating —
@@ -563,7 +569,7 @@ export function FormCheckRow({
         </div>
       ) : null}
       <div className="text-[13px] font-semibold text-ink" id={`rating-${clipKey ?? exerciseId}`}>
-        How did that set look?
+        How did {setLabel ?? 'that set'} look?
       </div>
       {!confirmedByHuman && rating ? (
         <p className="mt-1 text-[11.5px] font-medium text-accent-text" role="status">

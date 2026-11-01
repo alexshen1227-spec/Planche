@@ -551,6 +551,7 @@ export function Onboarding() {
                   onChange={(e) => setWeight(e.target.value)}
                   inputMode="decimal"
                   placeholder={units === 'metric' ? '70' : '155'}
+                  aria-label={`Bodyweight in ${units === 'metric' ? 'kilograms' : 'pounds'}`}
                   className="mt-1.5 w-full rounded-xl border border-line bg-raised px-3 py-2.5 text-[15px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
                 />
                 <span className="mt-1 block text-[12px] text-ink3">

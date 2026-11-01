@@ -577,3 +577,44 @@ describe('the coach’s read speaks about the step’s own hold', () => {
     expect(read(session('adv-tuck-planche', 11))).toMatch(/a PR/)
   })
 })
+
+describe('next-shape attempts are reported as they stand', () => {
+  // Found by playing a new athlete's first day: unrated, unfilmed frog stand
+  // attempts were summed up as "Held clean for 10s — rated Clean, camera pass
+  // — it opens the step early …", which reads as a report of what happened.
+  const at = Date.UTC(2026, 10, 1, 12)
+  const base = initialState()
+  const state: AppState = {
+    ...base,
+    onboarded: true,
+    stepId: 'lean',
+    baseStepId: 'lean',
+    unlocked: STEPS.filter((s) => s.order <= STEP_BY_ID.lean.order).map((s) => s.id),
+  }
+  const frog: Session = {
+    id: 'frog-attempts',
+    startedAt: at,
+    endedAt: at + 600_000,
+    workoutName: 'Session',
+    workoutKind: 'auto',
+    stepId: 'lean',
+    sets: [12, 7].map((value, i) => ({
+      exerciseId: 'frog-stand',
+      kind: 'hold' as const,
+      value,
+      target: 10,
+      section: 'main' as const,
+      role: 'bridge' as const,
+      at: at + i * 60_000,
+    })),
+  }
+
+  it('says nothing is verified, and puts the evidence as a condition', () => {
+    const line = debriefSession(state, state, frog).find((d) => /Frog Stand attempts/.test(d.text))
+    expect(line?.kind).toBe('info')
+    expect(line?.text).toMatch(/none of it verified yet/)
+    expect(line?.text).not.toMatch(/Held clean/)
+    // The frog stand is verified by its replay checklist, not the pose check.
+    expect(line?.text).not.toMatch(/camera pass/)
+  })
+})

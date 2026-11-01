@@ -116,10 +116,22 @@ export function stoppedAtTargetCall(rawStopSec: number, targetSec: number, allow
  * call is what happens. Maximal efforts — unlock and next-shape attempts, max
  * tests, the minimum dose — fail before the target as a matter of course, and
  * the timer runs on through the walk back, so the call can sound after the
- * athlete is already down: a stop near it proves nothing there.
+ * athlete is already down: a stop near it proves nothing there. Warm-ups and
+ * cooldowns feed nothing, so there is nothing to mark — a stretch once told
+ * the athlete they had "come down at the target call".
  */
-export function callMarksCompliance(block: Pick<Block, 'role'>, workoutKind: Workout['kind']): boolean {
-  return block.role !== 'attempt' && block.role !== 'bridge' && workoutKind !== 'test' && workoutKind !== 'micro'
+export function callMarksCompliance(
+  block: Pick<Block, 'role' | 'section'>,
+  workoutKind: Workout['kind'],
+): boolean {
+  return (
+    block.role !== 'attempt' &&
+    block.role !== 'bridge' &&
+    block.section !== 'warmup' &&
+    block.section !== 'cooldown' &&
+    workoutKind !== 'test' &&
+    workoutKind !== 'micro'
+  )
 }
 
 /** What the hold screen says while the athlete is still in position. */
