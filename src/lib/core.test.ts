@@ -2265,6 +2265,15 @@ describe('backup validation and normalization', () => {
     expect(normalizeState(JSON.parse(JSON.stringify(state()))).settings.walkBackSec).toBeUndefined()
   })
 
+  it('keeps play-through-silent only when it was switched on', () => {
+    const withSilent = (soundThroughSilent: unknown) =>
+      normalizeState(JSON.parse(JSON.stringify({ ...state(), settings: { ...state().settings, soundThroughSilent } })))
+        .settings.soundThroughSilent
+    expect(withSilent(true)).toBe(true)
+    expect(withSilent('yes')).toBe(false)
+    expect(withSilent(undefined)).toBe(false)
+  })
+
   it('accepts a backup created by the current app version', () => {
     expect(() => validateImport(initialState())).not.toThrow()
   })

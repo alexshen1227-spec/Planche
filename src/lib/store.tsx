@@ -724,6 +724,7 @@ export function normalizeStateWithReport(
       typeof rawSettings.phoneWithinReach === 'boolean'
         ? rawSettings.phoneWithinReach
         : DEFAULT_SETTINGS.phoneWithinReach,
+    soundThroughSilent: rawSettings.soundThroughSilent === true,
     // A measurement or nothing: anything else falls back to the assumed walk.
     walkBackSec:
       typeof rawSettings.walkBackSec === 'number' && Number.isFinite(rawSettings.walkBackSec)
@@ -1694,7 +1695,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [state.settings.theme])
 
   useEffect(() => {
-    configureAudio(state.settings.sound, state.settings.voice, state.settings.volume)
+    configureAudio(state.settings.sound, state.settings.voice, state.settings.volume, state.settings.soundThroughSilent === true)
   }, [state.settings.sound, state.settings.voice, state.settings.volume])
 
   const getState = useCallback(() => stateRef.current, [])

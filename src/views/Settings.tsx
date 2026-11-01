@@ -27,7 +27,7 @@ import { MeasurePrompt, lastOf } from '../components/MeasurePrompt'
 import { JointReports } from '../components/JointReports'
 import { buildSampleState } from '../data/sample'
 import { pushToast } from '../lib/toast'
-import { primeSignal, sfx, signalTone } from '../lib/audio'
+import { primeSignal, releaseSignal, sfx, signalTone } from '../lib/audio'
 import { PROGRESSION_STOP_LATENCY_SEC, WALK_BACK_MAX_SEC, WALK_BACK_MIN_SEC } from '../lib/sessionTiming'
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle } from '../components/ui'
@@ -256,7 +256,13 @@ function WalkBackCalibrator({ onDone }: { onDone: (sec: number) => void }) {
   const [times, setTimes] = useState<number[]>([])
   const goAtRef = useRef(0)
   const timerRef = useRef<number | undefined>(undefined)
-  useEffect(() => () => window.clearTimeout(timerRef.current), [])
+  useEffect(
+    () => () => {
+      window.clearTimeout(timerRef.current)
+      releaseSignal()
+    },
+    [],
+  )
 
   const start = () => {
     primeSignal()
@@ -949,6 +955,16 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
         <Row label="Sounds" hint="Start/stop chimes, PR fanfares.">
           <Toggle label="Sounds" on={s.sound} onChange={(v) => set({ sound: v })} />
+        </Row>
+        <Row
+          label="Play through the silent switch"
+          hint="iPhone: with the ring switch on silent, Safari mutes the app's chimes and beeps, the target call included. This plays them anyway — music in another app pauses while they play."
+        >
+          <Toggle
+            label="Play through the silent switch"
+            on={s.soundThroughSilent === true}
+            onChange={(v) => set({ soundThroughSilent: v })}
+          />
         </Row>
         <Row label="Voice cues" hint="Spoken counts every 5s mid-hold, plus go/target calls — you can't read a screen upside-down.">
           <Toggle label="Voice cues" on={s.voice} onChange={(v) => set({ voice: v })} />

@@ -2,11 +2,32 @@ let ctx: AudioContext | null = null
 let toneEnabled = true
 let voiceEnabled = true
 let volume = 0.7
+let throughSilent = false
 
-export function configureAudio(soundOn: boolean, voiceOn: boolean, vol: number) {
+/**
+ * iPhone's ring/silent switch mutes Web Audio: Safari treats it as "ambient"
+ * sound that mixes with other apps' audio. The Audio Session API (iOS 17+)
+ * can make it "playback", which plays through the switch but pauses music in
+ * another app while it plays (WebKit bug 237322 and its follow-ups). Feature-
+ * detected; other browsers have no such switch.
+ */
+type SessionType = 'ambient' | 'playback'
+function setSessionType(type: SessionType) {
+  const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession
+  if (!session) return
+  try {
+    session.type = type
+  } catch {
+    /* an unsupported value on an older WebKit: keep its default */
+  }
+}
+
+export function configureAudio(soundOn: boolean, voiceOn: boolean, vol: number, playThroughSilent = false) {
   toneEnabled = soundOn
   voiceEnabled = voiceOn
   volume = vol
+  throughSilent = playThroughSilent
+  setSessionType(throughSilent ? 'playback' : 'ambient')
 }
 
 function ac(): AudioContext | null {
@@ -44,12 +65,20 @@ function tone(freq: number, dur: number, delay = 0, type: OscillatorType = 'sine
  * gesture, and the beep comes seconds later.
  */
 export function primeSignal() {
+  // Through the silent switch for this measurement only: the athlete is in
+  // position across the room and has nothing else to go on.
+  setSessionType('playback')
   try {
     ctx ??= new AudioContext()
     if (ctx.state === 'suspended') void ctx.resume()
   } catch {
     /* no audio: the screen still shows the cue */
   }
+}
+
+/** Back to the athlete's own choice once the measurement is over. */
+export function releaseSignal() {
+  setSessionType(throughSilent ? 'playback' : 'ambient')
 }
 
 /** Three short, loud beeps on the primed context. */

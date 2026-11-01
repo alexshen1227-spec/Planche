@@ -581,6 +581,12 @@ export interface Settings {
    * measured (Settings → Measure my walk back); the slowest of three walks.
    */
   walkBackSec?: number
+  /**
+   * Play sounds and voice cues through an iPhone's silent switch (Safari's
+   * Audio Session "playback"). Pauses music in another app while they play,
+   * so it is the athlete's choice; off keeps Safari's default.
+   */
+  soundThroughSilent?: boolean
 }
 
 export interface AppState {

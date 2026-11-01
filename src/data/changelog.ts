@@ -24,6 +24,7 @@ export const CHANGELOG: ChangeEntry[] = [
     notes: [
       'New in Settings: measure your walk back. With the phone across the room, the app used to take an assumed five seconds off every main hold for getting up and walking to it — so a four-second attempt logged as almost nothing. Now you can time your real walk three times; the slowest is used, for every main hold from then on.',
       'It works both ways: a longer walk gets a longer allowance. A filmed hold still never counts for more than the camera saw, and every set can still be corrected with one tap.',
+      'iPhone: with the ring switch on silent, Safari mutes web sounds — including the target call. A new Sound setting, Play through the silent switch, plays them anyway (music in another app pauses while they do). The walk-back beep always plays through it, since you are across the room when it sounds.',
     ],
   },
   {
