@@ -881,10 +881,14 @@ export function restrictTemplate(workout: Workout, plan: CoachPlan): Workout {
 
 /**
  * Quality practice in the key position a session aims at: about a minute.
- * Sommer's steady-state cycle (as relayed by Antranik) builds its sets around
- * "60 seconds of quality aggregate practice" at 50–80% of a max hold, and the
- * tendon-loading prescription in the ledger (5×4 contractions of 3s) adds up to
- * the same minute. CONSENSUS — no trial compared session totals for a planche.
+ * Lum & Barbosa's 2019 review of isometric training recommends 30–90s of
+ * high-intensity contraction a session for maximal strength, and found gains
+ * tracked total contraction time per session more than per repetition
+ * (ledger §1; trials on simpler movements — treating a planche working hold as
+ * high-intensity is inference). Coaching practice lands in the same place:
+ * Sommer's steady-state cycle builds sets around "60 seconds of quality
+ * aggregate practice", and the tendon prescription in §2 adds up to a minute.
+ * No trial compared session totals for a planche.
  */
 export const KEY_HOLD_AGGREGATE_SEC = 60
 

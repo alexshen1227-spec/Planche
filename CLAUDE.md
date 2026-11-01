@@ -377,8 +377,10 @@ them. Real-hardware behaviour is still unproven.
   names the number that moves it back up.
 - **The key hold aims at about a minute of practice** (`KEY_HOLD_AGGREGATE_SEC`,
   3–6 sets, counted on the day's base target so the strategy's set delta keeps
-  its meaning; fatigue days take `LIGHT_DOSE_SHARE` of it). Source: Sommer's
-  steady-state cycle as relayed by Antranik, CONSENSUS (ledger §12). The sets
+  its meaning; fatigue days take `LIGHT_DOSE_SHARE` of it). Sources: Lum &
+  Barbosa 2019 (ledger §1 — 30–90 s a session for strength, MODERATE for
+  isometrics, INFERENCE for the planche) and Sommer's steady-state cycle via
+  Antranik (CONSENSUS, ledger §12). The sets
   above the old fixed count are `Block.reach`, and `fitToBudget` gives them up
   before any strength block — the user asked for the press and leans at every
   level — while the kept dose still goes last.

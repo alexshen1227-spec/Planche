@@ -31,7 +31,7 @@ export const CHANGELOG: ChangeEntry[] = [
     title: 'About a minute in the position',
     area: 'training',
     notes: [
-      'Your key hold now aims at about a minute of practice per session, in three to six sets — so a 6-second target gets six sets instead of four. A minute of quality practice is what a well-known coaching method builds its sets around; it is coaching practice, not a trial result.',
+      'Your key hold now aims at about a minute of practice per session, in three to six sets — so a 6-second target gets six sets instead of four. A 2019 review of isometric-training studies recommends 30–90 seconds of hard holding per session for strength, and a well-known coaching method builds its sets around a minute too. Those studies used simpler movements; none tested the planche.',
       'On a short session those extra sets are the first thing to go, before your push-up versions or leans. On an easy day the key hold takes its light share, like everything else.',
     ],
   },
