@@ -204,9 +204,9 @@ function FormTrendCard() {
               at the moment it is relevant — not as a standing banner. */}
           {result.comparison === null ? (
             <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">
-              No two clips left to compare — recordings are cleared after {CLIP_RETENTION_DAYS} days to keep the app
-              off your storage. Pin one from its exercise guide in Learn and it is kept indefinitely, which gives you a
-              permanent "before" to hold the next months against.
+              No two clips far enough apart to compare yet. The first clip the camera could read on each step’s key
+              hold is kept for good, so your “then” will still be here in months; other recordings clear after{' '}
+              {CLIP_RETENTION_DAYS} days unless you pin them from the exercise guide in Learn.
             </p>
           ) : null}
 
