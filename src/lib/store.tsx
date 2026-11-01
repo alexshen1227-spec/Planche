@@ -41,6 +41,7 @@ import { configureAudio } from './audio'
 import { clearMirror, readMirror, requestPersistence, writeMirror } from './persist'
 import { pushToast } from './toast'
 import { CLOCK_SKEW_MS } from './time'
+import { WALK_BACK_MAX_SEC, WALK_BACK_MIN_SEC } from './sessionTiming'
 
 const STORAGE_KEY = 'planchelab.v1'
 const THEME_KEY = 'planchelab.theme'
@@ -723,6 +724,11 @@ export function normalizeStateWithReport(
       typeof rawSettings.phoneWithinReach === 'boolean'
         ? rawSettings.phoneWithinReach
         : DEFAULT_SETTINGS.phoneWithinReach,
+    // A measurement or nothing: anything else falls back to the assumed walk.
+    walkBackSec:
+      typeof rawSettings.walkBackSec === 'number' && Number.isFinite(rawSettings.walkBackSec)
+        ? Math.min(WALK_BACK_MAX_SEC, Math.max(WALK_BACK_MIN_SEC, rawSettings.walkBackSec))
+        : undefined,
   }
   // One-time migration: anyone still carrying the old optimistic default gets
   // the realistic one. Deliberate choices made after this are left alone.

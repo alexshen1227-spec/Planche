@@ -27,7 +27,8 @@ import { MeasurePrompt, lastOf } from '../components/MeasurePrompt'
 import { JointReports } from '../components/JointReports'
 import { buildSampleState } from '../data/sample'
 import { pushToast } from '../lib/toast'
-import { sfx } from '../lib/audio'
+import { primeSignal, sfx, signalTone } from '../lib/audio'
+import { PROGRESSION_STOP_LATENCY_SEC, WALK_BACK_MAX_SEC, WALK_BACK_MIN_SEC } from '../lib/sessionTiming'
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle } from '../components/ui'
 
@@ -243,6 +244,98 @@ function LatencyCalibrator({ onDone }: { onDone: (sec: number) => void }) {
   )
 }
 
+/**
+ * Measures the walk back to a phone across the room: start at the phone, get
+ * into position, and on the beep come out, walk back and tap Stop. Three
+ * walks, the slowest kept — the allowance should cover a normal day's walk,
+ * not the quickest one.
+ */
+function WalkBackCalibrator({ onDone }: { onDone: (sec: number) => void }) {
+  const TRIALS = 3
+  const [stage, setStage] = useState<'idle' | 'positioning' | 'go' | 'done'>('idle')
+  const [times, setTimes] = useState<number[]>([])
+  const goAtRef = useRef(0)
+  const timerRef = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(timerRef.current), [])
+
+  const start = () => {
+    primeSignal()
+    setStage('positioning')
+    window.clearTimeout(timerRef.current)
+    // Long enough to walk to the spot and settle into the hold.
+    timerRef.current = window.setTimeout(
+      () => {
+        goAtRef.current = Date.now()
+        setStage('go')
+        signalTone()
+      },
+      10_000 + Math.random() * 3000,
+    )
+  }
+  const stop = () => {
+    const next = [...times, Date.now() - goAtRef.current]
+    setTimes(next)
+    setStage(next.length >= TRIALS ? 'done' : 'idle')
+  }
+  const cancel = () => {
+    window.clearTimeout(timerRef.current)
+    setStage('idle')
+  }
+  const slowest = times.length ? Math.max(...times) / 1000 : 0
+  const measured = Math.min(WALK_BACK_MAX_SEC, Math.max(WALK_BACK_MIN_SEC, Math.ceil(slowest * 10) / 10))
+
+  return (
+    <div className="p-6">
+      <div className="pr-10">
+        <h2 className="font-display text-[20px] font-bold text-ink">Measure your walk back</h2>
+        <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">
+          Set the phone where it films from. Tap Start, walk to your spot and get into your hold position, hands down.
+          At the beep, come out of it, walk back and tap Stop — exactly as after a real hold. Three walks; the slowest
+          is kept.
+        </p>
+      </div>
+      <button
+        onClick={stage === 'go' ? stop : stage === 'positioning' ? cancel : stage === 'idle' ? start : undefined}
+        disabled={stage === 'done'}
+        className={`mt-4 grid h-44 w-full place-items-center rounded-2xl border-2 px-4 text-center transition ${
+          stage === 'go' ? 'border-transparent text-on-accent' : 'border-line bg-raised text-ink'
+        }`}
+        style={stage === 'go' ? { background: 'var(--t-btn-accent)' } : undefined}
+      >
+        <span className="font-display text-[19px] font-semibold">
+          {stage === 'idle'
+            ? times.length
+              ? `Walk ${times.length + 1} of ${TRIALS} — tap to start`
+              : 'Tap to start'
+            : stage === 'positioning'
+              ? 'Get into position… the beep comes in about ten seconds (tap to cancel)'
+              : stage === 'go'
+                ? 'STOP'
+                : `Slowest walk ${slowest.toFixed(1)}s`}
+        </span>
+      </button>
+      <div className="mt-2 flex justify-center gap-1.5">
+        {Array.from({ length: TRIALS }, (_, i) => (
+          <span key={i} className={`h-1.5 w-8 rounded-full ${i < times.length ? 'bg-accent' : 'bg-line'}`} />
+        ))}
+      </div>
+      {stage === 'done' ? (
+        <button
+          onClick={() => onDone(measured)}
+          className="mt-4 w-full rounded-2xl px-6 py-3.5 font-display text-[16px] font-semibold text-on-accent shadow-card transition hover:brightness-105"
+          style={{ background: 'var(--t-btn-accent)' }}
+        >
+          Use {measured.toFixed(1)}s
+        </button>
+      ) : (
+        <p className="mt-3 text-center text-[12.5px] text-ink3">
+          The beep plays even with sounds off. A filmed hold still never counts for more than the camera saw.
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function Settings({ go }: { go: (t: Tab) => void }) {
   const { state, dispatch, getState } = useStore()
   const s = state.settings
@@ -265,6 +358,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   const [birthYear, setBirthYear] = useState(state.profile.birthYear?.toString() ?? '')
   const [storage, setStorage] = useState<StorageInfo | null>(null)
   const [calibrating, setCalibrating] = useState(false)
+  const [measuringWalk, setMeasuringWalk] = useState(false)
   const [loggingWeight, setLoggingWeight] = useState(false)
   const lastWeight = lastOf(state, 'weightKg')
   const [clipCount, setClipCount] = useState(0)
@@ -793,9 +887,19 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           hint={
             s.phoneWithinReach
               ? 'Starting answer: within reach, so main Path holds use your calibrated delay below. Each set can still be corrected with one tap on the rest screen.'
-              : 'Starting answer: across the room, so main Path holds allow 5.0s for climbing out and walking back. Each set can be corrected with one tap on the rest screen, so set this to whichever is usual for you.'
+              : s.walkBackSec !== undefined
+                ? `Across the room: main Path holds allow your measured ${s.walkBackSec.toFixed(1)}s walk back. Each set can be corrected with one tap on the rest screen.`
+                : 'Starting answer: across the room, so main Path holds allow 5.0s for climbing out and walking back — measure your own walk to replace it. Each set can be corrected with one tap on the rest screen.'
           }
         >
+          {!s.phoneWithinReach ? (
+            <button
+              onClick={() => setMeasuringWalk(true)}
+              className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+            >
+              {s.walkBackSec !== undefined ? 'Re-measure' : 'Measure my walk'}
+            </button>
+          ) : null}
           <Toggle
             on={s.phoneWithinReach}
             onChange={(v) => set({ phoneWithinReach: v })}
@@ -807,7 +911,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           hint={
             s.phoneWithinReach
               ? 'Your calibrated delay, now used for every timed hold including main Path holds.'
-              : 'Your calibrated delay for regular holds, including Planche Lean. Main Path holds use 5.0s instead — see the setting above.'
+              : `Your calibrated delay for regular holds, including Planche Lean. Main Path holds use ${(s.walkBackSec ?? PROGRESSION_STOP_LATENCY_SEC).toFixed(1)}s instead — see the setting above.`
           }
         >
           <button
@@ -1127,6 +1231,15 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </div>
       </Modal>
 
+      <Modal open={measuringWalk} onClose={() => setMeasuringWalk(false)} label="Measure your walk back">
+        <WalkBackCalibrator
+          onDone={(sec) => {
+            set({ walkBackSec: sec })
+            setMeasuringWalk(false)
+            pushToast(`Walk back set to ${sec.toFixed(1)}s for main Path holds.`, 'success')
+          }}
+        />
+      </Modal>
       <Modal open={calibrating} onClose={() => setCalibrating(false)} label="Calibrate reaction delay">
         <LatencyCalibrator
           onDone={(sec) => {

@@ -771,7 +771,7 @@ export function Stats({
             {' '}
             {state.settings.phoneWithinReach
               ? `Timed holds have your ${state.settings.stopLatencySec.toFixed(1)}s calibrated stop delay taken off`
-              : `Main Path holds — all but the planche lean — have ${Math.max(PROGRESSION_STOP_LATENCY_SEC, state.settings.stopLatencySec).toFixed(
+              : `Main Path holds — all but the planche lean — have ${Math.max(state.settings.walkBackSec ?? PROGRESSION_STOP_LATENCY_SEC, state.settings.stopLatencySec).toFixed(
                   1,
                 )}s taken off for getting back to the phone, and other timed holds, the lean included, your ${state.settings.stopLatencySec.toFixed(
                   1,

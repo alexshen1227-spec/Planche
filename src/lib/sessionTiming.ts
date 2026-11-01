@@ -4,6 +4,9 @@ import { STEPS } from '../data/progressions'
 export const STANDARD_LEAD_IN_SEC = 5
 export const PROGRESSION_LEAD_IN_SEC = 8
 export const PROGRESSION_STOP_LATENCY_SEC = 5
+/** Coming out of a planche and taking one step is not faster than this. */
+export const WALK_BACK_MIN_SEC = 2
+export const WALK_BACK_MAX_SEC = 8
 
 /**
  * The eight skills on the Path are the main progression line. Planche Lean is
@@ -50,11 +53,20 @@ export function stopLatencySecondsFor(
   exerciseId: string | undefined,
   calibratedLatencySec: number,
   phoneWithinReach = false,
+  /**
+   * The athlete's measured walk back to a phone across the room
+   * (`Settings.walkBackSec`), in place of the assumed five seconds. Measured,
+   * not dialled: the slowest of three timed walks, and it moves the allowance
+   * either way — a six-second walk lengthens it. On a filmed hold the credit
+   * stays capped by the stretch the camera verified, so a short measurement
+   * cannot buy an unlock.
+   */
+  walkBackSec?: number,
 ): number {
   const calibrated = Math.max(0, calibratedLatencySec)
   if (!isMainProgressionHold(exerciseId)) return calibrated
   // Never charge less than the reaction time that applies either way.
-  return phoneWithinReach ? calibrated : Math.max(PROGRESSION_STOP_LATENCY_SEC, calibrated)
+  return phoneWithinReach ? calibrated : Math.max(walkBackSec ?? PROGRESSION_STOP_LATENCY_SEC, calibrated)
 }
 
 /** Credit a stopwatch reading against one concrete stop setup. */
@@ -63,11 +75,12 @@ export function creditedHoldSeconds(
   exerciseId: string | undefined,
   calibratedLatencySec: number,
   phoneWithinReach = false,
+  walkBackSec?: number,
 ): number {
   return Math.max(
     0,
     Math.round(
-      (rawSeconds - stopLatencySecondsFor(exerciseId, calibratedLatencySec, phoneWithinReach)) * 10,
+      (rawSeconds - stopLatencySecondsFor(exerciseId, calibratedLatencySec, phoneWithinReach, walkBackSec)) * 10,
     ) / 10,
   )
 }
@@ -85,8 +98,9 @@ export function stopSetupCredits(
   rawSeconds: number,
   exerciseId: string | undefined,
   calibratedLatencySec: number,
+  walkBackSec?: number,
 ): { walkedBack: number; withinReach: number; delta: number } {
-  const walkedBack = creditedHoldSeconds(rawSeconds, exerciseId, calibratedLatencySec, false)
+  const walkedBack = creditedHoldSeconds(rawSeconds, exerciseId, calibratedLatencySec, false, walkBackSec)
   const withinReach = creditedHoldSeconds(rawSeconds, exerciseId, calibratedLatencySec, true)
   return {
     walkedBack,

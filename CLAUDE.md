@@ -395,6 +395,14 @@ them. Real-hardware behaviour is still unproven.
   leans never reached the soft-elbow athletes they were built for. A second
   loaded session on the same day stays skill only. The old test pinned
   `strategy`/`dayType` by hand and missed this; assert on `buildPlan`'s plan.
+- **The walk-back allowance can be measured** (`Settings.walkBackSec`,
+  Settings → Measure my walk): the slowest of three timed walks from the hold
+  position to the phone, clamped `WALK_BACK_MIN_SEC`–`WALK_BACK_MAX_SEC`,
+  replaces the assumed 5s for main Path holds — both ways. It is a
+  measurement, not the "dial that enlarges your records" the
+  `stopLatencySecondsFor` comment warns about, and a filmed hold's credit is
+  still capped by the verified stretch. The beep (`signalTone`, primed by the
+  starting tap) plays with sounds off. Unmeasured athletes keep the 5s.
 - **In-hold cues follow time held** (`holdCues`): the target call, spoken
   counts and ring use the stopwatch since Go; the stop allowance comes off the
   logged value only. The cues once used credited time, written for a reaction

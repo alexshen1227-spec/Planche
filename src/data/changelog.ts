@@ -19,6 +19,15 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'Your own walk back to the phone',
+    area: 'camera',
+    notes: [
+      'New in Settings: measure your walk back. With the phone across the room, the app used to take an assumed five seconds off every main hold for getting up and walking to it — so a four-second attempt logged as almost nothing. Now you can time your real walk three times; the slowest is used, for every main hold from then on.',
+      'It works both ways: a longer walk gets a longer allowance. A filmed hold still never counts for more than the camera saw, and every set can still be corrected with one tap.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'About a minute in the position',
     area: 'training',
     notes: [

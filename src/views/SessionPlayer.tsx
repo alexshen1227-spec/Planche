@@ -213,6 +213,7 @@ export function SessionPlayer({
     resumeExerciseId,
     state.settings.stopLatencySec,
     !restoredSetup.walkedBack,
+    state.settings.walkBackSec,
   )
   const [phase, setPhase] = useState<Phase>(
     resumeFrom
@@ -476,7 +477,9 @@ export function SessionPlayer({
   }, [exercise, state.prs, logs, surface])
   const leadSec = leadInSecondsFor(exercise?.id)
   const latency =
-    exercise?.type === 'hold' ? stopLatencySecondsFor(exercise.id, state.settings.stopLatencySec, !walkedBack) : 0
+    exercise?.type === 'hold'
+      ? stopLatencySecondsFor(exercise.id, state.settings.stopLatencySec, !walkedBack, state.settings.walkBackSec)
+      : 0
   // Film every key hold on the road. Most use pose geometry; Frog Stand keeps
   // the replay for an explicit checklist review instead.
   const filmable = Boolean(block?.section === 'main' && exercise && isFilmable(exercise.id))
@@ -1162,7 +1165,13 @@ export function SessionPlayer({
         l.map((log) => {
           if (log.at !== at || log.kind !== 'hold' || log.raw === undefined) return log
           if (log.timing && log.timing.method !== 'stopwatch') return log
-          const value = creditedHoldSeconds(log.raw, log.exerciseId, state.settings.stopLatencySec, !didWalk)
+          const value = creditedHoldSeconds(
+            log.raw,
+            log.exerciseId,
+            state.settings.stopLatencySec,
+            !didWalk,
+            state.settings.walkBackSec,
+          )
           const allowanceSec = round1(log.raw - value)
           return {
             ...log,
@@ -1182,7 +1191,7 @@ export function SessionPlayer({
   const stopAllowanceCorrection = (log: SetLog) => {
     if (log.kind !== 'hold' || log.raw === undefined || !isMainProgressionHold(log.exerciseId)) return null
     if (log.timing && log.timing.method !== 'stopwatch') return null
-    const credits = stopSetupCredits(log.raw, log.exerciseId, state.settings.stopLatencySec)
+    const credits = stopSetupCredits(log.raw, log.exerciseId, state.settings.stopLatencySec, state.settings.walkBackSec)
     if (credits.delta <= 0.05) return null
     const didWalk = Math.abs(log.value - credits.walkedBack) <= Math.abs(log.value - credits.withinReach)
     return (

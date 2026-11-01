@@ -575,6 +575,12 @@ export interface Settings {
    * inventing hold time.
    */
   phoneWithinReach: boolean
+  /**
+   * The athlete's measured walk back to a phone across the room, used for
+   * main Path holds in place of the assumed five seconds. Absent until
+   * measured (Settings → Measure my walk back); the slowest of three walks.
+   */
+  walkBackSec?: number
 }
 
 export interface AppState {

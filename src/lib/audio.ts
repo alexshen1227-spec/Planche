@@ -38,6 +38,41 @@ function tone(freq: number, dur: number, delay = 0, type: OscillatorType = 'sine
 }
 
 /**
+ * Audio for a measurement the athlete started and cannot watch — in position,
+ * away from the phone — so it plays with sounds switched off. Prime it from
+ * the tap that starts the measurement: browsers only let audio start from a
+ * gesture, and the beep comes seconds later.
+ */
+export function primeSignal() {
+  try {
+    ctx ??= new AudioContext()
+    if (ctx.state === 'suspended') void ctx.resume()
+  } catch {
+    /* no audio: the screen still shows the cue */
+  }
+}
+
+/** Three short, loud beeps on the primed context. */
+export function signalTone() {
+  const c = ctx
+  if (!c) return
+  for (const delay of [0, 0.2, 0.4]) {
+    const osc = c.createOscillator()
+    const g = c.createGain()
+    osc.type = 'square'
+    osc.frequency.value = 880
+    const t = c.currentTime + delay
+    g.gain.setValueAtTime(0, t)
+    g.gain.linearRampToValueAtTime(Math.max(volume, 0.6) * 0.3, t + 0.01)
+    g.gain.exponentialRampToValueAtTime(0.0008, t + 0.15)
+    osc.connect(g)
+    g.connect(c.destination)
+    osc.start(t)
+    osc.stop(t + 0.2)
+  }
+}
+
+/**
  * Spoken cue via the Web Speech API. Head-down holds make the screen
  * unreadable, so counts are announced out loud. Cancels any queued speech
  * so rapid cues never pile up.

@@ -176,6 +176,22 @@ describe('progression hold timing', () => {
     expect(credited(4, stopLatencySecondsFor('tuck-planche', 0.4, false))).toBe(0)
   })
 
+  it('replaces the assumed five-second walk with the athlete’s measured one, both ways', () => {
+    // A 4s attempt logged as ~0 under the assumption; a 2.6s walker measured
+    // gets 1.4s of it, and a 6.4s walker gets the longer allowance they need.
+    expect(stopLatencySecondsFor('tuck-planche', 2.3, false, 2.6)).toBe(2.6)
+    expect(stopLatencySecondsFor('tuck-planche', 2.3, false, 6.4)).toBe(6.4)
+    expect(creditedHoldSeconds(4, 'tuck-planche', 2.3, false, 2.6)).toBe(1.4)
+    // Never below the reaction delay that applies either way.
+    expect(stopLatencySecondsFor('tuck-planche', 2.3, false, 2)).toBe(2.3)
+    // Within reach, the lean, and unmeasured athletes are untouched.
+    expect(stopLatencySecondsFor('tuck-planche', 0.4, true, 2.6)).toBe(0.4)
+    expect(stopLatencySecondsFor('planche-lean', 2.3, false, 2.6)).toBe(2.3)
+    expect(stopLatencySecondsFor('tuck-planche', 2.3, false)).toBe(5)
+    // The one-tap correction is told the same walk.
+    expect(stopSetupCredits(8, 'tuck-planche', 2.3, 2.6)).toMatchObject({ walkedBack: 5.4, withinReach: 5.7 })
+  })
+
   it('re-credits a logged hold from the untouched stopwatch, so the tap never drifts', () => {
     // The rest screen offers a one-tap correction between the two allowances.
     // It recomputes from `raw` rather than nudging the credited value, so
@@ -2236,6 +2252,17 @@ describe('backup validation and normalization', () => {
     const junk = JSON.parse(JSON.stringify(saved))
     junk.settings.phoneWithinReach = 'yes please'
     expect(normalizeState(junk).settings.phoneWithinReach).toBe(false)
+  })
+
+  it('keeps a measured walk back through a backup, inside its bounds', () => {
+    const withWalk = (walkBackSec: unknown) =>
+      normalizeState(JSON.parse(JSON.stringify({ ...state(), settings: { ...state().settings, walkBackSec } }))).settings
+        .walkBackSec
+    expect(withWalk(3.4)).toBeCloseTo(3.4)
+    expect(withWalk(0.3)).toBe(2)
+    expect(withWalk(40)).toBe(8)
+    expect(withWalk('fast')).toBeUndefined()
+    expect(normalizeState(JSON.parse(JSON.stringify(state()))).settings.walkBackSec).toBeUndefined()
   })
 
   it('accepts a backup created by the current app version', () => {
