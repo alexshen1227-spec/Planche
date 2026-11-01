@@ -1019,7 +1019,9 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
         ? 'Harder clean holds. Rest fully and stop the instant elbow lock or body line goes.'
         : plan.strategy === 'density'
           ? 'Short rests on purpose, but never chase the timer past the first loss of shape.'
-          : 'Stop each set about 2s before failure or at the first loss of shape. Quality over seconds.'
+          : // It said "about 2s before failure" while the hold screen called
+            // the target: two instructions for the same set.
+            'Come down at the target call, or sooner at the first loss of shape. Quality over seconds.'
   const shortNote =
     target < 3
       ? ` Your recent holds are short, so these are too — that is a real dose, not a failure. If getting into the position or balancing is the struggle rather than strength, practising ${

@@ -332,11 +332,13 @@ export function simulateSeason(
       sets.push(s)
       clock += 150_000
     }
-    // Working sets sit at the prescribed target; the final set is taken close
-    // to the limit, which is what the app's own coaching tells an athlete to
-    // do ("finish about two seconds before you would collapse"). That last set
-    // is what makes the log reflect capacity rather than merely echoing the
-    // target back — see the `compliance` note below.
+    // Working sets sit at the prescribed target; in `to-capacity` the final
+    // set is taken close to the limit, which the app's coaching once asked for
+    // ("finish about two seconds before you would collapse"). It now asks for
+    // the target call on every working set — the `to-target` athlete — and
+    // measures with an in-session max clean hold instead (`queueRetest`).
+    // That last set is what makes a `to-capacity` log reflect capacity rather
+    // than merely echoing the target back — see the `compliance` note below.
     //
     // A due re-test is one max clean hold at the bar, first in the main work;
     // every athlete takes that one to their limit — it is what it asks for.

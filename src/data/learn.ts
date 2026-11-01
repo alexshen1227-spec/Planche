@@ -35,7 +35,7 @@ export const GUIDES: Guide[] = [
         bullets: [
           'Train 3 days a week with at least one rest day between sessions.',
           'Sessions start with a short wrist preparation — a moment to notice how your wrists feel before loading them. It is preparation, not protection. Wrist pain is common among gymnasts, the closest group anyone has studied.',
-          'Finish each hold a little before you would collapse. Coaches generally prefer practising seconds in a good position to grinding to failure.',
+          'Come down at the target call — or sooner, the moment the shape goes. Working targets sit well inside your max on purpose, and coaches generally prefer practising seconds in a good position to grinding to failure. Your max is measured on its own, about every three weeks, with one max clean hold.',
           'Film yourself from the side once a week. Video can reveal what you cannot feel, but automated estimates can be wrong — confirm the position yourself.',
         ],
       },
