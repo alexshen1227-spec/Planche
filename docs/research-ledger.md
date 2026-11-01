@@ -388,8 +388,10 @@ change alters the wrist's angle; it does not diagnose or clear pain.
 
 ## 12. Where the 2026-11 features sit
 
-No new sources were added; this records how the upgrade leans on the rows
-above, so its copy can be checked against them.
+This records how the upgrade leans on the rows above, so its copy can be
+checked against them. The last three rows add coaching-practice sources found
+on 2026-11-01 (a coach's blog and a members' forum — CONSENSUS at best); no
+trial was added.
 
 | Feature | Basis | Tier as stated to athletes |
 |---|---|---|
@@ -402,3 +404,6 @@ above, so its copy can be checked against them.
 | Hand-relative steadiness | Measured on the 2026-10-10 audit's real footage (fixed / pan / oscillation) | Describes movement, never its cause |
 | Minimum dose (a warm-up and five ~3 s maximal holds, for a day a full session will not happen) | Nuzzo, Pinto, Kirk & Nosaka, *Resistance exercise minimal dose strategies for increasing muscle strength in the general population: an overview.* Sports Med 54(5):1139–62, 2024. DOI 10.1007/s40279-024-02009-0, PMID 38509414. Its Table 8: practising a brief maximal isometric contraction 5–7 days a week, ≤3 min a session, raised *isometric* strength over a few weeks — e.g. Barss et al. 2018 (J Appl Physiol, PMID 30188797), five 3-s maximal grip contractions daily for 18 days, +9.7% trained hand. Elbow flexors, grip and knee extensors only; small, mostly decades-old trials; the overview did not assess study quality and calls practising the test "proof-of-concept"; it makes no claim about joint-angle specificity. Short holds over long: §2 (Bohm 2014). Extra sessions: §3 — the gain is the extra work | LIMITED. Copy: "Brief maximal holds raised strength in small trials on simpler movements; none tested the planche." Never: "proven", "specific to the planche", or a percentage |
 | In-hold cues on time held (`holdCues`) | Timing arithmetic, not research: the stop allowance happens after the hold | A bug fix, stated as one |
+| About a minute of key-hold practice a session (`KEY_HOLD_AGGREGATE_SEC`, 3–6 sets) | Antranik Kizirian, *How to implement a steady state training cycle* (antranik.org, coach blog, no date; attributed to Coach Sommer via the GymnasticBodies forum): test the max hold, then sets at 50–80% of it for "60 seconds of quality aggregate practice", 3–4×/week. The tendon prescription in §2 (Mersmann 2017: 5×4 contractions of 3 s) adds up to the same minute. Fetched 2026-11-01 by a subagent; the article itself cites no trial | CONSENSUS. Short sessions give up the reach toward the minute before any accessory block (`Block.reach`) |
+| An in-session max clean hold about every three weeks (`plan.queueRetest`) | Coaching practice varies: the same Sommer cycle re-tests only after 8–12 weeks ("Don't test it before 8 weeks"), while a StrongFirst forum program (2023, members' posts, low quality) works 3-week blocks at a percentage of the max. Both agree on submaximal work most of the time and occasional true maxes. The app takes the short end because its working targets are a fraction of the last measured max, early strength gains run fast (§2, Kubo 2010), and an athlete who stops at every call otherwise never re-anchors (simulated) | CONSENSUS for the practice; the cadence is the app's design choice, not a measured optimum |
+| Next-shape attempts aimed at the opening dose (4–10 s) | Sommer 2008's standard in §9: "15 s, plus 3–5 s on the next variation" | CONSENSUS. The steady-state cycle above advises *against* practising the next progression early — coaches disagree, and the app sides with the 2008 standard |

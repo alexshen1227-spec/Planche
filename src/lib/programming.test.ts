@@ -6,6 +6,7 @@ import {
   accessoryProgression,
   estimateMinutes,
   fitToBudget,
+  KEY_HOLD_AGGREGATE_SEC,
   mainHoldSets,
   restAfterHold,
   todaysSession,
@@ -295,10 +296,16 @@ describe('a fatigue day keeps the session’s shape at a light dose', () => {
 })
 
 describe('main-hold dose', () => {
-  it('gives short holds more sets so a beginner is not handed a quarter of the practice', () => {
-    expect(mainHoldSets(2, 0, 1)).toBeGreaterThan(mainHoldSets(8, 0, 1))
-    expect(mainHoldSets(4, 0, 1)).toBeGreaterThan(mainHoldSets(8, 0, 1))
-    // Total practised time still grows with the hold.
+  it('aims at about a minute of practice in the position, in three to six sets', () => {
+    // The fixed four sets gave a 5–10s target 20–40s of practice.
+    for (const target of [10, 12, 15, 20]) {
+      expect(mainHoldSets(target, 0, 1) * target).toBeGreaterThanOrEqual(KEY_HOLD_AGGREGATE_SEC)
+    }
+    expect(mainHoldSets(5, 0, 1)).toBe(6)
+    expect(mainHoldSets(20, 0, 1)).toBe(3)
+    // A short hold is never given fewer sets than a longer one…
+    for (let t = 1; t < 30; t++) expect(mainHoldSets(t, 0, 1)).toBeGreaterThanOrEqual(mainHoldSets(t + 1, 0, 1))
+    // …and the time practised still grows with the hold.
     expect(mainHoldSets(2, 0, 1) * 2).toBeLessThan(mainHoldSets(8, 0, 1) * 8)
   })
 
@@ -403,6 +410,19 @@ describe('trimming to a time budget', () => {
     if (roomier.dropped.some((id) => id === 'tuck-planche-pushup' || id === 'pppu' || id === 'planche-lean')) {
       expect(roomier.dropped).toContain('hollow-hold')
     }
+  })
+
+  it('gives up the key hold’s reach toward a minute before any strength block, and only the reach', () => {
+    // Six sets, two of them reach: a budget that fits four sets and the
+    // strength work at two sets each keeps the press and the leans, not the
+    // extra sets (accessories go to two sets first, as documented).
+    const reaching = [{ ...full[0], sets: 6, reach: 2 }, ...full.slice(1)]
+    const budget = estimateMinutes([{ ...full[0], sets: 4 }, ...full.slice(1, 4).map((b) => ({ ...b, sets: 2 }))]) + 1
+    const { blocks, dropped } = fitToBudget(reaching, budget)
+    expect(blocks.find((b) => b.role === 'skill')!.sets).toBe(4)
+    for (const id of ['tuck-planche-pushup', 'pppu', 'planche-lean']) expect(dropped).not.toContain(id)
+    // With no time at all, the kept dose still goes last, as before.
+    expect(fitToBudget(reaching, 1).blocks.find((b) => b.role === 'skill')!.sets).toBe(3)
   })
 
   it('keeps the main sets intact until every accessory is gone', () => {

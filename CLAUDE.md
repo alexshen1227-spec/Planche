@@ -375,6 +375,13 @@ them. Real-hardware behaviour is still unproven.
   log (push-ups ÷3 for a PPPU, knee push-ups ÷2, tuck hollow ÷2 — cautious
   conventions) once that says more than the answer did, and the swap note
   names the number that moves it back up.
+- **The key hold aims at about a minute of practice** (`KEY_HOLD_AGGREGATE_SEC`,
+  3–6 sets, counted on the day's base target so the strategy's set delta keeps
+  its meaning; fatigue days take `LIGHT_DOSE_SHARE` of it). Source: Sommer's
+  steady-state cycle as relayed by Antranik, CONSENSUS (ledger §12). The sets
+  above the old fixed count are `Block.reach`, and `fitToBudget` gives them up
+  before any strength block — the user asked for the press and leans at every
+  level — while the kept dose still goes last.
 - **Short holds get more sets** (`mainHoldSets`) and slightly shorter rest
   (`restAfterHold`, floor 90s). Per-side key holds start a set lighter.
 - **Easy days keep the session's shape.** Why the day is easy decides what

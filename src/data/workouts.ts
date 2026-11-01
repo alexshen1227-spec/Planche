@@ -36,7 +36,9 @@ function clamp(v: number, lo: number, hi: number) {
  */
 function withSides(blocks: Block[]): Block[] {
   return blocks.map((b) =>
-    EXERCISE_BY_ID[b.exerciseId]?.perSide ? { ...b, sets: b.sets * 2 } : b,
+    EXERCISE_BY_ID[b.exerciseId]?.perSide
+      ? { ...b, sets: b.sets * 2, ...(b.reach ? { reach: b.reach * 2 } : {}) }
+      : b,
   )
 }
 
@@ -614,6 +616,18 @@ export function fitToBudget(
     }
     return false
   }
+  /** Give up one set of a key hold's reach (`Block.reach`), last block first. */
+  const shaveReach = (): boolean => {
+    for (let i = out.length - 1; i >= 0; i--) {
+      const b = out[i]
+      if ((b.reach ?? 0) >= stepOf(b) && b.sets - stepOf(b) >= 1) {
+        b.sets -= stepOf(b)
+        b.reach = (b.reach ?? 0) - stepOf(b)
+        return true
+      }
+    }
+    return false
+  }
   const coreProtected = (b: Block) => preserveCorePair && roleOf(b) === 'core' && b.emphasis === true
   const steps: (() => boolean)[] = [
     // 1. Optional goal mobility and the second compression hold.
@@ -626,6 +640,11 @@ export function fitToBudget(
     () => dropLast((b) => roleOf(b) === 'backoff'),
     () => dropLast((b) => roleOf(b) === 'balance' && !b.emphasis),
     () => dropLast((b) => roleOf(b) === 'core' && !b.emphasis),
+    // The key hold's reach toward a minute of practice goes before a strength
+    // block does: the leans and the push-up versions are what a short session
+    // loses otherwise, and they were asked for at every level. Its kept dose
+    // still waits until every accessory is gone.
+    () => shaveReach(),
     () => dropLast((b) => roleOf(b) === 'straight-arm' && !b.emphasis),
     () => dropLast((b) => roleOf(b) === 'pressing' && !b.emphasis),
     () => dropLast((b) => roleOf(b) === 'assisted'),
@@ -861,17 +880,43 @@ export function restrictTemplate(workout: Workout, plan: CoachPlan): Workout {
 }
 
 /**
+ * Quality practice in the key position a session aims at: about a minute.
+ * Sommer's steady-state cycle (as relayed by Antranik) builds its sets around
+ * "60 seconds of quality aggregate practice" at 50–80% of a max hold, and the
+ * tendon-loading prescription in the ledger (5×4 contractions of 3s) adds up to
+ * the same minute. CONSENSUS — no trial compared session totals for a planche.
+ */
+export const KEY_HOLD_AGGREGATE_SEC = 60
+
+/**
  * Main-hold sets for a working target, before the plan's volume factor.
  *
- * A hold dose is the time practised, not the number of sets: four sets of two
- * seconds is eight seconds of practice, four of eight is thirty-two. A fixed
- * four sets therefore handed a beginner with a two-second tuck a quarter of an
- * intermediate's practice. Short targets get more sets instead — the common
- * coaching pattern of many short, fresh, clean attempts when a position can
- * only be held briefly. A convention, not a measured dose-response, and the
- * strategy's own set delta still shapes it either way.
+ * A hold dose is the time practised, not the number of sets. Sets add up to
+ * about a minute in the position, three to six of them: past six, a hold too
+ * short to reach the minute is better trained in an easier position (the lean
+ * work after the main block), and fewer than three barely practises a long
+ * one. The fixed four sets this replaced gave a 5–10s target 20–40s of
+ * practice — a third to two thirds of the minute, at exactly the targets an
+ * athlete holds for months. The strategy's set delta still shapes it either way.
  */
 export function mainHoldSets(
+  targetSec: number,
+  setsDelta: number,
+  volumeFactor: number,
+  unlockQueued = false,
+): number {
+  const base = clamp(Math.ceil(KEY_HOLD_AGGREGATE_SEC / Math.max(1, targetSec)), 3, 6)
+  return clamp(Math.max(1, Math.round(((unlockQueued ? base - 1 : base) + setsDelta) * volumeFactor)), 2, 8)
+}
+
+/**
+ * The main-hold dose a short session keeps: the fixed count the minute rule
+ * replaced (more sets only for holds of four seconds or less). Sets above it
+ * are the reach toward the minute, and a time budget gives them up before it
+ * drops any strength block — the documented order otherwise keeps main sets
+ * until every accessory is gone.
+ */
+export function mainHoldFloorSets(
   targetSec: number,
   setsDelta: number,
   volumeFactor: number,
@@ -1112,11 +1157,15 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   // are maximal straight-arm efforts; frog stand practice is a bent-arm
   // balance drill, and took a quarter of a beginner's lean practice for nothing.
   const maximalBridge = bridging && bridge?.next.keyExerciseId !== 'frog-stand'
-  const mainSets = Math.max(
-    2,
-    mainHoldSets(target, plan.setsDelta, vol, attemptQueued || maximalBridge) -
-      (EXERCISE_BY_ID[step.keyExerciseId]?.perSide ? 1 : 0),
-  )
+  // The minute is counted on the day's base target, before the strategy: its
+  // set delta is what makes a volume day longer and an intensity day shorter,
+  // and counting the minute on the strategy's own target as well doubled both.
+  // A fatigue day takes its light share of the sets, like its accessories.
+  const fatigueDay = plan.dayType === 'technique' || plan.dayType === 'deload'
+  const doseArgs = [baseTarget, plan.setsDelta, vol * (fatigueDay ? LIGHT_DOSE_SHARE : 1), attemptQueued || maximalBridge] as const
+  const sideLess = EXERCISE_BY_ID[step.keyExerciseId]?.perSide ? 1 : 0
+  const mainSets = Math.max(2, mainHoldSets(...doseArgs) - sideLess)
+  const reach = Math.max(0, mainSets - Math.max(2, mainHoldFloorSets(...doseArgs) - sideLess))
   // While bridging, the main holds lean toward the next shape too: the change
   // between two steps is a dial, not a switch.
   const lockoutCue =
@@ -1135,6 +1184,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   blocks.push({
     exerciseId: step.keyExerciseId,
     sets: mainSets,
+    ...(reach > 0 ? { reach } : {}),
     target: hold(target),
     restSec: restAfterHold(rMain, target),
     section: 'main',

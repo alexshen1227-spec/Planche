@@ -353,6 +353,12 @@ export interface Block {
   /** An easy day's lighter dose: its sets are logged `light` (see `SetLog.light`). */
   light?: boolean
   /**
+   * Sets past the dose a short session keeps: the key hold's reach toward
+   * about a minute of practice (`mainHoldSets`). A time budget gives these up
+   * before any strength block goes, and nothing else.
+   */
+  reach?: number
+  /**
    * An attempt queued to re-measure the hold rather than to unlock it
    * (`plan.queueRetest`) — the same single max hold at the bar, named for what
    * it is for.

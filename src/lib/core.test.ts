@@ -1823,7 +1823,11 @@ describe('recognizable coach session archetypes', () => {
     const intensityTarget = main(intensity).target
 
     expect(main(volume).sets).toBeGreaterThan(main(intensity).sets)
-    expect(main(timedVolume).sets).toBe(main(volume).sets)
+    // A time budget gives up only the reach toward a minute of practice; the
+    // volume day keeps its own extra sets, and stays larger than a balanced
+    // day in the same thirty minutes.
+    expect(main(timedVolume).sets).toBeGreaterThanOrEqual(main(volume).sets - (main(volume).reach ?? 0))
+    expect(main(timedVolume).sets).toBeGreaterThan(main(workoutFor('balanced', 30)).sets)
     expect(timedVolume.minutes).toBeLessThanOrEqual(30)
     expect(volumeTarget.kind).toBe('hold')
     expect(intensityTarget.kind).toBe('hold')
