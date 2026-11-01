@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { configureAudio, primeSignal, releaseSignal } from './audio'
+import { configureAudio, primeSignal, releaseSignal, unlockAudio } from './audio'
 
 /**
  * The silent switch on an iPhone mutes Web Audio unless Safari's audio
@@ -29,5 +29,34 @@ describe('audio session type', () => {
     vi.stubGlobal('navigator', {})
     expect(() => configureAudio(true, true, 0.7, true)).not.toThrow()
     expect(() => releaseSignal()).not.toThrow()
+  })
+})
+
+describe('unlocking audio from a tap', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('primes speech once with a silent utterance, and resumes the context on every tap', () => {
+    // iOS speaks and plays only from a gesture; every cue in a hold comes from
+    // a timer, so a tap has to have unlocked both first.
+    const resume = vi.fn(() => Promise.resolve())
+    class FakeContext {
+      state = 'suspended'
+      resume = resume
+    }
+    const speak = vi.fn()
+    class FakeUtterance {
+      volume = 1
+      constructor(public text: string) {}
+    }
+    vi.stubGlobal('navigator', {})
+    vi.stubGlobal('AudioContext', FakeContext)
+    vi.stubGlobal('SpeechSynthesisUtterance', FakeUtterance)
+    vi.stubGlobal('speechSynthesis', { speak, cancel: vi.fn() })
+    configureAudio(true, true, 0.7)
+    unlockAudio()
+    unlockAudio()
+    expect(speak).toHaveBeenCalledTimes(1)
+    expect(speak.mock.calls[0][0]).toMatchObject({ volume: 0 })
+    expect(resume).toHaveBeenCalledTimes(2)
   })
 })

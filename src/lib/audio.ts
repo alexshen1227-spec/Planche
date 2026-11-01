@@ -59,6 +59,48 @@ function tone(freq: number, dur: number, delay = 0, type: OscillatorType = 'sine
 }
 
 /**
+ * iOS Safari starts Web Audio and speech only from inside a user gesture. A
+ * context first created by a timer stays suspended, and a first `speak()`
+ * from a timer returns without speaking (WebKit bug 223473; developer
+ * reports) — and every cue in a hold comes from a timer: the counts, the go,
+ * the target call. So any tap anywhere resumes the context, and the first
+ * one speaks a silent utterance, which lets later programmatic speech
+ * through. Taps keep resuming, because Safari suspends the context again when
+ * the app goes to the background.
+ */
+let speechPrimed = false
+export function unlockAudio() {
+  if (toneEnabled) {
+    try {
+      ctx ??= new AudioContext()
+      if (ctx.state !== 'running') void ctx.resume().catch(() => undefined)
+    } catch {
+      /* no Web Audio */
+    }
+  }
+  if (voiceEnabled && !speechPrimed && typeof speechSynthesis !== 'undefined') {
+    try {
+      const u = new SpeechSynthesisUtterance(' ')
+      u.volume = 0
+      speechSynthesis.speak(u)
+      speechPrimed = true
+    } catch {
+      /* no speech */
+    }
+  }
+}
+
+let unlockInstalled = false
+/** Listen for the taps that may unlock audio. Once per page. */
+export function installAudioUnlock() {
+  if (unlockInstalled || typeof document === 'undefined') return
+  unlockInstalled = true
+  for (const type of ['touchend', 'click', 'keydown'] as const) {
+    document.addEventListener(type, unlockAudio, { capture: true, passive: true })
+  }
+}
+
+/**
  * Audio for a measurement the athlete started and cannot watch — in position,
  * away from the phone — so it plays with sounds switched off. Prime it from
  * the tap that starts the measurement: browsers only let audio start from a
