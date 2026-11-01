@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -104,4 +105,9 @@ export default defineConfig({
   // session on the same checkout); the fixed defaults remain for plain use.
   server: { port: Number(process.env.PORT) || 5173, strictPort: true },
   preview: { port: Number(process.env.PORT) || 4173, strictPort: true },
+  // The accuracy and safety evals sweep hundreds of synthetic holds and
+  // athletes: ~1.5s each alone, but 6–9s under a full parallel run on a busy
+  // machine, past the 5s default. The assertions are unchanged; only the time
+  // allowed to reach them is.
+  test: { testTimeout: 20_000 },
 })

@@ -1,118 +1,64 @@
+import { useId } from 'react'
 import type { StepId } from '../types'
-
-interface Pose {
-  head: [number, number]
-  limbs: number[][][] // list of polylines, each a list of [x, y] points
-  ground: [number, number]
-}
+import { figureParts } from '../lib/figure'
 
 /**
- * Minimal side-view pictograms of each position. Same visual grammar
- * everywhere: filled head, thick rounded limbs, faint ground line.
+ * A position's figure (geometry in lib/figure). Plain figures take the text
+ * colour; `accent` paints the body in the accent gradient.
  */
-const POSES: Record<StepId, Pose> = {
-  foundations: {
-    head: [60, 14],
-    limbs: [
-      [[60, 22], [60, 46]],
-      [[60, 29], [47, 41]],
-      [[60, 29], [73, 41]],
-      [[60, 46], [51, 74]],
-      [[60, 46], [69, 74]],
-    ],
-    ground: [38, 84],
-  },
-  lean: {
-    head: [84, 33],
-    limbs: [
-      [[74, 42], [66, 76]], // arm, shoulders ahead of the hand
-      [[74, 42], [40, 59], [14, 74]], // body line to the toes
-    ],
-    ground: [8, 84],
-  },
-  frog: {
-    head: [68, 33],
-    limbs: [
-      [[58, 44], [62, 76]], // arm
-      [[58, 44], [40, 52]], // back
-      [[40, 52], [53, 62], [42, 70]], // folded leg resting on the arm
-    ],
-    ground: [30, 84],
-  },
-  tuck: {
-    head: [75, 34],
-    limbs: [
-      [[64, 42], [64, 76]], // vertical arm
-      [[64, 42], [46, 47]], // rounded back
-      [[46, 47], [57, 58], [44, 64]], // knees to chest
-    ],
-    ground: [30, 84],
-  },
-  advtuck: {
-    head: [77, 35],
-    limbs: [
-      [[66, 42], [64, 76]],
-      [[66, 42], [38, 42]], // flat back
-      [[38, 42], [37, 58], [49, 61]], // knees under hips
-    ],
-    ground: [26, 84],
-  },
-  oneleg: {
-    head: [77, 35],
-    limbs: [
-      [[66, 42], [64, 76]],
-      [[66, 42], [38, 42]],
-      [[38, 42], [8, 41]], // extended leg
-      [[38, 42], [38, 56], [48, 59]], // tucked leg
-    ],
-    ground: [26, 84],
-  },
-  straddle: {
-    head: [77, 35],
-    limbs: [
-      [[66, 42], [64, 76]],
-      [[66, 42], [40, 42]],
-      [[40, 42], [9, 31]], // top leg of the straddle V
-      [[40, 42], [11, 55]], // bottom leg
-    ],
-    ground: [26, 84],
-  },
-  full: {
-    head: [77, 35],
-    limbs: [
-      [[66, 42], [64, 76]],
-      [[66, 42], [8, 41]], // one rigid line
-    ],
-    ground: [26, 84],
-  },
-}
-
-export function Figure({ step, className = '' }: { step: StepId; className?: string }) {
-  const pose = POSES[step]
+export function Figure({
+  step,
+  className = '',
+  tone = 'plain',
+}: {
+  step: StepId
+  className?: string
+  /** `accent` paints the body in the accent gradient — for the one hero figure on a screen. */
+  tone?: 'plain' | 'accent'
+}) {
+  const gradientId = useId()
+  const parts = figureParts(step)
+  const ink = tone === 'accent' ? `url(#${gradientId})` : 'currentColor'
   return (
     <svg viewBox="0 0 96 90" className={className} aria-hidden="true">
+      {tone === 'accent' ? (
+        <defs>
+          {/* In view coordinates: a bounding-box gradient renders nothing on a
+              perfectly level limb (its box has no height), and the full
+              planche's body line is level. */}
+          <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1="10" y1="20" x2="86" y2="84">
+            <stop offset="0" style={{ stopColor: 'var(--t-accent)' }} />
+            <stop offset="1" style={{ stopColor: 'var(--t-accent-strong)' }} />
+          </linearGradient>
+        </defs>
+      ) : null}
       <line
-        x1={pose.ground[0]}
-        y1={81}
-        x2={pose.ground[1]}
-        y2={81}
+        x1={parts.ground.x1}
+        y1={parts.ground.y}
+        x2={parts.ground.x2}
+        y2={parts.ground.y}
         stroke="currentColor"
-        strokeWidth={3}
+        strokeWidth={2.5}
         strokeLinecap="round"
-        opacity={0.22}
+        opacity={0.18}
       />
-      {pose.limbs.map((pts, i) => (
-        <polyline
+      {parts.bars ? (
+        // A parallette in profile: the grip, and its two feet.
+        <path d={parts.bars} stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.38} />
+      ) : null}
+      {parts.strokes.map((stroke, i) => (
+        <path
           key={i}
-          points={pts.map(([x, y]) => `${x},${y}`).join(' ')}
+          d={stroke.d}
           fill="none"
-          stroke="currentColor"
-          strokeWidth={6}
+          stroke={ink}
+          strokeWidth={stroke.width}
           strokeLinecap="round"
           strokeLinejoin="round"
+          opacity={stroke.far ? 0.32 : 1}
         />
       ))}
-      <circle cx={pose.head[0]} cy={pose.head[1]} r={6} fill="currentColor" />
+      <circle cx={parts.head.cx} cy={parts.head.cy} r={parts.head.r} fill={ink} />
     </svg>
   )
 }

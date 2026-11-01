@@ -41,6 +41,7 @@ import { recordForSurface } from '../lib/records'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
+import { ShareProgress } from '../components/ShareProgress'
 import { ProgressRing, Modal } from '../components/ui'
 import { FramingCheck } from '../components/FramingCheck'
 import {
@@ -2253,9 +2254,14 @@ export function SessionPlayer({
         {unlocked ? (
           <div className="mt-6 rounded-3xl border border-accent/30 bg-accent-soft p-6">
             <div className="text-[13px] font-semibold uppercase tracking-wide text-accent-text">Step unlocked</div>
-            <Figure step={unlocked.id} className="mx-auto mt-2 h-32 w-40 text-ink" />
+            <Figure step={unlocked.id} tone="accent" className="mx-auto mt-2 h-32 w-40 text-ink animate-floaty" />
             <div className="font-display text-[26px] font-bold text-ink">{unlocked.name}</div>
             <p className="mt-1 text-[14px] text-ink2">{unlocked.tagline}</p>
+            <ShareProgress
+              label="Share this"
+              opened={{ stepId: unlocked.id, ...(events.unlockedVia ? { via: events.unlockedVia } : {}) }}
+              className="mt-3"
+            />
             {events.unlockedVia === 'next-shape' ? (
               <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-ink2">
                 Opened early: you held its opening dose clean on camera while your last step was past half its bar.

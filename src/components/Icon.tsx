@@ -21,6 +21,7 @@ export type IconName =
   | 'trophy'
   | 'clock'
   | 'download'
+  | 'share'
   | 'upload'
   | 'trash'
   | 'info'
@@ -115,6 +116,13 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <circle cx="12" cy="12" r="8.5" />
       <path d="M12 7.5V12l3.2 2" />
+    </>
+  ),
+  share: (
+    <>
+      <path d="M12 15V3.5" />
+      <path d="m7.5 8 4.5-4.5L16.5 8" />
+      <path d="M8 11.5H6.5a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-5.5a2 2 0 0 0-2-2H16" />
     </>
   ),
   download: (

@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'Your road, drawn',
+    area: 'app',
+    notes: [
+      'New figures for every position, built from the same body proportions and angles the camera judges against. The flying shapes now sit on parallettes, so a tuck no longer looks like kneeling.',
+      'Path shows your road so far: when each step opened and how long it took, worked out from your own log. A step you were placed at shows no date rather than a guessed one.',
+      'Share progress: a card with your step, your best camera-verified hold and plain counts, made on your phone and sent only if you choose. A step that just opened gets its own card on the spot.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'Easy days keep the whole session',
     area: 'training',
     notes: [

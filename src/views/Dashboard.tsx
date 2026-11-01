@@ -221,7 +221,7 @@ export function Dashboard({
         <div className="pointer-events-none absolute -left-16 -bottom-20 h-48 w-48 rounded-full blur-3xl" style={{ background: 'var(--t-glow2)' }} />
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center">
           <div className="flex items-center gap-5">
-            <Figure step={step.id} className="h-28 w-32 shrink-0 text-ink animate-floaty" />
+            <Figure step={step.id} tone="accent" className="h-28 w-32 shrink-0 text-ink animate-floaty" />
             <div>
               <div className="text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
                 Step {step.order + 1} of 8 · current

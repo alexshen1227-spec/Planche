@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StepDef, StepId, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
@@ -13,6 +13,106 @@ import { Modal } from '../components/ui'
 import { qualifyingProgress } from '../lib/progression'
 import { BridgeCard } from '../components/BridgeCard'
 import { PUSHUP_VERSION } from '../data/pressing'
+import { readJourney, type JourneyStop } from '../lib/journey'
+import { ShareProgress } from '../components/ShareProgress'
+
+/** Names that fit under a small figure. */
+const SHORT_NAME: Record<StepId, string> = {
+  foundations: 'Foundations',
+  lean: 'Lean',
+  frog: 'Frog',
+  tuck: 'Tuck',
+  advtuck: 'Adv. tuck',
+  oneleg: 'One-leg',
+  straddle: 'Straddle',
+  full: 'Full',
+}
+
+/** How long a step took, or how long it has been going — only when both ends have dates. */
+function stopLine(stop: JourneyStop | undefined, next: JourneyStop | undefined): string | null {
+  if (!stop || stop.days === undefined) return null
+  const sessions = stop.sessions !== undefined ? ` · ${stop.sessions} session${stop.sessions === 1 ? '' : 's'}` : ''
+  if (stop.current && next?.openedAt === undefined) return `Day ${stop.days + 1} on this step${sessions}`
+  const took = stop.days === 0 ? 'Took under a day' : `Took ${stop.days} day${stop.days === 1 ? '' : 's'}`
+  return `${took}${sessions}${next?.via === 'next-shape' ? ' · opened the next step early' : ''}`
+}
+
+/**
+ * The road as a strip of figures: what is behind, where you are, what is
+ * ahead. Dates come from replaying history (lib/journey); a step that was
+ * placed rather than trained through has none.
+ */
+function RoadSoFar({ stops, firstSessionAt, totalSessions }: ReturnType<typeof readJourney>) {
+  const byId = new Map(stops.map((stop) => [stop.stepId, stop]))
+  // Bring the current step into view inside the strip, without scrolling the page.
+  const stripRef = useRef<HTMLOListElement | null>(null)
+  const currentId = stops.find((stop) => stop.current)?.stepId
+  useEffect(() => {
+    const strip = stripRef.current
+    const item = strip?.querySelector<HTMLElement>('[aria-current="step"]')
+    if (!strip || !item) return
+    strip.scrollLeft = Math.max(0, item.offsetLeft - (strip.clientWidth - item.clientWidth) / 2)
+  }, [currentId])
+  const earned = stops.filter((stop) => stop.via === 'bar' || stop.via === 'next-shape').length
+  return (
+    <section className="mt-4 rounded-2xl border border-line bg-surface p-4 shadow-card" aria-labelledby="road-so-far">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 id="road-so-far" className="text-[13px] font-semibold text-ink">
+            Your road so far
+          </h2>
+          <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink3 tnum">
+            {firstSessionAt === undefined
+              ? 'It starts with your first logged session.'
+              : `Training since ${fmtDate(firstSessionAt)} · ${totalSessions} session${totalSessions === 1 ? '' : 's'}${
+                  earned ? ` · ${earned} step${earned === 1 ? '' : 's'} earned` : ''
+                }`}
+          </p>
+        </div>
+        <ShareProgress />
+      </div>
+      <ol ref={stripRef} className="relative -mx-1 mt-3 flex snap-x gap-0.5 overflow-x-auto px-1 pb-1">
+        {STEPS.map((step) => {
+          const stop = byId.get(step.id)
+          const current = stop?.current === true
+          const reached = stop !== undefined
+          const label = current
+            ? stop?.days !== undefined
+              ? `day ${stop.days + 1}`
+              : 'now'
+            : !reached
+              ? ''
+              : stop.via === 'bar' || stop.via === 'next-shape'
+                ? stop.openedAt !== undefined
+                  ? fmtDate(stop.openedAt)
+                  : ''
+                : stop.via === 'placed'
+                  ? 'placed'
+                  : 'start'
+          return (
+            <li
+              key={step.id}
+              className={`w-[80px] shrink-0 snap-start rounded-xl px-1 py-1.5 text-center ${current ? 'bg-accent-soft' : ''}`}
+              aria-current={current ? 'step' : undefined}
+            >
+              <Figure
+                step={step.id}
+                tone={current ? 'accent' : 'plain'}
+                className={`mx-auto h-10 w-12 ${current ? 'text-ink' : reached ? 'text-ink2' : 'text-ink3 opacity-40'}`}
+              />
+              <div className={`mt-0.5 truncate text-[11px] font-semibold ${current ? 'text-accent-text' : reached ? 'text-ink2' : 'text-ink3'}`}>
+                {SHORT_NAME[step.id]}
+              </div>
+              <div className="h-4 truncate text-[10.5px] text-ink3 tnum">
+                {label || (reached ? '' : <Icon name="lock" size={10} className="mx-auto mt-0.5" />)}
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </section>
+  )
+}
 
 /** Destinations worth aiming at; the early steps are waypoints, not goals. */
 const GOAL_CHOICES: StepId[] = ['tuck', 'advtuck', 'straddle', 'full']
@@ -23,6 +123,13 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
 
   const currentOrder = STEPS.find((s) => s.id === state.stepId)?.order ?? 0
   const goalStepId = state.profile.goalStepId ?? 'straddle'
+  // A full replay of history: only when the history or the step changes.
+  const journey = useMemo(
+    () => readJourney(state),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.sessions, state.stepId, state.baseStepId, state.grandfatheredStepId, state.unlocked],
+  )
+  const stopById = new Map(journey.stops.map((stop) => [stop.stepId, stop]))
 
   return (
     <div className="animate-rise">
@@ -30,6 +137,8 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
       <p className="mt-0.5 max-w-2xl text-[14px] leading-relaxed text-ink2">
         Eight steps from first plank to full flight. Tap any step for coaching, form cues and a max test.
       </p>
+
+      <RoadSoFar {...journey} />
 
       {/* Goal picker. Deliberately here rather than buried in Settings: the
           goal decides which cooldown mobility appears and how far the app
@@ -135,6 +244,7 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                 </div>
                 <Figure
                   step={step.id}
+                  tone={isCurrent ? 'accent' : 'plain'}
                   className={`hidden h-14 w-16 shrink-0 min-[480px]:block sm:h-16 sm:w-20 ${unlocked ? 'text-ink' : 'text-ink3'}`}
                 />
                 <div className="min-w-0 flex-1">
@@ -165,6 +275,12 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                       {keyEx.perSide ? <span>· both sides</span> : null}
                       <span className="hidden sm:inline">· {keyEx.name.toLowerCase()}</span>
                     </div>
+                    {(() => {
+                      const line = stopLine(stopById.get(step.id), STEPS[step.order + 1] && stopById.get(STEPS[step.order + 1].id))
+                      return line ? (
+                        <div className={`text-[12px] leading-snug tnum ${isCurrent ? 'text-accent-text' : 'text-ink3'}`}>{line}</div>
+                      ) : null
+                    })()}
                   </div>
                 </div>
                 <Icon name="chevronR" size={17} className="shrink-0 text-ink3" />
@@ -230,7 +346,7 @@ function StepDetail({
   return (
     <div className="p-6 sm:p-8">
       <div className="flex flex-wrap items-center gap-5 pr-10">
-        <Figure step={step.id} className="h-24 w-28 text-ink" />
+        <Figure step={step.id} tone="accent" className="h-24 w-28 text-ink" />
         <div>
           <div className="text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
             Step {step.order + 1} of 8

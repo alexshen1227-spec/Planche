@@ -403,6 +403,23 @@ them. Real-hardware behaviour is still unproven.
   and a late reading whose start no longer matches the hold's
   (`readingFitsWindow`) is refused at every merge boundary.
 
+## Figures, the road and the share card (2026-11)
+
+- `lib/figure.ts` builds every position's side view from body geometry:
+  `PROPORTIONS` from poseSynth and each step's lean and hip/knee angles, so
+  the pictogram is the shape the judge grades. With real proportions a hip at
+  shoulder height hangs the knees within a few units of the floor, so flying
+  shapes are drawn on parallettes (`bars`). `components/Figure` renders it;
+  `tone="accent"` is for the one hero figure on a screen (its gradient is in
+  user space — a bounding-box gradient draws nothing on a level limb).
+- `lib/journey.ts` dates the road by replaying history from the same base as
+  `rebuildDerivedState`: the session that opened each step, days and sessions
+  per step. A step that was placed or jumped to has no date — never a guessed
+  one.
+- `lib/shareCard.ts`: card data and copy are pure and tested; drawing reuses
+  the figure geometry via `Path2D`. Only numbers the app already shows, each
+  able to be absent (no verified hold → "—"). Made and shared on the device.
+
 ## Conventions
 
 - User-facing changes get an entry in `src/data/changelog.ts`, written in the
