@@ -126,6 +126,8 @@ export function callMarksCompliance(block: Pick<Block, 'role'>, workoutKind: Wor
 export interface HoldCues {
   /** Time actually held so far — the stopwatch since Go. */
   heldSec: number
+  /** Progress toward the target on the clock the call uses (for the ring). */
+  towardSec: number
   /** The target has been held: time to stop while clean. */
   targetReached: boolean
   /** A new best even after the stop allowance comes off — never celebrated early. */
@@ -148,11 +150,26 @@ export interface HoldCues {
  * A record is the exception: it is only announced once the logged value would
  * stand, so walking time can never be celebrated as a PR.
  */
-export function holdCues(rawElapsedSec: number, allowanceSec: number, targetSec: number, bestSec: number | undefined): HoldCues {
+export function holdCues(
+  rawElapsedSec: number,
+  allowanceSec: number,
+  targetSec: number,
+  bestSec: number | undefined,
+  /**
+   * The target is a bar the *logged* value must reach — an unlock attempt or a
+   * max test. There the call means "banked": it comes once the time held, less
+   * the stop allowance, reaches the bar. Called on time held instead, an
+   * athlete who came down at it and walked back in 3s logged 18s of a 20s bar
+   * they had held, and the unlock failed.
+   */
+  banking = false,
+): HoldCues {
   const heldSec = Math.max(0, rawElapsedSec)
+  const toward = banking ? heldSec - Math.max(0, allowanceSec) : heldSec
   return {
     heldSec,
-    targetReached: targetSec > 0 && heldSec >= targetSec,
+    towardSec: Math.max(0, toward),
+    targetReached: targetSec > 0 && toward >= targetSec,
     pr: bestSec !== undefined && heldSec - Math.max(0, allowanceSec) > bestSec,
   }
 }

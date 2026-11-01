@@ -254,7 +254,12 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
         ) : null}
       </Modal>
 
-      <QuickLogModal open={quickLog} onClose={() => setQuickLog(false)} onSaved={() => setQuickLog(false)} />
+      <QuickLogModal
+        key={state.stepId}
+        open={quickLog}
+        onClose={() => setQuickLog(false)}
+        onSaved={() => setQuickLog(false)}
+      />
       <div className="mt-8 rounded-2xl border border-line bg-surface/60 p-4 text-[13px] leading-relaxed text-ink3">
         <span className="font-semibold text-ink2">Safety note:</span> prepare before loading, keep most holds a little
         shy of failure, and back off at the first sign of elbow or wrist pain — coaching conventions rather than tested
@@ -266,8 +271,15 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
 
 function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: () => void }) {
   const { state, dispatch } = useStore()
-  const [exerciseId, setExerciseId] = useState('planche-lean')
-  const [value, setValue] = useState(10)
+  // Training done away from the app is almost always the step's own hold, so
+  // that is where the picker starts, at the athlete's best rather than a
+  // number that fits a lean and nothing above it.
+  const startValue = (id: string) => {
+    const best = state.prs[id]?.value
+    return best !== undefined && best > 0 ? Math.max(1, Math.round(best)) : EXERCISE_BY_ID[id].type === 'hold' ? 10 : 8
+  }
+  const [exerciseId, setExerciseId] = useState(() => STEP_BY_ID[state.stepId]?.keyExerciseId ?? 'planche-lean')
+  const [value, setValue] = useState(() => startValue(exerciseId))
   const [surface, setSurface] = useState<TrainingSurface>(() =>
     defaultSurface(state.profile.equipment, state.profile.preferredSurface),
   )
@@ -346,7 +358,7 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
             value={exerciseId}
             onChange={(e) => {
               setExerciseId(e.target.value)
-              setValue(EXERCISE_BY_ID[e.target.value].type === 'hold' ? 10 : 8)
+              setValue(startValue(e.target.value))
               setSide(null)
               setAssist(null)
             }}

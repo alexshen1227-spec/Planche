@@ -295,7 +295,12 @@ them. Real-hardware behaviour is still unproven.
   (or `finalizeFromPlan` for a screen previewing many). Views never build a
   workout to start; a re-plan after a check-in rebuilds from `requestFor(w)`, so
   a 15-minute version stays one. `plan.challengeAllowed` is the only gate for a
-  max test or a queued unlock attempt — nothing may recreate one after it.
+  max test or a queued unlock attempt — nothing may recreate one after it. It
+  is false on every lighter `dayType` (technique, deload, recovery) as well as
+  on pain and low energy: it once asked only about those two, so a second max
+  test was offered right after the first, on a scheduled easy week.
+  `challengeBlockedReason` names which, and a scaled template says why
+  (`restrictTemplate`) — "low energy" only when the athlete said so.
 - **Joint reports are a timeline** (`state.symptoms`, read through
   `readinessTimeline`): onboarding answers, check-ins (recorded the moment they
   are given, so a discarded session cannot lose one) and mid-session reports.
@@ -379,6 +384,11 @@ them. Real-hardware behaviour is still unproven.
   up to its target so a confirmed camera reading decides (`capacityReading`).
   A warm-up primer is never the in-session best, and "PR secured — exit under
   control" (and its buzz) waits for the target — it once preempted it.
+  The exception is a bar the *logged* value must clear — an unlock attempt
+  (`role: 'attempt'`) or a max test: there `holdCues(…, banking = true)` calls
+  on credited time and the ring fills on `towardSec`, so coming down at the
+  call clears the bar after the walk. On time held, a 3s walker logged 18s of
+  a 20s bar they had held.
 - **The minimum dose** (request source / workout kind `micro`,
   `microDoseWorkout`): a short warm-up and five ~3s maximal holds at the
   hardest clean shape (the next shape when the bridge is open). Gated by

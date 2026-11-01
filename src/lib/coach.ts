@@ -1058,7 +1058,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     sig.formScoreTrend !== null &&
     sig.cameraSetCount >= 4
   ) {
-    if (sig.formScoreTrend >= 2.5 && (sig.trendPerWeek ?? 0) <= 0.2) {
+    if (sig.formScoreTrend >= 2.5 && sig.trendPerWeek !== null && sig.trendPerWeek <= 0.2) {
       decisions.push({
         text: `Your camera form score is climbing (~+${Math.round(sig.formScoreTrend)} points/week, now around ${Math.round(sig.meanFormScore)}) while hold times sit flat — the position is consolidating, and seconds usually follow it.`,
         kind: 'good',
@@ -1127,9 +1127,15 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       kind: 'info',
       source: 'load-advice',
     })
-  } else if (sig.accessoryTrend === 'up' && (sig.trendPerWeek ?? 0) <= 0.1 && accessoryEmphasis === 'none') {
+  } else if (
+    sig.accessoryTrend === 'up' &&
+    sig.trendPerWeek !== null &&
+    sig.trendPerWeek <= 0.1 &&
+    accessoryEmphasis === 'none'
+  ) {
     // Never override a form-driven emphasis — the plan text would then say
-    // one thing while the session did another.
+    // one thing while the session did another. A hold with no trend yet (the
+    // day after an unlock) is unknown, not flat.
     accessoryEmphasis = 'balance'
     limiter ??= {
       label: 'Skill transfer',
@@ -1614,7 +1620,16 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
         (checkInFresh && joints !== 'good' && checkInAge >= 2)))
 
   // One permission for maximal effort, applied to everything that creates it.
-  const challengeAllowed = loadPermission === 'normal' && !tiredToday
+  // A lighter day is one too: a hard session already today, a max test or an
+  // RPE 9+ session yesterday, an unusually high load, or an easy week. It once
+  // only asked about pain and energy, so a second max test could follow the
+  // first on the same day — on a scheduled easy week.
+  const challengeAllowed =
+    loadPermission === 'normal' &&
+    !tiredToday &&
+    dayType !== 'technique' &&
+    dayType !== 'deload' &&
+    dayType !== 'recovery'
   queueUnlockAttempt = queueUnlockAttempt && challengeAllowed
   suggestMaxTest = suggestMaxTest && challengeAllowed
   if (queueUnlockAttempt) {
@@ -1865,11 +1880,17 @@ export function debriefSession(
   // session produces no bullets is the one worth explaining: nothing was
   // rated, so none of it can count toward the next step.
   if (out.length === 0) {
-    const mainHolds = session.sets.filter((x) => x.section === 'main' && x.kind === 'hold' && x.value > 0)
-    const best = mainHolds.reduce((b, x) => Math.max(b, x.value), 0)
+    // Only the step's own hold speaks to its bar. Any main-section hold used
+    // to — a wrist routine's plank was reported against the advanced tuck's
+    // unlock, and called a PR whether or not it was one.
+    const keyHolds = session.sets.filter(
+      (x) => x.section === 'main' && x.kind === 'hold' && x.value > 0 && x.exerciseId === step.keyExerciseId,
+    )
+    const best = keyHolds.reduce((b, x) => Math.max(b, x.value), 0)
+    const wasPr = best > 0 && best > (prev.prs[step.keyExerciseId]?.value ?? 0)
     if (best > 0 && rated.length === 0) {
       out.push({
-        text: `Best hold today ${round1(best)}s — logged as a PR, but nothing was rated, so it cannot count toward the ${step.unlockSec}s unlock. A filmed set you confirm as Clean is what moves the road.`,
+        text: `Best hold today ${round1(best)}s${wasPr ? ' — a PR,' : ','} but nothing was rated, so it cannot count toward the ${step.unlockSec}s unlock. A filmed set you confirm as Clean is what moves the road.`,
         kind: 'info',
       })
     } else if (best > 0) {

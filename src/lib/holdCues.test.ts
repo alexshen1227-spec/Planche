@@ -214,3 +214,23 @@ describe('reading a hold stopped at its call', () => {
     expect(sessionLearningValue(broke, 'tuck')).toBe(3)
   })
 })
+
+describe('a bar the logged value must clear', () => {
+  const walk = PROGRESSION_STOP_LATENCY_SEC
+
+  it('calls an unlock attempt or max test once the bar is banked, not merely held', () => {
+    // A 20s bar: held 20s, but the log would read 15s if stopped now.
+    expect(holdCues(20, walk, 20, 12, true).targetReached).toBe(false)
+    expect(holdCues(25, walk, 20, 12, true).targetReached).toBe(true)
+    // An athlete who comes down at that call and walks back in 3s logs 22s:
+    // the bar they held is the bar they get.
+    expect(25 + 3 - walk).toBeGreaterThanOrEqual(20)
+    // A working set keeps the call on time held.
+    expect(holdCues(20, walk, 20, 12, false).targetReached).toBe(true)
+  })
+
+  it('fills the ring on the same clock as the call', () => {
+    expect(holdCues(20, walk, 20, 12, true).towardSec).toBe(15)
+    expect(holdCues(20, walk, 20, 12, false).towardSec).toBe(20)
+  })
+})

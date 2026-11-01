@@ -19,6 +19,19 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'Max efforts on the right days, called at the right moment',
+    area: 'coach',
+    notes: [
+      'On an unlock attempt or a max test, the “Target” call now comes once the time that will be logged reaches the bar — the walk back to your phone included — so coming down at the call clears it. It used to come on time held, so an athlete who stopped there and walked back quickly could log a little under a bar they had actually held. The ring fills on the same clock. Working sets still call on time held.',
+      'Max tests, unlock attempts and the minimum dose are no longer offered on a lighter day: after a hard session earlier the same day, after a max test or an RPE 9+ session, or during a scheduled easy week. Right after one max test, Train used to offer another.',
+      'A scaled-down template now says why — “this easy week” or “a lighter day” — instead of “low energy” for an athlete who had just said they felt fresh.',
+      'After a session with nothing rated, the coach’s note reports your step’s own hold, and calls it a PR only when it is one. A plank from the wrist routine was being reported against the advanced tuck’s unlock bar.',
+      'The coach no longer calls a hold flat before you have held it. The day after an unlock it said “pressing is improving while the key hold is flat” and moved your extra work onto balance drills, with nothing yet measured on the new hold.',
+      'Quick Log opens on your current step’s hold, starting at your best, instead of the planche lean.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'Targets called on time, and a minimum dose',
     area: 'training',
     notes: [

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, FormCheck, Session, SetLog, StepId } from '../types'
 import { STEP_BY_ID, STEPS } from '../data/progressions'
-import { adaptiveTarget, finalizeWorkout, finalizeWorkoutWithPlan, requestFor, TEMPLATE_BY_ID } from '../data/workouts'
+import { adaptiveTarget, challengeBlockedReason, finalizeWorkout, finalizeWorkoutWithPlan, requestFor, restrictTemplate, TEMPLATE_BY_ID } from '../data/workouts'
 import { ACHIEVEMENTS } from '../data/achievements'
 import { initialState, mergeExternalState, normalizeStateWithReport, reducer, reportHasLosses } from './store'
-import { buildPlan, rewardFor } from './coach'
+import { buildPlan, debriefSession, rewardFor } from './coach'
 import { readSignals, readinessTimeline } from './signals'
 import {
   endedForNonCapacityReason,
@@ -483,5 +483,97 @@ describe('stopping at the target does not shrink the next target', () => {
   it('an old completed prescription does not hold anything up after a long gap', () => {
     const state = athlete('tuck', { sessions: [daySession(30, 8.3, 8)] })
     expect(adaptiveTarget(state, 'tuck', NOW)).toBeLessThan(8)
+  })
+})
+
+describe('one permission for maximal effort includes the day itself', () => {
+  // Found by playing the app: right after a max test, on a scheduled easy
+  // week, the Train tab still offered another max test.
+  const DAY = 86_400_000
+  const morning = new Date(2026, 10, 1, 9).getTime()
+  const evening = new Date(2026, 10, 1, 18).getTime()
+  const session = (start: number, rpe: number): Session => ({
+    id: `gate-${start}`,
+    startedAt: start,
+    endedAt: start + 1_800_000,
+    workoutName: 'Training Day',
+    workoutKind: 'auto',
+    stepId: 'tuck',
+    rpe,
+    sets: [0, 1, 2, 3].map(
+      (i): SetLog => ({ exerciseId: 'tuck-planche', kind: 'hold', value: 9, target: 9, section: 'main', surface: 'parallettes', at: start + i * 60_000 }),
+    ),
+  })
+  const athlete = (sessions: Session[]): AppState => {
+    const base = initialState()
+    return {
+      ...base,
+      onboarded: true,
+      stepId: 'tuck',
+      baseStepId: 'tuck',
+      unlocked: STEPS.filter((s) => s.order <= STEP_BY_ID.tuck.order).map((s) => s.id),
+      sessions,
+      profile: { ...base.profile, equipment: ['floor', 'parallettes'], preferredSurface: 'parallettes' },
+    }
+  }
+
+  it('withholds a max test after a hard session today, and says so', () => {
+    const trainedToday = buildPlan(athlete([session(morning - 5 * DAY, 7), session(morning, 9)]), evening)
+    expect(trainedToday.challengeAllowed).toBe(false)
+    expect(challengeBlockedReason(trainedToday)).toBe('you already trained hard today')
+    expect(finalizeWorkout(athlete([session(morning - 5 * DAY, 7), session(morning, 9)]), { source: 'test' }, undefined, evening).kind).not.toBe('test')
+  })
+
+  it('still allows one on a fresh day', () => {
+    expect(buildPlan(athlete([session(morning - 5 * DAY, 7)]), evening).challengeAllowed).toBe(true)
+  })
+})
+
+describe('a scaled template says why', () => {
+  // Found by playing the app: a scheduled easy week read "Scaled for low
+  // energy" to an athlete who had just answered "Fresh".
+  it('names the easy week, the lighter day or the energy answer — whichever it was', () => {
+    const plan = buildPlan(initialState())
+    const template = Object.values(TEMPLATE_BY_ID)[0]
+    const scaled = (over: Partial<typeof plan>) => restrictTemplate(template, { ...plan, loadPermission: 'normal', volumeFactor: 0.6, ...over }).focus
+    expect(scaled({ dayType: 'deload' })).toMatch(/Scaled for this easy week/)
+    expect(scaled({ dayType: 'technique' })).toMatch(/Scaled for a lighter day/)
+    const tired = { ...plan.signals, lastCheckIn: { ...(plan.signals.lastCheckIn ?? { at: 0, joints: 'good' as const }), source: 'fresh' as const, energy: 'tired' as const } }
+    expect(scaled({ dayType: 'build', signals: tired as typeof plan.signals })).toMatch(/Scaled for low energy/)
+    expect(scaled({ dayType: 'deload' })).not.toMatch(/low energy/)
+  })
+})
+
+describe('the coach’s read speaks about the step’s own hold', () => {
+  // Found by playing the app: after a wrist routine, its plank was reported
+  // as "Best hold today 13s — logged as a PR … the 20s unlock".
+  const at = Date.UTC(2026, 10, 1, 12)
+  const base = initialState()
+  const state: AppState = {
+    ...base,
+    onboarded: true,
+    stepId: 'advtuck',
+    baseStepId: 'advtuck',
+    unlocked: STEPS.filter((s) => s.order <= STEP_BY_ID.advtuck.order).map((s) => s.id),
+    prs: { 'adv-tuck-planche': { value: 9, at: at - 86_400_000 } },
+  }
+  const session = (exerciseId: string, value: number): Session => ({
+    id: `d-${exerciseId}`,
+    startedAt: at,
+    endedAt: at + 600_000,
+    workoutName: 'Wrist Prep',
+    workoutKind: 'template',
+    stepId: 'advtuck',
+    sets: [{ exerciseId, kind: 'hold', value, target: value, section: 'main', at }],
+  })
+  const read = (s: Session) => debriefSession(state, state, s).map((d) => d.text).join(' ')
+
+  it('calls a session without the key hold supporting work', () => {
+    expect(read(session('ppp-hold', 13))).toMatch(/^Supporting work logged/)
+  })
+
+  it('names a PR only when it was one', () => {
+    expect(read(session('adv-tuck-planche', 7))).not.toMatch(/PR/)
+    expect(read(session('adv-tuck-planche', 11))).toMatch(/a PR/)
   })
 })

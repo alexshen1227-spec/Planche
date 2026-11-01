@@ -1458,6 +1458,23 @@ describe('pressing evidence is what was measured, not what was prescribed', () =
     expect(sig.accessoryTrend).toBe('flat')
     expect(sig.pressingLags).toBe(true)
   })
+
+  it('does not call a hold flat that has not been held yet', () => {
+    // Pressing climbing past its target, then the step unlocks: the new key
+    // hold has no history at all. "Pressing is improving while the key hold
+    // is flat" was shown the day after an unlock, and moved the session's
+    // extra work onto balance drills on no evidence about the hold.
+    const climbing = withPressing((i) => ({ value: 7 + i, target: 6 }))
+    expect(readSignals(climbing, NOW).accessoryTrend).toBe('up')
+    const justUnlocked = { ...climbing, stepId: 'advtuck' as const, unlocked: ['tuck' as const, 'advtuck' as const] }
+    const sig = readSignals(justUnlocked, NOW)
+    expect(sig.trendPerWeek).toBeNull()
+    const plan = buildPlan(justUnlocked, NOW)
+    expect(plan.accessoryEmphasis).not.toBe('balance')
+    expect(plan.limiter?.label).not.toBe('Skill transfer')
+    // The same climb against a measured, flat hold still reads as transfer.
+    expect(buildPlan(climbing, NOW).accessoryEmphasis).toBe('balance')
+  })
 })
 
 describe('a warm-up is skipped only where one belonged', () => {

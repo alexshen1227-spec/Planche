@@ -146,7 +146,7 @@ describe('when the minimum dose is withheld', () => {
 
   it('is withheld after loaded training today, and after one today already', () => {
     const trained = athlete('tuck', [...steady(), session(MORNING, [key(9), key(9), key(9), key(9)], { rpe: 9 })])
-    expect(microBlockedReason(trained, plan(trained), NOW)).toMatch(/already trained today/)
+    expect(microBlockedReason(trained, plan(trained), NOW)).toMatch(/already trained hard today/)
     const dosed = athlete('tuck', [...steady(), session(MORNING, [key(3, 3), key(3, 3)], { workoutKind: 'micro', workoutName: 'Tuck Planche · Minimum dose' })])
     expect(microBlockedReason(dosed, plan(dosed), NOW)).toMatch(/already did one today/)
   })

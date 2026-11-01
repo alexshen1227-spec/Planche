@@ -513,6 +513,8 @@ export function SessionPlayer({
     latency,
     phase === 'hold' && block?.target.kind === 'hold' ? block.target.sec : 0,
     bestBefore,
+    // An unlock attempt or max test is a bar the logged value must clear.
+    block?.role === 'attempt' || workout.kind === 'test',
   )
   const restRemaining = Math.max(0, (restEnd - now) / 1000)
 
@@ -1917,7 +1919,7 @@ export function SessionPlayer({
           <div className="relative mt-4">
             <div className="pointer-events-none absolute inset-6 rounded-full bg-accent-soft blur-3xl" />
             <ProgressRing
-              value={Math.min(1, cues.heldSec / Math.max(1, target))}
+              value={Math.min(1, cues.towardSec / Math.max(1, target))}
               size={ringSize}
               stroke={ringSize > 220 ? 13 : 10}
               glow

@@ -854,7 +854,16 @@ export function restrictTemplate(workout: Workout, plan: CoachPlan): Workout {
         : plan.openConcern
           ? 'a joint report that has not been updated'
           : 'today’s readiness'
-    : 'low energy'
+    : // Name the cause: every other reduced-volume day used to read "low
+      // energy" — including a scheduled easy week for an athlete who had just
+      // answered "Fresh".
+      plan.signals.lastCheckIn?.source === 'fresh' && plan.signals.lastCheckIn.energy === 'tired'
+      ? 'low energy'
+      : plan.dayType === 'deload'
+        ? 'this easy week'
+        : plan.dayType === 'technique'
+          ? 'a lighter day'
+          : 'today’s plan'
   return {
     ...workout,
     id: `${workout.id}-readiness-adjusted`,
@@ -1565,19 +1574,16 @@ export const MICRO_HOLDS = 5
 /**
  * Why there is no minimum dose today, or null when there may be one.
  *
- * It is maximal work, so it needs everything a max test needs, and more: not
- * on a lighter day (after a max test, an RPE 9+ session or a scheduled easy
- * week), not while the camera keeps flagging the shape (easier positions come
- * first there), not after loaded training today, and once a day at most.
+ * It is maximal work, so it needs everything a max test needs — which rules
+ * out a lighter day and a second hard session today — and more: not while the
+ * camera keeps flagging the shape (easier positions come first there), and
+ * once a day at most.
  */
 export function microBlockedReason(state: Pick<AppState, 'sessions'>, plan: CoachPlan, now = Date.now()): string | null {
+  // The max-effort gate covers pain, energy, a hard session today and every
+  // lighter day; what is left is the minimum dose's own.
   const challenge = challengeBlockedReason(plan)
   if (challenge) return challenge
-  // Before the day type: training today is what made it a lighter day.
-  if (plan.signals.daysSinceLoaded === 0) return 'you already trained today'
-  if (plan.dayType === 'technique' || plan.dayType === 'deload' || plan.dayType === 'recovery') {
-    return 'today is set up as a lighter day'
-  }
   if (plan.strategy === 'technique') return 'your recent holds are losing their shape, and easier positions come first'
   const today = new Date(now).toDateString()
   if (state.sessions.some((s) => s.workoutKind === 'micro' && new Date(s.startedAt).toDateString() === today)) {
@@ -1784,6 +1790,9 @@ export function challengeBlockedReason(plan: CoachPlan): string | null {
     return plan.signals.lastCheckIn?.source === 'fresh' ? 'you flagged a joint today' : 'a joint report has not been updated'
   }
   if (plan.loadPermission === 'reduced') return 'today’s readiness calls for reduced loading'
+  if (plan.signals.daysSinceLoaded === 0) return 'you already trained hard today'
+  if (plan.dayType === 'deload') return 'this is a scheduled easy week'
+  if (plan.dayType === 'technique' || plan.dayType === 'recovery') return 'today is set up as a lighter day'
   return 'you reported low energy'
 }
 
