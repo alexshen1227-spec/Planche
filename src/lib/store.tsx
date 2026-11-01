@@ -1696,7 +1696,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     configureAudio(state.settings.sound, state.settings.voice, state.settings.volume, state.settings.soundThroughSilent === true)
-  }, [state.settings.sound, state.settings.voice, state.settings.volume])
+    // Every argument is a dependency: without the last, switching on "play
+    // through the silent switch" did nothing until another sound setting moved.
+  }, [state.settings.sound, state.settings.voice, state.settings.volume, state.settings.soundThroughSilent])
 
   const getState = useCallback(() => stateRef.current, [])
   const startFresh = useCallback(() => setBoot({ phase: 'ready' }), [])
