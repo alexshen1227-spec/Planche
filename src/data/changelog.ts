@@ -25,6 +25,7 @@ export const CHANGELOG: ChangeEntry[] = [
       'New in Settings: measure your walk back. With the phone across the room, the app used to take an assumed five seconds off every main hold for getting up and walking to it — so a four-second attempt logged as almost nothing. Now you can time your real walk three times; the slowest is used, for every main hold from then on.',
       'It works both ways: a longer walk gets a longer allowance. A filmed hold still never counts for more than the camera saw, and every set can still be corrected with one tap.',
       'iPhone: Safari only lets a web page start sound or speech from a tap, and every cue in a hold comes from the timer — the counts, the go, the target call. The app now unlocks both on your first tap and again after it has been in the background, so the cues are not left silent.',
+      'If your browser refuses to keep the screen on during a session, the app now says so once, so you can lengthen auto-lock — a phone that locks during a rest stops the timer and the camera. (iPhone home-screen apps before iOS 18.4 refused silently.)',
       'iPhone: with the ring switch on silent, Safari mutes web sounds — including the target call. A new Sound setting, Play through the silent switch, plays them anyway (music in another app pauses while they do). The walk-back beep always plays through it, since you are across the room when it sounds.',
     ],
   },
