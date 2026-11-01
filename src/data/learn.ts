@@ -121,6 +121,7 @@ export const GUIDES: Guide[] = [
           'The push-up version of each step — tuck planche push-ups at the tuck, and so on — trains the bent-arm half of the position a hold never visits. Until your hold is halfway to its bar, you press one step behind.',
           'Accessories progress on their own: every set at target means a little more next time; most sets short means the next session matches what you did.',
           'Inside a session, the next set follows the last: a hold that blew past its target raises the next one a little, two short holds bring it down, and a big drop-off suggests moving on.',
+          'The “Target” call comes when you have actually held the target — come down at it. The time it takes to get back to your phone comes off the logged hold, never off the call.',
         ],
       },
       {
@@ -130,6 +131,14 @@ export const GUIDES: Guide[] = [
           'Tuck → advanced tuck adds the open-and-close drill and arch holds for the flat back, and the Home screen shows the hip angle the camera measures on your filmed tucks moving toward the advanced tuck’s.',
           'Advanced tuck → one-leg swaps in one-leg leans; one-leg → straddle adds band-assisted straddle work and compression; straddle → full narrows the legs a little at a time.',
           'Next-shape attempts only happen on days that allow a maximal effort, never beside an unlock attempt and never on an easy day.',
+        ],
+      },
+      {
+        heading: 'A busy day still counts',
+        body: 'When a full session will not happen, the minimum dose on Home keeps the position trained: a short wrist warm-up, then five short, maximal holds at the hardest shape you can keep clean — the next shape once your bridge is open. Brief maximal holds raised strength in small trials on simpler movements; none tested the planche, so treat it as a way to keep the thread on a busy day, not a replacement for your sessions.',
+        bullets: [
+          'It is offered only on days a maximal effort would be: not after a hard session yesterday, not in an easy week, not while your form is being repaired, and once a day at most.',
+          'It never changes your targets or counts toward your weekly sessions — it is extra.',
         ],
       },
       {
