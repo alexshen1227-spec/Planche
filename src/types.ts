@@ -450,6 +450,15 @@ export interface SetLog {
    */
   recordingOffsetSec?: number
   /**
+   * The target call sounded during this hold and it was stopped within the
+   * stop allowance of the call: the athlete came down at the call, as the hold
+   * screen asks. With the phone across the room the allowance is a fixed guess,
+   * so such a hold can log a little under its target; it is read as reaching
+   * the target (a lower bound), never as falling short. Observed by the app,
+   * not reported by the athlete — absent on older records.
+   */
+  calledAtTarget?: boolean
+  /**
    * Logged from an easy day's lighter accessory dose. Real work, so it counts
    * as volume — but a target chosen to be easy says nothing about capacity, so
    * it never moves accessory progression either way.

@@ -58,6 +58,8 @@ export interface SetOutcome {
   rating?: FormRating
   /** Ended for a reason that says nothing about capacity (interruption, timing). */
   nonCapacity?: boolean
+  /** Stopped at its target call: it reached the target, whatever the log reads. */
+  atTarget?: boolean
 }
 
 export interface NextSetAdvice {
@@ -118,9 +120,9 @@ export function adviseNextHold(planned: number, done: SetOutcome[], ceiling = In
       : { target: current, change: 'same', suggestMoveOn }
   }
 
-  const shortNow = last.value < last.target * SHORT_SHARE
+  const shortNow = !last.atTarget && last.value < last.target * SHORT_SHARE
   const prev = usable[usable.length - 2]
-  const shortBefore = prev !== undefined && prev.value < prev.target * SHORT_SHARE
+  const shortBefore = prev !== undefined && !prev.atTarget && prev.value < prev.target * SHORT_SHARE
   if (shortNow && shortBefore) {
     const achieved = Math.max(1, Math.round(median([last.value, prev.value])))
     if (achieved < current) {

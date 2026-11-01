@@ -33,6 +33,7 @@ import {
   creditedHoldSeconds,
   holdCues,
   isMainProgressionHold,
+  stoppedAtTargetCall,
   leadInSecondsFor,
   stopLatencySecondsFor,
   stopSetupCredits,
@@ -124,6 +125,8 @@ interface LogExtra {
   /** Actual setup countdown used; null when unknowable (a restored attempt). */
   leadInSec?: number | null
   recordingOffsetSec?: number
+  /** Stopped at its target call (`stoppedAtTargetCall`). */
+  calledAtTarget?: boolean
 }
 
 /**
@@ -393,6 +396,7 @@ export function SessionPlayer({
           target: log.target,
           rating: humanRating(log.form),
           nonCapacity: endedForNonCapacityReason(log),
+          ...(log.calledAtTarget ? { atTarget: true } : {}),
         }))
       if (!done.length) return null
       if (planned.target.kind === 'hold') {
@@ -865,7 +869,7 @@ export function SessionPlayer({
       // A snapshot of the remembered setup, so changing it later never
       // relabels this set.
       const remembered = assistApplies(ex) ? state.setups?.[ex.id] : undefined
-      const { raw, timing, leadInSec, recordingOffsetSec } = extra
+      const { raw, timing, leadInSec, recordingOffsetSec, calledAtTarget } = extra
       return {
         exerciseId: ex.id,
         kind: ex.type,
@@ -880,6 +884,7 @@ export function SessionPlayer({
           ? { recordingOffsetSec: round1(recordingOffsetSec) }
           : {}),
         ...(b.light ? { light: true } : {}),
+        ...(calledAtTarget ? { calledAtTarget: true } : {}),
         target: b.target.kind === 'hold' ? b.target.sec : b.target.reps,
         section: b.section,
         at: extra.at ?? Date.now(),
@@ -951,9 +956,21 @@ export function SessionPlayer({
             }
           : {}),
       }
-      logSet(v, { raw, at: loggedAt, timing, ...(recording ? { recordingOffsetSec: recording.offsetSec } : {}) }, then)
+      const calledAtTarget =
+        block?.target.kind === 'hold' && stoppedAtTargetCall(raw, block.target.sec, latency)
+      logSet(
+        v,
+        {
+          raw,
+          at: loggedAt,
+          timing,
+          ...(recording ? { recordingOffsetSec: recording.offsetSec } : {}),
+          ...(calledAtTarget ? { calledAtTarget: true } : {}),
+        },
+        then,
+      )
     },
-    [holdStart, latency, bestBefore, exercise, recorder, logSet, walkedBack, dispatch],
+    [holdStart, latency, bestBefore, exercise, block, recorder, logSet, walkedBack, dispatch],
   )
 
   const beginSet = useCallback(

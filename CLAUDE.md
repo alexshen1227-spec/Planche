@@ -363,7 +363,12 @@ them. Real-hardware behaviour is still unproven.
   logged value only. The cues once used credited time, written for a reaction
   delay of tenths — the 5s walk-back allowance then made every target call five
   seconds late for a phone across the room (working sets ran to the max). The
-  PR buzz stays on credited time, so walking is never celebrated.
+  PR buzz stays on credited time, so walking is never celebrated. Once holds
+  stop at the call, the fixed allowance lands logs at target ± (walk − 5s), so
+  a hold stopped within the allowance of its call is recorded `calledAtTarget`
+  and read as reaching the target by `sessionTargetCap`, the hit rate and
+  set-to-set advice — without it a compliant athlete who walks back faster
+  than 5s ratchets down session after session (pinned in holdCues.test).
 - **The minimum dose** (request source / workout kind `micro`,
   `microDoseWorkout`): a short warm-up and five ~3s maximal holds at the
   hardest clean shape (the next shape when the bridge is open). Gated by

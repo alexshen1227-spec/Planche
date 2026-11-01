@@ -491,6 +491,9 @@ export function sessionTargetCap(session: Session, stepId: StepId, surface: Trai
   const capped = key.every(
     (set) =>
       set.endReason === 'target' ||
+      // Came down at the target call: reached it, whatever the fixed walk-back
+      // allowance made of the logged value.
+      set.calledAtTarget === true ||
       (set.value >= set.target - 0.05 && set.value <= set.target + Math.max(1, set.target * 0.1)),
   )
   return capped ? Math.max(...key.map((set) => set.target)) : null

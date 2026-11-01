@@ -94,6 +94,20 @@ export function stopSetupCredits(
   }
 }
 
+/** Coming down after the call takes about this long before the walk to the phone begins. */
+export const TARGET_CALL_GRACE_SEC = 1
+
+/**
+ * Whether a hold was stopped at its target call: the call sounded (the time
+ * held reached the target) and the stop came within the stop allowance of it.
+ * The athlete was told to come down at the call; the walk back then took at
+ * most about the allowance. Such a hold reached its target — however the fixed
+ * allowance happens to land the logged value.
+ */
+export function stoppedAtTargetCall(rawStopSec: number, targetSec: number, allowanceSec: number): boolean {
+  return targetSec > 0 && rawStopSec >= targetSec && rawStopSec - targetSec <= Math.max(0, allowanceSec) + TARGET_CALL_GRACE_SEC
+}
+
 /** What the hold screen says while the athlete is still in position. */
 export interface HoldCues {
   /** Time actually held so far — the stopwatch since Go. */

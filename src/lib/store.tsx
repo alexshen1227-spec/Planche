@@ -522,6 +522,7 @@ function sanitizeSet(rawSet: unknown, sessionStart: number, report: NormalizeRep
       ? { recordingOffsetSec: clampNum(x.recordingOffsetSec, 0, 600, 0) }
       : {}),
     ...(x.light === true ? { light: true } : {}),
+    ...(x.calledAtTarget === true ? { calledAtTarget: true } : {}),
     ...(allRepairs.length ? { repaired: allRepairs } : {}),
   }
 }
