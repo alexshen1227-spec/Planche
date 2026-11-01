@@ -34,6 +34,7 @@ import {
   callMarksCompliance,
   holdCues,
   isMainProgressionHold,
+  PROGRESSION_STOP_LATENCY_SEC,
   stoppedAtTargetCall,
   leadInSecondsFor,
   stopLatencySecondsFor,
@@ -1194,16 +1195,27 @@ export function SessionPlayer({
     const credits = stopSetupCredits(log.raw, log.exerciseId, state.settings.stopLatencySec, state.settings.walkBackSec)
     if (credits.delta <= 0.05) return null
     const didWalk = Math.abs(log.value - credits.walkedBack) <= Math.abs(log.value - credits.withinReach)
+    // Where the assumed walk ate most of a hold, say that it can be measured —
+    // the setting is otherwise only found by someone already looking for it.
+    const assumedWalkAteIt = didWalk && state.settings.walkBackSec === undefined && log.value < log.raw / 2
     return (
-      <button
-        onClick={() => setWalkedBackForLog(log.at, !didWalk)}
-        className="mt-2 inline-flex min-h-10 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-[12.5px] font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
-      >
-        <Icon name="rotate" size={13} className="text-accent-text" />
-        {didWalk
-          ? `Stopped it without getting up? +${credits.delta.toFixed(1)}s`
-          : `Had to walk back to the phone? −${credits.delta.toFixed(1)}s`}
-      </button>
+      <>
+        <button
+          onClick={() => setWalkedBackForLog(log.at, !didWalk)}
+          className="mt-2 inline-flex min-h-10 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-[12.5px] font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
+        >
+          <Icon name="rotate" size={13} className="text-accent-text" />
+          {didWalk
+            ? `Stopped it without getting up? +${credits.delta.toFixed(1)}s`
+            : `Had to walk back to the phone? −${credits.delta.toFixed(1)}s`}
+        </button>
+        {assumedWalkAteIt ? (
+          <p className="mx-auto mt-1.5 max-w-xs text-[11.5px] leading-relaxed text-ink3">
+            Most of this hold went to an assumed {PROGRESSION_STOP_LATENCY_SEC.toFixed(1)}s walk back. Measure your own
+            walk once in Settings → Phone within reach, and every main hold uses it.
+          </p>
+        ) : null}
+      </>
     )
   }
 
