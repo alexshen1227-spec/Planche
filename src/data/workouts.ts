@@ -1048,9 +1048,14 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   // convenience preference.
   if (state.settings.warmup || plan.warmup === 'extended') blocks.push(...warmupFor(stepId, plan.warmup))
 
-  // Fresh and within reach → attempt the unlock while at your best. The plan
-  // only sets this when today's challenge permission allows it.
-  const attemptQueued = plan.queueUnlockAttempt && plan.challengeAllowed
+  // Fresh and within reach → attempt the unlock while at your best. A due
+  // re-test is the same single max hold at the bar, for a different reason:
+  // working targets are a fraction of the last measured max, and an athlete
+  // who stops at every call measures nothing. The plan only sets either when
+  // today's challenge permission allows it.
+  const unlockQueued = plan.queueUnlockAttempt && plan.challengeAllowed
+  const retestQueued = !unlockQueued && plan.queueRetest && plan.challengeAllowed
+  const attemptQueued = unlockQueued || retestQueued
   if (attemptQueued) {
     blocks.push({
       exerciseId: step.keyExerciseId,
@@ -1059,7 +1064,10 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
       restSec: 180,
       section: 'main',
       role: 'attempt',
-      note: `Unlock attempt — you're within reach. Hold ${step.unlockSec}s clean, film it, and pass both form confirmations. Stop the moment the shape goes; a stopped attempt is still useful.`,
+      ...(unlockQueued ? {} : { retest: true }),
+      note: unlockQueued
+        ? `Unlock attempt — you're within reach. Hold ${step.unlockSec}s clean, film it, and pass both form confirmations. Stop the moment the shape goes; a stopped attempt is still useful.`
+        : `Max clean hold — the coach re-measures your hold today. Hold as long as the shape stays clean and stop the moment it starts to go: every working target is set from this number. Filmed and clean at ${step.unlockSec}s, it unlocks the step like any attempt.`,
     })
   }
 

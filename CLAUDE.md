@@ -251,8 +251,20 @@ more certain than its basis.
 3. **The working target assumes the top set reflects capacity.** It is a
    fraction of recent session bests, so an athlete who never exceeds the number
    they were given makes the log echo the target back and it compounds
-   downward. The `to-target` compliance mode in `simulateSeason` pins this; the
-   max-test suggestion is the corrective and the eval asserts it engages.
+   downward. The `to-target` compliance mode in `simulateSeason` pins this.
+   `completedBaseTarget` stops the fall, but only a measured max moves the
+   target *up* (the hit-rate nudge applies to a base that never absorbs it,
+   and at short targets it rounds away). The re-test was once only a
+   suggestion beside a separate Max test button, and an athlete who never
+   took it held 5s of lean for twelve weeks while the simulated hold grew from
+   8s to 30s. A due re-test is now `plan.queueRetest`: one max clean hold at
+   the bar, first in the main work (the attempt block, its own note), and
+   `measuredMaxIn` counts it — like an unlock attempt — on the re-test clock.
+   The season eval asserts the obedient athlete's targets now climb. Set logs
+   keep no role, so `isBarAttempt` (a key hold targeted at the bar) is how a
+   max effort is told from a working set: the hit rate skips them — it once
+   read a max test's attempts as misses, and every test was followed by "most
+   sets fell short — easing the target back".
    Accessory reps echo the same way — the rep screen starts at the target —
    so the pressing trend reads only sessions whose best set went past or fell
    short of its target; a run of exact hits is "unknown", never "flat".

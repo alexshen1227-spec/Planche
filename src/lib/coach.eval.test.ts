@@ -533,6 +533,27 @@ describe('a season coached end to end', () => {
     }
   })
 
+  it('re-measures an obedient athlete inside the session, so their targets follow their strength', () => {
+    // The corrective above used to be a suggestion beside a separate Max test
+    // button. An athlete who never took it kept the same prescription all
+    // season: simulated at the lean, 5s for twelve weeks while the hold grew
+    // from 8s to 30s. The due re-test is now one max clean hold inside the
+    // session, so the loop closes without the athlete having to choose it.
+    const run = season({ weeks: 12, seed: 9, compliance: 'to-target', stepId: 'lean', startSec: 8 })
+    const retests = run.plans.filter((p) => p.queueRetest).length
+    // About every three weeks, not every session once it is due.
+    expect(retests).toBeGreaterThanOrEqual(3)
+    expect(retests).toBeLessThanOrEqual(5)
+    const third = Math.floor(run.plans.length / 3)
+    const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]
+    const early = median(run.plans.slice(0, third).map((p) => p.prescribed))
+    const late = median(run.plans.slice(-third).map((p) => p.prescribed))
+    expect(late).toBeGreaterThanOrEqual(early * 1.5)
+    // Still a working dose, not a chase of the max it just measured.
+    const lastCapacity = run.capacity[run.capacity.length - 1]
+    for (const p of run.plans.slice(-third)) expect(p.prescribed).toBeLessThanOrEqual(lastCapacity)
+  })
+
   it('leaves the athlete with a coherent record at the end of a season', () => {
     const run = season({ weeks: 14, seed: 7 })
     expect(run.state.sessions.length).toBe(14 * 3)

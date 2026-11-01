@@ -186,7 +186,7 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
     causes.push({
       id: 'testing',
       title: 'You have not tested in a while',
-      detail: `Last max test was about ${sig.daysSinceMaxTest} days ago, so your working targets may be based on stale numbers.`,
+      detail: `Your hold was last measured at its max about ${sig.daysSinceMaxTest} days ago, so your working targets may be based on stale numbers.`,
       fix: 'Run a Max Test on a fresh day. You may already be stronger than the plan assumes.',
       severity: 'low',
     })

@@ -634,6 +634,35 @@ export function testWasAttempted(session: Session): boolean {
   return session.workoutKind === 'test' && session.sets.some((set) => set.section === 'main')
 }
 
+/**
+ * The session measured the athlete's hold at its max: a max test, or a session
+ * whose key hold was attempted at the step's bar — an unlock attempt, or the
+ * re-test the coach puts inside a session when targets have gone stale. Either
+ * re-anchors the working target, so either resets the re-test clock.
+ */
+export function measuredMaxIn(session: Session): boolean {
+  if (testWasAttempted(session)) return true
+  const step = STEP_BY_ID[session.stepId]
+  return Boolean(step && session.sets.some((set) => isBarAttempt(set, step.id)))
+}
+
+/**
+ * A key hold asked for at the step's bar: an unlock attempt, a re-test or a
+ * max test's attempt. Working targets never reach the bar short of an unlock,
+ * so the target says which sets were maximal efforts — set logs keep no role.
+ * Falling short of one is a measurement, never a missed working set.
+ */
+export function isBarAttempt(set: SetLog, stepId: StepId): boolean {
+  const step = STEP_BY_ID[stepId]
+  return Boolean(
+    step &&
+      set.section === 'main' &&
+      set.kind === 'hold' &&
+      set.exerciseId === step.keyExerciseId &&
+      set.target >= step.unlockSec,
+  )
+}
+
 export function setNeedsProgressionFormEvidence(set: SetLog, state: Pick<AppState, 'stepId'>): boolean {
   const step = STEP_BY_ID[state.stepId]
   return (

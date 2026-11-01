@@ -100,7 +100,11 @@ const ROLE_LABEL: Partial<Record<NonNullable<Block['role']>, string>> = {
 }
 
 function blockLabel(block: Block): string | undefined {
-  return block.role && block.section !== 'warmup' && block.section !== 'cooldown' ? ROLE_LABEL[block.role] : undefined
+  if (block.section === 'warmup' || block.section === 'cooldown') return undefined
+  // A re-test is an attempt at the bar, but "Unlock attempt" over a 5s target
+  // promised a step the athlete was nowhere near.
+  if (block.retest) return 'Max clean hold'
+  return block.role ? ROLE_LABEL[block.role] : undefined
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10

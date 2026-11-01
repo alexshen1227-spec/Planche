@@ -3,7 +3,7 @@ import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { defaultSurface } from '../data/equipment'
 import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
-import { capacityReading, learningSeries, testWasAttempted, verifiedCleanRatio } from './progression'
+import { capacityReading, isBarAttempt, learningSeries, measuredMaxIn, testWasAttempted, verifiedCleanRatio } from './progression'
 import { trustedCameraEvidence } from './formEvidence'
 import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
 
@@ -478,8 +478,15 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // Hit rate from the most recent session that actually trained the key hold,
   // not the literal last session — a wrist day in between used to null this
   // out and silently skip the target adjustment.
+  //
+  // Only working sets have a target to hit. A max effort at the bar — a max
+  // test, an unlock attempt, a re-test — falling short is a measurement: read
+  // as a miss, every max test was followed by "most sets fell short — easing
+  // the target back", cutting the target it had just re-measured.
   let mainHitRate: number | null = null
   let mainSetCount = 0
+  const workingSetsOf = (s: Session) =>
+    keySetsOf(s, keyId, 'main').filter((set) => !isBarAttempt(set, state.stepId))
   const lastRelevant = [...sessions]
     .reverse()
     .find(
@@ -487,10 +494,11 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
         s.workoutName !== 'Quick Log' &&
         s.workoutKind !== 'micro' &&
         now - s.startedAt <= 14 * DAY &&
-        keySetsOf(s, keyId, 'main').length > 0,
+        // A max test's sets all target the bar, so it has none and is passed.
+        workingSetsOf(s).length > 0,
     )
   if (lastRelevant) {
-    const mains = keySetsOf(lastRelevant, keyId, 'main')
+    const mains = workingSetsOf(lastRelevant)
     mainSetCount = mains.length
     // A hold stopped at its target call reached the target, even when the fixed
     // walk-back allowance logs it a little under.
@@ -725,7 +733,8 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
 
   // Only a test with an attempt in it counts as a test. Saving the warm-ups of
   // a skipped test used to reset this clock and hide the next re-test prompt.
-  const lastTest = [...sessions].reverse().find(testWasAttempted)
+  // A max test, or a max hold at the bar inside a session: either measured it.
+  const lastTest = [...sessions].reverse().find(measuredMaxIn)
   const daysSinceMaxTest = lastTest ? Math.round((now - lastTest.startedAt) / DAY) : null
 
   const lastDeload = [...sessions].reverse().find((s) => s.workoutName.toLowerCase().includes('deload'))

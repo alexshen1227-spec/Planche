@@ -232,6 +232,8 @@ export interface SeasonResult {
     strategy: StrategyId
     prescribed: number
     suggestMaxTest: boolean
+    /** The session opened with one max clean hold at the bar. */
+    queueRetest: boolean
   }[]
   /** Logged best on the key exercise, session by session. */
   performance: number[]
@@ -271,7 +273,7 @@ export function simulateSeason(
   buildPlanFn: (
     state: AppState,
     now: number,
-  ) => { dayType: string; targetFactor: number; strategy: StrategyId; suggestMaxTest: boolean },
+  ) => { dayType: string; targetFactor: number; strategy: StrategyId; suggestMaxTest: boolean; queueRetest?: boolean },
   adaptiveTargetFn: (state: AppState, stepId: StepId, now?: number) => number,
   applySessionFn: (state: AppState, session: Session) => { next: AppState },
 ): SeasonResult {
@@ -321,6 +323,7 @@ export function simulateSeason(
       strategy: plan.strategy,
       prescribed,
       suggestMaxTest: plan.suggestMaxTest,
+      queueRetest: plan.queueRetest === true,
     })
 
     const sets: SetLog[] = []
@@ -334,6 +337,28 @@ export function simulateSeason(
     // do ("finish about two seconds before you would collapse"). That last set
     // is what makes the log reflect capacity rather than merely echoing the
     // target back — see the `compliance` note below.
+    //
+    // A due re-test is one max clean hold at the bar, first in the main work;
+    // every athlete takes that one to their limit — it is what it asks for.
+    if (plan.queueRetest) {
+      const swing = 1 + (rand() - 0.5) * 2 * noise
+      const value = Math.max(1, capacity * swing)
+      push(
+        holdSet(
+          keyId,
+          value,
+          clock,
+          'main',
+          {
+            rating: 'clean',
+            confirmed: true,
+            flightConfirmed: true,
+            auto: { issues: [], confidence: 0.9, score: 88, cleanSeconds: value, cleanRatio: 1 },
+          },
+          STEP_BY_ID[stepId].unlockSec,
+        ),
+      )
+    }
     for (let setIndex = 0; setIndex < 5; setIndex++) {
       const swing = 1 + (rand() - 0.5) * 2 * noise
       const topSet = setIndex === 4

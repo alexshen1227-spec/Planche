@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, FormCheck, Session, SetLog, StepId } from '../types'
 import { STEP_BY_ID, STEPS } from '../data/progressions'
-import { adaptiveTarget, challengeBlockedReason, finalizeWorkout, finalizeWorkoutWithPlan, requestFor, restrictTemplate, TEMPLATE_BY_ID } from '../data/workouts'
+import {
+  adaptiveTarget,
+  challengeBlockedReason,
+  finalizeWorkout,
+  finalizeWorkoutWithPlan,
+  requestFor,
+  restrictTemplate,
+  TEMPLATE_BY_ID,
+  todaysSession,
+} from '../data/workouts'
 import { ACHIEVEMENTS } from '../data/achievements'
 import { initialState, mergeExternalState, normalizeStateWithReport, reducer, reportHasLosses } from './store'
 import { buildPlan, debriefSession, rewardFor } from './coach'
@@ -616,5 +625,83 @@ describe('next-shape attempts are reported as they stand', () => {
     expect(line?.text).not.toMatch(/Held clean/)
     // The frog stand is verified by its replay checklist, not the pose check.
     expect(line?.text).not.toMatch(/camera pass/)
+  })
+})
+
+describe('a due re-test happens inside the session', () => {
+  // Found by simulating the athlete the hold screen asks for: one who stops
+  // every set at its call logs only lower bounds, so their target sat on the
+  // last measured number until they chose a separate max test — 5s for twelve
+  // weeks while the hold grew from 8s to 30s.
+  const obedient = (extra: Session[] = []) =>
+    athlete('tuck', {
+      sessions: [
+        ...[24, 21, 19, 17, 14, 12, 10, 7, 5].map((daysAgo) =>
+          trainingDay(daysAgo, [6, 6, 6, 6].map((v, i) => hold('tuck-planche', v, at(daysAgo) + i * 60_000, { target: 6 })), {
+            baseTargetSec: 6,
+          }),
+        ),
+        ...extra,
+      ],
+    })
+
+  it('queues one max clean hold at the bar, first in the main work', () => {
+    const state = obedient()
+    const plan = buildPlan(state, NOW)
+    expect(plan.suggestMaxTest).toBe(true)
+    expect(plan.queueRetest).toBe(true)
+    const blocks = todaysSession(state, plan).blocks
+    const first = blocks.find((b) => b.section === 'main')
+    expect(first).toMatchObject({ role: 'attempt', retest: true, sets: 1, target: { kind: 'hold', sec: STEP_BY_ID.tuck.unlockSec } })
+    expect(first?.note).toMatch(/re-measures/)
+    // One maximal focus a day: no next-shape attempts beside it.
+    expect(blocks.some((b) => b.role === 'bridge')).toBe(false)
+  })
+
+  it('is not queued again once a session has measured the hold', () => {
+    const measured = trainingDay(3, [hold('tuck-planche', 14, at(3), { target: STEP_BY_ID.tuck.unlockSec }), hold('tuck-planche', 8, at(3) + 60_000, { target: 8 })])
+    const state = obedient([measured])
+    expect(readSignals(state, NOW).daysSinceMaxTest).toBe(3)
+    const plan = buildPlan(state, NOW)
+    expect(plan.queueRetest).toBe(false)
+    // And the measurement re-anchors the working target above the old one.
+    expect(adaptiveTarget(state, 'tuck', NOW)).toBeGreaterThan(6)
+  })
+
+  it('never on a day a max effort is not allowed', () => {
+    const plan = buildPlan(obedient(), NOW, { joints: 'good', energy: 'tired', at: NOW })
+    expect(plan.challengeAllowed).toBe(false)
+    expect(plan.queueRetest).toBe(false)
+  })
+})
+
+describe('a max effort at the bar is not a missed working set', () => {
+  // Found while checking the in-session re-test: the hit rate read every
+  // main set against its target, and a max test's sets target the bar — so
+  // after any max test the coach said "Most sets fell short last time —
+  // easing the target back" and cut the target it had just re-measured.
+  const bar = STEP_BY_ID.tuck.unlockSec
+  const working = (daysAgo: number) =>
+    trainingDay(daysAgo, [6, 6, 6, 6].map((v, i) => hold('tuck-planche', v, at(daysAgo) + i * 60_000, { target: 6 })))
+
+  it('reads the hit rate past a max test, from the working sets before it', () => {
+    const test = trainingDay(2, [hold('tuck-planche', 12, at(2), { target: bar }), hold('tuck-planche', 13, at(2) + 180_000, { target: bar })], {
+      workoutKind: 'test',
+      workoutName: 'Max test',
+    })
+    const state = athlete('tuck', { sessions: [working(6), working(4), test] })
+    expect(readSignals(state, NOW).mainHitRate).toBe(1)
+    expect(buildPlan(state, NOW).decisions.some((d) => /fell short/.test(d.text))).toBe(false)
+  })
+
+  it('counts only the working sets of a session that opened with an attempt', () => {
+    const day = trainingDay(2, [
+      hold('tuck-planche', 11, at(2), { target: bar }),
+      ...[6, 6, 6].map((v, i) => hold('tuck-planche', v, at(2) + (i + 1) * 60_000, { target: 6 })),
+    ])
+    const state = athlete('tuck', { sessions: [working(6), day] })
+    const sig = readSignals(state, NOW)
+    expect(sig.mainHitRate).toBe(1)
+    expect(sig.mainSetCount).toBe(3)
   })
 })

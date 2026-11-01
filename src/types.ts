@@ -352,6 +352,12 @@ export interface Block {
   emphasis?: boolean
   /** An easy day's lighter dose: its sets are logged `light` (see `SetLog.light`). */
   light?: boolean
+  /**
+   * An attempt queued to re-measure the hold rather than to unlock it
+   * (`plan.queueRetest`) — the same single max hold at the bar, named for what
+   * it is for.
+   */
+  retest?: boolean
 }
 
 /**

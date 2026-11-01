@@ -565,6 +565,12 @@ export interface CoachPlan {
   warmup: WarmupLevel
   queueUnlockAttempt: boolean
   suggestMaxTest: boolean
+  /**
+   * The re-test happens inside today's session: one max clean hold at the
+   * bar, first in the main work. Set whenever a max test is due and nothing
+   * else maximal is queued.
+   */
+  queueRetest: boolean
   accessoryEmphasis: 'pressing' | 'scapula' | 'balance' | 'core' | 'lockout' | 'none'
   /** Best-supported current bottleneck, if enough history exists to name one. */
   limiter: CoachLimiter | null
@@ -1633,6 +1639,12 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     dayType !== 'recovery'
   queueUnlockAttempt = queueUnlockAttempt && challengeAllowed
   suggestMaxTest = suggestMaxTest && challengeAllowed
+  // A due re-test used to be a suggestion beside a separate Max test button.
+  // An athlete who stops every set at its call — as the hold screen asks —
+  // logs only lower bounds, so their target sat on the last measured number
+  // until they chose to test: simulated, 5s for twelve weeks while their lean
+  // grew from 8s to 30s. The re-test now comes inside the session.
+  const queueRetest = suggestMaxTest && !queueUnlockAttempt
   if (queueUnlockAttempt) {
     decisions.push({
       text: `You're within reach of the ${step.unlockSec}s bar — an unlock attempt is queued first, while you're freshest.`,
@@ -1651,18 +1663,20 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
 
   // Said out loud, not just returned: this flag used to be computed and then
   // shown nowhere, so the one day it fired the athlete never heard about it.
-  if (suggestMaxTest) {
+  if (queueRetest) {
+    const opens = 'today opens with one max clean hold: hold until the shape starts to go, then stop'
     decisions.push({
       // "Steady" is a claim about the numbers, and it was being printed on
       // exactly the days the coach had just called them too noisy to read.
       text: sig.noisy
         ? `Your recent holds have been swinging too much to read a trend from${
-            sig.daysSinceMaxTest === null ? '' : `, and it has been ${sig.daysSinceMaxTest} days since your last max test`
-          }. You are fresh today, so a clean max test would give every target a real number to sit on instead of an average of scatter.`
+            sig.daysSinceMaxTest === null ? '' : `, and your hold was last measured at its max ${sig.daysSinceMaxTest} days ago`
+          } — so ${opens}. Every target then sits on a real number instead of an average of scatter.`
         : sig.daysSinceMaxTest === null
-          ? 'You are fresh and your numbers are steady — a first max test today would calibrate every target the coach sets.'
-          : `It has been ${sig.daysSinceMaxTest} days since your last max test and you are fresh today — a re-test would recalibrate your targets.`,
+          ? `Your hold has not been measured at its max yet, so ${opens}. Every working target is set from that number.`
+          : `Your hold was last measured at its max ${sig.daysSinceMaxTest} days ago, so ${opens}. It re-anchors every working target to where you are now.`,
       kind: 'info',
+      source: 'loaded-session',
     })
   }
 
@@ -1714,6 +1728,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     warmup,
     queueUnlockAttempt,
     suggestMaxTest,
+    queueRetest,
     accessoryEmphasis,
     limiter: finalLimiter,
     plateau,
