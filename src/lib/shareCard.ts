@@ -151,6 +151,23 @@ function drawFigure(
   ctx.restore()
 }
 
+/** A rounded bar; `roundRect` is missing before iOS 16, so it is drawn by hand there. */
+function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  const r = Math.min(h / 2, w / 2)
+  ctx.beginPath()
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, r)
+  } else {
+    ctx.moveTo(x + r, y)
+    ctx.arcTo(x + w, y, x + w, y + h, r)
+    ctx.arcTo(x + w, y + h, x, y + h, r)
+    ctx.arcTo(x, y + h, x, y, r)
+    ctx.arcTo(x, y, x + w, y, r)
+    ctx.closePath()
+  }
+  ctx.fill()
+}
+
 /** Text that shrinks until it fits `maxWidth`. */
 function fitText(ctx: CanvasRenderingContext2D, text: string, weight: number, size: number, family: string, maxWidth: number) {
   let s = size
@@ -238,13 +255,9 @@ export async function drawShareCard(canvas: HTMLCanvasElement, data: ShareCardDa
     const barX = 80
     const barW = CARD_W - 160
     ctx.fillStyle = 'rgba(255,255,255,0.12)'
-    ctx.beginPath()
-    ctx.roundRect(barX, 1172, barW, 12, 6)
-    ctx.fill()
+    bar(ctx, barX, 1172, barW, 12)
     ctx.fillStyle = ink
-    ctx.beginPath()
-    ctx.roundRect(barX, 1172, Math.max(12, barW * pct), 12, 6)
-    ctx.fill()
+    bar(ctx, barX, 1172, Math.max(12, barW * pct), 12)
   }
 
   // Footer.
