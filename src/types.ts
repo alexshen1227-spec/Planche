@@ -363,7 +363,8 @@ export interface Block {
  * that rebuilds a workout rebuilds it from this.
  */
 export interface WorkoutRequest {
-  source: 'auto' | 'template' | 'test'
+  /** `micro` is the minimum dose: a few short maximal holds for a day a session will not happen. */
+  source: 'auto' | 'template' | 'test' | 'micro'
   templateId?: string
   stepId?: StepId
   /** One-off shorter budget for today. Absent = the profile default. */
@@ -375,7 +376,7 @@ export interface Workout {
   name: string
   focus: string
   minutes: number
-  kind: 'auto' | 'template' | 'test'
+  kind: 'auto' | 'template' | 'test' | 'micro'
   blocks: Block[]
   strategy?: StrategyId
   /** The request this was built from; absent on drafts saved by older versions. */

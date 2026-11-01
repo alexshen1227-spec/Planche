@@ -426,7 +426,10 @@ function inScope(set: SetLog, scope: LearningScope | undefined): boolean {
  */
 export function sessionLearningValue(session: Session, stepId: StepId, scope?: LearningScope): number {
   const step = STEP_BY_ID[stepId]
-  if (!step || session.workoutName === 'Quick Log') return 0
+  // A minimum dose is a few holds stopped at about three seconds on purpose:
+  // read as capacity, it would look like a collapse to the noise, trend and
+  // plateau readers, and the coach would answer a fiction.
+  if (!step || session.workoutName === 'Quick Log' || session.workoutKind === 'micro') return 0
   const bestOf = (sideScope: LearningScope | undefined) =>
     session.sets.reduce((best, set) => {
       if (

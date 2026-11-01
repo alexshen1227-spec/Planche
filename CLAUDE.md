@@ -358,6 +358,19 @@ them. Real-hardware behaviour is still unproven.
   leans never reached the soft-elbow athletes they were built for. A second
   loaded session on the same day stays skill only. The old test pinned
   `strategy`/`dayType` by hand and missed this; assert on `buildPlan`'s plan.
+- **In-hold cues follow time held** (`holdCues`): the target call, spoken
+  counts and ring use the stopwatch since Go; the stop allowance comes off the
+  logged value only. The cues once used credited time, written for a reaction
+  delay of tenths — the 5s walk-back allowance then made every target call five
+  seconds late for a phone across the room (working sets ran to the max). The
+  PR buzz stays on credited time, so walking is never celebrated.
+- **The minimum dose** (request source / workout kind `micro`,
+  `microDoseWorkout`): a short warm-up and five ~3s maximal holds at the
+  hardest clean shape (the next shape when the bridge is open). Gated by
+  `microBlockedReason` — the max-test gate plus no lighter day, no form repair,
+  nothing loaded today, once a day. It is extra: `sessionLearningValue`, the
+  hit-rate and frequency signals and the weekly goal all skip `micro` sessions,
+  and its targets never move set to set.
 - **Set-to-set targets** (`lib/autoregulate.ts`) are *derived*, not stored:
   the player keeps which logs belong to which block (`blockLogAts`, persisted
   in the draft) and recomputes the next target from them, so edits, ratings

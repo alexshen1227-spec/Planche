@@ -19,6 +19,15 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'Targets called on time, and a minimum dose',
+    area: 'training',
+    notes: [
+      'The “Target” call and the spoken counts now come when you have actually held that long. With your phone across the room they used to arrive five seconds late — the time allowed for walking back to the phone was taken off while you were still holding — so a working set meant to stop well short of your max could run all the way to it. Your logged times are worked out exactly as before.',
+      'New on Home, for a day a full session will not happen: a minimum dose. A short wrist warm-up, then five short, maximal holds at the hardest shape you can keep clean — the next shape once your bridge is open. Brief maximal holds raised strength in small trials on simpler movements; none tested the planche. It is offered only on days a max effort would be, does not count as one of your weekly sessions, and never changes your targets.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'Your road, drawn',
     area: 'app',
     notes: [

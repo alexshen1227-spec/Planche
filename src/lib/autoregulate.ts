@@ -38,6 +38,8 @@ export function adjustsSetToSet(
 ): boolean {
   return !(
     workoutKind === 'test' ||
+    // A minimum dose's holds are short on purpose; longer is not the point.
+    workoutKind === 'micro' ||
     block.light ||
     block.role === 'attempt' ||
     block.section === 'warmup' ||

@@ -3,7 +3,7 @@ import type { Tab, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
 import { STEP_BY_ID, stepAfter } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { challengeBlockedReason, finalizeFromPlan } from '../data/workouts'
+import { challengeBlockedReason, finalizeFromPlan, microBlockedReason, microDoseWorkout } from '../data/workouts'
 import { weekPlan, weekWork } from '../lib/volume'
 import { BridgeCard } from '../components/BridgeCard'
 import { BASIS_LABEL, tipOfTheDay } from '../data/tips'
@@ -144,6 +144,11 @@ export function Dashboard({
   const outlook = useMemo(() => goalOutlook(state), [state, today])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const plan = useMemo(() => buildPlan(state), [state, today])
+  // The minimum dose is offered only on a day it is allowed (see microBlockedReason).
+  const microMinutes = useMemo(
+    () => (microBlockedReason(state, plan) ? null : microDoseWorkout(state, plan).minutes),
+    [state, plan],
+  )
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const breakthrough = useMemo(() => recentBreakthrough(state), [state, today])
   const confidence = useMemo(() => coachConfidence(state), [state])
@@ -358,6 +363,21 @@ export function Dashboard({
                 {m} min version
               </button>
             ))}
+          </div>
+        ) : null}
+        {microMinutes !== null ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px]">
+            <span className="text-ink3">No full session today?</span>
+            <button
+              onClick={() => startWorkout({ source: 'micro' })}
+              className="min-h-10 rounded-lg border border-line bg-raised px-3 py-1.5 font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
+            >
+              Minimum dose · {microMinutes} min
+            </button>
+            <span className="w-full text-[12px] leading-relaxed text-ink3">
+              A few short, maximal holds — it keeps the position trained on a busy day, and does not count as one of
+              your sessions.
+            </span>
           </div>
         ) : null}
       </div>

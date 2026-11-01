@@ -579,7 +579,7 @@ function sanitizeSessions(
         ? { pausedMs: clampNum(c.pausedMs, 0, Math.max(0, endedAt - startedAt), 0) }
         : {}),
       workoutName: typeof c.workoutName === 'string' ? c.workoutName : 'Session',
-      workoutKind: c.workoutKind === 'template' || c.workoutKind === 'test' ? c.workoutKind : 'auto',
+      workoutKind: c.workoutKind === 'template' || c.workoutKind === 'test' || c.workoutKind === 'micro' ? c.workoutKind : 'auto',
       stepId: c.stepId && STEP_BY_ID[c.stepId] ? c.stepId : 'foundations',
       sets,
       rpe: typeof c.rpe === 'number' && Number.isFinite(c.rpe) ? clampNum(c.rpe, 1, 10, 8) : undefined,

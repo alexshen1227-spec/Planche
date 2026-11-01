@@ -18,7 +18,11 @@ export function sessionsInWeekOf(state: AppState, ts: number, now = Date.now()):
   const end = addDays(start, 7)
   // A session stamped in the future (a clock that ran ahead, an import from a
   // device in another state) has not happened yet and cannot meet a goal.
-  return state.sessions.filter((s) => s.startedAt >= start && s.startedAt < end && s.startedAt <= now + CLOCK_SKEW_MS)
+  // A minimum dose is extra, not one of the week's sessions: counting it let a
+  // few six-minute top-ups stand in for the sessions the goal is about.
+  return state.sessions.filter(
+    (s) => s.startedAt >= start && s.startedAt < end && s.startedAt <= now + CLOCK_SKEW_MS && s.workoutKind !== 'micro',
+  )
 }
 
 /**

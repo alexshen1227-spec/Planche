@@ -93,3 +93,38 @@ export function stopSetupCredits(
     delta: Math.round(Math.abs(withinReach - walkedBack) * 10) / 10,
   }
 }
+
+/** What the hold screen says while the athlete is still in position. */
+export interface HoldCues {
+  /** Time actually held so far — the stopwatch since Go. */
+  heldSec: number
+  /** The target has been held: time to stop while clean. */
+  targetReached: boolean
+  /** A new best even after the stop allowance comes off — never celebrated early. */
+  pr: boolean
+}
+
+/**
+ * Cues for a hold in progress.
+ *
+ * The stop allowance (reaction, or the walk back to the phone) happens after
+ * the hold ends, so it comes off the logged value — never off the cues an
+ * athlete in position is listening for. Taking it off the cues too made the
+ * "Target" call and the spoken counts arrive five seconds late for anyone
+ * whose phone is across the room: a working set meant to stop well short of
+ * the max ran on until the athlete had held five seconds more, which for a
+ * twelve-second athlete with a seven-second target is the whole twelve. That
+ * happened when the walk-back allowance arrived; the cues had been written for
+ * a reaction delay of a few tenths.
+ *
+ * A record is the exception: it is only announced once the logged value would
+ * stand, so walking time can never be celebrated as a PR.
+ */
+export function holdCues(rawElapsedSec: number, allowanceSec: number, targetSec: number, bestSec: number | undefined): HoldCues {
+  const heldSec = Math.max(0, rawElapsedSec)
+  return {
+    heldSec,
+    targetReached: targetSec > 0 && heldSec >= targetSec,
+    pr: bestSec !== undefined && heldSec - Math.max(0, allowanceSec) > bestSec,
+  }
+}

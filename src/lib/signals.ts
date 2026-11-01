@@ -485,6 +485,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     .find(
       (s) =>
         s.workoutName !== 'Quick Log' &&
+        s.workoutKind !== 'micro' &&
         now - s.startedAt <= 14 * DAY &&
         keySetsOf(s, keyId, 'main').length > 0,
     )
@@ -709,7 +710,9 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const skippedLastWarmup = lastPlancheSession ? !warmedUp(lastPlancheSession) : false
 
   const fourWeeksAgo = now - 28 * DAY
-  const recentCount = sessions.filter((s) => s.startedAt >= fourWeeksAgo).length
+  // A minimum dose is not a training session for frequency's sake: six minutes
+  // of short holds must not read as "training as often as planned".
+  const recentCount = sessions.filter((s) => s.startedAt >= fourWeeksAgo && s.workoutKind !== 'micro').length
   // Over the weeks actually trained, up to four — the same fix the chronic
   // load needed. Dividing a fortnight's history by four weeks told a new
   // athlete training three times a week that they averaged 1.5: "training

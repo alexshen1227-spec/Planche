@@ -1553,6 +1553,96 @@ export function maxTestWorkout(stepId: StepId): Workout {
   }
 }
 
+/** A minimum dose's holds: short, maximal and few. */
+export const MICRO_HOLD_SEC = 3
+export const MICRO_HOLDS = 5
+
+/**
+ * Why there is no minimum dose today, or null when there may be one.
+ *
+ * It is maximal work, so it needs everything a max test needs, and more: not
+ * on a lighter day (after a max test, an RPE 9+ session or a scheduled easy
+ * week), not while the camera keeps flagging the shape (easier positions come
+ * first there), not after loaded training today, and once a day at most.
+ */
+export function microBlockedReason(state: Pick<AppState, 'sessions'>, plan: CoachPlan, now = Date.now()): string | null {
+  const challenge = challengeBlockedReason(plan)
+  if (challenge) return challenge
+  // Before the day type: training today is what made it a lighter day.
+  if (plan.signals.daysSinceLoaded === 0) return 'you already trained today'
+  if (plan.dayType === 'technique' || plan.dayType === 'deload' || plan.dayType === 'recovery') {
+    return 'today is set up as a lighter day'
+  }
+  if (plan.strategy === 'technique') return 'your recent holds are losing their shape, and easier positions come first'
+  const today = new Date(now).toDateString()
+  if (state.sessions.some((s) => s.workoutKind === 'micro' && new Date(s.startedAt).toDateString() === today)) {
+    return 'you already did one today'
+  }
+  return null
+}
+
+/**
+ * The minimum dose: a few short, maximal holds for a day a full session will
+ * not happen.
+ *
+ * At the hardest shape held clean — the next shape once the bridge is open,
+ * otherwise the step's own hold leaned further than the working sets. Short
+ * maximal holds were the stronger tendon stimulus in the one trial comparing
+ * hold lengths (3 s against 12 s, ledger §2), and brief daily maximal holds
+ * raised strength in small trials on simpler movements (ledger §12) — none on
+ * the planche, which the copy says. It is extra, not a session: kept out of
+ * the coach's learning, the frequency signal and the weekly goal, and its
+ * targets never move set to set.
+ */
+export function microDoseWorkout(state: AppState, plan: CoachPlan): Workout {
+  const step = STEP_BY_ID[state.stepId]
+  const bridge = bridgeStatus(state, step.id)
+  const next = bridge?.open ? bridge.next : undefined
+  const shape = next ?? step
+  const exercise = EXERCISE_BY_ID[shape.keyExerciseId]
+  const shown = capacityOn(state, shape.id)
+  // About three seconds where the athlete has held more; never past what they
+  // have shown, and a short opener on a next shape not held yet.
+  const target =
+    shown !== undefined
+      ? clamp(Math.floor(shown), 1, MICRO_HOLD_SEC)
+      : next
+        ? clamp(Math.round(next.startSec * 0.4), 1, MICRO_HOLD_SEC)
+        : MICRO_HOLD_SEC
+  const blocks: Block[] = [
+    // Wrists and a primer lean are the warm-up three-second holds need; a coach
+    // that asked for the extended one (skipped warm-ups, a cold start) gets it.
+    ...warmupFor(step.id, plan.warmup === 'extended' ? 'extended' : 'short'),
+    {
+      exerciseId: shape.keyExerciseId,
+      // A per-side hold is a pair of rounds a set.
+      sets: exercise.perSide ? 3 : MICRO_HOLDS,
+      target: hold(target),
+      restSec: 40,
+      section: 'main',
+      role: next ? 'bridge' : 'skill',
+      note: next
+        ? `Short, hard holds at the ${exercise.name.toLowerCase()} — the shape you are building toward. About ${target}s each, and stop the moment the shape goes. Filmed and held clean, they count like any other attempt.`
+        : `Short, hard holds: lean further than in your working sets, until about ${target}s is all you could hold clean. Stop the moment the shape goes — a held position, not a struggle.`,
+    },
+    { exerciseId: 'wrist-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
+  ]
+  const kit = resolveEquipment(blocks, state.profile.equipment)
+  const sided = withSides(kit.blocks)
+  return {
+    id: `micro-${step.id}`,
+    name: `${step.name} · Minimum dose`,
+    focus: `A few short, maximal holds for a day a full session will not happen — it does not replace your sessions. Brief maximal holds raised strength in small trials on simpler movements; none tested the planche.`,
+    minutes: estimateMinutes(sided, state.settings.stopLatencySec, state.settings.phoneWithinReach),
+    kind: 'micro',
+    blocks: sided,
+    purpose: next
+      ? `${MICRO_HOLDS} short, hard holds at the next shape, then done.`
+      : `${MICRO_HOLDS} short, hard holds at the hardest version of your hold you can keep clean, then done.`,
+    ...(kit.notes.length ? { adjustments: kit.notes } : {}),
+  }
+}
+
 function template(w: Omit<Workout, 'minutes' | 'kind'> & { kind?: Workout['kind'] }): Workout {
   // Minutes come from the blocks, not a hand-typed label: "Quick Ten" must not
   // claim ten minutes it does not fit in.
@@ -1778,6 +1868,14 @@ export function finalizeFromPlan(
         }
       }
     }
+  } else if (request.source === 'micro') {
+    const blocked = microBlockedReason(state, plan, now)
+    if (blocked) {
+      workout = todaysSession(state, plan, request.minutes)
+      adjustments.push(`No minimum dose today because ${blocked} — this is an ordinary session instead.`)
+    } else {
+      workout = microDoseWorkout(state, plan)
+    }
   } else {
     workout = todaysSession(state, plan, request.minutes)
   }
@@ -1797,6 +1895,7 @@ export function requestFor(workout: Workout): WorkoutRequest {
     const stepId = workout.id.replace(/^test-/, '') as StepId
     return { source: 'test', ...(STEP_BY_ID[stepId] ? { stepId } : {}) }
   }
+  if (workout.kind === 'micro') return { source: 'micro' }
   if (workout.kind === 'template') {
     const id = workout.id.replace(/-readiness-adjusted$/, '')
     return TEMPLATE_BY_ID[id] ? { source: 'template', templateId: id } : { source: 'auto' }

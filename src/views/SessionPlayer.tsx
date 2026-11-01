@@ -31,6 +31,7 @@ import { fmtClock, fmtHold } from '../lib/time'
 import { readSignals } from '../lib/signals'
 import {
   creditedHoldSeconds,
+  holdCues,
   isMainProgressionHold,
   leadInSecondsFor,
   stopLatencySecondsFor,
@@ -490,11 +491,18 @@ export function SessionPlayer({
   const leadRemaining = Math.max(0, (leadEnd - now) / 1000)
   const holdElapsed = phase === 'hold' ? Math.max(0, (now - holdStart) / 1000) : 0
   /**
-   * What the hold will actually be logged as. Cues fire on this rather than
-   * the raw stopwatch, so a PR or a target can never be earned by the gap
-   * between coming out of the position and reaching the button.
+   * What the hold would be logged as if it were stopped now. The cues for an
+   * athlete still in position follow the time actually held (`holdCues`): the
+   * stop allowance happens after the hold, and taking it off the cues made the
+   * target call five seconds late whenever the phone was across the room.
    */
   const holdCredited = Math.max(0, holdElapsed - latency)
+  const cues = holdCues(
+    holdElapsed,
+    latency,
+    phase === 'hold' && block?.target.kind === 'hold' ? block.target.sec : 0,
+    bestBefore,
+  )
   const restRemaining = Math.max(0, (restEnd - now) / 1000)
 
   // Mirror the live session to storage on every meaningful change, and again
@@ -745,33 +753,34 @@ export function SessionPlayer({
   // Chime + announce when the target is reached mid-hold.
   useEffect(() => {
     if (phase !== 'hold' || !block || block.target.kind !== 'hold') return
-    if (!targetHitRef.current && holdCredited >= block.target.sec) {
+    if (!targetHitRef.current && cues.targetReached) {
       targetHitRef.current = true
       sfx.target()
       buzz(40)
       if (state.settings.voice) speak('Target')
     }
-  }, [phase, holdCredited, block, state.settings.voice])
+  }, [phase, cues.targetReached, block, state.settings.voice])
 
   // Spoken 5-second counts mid-hold — the screen is unreadable upside-down.
   useEffect(() => {
     if (phase !== 'hold' || !state.settings.voice || !block) return
-    const whole = Math.floor(holdCredited)
+    const whole = Math.floor(cues.heldSec)
     const target = block.target.kind === 'hold' ? block.target.sec : 0
     if (whole >= 5 && whole % 5 === 0 && whole !== target && whole !== lastCountRef.current) {
       lastCountRef.current = whole
       speak(String(whole))
     }
-  }, [phase, holdCredited, block, state.settings.voice])
+  }, [phase, cues.heldSec, block, state.settings.voice])
 
-  // Haptic pulse the moment a live hold becomes a PR.
+  // Haptic pulse the moment a live hold becomes a PR — on the logged value, so
+  // walking time is never celebrated.
   useEffect(() => {
     if (phase !== 'hold' || prBuzzedRef.current) return
-    if (bestBefore !== undefined && holdCredited > bestBefore) {
+    if (cues.pr) {
       prBuzzedRef.current = true
       buzz([30, 40, 30])
     }
-  }, [phase, holdCredited, bestBefore])
+  }, [phase, cues.pr])
 
   /**
    * Leave the intro and start the clock. Both the button and the Space key
@@ -1850,8 +1859,8 @@ export function SessionPlayer({
 
     if (phase === 'hold') {
       const target = block.target.kind === 'hold' ? block.target.sec : 0
-      const overTarget = holdCredited >= target
-      const isPr = bestBefore !== undefined && holdCredited > bestBefore
+      const overTarget = cues.targetReached
+      const isPr = cues.pr
       return (
         <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 text-center">
           <div className="mt-2 text-[14px] font-medium text-ink2">
@@ -1872,7 +1881,7 @@ export function SessionPlayer({
           <div className="relative mt-4">
             <div className="pointer-events-none absolute inset-6 rounded-full bg-accent-soft blur-3xl" />
             <ProgressRing
-              value={Math.min(1, holdCredited / Math.max(1, target))}
+              value={Math.min(1, cues.heldSec / Math.max(1, target))}
               size={ringSize}
               stroke={ringSize > 220 ? 13 : 10}
               glow
