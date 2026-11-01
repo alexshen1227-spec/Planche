@@ -2,6 +2,7 @@ import { CURRENT_STATE_VERSION, type AutoForm, type FormIssue, type FormRating }
 import type { JudgeInput, PoseFormResult } from './poseForm'
 import { JUDGE_VERSION } from './poseForm'
 import { dayKey } from './time'
+import { readDeviceCheck, type DeviceCheckResult } from './deviceCheck'
 
 const DB_NAME = 'planchelab-problem-reports'
 const REPORTS = 'reports'
@@ -20,6 +21,8 @@ export interface ProblemReportRuntime {
   timeZone: string
   viewport: { width: number; height: number; devicePixelRatio: number }
   screen: { width: number; height: number }
+  /** This phone's last "Check this phone" result, when it has one. */
+  deviceCheck?: DeviceCheckResult
 }
 
 export interface ProblemReportRecord {
@@ -172,6 +175,10 @@ function runtimeInfo(): ProblemReportRuntime {
       width: typeof screen === 'undefined' ? 0 : screen.width,
       height: typeof screen === 'undefined' ? 0 : screen.height,
     },
+    ...(() => {
+      const check = typeof localStorage === 'undefined' ? null : readDeviceCheck()
+      return check ? { deviceCheck: check } : {}
+    })(),
   }
 }
 

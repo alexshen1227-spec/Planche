@@ -297,6 +297,20 @@ those are the failures that leave the camera indicator burning. Verified to
 have teeth by mutation: deleting `stopStream()` from `teardown` fails four of
 them. Real-hardware behaviour is still unproven.
 
+## Check this phone (device behaviour no test here can reach)
+
+Settings → Check this phone (`components/DeviceCheck.tsx`, `lib/deviceCheck.ts`)
+runs, on the athlete's own device, what a session relies on: the target chime,
+the spoken call, the back camera (preview stopped on every exit — tested like
+the recorder), the wake lock and the share sheet. The result is per device
+(`planchelab.deviceCheck`), travels in every problem report
+(`ProblemReportRuntime.deviceCheck`), and "Copy result" gives a pasteable
+summary. iOS context it guards: audio and speech start only from a gesture
+(`installAudioUnlock`), the silent switch mutes Web Audio
+(`soundThroughSilent`, audio session "playback"), and home-screen apps before
+iOS 18.4 refused wake locks. None of it has been verified on a physical iPhone
+from this repo — the check exists so the athlete can.
+
 ## Testing tools
 
 - `#devlab` (linked from Settings → About and the Learn guide "How the camera

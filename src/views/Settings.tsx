@@ -28,6 +28,8 @@ import { JointReports } from '../components/JointReports'
 import { buildSampleState } from '../data/sample'
 import { pushToast } from '../lib/toast'
 import { primeSignal, releaseSignal, sfx, signalTone } from '../lib/audio'
+import { deviceCheckAdvice, readDeviceCheck } from '../lib/deviceCheck'
+import { DeviceCheck } from '../components/DeviceCheck'
 import { PROGRESSION_STOP_LATENCY_SEC, WALK_BACK_MAX_SEC, WALK_BACK_MIN_SEC } from '../lib/sessionTiming'
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle } from '../components/ui'
@@ -365,6 +367,8 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   const [storage, setStorage] = useState<StorageInfo | null>(null)
   const [calibrating, setCalibrating] = useState(false)
   const [measuringWalk, setMeasuringWalk] = useState(false)
+  const [checkingDevice, setCheckingDevice] = useState(false)
+  const [lastCheck, setLastCheck] = useState(() => readDeviceCheck())
   const [loggingWeight, setLoggingWeight] = useState(false)
   const lastWeight = lastOf(state, 'weightKg')
   const [clipCount, setClipCount] = useState(0)
@@ -791,6 +795,25 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
 
       <SectionTitle>Training</SectionTitle>
       <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
+        <Row
+          label="Check this phone"
+          hint={
+            lastCheck
+              ? deviceCheckAdvice(lastCheck).length
+                ? `Checked ${fmtDate(lastCheck.at)}: ${deviceCheckAdvice(lastCheck).length} thing${
+                    deviceCheckAdvice(lastCheck).length === 1 ? '' : 's'
+                  } to fix — open it to see what.`
+                : `Checked ${fmtDate(lastCheck.at)}: everything a session needs works here.`
+              : 'Not checked on this phone yet. Thirty seconds: the chime, the spoken call, the camera, the screen staying on, sharing.'
+          }
+        >
+          <button
+            onClick={() => setCheckingDevice(true)}
+            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+          >
+            {lastCheck ? 'Check again' : 'Check'}
+          </button>
+        </Row>
         <Row label="Include warm-up blocks" hint="Wrist prep and scapula activation at the start of generated sessions.">
           <Toggle label="Include warm-up blocks" on={s.warmup} onChange={(v) => set({ warmup: v })} />
         </Row>
@@ -1247,6 +1270,23 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </div>
       </Modal>
 
+      <Modal
+        open={checkingDevice}
+        onClose={() => {
+          setCheckingDevice(false)
+          setLastCheck(readDeviceCheck())
+        }}
+        label="Check this phone"
+      >
+        <DeviceCheck
+          soundOn={s.sound}
+          voiceOn={s.voice}
+          onDone={() => {
+            setCheckingDevice(false)
+            setLastCheck(readDeviceCheck())
+          }}
+        />
+      </Modal>
       <Modal open={measuringWalk} onClose={() => setMeasuringWalk(false)} label="Measure your walk back">
         <WalkBackCalibrator
           onDone={(sec) => {

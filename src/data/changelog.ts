@@ -19,6 +19,15 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'Check this phone',
+    area: 'app',
+    notes: [
+      'New in Settings → Check this phone: thirty seconds that test what a session relies on, on your own phone — the target chime, the spoken call, the back camera, the screen staying on, and the share sheet. Anything that fails comes with what to do about it.',
+      'Copy result gives you a short summary to paste into a message, and every problem report now carries your phone’s last check, so a report says what the phone did.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'Your own walk back to the phone',
     area: 'camera',
     notes: [
