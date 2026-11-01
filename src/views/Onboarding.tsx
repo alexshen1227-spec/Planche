@@ -397,8 +397,9 @@ export function Onboarding() {
                 </button>
               </div>
               <p className="mt-4 text-center text-[12px] leading-relaxed text-ink3">
-                Answer honestly rather than optimistically. Everything here is checked against a stopwatch later, and
-                starting one step low costs you a fortnight — starting one step high costs you months.
+                Answer honestly rather than optimistically — everything here is checked against a stopwatch later.
+                Placed a step low, a filmed clean hold at the bar moves you up the same day; placed a step high, the
+                first weeks go on holds you cannot keep clean.
               </p>
             </div>
           ) : null

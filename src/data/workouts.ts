@@ -925,6 +925,36 @@ function pressWithinKit(exerciseId: string, equipment: EquipmentId[]): string {
   return id
 }
 
+/**
+ * The press a full day actually programs: the step's push-up version (or the
+ * one behind it), stepped down for missing kit, then swapped for an easier
+ * version while the setup answers or the easier log say it is out of reach.
+ * The pressing ladder marks this one "now" — it marked the step's own press,
+ * and told an athlete doing push-ups that they pressed in their step's shape.
+ */
+export function programmedPress(
+  state: AppState,
+  now = Date.now(),
+): { exerciseId: string; swapped: boolean; note?: string; reason: string } {
+  const choice = pressingChoiceFor(state.stepId, observedCapacity(state, state.stepId))
+  const pressId = pressWithinKit(choice.exerciseId, state.profile.equipment)
+  const block: Block = {
+    exerciseId: pressId,
+    sets: 3,
+    target: reps(PRESS_DEFAULT_REPS[pressId] ?? 5),
+    restSec: 90,
+    section: 'strength',
+    role: 'press',
+  }
+  const adjusted = capacityAdjustBlocks(state, [block], now).blocks[0]
+  return {
+    exerciseId: adjusted.exerciseId,
+    swapped: adjusted.exerciseId !== pressId,
+    ...(adjusted.exerciseId !== pressId && adjusted.note ? { note: adjusted.note } : {}),
+    reason: choice.reason,
+  }
+}
+
 /** How a lean reads as an accessory at each stage of the road. */
 function leanAccessoryNote(stepId: StepId): string {
   if (stepId === 'frog' || stepId === 'tuck') {

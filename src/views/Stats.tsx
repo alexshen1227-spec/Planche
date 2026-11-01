@@ -32,12 +32,16 @@ import { CLIP_RETENTION_DAYS } from '../lib/clips'
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle, Stat } from '../components/ui'
 import { pushToast } from '../lib/toast'
-import type { TrainingSurface } from '../types'
+import type { Exercise, TrainingSurface } from '../types'
 import { surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 import { ASSIST_LABEL } from '../components/SetupRow'
 import { PRESS_LADDER, PUSHUP_VERSION, pressingChoiceFor } from '../data/pressing'
 import { capacityOn } from '../lib/bridge'
 import { END_REASON_LABEL } from '../components/AttemptEnd'
+import { programmedPress } from '../data/workouts'
+
+/** Categories whose logs are prescribed counts, not efforts worth a record. */
+const UNTRACKED_RECORD_CATEGORIES = new Set<Exercise['category']>(['general', 'wrist', 'mobility'])
 
 /**
  * Form over weeks, per position.
@@ -55,10 +59,9 @@ import { END_REASON_LABEL } from '../components/AttemptEnd'
  */
 function PressingLadder() {
   const { state } = useStore()
-  const current = useMemo(
-    () => pressingChoiceFor(state.stepId, capacityOn(state, state.stepId)),
-    [state],
-  )
+  const choice = useMemo(() => pressingChoiceFor(state.stepId, capacityOn(state, state.stepId)), [state])
+  // What a full day programs, after kit and any setup-answer swap.
+  const current = useMemo(() => programmedPress(state), [state])
   const own = PUSHUP_VERSION[state.stepId]
   return (
     <section id="pressing" className="scroll-mt-5">
@@ -93,9 +96,11 @@ function PressingLadder() {
           })}
         </ol>
         <p className="mt-2.5 text-[12px] leading-relaxed text-ink3">
-          {current.atLevel
-            ? `You press in your step’s own shape. Reps grow by one when every set hits its target.`
-            : `${current.reason} Reps grow by one when every set hits its target.`}{' '}
+          {current.swapped && current.note
+            ? `${current.note} Reps grow by one when every set hits its target.`
+            : choice.atLevel && current.exerciseId === own
+              ? `You press in your step’s own shape. Reps grow by one when every set hits its target.`
+              : `${choice.reason} Reps grow by one when every set hits its target.`}{' '}
           Bests are your logged reps, not camera-verified.
         </p>
       </div>
@@ -427,12 +432,18 @@ export function Stats({
 
   const holdExercises = EXERCISES.filter((e) => e.type === 'hold')
   const chartStep = STEPS.find((s) => s.keyExerciseId === chartEx)
+  // Training movements only. Warm-up drills, wrist prep and stretches are
+  // logged at their prescribed counts, so the board filled with "records" of
+  // ten arm circles and a thirty-second stretch. The planche line leads.
   const trackedPrs = useMemo(
     () =>
       Object.entries(state.prs)
         .map(([id, pr]) => ({ ex: EXERCISE_BY_ID[id], pr }))
-        .filter((x) => x.ex)
-        .sort((a, b) => b.pr.at - a.pr.at),
+        .filter((x) => x.ex && !UNTRACKED_RECORD_CATEGORIES.has(x.ex.category))
+        .sort(
+          (a, b) =>
+            Number(b.ex.category === 'planche') - Number(a.ex.category === 'planche') || b.pr.at - a.pr.at,
+        ),
     [state.prs],
   )
 
@@ -760,9 +771,9 @@ export function Stats({
             {' '}
             {state.settings.phoneWithinReach
               ? `Timed holds have your ${state.settings.stopLatencySec.toFixed(1)}s calibrated stop delay taken off`
-              : `Main Path holds have ${Math.max(PROGRESSION_STOP_LATENCY_SEC, state.settings.stopLatencySec).toFixed(
+              : `Main Path holds — all but the planche lean — have ${Math.max(PROGRESSION_STOP_LATENCY_SEC, state.settings.stopLatencySec).toFixed(
                   1,
-                )}s taken off for getting back to the phone, and other timed holds your ${state.settings.stopLatencySec.toFixed(
+                )}s taken off for getting back to the phone, and other timed holds, the lean included, your ${state.settings.stopLatencySec.toFixed(
                   1,
                 )}s calibrated delay`}
             {' '}— each set can be corrected on the rest screen, and a hold timed from its video has nothing taken off.

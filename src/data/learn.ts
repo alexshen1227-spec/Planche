@@ -91,7 +91,7 @@ export const GUIDES: Guide[] = [
       },
       {
         heading: 'Why you hold below your maximum',
-        body: 'Working sets sit at roughly 60% of your recent best. That looks too easy, and it is meant to: it lets you collect seconds in a good position and leaves room to recover. The 60% is this app’s design choice, in line with common coaching practice rather than a measured optimum — and an occasional max test is where your ceiling gets re-measured.',
+        body: 'Working sets sit at roughly 60% of your recent best. That looks too easy, and it is meant to: it lets you collect seconds in a good position and leaves room to recover. The 60% is this app’s design choice, in line with common coaching practice rather than a measured optimum — and your ceiling is re-measured about every three weeks: a session that is due opens with one max clean hold, or you can run a full max test yourself.',
       },
       {
         heading: 'When to move up a step',
@@ -405,6 +405,6 @@ export const GLOSSARY: GlossaryTerm[] = [
     term: 'Progressive overload',
     short: 'Gradually asking for slightly more',
     detail:
-      'Adding a little time, a little lean, or a longer lever over weeks. The app handles this for you: working targets follow your recent bests, and an occasional max test re-measures the ceiling.',
+      'Adding a little time, a little lean, or a longer lever over weeks. The app handles this for you: working targets follow your recent bests, and a max clean hold about every three weeks — inside a session — re-measures the ceiling.',
   },
 ]

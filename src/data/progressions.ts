@@ -59,7 +59,7 @@ export const STEPS: StepDef[] = [
     id: 'frog',
     order: 2,
     name: 'Frog Stand',
-    tagline: 'Balance on straight(ish) arms',
+    tagline: 'Hand balance, knees on the elbows',
     keyExerciseId: 'frog-stand',
     unlockSec: 30,
     startSec: 10,

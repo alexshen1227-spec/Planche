@@ -505,7 +505,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             ))}
           </select>
         </Row>
-        <Row label="Weekly session goal" hint="Drives the streak. 3–4 is the sweet spot for planche work.">
+        <Row label="Weekly session goal" hint="Drives the streak. Coaching sources mostly land on three a week for straight-arm work; with total work equal, frequency makes little measured difference — pick what you will keep.">
           <Stepper
             label="weekly session goal"
             value={s.weeklyGoal}
@@ -777,7 +777,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             Delete all
           </button>
         </Row>
-        <Row label="Rest after main work" hint="Hard isometrics want 2–3 minutes.">
+        <Row label="Rest after main work" hint="Two to three minutes is common coaching practice for hard holds.">
           <Stepper
             label="rest after main work"
             value={s.restMainSec}
@@ -1061,9 +1061,9 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           for learning the planche. All data lives in your browser — nothing leaves your machine.
         </p>
         <p className="mt-2">
-          Progressions follow standard gymnastics-strength practice (leans → frog → tuck → advanced tuck → straddle →
-          full). Expect the road to take 1–3+ years depending on starting point, bodyweight and consistency — that's
-          normal, not failure.
+          Progressions follow common gymnastics-strength practice (leans → frog → tuck → advanced tuck → one-leg →
+          straddle → full). Coaches commonly report the road taking 1–3+ years depending on starting point, bodyweight
+          and consistency — estimates, not measurements, and a long road is normal, not failure.
         </p>
         <p className="mt-2 text-ink3">
           Not medical advice. Straight-arm work is demanding on wrists, elbows and shoulders — train smart, rest hard,

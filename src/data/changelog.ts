@@ -19,6 +19,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'Progress says what you actually do',
+    area: 'app',
+    notes: [
+      'The pressing ladder now marks the press your sessions actually give you. Swapped to push-ups at setup, it marked pseudo planche push-ups as “now” and said you pressed in your step’s own shape; it now marks push-ups and says what brings the step’s press back.',
+      'Personal records show your training movements, planche line first. Warm-up drills, wrist prep and stretches are logged at the counts they ask for, so the board was filling up with “records” of ten arm circles.',
+      'Learn and the Path describe the re-measure that now happens inside a session, and a few lines that stated coaching convention as fact now say it is convention — weekly frequency, rest between holds, how long the road takes.',
+      'The Frog Stand step is summed up as what you do in it — hand balance with your knees on your elbows — not “straight(ish) arms”.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'Your targets now grow when you do',
     area: 'coach',
     notes: [

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, Block, Session, SetLog } from '../types'
 import { initialState } from './store'
-import { capacityAdjustBlocks } from '../data/workouts'
+import { capacityAdjustBlocks, programmedPress } from '../data/workouts'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
 
 /**
@@ -95,5 +95,17 @@ describe('a swap made from the setup answers can end', () => {
     expect(adjust(athlete({ hollow: 8 }), hollow).blocks[0].exerciseId).toBe('tuck-hollow-hold')
     expect(adjust(athlete({ hollow: 8 }, { 'tuck-hollow-hold': 14 }), hollow).blocks[0].exerciseId).toBe('tuck-hollow-hold')
     expect(adjust(athlete({ hollow: 8 }, { 'tuck-hollow-hold': 20 }), hollow).blocks[0].exerciseId).toBe('hollow-hold')
+  })
+})
+
+describe('the pressing ladder marks the press a day actually programs', () => {
+  it('marks push-ups while the setup swap holds, and says what moves it', () => {
+    const swapped = programmedPress(athlete({ pushups: 12 }), NOW)
+    expect(swapped).toMatchObject({ exerciseId: 'pushup', swapped: true })
+    expect(swapped.note).toMatch(/about 15 reps/)
+  })
+
+  it('marks the step’s own press once the swap has ended', () => {
+    expect(programmedPress(athlete({ pushups: 12 }, { pushup: 15 }), NOW)).toMatchObject({ exerciseId: 'pppu', swapped: false })
   })
 })
