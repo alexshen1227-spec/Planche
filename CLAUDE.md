@@ -349,7 +349,14 @@ them. Real-hardware behaviour is still unproven.
   target → +1 rep / +10%; at least half → repeat; most short → what was
   achieved. It replaced "60% of recent bests", which ratcheted a completed
   dose downward each session. Placement answers may still only *lower* a
-  default when nothing is logged.
+  default when nothing is logged. A swap to an easier version
+  (`capacityAdjustBlocks`) must be able to end: the swap is why the harder
+  movement is never logged, so it once re-read the setup answer forever —
+  every push-up answer under "20 or more" kept a lean-step athlete off PPPUs
+  for good. `READ_FROM_EASIER` reads the harder movement from the easier one's
+  log (push-ups ÷3 for a PPPU, knee push-ups ÷2, tuck hollow ÷2 — cautious
+  conventions) once that says more than the answer did, and the swap note
+  names the number that moves it back up.
 - **Short holds get more sets** (`mainHoldSets`) and slightly shorter rest
   (`restAfterHold`, floor 90s). Per-side key holds start a set lighter.
 - **Easy days keep the session's shape.** Why the day is easy decides what

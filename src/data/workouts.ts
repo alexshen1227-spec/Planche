@@ -203,15 +203,17 @@ export function observedCapacity(state: AppState, stepId: StepId): number | unde
  * different exercise with its own records, never the same one at a lower
  * number dressed up as progress.
  */
-function regressionFor(exerciseId: string, state: AppState): string | undefined {
-  const pushups = state.assessment?.answers.pushups
+function regressionFor(exerciseId: string, state: AppState, now: number): string | undefined {
   switch (exerciseId) {
     case 'pushup':
       return 'knee-pushup'
-    case 'pppu':
+    case 'pppu': {
       // Someone with a solid set of push-ups regresses to push-ups; someone
-      // without one regresses further.
-      return pushups !== undefined && pushups >= 5 ? 'pushup' : 'knee-pushup'
+      // without one regresses further — read from what they log, once they
+      // do, so knee push-ups lead on to push-ups.
+      const pushups = accessoryCapacity(state, 'pushup', now)
+      return pushups !== undefined && pushups.value >= 5 ? 'pushup' : 'knee-pushup'
+    }
     case 'hollow-hold':
       return 'tuck-hollow-hold'
     default:
@@ -348,17 +350,48 @@ function recentBest(state: AppState, exerciseId: string, now: number): number | 
 }
 
 /**
- * What the athlete can currently do on an accessory, from their own log first
- * and their placement answers second. Undefined means unknown — and unknown
- * leaves the default dose alone rather than guessing either way.
+ * Where a harder movement's capacity can be read from the easier one an
+ * athlete logs instead, and the divisor that reads it. Without this a swap
+ * made at setup never ended: an athlete moved from pseudo planche push-ups to
+ * push-ups never logged a pseudo planche push-up, so every plan re-read the
+ * same setup answer and swapped again — push-ups for good, however many. The
+ * divisors are cautious conventions like the third of a push-up count below;
+ * no study converts one movement into another.
  */
-function accessoryCapacity(
-  state: AppState,
-  exerciseId: string,
-  now: number,
-): { value: number; source: 'log' | 'placement' } | undefined {
+const READ_FROM_EASIER: Record<string, { from: string; divisor: number }> = {
+  pushup: { from: 'knee-pushup', divisor: 2 },
+  pppu: { from: 'pushup', divisor: 3 },
+  'pike-pushup': { from: 'pushup', divisor: 2 },
+  'hollow-hold': { from: 'tuck-hollow-hold', divisor: 2 },
+}
+
+interface AccessoryCapacity {
+  value: number
+  /** Its own log, the setup answers, or the easier version's log (`from`). */
+  source: 'log' | 'placement' | 'easier'
+  from?: string
+}
+
+/**
+ * What the athlete can currently do on an accessory, from their own log first,
+ * then the easier version they log instead once it says more than their
+ * placement answers did, then those answers. Undefined means unknown — and
+ * unknown leaves the default dose alone rather than guessing either way.
+ */
+function accessoryCapacity(state: AppState, exerciseId: string, now: number): AccessoryCapacity | undefined {
   const logged = recentBest(state, exerciseId, now)
   if (logged !== undefined) return { value: logged, source: 'log' }
+  const placement = placementCapacity(state, exerciseId)
+  const easier = READ_FROM_EASIER[exerciseId]
+  const easierBest = easier ? recentBest(state, easier.from, now) : undefined
+  if (easier && easierBest !== undefined) {
+    const value = Math.floor(easierBest / easier.divisor)
+    if (placement === undefined || value > placement.value) return { value, source: 'easier', from: easier.from }
+  }
+  return placement
+}
+
+function placementCapacity(state: AppState, exerciseId: string): AccessoryCapacity | undefined {
   const a = state.assessment?.answers
   if (!a) return undefined
   const pushups = a.pushups
@@ -403,31 +436,43 @@ export function capacityAdjustBlocks(
   /** The exercise each note describes, so a note can leave with its block. */
   const about: string[] = []
   const adjustable = (b: Block) => b.section === 'strength' || b.section === 'core'
-  const basisFor = (exerciseId: string, capacity: { value: number; source: 'log' | 'placement' }) =>
+  const basisFor = (exerciseId: string, capacity: AccessoryCapacity) =>
     capacity.source === 'log'
       ? 'your recent sessions'
-      : `your setup answer (${PLACEMENT_BAND[exerciseId]?.(capacity.value) ?? 'what you reported'})`
+      : capacity.source === 'easier'
+        ? `your recent ${EXERCISE_BY_ID[capacity.from!]?.name.toLowerCase() ?? 'easier'} sets`
+        : `your setup answer (${PLACEMENT_BAND[exerciseId]?.(capacity.value) ?? 'what you reported'})`
 
   // 1. Swap in an easier version where the placement says the default is out
-  //    of reach. Only placement answers do this: logged history is real
-  //    performance, and sizing the dose (step 3) is the right response to it.
+  //    of reach. Only an estimate does this — the setup answers, or the easier
+  //    version's log read upward. The movement's own log is real performance,
+  //    and sizing the dose (step 3) is the right response to it.
   const swapped: Block[] = blocks.map((block) => {
     if (!adjustable(block)) return block
     const capacity = accessoryCapacity(state, block.exerciseId, now)
-    if (!capacity || capacity.source !== 'placement') return block
-    const regression = regressionFor(block.exerciseId, state)
-    const tooHard =
-      block.target.kind === 'reps' ? capacity.value < Math.min(5, block.target.reps) : capacity.value < Math.min(10, block.target.sec / 2)
+    if (!capacity || capacity.source === 'log') return block
+    const regression = regressionFor(block.exerciseId, state, now)
+    const bar = block.target.kind === 'reps' ? Math.min(5, block.target.reps) : Math.min(10, block.target.sec / 2)
+    const tooHard = capacity.value < bar
     if (!tooHard || !regression || !EXERCISE_BY_ID[regression]) return block
     const reg = EXERCISE_BY_ID[regression]
     const basis = basisFor(block.exerciseId, capacity)
     notes.push(`${EXERCISE_BY_ID[block.exerciseId].name} swapped for ${reg.name.toLowerCase()}, from ${basis}.`)
     about.push(regression)
+    // Say where the way back up is: the swap ends by itself once the easier
+    // version's log reads past the bar.
+    const read = READ_FROM_EASIER[block.exerciseId]
+    const moveUp =
+      read?.from === regression
+        ? ` It moves back up on its own once your ${reg.name.toLowerCase()} sets reach about ${Math.ceil(bar * read.divisor)}${
+            reg.type === 'hold' ? 's' : ' reps'
+          }.`
+        : ' It moves up a step on its own as these sets grow.'
     return {
       ...block,
       exerciseId: regression,
       target: reg.type === 'hold' ? hold(Math.min(10, block.target.kind === 'hold' ? block.target.sec : 10)) : reps(5),
-      note: `${reg.name} instead of ${EXERCISE_BY_ID[block.exerciseId].name.toLowerCase()}, from ${basis}. Move up when these feel controlled.`,
+      note: `${reg.name} instead of ${EXERCISE_BY_ID[block.exerciseId].name.toLowerCase()}, from ${basis}.${moveUp}`,
     }
   })
 
