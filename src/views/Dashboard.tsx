@@ -478,9 +478,17 @@ export function Dashboard({
         <div className="animate-rise mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ok/25 bg-ok-soft px-5 py-3.5" style={{ animationDelay: '40ms' }}>
           <div className="flex items-center gap-2.5 text-[14px] text-ink">
             <Icon name="check" size={16} className="text-ok-text" />
-            <span>
-              <span className="font-semibold">Today is banked.</span> The next plan builds on what you logged.
-            </span>
+            {todaysLatest.workoutKind === 'micro' ? (
+              // A minimum dose feeds nothing the coach plans from, so it must
+              // not claim the next plan builds on it.
+              <span>
+                <span className="font-semibold">Minimum dose done.</span> Your next session is planned as usual.
+              </span>
+            ) : (
+              <span>
+                <span className="font-semibold">Today is banked.</span> The next plan builds on what you logged.
+              </span>
+            )}
           </div>
           <button
             onClick={() => viewSession(todaysLatest.id)}

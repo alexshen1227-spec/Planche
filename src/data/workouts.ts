@@ -18,6 +18,7 @@ import { bridgeStatus, capacityOn } from '../lib/bridge'
 import { buildPlan, STRATEGY_BY_ID, type CoachPlan, type WarmupLevel } from '../lib/coach'
 import { median } from '../lib/signals'
 import {
+  capacityReading,
   completedBaseTarget,
   endedForNonCapacityReason,
   isAssisted,
@@ -317,7 +318,7 @@ export function accessoryProgression(
     const tolerance = kind === 'reps' ? 0 : Math.max(0.5, lastTarget * 0.05)
     // A hold stopped at its target call reached it, even when the stop
     // allowance logs it a little under.
-    const hits = sets.filter((x) => x.value >= x.target - tolerance || x.calledAtTarget === true).length
+    const hits = sets.filter((x) => capacityReading(x) >= x.target - tolerance).length
     if (hits === sets.length) {
       const next = lastTarget + (kind === 'reps' ? 1 : Math.max(1, Math.round(lastTarget * 0.1)))
       return next <= ceiling
@@ -1516,11 +1517,13 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     blocks: fitted,
     strategy: plan.strategy,
     baseTargetSec: baseTarget,
-    purpose: light
-      ? `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at an easy dose, with the pressing and lean work kept light.`
-      : easy
-        ? `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at easier targets so the position stays clean, then build the strength behind it as usual.`
-        : `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at a working dose, then build the pressing and straight-arm strength behind it.`,
+    purpose: skillOnly
+      ? `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at an easy dose, with balance and protraction work only — no pressing or leans in a second session today.`
+      : light
+        ? `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at an easy dose, with the pressing and lean work kept light.`
+        : easy
+          ? `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at easier targets so the position stays clean, then build the strength behind it as usual.`
+          : `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at a working dose, then build the pressing and straight-arm strength behind it.`,
     ...(adjustments.length ? { adjustments } : {}),
   }
 }

@@ -17,8 +17,13 @@ export function applySession(state: AppState, session: Session): { next: AppStat
     string,
     { overall: number; bySurface: Partial<Record<TrainingSurface, number>> }
   > = {}
+  // A minimum dose stops its holds at about three seconds on purpose, so none
+  // of them is a best — and a record is also the capacity fallback for an
+  // athlete with no other history: its first one, a 1.1s stopwatch log of a
+  // three-second hold, set the next real session's target to one second.
+  const recordable = session.workoutKind !== 'micro'
   for (const set of session.sets) {
-    if (set.value <= 0) continue
+    if (set.value <= 0 || !recordable) continue
     const best = (bestInSession[set.exerciseId] ??= { overall: 0, bySurface: {} })
     if (set.value > best.overall) best.overall = set.value
     if (set.surface && set.value > (best.bySurface[set.surface] ?? 0)) {

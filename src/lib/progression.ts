@@ -435,9 +435,15 @@ function inScope(set: SetLog, scope: LearningScope | undefined): boolean {
  * shaved each session. Trusted camera evidence of an earlier breakdown still
  * wins: a cap below the logged value is a seen breakdown, not an artifact.
  */
-function capacityReading(set: SetLog): number {
+export function capacityReading(set: SetLog): number {
   const value = trainingSetValue(set)
-  return set.calledAtTarget === true && value >= set.value ? Math.max(value, set.target) : value
+  if (set.calledAtTarget !== true) return value
+  // Filmed, confirmed and agreed: the check runs up to the target, so the
+  // camera saw how long the position actually lasted — believe it over the
+  // assumption, either way.
+  const auto = trustedCameraEvidence(set) ? set.form?.auto : undefined
+  if (auto?.cleanSeconds !== undefined) return Math.max(value, Math.min(set.target, auto.cleanSeconds))
+  return Math.max(value, set.target)
 }
 
 export function sessionLearningValue(session: Session, stepId: StepId, scope?: LearningScope): number {
@@ -452,7 +458,9 @@ export function sessionLearningValue(session: Session, stepId: StepId, scope?: L
         set.exerciseId !== step.keyExerciseId ||
         set.kind !== 'hold' ||
         set.section !== 'main' ||
-        set.value <= 0 ||
+        // A hold stopped at its call can log zero when the walk back is quicker
+        // than the allowance; it still happened.
+        (set.value <= 0 && set.calledAtTarget !== true) ||
         humanRating(set.form) === 'broke' ||
         endedForNonCapacityReason(set) ||
         !inScope(set, sideScope)
@@ -495,7 +503,7 @@ export function sessionTargetCap(session: Session, stepId: StepId, surface: Trai
       set.exerciseId === step.keyExerciseId &&
       set.kind === 'hold' &&
       set.section === 'main' &&
-      set.value > 0 &&
+      (set.value > 0 || set.calledAtTarget === true) &&
       !endedForNonCapacityReason(set) &&
       humanRating(set.form) !== 'broke' &&
       inScope(set, { surface }),
@@ -508,8 +516,8 @@ export function sessionTargetCap(session: Session, stepId: StepId, surface: Trai
     (set) =>
       set.endReason === 'target' ||
       // Came down at the target call: reached it, whatever the fixed walk-back
-      // allowance made of the logged value.
-      set.calledAtTarget === true ||
+      // allowance made of the logged value — unless the camera saw otherwise.
+      (set.calledAtTarget === true && capacityReading(set) >= set.target - 0.05) ||
       (set.value >= set.target - 0.05 && set.value <= set.target + Math.max(1, set.target * 0.1)),
   )
   return capped ? Math.max(...key.map((set) => set.target)) : null

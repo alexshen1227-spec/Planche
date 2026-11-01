@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AppState, CheckIn, Session, SetLog, StepId } from '../types'
 import { initialState } from './store'
 import { buildPlan } from './coach'
+import { applySession } from './engine'
 import { readSignals } from './signals'
 import { learningSeries } from './progression'
 import { adjustsSetToSet } from './autoregulate'
@@ -185,6 +186,17 @@ describe('the minimum dose is extra, not a session', () => {
     const withMicro = athlete('tuck', [...short, micro])
     expect(readSignals(without, NOW).mainHitRate).toBeLessThan(0.5)
     expect(readSignals(withMicro, NOW).mainHitRate).toBe(readSignals(without, NOW).mainHitRate)
+  })
+
+  it('sets no records, so a new athlete’s next target never falls back on one', () => {
+    // Found by running a fresh athlete through the app: the first minimum dose
+    // set a 1.1s "record" (a three-second hold less the walk-back allowance),
+    // and with no other history the next real session's target became 1s.
+    const fresh = athlete('tuck')
+    const { next, events } = applySession(fresh, micro)
+    expect(events.prs).toEqual([])
+    expect(next.prs['tuck-planche']).toBeUndefined()
+    expect(adaptiveTarget(next, 'tuck', NOW)).toBe(adaptiveTarget(fresh, 'tuck', NOW))
   })
 
   it('does not count toward the weekly goal or the training-frequency signal', () => {

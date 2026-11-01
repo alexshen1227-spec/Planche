@@ -1,3 +1,4 @@
+import type { Block, Workout } from '../types'
 import { STEPS } from '../data/progressions'
 
 export const STANDARD_LEAD_IN_SEC = 5
@@ -106,6 +107,19 @@ export const TARGET_CALL_GRACE_SEC = 1
  */
 export function stoppedAtTargetCall(rawStopSec: number, targetSec: number, allowanceSec: number): boolean {
   return targetSec > 0 && rawStopSec >= targetSec && rawStopSec - targetSec <= Math.max(0, allowanceSec) + TARGET_CALL_GRACE_SEC
+}
+
+/**
+ * Whether stopping near the call says the athlete came down at it.
+ *
+ * Working sets and accessories sit well inside capacity, so coming down at the
+ * call is what happens. Maximal efforts — unlock and next-shape attempts, max
+ * tests, the minimum dose — fail before the target as a matter of course, and
+ * the timer runs on through the walk back, so the call can sound after the
+ * athlete is already down: a stop near it proves nothing there.
+ */
+export function callMarksCompliance(block: Pick<Block, 'role'>, workoutKind: Workout['kind']): boolean {
+  return block.role !== 'attempt' && block.role !== 'bridge' && workoutKind !== 'test' && workoutKind !== 'micro'
 }
 
 /** What the hold screen says while the athlete is still in position. */

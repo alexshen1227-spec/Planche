@@ -371,14 +371,23 @@ them. Real-hardware behaviour is still unproven.
   `sessionLearningValue` (so `capacityOn`'s target cap sees it too), unless
   trusted camera evidence saw an earlier breakdown. Without it a compliant
   athlete who walks back faster than the allowance ratchets down session after
-  session (pinned in holdCues.test, with the capacity cap modelled).
+  session (pinned in holdCues.test, with the capacity cap modelled). The
+  timer runs on through the walk, so the call can sound after an athlete who
+  failed is already down: flagging is limited to working sets and accessories
+  (`callMarksCompliance` — never attempts, bridge, tests or the minimum dose),
+  a call-stopped hold that logged 0 still counts, and a filmed one is checked
+  up to its target so a confirmed camera reading decides (`capacityReading`).
+  A warm-up primer is never the in-session best, and "PR secured — exit under
+  control" (and its buzz) waits for the target — it once preempted it.
 - **The minimum dose** (request source / workout kind `micro`,
   `microDoseWorkout`): a short warm-up and five ~3s maximal holds at the
   hardest clean shape (the next shape when the bridge is open). Gated by
   `microBlockedReason` — the max-test gate plus no lighter day, no form repair,
   nothing loaded today, once a day. It is extra: `sessionLearningValue`, the
   hit-rate and frequency signals and the weekly goal all skip `micro` sessions,
-  and its targets never move set to set.
+  its targets never move set to set, and it sets no records (a record is the
+  capacity fallback for an athlete with no history — found by running a fresh
+  athlete through the app).
 - **Set-to-set targets** (`lib/autoregulate.ts`) are *derived*, not stored:
   the player keeps which logs belong to which block (`blockLogAts`, persisted
   in the draft) and recomputes the next target from them, so edits, ratings

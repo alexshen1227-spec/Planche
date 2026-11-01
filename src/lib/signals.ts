@@ -3,7 +3,7 @@ import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { defaultSurface } from '../data/equipment'
 import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
-import { learningSeries, testWasAttempted, trainingSetValue, verifiedCleanRatio } from './progression'
+import { capacityReading, learningSeries, testWasAttempted, verifiedCleanRatio } from './progression'
 import { trustedCameraEvidence } from './formEvidence'
 import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
 
@@ -494,7 +494,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     mainSetCount = mains.length
     // A hold stopped at its target call reached the target, even when the fixed
     // walk-back allowance logs it a little under.
-    mainHitRate = mains.filter((s) => trainingSetValue(s) >= s.target || s.calledAtTarget === true).length / mains.length
+    mainHitRate = mains.filter((s) => capacityReading(s) >= s.target).length / mains.length
   }
 
   // An outlier is a value far outside the robust range of the ones before it.

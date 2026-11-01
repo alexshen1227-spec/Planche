@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, Session, SetLog } from '../types'
-import { holdCues, PROGRESSION_STOP_LATENCY_SEC, stoppedAtTargetCall } from './sessionTiming'
+import { callMarksCompliance, holdCues, PROGRESSION_STOP_LATENCY_SEC, stoppedAtTargetCall } from './sessionTiming'
 import { adviseNextHold } from './autoregulate'
 import { initialState } from './store'
 import { accessoryProgression, adaptiveTarget } from '../data/workouts'
-import { sessionLearningValue } from './progression'
+import { capacityReading, sessionLearningValue, sessionTargetCap } from './progression'
 import { capacityOn } from './bridge'
 import { readSignals } from './signals'
 
@@ -158,6 +158,44 @@ describe('reading a hold stopped at its call', () => {
     expect(accessoryProgression({ sessions: [leans] }, 'planche-lean', 'hold', NOW)?.change).not.toBe('down')
     const unflagged = sessionOf([0, 1, 2].map(() => ({ exerciseId: 'planche-lean', section: 'strength' as const, value: 10, target: 12 })))
     expect(accessoryProgression({ sessions: [unflagged] }, 'planche-lean', 'hold', NOW)?.change).toBe('down')
+  })
+
+  it('only treats a stop near the call as coming down at it for working sets', () => {
+    // Maximal efforts fail before the target as a matter of course, and the
+    // call can sound during the walk back after the athlete is already down.
+    expect(callMarksCompliance({ role: 'skill' }, 'auto')).toBe(true)
+    expect(callMarksCompliance({ role: 'straight-arm' }, 'auto')).toBe(true)
+    expect(callMarksCompliance({ role: 'attempt' }, 'auto')).toBe(false)
+    expect(callMarksCompliance({ role: 'bridge' }, 'auto')).toBe(false)
+    expect(callMarksCompliance({ role: 'skill' }, 'test')).toBe(false)
+    expect(callMarksCompliance({ role: 'skill' }, 'micro')).toBe(false)
+  })
+
+  it('keeps a call-stopped hold that logged zero in view', () => {
+    // A 1s target with a 3s walk back: 4s on the stopwatch, less 5s, logs 0.
+    const zero = sessionOf([{ exerciseId: 'tuck-planche', value: 0, target: 1, raw: 4, calledAtTarget: true }])
+    expect(sessionLearningValue(zero, 'tuck')).toBe(1)
+  })
+
+  it('believes a confirmed camera over the assumption, either way', () => {
+    const filmed = (clean: number): Partial<SetLog> => ({
+      exerciseId: 'tuck-planche',
+      value: 0,
+      target: 2,
+      raw: 4.5,
+      calledAtTarget: true,
+      form: {
+        rating: clean >= 2 ? 'clean' : 'slipped',
+        confirmed: true,
+        issues: clean >= 2 ? [] : ['lean'],
+        auto: { issues: clean >= 2 ? [] : ['lean'], confidence: 0.9, cleanSeconds: clean, cleanRatio: clean / 2 },
+      },
+    })
+    // The camera saw the position end at 1.5s: down before the call.
+    expect(capacityReading(filmed(1.5) as SetLog)).toBe(1.5)
+    expect(sessionTargetCap(sessionOf([filmed(1.5)]), 'tuck', 'parallettes')).toBeNull()
+    // The camera saw it last to the call.
+    expect(capacityReading(filmed(2) as SetLog)).toBe(2)
   })
 
   it('reads the target as reached, unless the camera saw it break down earlier', () => {

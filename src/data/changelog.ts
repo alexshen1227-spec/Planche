@@ -23,7 +23,9 @@ export const CHANGELOG: ChangeEntry[] = [
     area: 'training',
     notes: [
       'The “Target” call and the spoken counts now come when you have actually held that long. With your phone across the room they used to arrive five seconds late — the time allowed for walking back to the phone was taken off while you were still holding — so a working set meant to stop well short of your max could run all the way to it. Your logged times are worked out exactly as before.',
-      'A hold you stop at the target call now counts as reaching its target, even when the fixed walk-back allowance logs it a little under. Otherwise a quick walk back to the phone would read as a missed set every time and slowly drag your targets down.',
+      'A hold you stop at the target call now counts as reaching its target, even when the fixed walk-back allowance logs it a little under — or at zero, for a short target and a quick walk back. Otherwise those sets read as misses, or vanished from what the coach learns from, and slowly dragged your targets down. On a filmed set the camera checks up to the target to confirm it; unlock attempts, next-shape attempts and max tests never assume it.',
+      'A warm-up lean no longer counts as a best to beat, and “PR secured — exit under control” now waits until your target is held. On a new athlete’s first working leans it used to appear seconds before the target, and coming down at it cut the next set’s target.',
+      'A minimum dose sets no records — its holds stop at three seconds on purpose — and Home now says “Minimum dose done” instead of claiming your next plan builds on it.',
       'New on Home, for a day a full session will not happen: a minimum dose. A short wrist warm-up, then five short, maximal holds at the hardest shape you can keep clean — the next shape once your bridge is open. Brief maximal holds raised strength in small trials on simpler movements; none tested the planche. It is offered only on days a max effort would be, does not count as one of your weekly sessions, and never changes your targets.',
     ],
   },

@@ -31,6 +31,7 @@ import { fmtClock, fmtHold } from '../lib/time'
 import { readSignals } from '../lib/signals'
 import {
   creditedHoldSeconds,
+  callMarksCompliance,
   holdCues,
   isMainProgressionHold,
   stoppedAtTargetCall,
@@ -453,9 +454,15 @@ export function SessionPlayer({
     const stored = surfaceAware
       ? recordForSurface(state.prs[exercise.id], surface)?.value
       : state.prs[exercise.id]?.value
+    // A warm-up primer is a deliberately easy hold, not a best to beat: as one
+    // it turned the first working set of a new athlete's leans into "PR
+    // secured — exit under control" seconds before the target.
     const thisSession = logs.reduce(
       (best, log) =>
-        log.exerciseId === exercise.id && (!surfaceAware || log.surface === surface) && log.value > best
+        log.exerciseId === exercise.id &&
+        log.section !== 'warmup' &&
+        (!surfaceAware || log.surface === surface) &&
+        log.value > best
           ? log.value
           : best,
       0,
@@ -777,14 +784,16 @@ export function SessionPlayer({
   }, [phase, cues.heldSec, block, state.settings.voice])
 
   // Haptic pulse the moment a live hold becomes a PR — on the logged value, so
-  // walking time is never celebrated.
+  // walking time is never celebrated — and never before the target: a buzz
+  // mid-set reads as the call to stop.
+  const hasHoldTarget = block?.target.kind === 'hold' && block.target.sec > 0
   useEffect(() => {
     if (phase !== 'hold' || prBuzzedRef.current) return
-    if (cues.pr) {
+    if (cues.pr && (cues.targetReached || !hasHoldTarget)) {
       prBuzzedRef.current = true
       buzz([30, 40, 30])
     }
-  }, [phase, cues.pr])
+  }, [phase, cues.pr, cues.targetReached, hasHoldTarget])
 
   /**
    * Leave the intro and start the clock. Both the button and the Space key
@@ -957,7 +966,9 @@ export function SessionPlayer({
           : {}),
       }
       const calledAtTarget =
-        block?.target.kind === 'hold' && stoppedAtTargetCall(raw, block.target.sec, latency)
+        block?.target.kind === 'hold' &&
+        callMarksCompliance(block, workout.kind) &&
+        stoppedAtTargetCall(raw, block.target.sec, latency)
       logSet(
         v,
         {
@@ -1456,6 +1467,14 @@ export function SessionPlayer({
 
   const formRowFor = (log: SetLog, rest: boolean) => {
     const video = videoIntervalOf(log)
+    const counted = countedClipWindow(log)
+    // A hold stopped at its call is checked up to its target, so the camera can
+    // confirm the position lasted to the call — or see that it did not. Credit
+    // still never exceeds the logged value.
+    const analysedSec =
+      log.calledAtTarget && log.timing?.method !== 'video'
+        ? Math.max(counted.lengthSec, log.target - (log.recordingOffsetSec ?? 0))
+        : counted.lengthSec
     return (
       <FormCheckRow
         key={`form-${log.at}`}
@@ -1464,8 +1483,8 @@ export function SessionPlayer({
         creditedHoldSec={log.value}
         // A video-timed hold is analysed over exactly its marked stretch; a
         // stopwatch hold from the clip's start, less any late recording start.
-        analysisWindowSec={countedClipWindow(log).lengthSec}
-        analysisWindowStartSec={countedClipWindow(log).startSec}
+        analysisWindowSec={analysedSec}
+        analysisWindowStartSec={counted.startSec}
         videoInterval={video}
         onVideoInterval={(interval) => applyVideoInterval(log.at, interval)}
         value={log.form}
@@ -1913,10 +1932,14 @@ export function SessionPlayer({
                   {holdElapsed.toFixed(1)}
                 </div>
                 <div className="mt-1.5 text-[14px] font-semibold">
-                  {isPr ? (
+                  {/* "Exit" only once the target is held: before it, a new best
+                      is news, not an instruction to come down. */}
+                  {isPr && (overTarget || target === 0) ? (
                     <span className="text-ok-text">PR secured — exit under control</span>
                   ) : overTarget ? (
                     <span className="text-ok-text">target reached — stop while clean</span>
+                  ) : isPr ? (
+                    <span className="text-ok-text tnum">new best — target {target}s</span>
                   ) : (
                     <span className="text-ink3 tnum">target {target}s</span>
                   )}
@@ -2019,6 +2042,16 @@ export function SessionPlayer({
                 </button>
               </span>
             </div>
+          ) : null}
+          {/* A hold stopped at its call can log under its target when the walk
+              back is quicker than the allowance. The number stays honest; the
+              athlete is told what the coach takes from it. */}
+          {lastLog?.kind === 'hold' && lastLog.calledAtTarget && lastLog.value < lastLog.target ? (
+            <p className="mt-2 max-w-sm text-[12.5px] leading-relaxed text-ok-text">
+              You came down at the target call, so this counts as reaching your {fmtHold(lastLog.target)} target. The
+              logged number is the stopwatch less the time allowed for getting back to the phone — use + if you were
+              quicker.
+            </p>
           ) : null}
           {/* The one question the stopwatch cannot answer for itself. Asked
               where the number it changes is already on screen, phrased as what
