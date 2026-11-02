@@ -11,7 +11,7 @@ import type {
   WorkoutRequest,
 } from '../types'
 import { EXERCISE_BY_ID } from './exercises'
-import { STEP_BY_ID, stepBefore } from './progressions'
+import { STEP_BY_ID, stepAfter, stepBefore } from './progressions'
 import { defaultSurface, equipmentLabel } from './equipment'
 import { PRESS_LADDER, pressingChoiceFor } from './pressing'
 import { bridgeStatus, capacityOn } from '../lib/bridge'
@@ -1073,9 +1073,16 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
       section: 'main',
       role: 'attempt',
       ...(unlockQueued ? {} : { retest: true }),
+      // The summit has no step to open: its bar is the goal itself.
       note: unlockQueued
-        ? `Unlock attempt — you're within reach. Hold ${step.unlockSec}s clean, film it, and pass both form confirmations. Stop the moment the shape goes; a stopped attempt is still useful.`
-        : `Max clean hold — the coach re-measures your hold today. Hold as long as the shape stays clean and stop the moment it starts to go: every working target is set from this number. Filmed and clean at ${step.unlockSec}s, it unlocks the step like any attempt.`,
+        ? stepAfter(stepId)
+          ? `Unlock attempt — you're within reach. Hold ${step.unlockSec}s clean, film it, and pass both form confirmations. Stop the moment the shape goes; a stopped attempt is still useful.`
+          : `Bar attempt — you're within reach of the ${step.unlockSec}s full planche. Hold it clean, film it, and pass both form confirmations. Stop the moment the shape goes; a stopped attempt is still useful.`
+        : `Max clean hold — the coach re-measures your hold today. Hold as long as the shape stays clean and stop the moment it starts to go: every working target is set from this number. ${
+            stepAfter(stepId)
+              ? `Filmed and clean at ${step.unlockSec}s, it unlocks the step like any attempt.`
+              : `Filmed and clean at ${step.unlockSec}s, it meets the full planche's bar.`
+          }`,
     })
   }
 
@@ -1497,13 +1504,17 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   } else if (plan.strategy === 'density') {
     blocks.push({ exerciseId: 'hollow-rocks', sets: 3, target: reps(10), restSec: Math.min(40, rAcc), section: 'core', role: 'core' })
   } else {
+    // On a fatigue day the core takes the light share like the rest: a fixed
+    // 20s was overwritten by the progressed dose (44s on a deload day) and
+    // its sets kept moving the progression.
     blocks.push({
       exerciseId: 'hollow-hold',
       sets: plan.strategy === 'volume' ? scale(3) : scale(2),
-      target: hold(light ? 20 : 30),
+      target: hold(30),
       restSec: 45,
       section: 'core',
       role: 'core',
+      ...(light ? { light: true } : {}),
     })
     if (step.order >= STEP_BY_ID.tuck.order && !easy && plan.strategy === 'balanced') {
       blocks.push({ exerciseId: 'l-sit', sets: 2, target: hold(12), restSec: 60, section: 'core', role: 'core' })
@@ -1646,7 +1657,7 @@ export function maxTestWorkout(stepId: StepId): Workout {
   return {
     id: `test-${stepId}`,
     name: `Max Test · ${step.name}`,
-    focus: `${perSide ? 'Two fresh max attempts per side' : 'Three fresh max attempts'} at the ${EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. Hit ${step.unlockSec}s with athlete + filmed form confirmation to unlock the next step.`,
+    focus: `${perSide ? 'Two fresh max attempts per side' : 'Three fresh max attempts'} at the ${EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. Hit ${step.unlockSec}s with athlete + filmed form confirmation to ${stepAfter(stepId) ? 'unlock the next step' : 'meet the full planche’s bar'}.`,
     minutes: estimateMinutes(blocks),
     kind: 'test',
     blocks,
@@ -1735,9 +1746,10 @@ export function microDoseWorkout(state: AppState, plan: CoachPlan): Workout {
     minutes: estimateMinutes(sided, state.settings.stopLatencySec, state.settings.phoneWithinReach),
     kind: 'micro',
     blocks: sided,
-    purpose: next
-      ? `${MICRO_HOLDS} short, hard holds at the next shape, then done.`
-      : `${MICRO_HOLDS} short, hard holds at the hardest version of your hold you can keep clean, then done.`,
+    // Counted the way the block is: a per-side shape is three a side.
+    purpose: `${exercise.perSide ? '3 short, hard holds each side' : `${MICRO_HOLDS} short, hard holds`} ${
+      next ? 'at the next shape' : 'at the hardest version of your hold you can keep clean'
+    }, then done.`,
     ...(kit.notes.length ? { adjustments: kit.notes } : {}),
   }
 }

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, Session, SetLog } from '../types'
-import { callMarksCompliance, holdCues, PROGRESSION_STOP_LATENCY_SEC, stoppedAtTargetCall } from './sessionTiming'
+import {
+  calledAtTargetAfterCorrection,
+  callMarksCompliance,
+  holdCues,
+  PROGRESSION_STOP_LATENCY_SEC,
+  stoppedAtTargetCall,
+} from './sessionTiming'
 import { adviseNextHold } from './autoregulate'
 import { initialState } from './store'
 import { accessoryProgression, adaptiveTarget } from '../data/workouts'
@@ -236,5 +242,21 @@ describe('a bar the logged value must clear', () => {
   it('fills the ring on the same clock as the call', () => {
     expect(holdCues(20, walk, 20, 12, true).towardSec).toBe(15)
     expect(holdCues(20, walk, 20, 12, false).towardSec).toBe(20)
+  })
+})
+
+describe('correcting how a hold was stopped', () => {
+  // Found by an independent review: "Had to walk back to the phone" re-credited
+  // an 8.5s stopwatch reading to 3.5s but kept it marked as reaching its 8s
+  // target, so the coach read it as 8s.
+  it('withdraws the at-target reading when the stop came too soon after the call for a walk', () => {
+    const log = { calledAtTarget: true, raw: 8.5, target: 8 }
+    expect(calledAtTargetAfterCorrection(log, false, 2.3)).toBe(true)
+    expect(calledAtTargetAfterCorrection(log, true, PROGRESSION_STOP_LATENCY_SEC)).toBe(false)
+  })
+
+  it('keeps it when the stop fits a walk after the call, and never adds it', () => {
+    expect(calledAtTargetAfterCorrection({ calledAtTarget: true, raw: 11, target: 8 }, true, PROGRESSION_STOP_LATENCY_SEC)).toBe(true)
+    expect(calledAtTargetAfterCorrection({ raw: 8.5, target: 8 }, false, 2.3)).toBe(false)
   })
 })

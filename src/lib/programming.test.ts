@@ -239,6 +239,30 @@ describe('a fatigue day keeps the session’s shape at a light dose', () => {
     expect(pppuBlock.target).toEqual({ kind: 'reps', reps: Math.round(9 * 0.7) })
   })
 
+  it('lightens the core too: its share of the progressed dose, and no progression from it', () => {
+    // Found by an independent review: a fixed 20s on fatigue days was
+    // overwritten by the progressed dose — 44s on a deload day — and those
+    // sets kept moving the progression.
+    const yesterday = {
+      ...session(
+        [
+          ...[0, 1, 2, 3].map(() => ({ exerciseId: 'tuck-planche', kind: 'hold' as const, value: 8, target: 8, section: 'main' as const, surface: 'parallettes' as const })),
+          { exerciseId: 'hollow-hold', kind: 'hold' as const, value: 40, target: 40, section: 'core' as const },
+          { exerciseId: 'hollow-hold', kind: 'hold' as const, value: 40, target: 40, section: 'core' as const },
+        ],
+        1,
+      ),
+      rpe: 9,
+    }
+    const state = athlete('tuck', { settings: { sessionMinutes: 90 } as AppState['settings'], sessions: [yesterday] })
+    const plan = buildPlan(state, NOW)
+    expect(plan.dayType).toBe('technique')
+    const core = todaysSession(state, plan).blocks.find((b) => b.exerciseId === 'hollow-hold')!
+    expect(core.light).toBe(true)
+    // 40s hit on every set → progression's 44s, of which the light share.
+    expect(core.target).toEqual({ kind: 'hold', sec: Math.round(44 * 0.7) })
+  })
+
   it('steps a planche push-up down to the pseudo planche push-up, and only on the light day', () => {
     // Twelve-second tucks are past half the bar, so a full day presses the
     // tuck planche push-up; the day after an RPE 9 session presses lighter.

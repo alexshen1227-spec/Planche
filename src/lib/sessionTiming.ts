@@ -1,4 +1,4 @@
-import type { Block, Workout } from '../types'
+import type { Block, SetLog, Workout } from '../types'
 import { STEPS } from '../data/progressions'
 
 export const STANDARD_LEAD_IN_SEC = 5
@@ -121,6 +121,24 @@ export const TARGET_CALL_GRACE_SEC = 1
  */
 export function stoppedAtTargetCall(rawStopSec: number, targetSec: number, allowanceSec: number): boolean {
   return targetSec > 0 && rawStopSec >= targetSec && rawStopSec - targetSec <= Math.max(0, allowanceSec) + TARGET_CALL_GRACE_SEC
+}
+
+/**
+ * Whether a hold still reads as stopped at its call after the athlete corrects
+ * how they stopped it. A correction never adds the flag — whether a set may
+ * carry it at all depends on its block — and "I had to walk back" withdraws it
+ * when the stop came too soon after the call for any walk: a timer stopped
+ * half a second after the call, with a walk in between, means the athlete was
+ * already down well before the call.
+ */
+export function calledAtTargetAfterCorrection(
+  log: Pick<SetLog, 'calledAtTarget' | 'raw' | 'target'>,
+  didWalk: boolean,
+  allowanceSec: number,
+): boolean {
+  if (log.calledAtTarget !== true || log.raw === undefined) return false
+  if (!stoppedAtTargetCall(log.raw, log.target, allowanceSec)) return false
+  return !didWalk || log.raw - log.target >= WALK_BACK_MIN_SEC - TARGET_CALL_GRACE_SEC
 }
 
 /**

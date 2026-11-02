@@ -24,9 +24,11 @@ vi.mock('../lib/audio', () => ({
 }))
 vi.mock('../lib/confetti', () => ({ confetti: () => {} }))
 
-function seed(stepId: StepId): AppState {
+function seed(stepId: StepId, walkBackSec?: number): AppState {
+  const base = initialState()
   return {
-    ...initialState(),
+    ...base,
+    settings: { ...base.settings, ...(walkBackSec !== undefined ? { walkBackSec } : {}) },
     onboarded: true,
     stepId,
     baseStepId: stepId,
@@ -56,8 +58,8 @@ afterEach(() => {
 })
 
 /** Begin the session and its first hold, skipping the lead-in; time 0 = Go. */
-function startHold(workout: Workout, stepId: StepId) {
-  localStorage.setItem('planchelab.v1', JSON.stringify(seed(stepId)))
+function startHold(workout: Workout, stepId: StepId, walkBackSec?: number) {
+  localStorage.setItem('planchelab.v1', JSON.stringify(seed(stepId, walkBackSec)))
   render(
     <StoreProvider>
       <SessionPlayer workout={workout} onExit={() => {}} />
@@ -107,6 +109,29 @@ describe('what the athlete hears during a hold', () => {
     const call = spoken.find((s) => s.word === 'Target')!
     expect(call.at).toBeGreaterThanOrEqual(25)
     expect(spoken.filter((s) => s.at >= call.at && s.word !== 'Target')).toEqual([])
+  })
+
+  it('keeps "Target" when a measured walk lands the call just before a count', () => {
+    // A 4.6s measured walk: the call at 24.6s, the "25" count 0.4s later.
+    startHold(
+      {
+        id: 'attempt',
+        name: 'Attempt',
+        focus: '',
+        minutes: 5,
+        kind: 'auto',
+        blocks: [
+          { exerciseId: 'tuck-planche', sets: 1, target: { kind: 'hold', sec: 20 }, restSec: 180, section: 'main', role: 'attempt' },
+        ],
+      },
+      'tuck',
+      4.6,
+    )
+    holdFor(27)
+    const call = spoken.find((s) => s.word === 'Target')!
+    expect(call).toBeDefined()
+    expect(call.at).toBeLessThan(25)
+    expect(spoken.filter((s) => s.at > call.at && s.at < call.at + 1.5)).toEqual([])
   })
 
   it('calls a minimum dose’s short next-shape hold at its own target, not a banked one', () => {

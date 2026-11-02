@@ -509,6 +509,10 @@ export function sessionTargetCap(session: Session, stepId: StepId, surface: Trai
       inScope(set, { surface }),
   )
   if (!key.length) return null
+  // A maximal effort at the bar is a measurement, whatever it logged: at the
+  // summit a 10.4s re-test of the 10s full planche read as "reached and not
+  // passed", and the targets that followed sat at 2s.
+  if (key.some((set) => isBarAttempt(set, stepId) && set.value > 0)) return null
   // Reached, and not meaningfully passed. The tolerance is the size of the
   // stop itself: the chime sounds at the target and the stopwatch is stopped
   // a moment later, so an obedient hold reads up to about a second over.

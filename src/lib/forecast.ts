@@ -92,7 +92,12 @@ function quantile(sorted: number[], q: number): number {
 
 /** Verified session bests on a step's key hold, oldest first. */
 export function qualifyingSeries(state: Pick<AppState, 'sessions'>, stepId: StepId): Point[] {
+  // A minimum dose stops its holds at about three seconds on purpose: as
+  // points in a rate they read as collapses, turning an eight-week forecast
+  // into "past a year" and a steady climb into a capability jump. Its
+  // next-shape holds still count toward early promotion (qualifyingProgress).
   return [...state.sessions]
+    .filter((s) => s.workoutKind !== 'micro')
     .sort((a, b) => a.startedAt - b.startedAt)
     .map((s) => ({ at: s.startedAt, value: qualifyingSessionValue(s, stepId) }))
     .filter((p) => p.value > 0)

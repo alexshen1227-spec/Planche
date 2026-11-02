@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, CheckIn, Session, SetLog, StepId } from '../types'
 import { initialState } from './store'
-import { buildPlan } from './coach'
+import { buildPlan, debriefSession } from './coach'
 import { applySession } from './engine'
 import { readSignals } from './signals'
 import { learningSeries } from './progression'
@@ -100,6 +100,26 @@ describe('what the minimum dose prescribes', () => {
 
   it('keeps its holds short: set-to-set targets never lengthen them', () => {
     expect(adjustsSetToSet({ section: 'main', sets: 5, role: 'skill' }, 'micro', false)).toBe(false)
+  })
+
+  it('counts a per-side shape the way its block is built: three a side', () => {
+    const state = athlete('oneleg')
+    const workout = microDoseWorkout(state, buildPlan(state, NOW))
+    expect(workout.blocks.find((b) => b.section === 'main')!.exerciseId).toBe('one-leg-planche')
+    expect(workout.purpose).toMatch(/^3 short, hard holds each side/)
+  })
+
+  it('never calls a minimum dose’s hold a PR, since it records none', () => {
+    const state = { ...athlete('tuck'), prs: { 'tuck-planche': { value: 2, at: NOW - 5 * DAY } } }
+    const micro: Session = {
+      ...session(NOW - 60_000, [key(3), key(3)]),
+      workoutKind: 'micro',
+      workoutName: 'Tuck Planche · Minimum dose',
+    }
+    const text = debriefSession(state, state, micro)
+      .map((d) => d.text)
+      .join(' ')
+    expect(text).not.toMatch(/PR/)
   })
 
   it('primes a beginner’s lean with half a working hold, not a maximal one', () => {

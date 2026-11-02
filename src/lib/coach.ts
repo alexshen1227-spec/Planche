@@ -1676,7 +1676,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const queueRetest = suggestMaxTest && retestDue && !queueUnlockAttempt && !retestSkippedRecently
   if (queueUnlockAttempt) {
     decisions.push({
-      text: `You're within reach of the ${step.unlockSec}s bar — an unlock attempt is queued first, while you're freshest.`,
+      text: `You're within reach of the ${step.unlockSec}s bar — ${stepAfter(state.stepId) ? 'an unlock attempt' : 'an attempt at it'} is queued first, while you're freshest.`,
       kind: 'good',
     })
   }
@@ -1841,7 +1841,9 @@ export function debriefSession(
   const typical = median(priorStrains)
   if (typical !== null && priorStrains.length >= 3 && thisStrain >= typical * 1.4) {
     out.push({
-      text: 'That was one of your biggest sessions in weeks. Expect it to echo tomorrow — the plan will lean easier until it settles.',
+      // No promise about the plan: nothing in it reads this session's size,
+      // and the next day could be a build day with the targets up.
+      text: 'That was one of your biggest sessions in weeks — expect to feel it tomorrow. If you do, say so in the check-in and the plan eases.',
       kind: 'info',
     })
   }
@@ -1943,7 +1945,9 @@ export function debriefSession(
       (x) => x.section === 'main' && x.kind === 'hold' && x.value > 0 && x.exerciseId === step.keyExerciseId,
     )
     const best = keyHolds.reduce((b, x) => Math.max(b, x.value), 0)
-    const wasPr = best > 0 && best > (prev.prs[step.keyExerciseId]?.value ?? 0)
+    // A minimum dose sets no records (engine), so it never claims one here.
+    const wasPr =
+      session.workoutKind !== 'micro' && best > 0 && best > (prev.prs[step.keyExerciseId]?.value ?? 0)
     if (best > 0 && rated.length === 0) {
       out.push({
         text: `Best hold today ${round1(best)}s${wasPr ? ' — a PR,' : ','} but nothing was rated, so it cannot count toward the ${step.unlockSec}s unlock. A filmed set you confirm as Clean is what moves the road.`,

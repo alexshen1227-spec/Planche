@@ -22,6 +22,7 @@ export const CHANGELOG: ChangeEntry[] = [
     title: 'Easy weeks end',
     area: 'coach',
     notes: [
+      'Also from the same review: the spoken “Target” is no longer cut off by a count just after it (with a measured walk the call can land a fraction of a second before one). At the full planche, a max clean hold at the bar now counts as a measurement — it had left the targets after it at two seconds — and the copy no longer promises a step beyond the summit. Minimum-dose holds stay out of your forecast and progress readings, easy days lighten the core like everything else, and saying “Had to walk back to the phone” after stopping the timer right at the call no longer counts the hold as reaching its target.',
       'The coach now recognises the easy week it scheduled itself. Its easy-week sessions were named for their strategy and kept enough of the session to look like a normal week, so on 20–30 minute sessions an easy week could start and never end — no unlock attempts, max clean holds or next-shape attempts, and lighter work, session after session. If you were in one, it now ends a week after it next starts.',
     ],
   },

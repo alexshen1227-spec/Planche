@@ -32,6 +32,7 @@ import { readSignals } from '../lib/signals'
 import {
   creditedHoldSeconds,
   callMarksCompliance,
+  calledAtTargetAfterCorrection,
   holdCues,
   isMainProgressionHold,
   PROGRESSION_STOP_LATENCY_SEC,
@@ -778,11 +779,13 @@ export function SessionPlayer({
     if (phase !== 'hold' || !block || block.target.kind !== 'hold') return
     if (!targetHitRef.current && cues.targetReached) {
       targetHitRef.current = true
-      // The call takes this second's count: a banked call lands on held =
-      // target + allowance (25s for a 20s bar), the count effect below runs in
-      // the same tick, and speak() cancels what is playing — so "Target" was
-      // cut off by "25" on every default unlock attempt and re-test.
-      lastCountRef.current = Math.floor(cues.heldSec)
+      // The call takes the next count when it is close: a banked call lands on
+      // held = target + allowance (25s for a 20s bar), and speak() cancels what
+      // is playing — so "Target" was cut off by "25" on every default unlock
+      // attempt and re-test, and with a measured 4.6s walk by the "25" that
+      // came 0.4s after it.
+      const nextCount = Math.ceil(cues.heldSec / 5) * 5
+      lastCountRef.current = nextCount - cues.heldSec < 1.5 ? nextCount : Math.floor(cues.heldSec)
       sfx.target()
       buzz(40)
       if (state.settings.voice) speak('Target')
@@ -1180,9 +1183,18 @@ export function SessionPlayer({
             state.settings.walkBackSec,
           )
           const allowanceSec = round1(log.raw - value)
+          // The at-target reading follows the correction: kept only while the
+          // corrected stop still fits coming down at the call.
+          const atTarget = calledAtTargetAfterCorrection(
+            log,
+            didWalk,
+            stopLatencySecondsFor(log.exerciseId, state.settings.stopLatencySec, !didWalk, state.settings.walkBackSec),
+          )
+          const { calledAtTarget: _previous, ...rest } = log
           return {
-            ...log,
+            ...rest,
             value,
+            ...(atTarget ? { calledAtTarget: true } : {}),
             timing: {
               method: 'stopwatch',
               ...(allowanceSec > 0 ? { allowanceSec, allowance: didWalk ? ('walk-back' as const) : ('reaction' as const) } : {}),
