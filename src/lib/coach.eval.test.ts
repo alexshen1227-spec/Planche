@@ -428,8 +428,13 @@ describe('a season coached end to end', () => {
    * ratchets itself down, a day type that becomes absorbing — are invisible to
    * any single-plan test and obvious here.
    */
+  // A fixed clock: the simulator lays sessions out back from `now`, and which
+  // calendar day each lands on decides rest days and the re-test cadence. On
+  // the real clock the same season differed between time zones (CI runs in
+  // UTC) and between hours of the day.
+  const SEASON_NOW = Date.UTC(2026, 10, 1, 12)
   const season = (params: Parameters<typeof simulateSeason>[0] = {}) =>
-    simulateSeason(params, buildPlan, adaptiveTarget, applySession)
+    simulateSeason({ now: SEASON_NOW, ...params }, buildPlan, adaptiveTarget, applySession)
 
   it('lets a responsive athlete actually improve over twelve weeks', () => {
     const run = season({ weeks: 12, respondsTo: 'volume', gainPerWeek: 1.5, seed: 3 })
