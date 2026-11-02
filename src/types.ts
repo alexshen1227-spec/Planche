@@ -402,6 +402,8 @@ export interface Workout {
   adjustments?: string[]
   /** The key hold's working target before strategy and rail factors. Coach sessions only. */
   baseTargetSec?: number
+  /** Built on a day the coach scheduled as part of an easy week (`dayType` deload). */
+  plannedDeload?: boolean
 }
 
 /** Why an attempt ended, when the athlete chose to say. Unanswered stays unknown. */
@@ -523,6 +525,13 @@ export interface Session {
    * session after.
    */
   retestOffered?: boolean
+  /**
+   * Trained on a day of an easy week the coach scheduled. Without it the coach
+   * never recognised its own deload — its sessions are named for their
+   * strategy, and keep enough of the session to sit above the light-week load
+   * line — so shorter-session athletes stayed in a deload that never ended.
+   */
+  plannedDeload?: boolean
 }
 
 export interface PRMark {

@@ -1611,6 +1611,8 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     blocks: fitted,
     strategy: plan.strategy,
     baseTargetSec: baseTarget,
+    // The coach must recognise its own easy week afterwards (see signals).
+    ...(plan.dayType === 'deload' ? { plannedDeload: true } : {}),
     purpose: skillOnly
       ? `Practise ${EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase() ?? step.name} at an easy dose, with balance and protraction work only — no pressing or leans in a second session today.`
       : light

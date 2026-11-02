@@ -598,6 +598,7 @@ function sanitizeSessions(
         ? { baseTargetSec: clampNum(c.baseTargetSec, 1, 600, 1) }
         : {}),
       ...(c.retestOffered === true ? { retestOffered: true } : {}),
+      ...(c.plannedDeload === true ? { plannedDeload: true } : {}),
     }
     if (tombstones.has(session.id)) return
     const fingerprint = JSON.stringify(session)

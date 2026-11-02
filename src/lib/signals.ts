@@ -766,7 +766,13 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const lastSkippedRetest = [...sessions].reverse().find((s) => s.retestOffered === true && !measuredMaxIn(s))
   const daysSinceSkippedRetest = lastSkippedRetest ? Math.round((now - lastSkippedRetest.startedAt) / DAY) : null
 
-  const lastDeload = [...sessions].reverse().find((s) => s.workoutName.toLowerCase().includes('deload'))
+  // A deload session is one named for it (the Deload Flow template) or one the
+  // coach scheduled as part of an easy week. Its own were named for their
+  // strategy ("Tuck Planche · Technique") and kept enough of the session to
+  // sit above the light-week line below, so the coach never saw its own easy
+  // week: on 20–30 minute sessions 21 of 36 sessions became deload days.
+  const isDeloadSession = (s: Session) => s.plannedDeload === true || s.workoutName.toLowerCase().includes('deload')
+  const lastDeload = [...sessions].reverse().find(isDeloadSession)
   // An easy week counts whatever it was called.
   //
   // Recognising only the "Deload Flow" template meant an athlete who backed
@@ -808,7 +814,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     const lastIndex = sessions.indexOf(lastDeload)
     let blockStart = lastDeload.startedAt
     for (let i = lastIndex - 1; i >= 0; i--) {
-      if (!sessions[i].workoutName.toLowerCase().includes('deload')) break
+      if (!isDeloadSession(sessions[i])) break
       blockStart = sessions[i].startedAt
     }
     deloadActive = now - blockStart < 7 * DAY

@@ -1314,6 +1314,7 @@ export function SessionPlayer({
       plannedRounds: totalSets,
       ...(workout.baseTargetSec !== undefined ? { baseTargetSec: workout.baseTargetSec } : {}),
       ...(workout.blocks.some((b) => b.retest) ? { retestOffered: true } : {}),
+      ...(workout.plannedDeload ? { plannedDeload: true } : {}),
     }
     const { next, events: raw } = applySession(state, session)
     // The coach reacts to every finished session, whatever kind it was.

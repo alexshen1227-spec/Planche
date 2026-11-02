@@ -19,6 +19,14 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'Easy weeks end',
+    area: 'coach',
+    notes: [
+      'The coach now recognises the easy week it scheduled itself. Its easy-week sessions were named for their strategy and kept enough of the session to look like a normal week, so on 20–30 minute sessions an easy week could start and never end — no unlock attempts, max clean holds or next-shape attempts, and lighter work, session after session. If you were in one, it now ends a week after it next starts.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'Fixes from an independent review',
     area: 'coach',
     notes: [
