@@ -65,6 +65,27 @@ describe('the phone check’s camera preview', () => {
     expect(tracks.filter((t) => t.readyState === 'live')).toHaveLength(0)
   })
 
+  it('stops a camera that arrives after the check was closed', async () => {
+    // The permission sheet is up when the athlete closes the check: the
+    // unmount cleanup has already run by the time the stream exists.
+    let resolve: (s: ReturnType<typeof fakeStream>) => void = () => undefined
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn(() => new Promise((r) => (resolve = r))) },
+    })
+    const view = atCamera()
+    toCamera()
+    await act(async () => {
+      fireEvent.click(screen.getByText('Open the camera'))
+    })
+    view.unmount()
+    await act(async () => {
+      resolve(fakeStream())
+    })
+    expect(tracks).toHaveLength(1)
+    expect(tracks.filter((t) => t.readyState === 'live')).toHaveLength(0)
+  })
+
   it('names a refused camera instead of failing silently', async () => {
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,

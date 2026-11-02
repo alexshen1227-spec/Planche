@@ -11,12 +11,15 @@ let throughSilent = false
  * another app while it plays (WebKit bug 237322 and its follow-ups). Feature-
  * detected; other browsers have no such switch.
  */
-type SessionType = 'ambient' | 'playback'
+type SessionType = 'default' | 'playback'
+/** Whatever Safari started with ("auto"), restored whenever playback is not wanted. */
+let defaultSessionType: string | null = null
 function setSessionType(type: SessionType) {
   const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession
   if (!session) return
+  defaultSessionType ??= session.type
   try {
-    session.type = type
+    session.type = type === 'playback' ? 'playback' : defaultSessionType
   } catch {
     /* an unsupported value on an older WebKit: keep its default */
   }
@@ -27,7 +30,7 @@ export function configureAudio(soundOn: boolean, voiceOn: boolean, vol: number, 
   voiceEnabled = voiceOn
   volume = vol
   throughSilent = playThroughSilent
-  setSessionType(throughSilent ? 'playback' : 'ambient')
+  setSessionType(throughSilent ? 'playback' : 'default')
 }
 
 function ac(): AudioContext | null {
@@ -120,7 +123,7 @@ export function primeSignal() {
 
 /** Back to the athlete's own choice once the measurement is over. */
 export function releaseSignal() {
-  setSessionType(throughSilent ? 'playback' : 'ambient')
+  setSessionType(throughSilent ? 'playback' : 'default')
 }
 
 /** Three short, loud beeps on the primed context. */

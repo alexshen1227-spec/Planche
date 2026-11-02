@@ -39,9 +39,9 @@ it('applies play-through-silent the moment it is switched', () => {
       <Probe />
     </StoreProvider>,
   )
-  expect(session.type).toBe('ambient')
+  expect(session.type).toBe('auto')
   act(() => dispatch!({ type: 'SET_SETTINGS', patch: { soundThroughSilent: true } }))
   expect(session.type).toBe('playback')
   act(() => dispatch!({ type: 'SET_SETTINGS', patch: { soundThroughSilent: false } }))
-  expect(session.type).toBe('ambient')
+  expect(session.type).toBe('auto')
 })

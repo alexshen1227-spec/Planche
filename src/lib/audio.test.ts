@@ -14,11 +14,12 @@ describe('audio session type', () => {
     const session = { type: 'auto' }
     vi.stubGlobal('navigator', { audioSession: session })
     configureAudio(true, true, 0.7, false)
-    expect(session.type).toBe('ambient')
+    // Off leaves Safari's own default in place.
+    expect(session.type).toBe('auto')
     primeSignal()
     expect(session.type).toBe('playback')
     releaseSignal()
-    expect(session.type).toBe('ambient')
+    expect(session.type).toBe('auto')
     configureAudio(true, true, 0.7, true)
     expect(session.type).toBe('playback')
     releaseSignal()

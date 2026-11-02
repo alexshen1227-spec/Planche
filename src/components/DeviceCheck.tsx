@@ -33,15 +33,24 @@ export function DeviceCheck({
   const [opening, setOpening] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const mountedRef = useRef(true)
 
   // Every stream this opens is stopped on every way out: moving on, closing
-  // the check, or the component going away mid-preview.
+  // the check, or the component going away mid-preview — including while the
+  // permission sheet is still up, when the stream only arrives after the
+  // cleanup below has run.
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
     if (videoRef.current) videoRef.current.srcObject = null
   }
-  useEffect(() => stopCamera, [])
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      stopCamera()
+    }
+  }, [])
 
   const record = (patch: Partial<DeviceCheckResult>) => setResult((r) => ({ ...r, ...patch }))
   const next = (to: Step) => {
@@ -68,6 +77,10 @@ export function DeviceCheck({
     setOpening(true)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((t) => t.stop())
+        return
+      }
       stopCamera()
       streamRef.current = stream
       if (videoRef.current) {
@@ -76,9 +89,9 @@ export function DeviceCheck({
       }
       record({ camera: 'live', recorder: typeof MediaRecorder !== 'undefined' })
     } catch (err) {
-      record({ camera: classifyCameraError(err) as CameraOutcome })
+      if (mountedRef.current) record({ camera: classifyCameraError(err) as CameraOutcome })
     } finally {
-      setOpening(false)
+      if (mountedRef.current) setOpening(false)
     }
   }
 

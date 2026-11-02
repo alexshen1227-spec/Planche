@@ -19,6 +19,19 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'Fixes from an independent review',
+    area: 'coach',
+    notes: [
+      'The spoken “Target” on an unlock attempt, a max clean hold or a max test is no longer cut off by the count that lands in the same second — with the phone across the room that happened on almost every one.',
+      'After a step opens, the first plan no longer reads your last next-shape attempts as missed working sets and eases the target; the new step’s numbers start fresh.',
+      'A minimum dose’s next-shape holds call at their own three seconds again, not eight.',
+      'The max clean hold keeps to its three-week rhythm even while your holds are too scattered to read; the plateau card still offers a max test whenever you want one.',
+      'When a practice template ran in between, the coach quotes your own last working target, not the template’s fixed one.',
+      'Check this phone always releases the camera, even if you close it while the permission prompt is up.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'Check this phone',
     area: 'app',
     notes: [

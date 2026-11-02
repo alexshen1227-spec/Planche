@@ -768,3 +768,56 @@ describe('what the coach says about the target is the target', () => {
     if (sec_ === sec) expect(line).not.toMatch(/→/)
   })
 })
+
+describe('found by an independent review of the 2026-11 changes', () => {
+  // Each of these reached an athlete as a number or a sentence; the review
+  // confirmed them with throwaway tests, and these keep them fixed.
+
+  it('does not read last step’s next-shape attempts as this step’s missed working sets', () => {
+    // Promoted to advanced tuck; the newest session with advanced tuck holds
+    // is the tuck session that attempted it (3s, 2s, 2s against its 5s bar).
+    const bridging = trainingDay(3, [
+      hold('adv-tuck-planche', 3, at(3), { target: 5 }),
+      hold('adv-tuck-planche', 2, at(3) + 60_000, { target: 5 }),
+      hold('adv-tuck-planche', 2, at(3) + 120_000, { target: 5 }),
+      hold('tuck-planche', 12, at(3) + 300_000, { target: 12 }),
+    ])
+    const promoted = athlete('advtuck', { sessions: [bridging] })
+    const sig = readSignals(promoted, NOW)
+    expect(sig.mainHitRate).toBeNull()
+    expect(sig.lastWorkingTarget).toBeNull()
+    expect(buildPlan(promoted, NOW).decisions.some((d) => /fell short/.test(d.text))).toBe(false)
+  })
+
+  it('quotes the coach’s own last target, not a template’s fixed one', () => {
+    const coach = trainingDay(5, [15, 15, 15].map((v, i) => hold('tuck-planche', v, at(5) + i * 60_000, { target: 15 })), {
+      baseTargetSec: 15,
+    })
+    const template = trainingDay(2, [6, 6, 6, 6].map((v, i) => hold('tuck-planche', v, at(2) + i * 60_000, { target: 6 })), {
+      workoutKind: 'template',
+      workoutName: 'Setup Practice',
+    })
+    expect(readSignals(athlete('tuck', { sessions: [coach, template] }), NOW).lastWorkingTarget).toBe(15)
+  })
+
+  it('queues the in-session max hold only on its cadence, whatever a plateau suggests', () => {
+    // A plan whose re-test clock says three days: due or not is the clock's
+    // call, not the plateau's.
+    // Verified holds swinging 5–13s around a level line: a measurement-noise
+    // plateau, which suggests a max test. The last max hold (9s, as level as
+    // the rest) was three days ago.
+    const pattern = [9, 13, 5]
+    const noisy = [30, 27, 24, 21, 18, 15, 12, 9, 6].map((daysAgo, i) =>
+      trainingDay(daysAgo, [hold('tuck-planche', pattern[i % 3], at(daysAgo), { target: 8, form: verified(pattern[i % 3]) })], {
+        baseTargetSec: 8,
+      }),
+    )
+    const measured = trainingDay(3, [hold('tuck-planche', 9, at(3), { target: STEP_BY_ID.tuck.unlockSec, form: verified(9) })])
+    const state = athlete('tuck', { sessions: [...noisy, measured] })
+    const plan = buildPlan(state, NOW)
+    expect(readSignals(state, NOW).daysSinceMaxTest).toBe(3)
+    expect(plan.plateau?.suggestMaxTest).toBe(true)
+    expect(plan.suggestMaxTest).toBe(true)
+    expect(plan.queueRetest).toBe(false)
+  })
+})

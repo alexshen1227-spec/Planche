@@ -1669,7 +1669,11 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // Skipped, it backs off for a week: re-queued at every session it would keep
   // next-shape attempts (never beside a max effort) out of all of them.
   const retestSkippedRecently = sig.daysSinceSkippedRetest !== null && sig.daysSinceSkippedRetest < 7
-  const queueRetest = suggestMaxTest && !queueUnlockAttempt && !retestSkippedRecently
+  // Only on the re-test cadence. A noise plateau may *suggest* a max test at
+  // any time (its card offers one); made automatic, that suggestion re-queued
+  // the max hold three days after the last one, every rested session.
+  const retestDue = sig.daysSinceMaxTest === null ? sig.totalSessions >= 8 : sig.daysSinceMaxTest >= 21
+  const queueRetest = suggestMaxTest && retestDue && !queueUnlockAttempt && !retestSkippedRecently
   if (queueUnlockAttempt) {
     decisions.push({
       text: `You're within reach of the ${step.unlockSec}s bar — an unlock attempt is queued first, while you're freshest.`,

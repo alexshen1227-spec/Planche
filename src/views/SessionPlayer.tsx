@@ -522,8 +522,9 @@ export function SessionPlayer({
     phase === 'hold' && block?.target.kind === 'hold' ? block.target.sec : 0,
     bestBefore,
     // An unlock attempt, a next-shape attempt or a max test is a bar the
-    // logged value must clear.
-    block?.role === 'attempt' || block?.role === 'bridge' || workout.kind === 'test',
+    // logged value must clear. A minimum dose's next-shape holds are not: they
+    // are short on purpose, and banking called a 3s hold at 8s held.
+    block?.role === 'attempt' || (block?.role === 'bridge' && workout.kind !== 'micro') || workout.kind === 'test',
   )
   const restRemaining = Math.max(0, (restEnd - now) / 1000)
 
@@ -777,11 +778,16 @@ export function SessionPlayer({
     if (phase !== 'hold' || !block || block.target.kind !== 'hold') return
     if (!targetHitRef.current && cues.targetReached) {
       targetHitRef.current = true
+      // The call takes this second's count: a banked call lands on held =
+      // target + allowance (25s for a 20s bar), the count effect below runs in
+      // the same tick, and speak() cancels what is playing — so "Target" was
+      // cut off by "25" on every default unlock attempt and re-test.
+      lastCountRef.current = Math.floor(cues.heldSec)
       sfx.target()
       buzz(40)
       if (state.settings.voice) speak('Target')
     }
-  }, [phase, cues.targetReached, block, state.settings.voice])
+  }, [phase, cues.targetReached, cues.heldSec, block, state.settings.voice])
 
   // Spoken 5-second counts mid-hold — the screen is unreadable upside-down.
   useEffect(() => {
@@ -1185,7 +1191,7 @@ export function SessionPlayer({
         }),
       )
     },
-    [state.settings.stopLatencySec],
+    [state.settings.stopLatencySec, state.settings.walkBackSec],
   )
 
   /** The stopwatch correction shared by rest and the final summary screen. */

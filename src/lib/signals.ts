@@ -491,22 +491,40 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   let mainSetCount = 0
   const workingSetsOf = (s: Session) =>
     keySetsOf(s, keyId, 'main').filter((set) => !isBarAttempt(set, state.stepId))
+  // On this step only: after a step change the last session holding the new
+  // key exercise is the one that practised it as next-shape attempts — maximal
+  // efforts against the next bar — and read as working sets they made every
+  // promotion's first plan "most sets fell short — the target eases 5s → 2s".
   const lastRelevant = [...sessions]
     .reverse()
     .find(
       (s) =>
+        s.stepId === state.stepId &&
         s.workoutName !== 'Quick Log' &&
         s.workoutKind !== 'micro' &&
         now - s.startedAt <= 14 * DAY &&
         // A max test's sets all target the bar, so it has none and is passed.
         workingSetsOf(s).length > 0,
     )
-  let lastWorkingTarget: number | null = null
+  // The coach's own last working target: a template's fixed numbers (Setup
+  // Practice's 6s, Quick Ten's 10s) are not one, and quoted as "the working
+  // target moves 6s → 10s" they described a target that had in fact fallen.
+  const lastCoachSession = [...sessions]
+    .reverse()
+    .find(
+      (s) =>
+        s.stepId === state.stepId &&
+        s.workoutKind === 'auto' &&
+        s.baseTargetSec !== undefined &&
+        s.workoutName !== 'Quick Log' &&
+        now - s.startedAt <= 14 * DAY &&
+        workingSetsOf(s).length > 0,
+    )
+  const coachTargets = lastCoachSession ? workingSetsOf(lastCoachSession).map((set) => set.target).filter((t) => t > 0) : []
+  const lastWorkingTarget: number | null = coachTargets.length ? Math.max(...coachTargets) : null
   if (lastRelevant) {
     const mains = workingSetsOf(lastRelevant)
     mainSetCount = mains.length
-    const targets = mains.map((set) => set.target).filter((t) => t > 0)
-    lastWorkingTarget = targets.length ? Math.max(...targets) : null
     // A hold stopped at its target call reached the target, even when the fixed
     // walk-back allowance logs it a little under.
     mainHitRate = mains.filter((s) => capacityReading(s) >= s.target).length / mains.length
