@@ -381,9 +381,9 @@ export function Dashboard({
           <div className="relative mt-3 rounded-xl border border-accent/30 bg-accent-soft p-3 text-[13px] leading-relaxed text-ink">
             <div className="font-semibold">Measure your walk back to the phone</div>
             <p className="mt-0.5 text-ink2">
-              Every Path hold has 5 seconds taken off for coming out and reaching the phone. If your walk is quicker or
-              slower, every hold reads that much off — and your targets are set from those numbers. Three timed walks,
-              about a minute.
+              Your main Path holds have 5 seconds taken off for coming out and reaching the phone. If your walk is
+              quicker or slower, every one of them reads that much off — and your targets are set from those numbers.
+              Three timed walks, about a minute; it is in Settings too.
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               <button
@@ -396,7 +396,7 @@ export function Dashboard({
                 onClick={closeWalkNotice}
                 className="min-h-10 rounded-lg border border-line bg-surface px-3 py-1.5 font-medium text-ink2 hover:text-ink"
               >
-                Not now
+                No thanks
               </button>
             </div>
           </div>

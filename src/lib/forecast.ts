@@ -171,7 +171,7 @@ export function forecastUnlock(state: AppState, stepId: StepId = state.stepId, n
       need: floors
         ? `${missing} more measured ${EX_LABEL(step.keyExerciseId)} hold${
             missing === 1 ? '' : 's'
-          }. A hold you stop at the target call says "at least this much", not how far you could go — the re-tests and attempts the coach schedules are what measure it. A rate needs at least ${MIN_FORECAST_POINTS} measured points before it means anything.`
+          }. A hold that ends at or just past its target call says "at least this much", not how far you could go — the re-tests and attempts the coach schedules are what measure it. A rate needs at least ${MIN_FORECAST_POINTS} measured points before it means anything.`
         : `${missing} more session${missing === 1 ? '' : 's'} with a verified ${
             EX_LABEL(step.keyExerciseId)
           } hold. A rate needs at least ${MIN_FORECAST_POINTS} measured points before it means anything.`,

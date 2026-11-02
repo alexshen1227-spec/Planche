@@ -335,15 +335,27 @@ more certain than its basis.
    day-to-day swing, later sets harder, a walk that is not the assumed 5s,
    some sets filmed — logged through `stoppedAtTargetCall` like the player).
    A 7s walker down at the call logs ~2s over with no call flag, so the stop
-   band for a walk-back hold reaches `WALK_BACK_MAX_SEC − allowanceSec` (the
-   walk the allowance may have missed); without it that athlete never left the
-   tuck and was told "going backwards" for fifteen weeks. All five realistic
+   band (`stopBandSec`, shared with `completedAtTarget`) widens by the walk the
+   *assumed* 5s may have missed — never for a measured walk, which is the
+   slowest of three; without it that athlete never left the tuck and was told
+   "going backwards" for fifteen weeks. The camera decides over any band or
+   flag (`cameraMeasured`): clean time certified well past the call, or a
+   breakdown *seen* inside what it analysed (`cleanRatio` < 0.98, not footage
+   that ran out). It analyses only the credited stretch — up to the target for
+   a call-stopped hold (SessionPlayer `analysedSec`) — so it can never see
+   more than that; the loop's simulated camera mirrors this, and an earlier
+   fixture that let it see past the window described an impossible hold.
+   `capacityReading` never lifts a video-timed or edited hold, and set-to-set
+   advice stops at `setToSetCeiling` like every working target. All five realistic
    athletes are pinned (no noise or plateau days, at least two steps up);
    their seeds matter, so re-measure rather than loosen if one moves. A
    realistic athlete who never films stayed at the tuck for sixty sessions
    with 23s max holds on a 20s bar and was never told why (unlock attempts
    queue only from verified holds); the plan now says so whenever the fresh
-   stopwatch level reaches 85% of the bar and the verified best has not.
+   stopwatch level (fresh against *today*) reaches 85% of the bar and the
+   verified best has not — asking whether the max holds were filmed, not
+   whether anything was, worded for the frog stand's replay review, and
+   tagged `loaded-session` so a no-load day drops it.
 
 ## Camera lifecycle
 

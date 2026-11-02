@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AppState, FormCheck, Session, SetLog, StepId } from '../types'
+import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog, StepId } from '../types'
 import { STEP_BY_ID, STEPS } from '../data/progressions'
 import {
   adaptiveTarget,
@@ -18,6 +18,7 @@ import { readSignals, readinessTimeline } from './signals'
 import {
   capacityReading,
   endedForNonCapacityReason,
+  isBarAttempt,
   isQualifyingSet,
   measuredLevel,
   progressionCredit,
@@ -30,7 +31,8 @@ import {
 } from './progression'
 import { forecastUnlock } from './forecast'
 import { capacityOn } from './bridge'
-import { workingTargetSec } from './workingTarget'
+import { setToSetCeiling, workingTargetSec } from './workingTarget'
+import { adviseNextHold } from './autoregulate'
 import { walkMeasureDue } from './sessionTiming'
 import { bestSeries, sessionsInWeekOf, weekStreak } from './stats'
 import { mergeHumanReview, mergeModelReading, suggestedRatingFor } from '../components/FormCheckRow'
@@ -1032,13 +1034,14 @@ describe('found by a review of the floor rule', () => {
   })
 
   it('does not read a quick walker’s filmed stop at the call as a breakdown', () => {
-    // Walks 2s against the assumed 5s: the stopwatch nets 1.1s of a 3s target,
-    // while the camera they confirmed saw 3.3s clean. Down at the call: a floor.
+    // Walks 2s against the assumed 5s: the stopwatch nets 1.1s of a 3s target.
+    // A hold stopped at its call is analysed up to the target, and the camera
+    // they confirmed saw it clean to there. Down at the call: a floor.
     const filmed = set(1.1, 3, {
       calledAtTarget: true,
       raw: 6.1,
       timing: { method: 'stopwatch', allowance: 'walk-back', allowanceSec: 5 },
-      form: { rating: 'clean', confirmed: true, flightConfirmed: true, auto: { issues: [], confidence: 0.9, cleanSeconds: 3.3, cleanRatio: 1 } },
+      form: { rating: 'clean', confirmed: true, flightConfirmed: true, auto: { issues: [], confidence: 0.9, cleanSeconds: 3, cleanRatio: 1 } },
     })
     expect(stoppedAtTarget(filmed, 'tuck')).toBe(true)
     expect(sessionLearningPoint(trainingDay(3, [filmed]), 'tuck')).toEqual({ value: 3, floorAt: 3 })
@@ -1051,13 +1054,45 @@ describe('found by a review of the floor rule', () => {
     const text = buildPlan(athlete('tuck', { sessions }), NOW)
       .decisions.map((d) => d.text)
       .join(' ')
-    expect(text).toMatch(/On the stopwatch your max clean holds are at about 2\ds, past the 20s bar\. Advanced Tuck opens on a hold the camera has checked, and none of your recent ones were filmed/)
+    expect(text).toMatch(/On the stopwatch your holds have reached about 2\ds, past the 20s bar\. Advanced Tuck opens on a hold the camera has checked, and your max holds have not been filmed lately/)
     // Filmed and verified close to the bar: the unlock attempt says it instead.
     const filmed = [24, 3].map((d) => trainingDay(d, [set(18, STEP_BY_ID.tuck.unlockSec, { at: at(d), form: verified(18) })]))
     const verifiedText = buildPlan(athlete('tuck', { sessions: [...[20, 17, 13, 10, 7].map((d) => stoppedDay(d, 11)), ...filmed] }), NOW)
       .decisions.map((d) => d.text)
       .join(' ')
-    expect(verifiedText).not.toMatch(/On the stopwatch your max clean holds/)
+    expect(verifiedText).not.toMatch(/On the stopwatch your holds/)
+  })
+
+  it('says only what is true about the camera and the stopwatch level', () => {
+    const bar = STEP_BY_ID.tuck.unlockSec
+    const unfilmedMax = (d: number, v: number) => trainingDay(d, [set(v, bar, { at: at(d) })])
+    // Working sets filmed and passing; the max holds past the bar never filmed.
+    const filmedWork = [20, 17, 13, 10, 7].map((d) =>
+      trainingDay(d, [0, 1, 2].map((k) => set(10.6, 11, { at: at(d) + k * 60_000, calledAtTarget: true, form: verified(10.6) })), { baseTargetSec: 11 }),
+    )
+    const text = (sessions: Session[], checkIn?: CheckIn, when = NOW) =>
+      buildPlan(athlete('tuck', { sessions }), when, checkIn)
+        .decisions.map((d) => d.text)
+        .join(' ')
+    const sessions = [...filmedWork, unfilmedMax(24, 21), unfilmedMax(3, 23)]
+    expect(text(sessions)).toMatch(/your max holds have not been filmed lately/)
+    expect(text(sessions)).not.toMatch(/have not passed the check/)
+    // Months later, the old holds are not "your holds".
+    expect(text(sessions, undefined, NOW + 130 * DAY)).not.toMatch(/On the stopwatch your holds/)
+    // A day the rails cancel max efforts does not ask for one.
+    expect(text(sessions, { joints: 'pain', energy: 'ok', at: NOW, regions: ['elbow'] })).not.toMatch(/On the stopwatch your holds/)
+  })
+
+  it('tells a frog stand athlete the step opens on their own replay review', () => {
+    const frog = STEP_BY_ID.frog
+    const sessions = [24, 3].map((d) =>
+      trainingDay(d, [set(frog.unlockSec + 2, frog.unlockSec, { exerciseId: frog.keyExerciseId, at: at(d) })], { stepId: 'frog' }),
+    )
+    const text = buildPlan(athlete('frog', { sessions }), NOW)
+      .decisions.map((d) => d.text)
+      .join(' ')
+    expect(text).toMatch(/opens on a filmed hold you have reviewed against the checklist/)
+    expect(text).not.toMatch(/camera has checked/)
   })
 
   it('names a measurement only on the first plan after it', () => {
@@ -1112,6 +1147,88 @@ describe('the measure-your-walk card', () => {
     const sessions = [walked(9), walked(6), walked(3)]
     expect(walkMeasureDue({ settings: { ...base.settings, walkBackSec: 3.4 }, sessions })).toBe(false)
     expect(walkMeasureDue({ settings: { ...base.settings, phoneWithinReach: true }, sessions })).toBe(false)
+  })
+})
+
+describe('found by a review of the walk rule', () => {
+  const key = 'tuck-planche'
+  const set = (value: number, target: number, overrides: Partial<SetLog> = {}): SetLog => ({
+    exerciseId: key,
+    kind: 'hold',
+    value,
+    target,
+    section: 'main',
+    at: at(3),
+    ...overrides,
+  })
+  const walked = (allowanceSec: number) => ({
+    timing: { method: 'stopwatch' as const, allowance: 'walk-back' as const, allowanceSec },
+  })
+  const camera = (cleanSeconds: number, issues: FormIssue[] = []): Partial<SetLog> => ({
+    form: { rating: 'clean', confirmed: true, flightConfirmed: true, auto: { issues, confidence: 0.9, cleanSeconds, cleanRatio: 1 } },
+  })
+
+  it('gives only the assumed walk room for a slow walk, never a measured one', () => {
+    // Measured at 2.5s, the slowest of three: 4s past an 8s target is held past the call.
+    expect(stoppedAtTarget(set(12, 8, { raw: 14.5, ...walked(2.5) }), 'tuck')).toBe(false)
+    // Under the assumed 5s, 2.5s over could be a 7.5s walk: still a floor.
+    expect(stoppedAtTarget(set(10.5, 8, { raw: 15.5, ...walked(5) }), 'tuck')).toBe(true)
+  })
+
+  it('believes the camera that saw a hold go well past its call', () => {
+    // Held a 2s full planche to 4.5s, filmed: the walk band cannot hide it.
+    const full = STEP_BY_ID.full.keyExerciseId
+    const past = set(4.5, 2, { exerciseId: full, raw: 9.5, ...walked(5), ...camera(4.5) })
+    expect(stoppedAtTarget(past, 'full')).toBe(false)
+    // A breakdown after the target, at 11.2s of a 10s target, is the camera's measurement too.
+    expect(stoppedAtTarget(set(12.5, 10, { raw: 17.5, ...walked(5), ...camera(11.2) }), 'tuck')).toBe(false)
+    // And in the verified series, where one secondary flag still qualifies.
+    const day = trainingDay(3, [set(4.5, 2, { exerciseId: full, raw: 9.5, ...walked(5), ...camera(4.5, ['sag']) })], { stepId: 'full' })
+    expect(qualifyingValueIsFloor(day, 'full', qualifyingSessionValue(day, 'full'))).toBe(false)
+  })
+
+  it('reads a quick walker’s filmed stop at the call as a floor in the verified series too', () => {
+    const filmed = set(1.1, 3, { calledAtTarget: true, raw: 6.1, ...walked(5), ...camera(3) })
+    const day = trainingDay(3, [filmed])
+    expect(qualifyingValueIsFloor(day, 'tuck', qualifyingSessionValue(day, 'tuck'))).toBe(true)
+    // Not flagged, the camera analysed only the 1.1s credited and saw it clean to the end:
+    // no breakdown, so it says nothing about where the hold ended.
+    const short = set(1.1, 3, { raw: 6.1, ...walked(5), ...camera(1.1) })
+    expect(stoppedAtTarget({ ...short, form: { ...short.form!, auto: { ...short.form!.auto!, cleanRatio: 1 } } }, 'tuck')).toBe(false)
+  })
+
+  it('does not take footage that ran out for a breakdown', () => {
+    // Down at the 5s call, logged 3s net of a quick walk; the recording started
+    // half a second late, so the check ran to 4.5s and saw it clean to the end.
+    // One secondary flag: verified, not trusted. No breakdown was seen, so the
+    // camera says nothing about where the hold ended — the call flag does.
+    const late = set(3, 5, {
+      calledAtTarget: true,
+      raw: 8,
+      recordingOffsetSec: 0.5,
+      ...walked(5),
+      ...camera(4.5, ['sag']),
+    })
+    const day = trainingDay(3, [{ ...late, form: { ...late.form!, auto: { ...late.form!.auto!, cleanRatio: 1 } } }])
+    expect(qualifyingValueIsFloor(day, 'tuck', qualifyingSessionValue(day, 'tuck'))).toBe(true)
+  })
+
+  it('counts a slow walker’s stops at the call as the prescription done', () => {
+    // Every set 2s over its 8s target with no flag: completed, so the next base holds.
+    const day = trainingDay(3, [0, 1, 2].map((k) => set(10, 8, { at: at(3) + k * 60_000, raw: 15, ...walked(5) })))
+    expect(sessionTargetCap(day, 'tuck', null)).toBe(8)
+  })
+
+  it('never raises a working set to the bar between sets', () => {
+    const tuck = STEP_BY_ID.tuck
+    const next = adviseNextHold(17, [{ value: 26, target: 17 }], setToSetCeiling(tuck, tuck.keyExerciseId))
+    expect(next.target).toBeLessThan(tuck.unlockSec)
+    expect(isBarAttempt(set(next.target, next.target), 'tuck')).toBe(false)
+  })
+
+  it('does not lift a hold re-timed from its video or edited down', () => {
+    expect(capacityReading(set(8.2, 10, { calledAtTarget: true, timing: { method: 'video' } }))).toBe(8.2)
+    expect(capacityReading(set(6, 10, { calledAtTarget: true, timing: { method: 'edited' } }))).toBe(6)
   })
 })
 

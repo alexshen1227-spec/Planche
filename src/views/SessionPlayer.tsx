@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { setToSetCeiling } from '../lib/workingTarget'
 import type {
   CheckIn,
   EndReason,
@@ -408,9 +409,7 @@ export function SessionPlayer({
         }))
       if (!done.length) return null
       if (planned.target.kind === 'hold') {
-        const step = STEP_BY_ID[state.stepId]
-        const ceiling = step && planned.exerciseId === step.keyExerciseId ? step.unlockSec : Infinity
-        return adviseNextHold(planned.target.sec, done, ceiling)
+        return adviseNextHold(planned.target.sec, done, setToSetCeiling(STEP_BY_ID[state.stepId], planned.exerciseId))
       }
       return adviseNextReps(planned.target.reps, done)
     },

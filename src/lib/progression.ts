@@ -2,7 +2,7 @@ import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import type { AppState, AutoForm, FormCheck, FormIssue, FormRating, Session, SetLog, StepId, TrainingSurface } from '../types'
 import { trustedCameraEvidence } from './formEvidence'
-import { WALK_BACK_MAX_SEC } from './sessionTiming'
+import { PROGRESSION_STOP_LATENCY_SEC, WALK_BACK_MAX_SEC } from './sessionTiming'
 
 export interface Qualification {
   value: number
@@ -357,16 +357,11 @@ export function qualifyingValueIsFloor(session: Session, stepId: StepId, value: 
     const right = bestOn('right')
     if (Math.abs(left - right) > 0.05) top = top.filter((set) => set.side === (left < right ? 'left' : 'right'))
   }
-  return (
-    top.length > 0 &&
-    top.every(
-      (set) =>
-        stoppedAtTarget(set, stepId) &&
-        // The camera saw the clean hold end before the target: that is its
-        // measurement — unless it only stopped filming a hold still clean.
-        (credit(set) >= set.target - 0.05 || unfilmedAfterCleanFilm(set.form?.auto) > 0),
-    )
-  )
+  // A verified hold carries the reading the athlete confirmed, so the camera
+  // decides here even with the one secondary flag that keeps it from counting
+  // as trusted. Not the credit: that is capped at the logged value, which a
+  // quick walker's walk allowance pulls under the target.
+  return top.length > 0 && top.every((set) => !cameraMeasured(set, set.form?.auto) && stoppedAtTarget(set, stepId))
 }
 
 /**
@@ -475,9 +470,18 @@ function inScope(set: SetLog, scope: LearningScope | undefined): boolean {
  */
 export function capacityReading(set: SetLog): number {
   const value = trainingSetValue(set)
-  // The athlete said balance, technique or effort ended it: the walk overlapped
-  // the call rather than following it, and the logged value is the reading.
-  if (set.calledAtTarget !== true || endedAtLimit(set)) return value
+  // The athlete said balance, technique or effort ended it — the walk
+  // overlapped the call rather than following it — or set the number
+  // themselves, re-timing it from the video or editing it: the logged value is
+  // the reading. Lifted, an 8.2s hold marked on its clip read as a 10s floor.
+  if (
+    set.calledAtTarget !== true ||
+    endedAtLimit(set) ||
+    set.timing?.method === 'video' ||
+    set.timing?.method === 'edited'
+  ) {
+    return value
+  }
   // Filmed, confirmed and agreed: the check runs up to the target, so the
   // camera saw how long the position actually lasted — believe it over the
   // assumption, either way.
@@ -513,18 +517,46 @@ function endedAtLimit(set: Pick<SetLog, 'endReason'>): boolean {
  */
 export function stoppedAtTarget(set: SetLog, stepId: StepId): boolean {
   if (set.kind !== 'hold' || !(set.target > 0) || isBarAttempt(set, stepId) || endedAtLimit(set)) return false
-  // The camera the athlete confirmed saw the clean hold end before the target
-  // (and did not just stop filming a hold still clean). The stopwatch cannot
-  // say this: net of a walk allowance it reads short for a quick walker.
   const auto = trustedCameraEvidence(set) ? set.form?.auto : undefined
-  if (auto?.cleanSeconds !== undefined && auto.cleanSeconds < set.target - 0.05 && unfilmedAfterCleanFilm(auto) === 0) {
-    return false
-  }
+  if (cameraMeasured(set, auto)) return false
   if (set.endReason === 'target') return true
   if (set.calledAtTarget === true && capacityReading(set) >= set.target - 0.05) return true
   const held = trainingSetValue(set)
-  const walk = set.timing?.allowance === 'walk-back' ? WALK_BACK_MAX_SEC - (set.timing.allowanceSec ?? WALK_BACK_MAX_SEC) : 0
-  return held >= set.target - 0.05 && held <= set.target + Math.max(1, set.target * 0.1, walk)
+  return held >= set.target - 0.05 && held <= set.target + stopBandSec(set)
+}
+
+/**
+ * The camera saw where the clean hold ended, and it was not at the call: it
+ * certified clean time well past the call, or it saw a breakdown before the
+ * target. The stopwatch cannot say either — net of a walk allowance it reads
+ * short for a quick walker and long for a slow one — so the camera decides,
+ * whatever the band or the flag would.
+ *
+ * A breakdown means one inside what it analysed (the credited stretch, or up
+ * to the target for a hold stopped at its call). Clean to the end of that
+ * window — footage that ran out, or a stretch the walk allowance cut short —
+ * is no breakdown, and says nothing about where the hold ended.
+ */
+function cameraMeasured(set: SetLog, auto: AutoForm | undefined): boolean {
+  if (auto?.cleanSeconds === undefined) return false
+  if (auto.cleanSeconds > set.target + Math.max(1, set.target * 0.1)) return true
+  const sawBreakdown =
+    (auto.cleanRatio !== undefined ? auto.cleanRatio < 0.98 : auto.cleanSeconds < set.value - 0.15) &&
+    unfilmedAfterCleanFilm(auto) === 0
+  return sawBreakdown && auto.cleanSeconds < set.target - 0.05
+}
+
+/**
+ * How far past its target a hold can log and still have come down at the
+ * call: the stop itself — a second, or a tenth of a long hold — and, when the
+ * walk back to the phone was the *assumed* allowance, the walk it may have
+ * missed. A measured walk is the slowest of three, so it gets none: given the
+ * room, a measured 2.5s walker's 12s on an 8s target read as a floor.
+ */
+function stopBandSec(set: SetLog): number {
+  const assumedWalk =
+    set.timing?.allowance === 'walk-back' && set.timing.allowanceSec === PROGRESSION_STOP_LATENCY_SEC
+  return Math.max(1, set.target * 0.1, assumedWalk ? WALK_BACK_MAX_SEC - PROGRESSION_STOP_LATENCY_SEC : 0)
 }
 
 /** Reached its target and did not meaningfully pass it: the prescription, done. */
@@ -534,7 +566,9 @@ function completedAtTarget(set: SetLog): boolean {
     // Came down at the target call: reached it, whatever the fixed walk-back
     // allowance made of the logged value — unless the camera saw otherwise.
     (set.calledAtTarget === true && capacityReading(set) >= set.target - 0.05) ||
-    (set.value >= set.target - 0.05 && set.value <= set.target + Math.max(1, set.target * 0.1))
+    // The same band as a floor's: with the 1s band alone, a slow walker's stops
+    // at the call never counted as done, and their targets fell 8s → 5s.
+    (set.value >= set.target - 0.05 && set.value <= set.target + stopBandSec(set))
   )
 }
 

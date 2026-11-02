@@ -30,6 +30,15 @@ export function workingCeiling(step: StepDef): number {
 }
 
 /**
+ * The most a set-to-set adjustment may raise a target to: for the step's key
+ * hold, the same ceiling. It once passed the bar itself, so an athlete far
+ * past it was raised to an attempt-shaped working set that reset the re-test.
+ */
+export function setToSetCeiling(step: StepDef | undefined, exerciseId: string): number {
+  return step && exerciseId === step.keyExerciseId ? workingCeiling(step) : Infinity
+}
+
+/**
  * Working-set target, anchored robustly.
  *
  * Anchoring on the all-time best is tempting but fragile: a single

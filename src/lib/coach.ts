@@ -25,6 +25,7 @@ import {
 } from './signals'
 import {
   humanRating,
+  isBarAttempt,
   requiresFlightConfirmation as requiresFlight,
   qualifyingProgress,
   qualifyingSessionValue,
@@ -502,7 +503,7 @@ export function pickStrategy(state: AppState): CoachPick {
     reason:
       evaluated === 0
         ? stoppedAtCalls(state)
-          ? `Every approach has been tried, but none has a measured session after it yet: a hold you stop at the target call says “at least this much”, not how far you could go, so this log cannot say which approach suits you. ${name} today.`
+          ? `Every approach has been tried, but none has a measured session after it yet: a hold that ends at or just past its target call says “at least this much”, not how far you could go, so this log cannot say which approach suits you. ${name} today.`
           : `Every approach has been tried, but none has a later comparable session to measure it against yet. Staying on ${name.toLowerCase()} until results come in.`
         : best.n === 0
           ? `${name} has been tried but not measured yet — it gets another turn before the coach leans on any one approach.`
@@ -1780,23 +1781,37 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // step opens only on verified evidence, and the unlock attempt is queued only
   // from verified holds, so an athlete who never films was told nothing:
   // simulated, sixty sessions at the tuck with 23s max holds on a 20s bar.
-  const newestKey = keyPoints[keyPoints.length - 1]
-  const stopwatchLevel = newestKey ? measuredLevel(keyPoints, newestKey.at) : null
+  //
+  // Fresh against today, not against the last session: after months off, the
+  // holds of before are not "your holds". And about the holds, not "max
+  // holds": working sets taken past their calls measure too, and the same plan
+  // can say the hold has not been measured at its max yet.
+  const stopwatchLevel = measuredLevel(keyPoints, now)
   if (stopwatchLevel !== null && stopwatchLevel >= step.unlockSec * 0.85 && best < step.unlockSec * 0.85 && !queueUnlockAttempt) {
-    const filmedLately = state.sessions
+    // Whether a max effort at the bar was filmed lately — not whether anything
+    // was: an athlete whose working sets pass on camera was told "none of your
+    // filmed ones has passed". A frog stand is never graded by the camera; it
+    // opens on a filmed hold the athlete reviews against the checklist.
+    const frog = step.keyExerciseId === 'frog-stand'
+    const filmedMaxLately = state.sessions
       .filter((s) => s.stepId === state.stepId && s.startedAt <= now)
       .slice(-6)
-      .some((s) => s.sets.some((x) => x.exerciseId === step.keyExerciseId && x.section === 'main' && x.form?.auto !== undefined))
+      .some((s) => s.sets.some((x) => isBarAttempt(x, state.stepId) && (x.clipKey !== undefined || x.form?.auto !== undefined)))
     const next = stepAfter(state.stepId)
-    const opens = next ? `${next.name} opens on a hold the camera has checked` : 'The bar counts on a hold the camera has checked'
-    const where = `On the stopwatch your max clean holds are at about ${Math.round(stopwatchLevel)}s, ${
+    const checked = frog ? 'a filmed hold you have reviewed against the checklist' : 'a hold the camera has checked'
+    const opens = next ? `${next.name} opens on ${checked}` : `The bar counts on ${checked}`
+    const where = `On the stopwatch your holds have reached about ${Math.round(stopwatchLevel)}s, ${
       stopwatchLevel >= step.unlockSec ? 'past' : 'close to'
     } the ${step.unlockSec}s bar.`
     decisions.push({
-      text: filmedLately
-        ? `${where} ${opens}, and none of your filmed ones has passed the check yet — what the camera flags on them is what stands between you and the step.`
-        : `${where} ${opens}, and none of your recent ones were filmed — film ${queueRetest ? 'today’s' : 'your next'} max clean hold from the side.`,
+      text: filmedMaxLately
+        ? `${where} ${opens}, and your filmed max holds have not passed ${frog ? 'that review' : 'the check'} yet — ${
+            frog ? 'the checklist on the replay' : 'what the camera flags on them'
+          } is what stands between you and the step.`
+        : `${where} ${opens}, and your max holds have not been filmed lately — film ${queueRetest ? 'today’s' : 'your next'} max clean hold from the side.`,
       kind: 'good',
+      // It asks for a max effort, so it goes with the others on a day the rails cancel them.
+      source: 'loaded-session',
     })
   }
 
