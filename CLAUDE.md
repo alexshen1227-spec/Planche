@@ -346,7 +346,21 @@ more certain than its basis.
    more than that; the loop's simulated camera mirrors this, and an earlier
    fixture that let it see past the window described an impossible hold.
    `capacityReading` never lifts a video-timed or edited hold, and set-to-set
-   advice stops at `setToSetCeiling` like every working target. All five realistic
+   advice stops at `setToSetCeiling` like every working target.
+   Camera time is hold time (`cleanHoldSec` adds `recordingOffsetSec` for a
+   stopwatch hold), and only a *seen* breakdown bounds a hold
+   (`sawBreakdown`: the judge's `cleanRatio`, which is over the filmed part of
+   the requested window, so footage that ran out is never one) — in
+   `capacityReading`, `cameraMeasured` and `completedAtTarget` alike. A
+   measured walk is recorded (`timing.walkMeasured`) so a 5.0s measurement is
+   not mistaken for the assumed walk. Trends and noise read camera points
+   alone once three are in the window (`LearningPoint.camera`), like surfaces.
+   Known limit, from a 45-athlete sweep: slow gainers (~0.45s/week) with an
+   unmeasured walk still get a few "flat — no visible cause" days, because
+   working-set failures happen on bad days and the gain is inside the day
+   swing. That verdict changes nothing in the plan; measuring the walk shrinks
+   it. Redesigning the plateau test to need statistical support was judged
+   riskier than the hedged copy. All five realistic
    athletes are pinned (no noise or plateau days, at least two steps up);
    their seeds matter, so re-measure rather than loosen if one moves. A
    realistic athlete who never films stayed at the tuck for sixty sessions

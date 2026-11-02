@@ -486,13 +486,19 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const measured = series.points.filter((p) => p.cappedAt === undefined)
   const lastMeasuredAt = measured.length ? measured[measured.length - 1].at : 0
   const withKey = measured.filter((p) => lastMeasuredAt - p.at <= MEASURED_WINDOW_DAYS * DAY)
-  const recentBests = withKey.slice(-6).map((p) => p.value)
+  // One instrument at a time, like one surface: with three camera readings in
+  // the window, the spread and the trend come from those alone. A slow
+  // walker's unfilmed max holds read two seconds long, and a filmed reading
+  // after them looked like a decline — a stall called on someone gaining.
+  const byCamera = withKey.filter((p) => p.camera)
+  const readable = byCamera.length >= 3 ? byCamera : withKey
+  const recentBests = readable.slice(-6).map((p) => p.value)
   const mainMedian = median(recentBests)
-  const spread = spreadAroundTrend(withKey.slice(-6))
+  const spread = spreadAroundTrend(readable.slice(-6))
   const variability = mainMedian && mainMedian > 0 && spread !== null ? spread / mainMedian : null
   // Isometrics swing day to day; past ~22% deviation the signal is mostly noise.
   const noisy = variability !== null && variability > 0.22 && recentBests.length >= 3
-  const trendPerWeek = slopePerWeek(withKey.slice(-6))
+  const trendPerWeek = slopePerWeek(readable.slice(-6))
   // A floor is still evidence the key hold was trained.
   const latestKey = series.points[series.points.length - 1]
   const daysSinceKeyEvidence = latestKey ? daysBetween(latestKey.at) : null

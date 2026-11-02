@@ -477,6 +477,7 @@ function sanitizeSet(rawSet: unknown, sessionStart: number, report: NormalizeRep
           ? { allowanceSec: clampNum(t.allowanceSec, 0, 60, 0) }
           : {}),
         ...(typeof t.allowance === 'string' && TIMING_ALLOWANCES.has(t.allowance) ? { allowance: t.allowance } : {}),
+        ...(t.walkMeasured === true ? { walkMeasured: true } : {}),
         ...(t.method === 'video' &&
         typeof t.videoStartSec === 'number' &&
         typeof t.videoEndSec === 'number' &&

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AppState, CheckIn, FormCheck, FormIssue, Session, SetLog, StepId } from '../types'
+import type { AppState, AutoForm, CheckIn, FormCheck, FormIssue, Session, SetLog, StepId } from '../types'
 import { STEP_BY_ID, STEPS } from '../data/progressions'
 import {
   adaptiveTarget,
@@ -1054,7 +1054,7 @@ describe('found by a review of the floor rule', () => {
     const text = buildPlan(athlete('tuck', { sessions }), NOW)
       .decisions.map((d) => d.text)
       .join(' ')
-    expect(text).toMatch(/On the stopwatch your holds have reached about 2\ds, past the 20s bar\. Advanced Tuck opens on a hold the camera has checked, and your max holds have not been filmed lately/)
+    expect(text).toMatch(/On the stopwatch your holds have reached about 2\ds, past the 20s bar\. Advanced Tuck opens on a hold the camera has checked, and the camera has not checked one that long/)
     // Filmed and verified close to the bar: the unlock attempt says it instead.
     const filmed = [24, 3].map((d) => trainingDay(d, [set(18, STEP_BY_ID.tuck.unlockSec, { at: at(d), form: verified(18) })]))
     const verifiedText = buildPlan(athlete('tuck', { sessions: [...[20, 17, 13, 10, 7].map((d) => stoppedDay(d, 11)), ...filmed] }), NOW)
@@ -1075,7 +1075,7 @@ describe('found by a review of the floor rule', () => {
         .decisions.map((d) => d.text)
         .join(' ')
     const sessions = [...filmedWork, unfilmedMax(24, 21), unfilmedMax(3, 23)]
-    expect(text(sessions)).toMatch(/your max holds have not been filmed lately/)
+    expect(text(sessions)).toMatch(/the camera has not checked one that long/)
     expect(text(sessions)).not.toMatch(/have not passed the check/)
     // Months later, the old holds are not "your holds".
     expect(text(sessions, undefined, NOW + 130 * DAY)).not.toMatch(/On the stopwatch your holds/)
@@ -1229,6 +1229,94 @@ describe('found by a review of the walk rule', () => {
   it('does not lift a hold re-timed from its video or edited down', () => {
     expect(capacityReading(set(8.2, 10, { calledAtTarget: true, timing: { method: 'video' } }))).toBe(8.2)
     expect(capacityReading(set(6, 10, { calledAtTarget: true, timing: { method: 'edited' } }))).toBe(6)
+  })
+})
+
+describe('found by a review of the camera window', () => {
+  const key = 'tuck-planche'
+  const set = (value: number, target: number, overrides: Partial<SetLog> = {}): SetLog => ({
+    exerciseId: key,
+    kind: 'hold',
+    value,
+    target,
+    section: 'main',
+    at: at(3),
+    ...overrides,
+  })
+  const walked = { timing: { method: 'stopwatch' as const, allowance: 'walk-back' as const, allowanceSec: 5 } }
+  // A reading as the form check writes it: clean time over the window it analysed.
+  const read = (cleanSeconds: number, analysedSec: number, extra: Partial<AutoForm> = {}): Partial<SetLog> => ({
+    form: {
+      rating: 'clean',
+      confirmed: true,
+      flightConfirmed: true,
+      auto: { issues: [], confidence: 0.9, cleanSeconds, cleanRatio: Math.min(1, cleanSeconds / analysedSec), analysedSec, ...extra },
+    },
+  })
+
+  it('does not take the end of the camera’s window for the end of the hold', () => {
+    // Down at the 5s call, logged 3s net of a quick walk; the recording started
+    // half a second late, so the check covered 4.5s of clip and saw it clean.
+    const late = set(3, 5, { calledAtTarget: true, raw: 8, recordingOffsetSec: 0.5, ...walked, ...read(4.5, 4.5) })
+    expect(capacityReading(late)).toBe(5)
+    expect(sessionLearningPoint(trainingDay(3, [late]), 'tuck')).toEqual({ value: 5, floorAt: 5 })
+    // The recording stopped at 7s of a 10s window, clean to its last frame
+    // (the judge's ratio is over the filmed part, so 1).
+    const cut = set(8, 10, { calledAtTarget: true, raw: 13, ...walked, ...read(7, 10, { unfilmedSec: 3, cleanRatio: 1 }) })
+    expect(capacityReading(cut)).toBe(10)
+    expect(stoppedAtTarget(cut, 'tuck')).toBe(true)
+    // Footage ending a tenth short of the target, too little to be disclosed
+    // as unfilmed: the judge's ratio over what it filmed is 1, so no breakdown.
+    const short = set(3, 5, { calledAtTarget: true, raw: 8, ...walked, ...read(4.9, 5, { cleanRatio: 1 }) })
+    expect(capacityReading(short)).toBe(5)
+  })
+
+  it('reads the camera in hold time when the recording started late', () => {
+    // A 6.5s walker down at the 10s call: 10.3s of hold is 9.8s of clip.
+    const slow = set(11.8, 10, { raw: 16.8, recordingOffsetSec: 0.5, ...walked, ...read(9.8, 11.3) })
+    expect(stoppedAtTarget(slow, 'tuck')).toBe(true)
+  })
+
+  it('reads the trend from the camera when it has enough, not pooled with the stopwatch', () => {
+    // A slow walker's unfilmed max holds read two seconds long; the filmed ones
+    // after them are right, and rising. Pooled, that looked like a decline.
+    const bar = STEP_BY_ID.tuck.unlockSec
+    const unfilmed = [30, 26, 22].map((d, i) => trainingDay(d, [set([10, 10.5, 11][i], bar, { at: at(d) })]))
+    const filmed = [18, 14, 10, 6].map((d, i) => {
+      const v = [9.2, 9.6, 10, 10.4][i]
+      return trainingDay(d, [set(v, bar, { at: at(d), ...read(v, v) })])
+    })
+    expect(readSignals(athlete('tuck', { sessions: [...unfilmed, ...filmed] }), NOW).trendPerWeek!).toBeGreaterThan(0.5)
+  })
+
+  it('does not count a breakdown the camera saw as the target done', () => {
+    // A 7s walker failing at 9.5s of a 10s target logs 11.5s with no call flag.
+    const failed = set(11.5, 10, { raw: 16.5, ...walked, ...read(9.5, 11.5) })
+    expect(sessionTargetCap(trainingDay(3, [failed]), 'tuck', null)).toBeNull()
+  })
+
+  it('gives a measured walk of exactly five seconds no room for a slow one', () => {
+    const measured = { timing: { method: 'stopwatch' as const, allowance: 'walk-back' as const, allowanceSec: 5, walkMeasured: true } }
+    expect(stoppedAtTarget(set(10.5, 8, { raw: 15.5, ...measured }), 'tuck')).toBe(false)
+    expect(stoppedAtTarget(set(10.5, 8, { raw: 15.5, ...walked }), 'tuck')).toBe(true)
+  })
+
+  it('says what is missing from the filmed max holds, not just that they were filmed', () => {
+    const bar = STEP_BY_ID.tuck.unlockSec
+    const unfilmed = (d: number, v: number) => trainingDay(d, [set(v, bar, { at: at(d) })])
+    const text = (sessions: Session[]) =>
+      buildPlan(athlete('tuck', { sessions }), NOW)
+        .decisions.map((d) => d.text)
+        .join(' ')
+    // A filmed max hold that passed at 14s, and longer ones never filmed.
+    const passed = trainingDay(17, [set(14, bar, { at: at(17), form: verified(14) })])
+    const withPass = text([passed, unfilmed(10, 18), unfilmed(3, 19)])
+    expect(withPass).toMatch(/On the stopwatch your holds/)
+    expect(withPass).not.toMatch(/have not passed the check/)
+    expect(withPass).toMatch(/has not checked one that long/)
+    // A filmed max hold the check failed: that is what to look at.
+    const failed = trainingDay(17, [set(18, bar, { at: at(17), form: { rating: 'clean', confirmed: true, flightConfirmed: true, auto: { issues: ['arms'], confidence: 0.9, cleanSeconds: 0, cleanRatio: 0 } } })])
+    expect(text([failed, unfilmed(10, 18), unfilmed(3, 19)])).toMatch(/have not passed the check yet/)
   })
 })
 

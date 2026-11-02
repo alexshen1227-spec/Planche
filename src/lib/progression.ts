@@ -374,9 +374,33 @@ export function qualifyingValueIsFloor(session: Session, stepId: StepId, value: 
 export function trainingSetValue(set: SetLog): number {
   if (set.value <= 0 || humanRating(set.form) === 'broke') return 0
   const auto = trustedCameraEvidence(set) ? set.form?.auto : undefined
-  const cleanSeconds = auto?.cleanSeconds
-  if (auto === undefined || cleanSeconds === undefined) return set.value
-  return Math.min(set.value, Math.max(0, cleanSeconds) + unfilmedAfterCleanFilm(auto))
+  if (auto === undefined || auto.cleanSeconds === undefined) return set.value
+  return Math.min(set.value, cleanHoldSec(set, auto) + unfilmedAfterCleanFilm(auto))
+}
+
+/**
+ * The camera's clean time on the hold's clock. A stopwatch hold's clip starts
+ * `recordingOffsetSec` after Go, so clip time runs that far behind; a
+ * video-timed hold is analysed over its own marked stretch.
+ */
+function cleanHoldSec(set: SetLog, auto: AutoForm): number {
+  const offset = set.timing?.method === 'video' ? 0 : Math.max(0, set.recordingOffsetSec ?? 0)
+  return Math.max(0, auto.cleanSeconds ?? 0) + offset
+}
+
+/**
+ * The camera saw a breakdown inside what it analysed. Clean to the end of its
+ * window — footage that ran out, a recording that started late, or a stretch
+ * the walk allowance cut short — is no breakdown: it says the position held as
+ * far as the camera looked, not where the hold ended.
+ */
+function sawBreakdown(auto: AutoForm): boolean {
+  if (auto.cleanSeconds === undefined || unfilmedAfterCleanFilm(auto) > 0) return false
+  // The judge's own ratio is clean time over the filmed part of the window it
+  // was asked for, so it already discounts footage that ran out — even a tail
+  // too short to be disclosed as unfilmed.
+  if (auto.cleanRatio !== undefined) return auto.cleanRatio < 0.98
+  return auto.analysedSec !== undefined && auto.cleanSeconds < auto.analysedSec - 0.15
 }
 
 /**
@@ -482,11 +506,15 @@ export function capacityReading(set: SetLog): number {
   ) {
     return value
   }
-  // Filmed, confirmed and agreed: the check runs up to the target, so the
-  // camera saw how long the position actually lasted — believe it over the
-  // assumption, either way.
+  // Filmed, confirmed and agreed: the check runs up to the target, so a
+  // breakdown it saw is where the position actually went — believe it over the
+  // assumption. Clean to the end of its window is no breakdown, and the call
+  // stands: capped there, a recording that started half a second late read a
+  // hold stopped at its call as a shortfall, and the next target fell 10s → 6s.
   const auto = trustedCameraEvidence(set) ? set.form?.auto : undefined
-  if (auto?.cleanSeconds !== undefined) return Math.max(value, Math.min(set.target, auto.cleanSeconds))
+  if (auto?.cleanSeconds !== undefined && sawBreakdown(auto)) {
+    return Math.max(value, Math.min(set.target, cleanHoldSec(set, auto)))
+  }
   return Math.max(value, set.target)
 }
 
@@ -539,11 +567,9 @@ export function stoppedAtTarget(set: SetLog, stepId: StepId): boolean {
  */
 function cameraMeasured(set: SetLog, auto: AutoForm | undefined): boolean {
   if (auto?.cleanSeconds === undefined) return false
-  if (auto.cleanSeconds > set.target + Math.max(1, set.target * 0.1)) return true
-  const sawBreakdown =
-    (auto.cleanRatio !== undefined ? auto.cleanRatio < 0.98 : auto.cleanSeconds < set.value - 0.15) &&
-    unfilmedAfterCleanFilm(auto) === 0
-  return sawBreakdown && auto.cleanSeconds < set.target - 0.05
+  const clean = cleanHoldSec(set, auto)
+  if (clean > set.target + Math.max(1, set.target * 0.1)) return true
+  return sawBreakdown(auto) && clean < set.target - 0.05
 }
 
 /**
@@ -555,12 +581,16 @@ function cameraMeasured(set: SetLog, auto: AutoForm | undefined): boolean {
  */
 function stopBandSec(set: SetLog): number {
   const assumedWalk =
-    set.timing?.allowance === 'walk-back' && set.timing.allowanceSec === PROGRESSION_STOP_LATENCY_SEC
+    set.timing?.allowance === 'walk-back' &&
+    set.timing.walkMeasured !== true &&
+    set.timing.allowanceSec === PROGRESSION_STOP_LATENCY_SEC
   return Math.max(1, set.target * 0.1, assumedWalk ? WALK_BACK_MAX_SEC - PROGRESSION_STOP_LATENCY_SEC : 0)
 }
 
 /** Reached its target and did not meaningfully pass it: the prescription, done. */
 function completedAtTarget(set: SetLog): boolean {
+  // The camera saw it go before the target (a miss lifts nothing), or well past it.
+  if (cameraMeasured(set, trustedCameraEvidence(set) ? set.form?.auto : undefined)) return false
   return (
     set.endReason === 'target' ||
     // Came down at the target call: reached it, whatever the fixed walk-back
@@ -730,6 +760,29 @@ export interface LearningPoint {
    * much"), not a measurement, and this is the target it stopped at.
    */
   cappedAt?: number
+  /** The value was read through trusted camera evidence, not the stopwatch alone. */
+  camera?: true
+}
+
+/**
+ * Whether a session's learning value was read through the camera: every key
+ * hold that reached it carries trusted camera evidence. The camera and a
+ * stopwatch net of an assumed walk are two instruments — a slow walker's
+ * unfilmed max holds read two seconds long — and pooled, they manufactured a
+ * decline whenever a filmed reading followed an unfilmed one.
+ */
+export function learningValueFromCamera(session: Session, stepId: StepId, value: number, scope?: LearningScope): boolean {
+  const step = STEP_BY_ID[stepId]
+  if (!step || value <= 0) return false
+  const top = session.sets.filter(
+    (set) =>
+      set.exerciseId === step.keyExerciseId &&
+      set.kind === 'hold' &&
+      set.section === 'main' &&
+      inScope(set, scope) &&
+      Math.abs(capacityReading(set) - value) <= 0.05,
+  )
+  return top.length > 0 && top.every((set) => trustedCameraEvidence(set) && set.form?.auto?.cleanSeconds !== undefined)
 }
 
 /**
@@ -797,7 +850,12 @@ export function learningSeries(
     sorted
       .map((s) => {
         const { value, floorAt } = sessionLearningPoint(s, stepId, { surface })
-        return { at: s.startedAt, value, ...(floorAt !== null ? { cappedAt: floorAt } : {}) }
+        return {
+          at: s.startedAt,
+          value,
+          ...(floorAt !== null ? { cappedAt: floorAt } : {}),
+          ...(learningValueFromCamera(s, stepId, value, { surface }) ? { camera: true as const } : {}),
+        }
       })
       .filter((p) => p.value > 0)
   const own = seriesFor(preferred)

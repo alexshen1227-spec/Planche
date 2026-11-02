@@ -171,7 +171,15 @@ function runLoop(
                     confirmed: true,
                     flightConfirmed: true,
                     visualReviewPassed: true,
-                    auto: { issues: [], confidence: 0.9, score: 90, cleanSeconds: clean, cleanRatio: value > 0 ? Math.min(1, clean / value) : 1 },
+                    // Over the analysed window, as the judge computes it.
+                    auto: {
+                      issues: [],
+                      confidence: 0.9,
+                      score: 90,
+                      cleanSeconds: clean,
+                      cleanRatio: analysed > 0 ? Math.min(1, clean / analysed) : 1,
+                      analysedSec: round1(analysed),
+                    },
                   },
                 }
               : {}),

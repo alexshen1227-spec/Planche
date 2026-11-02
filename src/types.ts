@@ -426,6 +426,11 @@ export interface SetTiming {
   method: 'stopwatch' | 'interrupted' | 'edited' | 'video'
   /** Seconds taken off the raw reading, when any were. */
   allowanceSec?: number
+  /**
+   * The walk-back allowance was the athlete's measured walk, not the assumed
+   * five seconds. Only an assumed walk may have missed a slow one.
+   */
+  walkMeasured?: boolean
   allowance?: 'walk-back' | 'reaction' | 'interruption'
   /** Clip-time of the marked start and end, for `video` timing. */
   videoStartSec?: number

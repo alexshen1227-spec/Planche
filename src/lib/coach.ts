@@ -26,6 +26,7 @@ import {
 import {
   humanRating,
   isBarAttempt,
+  isQualifyingSet,
   requiresFlightConfirmation as requiresFlight,
   qualifyingProgress,
   qualifyingSessionValue,
@@ -1788,15 +1789,23 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // can say the hold has not been measured at its max yet.
   const stopwatchLevel = measuredLevel(keyPoints, now)
   if (stopwatchLevel !== null && stopwatchLevel >= step.unlockSec * 0.85 && best < step.unlockSec * 0.85 && !queueUnlockAttempt) {
-    // Whether a max effort at the bar was filmed lately — not whether anything
-    // was: an athlete whose working sets pass on camera was told "none of your
-    // filmed ones has passed". A frog stand is never graded by the camera; it
-    // opens on a filmed hold the athlete reviews against the checklist.
+    // Whether a max effort at the bar was filmed, checked and failed lately —
+    // not whether anything was filmed: working sets that pass on camera, a max
+    // hold that passed but shorter, or a clip never checked all got "what the
+    // camera flags". A frog stand is never graded by the camera; it opens on a
+    // filmed hold the athlete reviews against the checklist.
     const frog = step.keyExerciseId === 'frog-stand'
-    const filmedMaxLately = state.sessions
+    const filmedMaxFailed = state.sessions
       .filter((s) => s.stepId === state.stepId && s.startedAt <= now)
       .slice(-6)
-      .some((s) => s.sets.some((x) => isBarAttempt(x, state.stepId) && (x.clipKey !== undefined || x.form?.auto !== undefined)))
+      .some((s) =>
+        s.sets.some(
+          (x) =>
+            isBarAttempt(x, state.stepId) &&
+            (frog ? x.form?.confirmed === true : x.form?.auto !== undefined) &&
+            !isQualifyingSet(x, step.keyExerciseId),
+        ),
+      )
     const next = stepAfter(state.stepId)
     const checked = frog ? 'a filmed hold you have reviewed against the checklist' : 'a hold the camera has checked'
     const opens = next ? `${next.name} opens on ${checked}` : `The bar counts on ${checked}`
@@ -1804,11 +1813,13 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       stopwatchLevel >= step.unlockSec ? 'past' : 'close to'
     } the ${step.unlockSec}s bar.`
     decisions.push({
-      text: filmedMaxLately
+      text: filmedMaxFailed
         ? `${where} ${opens}, and your filmed max holds have not passed ${frog ? 'that review' : 'the check'} yet — ${
-            frog ? 'the checklist on the replay' : 'what the camera flags on them'
-          } is what stands between you and the step.`
-        : `${where} ${opens}, and your max holds have not been filmed lately — film ${queueRetest ? 'today’s' : 'your next'} max clean hold from the side.`,
+            frog ? 'the checklist on each replay' : 'each one’s form check'
+          } says what it is missing.`
+        : `${where} ${opens}, and ${frog ? 'you have not reviewed one that long' : 'the camera has not checked one that long'} — film ${
+            queueRetest ? 'today’s' : 'your next'
+          } max clean hold from the side and ${frog ? 'review it' : 'let the check run'}.`,
       kind: 'good',
       // It asks for a max effort, so it goes with the others on a day the rails cancel them.
       source: 'loaded-session',

@@ -975,12 +975,15 @@ export function SessionPlayer({
           .finally(() => setClipsFinalizing((n) => Math.max(0, n - 1)))
       }
       const allowanceSec = round1(raw - v)
+      const walkBack = Boolean(exercise && isMainProgressionHold(exercise.id) && walkedBack)
       const timing: SetTiming = {
         method: 'stopwatch',
         ...(allowanceSec > 0
           ? {
               allowanceSec,
-              allowance: exercise && isMainProgressionHold(exercise.id) && walkedBack ? 'walk-back' : 'reaction',
+              allowance: walkBack ? 'walk-back' : 'reaction',
+              // Only an assumed walk may have missed a slow one (see stopBandSec).
+              ...(walkBack && state.settings.walkBackSec !== undefined ? { walkMeasured: true } : {}),
             }
           : {}),
       }
@@ -1000,7 +1003,7 @@ export function SessionPlayer({
         then,
       )
     },
-    [holdStart, latency, bestBefore, exercise, block, recorder, logSet, walkedBack, dispatch],
+    [holdStart, latency, bestBefore, exercise, block, recorder, logSet, walkedBack, dispatch, state.settings.walkBackSec],
   )
 
   const beginSet = useCallback(

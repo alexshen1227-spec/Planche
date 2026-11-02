@@ -19,6 +19,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'The camera’s clock, not the clip’s',
+    area: 'camera',
+    notes: [
+      'A filmed hold you stopped at the call no longer counts as short when the recording started a moment late or stopped a little early — clean to the end of what the camera saw means the position held, not that the hold ended there. That had been able to drop your next target from 10s to 6s.',
+      'A breakdown the camera saw before the target no longer counts as the target done, and a walk you measured at exactly five seconds is treated as measured.',
+      'Trends and the noise check read your camera-checked holds on their own when there are enough of them, instead of mixing them with stopwatch times that a slow walk back can lengthen.',
+      'The “film your max clean hold” line now only blames the camera check when a filmed max hold actually failed it; otherwise it says the camera has not checked one that long.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'Your walk back to the phone is not extra hold time',
     area: 'coach',
     notes: [
