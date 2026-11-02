@@ -19,7 +19,9 @@ import { useToday } from '../lib/useToday'
 import { pushToast } from '../lib/toast'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
-import { ProgressRing, Stat, SectionTitle } from '../components/ui'
+import { Modal, ProgressRing, Stat, SectionTitle } from '../components/ui'
+import { WalkBackCalibrator } from '../components/WalkBackCalibrator'
+import { walkMeasureDue } from '../lib/sessionTiming'
 
 /** Per-device memory of the complete-sessions notice; never state that matters. */
 const SESSIONS_NOTICE_KEY = 'planchelab.notice.complete-sessions'
@@ -37,6 +39,17 @@ function markNoticeSeen() {
     localStorage.setItem(SESSIONS_NOTICE_KEY, '1')
   } catch {
     /* private mode: the notice simply returns next launch */
+  }
+}
+
+/** Per-device memory of the measure-your-walk card. */
+const WALK_NOTICE_KEY = 'planchelab.notice.measure-walk'
+
+function walkNoticeDismissed(): boolean {
+  try {
+    return localStorage.getItem(WALK_NOTICE_KEY) === '1'
+  } catch {
+    return false
   }
 }
 
@@ -160,6 +173,17 @@ export function Dashboard({
     markNoticeSeen()
     setNoticeClosed(true)
   }
+  const [walkNoticeClosed, setWalkNoticeClosed] = useState(walkNoticeDismissed)
+  const [measuringWalk, setMeasuringWalk] = useState(false)
+  const showWalkNotice = !walkNoticeClosed && !showSessionsNotice && walkMeasureDue(state)
+  const closeWalkNotice = () => {
+    try {
+      localStorage.setItem(WALK_NOTICE_KEY, '1')
+    } catch {
+      /* private mode: the card simply returns next launch */
+    }
+    setWalkNoticeClosed(true)
+  }
   // The week in the currencies that move a planche, against today's plan times
   // the sessions the athlete means to train. Only a full day's plan stands for
   // a normal week. A lighter day is left out too: once today's session is
@@ -223,7 +247,7 @@ export function Dashboard({
       </div>
 
       {/* Current step hero */}
-      <div className="card-sheen relative mt-5 overflow-hidden rounded-3xl border border-line bg-surface p-6 shadow-card sm:p-7">
+      <div className="card-sheen relative mt-5 overflow-clip rounded-3xl border border-line bg-surface p-6 shadow-card sm:p-7">
         <div className="pointer-events-none absolute -right-10 -top-16 h-56 w-56 rounded-full bg-accent-soft blur-2xl" />
         <div className="pointer-events-none absolute -left-16 -bottom-20 h-48 w-48 rounded-full blur-3xl" style={{ background: 'var(--t-glow2)' }} />
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center">
@@ -349,6 +373,30 @@ export function Dashboard({
                 className="min-h-10 rounded-lg border border-line bg-surface px-3 py-1.5 font-medium text-ink2 hover:text-ink"
               >
                 Keep {state.settings.sessionMinutes}
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {showWalkNotice ? (
+          <div className="relative mt-3 rounded-xl border border-accent/30 bg-accent-soft p-3 text-[13px] leading-relaxed text-ink">
+            <div className="font-semibold">Measure your walk back to the phone</div>
+            <p className="mt-0.5 text-ink2">
+              Every Path hold has 5 seconds taken off for coming out and reaching the phone. If your walk is quicker or
+              slower, every hold reads that much off — and your targets are set from those numbers. Three timed walks,
+              about a minute.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => setMeasuringWalk(true)}
+                className="min-h-10 rounded-lg bg-accent px-3 py-1.5 font-semibold text-on-accent"
+              >
+                Measure my walk
+              </button>
+              <button
+                onClick={closeWalkNotice}
+                className="min-h-10 rounded-lg border border-line bg-surface px-3 py-1.5 font-medium text-ink2 hover:text-ink"
+              >
+                Not now
               </button>
             </div>
           </div>
@@ -763,6 +811,15 @@ export function Dashboard({
           })}
         </div>
       )}
+      <Modal open={measuringWalk} onClose={() => setMeasuringWalk(false)} label="Measure your walk back">
+        <WalkBackCalibrator
+          onDone={(sec) => {
+            dispatch({ type: 'SET_SETTINGS', patch: { walkBackSec: sec } })
+            setMeasuringWalk(false)
+            pushToast(`Walk back set to ${sec.toFixed(1)}s for main Path holds. Change it any time in Settings.`, 'success')
+          }}
+        />
+      </Modal>
     </div>
   )
 }

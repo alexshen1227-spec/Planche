@@ -31,6 +31,7 @@ import {
 import { forecastUnlock } from './forecast'
 import { capacityOn } from './bridge'
 import { workingTargetSec } from './workingTarget'
+import { walkMeasureDue } from './sessionTiming'
 import { bestSeries, sessionsInWeekOf, weekStreak } from './stats'
 import { mergeHumanReview, mergeModelReading, suggestedRatingFor } from '../components/FormCheckRow'
 
@@ -1092,6 +1093,25 @@ describe('found by a review of the floor rule', () => {
     })
     const stopped = forecastUnlock(mostlyStopped, 'full', NOW)
     expect(stopped.kind === 'insufficient' ? stopped.need : stopped.kind).toMatch(/target call/)
+  })
+})
+
+describe('the measure-your-walk card', () => {
+  const walked = (daysAgo: number): Session =>
+    trainingDay(daysAgo, [
+      { exerciseId: 'tuck-planche', kind: 'hold', value: 6, raw: 11, target: 7, section: 'main', at: at(daysAgo), timing: { method: 'stopwatch', allowance: 'walk-back', allowanceSec: 5 } },
+    ])
+  const base = initialState()
+
+  it('shows after three sessions with the assumed walk taken off, and not before', () => {
+    expect(walkMeasureDue({ settings: base.settings, sessions: [walked(9), walked(6)] })).toBe(false)
+    expect(walkMeasureDue({ settings: base.settings, sessions: [walked(9), walked(6), walked(3)] })).toBe(true)
+  })
+
+  it('never shows once the walk is measured, or with the phone within reach', () => {
+    const sessions = [walked(9), walked(6), walked(3)]
+    expect(walkMeasureDue({ settings: { ...base.settings, walkBackSec: 3.4 }, sessions })).toBe(false)
+    expect(walkMeasureDue({ settings: { ...base.settings, phoneWithinReach: true }, sessions })).toBe(false)
   })
 })
 

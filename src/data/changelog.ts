@@ -23,6 +23,7 @@ export const CHANGELOG: ChangeEntry[] = [
     area: 'coach',
     notes: [
       'If your walk back to the phone takes longer than the five seconds the app assumes, a hold you stopped at the call no longer reads as a second or two past your target. Those had counted as measurements, which could make steady progress look like going backwards and keep your targets low. Measuring your walk in Settings still makes every hold’s time more exact.',
+      'Home now suggests measuring your walk once a few sessions have had the assumed five seconds taken off. It opens right there, takes about a minute, and every hold after it is timed against your own walk.',
       'A filmed hold you stopped at the call no longer counts as a breakdown just because a quick walk back made the stopwatch read short — the camera’s own clean time decides.',
       'The load warning no longer says 120% is above 120% when last week was only just over the limit.',
       'When your stopwatch holds reach the unlock bar but nothing the camera checked has, the coach now says so: a step opens on a filmed, checked hold, and if you never film, it tells you to film your next max clean hold. If you do film, it points at what the camera keeps flagging.',

@@ -1,4 +1,4 @@
-import type { Block, SetLog, Workout } from '../types'
+import type { AppState, Block, SetLog, Workout } from '../types'
 import { STEPS } from '../data/progressions'
 
 export const STANDARD_LEAD_IN_SEC = 5
@@ -217,3 +217,19 @@ export function holdCues(
     pr: bestSec !== undefined && heldSec - Math.max(0, allowanceSec) > bestSec,
   }
 }
+
+/**
+ * Whether to suggest measuring the walk back to the phone: the assumed walk
+ * has been taken off this athlete's Path holds for three sessions, and they
+ * have neither measured it nor said the phone is within reach. Every hold
+ * reads off by however far their walk is from the assumption — a quick walker
+ * short, a slow one long — and the targets are set from those numbers. The
+ * only other prompt fires when the walk ate most of a short hold, which a slow
+ * walker never sees.
+ */
+export function walkMeasureDue(state: Pick<AppState, 'sessions' | 'settings'>): boolean {
+  if (state.settings.phoneWithinReach || state.settings.walkBackSec !== undefined) return false
+  const walked = state.sessions.filter((session) => session.sets.some((set) => set.timing?.allowance === 'walk-back'))
+  return walked.length >= 3
+}
+
