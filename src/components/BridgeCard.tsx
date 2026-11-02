@@ -67,7 +67,7 @@ export function BridgeCard({ state, stepId, compact = false }: { state: AppState
             ? `${nextEx.name} practice is in your sessions from the start — it is balance more than strength.`
             : `Your ${step.name.toLowerCase()} is past halfway, so sessions open with short ${nextEx.name.toLowerCase()} attempts while you are fresh.`
           : `Short ${nextEx.name.toLowerCase()} attempts join your sessions once your ${step.name.toLowerCase()} reaches about ${fmtHold(status.openAtSec)}${
-              status.currentSec !== undefined ? ` (you: ${fmtHold(status.currentSec)})` : ''
+              status.currentSec !== undefined ? ` (recently: ${fmtHold(status.currentSec)})` : ''
             }.`}
       </p>
 

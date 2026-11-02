@@ -468,7 +468,13 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // manufactured trends out of two flat series.
   const preferred = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
   const series = learningSeries({ sessions }, state.stepId, preferred)
-  const withKey = series.points
+  // Measurements only. A session whose best hold stopped at its target call
+  // logged whatever was prescribed — 0.7× on a technique day, 1.25× on an
+  // intensity day — so read as data, a noise-free athlete gaining every
+  // session was called noisy (withholding the unlock attempt they had
+  // earned), "going backwards" and stalled. With too few measurements the
+  // spread and the trend are unknown, never flat.
+  const withKey = series.points.filter((p) => p.cappedAt === undefined)
   const recentBests = withKey.slice(-6).map((p) => p.value)
   const mainMedian = median(recentBests)
   const spread = spreadAroundTrend(withKey.slice(-6))
@@ -476,7 +482,8 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // Isometrics swing day to day; past ~22% deviation the signal is mostly noise.
   const noisy = variability !== null && variability > 0.22 && recentBests.length >= 3
   const trendPerWeek = slopePerWeek(withKey.slice(-6))
-  const latestKey = withKey[withKey.length - 1]
+  // A floor is still evidence the key hold was trained.
+  const latestKey = series.points[series.points.length - 1]
   const daysSinceKeyEvidence = latestKey ? daysBetween(latestKey.at) : null
 
   // Hit rate from the most recent session that actually trained the key hold,
@@ -530,15 +537,22 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     mainHitRate = mains.filter((s) => capacityReading(s) >= s.target).length / mains.length
   }
 
-  // An outlier is a value far outside the robust range of the ones before it.
+  // An outlier is a value far outside the robust range of the ones just
+  // before it — the latest session's own measurement, against measurements
+  // from the four weeks before it. Against readings from months earlier, a
+  // re-test after weeks of holds stopped at the call is just progress.
   let lastWasOutlier = false
-  if (withKey.length >= 4) {
-    const prior = withKey.slice(-5, -1).map((p) => p.value)
+  const lastPoint = series.points[series.points.length - 1]
+  if (lastPoint && lastPoint.cappedAt === undefined) {
+    const prior = withKey
+      .slice(0, -1)
+      .filter((p) => lastPoint.at - p.at <= 28 * DAY)
+      .slice(-4)
+      .map((p) => p.value)
     const pm = median(prior)
     const pmad = mad(prior)
-    const latest = withKey[withKey.length - 1].value
-    if (pm !== null && pmad !== null && pmad > 0) {
-      lastWasOutlier = Math.abs(latest - pm) > Math.max(3, 3.5 * pmad)
+    if (prior.length >= 3 && pm !== null && pmad !== null && pmad > 0) {
+      lastWasOutlier = Math.abs(lastPoint.value - pm) > Math.max(3, 3.5 * pmad)
     }
   }
 

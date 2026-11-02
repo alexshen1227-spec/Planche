@@ -77,7 +77,11 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
   const keySessions = state.sessions.filter((s) =>
     s.sets.some((set) => set.exerciseId === step.keyExerciseId && set.section === 'main' && set.value > 0),
   ).length
-  const verified = qualifyingSeries(state, state.stepId).length
+  const verifiedSeries = qualifyingSeries(state, state.stepId)
+  const verified = verifiedSeries.length
+  // Verified, but every one stopped at its call: the record exists and says
+  // "at least this much", so the gap is a measurement, not time.
+  const floorsOnly = verifiedSeries.some((p) => p.floor)
   const unverified = keySessions >= MIN_FORECAST_POINTS && verified < MIN_FORECAST_POINTS
   // Missing evidence has two very different causes. Someone who has never
   // filmed needs telling to film; someone who films every set and is told to
@@ -225,7 +229,7 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
                       }. That is the thing to fix, and the record starts with the first hold that passes.`
                     : 'Film a set from the side next session to start the record.'
                 }${tighten}`
-              : `Too early to call — progress is read from verified ${keyName} holds, and this needs ${forecast.need}${
+              : `${floorsOnly ? 'Not measured yet' : 'Too early to call'} — progress is read from verified ${keyName} holds, and this needs ${forecast.need}${
                   forecast.need.endsWith('.') ? '' : '.'
                 }${tighten}`
             : `${

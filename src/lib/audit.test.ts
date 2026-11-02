@@ -18,8 +18,12 @@ import { readSignals, readinessTimeline } from './signals'
 import {
   endedForNonCapacityReason,
   isQualifyingSet,
+  measuredLevel,
   progressionCredit,
+  sessionLearningPoint,
   sessionLearningValue,
+  sessionTargetCap,
+  stoppedAtTarget,
 } from './progression'
 import { bestSeries, sessionsInWeekOf, weekStreak } from './stats'
 import { mergeHumanReview, mergeModelReading, suggestedRatingFor } from '../components/FormCheckRow'
@@ -422,9 +426,11 @@ describe('a mistaken joint report can be withdrawn without rewriting history', (
   })
 
   it('a withdrawn complaint no longer costs the strategy that preceded it', () => {
-    const strategyDay = trainingDay(5, [hold('tuck-planche', 10, at(5))], { strategy: 'volume' })
-    const follow = trainingDay(2, [hold('tuck-planche', 11, at(2))])
-    const prior = [9, 8, 7].map((d) => trainingDay(d, [hold('tuck-planche', 10, at(d))]))
+    // Held to the limit, so each is a measurement the reward can read.
+    const limit = { endReason: 'effort' as const }
+    const strategyDay = trainingDay(5, [hold('tuck-planche', 10, at(5), limit)], { strategy: 'volume' })
+    const follow = trainingDay(2, [hold('tuck-planche', 11, at(2), limit)])
+    const prior = [9, 8, 7].map((d) => trainingDay(d, [hold('tuck-planche', 10, at(d), limit)]))
     const sessions = [...prior, strategyDay, follow]
     const complaint = { id: 'p', at: at(3), joints: 'pain' as const, source: 'check-in' as const }
     const withComplaint = rewardFor(sessions, strategyDay, [complaint])
@@ -808,7 +814,7 @@ describe('found by an independent review of the 2026-11 changes', () => {
     // the rest) was three days ago.
     const pattern = [9, 13, 5]
     const noisy = [30, 27, 24, 21, 18, 15, 12, 9, 6].map((daysAgo, i) =>
-      trainingDay(daysAgo, [hold('tuck-planche', pattern[i % 3], at(daysAgo), { target: 8, form: verified(pattern[i % 3]) })], {
+      trainingDay(daysAgo, [hold('tuck-planche', pattern[i % 3], at(daysAgo), { target: 8, endReason: 'effort', form: verified(pattern[i % 3]) })], {
         baseTargetSec: 8,
       }),
     )
@@ -821,3 +827,73 @@ describe('found by an independent review of the 2026-11 changes', () => {
     expect(plan.queueRetest).toBe(false)
   })
 })
+
+describe('a hold stopped at its call is a floor, not a measurement', () => {
+  const key = 'tuck-planche'
+  const set = (value: number, target: number, overrides: Partial<SetLog> = {}): SetLog => ({
+    exerciseId: key,
+    kind: 'hold',
+    value,
+    target,
+    section: 'main',
+    at: at(3),
+    ...overrides,
+  })
+  const one = (sets: SetLog[]) => trainingDay(3, sets)
+
+  it('reads the best set, so a later set falling short does not make it a measurement', () => {
+    const stopped = [set(7.4, 8, { calledAtTarget: true }), set(7.2, 8, { calledAtTarget: true }), set(6, 8)]
+    expect(sessionLearningPoint(one(stopped), 'tuck')).toEqual({ value: 8, floorAt: 8 })
+    // A set held past its target is the measurement, whatever the others did.
+    expect(sessionLearningPoint(one([...stopped, set(11, 8)]), 'tuck')).toEqual({ value: 11, floorAt: null })
+  })
+
+  it('takes the athlete’s word for why a hold ended', () => {
+    expect(stoppedAtTarget(set(8, 8), 'tuck')).toBe(true)
+    expect(stoppedAtTarget(set(8, 8, { endReason: 'effort' }), 'tuck')).toBe(false)
+    expect(stoppedAtTarget(set(8, 8, { endReason: 'balance' }), 'tuck')).toBe(false)
+    expect(stoppedAtTarget(set(5, 8, { endReason: 'target' }), 'tuck')).toBe(true)
+    // A maximal effort at the bar is never a floor.
+    expect(stoppedAtTarget(set(9, STEP_BY_ID.tuck.unlockSec, { calledAtTarget: true }), 'tuck')).toBe(false)
+    // Done as prescribed is a different question: the base it completed still holds the next one up.
+    expect(sessionTargetCap(one([set(8, 8, { endReason: 'effort' })]), 'tuck', null)).toBe(8)
+  })
+
+  it('follows a higher reading at once and waits for a second lower one', () => {
+    const points = (values: (number | string)[]) =>
+      values.map((v, i) => (typeof v === 'string' ? { at: i, value: Number(v.slice(1)), cappedAt: 3 } : { at: i, value: v }))
+    expect(measuredLevel(points([5, 5, 8.4]))).toBe(8.4)
+    expect(measuredLevel(points([10, 10, 7]))).toBe(10)
+    expect(measuredLevel(points([10, 7, 7]))).toBe(7)
+    expect(measuredLevel(points([5, 'F9', 'F9']))).toBe(5)
+    expect(measuredLevel(points(['F3']))).toBeNull()
+  })
+
+  it('names the measurement, not the hit rate, when it lifts the target', () => {
+    const coachDay = (daysAgo: number, sets: SetLog[]) => trainingDay(daysAgo, sets, { baseTargetSec: 5 })
+    const stoppedAt5 = (daysAgo: number) =>
+      [0, 1, 2].map((i) => set(4.6, 5, { at: at(daysAgo) + i * 60_000, calledAtTarget: true }))
+    const sessions = [
+      ...[16, 14, 12, 10, 8, 6].map((d) => coachDay(d, stoppedAt5(d))),
+      coachDay(2, [...stoppedAt5(2), set(18.6, 5, { at: at(2) + 600_000 })]),
+    ]
+    const plan = buildPlan(athlete('tuck', { sessions }), NOW)
+    const text = plan.decisions.map((d) => d.text).join(' ')
+    expect(text).toMatch(/Your 18\.6s hold measured you well past your 5s working target, so the target moves 5s → \d+s\./)
+    expect(text).not.toMatch(/You hit nearly every set last time — the working target moves/)
+  })
+
+  it('does not call a bigger target "clean hold grew"', () => {
+    const filmed = (value: number, target: number, daysAgo: number) =>
+      trainingDay(daysAgo, [set(value, target, { at: at(daysAgo), calledAtTarget: value <= target, form: { ...verified(value), auto: { issues: [], confidence: 0.9, cleanSeconds: value, cleanRatio: 1 } } })])
+    const grew = (prevSession: Session, session: Session) =>
+      debriefSession(athlete('tuck', { sessions: [prevSession] }), athlete('tuck', { sessions: [prevSession, session] }), session).some((d) =>
+        /clean hold grew/.test(d.text),
+      )
+    // A technique day stopped at 2s, then an intensity day stopped at 4s.
+    expect(grew(filmed(2, 2, 5), filmed(4, 4, 3))).toBe(false)
+    // Held past the target both times: that is the hold growing.
+    expect(grew(filmed(5, 3, 5), filmed(7, 4, 3))).toBe(true)
+  })
+})
+

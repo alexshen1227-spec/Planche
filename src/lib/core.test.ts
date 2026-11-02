@@ -1916,7 +1916,9 @@ describe('coach learning', () => {
     // yet" forever, however long they trained.
     const t = Date.now() - 20 * DAY
     const unfilmed = (value: number, day: number, strategy?: Session['strategy']) =>
-      session('tuck', [log('tuck-planche', value, { form: { rating: 'clean', confirmed: true } })], {
+      // Held to the limit: a hold logged at its own target with no reason
+      // reads as stopped at the call, which measures nothing.
+      session('tuck', [log('tuck-planche', value, { endReason: 'effort', form: { rating: 'clean', confirmed: true } })], {
         startedAt: t + day * DAY,
         workoutName: 'Training Day',
         ...(strategy ? { strategy } : {}),
@@ -1999,7 +2001,7 @@ describe('coach learning', () => {
     const t = Date.now() - 30 * DAY
     const at = (day: number) => t + day * DAY
     const leanSession = (value: number, day: number, strategy?: Session['strategy']) =>
-      session('lean', [log('planche-lean', value, { form: { rating: 'clean', confirmed: true } })], {
+      session('lean', [log('planche-lean', value, { endReason: 'effort', form: { rating: 'clean', confirmed: true } })], {
         startedAt: at(day),
         workoutName: 'Training Day',
         ...(strategy ? { strategy } : {}),
@@ -2095,13 +2097,13 @@ describe('coach learning', () => {
   it('compares follow-up performance with a prior baseline, not the arm session peak', () => {
     const t = Date.now() - 5 * DAY
     const history = [
-      session('foundations', [log('ppp-hold', 10, { form: form() })], { startedAt: t }),
-      session('foundations', [log('ppp-hold', 11, { form: form() })], { startedAt: t + DAY }),
-      session('foundations', [log('ppp-hold', 20, { form: form() })], {
+      session('foundations', [log('ppp-hold', 10, { endReason: 'effort', form: form() })], { startedAt: t }),
+      session('foundations', [log('ppp-hold', 11, { endReason: 'effort', form: form() })], { startedAt: t + DAY }),
+      session('foundations', [log('ppp-hold', 20, { endReason: 'effort', form: form() })], {
         startedAt: t + 2 * DAY,
         strategy: 'intensity',
       }),
-      session('foundations', [log('ppp-hold', 12, { form: form() })], { startedAt: t + 4 * DAY }),
+      session('foundations', [log('ppp-hold', 12, { endReason: 'effort', form: form() })], { startedAt: t + 4 * DAY }),
     ]
     expect(rewardFor(history, history[2])).toBeGreaterThan(0)
   })
@@ -2109,12 +2111,12 @@ describe('coach learning', () => {
   it('discounts seconds the camera watched decay, and pain that follows a strategy', () => {
     const t = Date.now() - 5 * DAY
     const build = (cleanRatio: number, checkIn?: CheckIn) => [
-      session('foundations', [log('ppp-hold', 10, { form: form() })], { startedAt: t }),
-      session('foundations', [log('ppp-hold', 11, { form: form() })], { startedAt: t + DAY }),
+      session('foundations', [log('ppp-hold', 10, { endReason: 'effort', form: form() })], { startedAt: t }),
+      session('foundations', [log('ppp-hold', 11, { endReason: 'effort', form: form() })], { startedAt: t + DAY }),
       session(
         'foundations',
         [
-          log('ppp-hold', 20, {
+          log('ppp-hold', 20, { endReason: 'effort',
             form: form(
               cleanRatio >= 0.8 ? 'clean' : 'slipped',
               true,
@@ -2124,7 +2126,7 @@ describe('coach learning', () => {
               cleanRatio,
             ),
           }),
-          log('ppp-hold', 19, {
+          log('ppp-hold', 19, { endReason: 'effort',
             form: form(
               cleanRatio >= 0.8 ? 'clean' : 'slipped',
               true,
@@ -2137,7 +2139,7 @@ describe('coach learning', () => {
         ],
         { startedAt: t + 2 * DAY, strategy: 'intensity' },
       ),
-      session('foundations', [log('ppp-hold', 12, { form: form() })], {
+      session('foundations', [log('ppp-hold', 12, { endReason: 'effort', form: form() })], {
         startedAt: t + 4 * DAY,
         ...(checkIn ? { checkIn } : {}),
       }),

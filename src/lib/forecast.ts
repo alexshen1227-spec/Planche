@@ -1,7 +1,7 @@
 import type { AppState, StepId } from '../types'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { qualifyingProgress, qualifyingSessionValue } from './progression'
+import { qualifyingProgress, qualifyingSessionValue, qualifyingValueIsFloor } from './progression'
 import { median } from './signals'
 
 /**
@@ -64,6 +64,11 @@ export type Forecast =
 interface Point {
   at: number
   value: number
+  /**
+   * The session's verified best stopped at its target call: "at least this
+   * much", never a measurement. Rates and levels read measured points only.
+   */
+  floor?: true
 }
 
 /** Every pairwise rate in the series, seconds per week. Theil–Sen's input. */
@@ -99,8 +104,21 @@ export function qualifyingSeries(state: Pick<AppState, 'sessions'>, stepId: Step
   return [...state.sessions]
     .filter((s) => s.workoutKind !== 'micro')
     .sort((a, b) => a.startedAt - b.startedAt)
-    .map((s) => ({ at: s.startedAt, value: qualifyingSessionValue(s, stepId) }))
+    .map((s) => {
+      const value = qualifyingSessionValue(s, stepId)
+      return { at: s.startedAt, value, ...(qualifyingValueIsFloor(s, stepId, value) ? { floor: true as const } : {}) }
+    })
     .filter((p) => p.value > 0)
+}
+
+/**
+ * The verified series without its floors: what a rate, a stall or a jump may
+ * be read from. A session stopped at its targets logs whatever was asked —
+ * read as data, a run of them was "flat" or "going backwards" for an athlete
+ * gaining every session, and the next re-test read as a sudden jump.
+ */
+export function measuredSeries(state: Pick<AppState, 'sessions'>, stepId: StepId): Point[] {
+  return qualifyingSeries(state, stepId).filter((p) => !p.floor)
 }
 
 /**
@@ -132,14 +150,20 @@ export function forecastUnlock(state: AppState, stepId: StepId = state.stepId, n
   const best = qualifyingProgress(state, stepId).value
   if (best >= step.unlockSec) return { kind: 'ready' }
 
-  const series = forecastWindow(qualifyingSeries(state, stepId), now)
+  const verified = qualifyingSeries(state, stepId)
+  const series = forecastWindow(verified.filter((p) => !p.floor), now)
   if (series.length < MIN_FORECAST_POINTS) {
     const missing = MIN_FORECAST_POINTS - series.length
+    const floors = verified.some((p) => p.floor)
     return {
       kind: 'insufficient',
-      need: `${missing} more session${missing === 1 ? '' : 's'} with a verified ${
-        EX_LABEL(step.keyExerciseId)
-      } hold. A rate needs at least ${MIN_FORECAST_POINTS} measured points before it means anything.`,
+      need: floors
+        ? `${missing} more measured ${EX_LABEL(step.keyExerciseId)} hold${
+            missing === 1 ? '' : 's'
+          }. A hold you stop at the target call says "at least this much", not how far you could go — the re-tests and attempts the coach schedules are what measure it. A rate needs at least ${MIN_FORECAST_POINTS} measured points before it means anything.`
+        : `${missing} more session${missing === 1 ? '' : 's'} with a verified ${
+            EX_LABEL(step.keyExerciseId)
+          } hold. A rate needs at least ${MIN_FORECAST_POINTS} measured points before it means anything.`,
     }
   }
 

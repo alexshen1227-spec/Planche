@@ -19,6 +19,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'Stopping at the call no longer counts as your max',
+    area: 'coach',
+    notes: [
+      'When you come down at the target call, that hold now counts as “at least this much” rather than as the most you can do. Before, the coach read those stopped holds as your max: because targets change with the day’s approach, steady progress could be called inconsistent (which held back an unlock attempt you had earned), “going backwards”, or a plateau, and your targets stayed where they were after a max clean hold had just measured you well past them. Next-shape practice could also switch off while you were still getting stronger.',
+      'Your targets now follow your latest max clean hold, unlock attempt or next-shape attempt. A reading lower than the ones before it waits for a second one before it lowers anything, so one bad day does not drag your targets down.',
+      'The trend, plateau check, forecast and approach picker now read only holds that measured you. If you stop at every call, the forecast says it needs measured holds instead of quoting a pace built from your targets, and the coach rotates approaches instead of crediting whichever one happened to come before a max clean hold.',
+      'If you say a hold ended because of balance, technique or effort, it counts as a measurement, however close to the target it came out.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'Easy weeks end',
     area: 'coach',
     notes: [

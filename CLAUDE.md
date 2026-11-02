@@ -284,6 +284,32 @@ more certain than its basis.
    and `sessionsPerWeek` both once divided by a flat 28 days, so a fortnight-old
    athlete at 3/week read as 1.5/week. Any new per-week signal must do the same
    (`Math.min(window, timeSinceFirstSession)`), or new athletes inherit a deficit.
+6. **A hold stopped at its call is a floor, everywhere** (2026-11 second
+   review). `sessionLearningPoint` marks a session's value a floor when the
+   set that set it was `stoppedAtTarget` — reached its target and was not
+   meaningfully passed, unless the athlete said balance/technique/effort ended
+   it; a later set falling short does not turn the best one into a
+   measurement. `LearningPoint.cappedAt` and the verified series' `floor`
+   carry it. Readers that need a measurement read measured points only:
+   noise, trend and outliers (`signals`), the plateau and breakthrough
+   (`measuredSeries`), the forecast (whose `need` then says so), the
+   capability jump, the strategy reward (measured sessions, baseline within
+   `PRIOR_WINDOW_DAYS`) and the debrief's "clean hold grew". Readers that need
+   a level raise floors to `measuredLevel` — the latest measurement, or the
+   median of the last three when that is higher (a high reading corrects itself
+   through missed targets; a low one never does for an athlete who stops at the
+   call) — in `adaptiveTarget`, and `capacityOn` keeps it beside its last six.
+   `sessionTargetCap` (done as prescribed, for `completedBaseTarget`) is a
+   different question and ignores the end reason. Found by running the real
+   loop (`closedLoop.eval.test.ts`): targets vary by strategy (0.7×–1.25×), so a
+   noise-free athlete gaining every session read "going backwards" for weeks,
+   one re-test kept technique running nine sessions, the capacity cap fell to
+   2s targets at a true 10s, and they never left the straddle. The eval has a
+   slow athlete whose next shape stays out of reach for weeks, because the fast
+   one promotes before most of these bugs can show; all six parts of the fix
+   were mutation-checked against it. Fixtures that mean "a measured best" say
+   so with `endReason: 'effort'` — a hold logged at its own target with no
+   reason reads as stopped at the call.
 
 ## Camera lifecycle
 

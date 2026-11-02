@@ -54,12 +54,17 @@ function form(cleanSeconds?: number): FormCheck {
   }
 }
 
+/**
+ * A measured best: held to the limit. Without a reason, a hold logged at its
+ * own target reads as one stopped at the call — "at least this much".
+ */
 function holdSet(exerciseId: string, value: number, at: number, overrides: Partial<SetLog> = {}): SetLog {
   return {
     exerciseId,
     kind: 'hold',
     value,
     target: value,
+    endReason: 'effort',
     section: 'main',
     at,
     form: form(),

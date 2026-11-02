@@ -1,7 +1,7 @@
 import type { AppState, Session, StepDef, StepId } from '../types'
 import { STEP_BY_ID, stepAfter } from '../data/progressions'
 import { defaultSurface } from '../data/equipment'
-import { learningSeries, qualifyingProgress } from './progression'
+import { learningSeries, measuredLevel, qualifyingProgress } from './progression'
 
 /**
  * The bridge between one step and the next — the part of the road where
@@ -45,13 +45,19 @@ const BRIDGE_FROM_DAY_ONE = new Set<StepId>(['lean'])
 /**
  * The most the athlete has shown they can hold on a step's key exercise, on
  * the comparable surface — or undefined when nothing has been measured.
+ *
+ * Recent sessions, and the latest measurement however many sessions ago it
+ * was. Holds stopped at their calls are floors: six obedient sessions pushed a
+ * re-tested 8.4s out of a last-six window, the capacity fell to the 2s targets
+ * they had been given, and next-shape practice closed on an athlete who was
+ * still getting stronger.
  */
 export function capacityOn(state: AppState, stepId: StepId): number | undefined {
   const step = STEP_BY_ID[stepId]
   const surface = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
   const series = learningSeries(state, stepId, surface)
   const recent = series.points.slice(-6).map((p) => p.value)
-  if (recent.length) return Math.max(...recent)
+  if (recent.length) return Math.max(...recent, measuredLevel(series.points) ?? 0)
   const timerBest = state.prs[step.keyExerciseId]?.value
   if (timerBest !== undefined && timerBest > 0) return timerBest
   const answered = state.assessment?.answers[step.keyExerciseId]

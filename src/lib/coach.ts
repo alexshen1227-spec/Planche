@@ -28,8 +28,11 @@ import {
   requiresFlightConfirmation as requiresFlight,
   qualifyingProgress,
   qualifyingSessionValue,
+  learningSeries,
+  sessionLearningPoint,
   sessionLearningValue,
   sessionSurface,
+  stoppedAtTarget,
   verifiedCleanSeconds,
   type LearningScope,
 } from './progression'
@@ -109,6 +112,8 @@ export const STRATEGY_BY_ID: Record<StrategyId, StrategyDef> = Object.fromEntrie
 const DAY = 86_400_000
 /** How long a session can plausibly be credited for the next result. */
 const ATTRIBUTION_DAYS = 10
+/** How far back a strategy session's baseline may reach. */
+const PRIOR_WINDOW_DAYS = 28
 /** Exploration weight, scaled to the reward range. */
 const UCB_C = 0.06
 
@@ -162,6 +167,14 @@ export interface CoachPick {
  * pooling them was enough to manufacture gains from two flat series. A
  * session that mixed surfaces on its key hold has no single task to compare
  * and is left unevaluated.
+ *
+ * And measured, from the weeks around it. A session whose best hold stopped
+ * at its call logged the prescription, so the gain behind a run of them
+ * surfaced at the next re-test — credited in full to whichever strategy came
+ * just before it, against a reading from a month earlier: a simulated athlete
+ * was kept on technique, at 0.7× targets, for nine sessions on the strength
+ * of one re-test. An athlete who always stops at the call leaves strategies
+ * unevaluated, which is what their log can support.
  */
 function comparableWindow(
   sessions: Session[],
@@ -170,22 +183,32 @@ function comparableWindow(
   const surface = sessionSurface(session, session.stepId)
   if (surface === 'mixed') return null
   const scope: LearningScope = { surface }
-  const value = (candidate: Session) => sessionLearningValue(candidate, session.stepId, scope)
-  if (value(session) <= 0) return null
+  const point = (candidate: Session) => sessionLearningPoint(candidate, session.stepId, scope)
+  if (point(session).value <= 0) return null
+  const measured = (candidate: Session) => {
+    const p = point(candidate)
+    return p.value > 0 && p.floorAt === null
+  }
   const prior = sessions
-    .filter((s) => s.startedAt < session.startedAt && s.stepId === session.stepId && value(s) > 0)
+    .filter(
+      (s) =>
+        s.startedAt < session.startedAt &&
+        s.startedAt >= session.startedAt - PRIOR_WINDOW_DAYS * DAY &&
+        s.stepId === session.stepId &&
+        measured(s),
+    )
     .slice(-3)
-    .map((s) => ({ at: s.startedAt, value: value(s) }))
+    .map((s) => ({ at: s.startedAt, value: point(s).value }))
   const follow = sessions
     .filter(
       (s) =>
         s.startedAt > session.startedAt &&
         s.startedAt <= session.startedAt + ATTRIBUTION_DAYS * DAY &&
         s.stepId === session.stepId &&
-        value(s) > 0,
+        measured(s),
     )
     .slice(0, 2)
-    .map((s) => ({ at: s.startedAt, value: value(s) }))
+    .map((s) => ({ at: s.startedAt, value: point(s).value }))
   return { prior, follow }
 }
 
@@ -477,7 +500,9 @@ export function pickStrategy(state: AppState): CoachPick {
     // which is a claim of superiority made from zero evaluated outcomes.
     reason:
       evaluated === 0
-        ? `Every approach has been tried, but none has a later comparable session to measure it against yet. Staying on ${name.toLowerCase()} until results come in.`
+        ? stoppedAtCalls(state)
+          ? `Every approach has been tried, but none has a measured session after it yet: a hold you stop at the target call says “at least this much”, not how far you could go. ${name} today — the re-tests and attempts are what will tell them apart.`
+          : `Every approach has been tried, but none has a later comparable session to measure it against yet. Staying on ${name.toLowerCase()} until results come in.`
         : best.n === 0
           ? `${name} has been tried but not measured yet — it gets another turn before the coach leans on any one approach.`
           : exploring
@@ -491,6 +516,13 @@ export function pickStrategy(state: AppState): CoachPick {
                   )} observed). Staying on ${name.toLowerCase()} while the difference is still inside the noise.`,
     exploring,
   }
+}
+
+/** Whether the current step's recent key holds were mostly stopped at their calls. */
+function stoppedAtCalls(state: AppState): boolean {
+  const surface = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
+  const recent = learningSeries(state, state.stepId, surface).points.slice(-6)
+  return recent.length > 0 && recent.filter((p) => p.cappedAt !== undefined).length * 2 > recent.length
 }
 
 export function formatRate(secPerWeek: number | null): string {
@@ -1475,7 +1507,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   if (capabilityJump && loadedDay) {
     volumeFactor = Math.min(volumeFactor, 0.85)
     decisions.push({
-      text: `Your verified hold has gone from about ${capabilityJump.fromSec}s — typical before the last two weeks — to ${capabilityJump.toSec}s within them. Volume is being held rather than raised to match. A climb that fast is mostly your nervous system learning the position rather than new tissue — measured strength can climb by a third while muscle and tendon are both still unchanged — so the structures carrying the load have not caught up with what the stopwatch says. Reasoning rather than a measured rule, and it costs you almost nothing to respect.`,
+      text: `Your verified hold has gone from about ${capabilityJump.fromSec}s before the last two weeks to ${capabilityJump.toSec}s within them. Volume is being held rather than raised to match. A climb that fast is mostly your nervous system learning the position rather than new tissue — measured strength can climb by a third while muscle and tendon are both still unchanged — so the structures carrying the load have not caught up with what the stopwatch says. Reasoning rather than a measured rule, and it costs you almost nothing to respect.`,
       kind: 'info',
     })
   }
@@ -1569,7 +1601,28 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const today = workingTarget(state, state.stepId, finalTarget, now)
   const todaySec = today.sec
   const lastSec = sig.lastWorkingTarget
-  if (targetIntent === 'up' && targetFactor > 1.02) {
+  // A rise this size is a measurement, not the nudge: weeks of holds stopped
+  // at the call, then a max clean hold or a hold taken past its target. "You
+  // hit nearly every set" was the reason given for 5s → 14s.
+  const keyPoints = learningSeries(
+    state,
+    state.stepId,
+    defaultSurface(state.profile.equipment, state.profile.preferredSurface),
+    now,
+  ).points
+  const lastMeasured = [...keyPoints].reverse().find((p) => p.cappedAt === undefined)
+  const measuredLift =
+    lastSec !== null &&
+    lastMeasured !== undefined &&
+    todaySec >= lastSec + 2 &&
+    now - lastMeasured.at <= 14 * DAY &&
+    lastMeasured.value >= lastSec * 1.5
+  if (measuredLift && targetIntent !== 'down') {
+    decisions.push({
+      text: `Your ${Math.round(lastMeasured.value * 10) / 10}s hold measured you well past your ${lastSec}s working target, so the target moves ${lastSec}s → ${todaySec}s.`,
+      kind: 'good',
+    })
+  } else if (targetIntent === 'up' && targetFactor > 1.02) {
     decisions.push({
       text:
         lastSec === null || todaySec > lastSec
@@ -1820,6 +1873,9 @@ export function debriefSession(
     s.sets.reduce((b, x) => {
       if (x.exerciseId !== step.keyExerciseId || x.section !== 'main') return b
       if (!trustedCameraEvidence(x) || humanRating(x.form) !== 'clean') return b
+      // A hold stopped at its call measured the target, not the athlete:
+      // "grew 2s → 3s" was a technique day followed by an intensity day.
+      if (stoppedAtTarget(x, s.stepId)) return b
       const verified = verifiedCleanSeconds(x.form?.auto)
       return verified !== undefined ? Math.max(b, verified) : b
     }, 0)

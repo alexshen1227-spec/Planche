@@ -333,6 +333,24 @@ export function qualifyingSessionValue(session: Session, stepId: StepId): number
 }
 
 /**
+ * Whether a session's verified value is a floor: every qualifying hold that
+ * reached it came down at its target call. The same reading as
+ * `sessionLearningPoint`, on the verified series the forecast, plateau and
+ * capability-jump readers use.
+ */
+export function qualifyingValueIsFloor(session: Session, stepId: StepId, value: number): boolean {
+  const step = STEP_BY_ID[stepId]
+  if (!step || value <= 0 || session.workoutName === 'Quick Log') return false
+  // The holds the value came from — for a unilateral hold, the weaker side's
+  // best, which is the value.
+  const top = session.sets.filter(
+    (set) =>
+      isQualifyingSet(set, step.keyExerciseId) && Math.abs(progressionCredit(set, step.keyExerciseId) - value) <= 0.05,
+  )
+  return top.length > 0 && top.every((set) => stoppedAtTarget(set, stepId))
+}
+
+/**
  * Performance credit for day-to-day coaching, deliberately separate from the
  * stricter progression gate. An athlete-confirmed camera result can cap a
  * stopwatch value when athlete and camera agree; an unreviewed or disputed
@@ -447,28 +465,78 @@ export function capacityReading(set: SetLog): number {
 }
 
 export function sessionLearningValue(session: Session, stepId: StepId, scope?: LearningScope): number {
+  return sessionLearningPoint(session, stepId, scope).value
+}
+
+/**
+ * A hold that came down at its target call: it says "at least this much",
+ * not how far the athlete could have gone. The hold screen asks for exactly
+ * that stop, so an obedient athlete's log is mostly these. The tolerance is
+ * the stop itself — the chime sounds at the target and the stopwatch stops a
+ * moment later, so an obedient hold reads up to about a second over. A
+ * maximal effort at the bar is never one, whatever it logged.
+ */
+export function stoppedAtTarget(set: SetLog, stepId: StepId): boolean {
+  if (set.kind !== 'hold' || !(set.target > 0) || isBarAttempt(set, stepId)) return false
+  // The athlete said the hold ended at their limit — balance, technique or
+  // effort: a measurement, however close to its target it came out.
+  if (set.endReason === 'balance' || set.endReason === 'technique' || set.endReason === 'effort') return false
+  return completedAtTarget(set)
+}
+
+/** Reached its target and did not meaningfully pass it: the prescription, done. */
+function completedAtTarget(set: SetLog): boolean {
+  return (
+    set.endReason === 'target' ||
+    // Came down at the target call: reached it, whatever the fixed walk-back
+    // allowance made of the logged value — unless the camera saw otherwise.
+    (set.calledAtTarget === true && capacityReading(set) >= set.target - 0.05) ||
+    (set.value >= set.target - 0.05 && set.value <= set.target + Math.max(1, set.target * 0.1))
+  )
+}
+
+/**
+ * A session's learning value, and whether it is a floor.
+ *
+ * The value is a floor when the hold that set it stopped at its target call:
+ * the number is then whatever the coach prescribed — 0.7× on a technique day,
+ * 1.25× on an intensity day — and only a lower bound on the athlete. A later
+ * set falling short does not turn the best one into a measurement; that is
+ * fatigue, not the limit. Read as measurements, floors made a noise-free
+ * athlete who gained every session look noisy (withholding an earned unlock
+ * attempt), "going backwards" for weeks, and capped their targets at the 2s
+ * they had last been asked for while they could hold 10.
+ */
+export function sessionLearningPoint(
+  session: Session,
+  stepId: StepId,
+  scope?: LearningScope,
+): { value: number; floorAt: number | null } {
+  const none = { value: 0, floorAt: null }
   const step = STEP_BY_ID[stepId]
   // A minimum dose is a few holds stopped at about three seconds on purpose:
   // read as capacity, it would look like a collapse to the noise, trend and
   // plateau readers, and the coach would answer a fiction.
-  if (!step || session.workoutName === 'Quick Log' || session.workoutKind === 'micro') return 0
-  const bestOf = (sideScope: LearningScope | undefined) =>
-    session.sets.reduce((best, set) => {
-      if (
-        set.exerciseId !== step.keyExerciseId ||
-        set.kind !== 'hold' ||
-        set.section !== 'main' ||
+  if (!step || session.workoutName === 'Quick Log' || session.workoutKind === 'micro') return none
+  const bestOf = (sideScope: LearningScope | undefined) => {
+    const sets = session.sets.filter(
+      (set) =>
+        set.exerciseId === step.keyExerciseId &&
+        set.kind === 'hold' &&
+        set.section === 'main' &&
         // A hold stopped at its call can log zero when the walk back is quicker
         // than the allowance; it still happened.
-        (set.value <= 0 && set.calledAtTarget !== true) ||
-        humanRating(set.form) === 'broke' ||
-        endedForNonCapacityReason(set) ||
-        !inScope(set, sideScope)
-      ) {
-        return best
-      }
-      return Math.max(best, capacityReading(set))
-    }, 0)
+        (set.value > 0 || set.calledAtTarget === true) &&
+        humanRating(set.form) !== 'broke' &&
+        !endedForNonCapacityReason(set) &&
+        inScope(set, sideScope),
+    )
+    const value = sets.reduce((best, set) => Math.max(best, capacityReading(set)), 0)
+    if (value <= 0) return none
+    const top = sets.filter((set) => capacityReading(set) >= value - 0.05)
+    const floorAt = top.every((set) => stoppedAtTarget(set, stepId)) ? Math.max(...top.map((set) => set.target)) : null
+    return { value, floorAt }
+  }
   if (EXERCISE_BY_ID[step.keyExerciseId]?.perSide && !scope?.side) {
     const left = bestOf({ ...scope, side: 'left' })
     const right = bestOf({ ...scope, side: 'right' })
@@ -476,9 +544,15 @@ export function sessionLearningValue(session: Session, stepId: StepId, scope?: L
     // other side failed at zero): the session says nothing about the pair, so
     // it contributes no bilateral value — the missing side is unknown, not
     // permission to inherit the stronger side's number.
-    if (left > 0 && right > 0) return Math.min(left, right)
+    if (left.value > 0 && right.value > 0) {
+      const gap = left.value - right.value
+      if (Math.abs(gap) > 0.05) return gap < 0 ? left : right
+      // Level sides: a floor only when neither side was measured.
+      const floorAt = left.floorAt !== null && right.floorAt !== null ? Math.max(left.floorAt, right.floorAt) : null
+      return { value: Math.min(left.value, right.value), floorAt }
+    }
     const sided = session.sets.some((set) => set.exerciseId === step.keyExerciseId && set.side)
-    return sided ? 0 : bestOf(scope)
+    return sided ? none : bestOf(scope)
   }
   return bestOf(scope)
 }
@@ -513,17 +587,9 @@ export function sessionTargetCap(session: Session, stepId: StepId, surface: Trai
   // summit a 10.4s re-test of the 10s full planche read as "reached and not
   // passed", and the targets that followed sat at 2s.
   if (key.some((set) => isBarAttempt(set, stepId) && set.value > 0)) return null
-  // Reached, and not meaningfully passed. The tolerance is the size of the
-  // stop itself: the chime sounds at the target and the stopwatch is stopped
-  // a moment later, so an obedient hold reads up to about a second over.
-  const capped = key.every(
-    (set) =>
-      set.endReason === 'target' ||
-      // Came down at the target call: reached it, whatever the fixed walk-back
-      // allowance made of the logged value — unless the camera saw otherwise.
-      (set.calledAtTarget === true && capacityReading(set) >= set.target - 0.05) ||
-      (set.value >= set.target - 0.05 && set.value <= set.target + Math.max(1, set.target * 0.1)),
-  )
+  // Reached, and not meaningfully passed — however the hold felt: this asks
+  // whether the prescription was done, not whether it was a measurement.
+  const capped = key.every(completedAtTarget)
   return capped ? Math.max(...key.map((set) => set.target)) : null
 }
 
@@ -574,10 +640,31 @@ export interface LearningPoint {
   at: number
   value: number
   /**
-   * Set when the session's key work stopped at its prescribed targets: the
-   * value is then a lower bound ("at least this much"), not a measurement.
+   * Set when the session's best key hold stopped at its target call (see
+   * `sessionLearningPoint`): the value is then a lower bound ("at least this
+   * much"), not a measurement, and this is the target it stopped at.
    */
   cappedAt?: number
+}
+
+/**
+ * Where a series' measurements put the athlete: the latest one, unless it is
+ * below the ones before it — then the median of the last three, so one bad
+ * day is not believed until a second agrees. Floors never set it. Null when
+ * nothing has been measured.
+ *
+ * Asymmetric on purpose. A reading that is too high corrects itself: the
+ * targets it sets are missed, and a missed target is a measurement. One that
+ * is too low never does for an athlete who stops at the call — every target it
+ * sets is reached — and the median of three spread one re-test's 8.4s across
+ * two older 5s readings, so the targets after it stayed where they had been.
+ */
+export function measuredLevel(points: LearningPoint[]): number | null {
+  const measured = points.filter((p) => p.cappedAt === undefined).map((p) => p.value)
+  if (!measured.length) return null
+  const last3 = measured.slice(-3).sort((a, b) => a - b)
+  const middle = last3.length % 2 ? last3[(last3.length - 1) / 2] : (last3[0] + last3[1]) / 2
+  return Math.max(measured[measured.length - 1], middle)
 }
 
 export interface LearningSeries {
@@ -610,9 +697,8 @@ export function learningSeries(
   const seriesFor = (surface: TrainingSurface | null): LearningPoint[] =>
     sorted
       .map((s) => {
-        const value = sessionLearningValue(s, stepId, { surface })
-        const cap = value > 0 ? sessionTargetCap(s, stepId, surface) : null
-        return { at: s.startedAt, value, ...(cap !== null ? { cappedAt: cap } : {}) }
+        const { value, floorAt } = sessionLearningPoint(s, stepId, { surface })
+        return { at: s.startedAt, value, ...(floorAt !== null ? { cappedAt: floorAt } : {}) }
       })
       .filter((p) => p.value > 0)
   const own = seriesFor(preferred)

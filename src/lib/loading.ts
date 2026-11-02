@@ -2,7 +2,8 @@ import type { AppState, Session, StepId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { addDays, weekStart } from './time'
 import { median } from './signals'
-import { qualifyingSeries } from './forecast'
+import { measuredSeries } from './forecast'
+import { measuredLevel } from './progression'
 
 /**
  * How hard a position actually is, and how fast the load on it is climbing.
@@ -201,12 +202,20 @@ export function readCapabilityJump(
   stepId: StepId = state.stepId,
   now = Date.now(),
 ): CapabilityJump | null {
-  const series = qualifyingSeries(state, stepId)
+  // Measured sessions only, against where the athlete last measured before
+  // the window. Holds stopped at their calls are the prescription read back,
+  // so against them every re-test looked like a jump; and the median of
+  // sparse readings reached back months — 5s at a step's first session and
+  // 11s at its third re-test is steady progress, unmeasured in between, when
+  // the re-test just before said 8.4s. With the last reading before the
+  // window over a fortnight older still, when the gain came is unknown.
+  const series = measuredSeries(state, stepId)
   if (series.length < 4) return null
   const recent = series.filter((p) => now - p.at <= 14 * 86_400_000)
   const earlier = series.filter((p) => now - p.at > 14 * 86_400_000)
   if (recent.length === 0 || earlier.length < 3) return null
-  const before = median(earlier.slice(-4).map((p) => p.value))
+  if (now - earlier[earlier.length - 1].at > 28 * 86_400_000) return null
+  const before = measuredLevel(earlier)
   const after = Math.max(...recent.map((p) => p.value))
   if (before === null || before <= 0) return null
   const gainPct = (after - before) / before

@@ -1,7 +1,7 @@
 import type { AppState, StepId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { defaultSurface } from '../data/equipment'
-import { completedBaseTarget, learningSeries, qualifyingProgress } from './progression'
+import { completedBaseTarget, learningSeries, measuredLevel, qualifyingProgress } from './progression'
 import { capacityOn } from './bridge'
 import { median } from './signals'
 
@@ -37,10 +37,10 @@ export function adaptiveTarget(state: AppState, stepId: StepId, now = Date.now()
   const surface = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
   const series = learningSeries(state, stepId, surface, now)
   // Sessions stopped at their targets are right-censored: they say "at least
-  // this much". They may not pull the estimate below what the athlete has
-  // actually been measured at — the last sessions that went past or fell
-  // short of their targets (a max test, a set taken to the limit).
-  const measured = median(series.points.filter((p) => p.cappedAt === undefined).slice(-3).map((p) => p.value))
+  // this much". They may not pull the estimate below where the athlete was
+  // last measured — a re-test, an attempt, a set that went past or fell short
+  // of its target (see measuredLevel for why the latest one leads).
+  const measured = measuredLevel(series.points)
   const recentBests = series.points
     .slice(-6)
     .map((p) => (p.cappedAt !== undefined && measured !== null ? Math.max(p.value, measured) : p.value))

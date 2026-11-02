@@ -1,6 +1,6 @@
 import type { AppState, StepId, StrategyId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
-import { qualifyingSeries } from './forecast'
+import { measuredSeries } from './forecast'
 import { median, type Signals } from './signals'
 
 /**
@@ -70,7 +70,10 @@ export function diagnosePlateau(
   const step = STEP_BY_ID[state.stepId]
   if (!step) return null
 
-  const series = qualifyingSeries(state, state.stepId)
+  // Measured sessions only: a run of holds stopped at their calls is the
+  // prescription read back, and it read as a stall for an athlete gaining
+  // every session.
+  const series = measuredSeries(state, state.stepId)
   if (series.length < PLATEAU_MIN_SESSIONS) return null
 
   const spanDays = (series[series.length - 1].at - series[0].at) / 86_400_000
@@ -278,7 +281,7 @@ export function recentBreakthrough(
   stepId: StepId = state.stepId,
   now = Date.now(),
 ): { gainSec: number; weeks: number } | null {
-  const series = qualifyingSeries(state, stepId)
+  const series = measuredSeries(state, stepId)
   if (series.length < 3) return null
   const recent = series.filter((p) => now - p.at <= 28 * 86_400_000)
   if (recent.length < 3) return null
