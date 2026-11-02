@@ -34,6 +34,8 @@ export const NEVER_DAYS = 99
  * has to ask rather than call it banked recovery. A convention, not biology.
  */
 export const LONG_GAP_DAYS = 14
+/** How far back from the latest measurement the spread and trend read: the forecast's eight weeks. */
+const MEASURED_WINDOW_DAYS = 56
 
 export function median(xs: number[]): number | null {
   if (xs.length === 0) return null
@@ -311,6 +313,8 @@ export interface Signals {
   mainHitRate: number | null
   /** The working target the hit rate was read against (its highest), in seconds. */
   lastWorkingTarget: number | null
+  /** When the session that set `lastWorkingTarget` started. */
+  lastWorkingTargetAt: number | null
   /** How many main sets that rate is based on — thin evidence gets less say. */
   mainSetCount: number
   /** Robust centre of recent session bests on the key hold, on the comparable surface. */
@@ -468,13 +472,20 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // manufactured trends out of two flat series.
   const preferred = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
   const series = learningSeries({ sessions }, state.stepId, preferred)
-  // Measurements only. A session whose best hold stopped at its target call
-  // logged whatever was prescribed — 0.7× on a technique day, 1.25× on an
-  // intensity day — so read as data, a noise-free athlete gaining every
-  // session was called noisy (withholding the unlock attempt they had
-  // earned), "going backwards" and stalled. With too few measurements the
-  // spread and the trend are unknown, never flat.
-  const withKey = series.points.filter((p) => p.cappedAt === undefined)
+  // Measurements only, from the eight weeks before the latest one. A session
+  // whose best hold stopped at its target call logged whatever was prescribed
+  // — 0.7× on a technique day, 1.25× on an intensity day — so read as data, a
+  // noise-free athlete gaining every session was called noisy (withholding
+  // the unlock attempt they had earned), "going backwards" and stalled. The
+  // window runs from the latest measurement, not the clock: an athlete who
+  // measures every few weeks keeps their context, and since noise no longer
+  // holds back the re-test, a new measurement always comes — after which
+  // scatter from months before stops counting (six scattered holds once kept
+  // an athlete "noisy" for good). With too few, the spread and the trend are
+  // unknown, never flat.
+  const measured = series.points.filter((p) => p.cappedAt === undefined)
+  const lastMeasuredAt = measured.length ? measured[measured.length - 1].at : 0
+  const withKey = measured.filter((p) => lastMeasuredAt - p.at <= MEASURED_WINDOW_DAYS * DAY)
   const recentBests = withKey.slice(-6).map((p) => p.value)
   const mainMedian = median(recentBests)
   const spread = spreadAroundTrend(withKey.slice(-6))
@@ -529,6 +540,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     )
   const coachTargets = lastCoachSession ? workingSetsOf(lastCoachSession).map((set) => set.target).filter((t) => t > 0) : []
   const lastWorkingTarget: number | null = coachTargets.length ? Math.max(...coachTargets) : null
+  const lastWorkingTargetAt = lastWorkingTarget !== null && lastCoachSession ? lastCoachSession.startedAt : null
   if (lastRelevant) {
     const mains = workingSetsOf(lastRelevant)
     mainSetCount = mains.length
@@ -891,6 +903,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     persistentComplaint,
     mainHitRate,
     lastWorkingTarget,
+    lastWorkingTargetAt,
     mainSetCount,
     mainMedian,
     variability,

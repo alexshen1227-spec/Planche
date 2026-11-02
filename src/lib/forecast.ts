@@ -122,6 +122,17 @@ export function measuredSeries(state: Pick<AppState, 'sessions'>, stepId: StepId
 }
 
 /**
+ * Whether most of the recent verified sessions were stopped at the call —
+ * the only time "a hold you stop at the call measures nothing" is the reason
+ * a number is missing. Said on any floor, it told an athlete who held every
+ * set to failure that they had stopped at the call.
+ */
+export function mostlyFloors(points: Point[]): boolean {
+  const recent = points.slice(-6)
+  return recent.length > 0 && recent.filter((p) => p.floor).length * 2 > recent.length
+}
+
+/**
  * The stretch of history a rate is measured from: the last
  * `FORECAST_WINDOW_DAYS` when that alone meets the evidence minimums, and the
  * whole history otherwise — sparse training has no "recent rate" to prefer,
@@ -154,7 +165,7 @@ export function forecastUnlock(state: AppState, stepId: StepId = state.stepId, n
   const series = forecastWindow(verified.filter((p) => !p.floor), now)
   if (series.length < MIN_FORECAST_POINTS) {
     const missing = MIN_FORECAST_POINTS - series.length
-    const floors = verified.some((p) => p.floor)
+    const floors = mostlyFloors(verified)
     return {
       kind: 'insufficient',
       need: floors

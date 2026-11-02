@@ -341,13 +341,31 @@ export function qualifyingSessionValue(session: Session, stepId: StepId): number
 export function qualifyingValueIsFloor(session: Session, stepId: StepId, value: number): boolean {
   const step = STEP_BY_ID[stepId]
   if (!step || value <= 0 || session.workoutName === 'Quick Log') return false
-  // The holds the value came from — for a unilateral hold, the weaker side's
-  // best, which is the value.
-  const top = session.sets.filter(
-    (set) =>
-      isQualifyingSet(set, step.keyExerciseId) && Math.abs(progressionCredit(set, step.keyExerciseId) - value) <= 0.05,
+  const key = step.keyExerciseId
+  const credit = (set: SetLog) => progressionCredit(set, key)
+  const qualifying = session.sets.filter((set) => isQualifyingSet(set, key) && credit(set) > 0)
+  // A maximal effort at the bar measured the session.
+  if (qualifying.some((set) => isBarAttempt(set, stepId))) return false
+  // The holds the value came from: for a unilateral hold, the weaker side's
+  // best, which is the value — the stronger side's lesser sets can match it.
+  let top = qualifying.filter((set) => Math.abs(credit(set) - value) <= 0.05)
+  if (EXERCISE_BY_ID[key]?.perSide) {
+    const bestOn = (side: 'left' | 'right') =>
+      qualifying.filter((set) => set.side === side).reduce((best, set) => Math.max(best, credit(set)), 0)
+    const left = bestOn('left')
+    const right = bestOn('right')
+    if (Math.abs(left - right) > 0.05) top = top.filter((set) => set.side === (left < right ? 'left' : 'right'))
+  }
+  return (
+    top.length > 0 &&
+    top.every(
+      (set) =>
+        stoppedAtTarget(set, stepId, callRecordedFor(session, set, stepId)) &&
+        // The camera saw the clean hold end before the target: that is its
+        // measurement — unless it only stopped filming a hold still clean.
+        (credit(set) >= set.target - 0.05 || unfilmedAfterCleanFilm(set.form?.auto) > 0),
+    )
   )
-  return top.length > 0 && top.every((set) => stoppedAtTarget(set, stepId))
 }
 
 /**
@@ -371,7 +389,8 @@ export function trainingSetValue(set: SetLog): number {
  * saw none, so the seconds it missed are not taken off the training dose.
  * (They still earn no progression credit — that runs on what was verified.)
  */
-function unfilmedAfterCleanFilm(auto: AutoForm): number {
+function unfilmedAfterCleanFilm(auto: AutoForm | undefined): number {
+  if (!auto) return 0
   const unfilmed = auto.unfilmedSec ?? 0
   if (unfilmed <= 0 || auto.analysedSec === undefined || auto.cleanSeconds === undefined) return 0
   // Three numbers each rounded to a tenth.
@@ -455,7 +474,9 @@ function inScope(set: SetLog, scope: LearningScope | undefined): boolean {
  */
 export function capacityReading(set: SetLog): number {
   const value = trainingSetValue(set)
-  if (set.calledAtTarget !== true) return value
+  // The athlete said balance, technique or effort ended it: the walk overlapped
+  // the call rather than following it, and the logged value is the reading.
+  if (set.calledAtTarget !== true || endedAtLimit(set)) return value
   // Filmed, confirmed and agreed: the check runs up to the target, so the
   // camera saw how long the position actually lasted — believe it over the
   // assumption, either way.
@@ -468,20 +489,44 @@ export function sessionLearningValue(session: Session, stepId: StepId, scope?: L
   return sessionLearningPoint(session, stepId, scope).value
 }
 
+/** The athlete said the hold ended at their limit: balance, technique or effort. */
+function endedAtLimit(set: Pick<SetLog, 'endReason'>): boolean {
+  return set.endReason === 'balance' || set.endReason === 'technique' || set.endReason === 'effort'
+}
+
 /**
  * A hold that came down at its target call: it says "at least this much",
  * not how far the athlete could have gone. The hold screen asks for exactly
- * that stop, so an obedient athlete's log is mostly these. The tolerance is
- * the stop itself — the chime sounds at the target and the stopwatch stops a
- * moment later, so an obedient hold reads up to about a second over. A
- * maximal effort at the bar is never one, whatever it logged.
+ * that stop, so an obedient athlete's log is mostly these. A maximal effort at
+ * the bar is never one, whatever it logged, and neither is a hold the athlete
+ * said ended at their limit, or one the camera saw break before its target.
+ *
+ * `callRecorded`: the player timed this hold as a working set and recorded
+ * whether it came down at the call (`calledAtTarget`), so that record is the
+ * answer. Without one — an older log, a next-shape attempt (never flagged) —
+ * only the stop band is left: the chime sounds at the target and the
+ * stopwatch stops a moment later, so an obedient hold reads up to about a
+ * second over. Applied to holds the player had timed, that band floored a
+ * full planche held to failure at 2.7s on a 2s target.
  */
-export function stoppedAtTarget(set: SetLog, stepId: StepId): boolean {
-  if (set.kind !== 'hold' || !(set.target > 0) || isBarAttempt(set, stepId)) return false
-  // The athlete said the hold ended at their limit — balance, technique or
-  // effort: a measurement, however close to its target it came out.
-  if (set.endReason === 'balance' || set.endReason === 'technique' || set.endReason === 'effort') return false
-  return completedAtTarget(set)
+export function stoppedAtTarget(set: SetLog, stepId: StepId, callRecorded = false): boolean {
+  if (set.kind !== 'hold' || !(set.target > 0) || isBarAttempt(set, stepId) || endedAtLimit(set)) return false
+  // What the athlete held, as far as trusted camera evidence says.
+  const held = trainingSetValue(set)
+  if (trustedCameraEvidence(set) && held < set.target - 0.05) return false
+  if (set.endReason === 'target') return true
+  if (set.calledAtTarget === true && capacityReading(set) >= set.target - 0.05) return true
+  if (callRecorded) return false
+  return held >= set.target - 0.05 && held <= set.target + Math.max(1, set.target * 0.1)
+}
+
+/**
+ * Whether the player recorded if this hold came down at its call: a hold it
+ * timed on the step's own session. Next-shape attempts (a session on the step
+ * before) are never flagged, so they have no record.
+ */
+function callRecordedFor(session: Session, set: SetLog, stepId: StepId): boolean {
+  return set.timing?.method === 'stopwatch' && session.stepId === stepId
 }
 
 /** Reached its target and did not meaningfully pass it: the prescription, done. */
@@ -531,10 +576,18 @@ export function sessionLearningPoint(
         !endedForNonCapacityReason(set) &&
         inScope(set, sideScope),
     )
-    const value = sets.reduce((best, set) => Math.max(best, capacityReading(set)), 0)
+    const isFloor = (set: SetLog) => stoppedAtTarget(set, stepId, callRecordedFor(session, set, stepId))
+    // A maximal effort at the bar measures the session, and sets the call lifted
+    // to their target may not outrank it: with the walk overlapping the call, a
+    // failed working set reads as reached, and a re-test at 9s under three
+    // "reached" 11s sets left a 16s reading from weeks before standing.
+    const measuredAtMax = sets.some((set) => isBarAttempt(set, stepId) && set.value > 0)
+    const counted = measuredAtMax ? sets.filter((set) => !isFloor(set)) : sets
+    const value = counted.reduce((best, set) => Math.max(best, capacityReading(set)), 0)
     if (value <= 0) return none
-    const top = sets.filter((set) => capacityReading(set) >= value - 0.05)
-    const floorAt = top.every((set) => stoppedAtTarget(set, stepId)) ? Math.max(...top.map((set) => set.target)) : null
+    if (measuredAtMax) return { value, floorAt: null }
+    const top = counted.filter((set) => capacityReading(set) >= value - 0.05)
+    const floorAt = top.every(isFloor) ? Math.max(...top.map((set) => set.target)) : null
     return { value, floorAt }
   }
   if (EXERCISE_BY_ID[step.keyExerciseId]?.perSide && !scope?.side) {
@@ -648,19 +701,33 @@ export interface LearningPoint {
 }
 
 /**
+ * How long a measurement speaks for the athlete: two re-test cycles. A
+ * fresher one is due every three weeks, and past this an old reading says
+ * nothing about today — six scattered holds from two months back kept an
+ * athlete "too noisy to read" for good, and noise held back the very re-test
+ * that would have measured them again.
+ */
+export const MEASUREMENT_FRESH_DAYS = 42
+
+/**
  * Where a series' measurements put the athlete: the latest one, unless it is
  * below the ones before it — then the median of the last three, so one bad
- * day is not believed until a second agrees. Floors never set it. Null when
- * nothing has been measured.
+ * day is not believed until a second agrees. Floors never set it. With
+ * `asOf`, only measurements from the `MEASUREMENT_FRESH_DAYS` before it count.
+ * Null when nothing (fresh) has been measured.
  *
- * Asymmetric on purpose. A reading that is too high corrects itself: the
- * targets it sets are missed, and a missed target is a measurement. One that
- * is too low never does for an athlete who stops at the call — every target it
- * sets is reached — and the median of three spread one re-test's 8.4s across
- * two older 5s readings, so the targets after it stayed where they had been.
+ * Asymmetric on purpose. A hold can come up short for many reasons — a bad
+ * day, fatigue, a poor setup — but can only run long by mis-timing, which the
+ * walk-back allowance and trusted camera evidence already guard. And a level
+ * read too low sets targets the athlete completes, which measures nothing, so
+ * it would stand until the next re-test: the median of three spread one
+ * re-test's 8.4s across two older 5s readings, and the targets after it stayed
+ * where they had been. A real drop is believed at the second low max effort.
  */
-export function measuredLevel(points: LearningPoint[]): number | null {
-  const measured = points.filter((p) => p.cappedAt === undefined).map((p) => p.value)
+export function measuredLevel(points: LearningPoint[], asOf?: number): number | null {
+  const measured = points
+    .filter((p) => p.cappedAt === undefined && (asOf === undefined || asOf - p.at <= MEASUREMENT_FRESH_DAYS * 86_400_000))
+    .map((p) => p.value)
   if (!measured.length) return null
   const last3 = measured.slice(-3).sort((a, b) => a - b)
   const middle = last3.length % 2 ? last3[(last3.length - 1) / 2] : (last3[0] + last3[1]) / 2
@@ -738,8 +805,10 @@ export function measuredMaxIn(session: Session): boolean {
 
 /**
  * A key hold asked for at the step's bar: an unlock attempt, a re-test or a
- * max test's attempt. Working targets never reach the bar short of an unlock,
- * so the target says which sets were maximal efforts — set logs keep no role.
+ * max test's attempt. Working targets stop a second short of the bar
+ * (`workingCeiling`), so the target says which sets were maximal efforts — set
+ * logs keep no role. Clamped to the bar itself, an intensity day's working
+ * sets read as max efforts that fell short of nothing.
  * Falling short of one is a measurement, never a missed working set.
  */
 export function isBarAttempt(set: SetLog, stepId: StepId): boolean {

@@ -501,7 +501,7 @@ export function pickStrategy(state: AppState): CoachPick {
     reason:
       evaluated === 0
         ? stoppedAtCalls(state)
-          ? `Every approach has been tried, but none has a measured session after it yet: a hold you stop at the target call says “at least this much”, not how far you could go. ${name} today — the re-tests and attempts are what will tell them apart.`
+          ? `Every approach has been tried, but none has a measured session after it yet: a hold you stop at the target call says “at least this much”, not how far you could go, so this log cannot say which approach suits you. ${name} today.`
           : `Every approach has been tried, but none has a later comparable session to measure it against yet. Staying on ${name.toLowerCase()} until results come in.`
         : best.n === 0
           ? `${name} has been tried but not measured yet — it gets another turn before the coach leans on any one approach.`
@@ -1238,13 +1238,18 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   }
   // Not on the first session back from a long gap: re-establishing working
   // evidence comes before a maximal test, and old numbers are not today's.
+  //
+  // Noise is applied last, and only to the standalone suggestion: the
+  // in-session re-test is how scatter gets settled. Blocking it too locked an
+  // athlete whose only measurements were scattered into "noisy" for good —
+  // nothing new could be measured, so nothing could change.
   let suggestMaxTest =
     (sig.daysSinceMaxTest === null ? sig.totalSessions >= 8 : sig.daysSinceMaxTest >= 21) &&
     sig.restDays >= 2 &&
     !longGap &&
-    !sig.noisy &&
     dayType !== 'deload' &&
     !formRepairNeeded
+  let plateauAskedMaxTest = false
 
   // ——— A named stall, and the one change it argues for ———
   //
@@ -1272,6 +1277,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     // days, so this is the floor rather than the last word.
     if (plateau.suggestMaxTest && dayType !== 'deload' && !formRepairNeeded && sig.restDays >= 2) {
       suggestMaxTest = true
+      plateauAskedMaxTest = true
     }
     // A stall is not the moment to also chase an unlock attempt.
     if (plateau.cause !== 'measurement-noise') queueUnlockAttempt = false
@@ -1611,11 +1617,17 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     now,
   ).points
   const lastMeasured = [...keyPoints].reverse().find((p) => p.cappedAt === undefined)
+  // Only on the first plan after it: once a working target has been set from
+  // the measurement, a later rise is the day's approach or an easy day ending
+  // — the line once credited a five-session-old re-test with 5s → 10s that was
+  // a deload ending into an intensity day.
   const measuredLift =
+    !sig.noisy &&
     lastSec !== null &&
+    sig.lastWorkingTargetAt !== null &&
     lastMeasured !== undefined &&
+    lastMeasured.at >= sig.lastWorkingTargetAt &&
     todaySec >= lastSec + 2 &&
-    now - lastMeasured.at <= 14 * DAY &&
     lastMeasured.value >= lastSec * 1.5
   if (measuredLift && targetIntent !== 'down') {
     decisions.push({
@@ -1727,6 +1739,8 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // the max hold three days after the last one, every rested session.
   const retestDue = sig.daysSinceMaxTest === null ? sig.totalSessions >= 8 : sig.daysSinceMaxTest >= 21
   const queueRetest = suggestMaxTest && retestDue && !queueUnlockAttempt && !retestSkippedRecently
+  // The standalone max test still waits out the noise, unless the plateau asked for one.
+  suggestMaxTest = suggestMaxTest && (!sig.noisy || plateauAskedMaxTest)
   if (queueUnlockAttempt) {
     decisions.push({
       text: `You're within reach of the ${step.unlockSec}s bar — ${stepAfter(state.stepId) ? 'an unlock attempt' : 'an attempt at it'} is queued first, while you're freshest.`,

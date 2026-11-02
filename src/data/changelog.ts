@@ -26,6 +26,7 @@ export const CHANGELOG: ChangeEntry[] = [
       'Your targets now follow your latest max clean hold, unlock attempt or next-shape attempt. A reading lower than the ones before it waits for a second one before it lowers anything, so one bad day does not drag your targets down.',
       'The trend, plateau check, forecast and approach picker now read only holds that measured you. If you stop at every call, the forecast says it needs measured holds instead of quoting a pace built from your targets, and the coach rotates approaches instead of crediting whichever one happened to come before a max clean hold.',
       'If you say a hold ended because of balance, technique or effort, it counts as a measurement, however close to the target it came out.',
+      'Fixes from a review of this change, the same day: scattered holds no longer hold back your max clean hold — it is how scatter gets settled, and without it old numbers could keep you “too noisy to read” for good. A max clean hold or unlock attempt now measures its session even when working sets later came down near their call, a breakdown the camera saw counts as a measurement, and a reading over six weeks older than your latest session no longer props up your targets. Working targets stop a second short of the bar, so a working set is never read as a max effort. The coach only says your target rose because of a measurement on the first plan after it, and only says you stopped at the call when you mostly did.',
     ],
   },
   {

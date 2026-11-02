@@ -1,4 +1,4 @@
-import type { AppState, StepId } from '../types'
+import type { AppState, StepDef, StepId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { defaultSurface } from '../data/equipment'
 import { completedBaseTarget, learningSeries, measuredLevel, qualifyingProgress } from './progression'
@@ -18,14 +18,30 @@ function clamp(v: number, lo: number, hi: number) {
 }
 
 /**
+ * The longest a working target may be: a second short of the bar. A key hold
+ * targeted at the bar is how a max effort is told from a working set
+ * (`isBarAttempt` — set logs keep no role), and clamped to the bar itself the
+ * working sets of an athlete past it read as max efforts: holding 14–16s full
+ * planches and stopping intensity-day sets at the 10s call, they were "measured"
+ * at 10s — base and cap fell, and the trend read −1.5s a week.
+ */
+export function workingCeiling(step: StepDef): number {
+  return Math.max(1, step.unlockSec - 1)
+}
+
+/**
  * Working-set target, anchored robustly.
  *
  * Anchoring on the all-time best is tempting but fragile: a single
  * mis-measured or lucky hold would permanently inflate every future target
  * and quietly set the athlete up to fail every set. Instead the anchor is the
- * median of recent session bests — immune to one bad value — and the all-time
- * best is only allowed to pull it up a little. The coach applies the one
- * evidence-scaled hit-rate nudge later; doing it here as well caused swings.
+ * median of recent session bests, and the all-time best is only allowed to
+ * pull it up a little. Sessions stopped at their calls are floors, raised to
+ * the measured level — which follows the latest max effort when it is higher
+ * (see measuredLevel) — so for an athlete who stops at every call one fresh
+ * re-test does move the anchor; that is the point of it. The coach applies
+ * the one evidence-scaled hit-rate nudge later; doing it here as well caused
+ * swings.
  *
  * Read from one comparable task: the surface the athlete trains on now, with a
  * unilateral hold's weaker side setting the value. With nothing comparable
@@ -39,8 +55,10 @@ export function adaptiveTarget(state: AppState, stepId: StepId, now = Date.now()
   // Sessions stopped at their targets are right-censored: they say "at least
   // this much". They may not pull the estimate below where the athlete was
   // last measured — a re-test, an attempt, a set that went past or fell short
-  // of its target (see measuredLevel for why the latest one leads).
-  const measured = measuredLevel(series.points)
+  // of its target (see measuredLevel for why the latest one leads) — while
+  // that measurement is fresh against their latest session.
+  const newest = series.points[series.points.length - 1]
+  const measured = newest ? measuredLevel(series.points, newest.at) : null
   const recentBests = series.points
     .slice(-6)
     .map((p) => (p.cappedAt !== undefined && measured !== null ? Math.max(p.value, measured) : p.value))
@@ -78,7 +96,7 @@ export function adaptiveTarget(state: AppState, stepId: StepId, now = Date.now()
   // Without this, an athlete who stopped every set at its target — as the
   // hold screen invites — saw each target come out at a fraction of the last.
   const floor = series.transferred ? null : completedBaseTarget(state, stepId, series.surface, now)
-  const target = clamp(Math.max(Math.round(t), floor ?? 0), 1, step.unlockSec)
+  const target = clamp(Math.max(Math.round(t), floor ?? 0), 1, workingCeiling(step))
   // Nothing on this surface yet: another surface's numbers are an uncertain
   // transfer, so they may only lower the conventional start, never raise it.
   return series.transferred ? Math.min(target, step.startSec) : target
@@ -109,7 +127,7 @@ export function workingTarget(
 ): { sec: number; heldByCapacity: boolean } {
   const step = STEP_BY_ID[stepId]
   const base = adaptiveTarget(state, stepId, now)
-  const target = clamp(Math.round(base * targetFactor), 1, step.unlockSec)
+  const target = clamp(Math.round(base * targetFactor), 1, workingCeiling(step))
   const capacity = capacityOn(state, stepId)
   const cap = capacity !== undefined ? Math.max(1, Math.floor(capacity)) : Infinity
   return { sec: Math.min(target, cap), heldByCapacity: cap < target }

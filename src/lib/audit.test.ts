@@ -16,15 +16,21 @@ import { initialState, mergeExternalState, normalizeStateWithReport, reducer, re
 import { buildPlan, debriefSession, rewardFor } from './coach'
 import { readSignals, readinessTimeline } from './signals'
 import {
+  capacityReading,
   endedForNonCapacityReason,
   isQualifyingSet,
   measuredLevel,
   progressionCredit,
+  qualifyingSessionValue,
+  qualifyingValueIsFloor,
   sessionLearningPoint,
   sessionLearningValue,
   sessionTargetCap,
   stoppedAtTarget,
 } from './progression'
+import { forecastUnlock } from './forecast'
+import { capacityOn } from './bridge'
+import { workingTargetSec } from './workingTarget'
 import { bestSeries, sessionsInWeekOf, weekStreak } from './stats'
 import { mergeHumanReview, mergeModelReading, suggestedRatingFor } from '../components/FormCheckRow'
 
@@ -894,6 +900,166 @@ describe('a hold stopped at its call is a floor, not a measurement', () => {
     expect(grew(filmed(2, 2, 5), filmed(4, 4, 3))).toBe(false)
     // Held past the target both times: that is the hold growing.
     expect(grew(filmed(5, 3, 5), filmed(7, 4, 3))).toBe(true)
+  })
+})
+
+describe('found by a review of the floor rule', () => {
+  const key = 'tuck-planche'
+  const set = (value: number, target: number, overrides: Partial<SetLog> = {}): SetLog => ({
+    exerciseId: key,
+    kind: 'hold',
+    value,
+    target,
+    section: 'main',
+    at: at(3),
+    ...overrides,
+  })
+  // Timed by the player's stopwatch: the player records whether it came down at the call.
+  const timed = { timing: { method: 'stopwatch' as const } }
+  const stoppedDay = (daysAgo: number, target: number, base = target) =>
+    trainingDay(
+      daysAgo,
+      [0, 1, 2].map((k) => set(target - 0.4, target, { at: at(daysAgo) + k * 60_000, calledAtTarget: true })),
+      { baseTargetSec: base },
+    )
+
+  it('lets old scatter go once the athlete is measured again', () => {
+    // Six scattered holds to the limit months ago, then weeks of holds
+    // stopped at the call: the last measurements were scattered, so noisy —
+    // and the re-test that settles it is queued anyway (next test).
+    // (The swing is v2.test's noise fixture, three months earlier.)
+    const scattered = [8, 14, 5, 13, 5, 8]
+    const old = [146, 135, 125, 114, 102, 93].map((d, i) => trainingDay(d, [set(scattered[i], 4, { at: at(d), endReason: 'effort' })]))
+    const recent = [26, 23, 20, 18, 16, 13, 11, 9, 6].map((d) => stoppedDay(d, 7))
+    expect(readSignals(athlete('tuck', { sessions: [...old, ...recent] }), NOW).noisy).toBe(true)
+    // Then a max clean hold: the scatter from months before stops counting.
+    const retest = trainingDay(3, [set(9, STEP_BY_ID.tuck.unlockSec, { at: at(3) })])
+    const sig = readSignals(athlete('tuck', { sessions: [...old, ...recent, retest] }), NOW)
+    expect(sig.noisy).toBe(false)
+  })
+
+  it('never lets scattered readings hold back the max clean hold that would settle them', () => {
+    const scattered = [8, 13, 7, 12, 8, 13, 7, 12, 8]
+    const sessions = [24, 21, 19, 17, 14, 12, 10, 7, 3].map((d, i) =>
+      trainingDay(d, [set(scattered[i], 6, { at: at(d), endReason: 'effort' })]),
+    )
+    const plan = buildPlan(athlete('tuck', { sessions }), NOW)
+    expect(plan.signals.noisy).toBe(true)
+    expect(plan.challengeAllowed).toBe(true)
+    expect(plan.queueRetest).toBe(true)
+  })
+
+  it('measures a session by its max effort, not by sets the call lifted to their target', () => {
+    // Re-tested at the bar at 9s; the working sets after it failed, but within the allowance of their call.
+    const retest = trainingDay(3, [
+      set(9, STEP_BY_ID.tuck.unlockSec, { at: at(3), ...timed }),
+      ...[1, 2, 3].map((k) => set(6.5, 11, { at: at(3) + k * 60_000, calledAtTarget: true, ...timed })),
+    ])
+    expect(sessionLearningPoint(retest, 'tuck')).toEqual({ value: 9, floorAt: null })
+  })
+
+  it('reads a breakdown the camera saw as a measurement, not a floor', () => {
+    const auto = { issues: [], confidence: 0.9, cleanSeconds: 8, cleanRatio: 0.8 }
+    const sagged = set(10, 10, { form: { rating: 'clean', confirmed: true, flightConfirmed: true, auto } })
+    expect(stoppedAtTarget(sagged, 'tuck')).toBe(false)
+    const day = trainingDay(3, [sagged])
+    expect(sessionLearningPoint(day, 'tuck')).toEqual({ value: 8, floorAt: null })
+    // Even when the athlete said it ended at the target: the camera they confirmed saw it go at 8s.
+    expect(stoppedAtTarget({ ...sagged, endReason: 'target' }, 'tuck')).toBe(false)
+    // Verified with one flag: still the camera's measurement of the clean hold.
+    const flagged = set(10, 10, {
+      form: { rating: 'clean', confirmed: true, flightConfirmed: true, auto: { ...auto, issues: ['sag'] } },
+    })
+    const flaggedDay = trainingDay(3, [flagged])
+    expect(qualifyingValueIsFloor(flaggedDay, 'tuck', qualifyingSessionValue(flaggedDay, 'tuck'))).toBe(false)
+  })
+
+  it('reads the weaker side’s best for a unilateral hold', () => {
+    const one = STEP_BY_ID.oneleg.keyExerciseId
+    const side = (value: number, target: number, s: 'left' | 'right', extra: Partial<SetLog> = {}) =>
+      set(value, target, { exerciseId: one, side: s, form: verified(value), ...extra })
+    // Left stopped at its 7s call twice; right went past it, then fell short once.
+    const day = trainingDay(
+      3,
+      [side(7, 7, 'left', { calledAtTarget: true }), side(7, 7, 'left', { calledAtTarget: true }), side(9, 7, 'right'), side(7, 8, 'right')],
+      { stepId: 'oneleg' },
+    )
+    expect(qualifyingSessionValue(day, 'oneleg')).toBe(7)
+    expect(qualifyingValueIsFloor(day, 'oneleg', 7)).toBe(true)
+  })
+
+  it('does not let a reading from months before hold the cap up', () => {
+    // Re-tested at 16s, then two months of holds stopped at an 8s call.
+    const retest = trainingDay(70, [set(16, STEP_BY_ID.tuck.unlockSec, { at: at(70) })])
+    const since = [60, 50, 40, 30, 20, 12, 6].map((d) => stoppedDay(d, 8))
+    const state = athlete('tuck', { sessions: [retest, ...since] })
+    expect(capacityOn(state, 'tuck')).toBe(8)
+    // Fresh, the same reading still stands over the floors.
+    const recent = athlete('tuck', { sessions: [trainingDay(20, [set(16, STEP_BY_ID.tuck.unlockSec, { at: at(20) })]), ...[12, 6].map((d) => stoppedDay(d, 8))] })
+    expect(capacityOn(recent, 'tuck')).toBe(16)
+  })
+
+  it('keeps working targets below the bar, so a working set is never read as a max effort', () => {
+    const full = STEP_BY_ID.full
+    const sessions = [9, 6, 3].map((d) =>
+      trainingDay(d, [set(15, full.unlockSec, { exerciseId: full.keyExerciseId, at: at(d) })], { stepId: 'full' }),
+    )
+    const state = athlete('full', { sessions })
+    for (const factor of [0.7, 1, 1.25, 1.3]) expect(workingTargetSec(state, 'full', factor, NOW)).toBeLessThan(full.unlockSec)
+  })
+
+  it('takes the athlete’s reason over the call when a hold ended at their limit', () => {
+    const balance = set(6, 10, { calledAtTarget: true, endReason: 'balance', ...timed })
+    expect(capacityReading(balance)).toBe(6)
+    expect(sessionLearningPoint(trainingDay(3, [balance]), 'tuck')).toEqual({ value: 6, floorAt: null })
+  })
+
+  it('trusts the player’s call record over the stop band for holds it timed', () => {
+    // Held to failure at 2.7s on a 2s target: the player saw it go well past the call.
+    const full = STEP_BY_ID.full.keyExerciseId
+    const timedDay = trainingDay(3, [set(2.7, 2, { exerciseId: full, ...timed })], { stepId: 'full' })
+    expect(sessionLearningPoint(timedDay, 'full')).toEqual({ value: 2.7, floorAt: null })
+    // An older log has no call record, and the stop band is all there is.
+    const olderDay = trainingDay(3, [set(2.7, 2, { exerciseId: full })], { stepId: 'full' })
+    expect(sessionLearningPoint(olderDay, 'full').floorAt).toBe(2)
+    // Next-shape attempts are never flagged by the player, so the band still reads them.
+    const bridge = trainingDay(3, [set(5.4, 5, { exerciseId: STEP_BY_ID.advtuck.keyExerciseId, ...timed })])
+    expect(sessionLearningPoint(bridge, 'advtuck').floorAt).toBe(5)
+  })
+
+  it('names a measurement only on the first plan after it', () => {
+    // Re-tested at 13s nine days ago; the targets since worked from it, and the last day was an easy 5s.
+    const sessions = [
+      ...[20, 18, 16].map((d) => stoppedDay(d, 5)),
+      trainingDay(9, [set(13, STEP_BY_ID.tuck.unlockSec, { at: at(9) })]),
+      stoppedDay(7, 8),
+      stoppedDay(5, 8),
+      stoppedDay(2, 5, 8),
+    ]
+    const text = buildPlan(athlete('tuck', { sessions }), NOW)
+      .decisions.map((d) => d.text)
+      .join(' ')
+    expect(text).not.toMatch(/measured you well past/)
+  })
+
+  it('says holds were stopped at the call only when they mostly were', () => {
+    const full = STEP_BY_ID.full.keyExerciseId
+    const filmed = (daysAgo: number, value: number, target: number, extra: Partial<SetLog> = {}) =>
+      trainingDay(daysAgo, [set(value, target, { exerciseId: full, at: at(daysAgo), form: verified(value), ...extra })], {
+        stepId: 'full',
+      })
+    // Two holds to the limit and one stopped at its call: too few measured for a rate, but not because of the call.
+    const mostlyMeasured = athlete('full', {
+      sessions: [filmed(12, 3.6, 2, timed), filmed(8, 3.8, 2, timed), filmed(4, 2, 2, { calledAtTarget: true, ...timed })],
+    })
+    const forecast = forecastUnlock(mostlyMeasured, 'full', NOW)
+    expect(forecast.kind).toBe('insufficient')
+    expect(forecast.kind === 'insufficient' ? forecast.need : '').not.toMatch(/target call/)
+    const mostlyStopped = athlete('full', {
+      sessions: [12, 10, 8, 6, 4].map((d) => filmed(d, 2, 2, { calledAtTarget: true, ...timed })),
+    })
+    const stopped = forecastUnlock(mostlyStopped, 'full', NOW)
+    expect(stopped.kind === 'insufficient' ? stopped.need : stopped.kind).toMatch(/target call/)
   })
 })
 

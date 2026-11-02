@@ -1,7 +1,7 @@
 import type { AppState } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { forecastUnlock, MIN_FORECAST_POINTS, qualifyingSeries } from './forecast'
+import { forecastUnlock, MIN_FORECAST_POINTS, mostlyFloors, qualifyingSeries } from './forecast'
 import { readSignals } from './signals'
 import { diagnosePlateau, PLATEAU_MIN_DAYS, type PlateauVerdict } from './plateau'
 import { fmtWeight } from './units'
@@ -79,9 +79,9 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
   ).length
   const verifiedSeries = qualifyingSeries(state, state.stepId)
   const verified = verifiedSeries.length
-  // Verified, but every one stopped at its call: the record exists and says
-  // "at least this much", so the gap is a measurement, not time.
-  const floorsOnly = verifiedSeries.some((p) => p.floor)
+  // Verified, but mostly stopped at the call: the record exists and says "at
+  // least this much", so the gap is a measurement, not time.
+  const floorsOnly = mostlyFloors(verifiedSeries)
   const unverified = keySessions >= MIN_FORECAST_POINTS && verified < MIN_FORECAST_POINTS
   // Missing evidence has two very different causes. Someone who has never
   // filmed needs telling to film; someone who films every set and is told to

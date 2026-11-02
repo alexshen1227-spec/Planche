@@ -310,6 +310,28 @@ more certain than its basis.
    were mutation-checked against it. Fixtures that mean "a measured best" say
    so with `endReason: 'effort'` — a hold logged at its own target with no
    reason reads as stopped at the call.
+   An independent review of that commit found twelve more, all now pinned in
+   audit.test ("found by a review of the floor rule") and mutation-checked one
+   by one: **noise must never block the in-session re-test** (it blocked the
+   only thing that adds a measurement, so stale scatter meant "noisy" for
+   good — the standalone max-test suggestion still waits it out); the spread
+   and trend read measurements from the 56 days before the *latest
+   measurement*, not the clock (sparse trainers keep their context);
+   `measuredLevel(points, asOf)` counts only `MEASUREMENT_FRESH_DAYS` (42)
+   before the newest session in `capacityOn`/`adaptiveTarget`; a session
+   with a bar attempt is measured by its non-floor sets (`calledAtTarget`
+   lifts a failed working set to its target when the walk overlaps the call,
+   and those lifted floors had outranked the re-test); `stoppedAtTarget` reads
+   the band on `trainingSetValue`, lets a trusted camera breakdown win over
+   any stop, and trusts the player's call record (`callRecordedFor`: a
+   stopwatch hold on the step's own session) instead of the band — the band
+   is for older logs and next-shape attempts, never flagged; `capacityReading`
+   does not lift a hold the athlete said ended at their limit; the verified
+   series reads the weaker side and the camera's own credit;
+   `workingCeiling` keeps working targets a second short of the bar so
+   `isBarAttempt` stays true to its name; the measured-lift line needs a
+   measurement newer than `sig.lastWorkingTargetAt`; and the floors copy
+   needs `mostlyFloors`.
 
 ## Camera lifecycle
 

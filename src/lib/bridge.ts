@@ -46,18 +46,21 @@ const BRIDGE_FROM_DAY_ONE = new Set<StepId>(['lean'])
  * The most the athlete has shown they can hold on a step's key exercise, on
  * the comparable surface — or undefined when nothing has been measured.
  *
- * Recent sessions, and the latest measurement however many sessions ago it
- * was. Holds stopped at their calls are floors: six obedient sessions pushed a
- * re-tested 8.4s out of a last-six window, the capacity fell to the 2s targets
- * they had been given, and next-shape practice closed on an athlete who was
- * still getting stronger.
+ * Recent sessions, and the latest fresh measurement however many sessions ago
+ * it was. Holds stopped at their calls are floors: six obedient sessions pushed
+ * a re-tested 8.4s out of a last-six window, the capacity fell to the 2s
+ * targets they had been given, and next-shape practice closed on an athlete
+ * who was still getting stronger. Fresh means within `MEASUREMENT_FRESH_DAYS`
+ * of their latest session, so a reading from months before cannot hold the cap
+ * up through a real drop.
  */
 export function capacityOn(state: AppState, stepId: StepId): number | undefined {
   const step = STEP_BY_ID[stepId]
   const surface = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
   const series = learningSeries(state, stepId, surface)
   const recent = series.points.slice(-6).map((p) => p.value)
-  if (recent.length) return Math.max(...recent, measuredLevel(series.points) ?? 0)
+  const newest = series.points[series.points.length - 1]
+  if (newest) return Math.max(...recent, measuredLevel(series.points, newest.at) ?? 0)
   const timerBest = state.prs[step.keyExerciseId]?.value
   if (timerBest !== undefined && timerBest > 0) return timerBest
   const answered = state.assessment?.answers[step.keyExerciseId]
