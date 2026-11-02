@@ -2,6 +2,7 @@ import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import type { AppState, AutoForm, FormCheck, FormIssue, FormRating, Session, SetLog, StepId, TrainingSurface } from '../types'
 import { trustedCameraEvidence } from './formEvidence'
+import { WALK_BACK_MAX_SEC } from './sessionTiming'
 
 export interface Qualification {
   value: number
@@ -360,7 +361,7 @@ export function qualifyingValueIsFloor(session: Session, stepId: StepId, value: 
     top.length > 0 &&
     top.every(
       (set) =>
-        stoppedAtTarget(set, stepId, callRecordedFor(session, set, stepId)) &&
+        stoppedAtTarget(set, stepId) &&
         // The camera saw the clean hold end before the target: that is its
         // measurement — unless it only stopped filming a hold still clean.
         (credit(set) >= set.target - 0.05 || unfilmedAfterCleanFilm(set.form?.auto) > 0),
@@ -501,32 +502,29 @@ function endedAtLimit(set: Pick<SetLog, 'endReason'>): boolean {
  * the bar is never one, whatever it logged, and neither is a hold the athlete
  * said ended at their limit, or one the camera saw break before its target.
  *
- * `callRecorded`: the player timed this hold as a working set and recorded
- * whether it came down at the call (`calledAtTarget`), so that record is the
- * answer. Without one — an older log, a next-shape attempt (never flagged) —
- * only the stop band is left: the chime sounds at the target and the
- * stopwatch stops a moment later, so an obedient hold reads up to about a
- * second over. Applied to holds the player had timed, that band floored a
- * full planche held to failure at 2.7s on a 2s target.
+ * Without the call flag, a hold that reached its target and did not
+ * meaningfully pass it is one too. "Meaningfully" is the size of the stop: a
+ * second for a stopwatch within reach, and for a walk back to the phone the
+ * walk the allowance may have missed — a hold stopped at the call by an
+ * athlete who walks 7s against the assumed 5s logs two seconds over, without
+ * the flag. Read as measurements, those echoed the day's target back, and a
+ * slow walker gaining every session was told for fifteen weeks that their
+ * hold was going backwards.
  */
-export function stoppedAtTarget(set: SetLog, stepId: StepId, callRecorded = false): boolean {
+export function stoppedAtTarget(set: SetLog, stepId: StepId): boolean {
   if (set.kind !== 'hold' || !(set.target > 0) || isBarAttempt(set, stepId) || endedAtLimit(set)) return false
-  // What the athlete held, as far as trusted camera evidence says.
-  const held = trainingSetValue(set)
-  if (trustedCameraEvidence(set) && held < set.target - 0.05) return false
+  // The camera the athlete confirmed saw the clean hold end before the target
+  // (and did not just stop filming a hold still clean). The stopwatch cannot
+  // say this: net of a walk allowance it reads short for a quick walker.
+  const auto = trustedCameraEvidence(set) ? set.form?.auto : undefined
+  if (auto?.cleanSeconds !== undefined && auto.cleanSeconds < set.target - 0.05 && unfilmedAfterCleanFilm(auto) === 0) {
+    return false
+  }
   if (set.endReason === 'target') return true
   if (set.calledAtTarget === true && capacityReading(set) >= set.target - 0.05) return true
-  if (callRecorded) return false
-  return held >= set.target - 0.05 && held <= set.target + Math.max(1, set.target * 0.1)
-}
-
-/**
- * Whether the player recorded if this hold came down at its call: a hold it
- * timed on the step's own session. Next-shape attempts (a session on the step
- * before) are never flagged, so they have no record.
- */
-function callRecordedFor(session: Session, set: SetLog, stepId: StepId): boolean {
-  return set.timing?.method === 'stopwatch' && session.stepId === stepId
+  const held = trainingSetValue(set)
+  const walk = set.timing?.allowance === 'walk-back' ? WALK_BACK_MAX_SEC - (set.timing.allowanceSec ?? WALK_BACK_MAX_SEC) : 0
+  return held >= set.target - 0.05 && held <= set.target + Math.max(1, set.target * 0.1, walk)
 }
 
 /** Reached its target and did not meaningfully pass it: the prescription, done. */
@@ -576,7 +574,7 @@ export function sessionLearningPoint(
         !endedForNonCapacityReason(set) &&
         inScope(set, sideScope),
     )
-    const isFloor = (set: SetLog) => stoppedAtTarget(set, stepId, callRecordedFor(session, set, stepId))
+    const isFloor = (set: SetLog) => stoppedAtTarget(set, stepId)
     // A maximal effort at the bar measures the session, and sets the call lifted
     // to their target may not outrank it: with the walk overlapping the call, a
     // failed working set reads as reached, and a re-test at 9s under three

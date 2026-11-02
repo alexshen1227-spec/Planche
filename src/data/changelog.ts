@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-01',
+    title: 'Your walk back to the phone is not extra hold time',
+    area: 'coach',
+    notes: [
+      'If your walk back to the phone takes longer than the five seconds the app assumes, a hold you stopped at the call no longer reads as a second or two past your target. Those had counted as measurements, which could make steady progress look like going backwards and keep your targets low. Measuring your walk in Settings still makes every hold’s time more exact.',
+      'A filmed hold you stopped at the call no longer counts as a breakdown just because a quick walk back made the stopwatch read short — the camera’s own clean time decides.',
+      'The load warning no longer says 120% is above 120% when last week was only just over the limit.',
+    ],
+  },
+  {
+    date: '2026-11-01',
     title: 'Stopping at the call no longer counts as your max',
     area: 'coach',
     notes: [

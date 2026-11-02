@@ -7,6 +7,7 @@ import { finalizeFromPlan } from '../data/workouts'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEPS, STEP_BY_ID, stepAfter } from '../data/progressions'
 import { bridgeStatus } from './bridge'
+import { callMarksCompliance, isMainProgressionHold, stopLatencySecondsFor, stoppedAtTargetCall } from './sessionTiming'
 
 /**
  * The loop the athlete actually lives in: the real session builder, logged
@@ -43,10 +44,40 @@ interface LoopDay {
 }
 
 /**
+ * An athlete who trains like a person: some days are better than others,
+ * later sets are harder, the walk back to the phone is not the five seconds
+ * the app assumes, and only some sets are filmed. Logged the way the hold
+ * screen logs them — stopwatch time minus the stop allowance, the call flag
+ * from `stoppedAtTargetCall` — so the floors and the walk ambiguity are real.
+ */
+interface Realism {
+  seed: number
+  /** Day-to-day swing in what the athlete can hold, as a standard deviation share. */
+  dayNoise: number
+  /** The walk back to the phone after a main hold, uniform, in seconds. */
+  walk: [number, number]
+  /** Share of main sets filmed, with a reading the athlete confirms. */
+  filmShare: number
+}
+
+/** Small seeded generator (mulberry32), so a realistic run is the same every time. */
+function seeded(seed: number) {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/**
  * @param nextShapeShare where each later shape starts, as a share of its
  *   opening dose: above 1, the athlete holds the next shape as soon as they
  *   meet it; below, they practise it for weeks before early promotion is
  *   possible.
+ * @param realism log like a person instead of a perfectly obedient machine.
  */
 function runLoop(
   stepId: StepId,
@@ -54,7 +85,14 @@ function runLoop(
   count: number,
   gainPerSession = 0.25,
   nextShapeShare = 1.6,
+  realism?: Realism,
 ): { days: LoopDay[]; state: AppState } {
+  const rng = realism ? seeded(realism.seed) : () => 0.5
+  const gauss = () => {
+    const u = Math.max(1e-9, rng())
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng())
+  }
+  const round1 = (n: number) => Math.round(n * 10) / 10
   const base = initialState()
   let state: AppState = {
     ...base,
@@ -83,6 +121,8 @@ function runLoop(
     const key = STEP_BY_ID[state.stepId].keyExerciseId
     const sets: SetLog[] = []
     let clock = at
+    // Today's form: one draw for the whole session.
+    const dayFactor = realism ? Math.max(0.6, 1 + realism.dayNoise * gauss()) : 1
     for (const block of workout.blocks) {
       const ex = EXERCISE_BY_ID[block.exerciseId]
       for (let s = 0; s < block.sets; s++) {
@@ -94,18 +134,50 @@ function runLoop(
         }
         const target = block.target.sec
         const maximal = block.role === 'attempt' || block.role === 'bridge'
-        const value = maximal ? Math.round(capOf(block.exerciseId) * 10) / 10 : target
+        if (realism) {
+          // Held to failure on a max effort; otherwise down at the call, or
+          // sooner when today's capacity runs out first.
+          const can = Math.max(0.5, capOf(block.exerciseId) * dayFactor * (1 - 0.03 * s))
+          const held = maximal ? can : Math.min(can, target + 0.3)
+          const mainHold = isMainProgressionHold(block.exerciseId)
+          const walk = mainHold ? realism.walk[0] + rng() * (realism.walk[1] - realism.walk[0]) : 0.8 + rng() * 1.5
+          const raw = round1(held + walk)
+          const allowance = stopLatencySecondsFor(block.exerciseId, state.settings.stopLatencySec, false, state.settings.walkBackSec)
+          const value = Math.max(0, round1(raw - allowance))
+          const called = callMarksCompliance(block, workout.kind) && stoppedAtTargetCall(raw, target, allowance)
+          const filmed = block.section === 'main' && rng() < realism.filmShare
+          sets.push({
+            exerciseId: block.exerciseId,
+            kind: 'hold',
+            value,
+            raw,
+            target,
+            section: block.section,
+            at: clock,
+            timing: {
+              method: 'stopwatch',
+              ...(allowance > 0 ? { allowanceSec: allowance, allowance: mainHold ? ('walk-back' as const) : ('reaction' as const) } : {}),
+            },
+            ...(side ? { side } : {}),
+            ...(called ? { calledAtTarget: true } : {}),
+            ...(filmed ? { form: verified(round1(held)) } : {}),
+            ...(block.light ? { light: true } : {}),
+          })
+          continue
+        }
+        const value = Math.round(capOf(block.exerciseId) * 10) / 10
+        const loggedValue = maximal ? value : target
         const filmed = block.section === 'main'
         sets.push({
           exerciseId: block.exerciseId,
           kind: 'hold',
-          value,
+          value: loggedValue,
           target,
           section: block.section,
           at: clock,
           ...(side ? { side } : {}),
           ...(!maximal && block.section !== 'warmup' && block.section !== 'cooldown' ? { calledAtTarget: true } : {}),
-          ...(filmed ? { form: verified(value) } : {}),
+          ...(filmed ? { form: verified(loggedValue) } : {}),
           ...(block.light ? { light: true } : {}),
         })
       }
@@ -221,6 +293,29 @@ describe('the real loop, for an athlete who does exactly what it asks', () => {
     const trends = days.map((d) => d.plan.signals.trendPerWeek).filter((t): t is number => t !== null)
     expect(trends.length).toBeGreaterThan(10)
     for (const t of trends) expect(t).toBeCloseTo(0.36, 0)
+  })
+
+  // Found by running athletes who train like people: day-to-day swing, later
+  // sets harder, a walk back to the phone that is not the assumed 5s, and only
+  // some sets filmed. A 7s walker who comes down at the call logs two seconds
+  // over with no call flag, and those holds were read as measurements: the
+  // day's target echoed back, "going backwards for fifteen weeks", technique
+  // picked for 2s targets at a true 15–22s, never past the tuck. And a quick
+  // walker's filmed stops at the call read as camera-seen breakdowns, because
+  // the check compared the stopwatch (net of the walk allowance) instead of
+  // the camera's own clean time — those fake lows outvoted an 18s re-test.
+  it.each([
+    ['a 4s walker', 'tuck', 0.25, 1.6, { seed: 1, dayNoise: 0.1, walk: [3.5, 4.5], filmShare: 0.7 }],
+    ['a slow 7s walker who rarely films', 'tuck', 0.25, 1.6, { seed: 2, dayNoise: 0.1, walk: [6.5, 7.5], filmShare: 0.3 }],
+    ['a quick 3s walker starting at the lean', 'lean', 0.4, 1.6, { seed: 3, dayNoise: 0.15, walk: [2.5, 3.5], filmShare: 0.5 }],
+    ['a slow gainer facing a hard next shape', 'advtuck', 0.15, 0.6, { seed: 4, dayNoise: 0.1, walk: [5, 6], filmShare: 0.8 }],
+    ['an erratic 2–7s walker', 'tuck', 0.25, 1.6, { seed: 5, dayNoise: 0.1, walk: [2, 7], filmShare: 0.5 }],
+  ] as [string, StepId, number, number, Realism][])('reads %s as getting stronger, and moves them up the road', (_who, start, gain, share, realism) => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const { days, state } = runLoop(start, 45, 60, gain, share, realism)
+    expect(days.filter((d) => d.plan.signals.noisy).length).toBe(0)
+    expect(days.filter((d) => d.plan.plateau !== null).length).toBe(0)
+    expect(STEP_BY_ID[state.stepId].order - STEP_BY_ID[start].order).toBeGreaterThanOrEqual(2)
   })
 
   it('moves up the road when the athlete gets strong enough', () => {

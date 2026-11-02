@@ -323,15 +323,23 @@ more certain than its basis.
    lifts a failed working set to its target when the walk overlaps the call,
    and those lifted floors had outranked the re-test); `stoppedAtTarget` reads
    the band on `trainingSetValue`, lets a trusted camera breakdown win over
-   any stop, and trusts the player's call record (`callRecordedFor`: a
-   stopwatch hold on the step's own session) instead of the band — the band
-   is for older logs and next-shape attempts, never flagged; `capacityReading`
+   any stop (read from the camera's own `cleanSeconds` — the stopwatch, net
+   of a walk allowance, reads short for a quick walker); `capacityReading`
    does not lift a hold the athlete said ended at their limit; the verified
    series reads the weaker side and the camera's own credit;
    `workingCeiling` keeps working targets a second short of the bar so
    `isBarAttempt` stays true to its name; the measured-lift line needs a
    measurement newer than `sig.lastWorkingTargetAt`; and the floors copy
    needs `mostlyFloors`.
+   Then the closed loop got athletes who train like people (`Realism`:
+   day-to-day swing, later sets harder, a walk that is not the assumed 5s,
+   some sets filmed — logged through `stoppedAtTargetCall` like the player).
+   A 7s walker down at the call logs ~2s over with no call flag, so the stop
+   band for a walk-back hold reaches `WALK_BACK_MAX_SEC − allowanceSec` (the
+   walk the allowance may have missed); without it that athlete never left the
+   tuck and was told "going backwards" for fifteen weeks. All five realistic
+   athletes are pinned (no noise or plateau days, at least two steps up);
+   their seeds matter, so re-measure rather than loosen if one moves.
 
 ## Camera lifecycle
 

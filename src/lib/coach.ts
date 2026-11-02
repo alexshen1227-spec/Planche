@@ -1526,12 +1526,11 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const enoughVolumeToRamp = sig.sessionsPerWeek >= 2
   if (ramp?.rampingFast && loadedDay && enoughVolumeToRamp) {
     volumeFactor = Math.min(volumeFactor, 0.85)
+    // Rounded, a ratio just past the limit read "120% … above the 120% this app allows".
+    const rampPct = Math.round(ramp.ratio * 100)
+    const limitPct = Math.round(MAX_WEEKLY_LOAD_RAMP * 100)
     decisions.push({
-      text: `Last week's planche-specific load was ${Math.round(
-        ramp.ratio * 100,
-      )}% of your typical week over the month before — above the ${Math.round(
-        MAX_WEEKLY_LOAD_RAMP * 100,
-      )}% this app allows. That limit is a cautious design choice, not a proven safety threshold — the 10%-a-week rule it resembles did not reduce injuries in its trial. Today is trimmed to bring it back in line. Load here is weighted by how hard each position is, so a long easy lean does not count the same as a short advanced tuck.`,
+      text: `Last week's planche-specific load was ${rampPct > limitPct ? `${rampPct}%` : `just over ${limitPct}%`} of your typical week over the month before — above the ${limitPct}% this app allows. That limit is a cautious design choice, not a proven safety threshold — the 10%-a-week rule it resembles did not reduce injuries in its trial. Today is trimmed to bring it back in line. Load here is weighted by how hard each position is, so a long easy lean does not count the same as a short advanced tuck.`,
       kind: 'warn',
     })
   }

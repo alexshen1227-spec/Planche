@@ -1014,17 +1014,33 @@ describe('found by a review of the floor rule', () => {
     expect(sessionLearningPoint(trainingDay(3, [balance]), 'tuck')).toEqual({ value: 6, floorAt: null })
   })
 
-  it('trusts the player’s call record over the stop band for holds it timed', () => {
-    // Held to failure at 2.7s on a 2s target: the player saw it go well past the call.
-    const full = STEP_BY_ID.full.keyExerciseId
-    const timedDay = trainingDay(3, [set(2.7, 2, { exerciseId: full, ...timed })], { stepId: 'full' })
-    expect(sessionLearningPoint(timedDay, 'full')).toEqual({ value: 2.7, floorAt: null })
-    // An older log has no call record, and the stop band is all there is.
-    const olderDay = trainingDay(3, [set(2.7, 2, { exerciseId: full })], { stepId: 'full' })
-    expect(sessionLearningPoint(olderDay, 'full').floorAt).toBe(2)
-    // Next-shape attempts are never flagged by the player, so the band still reads them.
-    const bridge = trainingDay(3, [set(5.4, 5, { exerciseId: STEP_BY_ID.advtuck.keyExerciseId, ...timed })])
+  it('reads the walk back to the phone as part of the stop, not as extra hold', () => {
+    // The app assumes a 5s walk; this athlete takes about 7s. Down at a 5s
+    // call, the stopwatch stops 7.3s after it: 2.3s over, and no call flag.
+    const assumed = { timing: { method: 'stopwatch' as const, allowance: 'walk-back' as const, allowanceSec: 5 } }
+    const slowWalk = set(7.3, 5, { raw: 12.3, ...assumed })
+    expect(stoppedAtTarget(slowWalk, 'tuck')).toBe(true)
+    // Held well past the call: a measurement.
+    expect(stoppedAtTarget(set(9, 5, { raw: 14, ...assumed }), 'tuck')).toBe(false)
+    // With the walk measured at 7.5s, the allowance already covers it: 2s over is real.
+    const measured = { timing: { method: 'stopwatch' as const, allowance: 'walk-back' as const, allowanceSec: 7.5 } }
+    expect(stoppedAtTarget(set(7, 5, { raw: 14.5, ...measured }), 'tuck')).toBe(false)
+    // A next-shape attempt stopped at its call by the same slow walker is a floor too.
+    const bridge = trainingDay(3, [set(7.2, 5, { exerciseId: STEP_BY_ID.advtuck.keyExerciseId, raw: 12.2, ...assumed })])
     expect(sessionLearningPoint(bridge, 'advtuck').floorAt).toBe(5)
+  })
+
+  it('does not read a quick walker’s filmed stop at the call as a breakdown', () => {
+    // Walks 2s against the assumed 5s: the stopwatch nets 1.1s of a 3s target,
+    // while the camera they confirmed saw 3.3s clean. Down at the call: a floor.
+    const filmed = set(1.1, 3, {
+      calledAtTarget: true,
+      raw: 6.1,
+      timing: { method: 'stopwatch', allowance: 'walk-back', allowanceSec: 5 },
+      form: { rating: 'clean', confirmed: true, flightConfirmed: true, auto: { issues: [], confidence: 0.9, cleanSeconds: 3.3, cleanRatio: 1 } },
+    })
+    expect(stoppedAtTarget(filmed, 'tuck')).toBe(true)
+    expect(sessionLearningPoint(trainingDay(3, [filmed]), 'tuck')).toEqual({ value: 3, floorAt: 3 })
   })
 
   it('names a measurement only on the first plan after it', () => {
