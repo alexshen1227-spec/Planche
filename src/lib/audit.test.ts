@@ -1043,6 +1043,22 @@ describe('found by a review of the floor rule', () => {
     expect(sessionLearningPoint(trainingDay(3, [filmed]), 'tuck')).toEqual({ value: 3, floorAt: 3 })
   })
 
+  it('tells an athlete whose stopwatch has reached the bar that the camera is what is missing', () => {
+    // Max clean holds of 23s on the 20s bar, never filmed: the step cannot open.
+    const unfilmed = [24, 3].map((d) => trainingDay(d, [set(d === 3 ? 23 : 21, STEP_BY_ID.tuck.unlockSec, { at: at(d) })]))
+    const sessions = [...[20, 17, 13, 10, 7].map((d) => stoppedDay(d, 11)), ...unfilmed]
+    const text = buildPlan(athlete('tuck', { sessions }), NOW)
+      .decisions.map((d) => d.text)
+      .join(' ')
+    expect(text).toMatch(/On the stopwatch your max clean holds are at about 2\ds, past the 20s bar\. Advanced Tuck opens on a hold the camera has checked, and none of your recent ones were filmed/)
+    // Filmed and verified close to the bar: the unlock attempt says it instead.
+    const filmed = [24, 3].map((d) => trainingDay(d, [set(18, STEP_BY_ID.tuck.unlockSec, { at: at(d), form: verified(18) })]))
+    const verifiedText = buildPlan(athlete('tuck', { sessions: [...[20, 17, 13, 10, 7].map((d) => stoppedDay(d, 11)), ...filmed] }), NOW)
+      .decisions.map((d) => d.text)
+      .join(' ')
+    expect(verifiedText).not.toMatch(/On the stopwatch your max clean holds/)
+  })
+
   it('names a measurement only on the first plan after it', () => {
     // Re-tested at 13s nine days ago; the targets since worked from it, and the last day was an easy 5s.
     const sessions = [

@@ -339,7 +339,11 @@ more certain than its basis.
    walk the allowance may have missed); without it that athlete never left the
    tuck and was told "going backwards" for fifteen weeks. All five realistic
    athletes are pinned (no noise or plateau days, at least two steps up);
-   their seeds matter, so re-measure rather than loosen if one moves.
+   their seeds matter, so re-measure rather than loosen if one moves. A
+   realistic athlete who never films stayed at the tuck for sixty sessions
+   with 23s max holds on a 20s bar and was never told why (unlock attempts
+   queue only from verified holds); the plan now says so whenever the fresh
+   stopwatch level reaches 85% of the bar and the verified best has not.
 
 ## Camera lifecycle
 

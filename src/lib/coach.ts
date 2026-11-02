@@ -29,6 +29,7 @@ import {
   qualifyingProgress,
   qualifyingSessionValue,
   learningSeries,
+  measuredLevel,
   sessionLearningPoint,
   sessionLearningValue,
   sessionSurface,
@@ -1772,6 +1773,30 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
           : `Your hold was last measured at its max ${sig.daysSinceMaxTest} days ago, so ${opens}. It re-anchors every working target to where you are now.`,
       kind: 'info',
       source: 'loaded-session',
+    })
+  }
+
+  // The stopwatch has reached the bar, and nothing the camera checked has. A
+  // step opens only on verified evidence, and the unlock attempt is queued only
+  // from verified holds, so an athlete who never films was told nothing:
+  // simulated, sixty sessions at the tuck with 23s max holds on a 20s bar.
+  const newestKey = keyPoints[keyPoints.length - 1]
+  const stopwatchLevel = newestKey ? measuredLevel(keyPoints, newestKey.at) : null
+  if (stopwatchLevel !== null && stopwatchLevel >= step.unlockSec * 0.85 && best < step.unlockSec * 0.85 && !queueUnlockAttempt) {
+    const filmedLately = state.sessions
+      .filter((s) => s.stepId === state.stepId && s.startedAt <= now)
+      .slice(-6)
+      .some((s) => s.sets.some((x) => x.exerciseId === step.keyExerciseId && x.section === 'main' && x.form?.auto !== undefined))
+    const next = stepAfter(state.stepId)
+    const opens = next ? `${next.name} opens on a hold the camera has checked` : 'The bar counts on a hold the camera has checked'
+    const where = `On the stopwatch your max clean holds are at about ${Math.round(stopwatchLevel)}s, ${
+      stopwatchLevel >= step.unlockSec ? 'past' : 'close to'
+    } the ${step.unlockSec}s bar.`
+    decisions.push({
+      text: filmedLately
+        ? `${where} ${opens}, and none of your filmed ones has passed the check yet — what the camera flags on them is what stands between you and the step.`
+        : `${where} ${opens}, and none of your recent ones were filmed — film ${queueRetest ? 'today’s' : 'your next'} max clean hold from the side.`,
+      kind: 'good',
     })
   }
 
