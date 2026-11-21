@@ -725,7 +725,7 @@ function SkipStepFlow({
  * says exactly what opens the next rung.
  */
 function LadderCard({ status, skill }: { status: LadderStatus; skill: SkillId }) {
-  const { ladder, rungs, index, verifiedBest, loggedBest, waitingOn } = status
+  const { ladder, rungs, index, verifiedBest, loggedBest, waitingOn, placedPastGate } = status
   return (
     <section className="mt-6 rounded-2xl border border-line bg-surface p-5 shadow-card" aria-labelledby="rep-ladder">
       <h2 id="rep-ladder" className="font-display text-[18px] font-semibold text-ink">
@@ -793,9 +793,15 @@ function LadderCard({ status, skill }: { status: LadderStatus; skill: SkillId })
       </ol>
       {waitingOn ? (
         <p className="mt-3 rounded-xl border border-line bg-raised px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
-          You have met this rung’s standard. The next one waits for{' '}
-          <span className="font-semibold text-ink">{STEP_BY_ID[waitingOn].name}</span> on the hold road — a push-up is not
-          trained in a balance you do not have yet.
+          {placedPastGate
+            ? 'You placed yourself further up this line, but the next rung '
+            : 'You have met this rung’s standard. The next one '}
+          waits for <span className="font-semibold text-ink">{STEP_BY_ID[waitingOn].name}</span> on the{' '}
+          {STEP_BY_ID[waitingOn].skill === skill ? 'hold' : SKILLS[STEP_BY_ID[waitingOn].skill].name.toLowerCase()}{' '}
+          road — a push-up is not trained in a balance you do not have yet.
+          {STEP_BY_ID[waitingOn].skill === skill
+            ? ''
+            : ` If you do not train the ${SKILLS[STEP_BY_ID[waitingOn].skill].name.toLowerCase()} here, add it under Skills and place yourself on it.`}
         </p>
       ) : null}
       <p className="mt-3 text-[12px] leading-relaxed text-ink3">

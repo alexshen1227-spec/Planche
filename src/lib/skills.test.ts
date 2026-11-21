@@ -49,6 +49,7 @@ import {
   isQualifyingSet,
   isReviewOnly,
   passesProgressionFormCheck,
+  progressionCredit,
   requiresArmsConfirmation,
   requiresFlightConfirmation,
   REVIEW_PROMPT,
@@ -201,7 +202,9 @@ describe('the skill registry', () => {
       for (const rung of def.ladder?.rungs ?? []) {
         expect(EXERCISE_BY_ID[rung.exerciseId]?.type, rung.exerciseId).toBe('reps')
         expect(rung.standardReps).toBeGreaterThanOrEqual(rung.startReps > rung.standardReps ? rung.standardReps : 1)
-        if (rung.needsStep) expect(STEP_BY_ID[rung.needsStep].skill).toBe(def.id)
+        // A gate is a real step: on the skill's own road, or — where the
+        // movement starts in a handstand — on the handstand's.
+        if (rung.needsStep) expect([def.id, 'handstand'], `${rung.exerciseId} waits for ${rung.needsStep}`).toContain(STEP_BY_ID[rung.needsStep].skill)
       }
     }
   })
@@ -352,6 +355,57 @@ describe('what the camera can and cannot grade, per hold', () => {
     )
     raw.sessions[0].sets[0].form.auto.coarse = 'elbows'
     expect(normalizeState(raw).sessions[0].sets[0].form?.auto?.malformed).toBe(true)
+  })
+
+  it('carries a judged clip all the way to progression credit, and a faulty one nowhere', () => {
+    // The season evals hand the engine a perfect reading, so nothing there ever
+    // ran the judge and the progression gate together for the new skills. Here
+    // the reading is the judge's own, from a clip of known shape.
+    const graded = ALL_STEPS.map((step) => step.keyExerciseId).filter((id) => !isReviewOnly(id) && skillOfExercise(id) !== 'planche')
+    expect(graded.length).toBeGreaterThanOrEqual(14)
+    let bentJudged = 0
+    for (const id of graded) {
+      const profile = POSE_PROFILES[id]
+      const held = (form: SetLog['form']): SetLog => ({ exerciseId: id, kind: 'hold', value: 5, target: 5, section: 'main', at: T0, endReason: 'effort', form })
+      const clean = judgeTrackedFrames(synthesizeClip({ ...IDEAL[id], seed: 7, noise: 0.015 }), id)
+      expect(clean.ok, `${id}: ${clean.reason}`).toBe(true)
+      expect(clean.issues, id).toEqual([])
+      const confirmed = { rating: 'clean' as const, confirmed: true, flightConfirmed: true, armsConfirmed: true, auto: autoFromResult(clean, 5) }
+      expect(isQualifyingSet(held(confirmed), id), id).toBe(true)
+      expect(progressionCredit(held(confirmed), id), id).toBeGreaterThan(3)
+      // The camera's pass is never the whole of it.
+      expect(isQualifyingSet(held({ ...confirmed, confirmed: false }), id), `${id}: a suggestion nobody confirmed`).toBe(false)
+      expect(isQualifyingSet(held({ ...confirmed, rating: 'slipped' }), id), `${id}: rated slipped`).toBe(false)
+      if (requiresFlightConfirmation(id)) {
+        expect(progressionCredit(held({ ...confirmed, flightConfirmed: undefined }), id), `${id}: support not confirmed`).toBe(0)
+      }
+      if (requiresArmsConfirmation(id)) {
+        expect(progressionCredit(held({ ...confirmed, armsConfirmed: undefined }), id), `${id}: lockout not confirmed`).toBe(0)
+      }
+      // Arms that are plainly wrong earn nothing, whatever the athlete confirms.
+      const wrong = profile.elbowTargetDeg !== undefined ? { elbowBendDeg: 30 } : { elbowBendDeg: 65 }
+      const bent = judgeTrackedFrames(synthesizeClip({ ...IDEAL[id], ...wrong, seed: 7, noise: 0.015 }), id)
+      // (Bent that far, a wall plank is no longer an incline at all, and is refused instead.)
+      if (!bent.ok) continue
+      bentJudged += 1
+      expect(bent.issues.some((issue) => issue === 'arms' || issue === 'angle'), `${id}: ${bent.issues.join(',')}`).toBe(true)
+      expect(progressionCredit(held({ ...confirmed, auto: autoFromResult(bent, 5) }), id), `${id}: bent arms`).toBe(0)
+    }
+    expect(bentJudged).toBeGreaterThanOrEqual(graded.length - 2)
+    // A lever with the hips hanging low is named and earns nothing.
+    for (const id of graded.filter((key) => POSE_PROFILES[key].posture === 'hang')) {
+      const low = judgeTrackedFrames(synthesizeClip({ ...IDEAL[id], hipOffset: -0.7, seed: 7, noise: 0.015 }), id)
+      expect(low.issues, id).toContain('sag')
+      const form = { rating: 'clean' as const, confirmed: true, flightConfirmed: true, armsConfirmed: true, auto: autoFromResult(low, 5) }
+      expect(progressionCredit({ exerciseId: id, kind: 'hold', value: 5, target: 5, section: 'main', at: T0, form }, id), id).toBe(0)
+    }
+    // An ordinary plank or a lean is not a handstand, however it is filmed.
+    for (const pose of ['ppp-hold', 'planche-lean', 'tuck-planche']) {
+      for (const id of ['wall-plank', 'wall-handstand', 'freestanding-handstand']) {
+        const result = judgeTrackedFrames(synthesizeClip({ ...IDEAL[pose], seed: 7, noise: 0.015 }), id)
+        expect(result.ok && result.issues.length === 0, `${pose} judged as ${id}`).toBe(false)
+      }
+    }
   })
 
   it('offers each skill its own faults, in its own words, and only where the shape can have them', () => {
@@ -741,6 +795,66 @@ describe('the rep ladders', () => {
     // The top rung has nothing above it.
     const top = { ...waiting, rung: ladder.rungs[ladder.rungs.length - 1], next: undefined }
     expect(rungOutcome(top, 1)).toBe('top')
+  })
+
+  it('does not let a placement answer start a push-up line past a hold it needs', () => {
+    const kit = ['floor', 'wall', 'box', 'parallettes'] as const
+    const withAnswer = (state: AppState, skill: 'handstand' | 'ninety', rung: number): AppState => ({
+      ...state,
+      tracks: {
+        ...state.tracks,
+        [skill]: {
+          ...trackOf(state, skill),
+          assessment: { at: T0, answers: { [ladderId(skill)]: rung }, placedStepId: trackOf(state, skill).stepId, confidence: 'moderate', gapIds: [] },
+        },
+      },
+    })
+    // "I can do a freestanding handstand push-up", placed on the wall handstand.
+    // The line once started on the freestanding rung: the starting rung was
+    // never checked against the hold it needs.
+    const hs = SKILLS.handstand.ladder!
+    const top = hs.rungs.length - 1
+    expect(hs.rungs[top].needsStep).toBe('hs-free')
+    const onWall = withAnswer(startingState({ skills: ['handstand'], steps: { handstand: 'hs-wall' }, equipment: [...kit] }), 'handstand', top)
+    const capped = ladderStatus(onWall, 'handstand')!
+    expect(capped.index).toBe(top - 1)
+    expect(capped.waitingOn).toBe('hs-free')
+    expect(capped.placedPastGate).toBe(true)
+    expect(rungOutcome(capped, capped.rung.standardReps)).toBe('waits')
+    // With the balance, the claim stands.
+    const free = withAnswer(startingState({ skills: ['handstand'], steps: { handstand: 'hs-free' }, equipment: [...kit] }), 'handstand', top)
+    expect(ladderStatus(free, 'handstand')).toMatchObject({ index: top })
+    expect(ladderStatus(free, 'handstand')!.placedPastGate).toBeUndefined()
+
+    // The 90° push-up line: every rung past the first starts in a hold or a
+    // handstand, and waits for it — it had no gate at all, and a claim could
+    // start an athlete on a 90° push-up they had no handstand for.
+    const n90 = SKILLS.ninety.ladder!
+    expect(n90.rungs.map((rung) => rung.needsStep)).toEqual([undefined, 'n90-tuck', 'hs-float', 'hs-free', 'hs-free'])
+    const summit = n90.rungs.length - 1
+    const at = (ninety: 'n90-lean' | 'n90-tuck', handstand?: 'hs-wall' | 'hs-float' | 'hs-free') =>
+      ladderStatus(
+        withAnswer(
+          startingState({
+            skills: handstand ? ['ninety', 'handstand'] : ['ninety'],
+            steps: { ninety, ...(handstand ? { handstand } : {}) },
+            equipment: [...kit],
+          }),
+          'ninety',
+          summit,
+        ),
+        'ninety',
+      )!
+    expect(at('n90-lean')).toMatchObject({ index: 0, waitingOn: 'n90-tuck', placedPastGate: true })
+    // No handstand trained here at all: the line stops before the first rung that starts in one.
+    expect(at('n90-tuck')).toMatchObject({ index: 1, waitingOn: 'hs-float', placedPastGate: true })
+    expect(at('n90-tuck', 'hs-wall')).toMatchObject({ index: 1, waitingOn: 'hs-float' })
+    expect(at('n90-tuck', 'hs-float')).toMatchObject({ index: 2, waitingOn: 'hs-free' })
+    expect(at('n90-tuck', 'hs-free')).toMatchObject({ index: summit })
+    // And a standard met below a gate waits there, on the other skill's road too.
+    const below = at('n90-tuck', 'hs-wall')
+    expect(rungOutcome(below, below.rung.standardReps)).toBe('waits')
+    expect(rungOutcome(at('n90-tuck', 'hs-float'), below.rung.standardReps)).toBe('waits')
   })
 
   it('counts standards met from the history alone, whatever kit is listed today', () => {

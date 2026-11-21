@@ -46,7 +46,7 @@ export { MIN_VERIFIED_COVERAGE }
  *     unchanged by it; the number moves because readings of the new positions
  *     did not exist before, and a stored reading says which judge made it.
  */
-export const JUDGE_VERSION = 6
+export const JUDGE_VERSION = 7
 
 /**
  * Automatic form analysis from a recorded clip.
@@ -1954,7 +1954,32 @@ export type FloorRefusal =
 export interface FloorVerdict {
   floor: FloorEdge | null
   refusal?: FloorRefusal
+  /**
+   * Inverted postures only: how steeply the body rises from the shoulders to
+   * its far end — the ankles, or the knees or hips when they are all that was
+   * seen — in degrees above level (90 = feet straight above the shoulders,
+   * below 0 = a plank on the floor, whose feet sit lower than its shoulders).
+   */
+  bodyRiseDeg?: number
 }
+
+/**
+ * How steeply the body must rise before a hold is judged as an inverted one —
+ * a wall plank or a handstand — at all.
+ *
+ * Nothing in an inverted profile said the body had to be inverted, so a plank
+ * on the floor — straight arms, straight body, arms pointing at the floor —
+ * passed clean as a wall plank. The trunk alone cannot say: a real arched
+ * handstand's trunk lies within 20° of level while its feet are far overhead.
+ * The feet can. Measured from the shoulders to the ankles, with the phone
+ * rolled 12° either way: floor planks, leans and level planches −13° to 14°
+ * (tucks far below); the synthetic wall plank 36° to 60°; synthetic handstands
+ * 69° to 87°; the real straight handstand 89° and the real arched one 59°.
+ * The bar sits in the gap, nearer the planks' side of it: a low wall plank is
+ * still a wall plank, and a handstand at a shallow incline is caught by its
+ * shoulder angle, not by this.
+ */
+export const MIN_INVERTED_RISE_DEG = 25
 
 /**
  * Where the floor is in the picture, read from the body itself.
@@ -2000,6 +2025,8 @@ export function readFloor(frames: { kps: Kp[] }[], posture: Posture = 'support')
   const trunkAcross: number[] = []
   /** The line between the two hands, in degrees from the picture's horizontal. */
   const gripLines: number[] = []
+  /** How far up the picture the body's far end sits from the shoulders (+1 = straight up). */
+  const bodyUp: number[] = []
   for (const { kps } of frames) {
     if (posture === 'flag') {
       const lw = byName(kps, 'left_wrist', MIN_PRECISE_KP_SCORE)
@@ -2033,6 +2060,11 @@ export function readFloor(frames: { kps: Kp[] }[], posture: Posture = 'support')
     const trunkLength = Math.hypot(tx, ty)
     trunkUp.push(-ty / trunkLength)
     trunkAcross.push(tx / trunkLength)
+    if (posture === 'inverted') {
+      const far = byName(kps, `${best.side}_ankle`) ?? byName(kps, `${best.side}_knee`) ?? best.h
+      const reach = Math.hypot(far.x - best.s.x, far.y - best.s.y)
+      if (reach >= 1) bodyUp.push((best.s.y - far.y) / reach)
+    }
     if (posture === 'hang') {
       // The centre of mass, from whichever segments this moment shows. The
       // legs matter — in a full lever they carry the weight out past the hips
@@ -2081,7 +2113,9 @@ export function readFloor(frames: { kps: Kp[] }[], posture: Posture = 'support')
     // nothing reliable. Arms pointing any other way, the picture is on its
     // side or upside down — or this is not a handstand — and nothing in the
     // joints can say which.
-    return median(arms)! <= INVERTED_ARM_SLACK_DEG ? decided('bottom') : { floor: null, refusal: 'not-upright' }
+    if (median(arms)! > INVERTED_ARM_SLACK_DEG) return { floor: null, refusal: 'not-upright' }
+    const up = Math.max(-1, Math.min(1, median(bodyUp) ?? median(trunkUp)!))
+    return { floor: 'bottom', bodyRiseDeg: (Math.asin(up) * 180) / Math.PI }
   }
   if (posture === 'hang') {
     // A body hanging still has its centre of mass directly below its hands:
@@ -2638,6 +2672,20 @@ export function judgeTrackedFrames(
   const gravity = readFloor(tracked, posture)
   if (gravity.refusal) {
     return { ...empty, framesSampled: times.length, track, reason: FLOOR_REFUSAL[gravity.refusal] }
+  }
+  // On the hands is not yet upside down: a plank is on the hands too.
+  if (posture === 'inverted' && gravity.bodyRiseDeg !== undefined) {
+    const incline = profile.minShoulderDeg === undefined
+    if (gravity.bodyRiseDeg < MIN_INVERTED_RISE_DEG) {
+      return {
+        ...empty,
+        framesSampled: times.length,
+        track,
+        reason: incline
+          ? 'Your feet are not clearly above your shoulders in this clip, so it reads as a plank on the floor rather than a wall plank. Walk your feet higher up the wall until your body is a steep incline, and film again.'
+          : 'Your body is not upside down over your hands in this clip — the feet need to be well above the shoulders — so there is no handstand here for the camera to check.',
+      }
+    }
   }
   const floor = gravity.floor
   const frameTurned = floor && floor !== 'bottom' ? floor : undefined

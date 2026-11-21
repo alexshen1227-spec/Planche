@@ -1,5 +1,6 @@
 import type { AppState, EquipmentId, Session, SetLog, SkillId, StepId } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
+import { skillOfStep } from '../data/progressions'
 import { ownsKit, SKILLS, type RepLadder, type RepRung } from '../data/skills'
 import { isAssisted } from './progression'
 import { isActiveSkill, trackOf, wholeState } from './skills'
@@ -84,6 +85,12 @@ export interface LadderStatus {
   baseIndex: number
   /** When each rung past the base was opened, by rung exercise id. */
   openedAt: Record<string, number>
+  /**
+   * The placement answer named a rung past a gate the roads have not opened,
+   * so the line starts below it. (`waitingOn` then says what for, without the
+   * current rung's standard having been met.)
+   */
+  placedPastGate?: true
 }
 
 /** The placement answer that sets a ladder's starting rung, when one was given. */
@@ -93,6 +100,11 @@ export function ladderAnswerKey(ladder: RepLadder): string {
 
 function counts(session: Session): boolean {
   return session.workoutName !== 'Quick Log'
+}
+
+/** Whether a step is open on its own skill's road — whichever skill that is. */
+function stepOpen(state: AppState, stepId: StepId): boolean {
+  return trackOf(state, skillOfStep(stepId)).unlocked.includes(stepId)
 }
 
 /**
@@ -116,10 +128,16 @@ export function ladderStatus(stateIn: AppState, skill: SkillId, now = Number.POS
       if (ladder.rungs.findIndex((rung) => rung.exerciseId === rungs[i].exerciseId) <= full) baseIndex = i
     }
   }
+  // A claim does not open a gate. Placed on "freestanding handstand push-up"
+  // with no freestanding handstand, the line once started there: the starting
+  // rung was never checked against the hold it needs.
+  const gated = (rung: RepRung | undefined) => rung?.needsStep !== undefined && !stepOpen(state, rung.needsStep)
+  const firstGate = rungs.findIndex((rung, i) => i > 0 && gated(rung))
+  const placedPastGate = firstGate > 0 && baseIndex >= firstGate
+  if (placedPastGate) baseIndex = firstGate - 1
 
   let index = baseIndex
-  let waitingOn: StepId | undefined
-  const holdRoad = trackOf(state, skill).unlocked
+  let waitingOn: StepId | undefined = placedPastGate ? rungs[firstGate].needsStep : undefined
   const openedAt: Record<string, number> = {}
   const sessions = state.sessions
     .filter((session) => session.startedAt <= now && counts(session))
@@ -132,7 +150,7 @@ export function ladderStatus(stateIn: AppState, skill: SkillId, now = Number.POS
       if (!next || !session.sets.some((set) => meetsStandard(set, rung))) break
       // The standard is met, but the next rung needs a hold the road has not
       // reached: the ladder waits there, and says what for.
-      if (next.needsStep && !holdRoad.includes(next.needsStep)) {
+      if (gated(next)) {
         waitingOn = next.needsStep
         break
       }
@@ -161,7 +179,9 @@ export function ladderStatus(stateIn: AppState, skill: SkillId, now = Number.POS
     verifiedBest,
     loggedBest,
     ...(waitingOn && rungs[index + 1]?.needsStep === waitingOn ? { waitingOn } : {}),
-    holdRoad,
+    ...(placedPastGate && index === baseIndex ? { placedPastGate: true as const } : {}),
+    // The gate steps that are open, on whichever road each belongs to.
+    holdRoad: rungs.flatMap((r) => (r.needsStep && stepOpen(state, r.needsStep) ? [r.needsStep] : [])),
     baseIndex,
     openedAt,
   }

@@ -97,8 +97,10 @@ export interface RepRung {
   /** The shape the set makes in the picture: wide (phone on its side) or tall (phone upright). */
   frame: 'wide' | 'tall'
   /**
-   * A step on the skill's hold road that must be open before this rung is:
-   * a freestanding push-up is not trained before the freestanding handstand.
+   * A step that must be open before this rung is: a freestanding push-up is
+   * not trained before the freestanding handstand. Usually on the skill's own
+   * hold road; it may be on another skill's — the 90° push-up's last rungs
+   * start and finish in a handstand, so they wait for the handstand road.
    */
   needsStep?: StepId
 }

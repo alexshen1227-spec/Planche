@@ -25,6 +25,10 @@ export function applySession(state: AppState, session: Session): { next: AppStat
   const recordable = session.workoutKind !== 'micro'
   for (const set of session.sets) {
     if (set.value <= 0 || !recordable) continue
+    // A warm-up primer or a cooldown stretch is not an attempt at anything. A
+    // primer lean left running to 11.3s was announced under New Records and
+    // became the athlete's "best planche lean".
+    if (set.section === 'warmup' || set.section === 'cooldown') continue
     const best = (bestInSession[set.exerciseId] ??= { overall: 0, bySurface: {} })
     if (set.value > best.overall) best.overall = set.value
     if (set.surface && set.value > (best.bySurface[set.surface] ?? 0)) {

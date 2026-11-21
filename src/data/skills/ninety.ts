@@ -469,7 +469,7 @@ export const NINETY: SkillDef = {
     name: '90° push-up',
     summit: 'a 90° push-up from a handstand and back',
     sourcing:
-      'One coach has published a ladder toward this push-up, with no numbers on it. The order here is this app’s reading of that ladder, and every rep standard is this app’s own design — not a measured threshold.',
+      'One coach has published a ladder toward this push-up, with no numbers on it. The order here is this app’s reading of that ladder, and every rep standard is this app’s own design — not a measured threshold. So are the gates: the rungs that start or finish in a handstand wait for the handstand road, because a push-up is not trained in a balance you do not have yet.',
     rungs: [
       {
         exerciseId: 'pppu',
@@ -487,6 +487,8 @@ export const NINETY: SkillDef = {
         exerciseId: 'tuck-ninety-pushup',
         startReps: 2,
         standardReps: 5,
+        // Pressing out of a hold needs the hold.
+        needsStep: 'n90-tuck',
         why: 'Pressing out of the unsupported hold itself, at the shortest lever.',
         check: [
           'Feet stayed off the floor from the first rep to the last',
@@ -499,6 +501,8 @@ export const NINETY: SkillDef = {
         exerciseId: 'ninety-negative',
         startReps: 1,
         standardReps: 3,
+        // Lowered from a handstand: the wall handstand held to its bar.
+        needsStep: 'hs-float',
         why: 'The lowering half, from a handstand, stopping in the hold — it needs a handstand you can already hold.',
         check: [
           'Started from a handstand with locked arms',
@@ -511,6 +515,8 @@ export const NINETY: SkillDef = {
         exerciseId: 'straddle-ninety-pushup',
         startReps: 1,
         standardReps: 3,
+        // Pressed back to a handstand, with nothing to lean on.
+        needsStep: 'hs-free',
         why: 'The whole movement with the legs apart, which shortens the lever.',
         check: [
           'Lowered until the body was level, elbows at a right angle',
@@ -523,6 +529,7 @@ export const NINETY: SkillDef = {
         exerciseId: 'ninety-pushup',
         startReps: 1,
         standardReps: 1,
+        needsStep: 'hs-free',
         why: 'The whole movement, legs together — one clean rep is the summit.',
         check: [
           'Lowered until the body was level, elbows at a right angle, legs together',

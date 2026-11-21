@@ -11,9 +11,10 @@ import { isSkillHold } from '../lib/skills'
  * Bump whenever existing history should be rechecked against the catalog.
  * Version 4 added the front lever, handstand, 90° and flag badges, and widened
  * three planche-only ones (film study, precision pass, two minutes on the
- * line) to any skill's holds.
+ * line) to any skill's holds. Version 5 recounts records without warm-up and
+ * cooldown sets, which had been setting them.
  */
-export const ACHIEVEMENT_VERSION = 4
+export const ACHIEVEMENT_VERSION = 5
 
 /**
  * Badges whose *rule* was corrected in a catalog version, so an award made

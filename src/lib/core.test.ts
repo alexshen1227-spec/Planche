@@ -388,6 +388,28 @@ describe('progression safety', () => {
     expect(confirmedFlight.next.stepId).toBe('advtuck')
   })
 
+  it('does not make a record of a warm-up primer or a cooldown stretch', () => {
+    // A primer lean left running to 11.3s was announced under New Records and
+    // became the athlete's "best planche lean".
+    const done = applySession(
+      state('tuck'),
+      session('tuck', [
+        log('planche-lean', 11.3, { section: 'warmup' }),
+        log('tuck-planche', 4),
+        log('planche-lean', 8),
+        log('wrist-stretch', 30, { section: 'cooldown' }),
+      ]),
+    )
+    expect(done.next.prs['planche-lean']?.value).toBe(8)
+    expect(done.next.prs['tuck-planche']?.value).toBe(4)
+    expect(done.next.prs['wrist-stretch']).toBeUndefined()
+    expect(done.events.prs.map((pr) => `${pr.exerciseId}:${pr.value}`)).toEqual(['tuck-planche:4', 'planche-lean:8'])
+    // A later, longer primer changes nothing either.
+    const again = applySession(done.next, session('tuck', [log('planche-lean', 20, { section: 'warmup' }), log('tuck-planche', 3)]))
+    expect(again.next.prs['planche-lean']?.value).toBe(8)
+    expect(again.events.prs).toEqual([])
+  })
+
   it('keeps separate floor and parallettes records without losing the overall PR', () => {
     const first = applySession(
       state('tuck'),
