@@ -19,6 +19,21 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-20',
+    title: 'Sessions that share the time properly',
+    area: 'training',
+    notes: [
+      'A second skill now gets its strength movement, not only its holds. In a 45-minute session the second skill’s holds used to take all of its time — a front lever day beside the planche often had no pulling movement at all. Now each full part gets its hold and the strength work behind it first, and extra sets of the holds come after.',
+      'Your order decides who appears. A third skill gets a short dose — two sets, or a few minutes of balance practice for the handstand — and it goes to whichever has waited longest, weighted by your order. The handstand used to ride along in every session wherever you ranked it.',
+      'How much fits is now said plainly: one skill under 25 minutes, two in full from there, plus one short dose from 30 minutes and two beyond 50. A skill left out is told that rule, instead of “later this week”, which the app could not know.',
+      'Work left out for time says where it does fit — a longer session, or picking that skill on its own under Train — instead of promising a day it trains alone.',
+      'Ending a session early records only what you did. A skill whose holds you never reached is not marked as trained, so it keeps its turn.',
+      'One cut-short hold no longer sets your level. For the first two sessions on a step, what you said you can hold at placement still counts beside what was logged; three sessions that agree outvote it.',
+      'A niggle steers the session, not just the volume: the second part and the short doses go to skills that do not load the area you named, the day is no longer described as a push day, and the check-in says exactly this instead of promising more.',
+      'Home’s “today’s session trains” now describes the session Start will build — on a pain day it says that none of your skills are loaded. After a session with a pain report in it, the summary leads with that and skips the confetti.',
+    ],
+  },
+  {
+    date: '2026-11-20',
     title: 'A hang is not a lever, and the camera says what it cannot see',
     area: 'camera',
     notes: [

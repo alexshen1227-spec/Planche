@@ -48,6 +48,7 @@ beforeAll(() => {
   run('flag', ['flag'], 40)
   run('three', ['frontlever', 'handstand', 'planche'], 45)
   run('five', ['planche', 'frontlever', 'handstand', 'ninety', 'flag'], 45, 60)
+  run('four', ['planche', 'frontlever', 'flag', 'handstand'], 30)
   run('short', ['planche', 'frontlever'], 30, 20)
 }, 600_000)
 
@@ -245,6 +246,92 @@ describe('several skills, one athlete', () => {
       const own = day.workout.blocks.filter((b) => b.skill === 'handstand' && b.section !== 'warmup' && b.section !== 'cooldown')
       expect(own.every((b) => b.section === 'main' || b.role === 'balance')).toBe(true)
     }
+  })
+})
+
+describe('what a part of a mixed session is made of', () => {
+  /** A strength-section movement brought by this skill's own part. */
+  const strengthFor = (day: SkillLoopDay, skill: SkillId) =>
+    day.workout.blocks.some((b) => b.section === 'strength' && b.skill === skill)
+  const loadedDay = (day: SkillLoopDay) => day.plan.dayType === 'push' || day.plan.dayType === 'build'
+
+  for (const name of ['three', 'four', 'five'] as const) {
+    it(`${name}: a second skill gets its strength movement, not only its holds`, () => {
+      // Every hold of every full part once went in before anything else, and a
+      // second skill's holds took the room its strength movement needed: the
+      // front lever got a pulling movement in four partner sessions of
+      // thirteen, the flag in none of seven.
+      const { days } = seasons[name]
+      const partnered = days.filter(loadedDay).flatMap((day) =>
+        day.lineup.filter((entry) => entry.role === 'partner').map((entry) => ({ day, skill: entry.skill })),
+      )
+      expect(partnered.length).toBeGreaterThan(10)
+      const withStrength = partnered.filter(({ day, skill }) => strengthFor(day, skill))
+      expect(withStrength.length / partnered.length, `${withStrength.length} of ${partnered.length}`).toBeGreaterThanOrEqual(0.9)
+      // And the lead keeps its own, every loaded day.
+      for (const [i, day] of days.entries()) {
+        if (loadedDay(day)) expect(strengthFor(day, day.lineup[0].skill), `session ${i + 1}: the lead has no strength movement`).toBe(true)
+      }
+    })
+
+    it(`${name}: a short dose is two sets of the hold and nothing else`, () => {
+      const { days } = seasons[name]
+      for (const [i, day] of days.entries()) {
+        for (const entry of day.lineup.filter((e) => e.role === 'maintenance')) {
+          const own = day.workout.blocks.filter((b) => b.skill === entry.skill && b.section !== 'warmup' && b.section !== 'cooldown')
+          const where = `session ${i + 1}: ${entry.skill}`
+          expect(own.every((b) => b.section === 'main'), where).toBe(true)
+          const hold = own.find((b) => b.role === 'skill')!
+          expect(hold, where).toBeDefined()
+          expect(hold.sets, where).toBe(EXERCISE_BY_ID[hold.exerciseId].perSide ? 4 : 2)
+        }
+      }
+    })
+
+    it(`${name}: nothing the session says promises a day it cannot know`, () => {
+      const { days } = seasons[name]
+      for (const [i, day] of days.entries()) {
+        for (const text of wordsOf(day)) {
+          // "Waits for a later session this week" and "comes back on a day it
+          // trains alone" were both said of skills neither was true of.
+          expect(text, `session ${i + 1}`).not.toMatch(/this week|trains alone|later session/i)
+        }
+      }
+    })
+  }
+
+  for (const name of ['four', 'five'] as const) {
+    it(`${name}: how often a skill appears follows the athlete's order`, () => {
+      // Balance practice once rode along in every session whatever its rank:
+      // ranked last of four, the handstand was in thirty sessions of thirty
+      // and the third priority in seven.
+      const { days, skills } = seasons[name]
+      const appearances = (skill: SkillId) => days.filter((day) => day.lineup.some((entry) => entry.skill === skill)).length
+      const full = (skill: SkillId) => days.filter((day) => fullPart(day, skill)).length
+      for (let rank = 0; rank + 1 < skills.length; rank++) {
+        expect(appearances(skills[rank]), `${skills[rank]} against ${skills[rank + 1]}`).toBeGreaterThanOrEqual(appearances(skills[rank + 1]))
+        expect(full(skills[rank]), `${skills[rank]} against ${skills[rank + 1]}, full parts`).toBeGreaterThanOrEqual(full(skills[rank + 1]))
+      }
+      // Nobody is forgotten: the last priority still appears about one session in three or more.
+      expect(appearances(skills[skills.length - 1]) / days.length).toBeGreaterThanOrEqual(0.3)
+    })
+  }
+
+  it('builds the same season whatever the wall clock says', () => {
+    // Every builder takes the time it plans for. Two of them read the wall
+    // clock for the working target instead, so a history replayed from another
+    // date lost its "done as prescribed" floor: a compliant athlete's targets
+    // fell from 12s to 3s. The same season, with the system clock parked years
+    // away from the sessions, has to come out identical.
+    const shape = (days: SkillLoopDay[]) =>
+      days.map((day) =>
+        day.workout.blocks.map((b) => `${b.exerciseId}:${b.sets}x${b.target.kind === 'hold' ? `${b.target.sec}s` : b.target.reps}`).join(' '),
+      )
+    const options = { skills: ['planche', 'frontlever', 'handstand'] as SkillId[], sessions: 24, sessionMinutes: 45 }
+    const onTime = runSkillLoop({ ...options, setClock: (at) => vi.setSystemTime(at) })
+    const parked = new Date(2031, 6, 1, 9, 0).getTime()
+    const adrift = runSkillLoop({ ...options, setClock: () => vi.setSystemTime(parked) })
+    expect(shape(adrift.days)).toEqual(shape(onTime.days))
   })
 })
 

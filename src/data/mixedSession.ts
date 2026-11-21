@@ -6,7 +6,7 @@ import type { CoachPlan } from '../lib/coach'
 import type { LineupEntry, LineupRole } from '../lib/lineup'
 import { isBarAttempt } from '../lib/progression'
 import { skillView, stepOfSkill } from '../lib/skills'
-import { estimateMinutes, fitToBudget, joinWords } from './workouts'
+import { estimateMinutes, fitToBudget, joinWords, LIGHT_DOSE_SHARE } from './workouts'
 
 /**
  * One session, several skills.
@@ -23,18 +23,27 @@ import { estimateMinutes, fitToBudget, joinWords } from './workouts'
  * been tested in a trial on these skills, and the session says so where it
  * explains itself (ledger §13).
  *
- * **What goes in is decided by priority, not by trimming.** Every part's holds
- * are in — that is what "training the skill today" means. After them the time
- * left is filled in a fixed order: the moving version of each skill's step
- * (lead first), one shared core block, each skill's support work, then second
+ * **What goes in is decided by priority, not by trimming.** Every part's key
+ * hold is in, at a floor: that is what "training the skill today" means. After
+ * that the time left is filled in a fixed order (`FILL`): the moving version of
+ * each full part's step, the lead's next-shape attempts, more sets of the
+ * holds, one shared core block, each skill's support work, then second
  * strength movements and back-off work. Whatever does not fit is left out and
- * named. The earlier version let each part trim itself to a share of the time,
- * and every part gave up its core first — a mixed session had none at all.
+ * named.
  *
- * What a part keeps also depends on its role. A maintenance skill keeps its
- * key hold at the current step and nothing else — the progression, not the
- * volume, is what a maintenance dose holds on to. Balance practice keeps its
- * holds and its balance drill.
+ * Two earlier versions got this wrong in opposite ways. The first let each part
+ * trim itself to a share of the time, and every part gave up its core first —
+ * a mixed session had none at all. The second put every hold of every full
+ * part in before anything else: a second skill's five or ten holds then took
+ * the room its strength movement needed, and over a simulated season the front
+ * lever as second skill got a pulling movement in four sessions of thirteen,
+ * the flag in none of seven. A full part is its hold *and* the strength work
+ * behind it, so both parts get the second before either gets more of the first.
+ *
+ * What a part keeps also depends on its role. A short dose — maintenance — is
+ * the key hold at the current step, two sets, nothing else: the progression,
+ * not the volume, is what it holds on to. Balance practice keeps its holds, and
+ * its balance drill when there is room.
  *
  * One maximal effort a session: if the lead has an unlock attempt or a re-test
  * queued, the other skills' attempts wait for another day.
@@ -45,8 +54,10 @@ const UNTRIMMED_MIN = 240
 
 /** What a part's blocks are for, in the order the mixed session wants them. */
 type Tier =
-  | 'always' // warm-up, holds at the dose a short session keeps, balance practice, cooldown
+  | 'always' // warm-up, each part's key hold at its floor, the session's max effort, cooldown
   | 'twin' // the moving version of the step
+  | 'nextshape' // attempts at the next step's hold (the bridge)
+  | 'drill' // a balance skill's balance drill
   | 'limiter' // the coach's measured limiter
   | 'core'
   | 'support' // straight-arm and support work
@@ -60,13 +71,14 @@ function tierOf(block: Block, role: LineupRole): Tier | null {
     return block.role === 'mobility' ? 'extra' : 'always'
   }
   if (block.section === 'main') {
+    // Next-shape practice belongs to a full part, and waits its turn for room.
+    if (block.role === 'bridge') return role === 'lead' || role === 'partner' ? 'nextshape' : null
     if (role === 'lead' || role === 'partner') return 'always'
-    // A maintenance or practice part is its key hold — and its max effort, on
-    // the day it holds the session's one; next-shape practice waits for a day
-    // the skill has a full part.
+    // A short dose is its key hold — and its max effort, on the day it holds
+    // the session's one.
     return block.role === 'skill' || block.role === 'attempt' ? 'always' : null
   }
-  if (block.role === 'balance') return role === 'maintenance' ? null : 'always'
+  if (block.role === 'balance') return role === 'maintenance' ? null : 'drill'
   if (role === 'maintenance' || role === 'practice') return null
   if (block.emphasis) return 'limiter'
   switch (block.role) {
@@ -86,22 +98,56 @@ function tierOf(block: Block, role: LineupRole): Tier | null {
   }
 }
 
-/** The order optional work is added in, most worth keeping first. */
-const FILL_ORDER: { tier: Tier; who: 'lead' | 'partner' }[] = [
-  { tier: 'twin', who: 'lead' },
-  { tier: 'twin', who: 'partner' },
-  { tier: 'limiter', who: 'lead' },
-  { tier: 'core', who: 'lead' },
-  { tier: 'support', who: 'lead' },
-  { tier: 'limiter', who: 'partner' },
-  { tier: 'support', who: 'partner' },
-  { tier: 'bridge', who: 'lead' },
-  { tier: 'strength', who: 'lead' },
-  { tier: 'core', who: 'partner' },
-  { tier: 'bridge', who: 'partner' },
-  { tier: 'strength', who: 'partner' },
-  { tier: 'extra', who: 'lead' },
-  { tier: 'extra', who: 'partner' },
+/**
+ * How the time after the floors is spent, most worth having first.
+ *
+ * `add` brings a block in — at two sets, or whole where that fits. `raise`
+ * gives an already-chosen block one more set at a time, toward the number its
+ * own session built it with (`full`) or its role's cap for a key hold (`cap`).
+ * The lead comes first at every level; the point of the order is that the
+ * second skill's strength movement comes before anybody's extra holds.
+ */
+type Who = 'lead' | 'partner' | 'practice'
+type FillStep =
+  | { op: 'add'; tier: Tier; who: Who; start: 'two' | 'whole' }
+  | { op: 'raise'; what: 'hold' | Tier; who: Who; to: 'cap' | 'full' }
+
+const FILL: FillStep[] = [
+  // A full part is the hold and the strength work behind it.
+  { op: 'add', tier: 'twin', who: 'lead', start: 'two' },
+  { op: 'add', tier: 'drill', who: 'lead', start: 'two' },
+  { op: 'add', tier: 'nextshape', who: 'lead', start: 'two' },
+  { op: 'add', tier: 'twin', who: 'partner', start: 'two' },
+  { op: 'add', tier: 'drill', who: 'partner', start: 'two' },
+  // Next-shape attempts are how a step opens early. Left behind the extra
+  // holds, a second skill never got them and sat on its first step all season.
+  { op: 'add', tier: 'nextshape', who: 'partner', start: 'two' },
+  // Then more of the holds, the lead's first.
+  { op: 'raise', what: 'hold', who: 'lead', to: 'cap' },
+  { op: 'raise', what: 'hold', who: 'partner', to: 'cap' },
+  { op: 'add', tier: 'core', who: 'lead', start: 'whole' },
+  { op: 'raise', what: 'twin', who: 'lead', to: 'full' },
+  { op: 'raise', what: 'twin', who: 'partner', to: 'full' },
+  { op: 'raise', what: 'nextshape', who: 'lead', to: 'full' },
+  { op: 'raise', what: 'drill', who: 'lead', to: 'full' },
+  { op: 'raise', what: 'drill', who: 'partner', to: 'full' },
+  // Then everything a longer session has room for.
+  { op: 'add', tier: 'limiter', who: 'lead', start: 'whole' },
+  { op: 'add', tier: 'support', who: 'lead', start: 'whole' },
+  { op: 'add', tier: 'drill', who: 'practice', start: 'whole' },
+  { op: 'raise', what: 'hold', who: 'practice', to: 'cap' },
+  { op: 'add', tier: 'limiter', who: 'partner', start: 'whole' },
+  { op: 'add', tier: 'support', who: 'partner', start: 'whole' },
+  { op: 'add', tier: 'bridge', who: 'lead', start: 'whole' },
+  { op: 'add', tier: 'strength', who: 'lead', start: 'whole' },
+  { op: 'add', tier: 'core', who: 'partner', start: 'whole' },
+  { op: 'raise', what: 'nextshape', who: 'partner', to: 'full' },
+  { op: 'add', tier: 'bridge', who: 'partner', start: 'whole' },
+  { op: 'add', tier: 'strength', who: 'partner', start: 'whole' },
+  { op: 'add', tier: 'extra', who: 'lead', start: 'whole' },
+  { op: 'add', tier: 'extra', who: 'partner', start: 'whole' },
+  // Last, the lead's reach toward its full practice time.
+  { op: 'raise', what: 'hold', who: 'lead', to: 'full' },
 ]
 
 /** Stretches a mixed session keeps: the lead's standard pair and one for each other skill. */
@@ -119,23 +165,35 @@ function phaseOf(block: Block): Phase {
   return 4
 }
 
+/** A unilateral hold's sets are stored doubled, a side each. */
+const sidesOf = (block: Block) => (EXERCISE_BY_ID[block.exerciseId]?.perSide ? 2 : 1)
+
 /**
- * A part's block as its role wants it. Every key hold starts at the dose a
- * short session keeps; the lead's reach toward its full practice time
- * (`Block.reach`) is added back last, if the session has room — the same order
- * a time budget gives it up in on a single-skill day.
+ * A part's key hold as its role wants it: the sets it always gets (`floor`),
+ * and the most the session will raise it to when there is room (`cap`).
+ *
+ * The lead's cap is the dose a short single-skill session keeps; its reach
+ * toward its full practice time (`Block.reach`) is added back last — the same
+ * order a time budget gives it up in on a single-skill day. A partner's cap is
+ * four sets: past that, more of the same hold is worth less to it than the
+ * strength movement the time would otherwise go to.
  */
-function shapeForRole(block: Block, role: LineupRole): Block {
-  if (block.role !== 'skill') return block
-  const perSide = EXERCISE_BY_ID[block.exerciseId]?.perSide ? 2 : 1
+function shapeForRole(block: Block, role: LineupRole): { block: Block; cap: number } {
+  if (block.role !== 'skill') return { block, cap: block.sets }
+  const sides = sidesOf(block)
   const { reach: _reach, ...rest } = block
-  const kept = Math.max(2 * perSide, block.sets - (block.reach ?? 0))
-  if (role === 'lead' || role === 'partner') return { ...rest, sets: kept }
-  if (role === 'practice') return { ...rest, sets: Math.min(kept, 3 * perSide) }
+  const kept = Math.max(2 * sides, block.sets - (block.reach ?? 0))
+  // Three sets for the lead, two a side for a unilateral hold; two for a partner.
+  if (role === 'lead') return { block: { ...rest, sets: Math.min(kept, sides === 2 ? 4 : 3) }, cap: kept }
+  if (role === 'partner') return { block: { ...rest, sets: Math.min(kept, 2 * sides) }, cap: Math.min(kept, 4) }
+  if (role === 'practice') return { block: { ...rest, sets: Math.min(kept, 2 * sides) }, cap: Math.min(kept, 3 * sides) }
   return {
-    ...rest,
-    sets: 2 * perSide,
-    note: 'Maintenance dose: a couple of clean holds at your current step keep the position while another skill leads. Come down at the target call.',
+    block: {
+      ...rest,
+      sets: 2 * sides,
+      note: 'Short dose: a couple of clean holds at your current step keep the position while other skills take the session. Come down at the target call.',
+    },
+    cap: 2 * sides,
   }
 }
 
@@ -146,6 +204,10 @@ interface Candidate {
   tier: Tier
   /** Position in its own part, so a part's internal order survives. */
   index: number
+  /** Sets its own session built it with. */
+  full: number
+  /** For a key hold: the most its role is raised to before the lead's reach. */
+  cap: number
 }
 
 /**
@@ -160,6 +222,8 @@ export function mixedSession(
   plans: Partial<Record<SkillId, CoachPlan>>,
   build: (view: AppState, plan: CoachPlan, minutes: number) => Workout,
   minutesOverride?: number,
+  /** Said by an earlier pass that had to leave a short dose out. */
+  carried: string[] = [],
 ): Workout {
   const lead = lineup.find((entry) => entry.role === 'lead') ?? lineup[0]
   const leadPlan = plans[lead.skill]!
@@ -212,8 +276,9 @@ export function mixedSession(
     workout.blocks.forEach((raw, index) => {
       const tier = tierOf(raw, entry.role)
       if (!tier) return
-      const block = { ...shapeForRole(raw, entry.role), skill: raw.skill ?? entry.skill }
-      candidates.push({ block, skill: entry.skill, role: entry.role, tier, index })
+      const shaped = shapeForRole(raw, entry.role)
+      const block = { ...shaped.block, skill: raw.skill ?? entry.skill }
+      candidates.push({ block, skill: entry.skill, role: entry.role, tier, index, full: raw.sets, cap: shaped.cap })
     })
   }
 
@@ -222,7 +287,7 @@ export function mixedSession(
   const runningOrder = (chosen: Candidate[]): Block[] => {
     const out: Block[] = []
     const merged = new Map<string, Block>()
-    const once = (block: Block) => {
+    const once = (block: Block, shared = true) => {
       const twin = merged.get(block.exerciseId)
       if (twin) {
         // The same preparation, core or stretch asked for by two skills is done once.
@@ -230,8 +295,9 @@ export function mixedSession(
         return
       }
       const copy = { ...block }
-      // Shared work belongs to the session, not to one skill.
-      if (!EXERCISE_BY_ID[block.exerciseId]?.skill) delete copy.skill
+      // Shared work belongs to the session, not to one skill — but a strength
+      // movement stays its part's: a pull-up is the front lever's work today.
+      if (shared && !EXERCISE_BY_ID[block.exerciseId]?.skill) delete copy.skill
       merged.set(block.exerciseId, copy)
       out.push(copy)
     }
@@ -247,14 +313,18 @@ export function mixedSession(
     merged.clear()
     for (const c of ofPhase(1).sort(bySkillOrder)) out.push({ ...c.block })
     // Strength: alternate between the parts, so a push is followed by a pull.
+    // A movement two parts both ask for is done once — pike push-ups for the
+    // handstand and again, at another count, for the flag was two blocks of
+    // the same thing with a note that matched neither.
     const queues = running.map((entry) =>
       ofPhase(2)
         .filter((c) => c.skill === entry.skill)
         .sort((a, b) => a.index - b.index),
     )
     for (let i = 0; queues.some((q) => i < q.length); i++) {
-      for (const q of queues) if (i < q.length) out.push({ ...q[i].block })
+      for (const q of queues) if (i < q.length) once(q[i].block, false)
     }
+    merged.clear()
     for (const c of ofPhase(3).sort(leadFirst)) once(c.block)
     merged.clear()
     for (const c of ofPhase(4).sort(leadFirst)) once(c.block)
@@ -272,29 +342,46 @@ export function mixedSession(
     return n < COOLDOWN_PER_OTHER
   })
   const leftOut: Candidate[] = []
-  for (const slot of FILL_ORDER) {
-    const role: LineupRole = slot.who
-    for (const candidate of candidates.filter((c) => c.tier === slot.tier && c.role === role)) {
-      // Whole, or — for work that scales by sets — at two sets, or not at all.
-      const perSide = EXERCISE_BY_ID[candidate.block.exerciseId]?.perSide ? 2 : 1
-      const options: Block[] = [candidate.block]
-      if (candidate.block.sets > 2 * perSide) options.push({ ...candidate.block, sets: 2 * perSide })
-      const fitting = options.find((block) => estimate(runningOrder([...chosen, { ...candidate, block }])) <= budget)
-      if (fitting) chosen.push({ ...candidate, block: fitting })
-      else leftOut.push(candidate)
+  const fits = (trial: Candidate[]) => estimate(runningOrder(trial)) <= budget
+
+  // The floors alone can overrun a short session. A short dose is then the
+  // first thing to go — whole, and said — before either full part loses a set:
+  // the line-up it came from only knew the minutes, not what the parts weigh.
+  if (!fits(chosen)) {
+    const spare =
+      [...lineup].reverse().find((entry) => entry.role === 'maintenance' && entry.skill !== effortSkill) ??
+      [...lineup].reverse().find((entry) => entry.role === 'practice' && entry.skill !== effortSkill)
+    if (spare) {
+      const others = lineup.filter((entry) => entry !== spare)
+      const note = `${SKILLS[spare.skill].name} was due a short dose, but today's two full parts fill the ${budget} minutes — it is left for another session.`
+      return mixedSession(state, others, plans, build, minutesOverride, [...carried, note])
     }
   }
 
-  // Last, the lead's reach toward its full practice time: one set at a time
-  // while the session still has room.
-  const leadBuilt = built.get(lead.skill)?.blocks.find((b) => b.role === 'skill')
-  const leadHold = chosen.find((c) => c.skill === lead.skill && c.block.role === 'skill')
-  if (leadBuilt && leadHold) {
-    const step = EXERCISE_BY_ID[leadBuilt.exerciseId]?.perSide ? 2 : 1
-    for (let sets = leadHold.block.sets + step; sets <= leadBuilt.sets; sets += step) {
-      const trial = { ...leadHold, block: { ...leadHold.block, sets } }
-      if (estimate(runningOrder(chosen.map((c) => (c === leadHold ? trial : c)))) > budget) break
-      leadHold.block = trial.block
+  for (const step of FILL) {
+    if (step.op === 'add') {
+      for (const candidate of candidates.filter((c) => c.tier === step.tier && c.role === step.who)) {
+        // Whole, or — for work that scales by sets — at two sets, or not at all.
+        const two = Math.min(candidate.block.sets, 2 * sidesOf(candidate.block))
+        const options = step.start === 'two' || two === candidate.block.sets ? [two] : [candidate.block.sets, two]
+        const sets = options.find((n) => fits([...chosen, { ...candidate, block: { ...candidate.block, sets: n } }]))
+        if (sets !== undefined) chosen.push({ ...candidate, block: { ...candidate.block, sets } })
+        else leftOut.push(candidate)
+      }
+      continue
+    }
+    // One set at a time while the session still has room.
+    const raised = chosen.filter(
+      (c) => c.role === step.who && (step.what === 'hold' ? c.tier === 'always' && c.block.role === 'skill' : c.tier === step.what),
+    )
+    for (const candidate of raised) {
+      const limit = step.to === 'cap' ? candidate.cap : candidate.full
+      const by = sidesOf(candidate.block)
+      while (candidate.block.sets + by <= limit) {
+        const trial = { ...candidate, block: { ...candidate.block, sets: candidate.block.sets + by } }
+        if (!fits(chosen.map((c) => (c === candidate ? trial : c)))) break
+        candidate.block = trial.block
+      }
     }
   }
 
@@ -306,15 +393,38 @@ export function mixedSession(
 
   // ——— What the session says about itself ———
   const present = new Set(blocks.map((b) => b.exerciseId))
-  const adjustments: string[] = []
+  // Whose version of a movement the session shows: the first part to bring it,
+  // in the running order. A note from another part's version — "Pike Push-Up
+  // set to 7 reps" beside the block that says 3×5 — describes a block that is
+  // not here.
+  const shownFrom = new Map<string, SkillId>()
+  for (const entry of [lead, ...running.filter((e) => e !== lead)]) {
+    for (const c of chosen) {
+      if (c.skill === entry.skill && present.has(c.block.exerciseId) && !shownFrom.has(c.block.exerciseId)) {
+        shownFrom.set(c.block.exerciseId, c.skill)
+      }
+    }
+  }
+  const adjustments: string[] = [...carried]
+  let easyDaySaid = false
   for (const entry of running) {
     for (const note of built.get(entry.skill)?.adjustments ?? []) {
+      if (note.startsWith('Easy day')) {
+        // Each part says it in its own words; once is enough for the session.
+        if (!easyDaySaid) {
+          adjustments.push(
+            `Easy day: strength and support work at about ${Math.round(LIGHT_DOSE_SHARE * 100)}% of your usual dose — keep the pattern, leave the fatigue. These sets do not change your accessory targets.`,
+          )
+          easyDaySaid = true
+        }
+        continue
+      }
       // A note about work this session does not contain describes another day.
       const mentioned = [...present].some((id) => {
         const name = EXERCISE_BY_ID[id]?.name
-        return name ? note.toLowerCase().includes(name.toLowerCase()) : false
+        return name && shownFrom.get(id) === entry.skill ? note.toLowerCase().includes(name.toLowerCase()) : false
       })
-      if ((mentioned || note.startsWith('Easy day')) && !adjustments.includes(note)) adjustments.push(note)
+      if (mentioned && !adjustments.includes(note)) adjustments.push(note)
     }
   }
   for (const entry of running) {
@@ -329,10 +439,12 @@ export function mixedSession(
     ]
     if (names.length) {
       const skillName = SKILLS[entry.skill].name.toLowerCase()
+      // Only what is true: there is no day a second skill trains alone unless
+      // the athlete picks one, and nothing here knows which session is next.
       adjustments.push(
         `Left out of the ${skillName} work to fit ${budget} minutes across today's skills: ${joinWords(names)}. ${
-          names.length === 1 ? 'It comes' : 'They come'
-        } back on a day ${skillName} trains alone, or with a longer session.`,
+          names.length === 1 ? 'It fits' : 'They fit'
+        } in a longer session (Settings → session length), or when you pick ${skillName} on its own under Train → Choose today’s skills.`,
       )
     }
   }
@@ -370,7 +482,7 @@ export function mixedSession(
     return entry.role === 'partner'
       ? `${name} as its partner`
       : entry.role === 'maintenance'
-        ? `a maintenance dose of ${name}`
+        ? `a short dose of ${name}`
         : `${name} balance practice`
   }
   const others = running.filter((entry) => entry !== lead)

@@ -278,6 +278,32 @@ export function readinessTimeline(state: AppState, now = Date.now(), fresh?: Che
   return timeline
 }
 
+/**
+ * Whether the athlete reported joint pain during a session — at its check-in,
+ * or in a report made mid-set. A report later withdrawn does not count.
+ */
+export function painReportedIn(state: AppState, session: Pick<Session, 'startedAt' | 'endedAt' | 'checkIn'>): boolean {
+  if (session.checkIn?.joints === 'pain') return true
+  const end = Math.max(session.endedAt ?? session.startedAt, session.startedAt)
+  return readinessTimeline(state, end + 60_000).some(
+    (answer) => answer.joints === 'pain' && answer.at >= session.startedAt - 60_000 && answer.at <= end + 60_000,
+  )
+}
+
+/**
+ * The areas named in a niggle reported today — what a session can steer round.
+ * Pain is not here: it takes loaded work off altogether, so there is nothing
+ * left to steer. Neither is the elbow, which does the same on its own.
+ */
+export function niggleRegionsToday(state: AppState, now = Date.now()): BodyRegion[] {
+  const timeline = readinessTimeline(state, now)
+  const latest = timeline[timeline.length - 1]
+  if (!latest || latest.joints !== 'niggle') return []
+  const sameDay = new Date(latest.at).setHours(0, 0, 0, 0) === new Date(now).setHours(0, 0, 0, 0)
+  if (!sameDay) return []
+  return (latest.regions ?? []).filter((region) => region !== 'other' && region !== 'elbow')
+}
+
 export interface Signals {
   /** Days since the last logged session of any kind. */
   restDays: number

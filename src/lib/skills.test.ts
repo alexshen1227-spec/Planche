@@ -9,13 +9,23 @@ import { ACHIEVEMENTS } from '../data/achievements'
 import { buildSampleState } from '../data/sample'
 import { GUIDE_GROUPS, GUIDES, skillGuide } from '../data/learn'
 import { BASIS_LABEL, TIPS, tipOfTheDay } from '../data/tips'
-import { finalizeWorkoutWithPlan, planForToday, TEMPLATE_SKILLS, TEMPLATES, templatesFor } from '../data/workouts'
+import {
+  challengeBlockedReason,
+  finalizeWorkoutWithPlan,
+  planForToday,
+  TEMPLATE_SKILLS,
+  TEMPLATES,
+  templatesFor,
+} from '../data/workouts'
+import { debriefSession } from './coach'
+import { niggleRegionsToday, painReportedIn } from './signals'
 import { autoFromResult, issuesFor, mergeHumanReview } from '../components/FormCheckRow'
+import { capacityOn } from './bridge'
 import { applySession } from './engine'
 import { figureBounds, figureParts } from './figure'
 import { filmedExercises, filmedExercisesFor, readFormTrends } from './formTrend'
 import { readJourney } from './journey'
-import { daysSinceFullPart, lineupFor, strengthSlots, todaysLineup } from './lineup'
+import { daysSinceFullPart, fullParts, lineupFor, roomIn, rolesTrained, shortDoses, todaysLineup } from './lineup'
 import { LEVER_FRACTION } from './loading'
 import {
   goalChoices,
@@ -1180,8 +1190,14 @@ describe('badges for every skill', () => {
 })
 
 describe('the line-up', () => {
-  it('fits one, two or three strength skills by the time there is', () => {
-    expect([15, 24, 25, 45, 50, 51, 90].map(strengthSlots)).toEqual([1, 1, 2, 2, 2, 3, 3])
+  it('fits full parts and short doses by the time there is', () => {
+    const lengths = [15, 24, 25, 29, 30, 45, 50, 51, 90]
+    expect(lengths.map(fullParts)).toEqual([1, 1, 2, 2, 2, 2, 2, 2, 2])
+    expect(lengths.map(shortDoses)).toEqual([0, 0, 0, 0, 1, 1, 1, 2, 2])
+    expect(roomIn(20)).toBe('one skill')
+    expect(roomIn(26)).toBe('two skills in full')
+    expect(roomIn(45)).toBe('two skills in full and one short dose')
+    expect(roomIn(60)).toBe('two skills in full and two short doses')
   })
 
   it('leads with the first priority and pairs it with a skill that loads different joints', () => {
@@ -1209,12 +1225,53 @@ describe('the line-up', () => {
     expect(todaysLineup(stuck, T0).map((entry) => entry.skill)).toEqual(['flag'])
   })
 
-  it('carries a handstand as balance practice when it holds no strength slot', () => {
+  it('gives the short dose in its own form: balance practice, or two sets', () => {
     const state = startingState({ skills: ['planche', 'frontlever', 'handstand'] })
     const lineup = todaysLineup(state, T0, 45)
     expect(lineup.find((entry) => entry.skill === 'handstand')?.role).toBe('practice')
-    // Not in a session too short to carry it.
-    expect(todaysLineup(state, T0, 26).some((entry) => entry.skill === 'handstand' && entry.role === 'practice')).toBe(false)
+    // Practice is done fresh: straight after the lead in the listing, first in the running order.
+    expect(lineup.map((entry) => entry.skill)).toEqual(['planche', 'handstand', 'frontlever'])
+    // Not in a session too short to carry one.
+    expect(todaysLineup(state, T0, 26).map((entry) => `${entry.skill}:${entry.role}`)).toEqual(['planche:lead', 'frontlever:partner'])
+    // A strength skill's short dose is a couple of sets at its step.
+    const strength = todaysLineup(startingState({ skills: ['planche', 'frontlever', 'flag'] }), T0, 45)
+    expect(strength.map((entry) => `${entry.skill}:${entry.role}`)).toEqual(['planche:lead', 'frontlever:partner', 'flag:maintenance'])
+    expect(strength[2].reason).toMatch(/short dose/)
+  })
+
+  it('never lets a short dose outrank the athlete’s own order', () => {
+    // Balance practice once rode along in every session whatever its rank: the
+    // last priority was in thirty sessions of thirty, the third in seven.
+    const state = startingState({ skills: ['planche', 'frontlever', 'flag', 'handstand'] })
+    const first = todaysLineup(state, T0, 45)
+    expect(first.map((entry) => `${entry.skill}:${entry.role}`)).toEqual(['planche:lead', 'frontlever:partner', 'flag:maintenance'])
+    // The one left out is told the rule, not given a day nobody can promise.
+    expect(first[0].reason).toMatch(/Handstand push-up sits this one out/)
+    expect(first[0].reason).toMatch(/two skills in full and one short dose/)
+    expect(first[0].reason).toMatch(/waited longest, weighted by your order/)
+    expect(first.map((entry) => entry.reason).join(' ')).not.toMatch(/this week|trains alone/)
+    // Sixty minutes carries two short doses: all four skills.
+    expect(todaysLineup(state, T0, 60).map((entry) => `${entry.skill}:${entry.role}`)).toEqual([
+      'planche:lead',
+      'handstand:practice',
+      'frontlever:partner',
+      'flag:maintenance',
+    ])
+    // A skill already practised today is not handed a second short dose.
+    const practised: Session = {
+      ...sessionOf(state, T0, [{ exerciseId: 'supported-flag', kind: 'hold', value: 5, target: 5, section: 'main', at: T0 }]),
+      roles: { planche: 'lead', frontlever: 'partner', flag: 'maintenance' },
+    }
+    const later = todaysLineup({ ...state, sessions: [practised] }, T0 + 3 * 3_600_000, 45)
+    expect(later.some((entry) => entry.skill === 'flag' && entry.role === 'maintenance')).toBe(false)
+    // Even when it is the only skill left to give one to.
+    const three = startingState({ skills: ['planche', 'frontlever', 'flag'] })
+    const earlier: Session = {
+      ...sessionOf(three, T0, [{ exerciseId: 'active-hang', kind: 'hold', value: 15, target: 15, section: 'main', at: T0 }]),
+      roles: { planche: 'lead', frontlever: 'partner' },
+    }
+    const again = todaysLineup({ ...three, sessions: [earlier] }, T0 + 3 * 3_600_000, 45)
+    expect(again.map((entry) => `${entry.skill}:${entry.role}`)).toEqual(['planche:lead', 'flag:partner'])
   })
 
   it('honours a session the athlete chose, in their order, and keeps tests and short doses to one skill', () => {
@@ -1223,13 +1280,155 @@ describe('the line-up', () => {
     expect(lineupFor(state, { source: 'auto', skills: ['flag', 'planche', 'handstand', 'frontlever'] }, T0).map((entry) => `${entry.skill}:${entry.role}`)).toEqual([
       'flag:lead',
       'planche:partner',
-      'handstand:maintenance',
+      'handstand:practice',
     ])
     expect(lineupFor(state, { source: 'test', stepId: 'fl-hang' }, T0).map((entry) => entry.skill)).toEqual(['frontlever'])
     expect(lineupFor(state, { source: 'micro', skills: ['handstand'] }, T0).map((entry) => entry.skill)).toEqual(['handstand'])
     const chosen = finalizeWorkoutWithPlan(state, { source: 'auto', skills: ['flag'] }, undefined, T0).workout
     expect(chosen.skills).toEqual(['flag'])
     expect(chosen.blocks.some((block) => skillOfExercise(block.exerciseId) === 'planche')).toBe(false)
+  })
+
+  it('records the part a skill actually had, not the part it was planned', () => {
+    const state = startingState({ skills: ['planche', 'frontlever', 'flag'] })
+    const { workout, lineup } = finalizeWorkoutWithPlan(state, { source: 'auto' }, undefined, T0)
+    expect(lineup.map((entry) => `${entry.skill}:${entry.role}`)).toEqual(['planche:lead', 'frontlever:partner', 'flag:maintenance'])
+    const done = (keep: (exerciseId: string, n: number) => boolean) => {
+      const seen = new Map<string, number>()
+      return workout.blocks.flatMap((block) =>
+        Array.from({ length: block.sets }, () => {
+          const n = (seen.get(block.exerciseId) ?? 0) + 1
+          seen.set(block.exerciseId, n)
+          return { exerciseId: block.exerciseId, section: block.section, value: keep(block.exerciseId, n) ? 5 : 0 }
+        }).filter((set) => set.value > 0),
+      )
+    }
+    // Everything done: the plan stands.
+    expect(rolesTrained(lineup, workout.blocks, done(() => true))).toEqual({ planche: 'lead', frontlever: 'partner', flag: 'maintenance' })
+    // Ended after the first skill's holds: the others had no part at all, and
+    // the one that got nothing keeps its turn.
+    const leadOnly = rolesTrained(lineup, workout.blocks, done((id) => skillOfExercise(id) === 'planche'))
+    expect(leadOnly).toEqual({ planche: 'lead' })
+    // One hold of a planned full part is a short dose, which is what it was.
+    const partnerHolds = workout.blocks.filter((b) => b.section === 'main' && b.skill === 'frontlever').reduce((n, b) => n + b.sets, 0)
+    expect(partnerHolds).toBeGreaterThanOrEqual(2)
+    const oneHold = rolesTrained(
+      lineup,
+      [...workout.blocks, { exerciseId: 'active-hang', sets: 3, section: 'main' as const, skill: 'frontlever' as const }],
+      done((id, n) => skillOfExercise(id) !== 'frontlever' || n === 1),
+    )
+    expect(oneHold.frontlever).toBe('maintenance')
+    expect(oneHold.planche).toBe('lead')
+    // Nothing logged, nothing recorded.
+    expect(rolesTrained(lineup, workout.blocks, [])).toEqual({})
+  })
+
+  it('hands back the line-up of the session it built, not of the one it had planned', () => {
+    const state = startingState({ skills: ['planche', 'frontlever', 'handstand'] })
+    const checkIn = { at: T0, energy: 'ok' as const, joints: 'pain' as const, regions: ['elbow' as const] }
+    const pain = finalizeWorkoutWithPlan(state, { source: 'auto' }, checkIn, T0)
+    expect(pain.plan.loadPermission).toBe('none')
+    // Home once listed three skills for "today's session" above a button that
+    // built the pain-safe one.
+    expect(pain.lineup).toEqual([])
+    const usual = finalizeWorkoutWithPlan(state, { source: 'auto' }, undefined, T0)
+    expect(usual.lineup.map((entry) => entry.skill)).toEqual(usual.workout.lineup!.map((entry) => entry.skill))
+    // A short dose the minutes had room for on paper, but the two full parts fill.
+    const heavy = startingState({
+      skills: ['ninety', 'planche', 'flag'],
+      steps: { ninety: 'n90-straddle', planche: 'oneleg', flag: 'flag-tuck' },
+      sessionMinutes: 30,
+    })
+    expect(todaysLineup(heavy, T0).map((entry) => `${entry.skill}:${entry.role}`)).toEqual(['ninety:lead', 'planche:partner', 'flag:maintenance'])
+    const built = finalizeWorkoutWithPlan(heavy, { source: 'auto' }, undefined, T0)
+    expect(built.workout.minutes).toBeLessThanOrEqual(31)
+    if (!built.lineup.some((entry) => entry.skill === 'flag')) {
+      expect(built.workout.blocks.some((b) => b.skill === 'flag' && b.section === 'main')).toBe(false)
+      expect((built.workout.adjustments ?? []).join(' ')).toMatch(/Human flag was due a short dose/)
+    }
+    for (const entry of built.lineup) {
+      expect(built.workout.blocks.some((b) => b.section === 'main' && b.skill === entry.skill), entry.skill).toBe(true)
+    }
+  })
+
+  it('does not take one cut-short hold for the athlete’s level', () => {
+    // Placed on the wall handstand saying they hold it for twenty seconds; the
+    // first session logged one hold of two. The next asked for five sets of
+    // one second.
+    const base = startingState({ skills: ['handstand'], steps: { handstand: 'hs-wall' } })
+    const assessment = { at: T0 - DAY, answers: { 'wall-handstand': 20 }, placedStepId: 'hs-wall' as const, confidence: 'good' as const, gapIds: [] }
+    const told: AppState = { ...base, tracks: { ...base.tracks, handstand: { ...trackOf(base, 'handstand'), assessment } } }
+    const view = () => skillView(told, 'handstand')
+    const targetOf = (state: AppState) => {
+      const hold = finalizeWorkoutWithPlan(state, { source: 'auto' }, undefined, T0 + 2 * DAY).workout.blocks.find((b) => b.role === 'skill')!
+      return hold.target.kind === 'hold' ? hold.target.sec : 0
+    }
+    const fresh = targetOf(told)
+    expect(fresh).toBeGreaterThanOrEqual(8)
+    const short = (at: number): Session => sessionOf(view(), at, [{ exerciseId: 'wall-handstand', kind: 'hold', value: 2, target: fresh, section: 'main', at }], `cut-${at}`)
+    const one = applySession(told, short(T0)).next
+    expect(targetOf(one), 'after one short hold').toBeGreaterThanOrEqual(5)
+    expect(capacityOn(skillView(one, 'handstand'), 'hs-wall')).toBe(20)
+    // Three sessions that agree are a level, and the answer no longer outvotes them.
+    let three = one
+    for (const day of [-6, -3]) three = applySession(three, short(T0 + day * DAY)).next
+    expect(targetOf(three), 'after three short sessions').toBeLessThanOrEqual(2)
+    expect(capacityOn(skillView(three, 'handstand'), 'hs-wall')).toBe(2)
+  })
+
+  it('steers the second part and the short doses round a joint flagged today', () => {
+    const state = startingState({ skills: ['planche', 'handstand', 'frontlever'] })
+    // The handstand is second in the athlete's order, and takes the second part…
+    expect(todaysLineup(state, T0, 45).map((entry) => `${entry.skill}:${entry.role}`)).toEqual(['planche:lead', 'handstand:partner', 'frontlever:maintenance'])
+    // …until a wrist is flagged: the front lever is the one skill here that
+    // leaves the wrist alone. It once went the other way — the handstand kept,
+    // the lever dropped — under a form that said the plan leaves out whatever
+    // loads the area you name.
+    const flagged = reducer(state, { type: 'RECORD_SYMPTOM', event: { at: T0 - 60_000, joints: 'niggle', regions: ['wrist'], source: 'check-in' } })
+    expect(niggleRegionsToday(flagged, T0)).toEqual(['wrist'])
+    const lineup = todaysLineup(flagged, T0, 45)
+    expect(lineup.map((entry) => `${entry.skill}:${entry.role}`)).toEqual(['planche:lead', 'frontlever:partner'])
+    expect(lineup[1].reason).toMatch(/off the wrist you flagged today/)
+    // The day itself is eased, and says one thing about it.
+    const { plan, workout } = finalizeWorkoutWithPlan(flagged, { source: 'auto' }, undefined, T0)
+    expect(plan.loadPermission).toBe('reduced')
+    expect(plan.dayType).not.toBe('push')
+    expect(plan.challengeAllowed).toBe(false)
+    expect([plan.dayReason, ...plan.decisions.map((d) => d.text)].join(' ')).not.toMatch(/today pushes/)
+    expect(workout.blocks.some((b) => b.role === 'attempt')).toBe(false)
+    expect(workout.blocks.some((b) => b.skill === 'handstand')).toBe(false)
+    // A report made a minute ago is "today", however it reached the plan.
+    expect(challengeBlockedReason(plan)).toBe('you flagged a joint today')
+    // Yesterday's is not today's: the line-up is the athlete's order again.
+    expect(niggleRegionsToday(flagged, T0 + DAY)).toEqual([])
+    expect(todaysLineup(flagged, T0 + DAY, 45)[1].skill).toBe('handstand')
+    // An elbow or pain takes the load off altogether, so there is nothing to steer.
+    const elbow = reducer(state, { type: 'RECORD_SYMPTOM', event: { at: T0 - 60_000, joints: 'niggle', regions: ['elbow'], source: 'check-in' } })
+    expect(niggleRegionsToday(elbow, T0)).toEqual([])
+    expect(finalizeWorkoutWithPlan(elbow, { source: 'auto' }, undefined, T0).lineup).toEqual([])
+  })
+
+  it('does not close a session that had a pain report in it on a number', () => {
+    const state = startingState({ skills: ['planche'], steps: { planche: 'lean' } })
+    const session = sessionOf(state, T0, [verifiedHold('planche-lean', 11, T0 + 60_000), verifiedHold('planche-lean', 6, T0 + 180_000)])
+    const after = applySession(state, session).next
+    const targets = { before: 11, after: 7 }
+    const quiet = debriefSession(state, after, session, targets)
+    expect(painReportedIn(after, session)).toBe(false)
+    expect(quiet.map((d) => d.text).join(' ')).toMatch(/Working target moves 11s → 7s/)
+    // The same session with pain reported mid-set.
+    const hurt = reducer(after, { type: 'RECORD_SYMPTOM', event: { at: T0 + 200_000, joints: 'pain', regions: ['wrist'], source: 'attempt' } })
+    expect(painReportedIn(hurt, session)).toBe(true)
+    const said = debriefSession(state, hurt, session, targets)
+    expect(said[0].kind).toBe('warn')
+    expect(said[0].text).toMatch(/reported joint pain in this session/)
+    expect(said.map((d) => d.text).join(' ')).not.toMatch(/Working target moves/)
+    // Withdrawn, it is as if it had not been said.
+    const undone = reducer(hurt, { type: 'RECORD_SYMPTOM', event: { at: T0 + 210_000, joints: 'pain', regions: ['wrist'], source: 'attempt', correction: true } })
+    expect(painReportedIn(undone, session)).toBe(false)
+    // A report from another day is not this session's.
+    const earlier = reducer(after, { type: 'RECORD_SYMPTOM', event: { at: T0 - 3 * DAY, joints: 'pain', regions: ['wrist'], source: 'check-in' } })
+    expect(painReportedIn(earlier, session)).toBe(false)
   })
 
   it('does not count a maintenance dose as a training day', () => {

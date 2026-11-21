@@ -60,10 +60,29 @@ export function capacityOn(state: AppState, stepId: StepId): number | undefined 
   const series = learningSeries(state, stepId, surface)
   const recent = series.points.slice(-6).map((p) => p.value)
   const newest = series.points[series.points.length - 1]
-  if (newest) return Math.max(...recent, measuredLevel(series.points, newest.at) ?? 0)
+  const told = toldHold(state, stepId)
+  if (newest) {
+    const shown = Math.max(...recent, measuredLevel(series.points, newest.at) ?? 0)
+    return series.points.length < SETTLED_SESSIONS && told !== undefined ? Math.max(shown, told) : shown
+  }
   const timerBest = state.prs[step.keyExerciseId]?.value
   if (timerBest !== undefined && timerBest > 0) return timerBest
-  const answered = state.assessment?.answers[step.keyExerciseId]
+  return told
+}
+
+/**
+ * Sessions on a step before its logged holds alone say what the athlete can
+ * do. Until then the placement answer for that exact hold still counts beside
+ * them: one hold cut short in a first session — two seconds of a wall
+ * handstand the athlete had said they hold for twenty — once became "the most
+ * they have shown", and the next session asked for five sets of one second.
+ * Three sessions that agree outvote the answer; one does not.
+ */
+export const SETTLED_SESSIONS = 3
+
+/** What the athlete said they hold on a step's key hold at placement, when they said they can. */
+export function toldHold(state: Pick<AppState, 'assessment'>, stepId: StepId): number | undefined {
+  const answered = state.assessment?.answers[STEP_BY_ID[stepId].keyExerciseId]
   return answered !== undefined && answered > 0 ? answered : undefined
 }
 

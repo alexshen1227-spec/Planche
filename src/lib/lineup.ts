@@ -1,6 +1,7 @@
-import type { AppState, LineupRole, SkillId, WorkoutRequest } from '../types'
+import type { AppState, Block, LineupRole, SetLog, SkillId, WorkoutRequest } from '../types'
 import { skillOfStep } from '../data/progressions'
 import { missingKit, skillOfExercise, SKILLS } from '../data/skills'
+import { niggleRegionsToday } from './signals'
 import { activeSkills, focusSkill, wholeState } from './skills'
 
 /**
@@ -18,18 +19,23 @@ import { activeSkills, focusSkill, wholeState } from './skills'
  * - **Push pairs with pull.** The second slot prefers a skill from a different
  *   family — the planche with the front lever is the textbook pair — and is
  *   marked down when it loads the same joints as the lead.
- * - **Balance practice is its own kind of work.** A handstand is skill
- *   practice: low in load, learned by time spent, so it rides along as a short
- *   block at the start of a session even when it holds no strength slot.
- * - **Everything else rotates, by priority.** The second slot goes to the skill
- *   that has waited longest for a *full* part, weighted by its place in the
+ * - **Everything else rotates, by priority.** The second full part goes to the
+ *   skill that has waited longest for one, weighted by its place in the
  *   athlete's order: the second priority gets it about twice as often as the
  *   third. A couple of maintenance sets do not count as having been trained —
  *   they once did, and with four or five skills the lower ones were held at
  *   two sets a week for good, their targets and their steps never moving.
+ * - **A short dose keeps a position between full parts** — two sets at the
+ *   current step, or for a balance skill a few minutes of practice at the
+ *   start of the session, while fresh. It goes by the same rule: longest
+ *   waiting, weighted by the athlete's order. Balance practice once rode along
+ *   in *every* session regardless — so an athlete who ranked the handstand
+ *   last saw it in thirty sessions of thirty and their third priority in
+ *   seven. The order is the athlete's; nothing here outranks it.
  *
- * How many strength skills fit is a function of the time available, nothing
- * cleverer: one under 25 minutes, two to 50, three beyond.
+ * How much fits is a function of the time available, nothing cleverer: one
+ * skill under 25 minutes, two in full from there, plus one short dose from 30
+ * minutes and two beyond 50.
  */
 
 /**
@@ -95,9 +101,50 @@ export function daysSinceFullPart(stateIn: AppState, skill: SkillId, now = Date.
   return Math.max(0, Math.round((startOfDay(now) - startOfDay(last)) / DAY))
 }
 
-/** Strength skills a session of this length has room for. */
-export function strengthSlots(minutes: number): number {
-  return minutes < 25 ? 1 : minutes <= 50 ? 2 : 3
+/**
+ * What each skill's part of a session turned out to be — from what was logged,
+ * not from what was planned.
+ *
+ * The plan says who leads and who partners. Saved as planned, a session ended
+ * after the first skill's holds still recorded its partner as trained in full,
+ * so the skill that got nothing lost its turn as well; and a pain-safe session
+ * went down as a full day for the lead. A skill with none of its holds done has
+ * no part. A full part with fewer than half its planned holds done is a short
+ * dose, which is what it was.
+ */
+export function rolesTrained(
+  planned: readonly { skill: SkillId; role: LineupRole }[],
+  blocks: readonly Pick<Block, 'exerciseId' | 'sets' | 'section' | 'skill'>[],
+  logs: readonly Pick<SetLog, 'exerciseId' | 'section' | 'value'>[],
+): Partial<Record<SkillId, LineupRole>> {
+  const roles: Partial<Record<SkillId, LineupRole>> = {}
+  for (const { skill, role } of planned) {
+    const plannedHolds = blocks
+      .filter((block) => block.section === 'main' && (block.skill ?? skillOfExercise(block.exerciseId)) === skill)
+      .reduce((sum, block) => sum + block.sets, 0)
+    const done = logs.filter((set) => set.section === 'main' && set.value > 0 && skillOfExercise(set.exerciseId) === skill).length
+    if (done === 0) continue
+    const full = role === 'lead' || role === 'partner'
+    roles[skill] = full && done * 2 < plannedHolds ? (SKILLS[skill].family === 'balance' ? 'practice' : 'maintenance') : role
+  }
+  return roles
+}
+
+/** Skills that get a full part of a session this long: their holds and the strength work behind them. */
+export function fullParts(minutes: number): number {
+  return minutes < 25 ? 1 : 2
+}
+
+/** Short doses a session this long carries beside its full parts: two sets, or a few minutes of balance practice. */
+export function shortDoses(minutes: number): number {
+  return minutes < 30 ? 0 : minutes <= 50 ? 1 : 2
+}
+
+/** What a session of this length has room for, in words. */
+export function roomIn(minutes: number): string {
+  if (fullParts(minutes) === 1) return 'one skill'
+  const doses = shortDoses(minutes)
+  return `two skills in full${doses === 0 ? '' : doses === 1 ? ' and one short dose' : ' and two short doses'}`
 }
 
 /** Skills the athlete trains *and* has the kit for, focus first. */
@@ -143,7 +190,7 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
   }
 
   const minutes = minutesOverride ?? state.settings.sessionMinutes
-  const slots = strengthSlots(minutes)
+  const slots = fullParts(minutes)
 
   // ——— Sessions that only ever fit one skill ———
   // "The priority skill leads every session" then means the others are never
@@ -152,7 +199,7 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
   // each skill after it for less — which gives the main skill about two
   // sessions in three with one other, and the rest their turn in between.
   // (A one-off short version of a longer session is still the main skill's.)
-  if (strengthSlots(state.settings.sessionMinutes) === 1) {
+  if (fullParts(state.settings.sessionMinutes) === 1) {
     const turn = skills
       .map((skill, rank) => {
         const sinceFull = daysSinceFullPart(state, skill, now)
@@ -196,6 +243,15 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
     },
   ]
 
+  // ——— A niggle named today steers the rest of the session round it ———
+  // The first priority still leads, eased by its own plan. But the second part
+  // and the short doses go to skills that do not load the area — the check-in
+  // says the session changes, and a wrist niggle once kept the handstand and
+  // dropped the front lever, the one skill here that leaves the wrist alone.
+  const sore = niggleRegionsToday(state, now)
+  const loadsSore = (skill: SkillId) => sore.some((region) => SKILLS[skill].loads.includes(region))
+  const soreWords = sore.map((region) => region.replace('-', ' ')).join(' and ')
+
   // ——— The other strength slots: most due first, weighted by priority and fit ———
   const chosen: SkillId[] = [lead]
   const candidates = skills.slice(1)
@@ -218,61 +274,88 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
       const complements = def.family !== leadDef.family && def.words.strength !== leadDef.words.strength
       return { skill, since, sinceFull, score: due * priority * complement * overlap, complements }
     })
-    .sort((a, b) => b.score - a.score || candidates.indexOf(a.skill) - candidates.indexOf(b.skill))
+    .sort(
+      (a, b) =>
+        Number(loadsSore(a.skill)) - Number(loadsSore(b.skill)) ||
+        b.score - a.score ||
+        candidates.indexOf(a.skill) - candidates.indexOf(b.skill),
+    )
 
-  for (const candidate of scored) {
-    if (chosen.length >= slots) break
-    const def = SKILLS[candidate.skill]
-    const role: LineupRole = chosen.length === 1 ? 'partner' : 'maintenance'
-    // The partner slot is about full training days; a maintenance dose is about any practice at all.
-    const days = role === 'partner' ? candidate.sinceFull : candidate.since
-    const what = role === 'partner' && candidate.since !== null && candidate.sinceFull !== candidate.since ? 'trained in full' : 'trained'
+  // ——— The second full part ———
+  const partner = slots >= 2 ? scored[0] : undefined
+  const steered = Boolean(partner) && sore.length > 0 && !loadsSore(partner!.skill) && scored.some((c) => loadsSore(c.skill))
+  if (partner) {
+    const def = SKILLS[partner.skill]
+    // The partner slot is about full training days, not any appearance.
+    const days = partner.sinceFull
+    const what = partner.since !== null && partner.sinceFull !== partner.since ? 'trained in full' : 'trained'
     const when =
       days === null
-        ? candidate.since === null
+        ? partner.since === null
           ? 'has not been trained yet'
-          : 'has only had maintenance sets so far'
+          : 'has only had short doses so far'
         : days === 0
           ? `was ${what} earlier today`
           : days === 1
             ? `was last ${what} yesterday`
             : `was last ${what} ${days} days ago`
     lineup.push({
-      skill: candidate.skill,
-      role,
-      reason:
-        role === 'partner'
-          ? `${def.name} is today's second skill: it ${when}${
-              candidate.complements ? `, and its ${def.words.strength} pairs with the ${leadDef.holdName}'s ${leadDef.words.strength}` : ''
-            }.`
-          : `${def.name} gets a short maintenance dose — a couple of sets at your current step — because it ${when}.`,
+      skill: partner.skill,
+      role: 'partner',
+      reason: `${def.name} is today's second skill: it ${when}${
+        partner.complements ? `, and its ${def.words.strength} pairs with the ${leadDef.holdName}'s ${leadDef.words.strength}` : ''
+      }.${steered ? ` It also keeps the second part off the ${soreWords} you flagged today.` : ''}`,
     })
-    chosen.push(candidate.skill)
+    chosen.push(partner.skill)
   }
 
-  // ——— Balance practice rides along ———
-  // A handstand that holds no strength slot today still gets a short practice
-  // block, unless it was already practised today or the session is too short
-  // to carry one.
-  for (const skill of candidates) {
-    if (chosen.includes(skill) || SKILLS[skill].family !== 'balance') continue
-    if (minutes < 30 || daysSinceSkill(state, skill, now) === 0) continue
-    // Practice comes first in the running order, straight after the warm-up.
-    lineup.splice(1, 0, {
-      skill,
-      role: 'practice',
-      reason: `A few minutes of ${SKILLS[skill].holdName} balance practice first, while you are fresh — it is skill practice, light enough to ride along with strength work.`,
+  // ——— Short doses: whoever has waited longest, weighted by the athlete's order ———
+  // Two sets at the current step — or, for a balance skill, a few minutes of
+  // practice at the start of the session. A skill already practised today is
+  // not given another.
+  const dosed = candidates
+    .map((skill, rank) => {
+      const since = daysSinceSkill(state, skill, now)
+      return { skill, rank, since, score: ((since ?? NEVER_TRAINED_DAYS) + 1) / (rank + 1) }
     })
-    chosen.push(skill)
+    // A short dose is optional work: none for a skill that loads what is sore today.
+    .filter((candidate) => !chosen.includes(candidate.skill) && candidate.since !== 0 && !loadsSore(candidate.skill))
+    .sort((a, b) => b.score - a.score || a.rank - b.rank)
+    .slice(0, shortDoses(minutes))
+  for (const candidate of dosed) {
+    const def = SKILLS[candidate.skill]
+    const when =
+      candidate.since === null
+        ? 'has not been trained yet'
+        : candidate.since === 1
+          ? 'was last trained yesterday'
+          : `was last trained ${candidate.since} days ago`
+    if (def.family === 'balance') {
+      // Practice comes first in the running order, straight after the warm-up.
+      lineup.splice(1, 0, {
+        skill: candidate.skill,
+        role: 'practice',
+        reason: `A few minutes of ${def.holdName} balance practice first, while you are fresh: it ${when}, and balance practice is light enough to sit beside strength work.`,
+      })
+    } else {
+      lineup.push({
+        skill: candidate.skill,
+        role: 'maintenance',
+        reason: `${def.name} gets a short dose — a couple of sets at your current step, to keep the position — because it ${when}.`,
+      })
+    }
+    chosen.push(candidate.skill)
   }
 
   const waiting = candidates.filter((skill) => !chosen.includes(skill))
   if (waiting.length) {
+    // No promise of a day: when a skill comes back depends on how the next
+    // sessions go. What is true is the rule that decides it.
     lineup[0] = {
       ...lineup[0],
       reason: `${lineup[0].reason} ${joinNames(waiting)[0].toUpperCase()}${joinNames(waiting).slice(1)} ${
-        waiting.length === 1 ? 'waits' : 'wait'
-      } for a later session this week — a ${minutes}-minute session has room for ${slots === 1 ? 'one strength skill' : `${slots} strength skills`}.`,
+        waiting.length === 1 ? 'sits' : 'sit'
+      } this one out — a ${minutes}-minute session has room for ${roomIn(minutes)}, and the skill that has waited longest, weighted by your order, comes in next.`,
     }
   }
   return lineup
@@ -297,7 +380,8 @@ export function lineupFor(stateIn: AppState, request: WorkoutRequest, now = Date
   if (asked?.length) {
     return asked.slice(0, 3).map((skill, i) => ({
       skill,
-      role: i === 0 ? 'lead' : i === 1 ? 'partner' : 'maintenance',
+      // A third skill gets its short form: practice for a balance skill, two sets otherwise.
+      role: i === 0 ? 'lead' : i === 1 ? 'partner' : SKILLS[skill].family === 'balance' ? 'practice' : 'maintenance',
       reason: asked.length === 1 ? `You chose a ${SKILLS[skill].name.toLowerCase()} session.` : `You chose ${joinNames(asked.slice(0, 3))} for this session.`,
     }))
   }

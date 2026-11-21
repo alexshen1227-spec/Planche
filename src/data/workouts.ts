@@ -1215,10 +1215,13 @@ export function todaysSession(
   // capacity-capped one-second target back above what the athlete had shown,
   // and contradicted Full Planche's own two-second start. And no strategy may
   // push a working target past the best this athlete has actually held.
-  const baseTarget = adaptiveTarget(state, stepId)
+  // Built for `now`, like everything else here: read at the wall clock instead,
+  // a history replayed from another date lost its "done as prescribed" floor
+  // and a compliant athlete's targets fell from 12s to 3s.
+  const baseTarget = adaptiveTarget(state, stepId, now)
   const capacity = observedCapacity(state, stepId)
   // Shared with the coach, so what it says about the target is what it is.
-  const target = workingTargetSec(state, stepId, plan.targetFactor)
+  const target = workingTargetSec(state, stepId, plan.targetFactor, now)
   const surface = defaultSurface(equipment, state.profile.preferredSurface)
   const transferred = plan.signals.keySeriesTransferred
   const strategyNote =
@@ -1231,9 +1234,14 @@ export function todaysSession(
           : // It said "about 2s before failure" while the hold screen called
             // the target: two instructions for the same set.
             'Come down at the target call, or sooner at the first loss of shape. Quality over seconds.'
+  // Whether this hold has ever been logged: "your recent holds" is not a thing
+  // to say about a skill added this morning.
+  const heldBefore = state.sessions.some((session) =>
+    session.sets.some((set) => set.exerciseId === step.keyExerciseId && set.value > 0),
+  )
   const shortNote =
     target < 3
-      ? ` Your recent holds are short, so these are too — that is a real dose, not a failure. If getting into the position or balancing is the struggle rather than strength, practising ${
+      ? ` ${heldBefore ? 'Your recent holds are short' : 'You said this hold is short for you right now'}, so these are too — that is a real dose, not a failure. If getting into the position or balancing is the struggle rather than strength, practising ${
           stepBefore(stepId) ? EXERCISE_BY_ID[stepBefore(stepId)!.keyExerciseId].name.toLowerCase() : 'an easier lean'
         } or using a smaller lean is worth reviewing with your replay.`
       : ''
@@ -1845,7 +1853,7 @@ export function microBlockedReason(state: Pick<AppState, 'sessions'>, plan: Coac
  * the coach's learning, the frequency signal and the weekly goal, and its
  * targets never move set to set.
  */
-export function microDoseWorkout(state: AppState, plan: CoachPlan): Workout {
+export function microDoseWorkout(state: AppState, plan: CoachPlan, now = Date.now()): Workout {
   const step = STEP_BY_ID[state.stepId]
   const bridge = bridgeStatus(state, step.id)
   const next = bridge?.open ? bridge.next : undefined
@@ -1865,7 +1873,7 @@ export function microDoseWorkout(state: AppState, plan: CoachPlan): Workout {
   const blocks: Block[] = [
     // Wrists and a primer lean are the warm-up three-second holds need; a coach
     // that asked for the extended one (skipped warm-ups, a cold start) gets it.
-    ...(step.skill === 'planche' ? warmupFor(step.id, warmLevel) : skillWarmup(step.skill, step.id, warmLevel, adaptiveTarget(state, step.id))),
+    ...(step.skill === 'planche' ? warmupFor(step.id, warmLevel) : skillWarmup(step.skill, step.id, warmLevel, adaptiveTarget(state, step.id, now))),
     {
       exerciseId: shape.keyExerciseId,
       // A per-side hold is a pair of rounds a set.
@@ -1890,7 +1898,7 @@ export function microDoseWorkout(state: AppState, plan: CoachPlan): Workout {
           section: 'cooldown',
         },
   ]
-  scaleLeanPrimer(blocks, step.id, adaptiveTarget(state, step.id))
+  scaleLeanPrimer(blocks, step.id, adaptiveTarget(state, step.id, now))
   const kit = resolveEquipment(blocks, state.profile.equipment)
   const sided = withSides(kit.blocks)
   return {
@@ -2087,7 +2095,13 @@ export function challengeBlockedReason(plan: CoachPlan): string | null {
   if (plan.loadPermission === 'none') return 'what you reported means no loaded work today'
   if (plan.signals.persistentComplaint) return 'a joint complaint keeps coming back'
   if (plan.openConcern && plan.loadPermission === 'reduced') {
-    return plan.signals.lastCheckIn?.source === 'fresh' ? 'you flagged a joint today' : 'a joint report has not been updated'
+    // By how old the report is, not by how it reached the plan: an answer
+    // given a minute ago is stored like any other, and Home then said "a joint
+    // report has not been updated" straight after the update.
+    const age = plan.signals.daysSinceCheckIn
+    if (age === 0) return 'you flagged a joint today'
+    if (age !== null && age <= 7) return `you flagged a joint ${age === 1 ? 'yesterday' : `${age} days ago`}`
+    return 'a joint report has not been updated'
   }
   if (plan.loadPermission === 'reduced') return 'today’s readiness calls for reduced loading'
   if (plan.signals.daysSinceLoaded === 0) return 'you already trained hard today'
@@ -2264,7 +2278,7 @@ export function finalizeFromPlan(
       workout = coachSession()
       adjustments.push(`No minimum dose today because ${blocked} — this is an ordinary session instead.`)
     } else {
-      workout = microDoseWorkout(state, plan)
+      workout = microDoseWorkout(state, plan, now)
     }
   } else {
     workout = coachSession()
@@ -2273,7 +2287,17 @@ export function finalizeFromPlan(
   const all = [...(workout.adjustments ?? []), ...adjustments]
   // A template is not any one skill's session; everything else is the lead's.
   const recorded = workout.kind === 'template' ? workout : recordFor(workout, lead)
-  return { workout: { ...recorded, request, ...(all.length ? { adjustments: all } : {}) }, plan, lineup }
+  // The line-up handed back describes the session handed back. It was once
+  // whatever had been planned before the rails ran: Home listed three skills
+  // for "today's session" above a Start button that built the pain-safe one.
+  const trains: LineupEntry[] =
+    isPainSafe(workout) || workout.kind === 'template' ? [] : ((workout.lineup as LineupEntry[] | undefined) ?? lineup.slice(0, 1))
+  return { workout: { ...recorded, request, ...(all.length ? { adjustments: all } : {}) }, plan, lineup: trains }
+}
+
+/** The no-load session a pain day gets, whatever was asked for. */
+export function isPainSafe(workout: Pick<Workout, 'id'>): boolean {
+  return workout.id.startsWith('pain-safe-recovery')
 }
 
 /**

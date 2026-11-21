@@ -5,9 +5,15 @@ import { STEP_BY_ID, stepAfter, stepsOf } from '../data/progressions'
 import { missingKit, SKILLS } from '../data/skills'
 import { equipmentLabel } from '../data/equipment'
 import { activeSkills, skillView } from '../lib/skills'
-import { lineupFor } from '../lib/lineup'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { challengeBlockedReason, finalizeFromPlan, microBlockedReason, microDoseWorkout } from '../data/workouts'
+import {
+  challengeBlockedReason,
+  finalizeFromPlan,
+  finalizeWorkoutWithPlan,
+  isPainSafe,
+  microBlockedReason,
+  microDoseWorkout,
+} from '../data/workouts'
 import { weekPlan, weekWork, workSets } from '../lib/volume'
 import { BridgeCard } from '../components/BridgeCard'
 import { BASIS_LABEL, tipOfTheDay } from '../data/tips'
@@ -172,9 +178,12 @@ export function Dashboard({
   const unlockPct = Math.min(1, best / step.unlockSec)
   const next = stepAfter(state.stepId)
   const goalStep = STEP_BY_ID[state.profile.goalStepId ?? skillDef.defaultGoal] ?? road[road.length - 1]
-  // Who trains today, and why — only worth a card when there is a choice.
+  // Who trains today, and why — only worth a card when there is a choice. Read
+  // off the session Start would build, after the rails: the planned line-up
+  // once listed three skills above a button that built the pain-safe session.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const lineup = useMemo(() => lineupFor(whole, { source: 'auto' }, Date.now()), [whole, today])
+  const todays = useMemo(() => finalizeWorkoutWithPlan(whole, { source: 'auto' }, undefined, Date.now()), [whole, today])
+  const lineup = todays.lineup
   /** Chosen skills that cannot train until some kit is added. */
   const waiting = skills
     .map((skill) => ({ skill, missing: missingKit(skill, whole.profile.equipment) }))
@@ -464,6 +473,11 @@ export function Dashboard({
         ) : several && lineup[0] ? (
           <p className="relative mt-2 text-[12.5px] leading-relaxed text-ink3">
             Today's session: {SKILLS[lineup[0].skill].name}. {lineup[0].reason}
+          </p>
+        ) : several && isPainSafe(todays.workout) ? (
+          <p className="relative mt-2 text-[12.5px] leading-relaxed text-ink3">
+            Today's session trains none of your skills: with what you reported, it is the pain-safe session — easy
+            movement only — until a check-in says the joint has settled.
           </p>
         ) : null}
         {waiting.map(({ skill, missing }) => (

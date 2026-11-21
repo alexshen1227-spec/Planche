@@ -5,7 +5,7 @@ import { skillOfExercise } from '../data/skills'
 import { finalizeFromPlan, planForToday } from '../data/workouts'
 import type { CoachPlan } from './coach'
 import { applySession } from './engine'
-import type { LineupEntry } from './lineup'
+import { rolesTrained, type LineupEntry } from './lineup'
 import { ladderOfExercise } from './repLadder'
 import { sessionSkillSteps, stepOfSkill } from './skills'
 import { initialState, reducer } from './store'
@@ -179,7 +179,11 @@ export function sessionFromWorkout(
       : {}),
     ...(workout.plannedDeload ? { plannedDeload: true } : {}),
     ...(Object.keys(notes).length ? { skills: notes } : {}),
-    roles: Object.fromEntries(lineup.map((entry) => [entry.skill, entry.role])),
+    // As the player saves it: from what was logged.
+    ...(() => {
+      const roles = rolesTrained(lineup, workout.blocks, sets)
+      return Object.keys(roles).length ? { roles } : {}
+    })(),
   }
 }
 

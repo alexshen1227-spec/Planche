@@ -189,9 +189,9 @@ export function skillSession(
   const words = skill.words
 
   // ——— The key hold's numbers (shared with the coach, so its copy matches) ———
-  const baseTarget = adaptiveTarget(state, stepId)
+  const baseTarget = adaptiveTarget(state, stepId, now)
   const capacity = observedCapacity(state, stepId)
-  const target = workingTargetSec(state, stepId, plan.targetFactor)
+  const target = workingTargetSec(state, stepId, plan.targetFactor, now)
 
   // An extended warm-up is a coach safety rail and cannot be disabled by the
   // convenience preference.
@@ -260,10 +260,15 @@ export function skillSession(
         : plan.strategy === 'density'
           ? 'Short rests on purpose, but never chase the timer past the first loss of shape.'
           : 'Come down at the target call, or sooner at the first loss of shape. Quality over seconds.'
+  // Whether this hold has ever been logged: "your recent holds" is not a thing
+  // to say about a skill added this morning.
+  const heldBefore = state.sessions.some((session) =>
+    session.sets.some((set) => set.exerciseId === step.keyExerciseId && set.value > 0),
+  )
   const prev = stepBefore(stepId)
   const shortNote =
     target < 3
-      ? ` Your recent holds are short, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, ${
+      ? ` ${heldBefore ? 'Your recent holds are short' : 'You said this hold is short for you right now'}, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, ${
           prev ? `practising ${EXERCISE_BY_ID[prev.keyExerciseId].name.toLowerCase()}` : 'an easier version'
         } is worth reviewing with your replay.`
       : ''

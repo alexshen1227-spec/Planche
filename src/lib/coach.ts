@@ -25,6 +25,7 @@ import {
   type CapabilityJump,
 } from './loading'
 import {
+  painReportedIn,
   readSignals,
   observedRestSec,
   median,
@@ -1377,6 +1378,12 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     // "No max-intensity work" was said here while a max-test suggestion could
     // survive from earlier in the plan — the plan arguing with itself again.
     suggestMaxTest = false
+    // And while the day itself was still called a push day: "you're fresh, so
+    // today pushes" one line above "no max-intensity work today".
+    if (dayType === 'push') {
+      dayType = 'build'
+      dayReason = 'You flagged a niggle, so today builds rather than pushes: ordinary work, nothing maximal, a longer warm-up.'
+    }
     decisions.push({
       text: 'You flagged a niggle — no max-intensity work today, longer warm-up, slightly less volume.',
       kind: 'warn',
@@ -1949,6 +1956,17 @@ export function debriefSession(
   const out: CoachDecision[] = []
   const step = STEP_BY_ID[session.stepId]
 
+  // Pain reported in this session outranks everything else it could say. It
+  // once closed on "Working target moves 11s → 7s — rebuilding quality" and a
+  // burst of confetti, as if the number were the news.
+  const hurt = painReportedIn(next, session)
+  if (hurt) {
+    out.push({
+      text: 'You reported joint pain in this session, and that matters more than any number below. Loaded work stays off until a check-in says it has settled. If it is still there tomorrow, keeps coming back, or there is swelling, get it checked by a qualified clinician.',
+      kind: 'warn',
+    })
+  }
+
   // Form slipped in this specific session — the highest-priority thing to say.
   const rated = session.sets.filter((x) => x.form?.confirmed !== false && x.form && x.section === 'main')
   const clean = rated.filter((x) => x.form!.rating === 'clean').length
@@ -2012,7 +2030,7 @@ export function debriefSession(
   }
 
   // The number that actually changes their next session.
-  if (targets && targets.after !== undefined && Math.abs(targets.after - targets.before) >= 1) {
+  if (!hurt && targets && targets.after !== undefined && Math.abs(targets.after - targets.before) >= 1) {
     const up = targets.after > targets.before
     out.push({
       text: `Working target moves ${targets.before}s → ${targets.after}s next session${up ? '' : ' — rebuilding quality before pushing again'}.`,

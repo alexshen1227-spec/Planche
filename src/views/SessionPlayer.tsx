@@ -29,7 +29,7 @@ import { saveClip } from '../lib/clips'
 import { isFilmable, warmDetector } from '../lib/poseForm'
 import { pushToast } from '../lib/toast'
 import { fmtClock, fmtHold } from '../lib/time'
-import { readSignals } from '../lib/signals'
+import { painReportedIn, readSignals } from '../lib/signals'
 import {
   creditedHoldSeconds,
   callMarksCompliance,
@@ -75,6 +75,7 @@ import { POSE_PROFILES, postureOf, type Posture } from '../lib/poseForm'
 import { isReviewOnly } from '../lib/progression'
 import { repSetsToReview, rungInPlay, rungOutcome, rungsOpenedBy, withRepCount } from '../lib/repLadder'
 import { RepReviewRow } from '../components/RepReviewRow'
+import { rolesTrained } from '../lib/lineup'
 import {
   assistAppliesTo,
   currentStepForExercise,
@@ -1528,14 +1529,18 @@ export function SessionPlayer({
         : {}),
       ...(workout.plannedDeload ? { plannedDeload: true } : {}),
       ...(Object.keys(skillNotes).length ? { skills: skillNotes } : {}),
-      // What each skill's part was, so the line-up can tell a full training
-      // day from a maintenance dose.
+      // What each skill's part turned out to be, so the line-up can tell a
+      // full training day from a short dose — read from what was logged, so a
+      // session ended early does not record work that was not done.
       ...(workout.kind === 'auto' || workout.kind === 'test'
-        ? {
-            roles: workout.lineup?.length
-              ? Object.fromEntries(workout.lineup.map((entry) => [entry.skill, entry.role]))
-              : { [lead]: 'lead' as const },
-          }
+        ? (() => {
+            const roles = rolesTrained(
+              workout.lineup?.length ? workout.lineup : [{ skill: lead, role: 'lead' as const }],
+              workout.blocks,
+              logs,
+            )
+            return Object.keys(roles).length ? { roles } : {}
+          })()
         : {}),
     }
     const { next, events: raw } = applySession(state, session)
@@ -1585,6 +1590,9 @@ export function SessionPlayer({
     setConfirmExit(false)
     setPhase('celebrate')
     sfx.done()
+    // A session with a pain report in it is not one to throw confetti over,
+    // whatever else it logged.
+    if (painReportedIn(next, session)) return
     if (ev.unlockedStep) confetti(2)
     else if (ev.prs.length > 0 || rungs.length > 0) confetti(1)
   }, [workout, state, logs, rpe, notes, dispatch, checkIn, finishedEarly, totalSets])

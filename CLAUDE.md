@@ -654,13 +654,36 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
   kept for *every* role: without it a maintenance dose done exactly as asked
   came back 40% shorter each session (15s → 1s, simulated).
 - **The line-up** (`lib/lineup.ts`). The first priority leads every session.
-  `strengthSlots(minutes)` is 1 under 25, 2 up to 50, 3 beyond. The partner
-  slot goes by days since a *full* part (`daysSinceFullPart`: led or partnered
-  — a maintenance dose keeps a position, it does not train it) × priority ×
-  a bonus for a different family (a pull beside a push) × joint overlap. A
-  third skill gets maintenance; handstand balance rides as `practice`. With
+  `fullParts(minutes)` is 1 under 25 and 2 from there; `shortDoses(minutes)`
+  is 0 under 30, 1 to 50, 2 beyond. The partner slot goes by days since a
+  *full* part (`daysSinceFullPart`: led or partnered — a short dose keeps a
+  position, it does not train it) × priority × a bonus for a different family
+  (a pull beside a push) × joint overlap. A short dose goes to whoever has
+  waited longest for any practice, weighted by the athlete's order — two sets
+  (`maintenance`), or balance practice for a balance skill (`practice`).
+  **Nothing outranks the athlete's order**: practice once rode along in every
+  session, so the last-ranked handstand appeared in 30 of 30 sessions and the
+  third priority in 7. A niggle named today (`niggleRegionsToday`) sends the
+  second part and the short doses to skills that do not load the area. With
   one slot the skills take turns, the first priority at weight 2. All of it is
-  CONSENSUS or the app's design (ledger §13.2) and the copy says so.
+  CONSENSUS or the app's design (ledger §13.2) and the copy says so — and
+  never promises a day (“later this week”) it cannot know.
+- **A full part is its hold and the strength work behind it**
+  (`data/mixedSession.ts`, `FILL`). Each part's key hold goes in at a floor;
+  then the lead's moving version, its next-shape attempts, the partner's
+  moving version and next-shape attempts; only then more sets of the holds,
+  core, and the rest. When every hold went in first, a second skill's holds
+  took the room its strength movement needed (front lever: a pull in 4 partner
+  sessions of 13; flag: 0 of 7), and with next-shape attempts last it sat on
+  its first step all season. A short dose that does not fit beside the two
+  full parts is dropped whole and said. `finalizeFromPlan` hands back the
+  line-up of the session it *built* (empty for the pain-safe one), and saved
+  roles come from what was logged (`rolesTrained`), not what was planned.
+- **One or two sessions are not a level** (`SETTLED_SESSIONS`, `toldHold`):
+  until a step has three logged sessions, the placement answer for that exact
+  hold stands beside them in `adaptiveTarget` and `capacityOn`. One 2s hold in
+  a first session once became "the most they have shown" and the next session
+  asked for five sets of one second.
 - **One maximal effort a session** (`data/mixedSession.ts`, `effortSkill`):
   the lead's by default; when the lead held it last session and another skill
   has one queued, that skill takes today's. Only a max effort raises a target,

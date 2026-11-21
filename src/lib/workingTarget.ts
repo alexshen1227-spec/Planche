@@ -2,7 +2,7 @@ import type { AppState, StepDef, StepId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { defaultSurface } from '../data/equipment'
 import { completedBaseTarget, learningSeries, measuredLevel, qualifyingProgress } from './progression'
-import { capacityOn } from './bridge'
+import { capacityOn, SETTLED_SESSIONS, toldHold } from './bridge'
 import { median } from './signals'
 
 /**
@@ -68,9 +68,13 @@ export function adaptiveTarget(state: AppState, stepId: StepId, now = Date.now()
   // that measurement is fresh against their latest session.
   const newest = series.points[series.points.length - 1]
   const measured = newest ? measuredLevel(series.points, newest.at) : null
-  const recentBests = series.points
+  const logged = series.points
     .slice(-6)
     .map((p) => (p.cappedAt !== undefined && measured !== null ? Math.max(p.value, measured) : p.value))
+  // One or two sessions are not yet a level: the placement answer for this
+  // exact hold stands beside them until a third agrees (see SETTLED_SESSIONS).
+  const told = series.transferred ? undefined : toldHold(state, stepId)
+  const recentBests = logged.length > 0 && series.points.length < SETTLED_SESSIONS && told !== undefined ? [told, ...logged] : logged
 
   if (recentBests.length === 0) {
     // A standalone unverified PR must never raise a target or unlock a step,
