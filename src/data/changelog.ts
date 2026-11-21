@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-21',
+    title: 'A truer preview, spaced attempts, and a step back after pain',
+    area: 'coach',
+    notes: [
+      'Train → Choose today’s skills → Preview now shows the session you chose. It was showing the recommended one, and Start then ran something else.',
+      'An attempt at a step’s bar that falls short is no longer queued again the very next session. The next one waits a week from the last — the work in between is what moves a hold — so that session’s one maximal effort is free for another skill, and next-shape practice is not crowded out. The week is this app’s own rule, not a research finding.',
+      'The first session after a pain report is a deliberate step back, even when the check-in says all good: a build day, nothing maximal, a little less volume, and no max test or minimum dose. One quiet session later the plan is back to normal. This is the app being cautious, not a claim about how a joint heals.',
+    ],
+  },
+  {
+    date: '2026-11-21',
     title: 'Your week, your way',
     area: 'training',
     notes: [

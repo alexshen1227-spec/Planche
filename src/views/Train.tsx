@@ -11,6 +11,7 @@ import {
   challengeBlockedReason,
   finalizeFromPlan,
   isPainSafe,
+  isRecommendedRequest,
   planForToday,
 } from '../data/workouts'
 import { missingKit, SKILLS } from '../data/skills'
@@ -99,7 +100,10 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
   const preview: Workout | null = useMemo(
     () =>
       previewRequest
-        ? previewRequest.source === 'auto' && !previewRequest.minutes
+        ? // Only the plain recommended request may reuse the session built for
+          // the card above. Anything chosen — skills, a time budget — is built
+          // from the request itself, the same way Start builds it.
+          isRecommendedRequest(previewRequest)
           ? finalized.today
           : previewRequest.source === 'template' && previewRequest.templateId
             ? (finalized.templates.get(previewRequest.templateId) ?? finalized.build(previewRequest))

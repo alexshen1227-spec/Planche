@@ -5,7 +5,15 @@ import { isSkillWork } from './skills'
 import { workSets } from './volume'
 import { defaultSurface } from '../data/equipment'
 import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
-import { capacityReading, isBarAttempt, learningSeries, measuredMaxIn, testWasAttempted, verifiedCleanRatio } from './progression'
+import {
+  capacityReading,
+  isBarAttempt,
+  learningSeries,
+  measuredMaxIn,
+  qualifyingProgress,
+  testWasAttempted,
+  verifiedCleanRatio,
+} from './progression'
 import { trustedCameraEvidence } from './formEvidence'
 import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
 
@@ -36,6 +44,14 @@ export const NEVER_DAYS = 99
  * has to ask rather than call it banked recovery. A convention, not biology.
  */
 export const LONG_GAP_DAYS = 14
+
+/**
+ * How long after a pain report the first loaded session still counts as the
+ * session back from it. This app's own rule — a design choice, not evidence:
+ * no source says when a report stops mattering. Past it with nothing logged,
+ * the long-gap handling is what shapes the day.
+ */
+export const PAIN_RETURN_WINDOW_DAYS = 14
 /** How far back from the latest measurement the spread and trend read: the forecast's eight weeks. */
 const MEASURED_WINDOW_DAYS = 56
 
@@ -425,6 +441,22 @@ export interface Signals {
   daysSinceMaxTest: number | null
   /** Days since a session that was offered a re-test and did not measure the max. */
   daysSinceSkippedRetest: number | null
+  /**
+   * Calendar days since the most recent attempt at this step's bar (an unlock
+   * attempt, a re-test or a max test's attempt — see `isBarAttempt`), when no
+   * verified hold in that session reached the bar. Null when nothing has been
+   * attempted at the bar on this step, or the latest attempt showed it (a step
+   * that asks to see the bar on a second day is not waiting on a failure).
+   */
+  daysSinceFailedBarAttempt: number | null
+  /**
+   * The first loaded session after a pain report is still ahead: the latest
+   * joint answer is "good", a pain report came before it within
+   * `PAIN_RETURN_WINDOW_DAYS`, and no session with main or strength work has
+   * been logged since that report. A withdrawn report is not on the timeline,
+   * so it never counts. Null otherwise.
+   */
+  returningFromPain: { daysSincePain: number } | null
   /** Weeks since the last deliberately easy week. */
   weeksSinceDeload: number
   /** True during the seven-day block started by the latest deload session. */
@@ -841,6 +873,17 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const daysSinceMaxTest = lastTest ? Math.round((now - lastTest.startedAt) / DAY) : null
   const lastSkippedRetest = [...sessions].reverse().find((s) => s.retestOffered === true && !measuredMaxIn(s))
   const daysSinceSkippedRetest = lastSkippedRetest ? Math.round((now - lastSkippedRetest.startedAt) / DAY) : null
+  // The latest attempt at this step's bar, and whether that session showed the
+  // bar. Set logs keep no role, so the target says which holds were attempts.
+  // Counted in calendar days: an attempt on Monday evening is a week old on
+  // the next Monday morning, which is when an athlete on fixed weekdays trains.
+  const lastBarAttempt = [...sessions]
+    .reverse()
+    .find((s) => s.stepId === state.stepId && s.sets.some((set) => isBarAttempt(set, state.stepId)))
+  const daysSinceFailedBarAttempt =
+    lastBarAttempt && qualifyingProgress({ sessions: [lastBarAttempt] }, state.stepId).value < step.unlockSec
+      ? daysBetween(lastBarAttempt.startedAt)
+      : null
 
   // A deload session is one named for it (the Deload Flow template) or one the
   // coach scheduled as part of an easy week. Its own were named for their
@@ -900,6 +943,30 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const timeline = readinessTimeline({ ...state, sessions }, now, freshCheckIn)
   const lastCheckIn = timeline[timeline.length - 1]
   const daysSinceCheckIn = freshCheckIn ? 0 : lastCheckIn ? Math.round((now - lastCheckIn.at) / DAY) : null
+
+  // ——— The first loaded session after a pain report ———
+  //
+  // "Good" after pain says the joint is quiet at rest; it does not say it has
+  // been loaded since. Read from the most recent pain report rather than only
+  // the answer before today's, so answering the check-in twice (a discarded
+  // session in between) does not make the first session back an ordinary one.
+  // Loaded means main or strength work that was actually done — the pain-safe
+  // session has neither — in a session begun after the report: the session a
+  // report was made in the middle of is not a session back from it.
+  const lastPain = [...timeline].reverse().find((answer) => answer.joints === 'pain')
+  const loadedSince = (from: number) =>
+    sessions.some(
+      (s) =>
+        s.startedAt > from &&
+        s.sets.some((set) => (set.section === 'main' || set.section === 'strength') && set.value > 0),
+    )
+  const returningFromPain: Signals['returningFromPain'] =
+    lastCheckIn?.joints === 'good' &&
+    lastPain !== undefined &&
+    daysBetween(lastPain.at) <= PAIN_RETURN_WINDOW_DAYS &&
+    !loadedSince(lastPain.at)
+      ? { daysSincePain: daysBetween(lastPain.at) }
+      : null
 
   // ——— A complaint that is not settling ———
   //
@@ -985,6 +1052,8 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     sessionsPerWeek,
     daysSinceMaxTest,
     daysSinceSkippedRetest,
+    daysSinceFailedBarAttempt,
+    returningFromPain,
     weeksSinceDeload,
     deloadActive,
     totalSessions: sessions.length,

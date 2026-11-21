@@ -688,6 +688,16 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
   seconds, then stopped every working set at its six-second call, had "shown
   six" — next-shape practice opened for two sessions and shut until the first
   re-test.
+- **A bar attempt that fell short waits a week** (`BAR_ATTEMPT_SPACING_DAYS`,
+  `signals.daysSinceFailedBarAttempt`): re-queued every session, a 30s
+  wall-plank attempt ran five sessions running at 27–28s, taking the one
+  maximal effort each time. A re-test is a bar attempt too. The app's own
+  rule, and the decision line says so.
+- **The first loaded session after a pain report is a step back**
+  (`signals.returningFromPain`, 14 days): never a push day, target factor ≤ 1,
+  volume ≤ 0.85, `challengeAllowed` false — whatever today's check-in says.
+  One loaded session later the plan equals a never-hurt control. Both rules
+  are pinned by decision in `returnRails.test.ts`.
 - **The athlete's own week** (`lib/weekPlan.ts`, `settings.weekPlan`,
   `SET_WEEK_PLAN`). Each weekday can be given up to three skills in order, or
   marked rest; a day left out is the coach's. `todaysLineup` trains an

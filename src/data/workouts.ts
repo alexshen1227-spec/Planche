@@ -2106,6 +2106,9 @@ export function challengeBlockedReason(plan: CoachPlan): string | null {
     return 'a joint report has not been updated'
   }
   if (plan.loadPermission === 'reduced') return 'today’s readiness calls for reduced loading'
+  // The latest answer was "good", so none of the joint reasons above apply:
+  // what holds maximal work back is the first loaded session after the report.
+  if (plan.signals.returningFromPain) return 'this is your first session back after a pain report'
   if (plan.signals.daysSinceLoaded === 0) return 'you already trained hard today'
   if (plan.dayType === 'deload') return 'this is a scheduled easy week'
   if (plan.dayType === 'technique' || plan.dayType === 'recovery') return 'today is set up as a lighter day'
@@ -2295,6 +2298,17 @@ export function finalizeFromPlan(
   const trains: LineupEntry[] =
     isPainSafe(workout) || workout.kind === 'template' ? [] : ((workout.lineup as LineupEntry[] | undefined) ?? lineup.slice(0, 1))
   return { workout: { ...recorded, request, ...(all.length ? { adjustments: all } : {}) }, plan, lineup: trains }
+}
+
+/**
+ * Whether a request is the plain recommended session: nothing chosen, no time
+ * budget. Only then may a screen show the session it already built for
+ * "today" instead of building the request. Train's preview once did that for
+ * every `auto` request without `minutes`, so "Choose today's skills" previewed
+ * the recommended session and Start then ran a different one.
+ */
+export function isRecommendedRequest(request: WorkoutRequest): boolean {
+  return request.source === 'auto' && !request.minutes && !request.skills?.length
 }
 
 /** The no-load session a pain day gets, whatever was asked for. */

@@ -825,6 +825,22 @@ function smartRest(state: AppState, restFactor: number, sig: Signals): number {
 }
 
 /**
+ * Days a failed attempt at the bar is given before another is queued.
+ *
+ * This app's own rule — a design heuristic, not evidence: no source measured
+ * how far apart maximal attempts at a hold should sit. It exists because the
+ * attempt was re-queued at every rested session: in a simulated season a 30s
+ * wall-plank attempt ran in five consecutive sessions, 27–28s each time, and
+ * took that session's single maximal effort every time.
+ */
+export const BAR_ATTEMPT_SPACING_DAYS = 7
+
+/** "earlier today", "yesterday" or "N days ago", for a whole number of calendar days. */
+function daysAgoWords(days: number): string {
+  return days <= 0 ? 'earlier today' : days === 1 ? 'yesterday' : `${days} days ago`
+}
+
+/**
  * The full session plan: bandit choice for stimulus shape, signal-driven
  * adjustments, then safety rails that always get the last word.
  */
@@ -1532,6 +1548,38 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   }
 
+  // ——— The first loaded session after pain steps back on purpose ———
+  //
+  // "All good" at the check-in after a pain report used to hand back an
+  // ordinary day at once: a push day, a max test and the minimum dose, under
+  // "Everything looks steady". The answer says the joint is quiet at rest, not
+  // that it has been loaded since. This is the app's cautious rule, not a
+  // fact about tissue — nothing in the ledger says how a first session back
+  // should be dosed — and the copy says so. It lasts one loaded session: the
+  // signal clears as soon as one is logged. A day that is already off loading
+  // (a complaint that keeps coming back) is left to the rail that made it so.
+  const firstSessionBack = sig.returningFromPain !== null && loadPermission !== 'none'
+  if (firstSessionBack && sig.returningFromPain) {
+    volumeFactor = Math.min(volumeFactor, 0.85)
+    targetFactor = Math.min(targetFactor, 1)
+    queueUnlockAttempt = false
+    suggestMaxTest = false
+    if (strategy === 'intensity') strategy = 'balanced'
+    const buildDay = dayType === 'push' || dayType === 'build'
+    if (buildDay) {
+      dayType = 'build'
+      dayReason = 'Build day — your first session back after a pain report, so nothing maximal today.'
+    }
+    decisions.push({
+      text: `First session back after the pain you reported ${daysAgoWords(sig.returningFromPain.daysSincePain)}: ${
+        buildDay ? 'a build day with nothing maximal and a little less volume' : 'nothing maximal and a little less volume, on top of today’s lighter day'
+      }. That is this app’s cautious rule, not a fact about your joint. If it stays quiet through this one, the next session is back to normal.`,
+      kind: 'warn',
+      // It describes loaded work, so a day the rails take loading off drops it.
+      source: 'loaded-session',
+    })
+  }
+
   // ——— Low energy: ordinary work, no maximal effort ———
   //
   // Tired used to trim volume and nothing else, so a tired athlete who had
@@ -1690,7 +1738,13 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   }
 
   const shape = STRATEGY_BY_ID[strategy]
-  const finalTarget = clampTo(targetFactor * shape.targetFactor, LIMITS.targetFactor)
+  // The first session back after pain never asks for more than the base
+  // target, whatever shape the strategy has: the rail above capped the day's
+  // factor, and a strategy that lengthens holds must not undo that here.
+  const finalTarget = clampTo(
+    firstSessionBack ? Math.min(1, targetFactor * shape.targetFactor) : targetFactor * shape.targetFactor,
+    LIMITS.targetFactor,
+  )
 
   // Explain the target only in terms of what actually happened to it — in the
   // whole seconds the session shows. From the factor alone it said "nudging
@@ -1813,11 +1867,22 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const challengeAllowed =
     loadPermission === 'normal' &&
     !tiredToday &&
+    // Nothing maximal in the first loaded session after a pain report: no max
+    // test, no next-shape attempts, no minimum dose.
+    !firstSessionBack &&
     dayType !== 'technique' &&
     dayType !== 'deload' &&
     dayType !== 'recovery'
   queueUnlockAttempt = queueUnlockAttempt && challengeAllowed
   suggestMaxTest = suggestMaxTest && challengeAllowed
+  // A failed attempt at the bar is not repeated at every session. Decided
+  // here, after every rail, so the line below is only written on a day an
+  // attempt would otherwise have been queued — and so the session's one
+  // maximal effort goes to something else (next-shape attempts, or another
+  // skill's turn) instead of the same attempt, days apart, at the same hold.
+  const failedAttemptDays = sig.daysSinceFailedBarAttempt
+  const attemptWaits = queueUnlockAttempt && failedAttemptDays !== null && failedAttemptDays < BAR_ATTEMPT_SPACING_DAYS
+  if (attemptWaits) queueUnlockAttempt = false
   // A due re-test used to be a suggestion beside a separate Max test button.
   // An athlete who stops every set at its call — as the hold screen asks —
   // logs only lower bounds, so their target sat on the last measured number
@@ -1837,6 +1902,19 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     decisions.push({
       text: `You're within reach of the ${step.unlockSec}s bar — ${stepAfter(state.stepId) ? 'an unlock attempt' : 'an attempt at it'} is queued first, while you're freshest.`,
       kind: 'good',
+    })
+  } else if (attemptWaits && failedAttemptDays !== null) {
+    const left = BAR_ATTEMPT_SPACING_DAYS - failedAttemptDays
+    decisions.push({
+      // "No verified hold reached it" rather than "fell short": an attempt
+      // that reached the time unfilmed, or that the form check did not pass,
+      // waits the same way and did not fall short on the stopwatch.
+      text: `Your last attempt at the ${step.unlockSec}s bar was ${daysAgoWords(failedAttemptDays)} and no verified hold reached it, so the next attempt waits a week from it — ${left} more day${
+        left === 1 ? '' : 's'
+      }. That spacing is this app’s own rule, not a measured interval: an attempt measures the hold, and the working sets between attempts are what is meant to build it.`,
+      kind: 'info',
+      // About a maximal effort, so it goes with the others on a day the rails take loading off.
+      source: 'loaded-session',
     })
   }
 
