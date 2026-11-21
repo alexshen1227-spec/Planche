@@ -119,6 +119,55 @@ export function nextPlannedDay(state: AppState, now = Date.now()): { weekday: We
   return null
 }
 
+export interface PlanCoverage {
+  /** Per skill the athlete trains: days a week it has a full part (first or second on a day), and days it has a short dose (third). */
+  skills: { skill: SkillId; full: number; short: number }[]
+  trainingDays: number
+  restDays: number
+  /** Days left to the coach — who trains on them is not fixed, so they are not counted for any skill. */
+  openDays: number
+}
+
+/** How the plan, as written, spreads the athlete's skills over the week. */
+export function planCoverage(stateIn: AppState, plan: WeekPlan | undefined = wholeState(stateIn).settings.weekPlan): PlanCoverage {
+  const state = wholeState(stateIn)
+  const days = WEEKDAYS.map((day) => plan?.[day])
+  const count = (skill: SkillId, positions: (index: number) => boolean) =>
+    days.filter((day) => Array.isArray(day) && day.some((entry, index) => entry === skill && positions(index))).length
+  return {
+    skills: activeSkills(state).map((skill) => ({ skill, full: count(skill, (i) => i < 2), short: count(skill, (i) => i >= 2) })),
+    trainingDays: days.filter((day) => Array.isArray(day) && day.length > 0).length,
+    restDays: days.filter((day) => day === 'rest').length,
+    openDays: days.filter((day) => day === undefined || (Array.isArray(day) && day.length === 0)).length,
+  }
+}
+
+/**
+ * What is worth saying about a plan before it is saved — only when the plan
+ * itself settles the question, which it does not while any day is left to the
+ * coach. Twice a week or more is what coaches commonly ask of a skill being
+ * built (each skill's own page says so); it is convention, no trial has
+ * compared weekly frequencies for these holds, and the note says that.
+ */
+export function coverageNotes(state: AppState, plan: WeekPlan | undefined): string[] {
+  const coverage = planCoverage(state, plan)
+  if (coverage.trainingDays === 0 || coverage.openDays > 0) return []
+  const notes: string[] = []
+  for (const { skill, full, short } of coverage.skills) {
+    const name = SKILLS[skill].name
+    if (full === 0 && short === 0) {
+      notes.push(`${name} is in none of your days, so with this plan it is not trained at all. Add it to a day, or leave a day to the coach.`)
+    } else if (full === 0) {
+      notes.push(`${name} only ever gets a short dose in this plan — enough to keep a position, not to build one.`)
+    } else if (full === 1) {
+      notes.push(
+        `${name} has one full day a week in this plan. Coaches commonly train a skill they are building two or three times a week — a convention, not something a trial has tested for these holds.`,
+      )
+    }
+  }
+  return notes
+}
+
 export interface WeekOutlineDay {
   weekday: Weekday
   /** Local midnight that starts the day. */

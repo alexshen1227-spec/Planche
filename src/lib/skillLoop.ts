@@ -26,7 +26,6 @@ import { initialState, reducer } from './store'
  * was trained — so a skill the line-up starves visibly stops moving.
  */
 
-const DAY = 86_400_000
 
 const ALL_KIT: EquipmentId[] = ['floor', 'parallettes', 'pullup-bar', 'wall', 'pole', 'band', 'box', 'dip-bars']
 
@@ -43,6 +42,10 @@ export interface SkillLoopOptions {
   nextShapeShare?: number
   /** Called with each session's time before it is planned, for a fake clock. */
   setClock?: (at: number) => void
+  /** Weekdays trained on (0 is Sunday). Monday, Wednesday and Friday when left out. */
+  trainOn?: number[]
+  /** The athlete's own week plan, when the season should follow one. */
+  weekPlan?: unknown
 }
 
 export interface SkillLoopDay {
@@ -191,6 +194,7 @@ export function runSkillLoop(options: SkillLoopOptions): { days: SkillLoopDay[];
   const gain = options.gainPerSession ?? 0.3
   const nextShapeShare = options.nextShapeShare ?? 0.8
   let state = startingState(options)
+  if (options.weekPlan !== undefined) state = reducer(state, { type: 'SET_WEEK_PLAN', plan: options.weekPlan })
   // What the athlete can truly hold, per movement. A shape they are placed on
   // starts comfortably above its opening dose; a later one below it.
   const capacity = new Map<string, number>()
@@ -203,8 +207,16 @@ export function runSkillLoop(options: SkillLoopOptions): { days: SkillLoopDay[];
     return capacity.get(exerciseId)!
   }
   const days: SkillLoopDay[] = []
-  // Mondays, Wednesdays and Fridays at 18:00, local time.
+  // Mondays, Wednesdays and Fridays at 18:00, local time — or the days asked for.
+  const trainOn = options.trainOn?.length ? options.trainOn : [1, 3, 5]
+  const nextDay = (from: number) => {
+    const d = new Date(from)
+    do d.setDate(d.getDate() + 1)
+    while (!trainOn.includes(d.getDay()))
+    return d.getTime()
+  }
   let at = new Date(2026, 0, 5, 18, 0).getTime()
+  if (!trainOn.includes(new Date(at).getDay())) at = nextDay(at)
   for (let i = 0; i < options.sessions; i++) {
     options.setClock?.(at)
     const plan = planForToday(state, at)
@@ -225,8 +237,7 @@ export function runSkillLoop(options: SkillLoopOptions): { days: SkillLoopDay[];
       const owner = skillOfExercise(id)
       if (owner && trainedSkills.has(owner)) capacity.set(id, seconds + gain)
     }
-    const weekday = new Date(at).getDay()
-    at += (weekday === 5 ? 3 : 2) * DAY
+    at = nextDay(at)
   }
   return { days, state }
 }

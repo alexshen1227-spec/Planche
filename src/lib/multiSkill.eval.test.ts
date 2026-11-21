@@ -50,6 +50,17 @@ beforeAll(() => {
   run('five', ['planche', 'frontlever', 'handstand', 'ninety', 'flag'], 45, 60)
   run('four', ['planche', 'frontlever', 'flag', 'handstand'], 30)
   run('short', ['planche', 'frontlever'], 30, 20)
+  // The week the plan was asked for: a lever day, a planche day, and one for both.
+  const planned = runSkillLoop({
+    skills: ['planche', 'frontlever'],
+    steps: { planche: 'tuck', frontlever: 'fl-tuck' },
+    sessions: 36,
+    sessionMinutes: 45,
+    trainOn: [6, 0, 3],
+    weekPlan: { 6: ['frontlever'], 0: ['planche'], 3: ['planche', 'frontlever'] },
+    setClock: (at) => vi.setSystemTime(at),
+  })
+  seasons.planned = { ...planned, skills: ['planche', 'frontlever'], minutes: 45 }
 }, 600_000)
 
 afterAll(() => vi.useRealTimers())
@@ -332,6 +343,67 @@ describe('what a part of a mixed session is made of', () => {
     const parked = new Date(2031, 6, 1, 9, 0).getTime()
     const adrift = runSkillLoop({ ...options, setClock: () => vi.setSystemTime(parked) })
     expect(shape(adrift.days)).toEqual(shape(onTime.days))
+  })
+})
+
+describe('a season on the athlete’s own week', () => {
+  const weekday = (day: SkillLoopDay) => new Date(day.at).getDay()
+
+  it('trains each day as the plan says, for twelve weeks', () => {
+    const { days } = seasons.planned
+    for (const [i, day] of days.entries()) {
+      const where = `session ${i + 1}`
+      const lineup = day.lineup.map((entry) => `${entry.skill}:${entry.role}`)
+      if (weekday(day) === 6) expect(lineup, where).toEqual(['frontlever:lead'])
+      else if (weekday(day) === 0) expect(lineup, where).toEqual(['planche:lead'])
+      else expect(lineup, where).toEqual(['planche:lead', 'frontlever:partner'])
+      expect(day.plan.skill, where).toBe(day.lineup[0].skill)
+      expect(day.workout.minutes, where).toBeLessThanOrEqual(46)
+      expect(day.workout.blocks.filter((b) => b.role === 'attempt').length, where).toBeLessThanOrEqual(1)
+      // A lever day holds no planche, and a planche day no lever.
+      const others = day.workout.blocks.filter((b) => {
+        const owner = b.skill ?? skillOfExercise(b.exerciseId)
+        return owner !== undefined && !day.lineup.some((entry) => entry.skill === owner)
+      })
+      expect(others.map((b) => b.exerciseId), where).toEqual([])
+      for (const text of wordsOf(day)) expect(text, where).not.toMatch(/undefined|NaN|\[object/)
+    }
+  })
+
+  it('gives a dedicated day the whole session: the hold, its moving version and its support work', () => {
+    const { days } = seasons.planned
+    const dedicated = days.filter((day) => day.lineup.length === 1 && (day.plan.dayType === 'push' || day.plan.dayType === 'build'))
+    expect(dedicated.length).toBeGreaterThan(15)
+    for (const day of dedicated) {
+      const roles = new Set(day.workout.blocks.map((b) => b.role))
+      expect(roles.has('skill')).toBe(true)
+      expect(roles.has('press')).toBe(true)
+      expect(roles.has('straight-arm') || roles.has('core')).toBe(true)
+    }
+  })
+
+  it('does not write off the day after the other skill’s day as an easy one', () => {
+    // Sunday's planche follows Saturday's lever every week. A pull the day
+    // before a push is ordinary practice, and nothing here turns the planche
+    // day — half this athlete's planche work — into a technique day for it.
+    const { days } = seasons.planned
+    const sundays = days.filter((day) => weekday(day) === 0)
+    const loaded = sundays.filter((day) => day.plan.dayType === 'push' || day.plan.dayType === 'build')
+    expect(loaded.length / sundays.length).toBeGreaterThanOrEqual(0.8)
+    for (const day of loaded) expect(day.plan.challengeAllowed).toBe(true)
+  })
+
+  it('measures and moves both skills', () => {
+    const { days, state } = seasons.planned
+    for (const skill of ['planche', 'frontlever'] as const) {
+      const efforts = days.filter((day) => day.workout.blocks.some((b) => b.role === 'attempt' && (b.skill ?? skillOfExercise(b.exerciseId)) === skill))
+      expect(efforts.length, `${skill} was never measured at its max`).toBeGreaterThanOrEqual(2)
+      const nextShape = days.filter((day) => day.workout.blocks.some((b) => b.role === 'bridge' && b.section === 'main' && (b.skill ?? skillOfExercise(b.exerciseId)) === skill))
+      expect(nextShape.length, `${skill} never practised its next shape`).toBeGreaterThanOrEqual(2)
+    }
+    // Twelve weeks, steadily stronger: each road is at least a step further on.
+    expect(STEP_BY_ID[trackOf(state, 'frontlever').stepId].order).toBeGreaterThan(STEP_BY_ID['fl-tuck'].order)
+    expect(STEP_BY_ID[trackOf(state, 'planche').stepId].order).toBeGreaterThan(STEP_BY_ID.tuck.order)
   })
 })
 

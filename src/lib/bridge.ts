@@ -63,7 +63,7 @@ export function capacityOn(state: AppState, stepId: StepId): number | undefined 
   const told = toldHold(state, stepId)
   if (newest) {
     const shown = Math.max(...recent, measuredLevel(series.points, newest.at) ?? 0)
-    return series.points.length < SETTLED_SESSIONS && told !== undefined ? Math.max(shown, told) : shown
+    return !settled(series.points) && told !== undefined ? Math.max(shown, told) : shown
   }
   const timerBest = state.prs[step.keyExerciseId]?.value
   if (timerBest !== undefined && timerBest > 0) return timerBest
@@ -77,8 +77,21 @@ export function capacityOn(state: AppState, stepId: StepId): number | undefined 
  * handstand the athlete had said they hold for twenty — once became "the most
  * they have shown", and the next session asked for five sets of one second.
  * Three sessions that agree outvote the answer; one does not.
+ *
+ * And holds stopped at their calls never outvote it at all. They are floors —
+ * "at least this much" — and say nothing against a longer hold the athlete
+ * told us about: an athlete who said ten seconds and stopped every working set
+ * at its six-second call had "shown six", so next-shape practice opened for
+ * two sessions and then shut until the first re-test, weeks later. The answer
+ * stands until something *measures* the hold: a set that fell short of its
+ * target or went past it, a re-test, an attempt.
  */
 export const SETTLED_SESSIONS = 3
+
+/** Whether a step's logged sessions are enough, on their own, to say what the athlete can hold. */
+export function settled(points: readonly { cappedAt?: number }[]): boolean {
+  return points.length >= SETTLED_SESSIONS && points.some((point) => point.cappedAt === undefined)
+}
 
 /** What the athlete said they hold on a step's key hold at placement, when they said they can. */
 export function toldHold(state: Pick<AppState, 'assessment'>, stepId: StepId): number | undefined {

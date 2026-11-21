@@ -6,8 +6,10 @@ import { lineupFor, todaysLineup } from './lineup'
 import { startingState } from './skillLoop'
 import { normalizeState, reducer } from './store'
 import {
+  coverageNotes,
   describeDay,
   nextPlannedDay,
+  planCoverage,
   plannedTrainingDays,
   readDay,
   sanitizeWeekPlan,
@@ -166,6 +168,34 @@ describe('the athlete’s own week', () => {
     const raw = JSON.parse(JSON.stringify(four))
     raw.settings.weekPlan = { 6: ['frontlever', 'nonsense'], 8: ['planche'], 0: 'sleep' }
     expect(normalizeState(raw).settings.weekPlan).toEqual({ 6: ['frontlever'] })
+  })
+
+  it('says how a plan spreads the skills, only when the plan itself settles it', () => {
+    const state = startingState({ skills: ['planche', 'frontlever', 'handstand'] })
+    // The asked-for week leaves four days to the coach: nothing to say yet.
+    expect(planCoverage(state, PLAN)).toEqual({
+      skills: [
+        { skill: 'planche', full: 2, short: 0 },
+        { skill: 'frontlever', full: 2, short: 0 },
+        { skill: 'handstand', full: 0, short: 0 },
+      ],
+      trainingDays: 3,
+      restDays: 0,
+      openDays: 4,
+    })
+    expect(coverageNotes(state, PLAN)).toEqual([])
+    expect(coverageNotes(state, undefined)).toEqual([])
+    // The same week with every other day a rest day is the whole week.
+    const whole: WeekPlan = { ...PLAN, 1: 'rest', 2: 'rest', 4: 'rest', 5: 'rest' }
+    const notes = coverageNotes(state, whole)
+    expect(notes).toHaveLength(1)
+    expect(notes[0]).toMatch(/Handstand push-up is in none of your days/)
+    // Once a week, and third on the list, are each said — as convention, not as fact.
+    const thin: WeekPlan = { 1: 'rest', 2: 'rest', 4: 'rest', 5: 'rest', 6: 'rest', 0: ['planche', 'frontlever', 'handstand'], 3: ['planche'] }
+    const said = coverageNotes(state, thin)
+    expect(said.find((note) => note.startsWith('Planche'))).toBeUndefined()
+    expect(said.find((note) => note.startsWith('Front lever'))).toMatch(/one full day a week.*a convention, not something a trial has tested/)
+    expect(said.find((note) => note.startsWith('Handstand'))).toMatch(/only ever gets a short dose/)
   })
 
   it('lays the week out Monday to Sunday with what was planned and what was done', () => {

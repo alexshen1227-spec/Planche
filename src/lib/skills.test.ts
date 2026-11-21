@@ -20,7 +20,7 @@ import {
 import { debriefSession } from './coach'
 import { niggleRegionsToday, painReportedIn } from './signals'
 import { autoFromResult, issuesFor, mergeHumanReview } from '../components/FormCheckRow'
-import { capacityOn } from './bridge'
+import { bridgeStatus, capacityOn } from './bridge'
 import { applySession } from './engine'
 import { figureBounds, figureParts } from './figure'
 import { filmedExercises, filmedExercisesFor, readFormTrends } from './formTrend'
@@ -1488,6 +1488,29 @@ describe('the line-up', () => {
     for (const day of [-6, -3]) three = applySession(three, short(T0 + day * DAY)).next
     expect(targetOf(three), 'after three short sessions').toBeLessThanOrEqual(2)
     expect(capacityOn(skillView(three, 'handstand'), 'hs-wall')).toBe(2)
+  })
+
+  it('does not let holds stopped at their calls outvote what the athlete said they can hold', () => {
+    // Said twelve seconds of tuck lever; every working set since stopped at its
+    // seven-second call. Those are floors. Read as "the most they have shown",
+    // they shut next-shape practice after two sessions until the first re-test.
+    const base = startingState({ skills: ['frontlever'], steps: { frontlever: 'fl-tuck' } })
+    const assessment = { at: T0 - DAY, answers: { 'tuck-front-lever': 12 }, placedStepId: 'fl-tuck' as const, confidence: 'good' as const, gapIds: [] }
+    let state: AppState = { ...base, tracks: { ...base.tracks, frontlever: { ...trackOf(base, 'frontlever'), assessment } } }
+    const view = () => skillView(state, 'frontlever')
+    expect(capacityOn(view(), 'fl-tuck')).toBe(12)
+    expect(bridgeStatus(view(), 'fl-tuck')?.open).toBe(true)
+    for (let i = 0; i < 5; i++) {
+      const at = T0 + i * 2 * DAY
+      const calls = [1, 2, 3].map((n) => ({ ...verifiedHold('tuck-front-lever', 7, at + n * 60_000), endReason: undefined, calledAtTarget: true }))
+      state = applySession(state, sessionOf(view(), at, calls, `call-${i}`)).next
+      expect(capacityOn(view(), 'fl-tuck'), `after ${i + 1} sessions stopped at the call`).toBe(12)
+      expect(bridgeStatus(view(), 'fl-tuck')?.open, `after ${i + 1} sessions`).toBe(true)
+    }
+    // A hold that fell short is a measurement, and three sessions in, it is the level.
+    const at = T0 + 12 * DAY
+    state = applySession(state, sessionOf(view(), at, [{ ...verifiedHold('tuck-front-lever', 4, at + 60_000), target: 7 }], 'short')).next
+    expect(capacityOn(view(), 'fl-tuck')).toBeLessThan(12)
   })
 
   it('steers the second part and the short doses round a joint flagged today', () => {
