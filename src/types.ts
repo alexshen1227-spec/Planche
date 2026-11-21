@@ -217,6 +217,12 @@ export interface AutoForm {
    */
   unseen?: string[]
   /**
+   * Criteria the camera did judge, but only coarsely (judge v6+). `elbows` in
+   * a hang, a handstand or a flag: a large bend would have been named, a small
+   * one cannot be seen. Not a pass for them — the athlete confirms lockout.
+   */
+  coarse?: string[]
+  /**
    * Seconds of the hold the analysis actually covered. When the credited
    * value is corrected later (the walk-back tap), evidence that only covered
    * the old, shorter window must not be read as covering the new one.
@@ -263,6 +269,12 @@ export interface FormCheck {
    * a camera that lost the extended leg has not verified a one-leg planche.
    */
   variantConfirmed?: boolean
+  /**
+   * The athlete watched the replay and confirmed the elbows stayed locked, for
+   * a hold where the camera can only see a large bend (a hang, a handstand, a
+   * flag — `requiresArmsConfirmation`). Needed for progression credit there.
+   */
+  armsConfirmed?: boolean
   issues?: FormIssue[]
   /** Key of the recorded clip in the clip store, when one was kept. */
   clipKey?: string

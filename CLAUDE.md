@@ -233,6 +233,16 @@ more certain than its basis.
    arms (≥120° from the picture's down = upside down), then `turnUpright`
    rotates the *measured* landmarks; the replay track stays as recorded. The arm
    direction alone cannot decide this — synthetic overlap was 1°–97°.
+   That is the *support* rule only. A hang's trunk is the thing being judged,
+   so it cannot be the reference: the trunk rule turned a dead hang a quarter
+   and certified it as a level lever, score 100 (first independent review).
+   `readFloor` (judge v6) uses the plumb line from the hands to the centre of
+   mass for a hang — weight above the hands is refused as not a hang — and
+   judges a handstand only in an upright picture (arms within
+   `INVERTED_ARM_SLACK_DEG` of picture-down), refusing anything else, because
+   joint for joint a handstand turned over is someone standing with their arms
+   up. Synthetic hangs are *balanced* (`SynthParams.balanced`): the wrist sits
+   over the centre of mass, or the skeleton is one nothing could hang.
 9. **"Clean" in the UI means camera-verified clean** (`verifiedCleanRatio`):
    `cleanRatio` is time before a sustained breakdown and stays the training-dose
    number (`trainingSetValue` caps on it — zeroing it would turn a 7s soft-elbow
@@ -666,14 +676,22 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
   is worth filming — the current rung of an active skill, in real work — and a
   count raised after a review loses the review. Do not add a count without the
   sampling study the ledger names.
-- **Judge postures** (`Posture = support | hang | inverted | flag`, judge v5).
+- **Judge postures** (`Posture = support | hang | inverted | flag`, judge v6).
   The view gate, the floor rule and the elbow reading are per posture. A
   hanging, inverted or front-on elbow is read coarsely (`coarseElbow`,
   `POSTURE_TOLERANCE`, measured on real photos: hang 36° / 44° momentary,
-  inverted 30° / 38°, flag 24° / 32°). The flag is judged front-on
+  inverted 30° / 38°, flag 24° / 32°). **A coarse reading is not a pass for
+  the arms**: the result carries `coarse: ['elbows']` (persisted on
+  `AutoForm`, listed in `sanitizeAuto`), shows no "Straight arms" subscore
+  unless a bend was named, calls the clean window "Shape held" rather than
+  "Verified clean" (`cleanEvidence(...).armsUnmeasured`), and progression asks
+  the athlete to confirm the lockout on the replay (`FormCheck.armsConfirmed`,
+  `requiresArmsConfirmation` — one button with the flight confirmation,
+  `athleteConfirmationLabel`). A test keeps `ARMS_PROMPT` in step with the
+  coarse profiles. The flag is judged front-on
   (`MIN_FRONT_VIEW_RATIO`–`MAX_FRONT_VIEW_RATIO`, an oblique shot refused) and
-  its floor comes from the wrist-to-wrist line; an inverted floor comes from
-  the arm direction. `shoulderOpeningDeg` and `tiltDeg` are the handstand's and
+  its floor comes from the wrist-to-wrist line; a hang's from the plumb line
+  and a handstand only upright (invariant 8). `shoulderOpeningDeg` and `tiltDeg` are the handstand's and
   flag's own criteria. Review-only holds (`isReviewOnly`: frog stand, active
   hang, supported and vertical flag) carry `noChecks` profiles, and a test
   keeps the two lists in step.
@@ -737,4 +755,5 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
   strip them. `PoseFormResult.track`/`explain` are transient — never persist.
 - Progression credit demands: athlete-confirmed Clean + camera pass (no
   `arms` flag, ≤1 secondary flag, elbows seen) + flight confirmation on true
-  flight skills. Don't weaken these to make a test pass.
+  flight skills + the athlete's lockout confirmation wherever the elbows are
+  read coarsely. Don't weaken these to make a test pass.

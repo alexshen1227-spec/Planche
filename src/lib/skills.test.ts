@@ -10,7 +10,7 @@ import { buildSampleState } from '../data/sample'
 import { GUIDE_GROUPS, GUIDES, skillGuide } from '../data/learn'
 import { BASIS_LABEL, TIPS, tipOfTheDay } from '../data/tips'
 import { finalizeWorkoutWithPlan, planForToday, TEMPLATE_SKILLS, TEMPLATES, templatesFor } from '../data/workouts'
-import { issuesFor } from '../components/FormCheckRow'
+import { autoFromResult, issuesFor, mergeHumanReview } from '../components/FormCheckRow'
 import { applySession } from './engine'
 import { figureBounds, figureParts } from './figure'
 import { filmedExercises, filmedExercisesFor, readFormTrends } from './formTrend'
@@ -27,9 +27,23 @@ import {
   placementRecord,
   placeSkill,
 } from './placement'
-import { POSE_PROFILES } from './poseForm'
-import { IDEAL } from './poseSynth'
-import { FLIGHT_PROMPT, isReviewOnly, requiresFlightConfirmation, REVIEW_PROMPT, VARIANT_CRITICAL } from './progression'
+import { coarseElbow, judgeTrackedFrames, POSE_PROFILES } from './poseForm'
+import { IDEAL, synthesizeClip } from './poseSynth'
+import {
+  ARMS_PROMPT,
+  athleteConfirmationLabel,
+  athleteConfirmationPrompt,
+  athleteConfirmed,
+  cleanEvidence,
+  FLIGHT_PROMPT,
+  isQualifyingSet,
+  isReviewOnly,
+  passesProgressionFormCheck,
+  requiresArmsConfirmation,
+  requiresFlightConfirmation,
+  REVIEW_PROMPT,
+  VARIANT_CRITICAL,
+} from './progression'
 import {
   ladderOfExercise,
   ladderStatus,
@@ -76,6 +90,7 @@ function verifiedHold(exerciseId: string, sec: number, at: number, extra: Partia
       rating: 'clean',
       confirmed: true,
       flightConfirmed: true,
+      armsConfirmed: true,
       visualReviewPassed: true,
       auto: { issues: [], confidence: 0.9, score: 92, cleanSeconds: sec, cleanRatio: 1 },
     },
@@ -209,6 +224,124 @@ describe('what the camera can and cannot grade, per hold', () => {
       expect(EXERCISE_BY_ID[id], id).toBeDefined()
       expect(critical.criteria.length && critical.prompt.length, id).toBeGreaterThan(0)
     }
+  })
+
+  it('asks the athlete for the lockout wherever the camera can only see a large bend', () => {
+    // One rule, two lists: every graded straight-arm hold the judge reads
+    // coarsely asks for the confirmation, and nothing else does.
+    const coarse = Object.entries(POSE_PROFILES)
+      .filter(([, profile]) => !profile.noChecks && profile.minElbowDeg !== undefined && coarseElbow(profile))
+      .map(([id]) => id)
+      .sort()
+    expect(Object.keys(ARMS_PROMPT).sort()).toEqual(coarse)
+    expect(coarse.length).toBeGreaterThanOrEqual(12)
+    for (const id of coarse) {
+      expect(EXERCISE_BY_ID[id], id).toBeDefined()
+      expect(requiresArmsConfirmation(id), id).toBe(true)
+      expect(athleteConfirmationPrompt(id), id).toMatch(/elbow|arms/i)
+      expect(athleteConfirmationLabel(id), id).toMatch(/elbows|arms/i)
+    }
+    // The planche family and the 90° holds are read side-on on the hands, to
+    // within a few degrees: the camera's own word stands, as it always has.
+    for (const id of ['planche-lean', 'tuck-planche', 'full-planche', 'ninety-hold', 'elbow-lever', 'frog-stand']) {
+      expect(requiresArmsConfirmation(id), id).toBe(false)
+    }
+    expect(athleteConfirmationLabel('tuck-planche')).toBe('Feet stayed off the floor')
+    // One button says everything a hold needs said.
+    expect(athleteConfirmationLabel('front-lever')).toBe('Hung free, elbows locked')
+    expect(athleteConfirmationLabel('wall-handstand')).toBe('Elbows stayed locked')
+    expect(athleteConfirmationLabel('freestanding-handstand')).toBe('Clear of the wall, elbows locked')
+    expect(athleteConfirmationLabel('human-flag')).toBe('Hands only, both arms straight')
+  })
+
+  it('does not count a lever, a handstand or a flag on the camera alone', () => {
+    const at = T0
+    for (const id of ['tuck-front-lever', 'front-lever', 'wall-handstand', 'freestanding-handstand', 'tuck-flag', 'human-flag']) {
+      const full = verifiedHold(id, 12, at)
+      expect(isQualifyingSet(full, id), id).toBe(true)
+      // The camera passed it and the athlete called it clean and unsupported —
+      // and that used to be enough, on arms the camera cannot see bend.
+      const noArms = verifiedHold(id, 12, at)
+      delete noArms.form!.armsConfirmed
+      expect(passesProgressionFormCheck(noArms.form, id), id).toBe(false)
+      expect(isQualifyingSet(noArms, id), id).toBe(false)
+      expect(athleteConfirmed(noArms.form, id), id).toBe(false)
+      expect(athleteConfirmed(full.form, id), id).toBe(true)
+    }
+    // A support hold never needed it and still does not.
+    const planche = verifiedHold('tuck-planche', 12, at)
+    delete planche.form!.armsConfirmed
+    expect(isQualifyingSet(planche, 'tuck-planche')).toBe(true)
+
+    // The confirmation is the athlete's and only for a hold they called clean.
+    const confirmed = mergeHumanReview(undefined, { rating: 'clean', issues: [], flightConfirmed: true, armsConfirmed: true })
+    expect(confirmed.armsConfirmed).toBe(true)
+    const slipped = mergeHumanReview(confirmed, { rating: 'slipped', issues: ['sag'], flightConfirmed: true, armsConfirmed: true })
+    expect(slipped.armsConfirmed).toBeUndefined()
+    expect(slipped.flightConfirmed).toBeUndefined()
+  })
+
+  it('never words a coarse elbow reading as locked arms', () => {
+    for (const [id, bend] of [
+      ['front-lever', 28],
+      ['tuck-front-lever', 28],
+      ['wall-handstand', 24],
+      ['freestanding-handstand', 24],
+      ['human-flag', 16],
+    ] as const) {
+      // Arms bent well short of what the camera can call in this position.
+      const result = judgeTrackedFrames(synthesizeClip({ ...IDEAL[id], elbowBendDeg: bend, seed: 3, noise: 0.015 }), id)
+      expect(result.ok, id).toBe(true)
+      expect(result.issues, id).not.toContain('arms')
+      expect(result.coarse, id).toEqual(['elbows'])
+      const labels = (result.subscores ?? []).map((s) => s.label)
+      expect(labels, id).not.toContain('Straight arms')
+      expect(labels, id).not.toContain('Verified clean')
+      expect(labels, id).toContain('Shape held')
+      expect(result.good.join(' '), id).not.toMatch(/locked/i)
+      // Stored, and read back as a window that leaves the arms out.
+      const auto = autoFromResult(result, 5)
+      expect(auto.coarse, id).toEqual(['elbows'])
+      const evidence = cleanEvidence(auto)
+      expect(evidence.state, id).toBe('verified')
+      expect(evidence.state === 'verified' && evidence.armsUnmeasured, id).toBe(true)
+      // And it survives being saved and loaded.
+      const state = startingState({ skills: ['planche', 'frontlever', 'handstand', 'flag'] })
+      const saved = normalizeState(
+        JSON.parse(
+          JSON.stringify({
+            ...state,
+            sessions: [sessionOf(state, T0, [verifiedHold(id, 6, T0, { form: { rating: 'clean', confirmed: true, flightConfirmed: true, armsConfirmed: true, auto } })])],
+          }),
+        ),
+      )
+      expect(saved.sessions[0].sets[0].form?.auto?.coarse, id).toEqual(['elbows'])
+      expect(saved.sessions[0].sets[0].form?.armsConfirmed, id).toBe(true)
+    }
+    // A bend the camera can stand behind is still named, scored and blocks credit.
+    const bent = judgeTrackedFrames(synthesizeClip({ ...IDEAL['front-lever'], elbowBendDeg: 60, seed: 3, noise: 0.015 }), 'front-lever')
+    expect(bent.issues).toContain('arms')
+    const elbow = bent.subscores?.find((s) => s.key === 'elbow')
+    expect(elbow?.score ?? 100).toBeLessThan(85)
+    expect(cleanEvidence(autoFromResult(bent, 5)).state).toBe('fault')
+    // Side-on on the hands nothing changed: a number for the arms, and "verified".
+    const planche = judgeTrackedFrames(synthesizeClip({ ...IDEAL['tuck-planche'], seed: 3, noise: 0.015 }), 'tuck-planche')
+    const plancheLabels = (planche.subscores ?? []).map((s) => s.label)
+    expect(plancheLabels).toContain('Straight arms')
+    expect(plancheLabels).toContain('Verified clean')
+    expect(planche.coarse).toBeUndefined()
+    const plancheEvidence = cleanEvidence(autoFromResult(planche, 5))
+    expect(plancheEvidence.state === 'verified' && plancheEvidence.armsUnmeasured).toBeFalsy()
+    // A damaged list is not quietly dropped: that would turn it back into a pass.
+    const state = startingState({ skills: ['planche', 'frontlever'] })
+    const raw = JSON.parse(
+      JSON.stringify({
+        ...state,
+        sessions: [sessionOf(state, T0, [verifiedHold('front-lever', 6, T0)])],
+      }),
+    )
+    raw.sessions[0].sets[0].form.auto.coarse = 'elbows'
+    expect(normalizeState(raw).sessions[0].sets[0].form?.auto?.malformed).toBe(true)
   })
 
   it('offers each skill its own faults, in its own words, and only where the shape can have them', () => {

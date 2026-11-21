@@ -210,7 +210,7 @@ export const TIPS: Tip[] = [
   {
     title: 'Film a flag from the front',
     skill: 'flag',
-    body: 'A flag is judged with the phone facing your chest: from there the camera reads how level you are, your line and both arms. From the side it cannot be judged at all.',
+    body: 'A flag is judged with the phone facing your chest: from there the camera reads how level you are, your line, and a large bend in either arm. From the side it cannot be judged at all.',
     basis: 'app',
   },
   {

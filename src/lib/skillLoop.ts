@@ -63,6 +63,8 @@ function verified(sec: number): SetLog['form'] {
     rating: 'clean',
     confirmed: true,
     flightConfirmed: true,
+    // Where the camera only sees a large elbow bend, the athlete vouches for the lock.
+    armsConfirmed: true,
     visualReviewPassed: true,
     auto: { issues: [], confidence: 0.9, score: 90, cleanSeconds: sec, cleanRatio: 1 },
   }

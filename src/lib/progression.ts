@@ -71,6 +71,76 @@ export function flightLabel(exerciseId: string): string {
 }
 
 /**
+ * What the athlete must confirm about the arms where the camera cannot.
+ *
+ * Side-on to a support hold the model reads an elbow to within a few degrees.
+ * Hanging, upside down, or seen from the front it does not: a straight arm
+ * already reads well short of 180°, so only a large bend can be called (the
+ * judge's `POSTURE_TOLERANCE` — about 36° hanging, 30° inverted, 24° on a
+ * flag). A lever held on arms bent 30° read "Straight arms 100" and counted
+ * toward the next step on the camera's word alone. Locked arms are what make
+ * every one of these the skill it is, so where the camera cannot vouch for
+ * them the athlete does, on the replay — the same way a free hang is
+ * confirmed. The stored answer is `FormCheck.armsConfirmed`. A test keeps this
+ * list in step with the judge's profiles.
+ */
+const LEVER_ARMS =
+  'Hanging, the camera only sees a large elbow bend, not a small one. Watch the replay and confirm your elbows stayed locked for the counted time — on bent arms it is a different, easier hold.'
+const HANDSTAND_ARMS =
+  'Upside down, the camera only sees a large elbow bend, not a small one. Watch the replay and confirm your elbows stayed locked for the counted time.'
+const FLAG_ARMS =
+  'From the front, the camera only sees a large elbow bend, not a small one. Watch the replay and confirm both arms stayed straight for the counted time.'
+
+export const ARMS_PROMPT: Record<string, string> = {
+  'tuck-front-lever': LEVER_ARMS,
+  'adv-tuck-front-lever': LEVER_ARMS,
+  'one-leg-front-lever': LEVER_ARMS,
+  'straddle-front-lever': LEVER_ARMS,
+  'band-front-lever': LEVER_ARMS,
+  'front-lever': LEVER_ARMS,
+  'wall-plank': HANDSTAND_ARMS,
+  'wall-handstand': HANDSTAND_ARMS,
+  'wall-float': HANDSTAND_ARMS,
+  'freestanding-handstand': HANDSTAND_ARMS,
+  'tuck-flag': FLAG_ARMS,
+  'one-leg-flag': FLAG_ARMS,
+  'straddle-flag': FLAG_ARMS,
+  'human-flag': FLAG_ARMS,
+}
+
+/** A small elbow bend is not observable in these positions; the athlete confirms lockout. */
+export function requiresArmsConfirmation(exerciseId: string): boolean {
+  return exerciseId in ARMS_PROMPT
+}
+
+/**
+ * One button for everything the athlete has to vouch for on a hold: that
+ * nothing was helping, and — where the camera cannot see it — that the arms
+ * stayed locked. Credit needs every part, so one tap that means all of them
+ * loses nothing and saves a second tap on every set.
+ */
+export function athleteConfirmationLabel(exerciseId: string): string {
+  const flight = requiresFlightConfirmation(exerciseId)
+  if (!requiresArmsConfirmation(exerciseId)) return flightLabel(exerciseId)
+  const prompt = ARMS_PROMPT[exerciseId]
+  if (prompt === LEVER_ARMS) return flight ? 'Hung free, elbows locked' : 'Elbows stayed locked'
+  if (prompt === FLAG_ARMS) return flight ? 'Hands only, both arms straight' : 'Both arms stayed straight'
+  return flight ? 'Clear of the wall, elbows locked' : 'Elbows stayed locked'
+}
+
+/** What `athleteConfirmationLabel` asks the athlete to confirm, in full. */
+export function athleteConfirmationPrompt(exerciseId: string): string {
+  return [FLIGHT_PROMPT[exerciseId], ARMS_PROMPT[exerciseId]].filter(Boolean).join(' ')
+}
+
+/** Whether every confirmation a hold asks of the athlete has been given. */
+export function athleteConfirmed(form: FormCheck | undefined, exerciseId: string): boolean {
+  if (requiresFlightConfirmation(exerciseId) && form?.flightConfirmed !== true) return false
+  if (requiresArmsConfirmation(exerciseId) && form?.armsConfirmed !== true) return false
+  return true
+}
+
+/**
  * Holds with no fixed geometry the camera can honestly grade — a balance drill
  * with bent arms, a plain hang, the upside-down position on a flag pole. They
  * are still filmed, and the athlete's review of the replay against the
@@ -321,9 +391,16 @@ export function cleanTimeVerifiable(auto: AutoForm): boolean {
   return auto.coverage === undefined || auto.coverage >= MIN_VERIFIED_COVERAGE
 }
 
-/** The three answers a camera reading can give about clean time. */
+/**
+ * The three answers a camera reading can give about clean time.
+ *
+ * `armsUnmeasured` marks a verified window in a position where the elbows are
+ * read only coarsely (`AutoForm.coarse`): the shape the camera could measure
+ * held, and no large bend was seen — which is not the same as locked arms, and
+ * must not be worded as if it were.
+ */
 export type CleanEvidence =
-  | { state: 'verified'; seconds: number; ratio: number }
+  | { state: 'verified'; seconds: number; ratio: number; armsUnmeasured?: true }
   | { state: 'fault'; seconds: 0 }
   | { state: 'unknown'; reason: 'elbows' | 'coverage' | 'malformed' | 'missing' }
 
@@ -334,7 +411,17 @@ export function cleanEvidence(auto: AutoForm | undefined): CleanEvidence {
   if (hasArmFault(progressionRelevantIssues(auto))) return { state: 'fault', seconds: 0 }
   if (auto.unseen?.includes('elbows')) return { state: 'unknown', reason: 'elbows' }
   if (auto.coverage !== undefined && auto.coverage < MIN_VERIFIED_COVERAGE) return { state: 'unknown', reason: 'coverage' }
-  return { state: 'verified', seconds: auto.cleanSeconds, ratio: auto.cleanRatio }
+  return {
+    state: 'verified',
+    seconds: auto.cleanSeconds,
+    ratio: auto.cleanRatio,
+    ...(armsReadCoarsely(auto) ? { armsUnmeasured: true as const } : {}),
+  }
+}
+
+/** Whether a reading's elbows were only read coarsely (judge v6+ records it). */
+export function armsReadCoarsely(auto: Pick<AutoForm, 'coarse'> | undefined): boolean {
+  return auto?.coarse?.includes('elbows') === true
 }
 
 /**
@@ -362,7 +449,9 @@ export function isAssisted(set: Pick<SetLog, 'assist'>): boolean {
 /**
  * The second half of the mastery gate. Most skills need a successful camera
  * check with at most one isolated secondary flag. A bent-arm flag is never
- * tolerated because straight arms define every graded planche progression.
+ * tolerated because straight arms define every graded planche progression —
+ * and where the camera can only see a large bend (a hang, a handstand, a
+ * flag), the athlete's own confirmation of the lockout is needed with it.
  * Frog Stand intentionally has no
  * honest fixed geometry for the model to grade, so it needs a filmed replay
  * that the athlete explicitly reviewed against the checklist instead.
@@ -373,6 +462,9 @@ export function passesProgressionFormCheck(form: SetLog['form'], exerciseId: str
     return form.visualReviewPassed === true
   }
   if (requiresFlightConfirmation(exerciseId) && form.flightConfirmed !== true) return false
+  // Where the camera reads the elbows only coarsely, its silence about them is
+  // not evidence of a lock: the athlete confirms it on the replay.
+  if (requiresArmsConfirmation(exerciseId) && form.armsConfirmed !== true) return false
   if (!form.auto || form.auto.malformed) return false
   if (unseenVariantCriteria(exerciseId, form.auto).length > 0 && form.variantConfirmed !== true) return false
   const issues = progressionRelevantIssues(form.auto)

@@ -46,7 +46,7 @@ export { MIN_VERIFIED_COVERAGE }
  *     unchanged by it; the number moves because readings of the new positions
  *     did not exist before, and a stored reading says which judge made it.
  */
-export const JUDGE_VERSION = 5
+export const JUDGE_VERSION = 6
 
 /**
  * Automatic form analysis from a recorded clip.
@@ -143,6 +143,14 @@ export interface PoseFormResult {
    * not part of it.
    */
   unseen: string[]
+  /**
+   * Criteria that were judged, but only coarsely: `elbows` wherever the body
+   * is not side-on on its hands (`coarseElbow`). A large bend would have been
+   * named; a small one cannot be seen, so nothing here says the arms were
+   * locked — no subscore, no "verified clean" wording, and the athlete's own
+   * confirmation is what progression asks for.
+   */
+  coarse?: string[]
   /**
    * The picture was on its side (or upside down) and was turned the right way
    * up before hip height and lean were measured — see `floorEdge`. Transient,
@@ -1918,6 +1926,37 @@ export const UPSIDE_DOWN_ARM_DEG = 120
 export const INVERTED_ARM_SLACK_DEG = 45
 
 /**
+ * Where a hanging body's weight sits, from the joints a side view shows: each
+ * segment's share of body mass and how far along it its centre lies (Winter's
+ * anthropometric table, rounded). Only the *direction* from the hands to this
+ * point is ever used (`readFloor`), so nothing here needs to be exact.
+ */
+const SEGMENT_MASS = {
+  /** Head and neck, placed a quarter of a trunk beyond the shoulders. */
+  head: 0.08,
+  /** Shoulder to hip, centred half-way. */
+  trunk: 0.5,
+  /** Both arms, centred half-way from shoulder to wrist. */
+  arms: 0.1,
+  /** Both thighs, centred 43% of the way from hip to knee. */
+  thighs: 0.2,
+  /** Both shanks and feet, centred 60% of the way from knee to ankle. */
+  shanks: 0.12,
+}
+
+/** Why a clip's gravity could not be accepted for its posture. */
+export type FloorRefusal =
+  /** A lever or hang filmed with the hands below the shoulders: not hanging. */
+  | 'not-hanging'
+  /** A handstand filmed any way but upright: indistinguishable from standing or lying. */
+  | 'not-upright'
+
+export interface FloorVerdict {
+  floor: FloorEdge | null
+  refusal?: FloorRefusal
+}
+
+/**
  * Where the floor is in the picture, read from the body itself.
  *
  * The app suggests turning the phone on its side, and with rotation lock on a
@@ -1928,11 +1967,34 @@ export const INVERTED_ARM_SLACK_DEG = 45
  * always below the shoulders in these holds, so once the picture is known to
  * be on its side, which way the arms point says which side the floor is on.
  * `null` when too few moments resolve shoulder, wrist and hip to say.
+ *
+ * Two postures can also be *refused* (`readFloor`), because a body alone does
+ * not always say which way gravity runs:
+ *
+ * - **Hanging.** The trunk cannot be the reference — how far it is from level
+ *   is the thing being judged. It once was: a trunk pointing up the picture
+ *   was taken for a phone on its side, so a dead hang was turned a quarter and
+ *   certified as a perfect level lever. The plumb line from the hands to the
+ *   centre of mass is used instead, and weight *above* the hands is not a
+ *   hang at all.
+ * - **Inverted.** A handstand in an upside-down picture is, joint for joint,
+ *   someone standing with their arms overhead; in a sideways one, someone
+ *   lying down. Both were once turned and passed. Only an upright picture —
+ *   hands at the bottom — is judged; the screen already asks for the phone
+ *   upright for these.
  */
 export function floorEdge(frames: { kps: Kp[] }[], posture: Posture = 'support'): FloorEdge | null {
+  return readFloor(frames, posture).floor
+}
+
+export function readFloor(frames: { kps: Kp[] }[], posture: Posture = 'support'): FloorVerdict {
+  const decided = (floor: FloorEdge | null): FloorVerdict => ({ floor })
   const trunks: number[] = []
   const arms: number[] = []
   const armAcross: number[] = []
+  /** Per moment, the unit direction from the hands to the body's centre of mass. */
+  const plumbX: number[] = []
+  const plumbY: number[] = []
   /** How far the hips sit up the picture from the shoulders (+1 = straight up), and across it. */
   const trunkUp: number[] = []
   const trunkAcross: number[] = []
@@ -1947,14 +2009,14 @@ export function floorEdge(frames: { kps: Kp[] }[], posture: Posture = 'support')
       }
       continue
     }
-    let best: { s: Kp; w: Kp; h: Kp; q: number } | undefined
+    let best: { s: Kp; w: Kp; h: Kp; q: number; side: 'left' | 'right' } | undefined
     for (const side of ['left', 'right'] as const) {
       const s = byName(kps, `${side}_shoulder`, MIN_PRECISE_KP_SCORE)
       const w = byName(kps, `${side}_wrist`, MIN_PRECISE_KP_SCORE)
       const h = byName(kps, `${side}_hip`, MIN_PRECISE_KP_SCORE)
       if (!s || !w || !h) continue
       const q = (s.score ?? 0) + (w.score ?? 0) + (h.score ?? 0)
-      if (!best || q > best.q) best = { s, w, h, q }
+      if (!best || q > best.q) best = { s, w, h, q, side }
     }
     if (!best) continue
     const ax = best.w.x - best.s.x
@@ -1971,6 +2033,29 @@ export function floorEdge(frames: { kps: Kp[] }[], posture: Posture = 'support')
     const trunkLength = Math.hypot(tx, ty)
     trunkUp.push(-ty / trunkLength)
     trunkAcross.push(tx / trunkLength)
+    if (posture === 'hang') {
+      // The centre of mass, from whichever segments this moment shows. The
+      // legs matter — in a full lever they carry the weight out past the hips
+      // — so they are counted whenever the knee (and ankle) can be seen.
+      const { s, w, h } = best
+      const knee = byName(kps, `${best.side}_knee`)
+      const ankle = byName(kps, `${best.side}_ankle`)
+      const parts: [number, number, number][] = [
+        [SEGMENT_MASS.head, s.x - 0.25 * tx, s.y - 0.25 * ty],
+        [SEGMENT_MASS.trunk, s.x + 0.5 * tx, s.y + 0.5 * ty],
+        [SEGMENT_MASS.arms, s.x + 0.5 * ax, s.y + 0.5 * ay],
+      ]
+      if (knee) parts.push([SEGMENT_MASS.thighs, h.x + 0.43 * (knee.x - h.x), h.y + 0.43 * (knee.y - h.y)])
+      if (knee && ankle) parts.push([SEGMENT_MASS.shanks, knee.x + 0.6 * (ankle.x - knee.x), knee.y + 0.6 * (ankle.y - knee.y)])
+      const mass = parts.reduce((sum, [m]) => sum + m, 0)
+      const cx = parts.reduce((sum, [m, x]) => sum + m * x, 0) / mass
+      const cy = parts.reduce((sum, [m, , y]) => sum + m * y, 0) / mass
+      const reach = Math.hypot(cx - w.x, cy - w.y)
+      if (reach >= 1) {
+        plumbX.push((cx - w.x) / reach)
+        plumbY.push((cy - w.y) / reach)
+      }
+    }
   }
   if (posture === 'flag') {
     // A flag's body lies across the picture *if* it is level — and a clip of a
@@ -1982,35 +2067,44 @@ export function floorEdge(frames: { kps: Kp[] }[], posture: Posture = 'support')
     // flag is measured by (angles to the horizontal, straightness), so one
     // quarter-turn serves. Hands that are neither stacked nor side by side
     // say nothing, and then how level the body is goes unjudged.
-    if (gripLines.length < MIN_FRAMES) return null
+    if (gripLines.length < MIN_FRAMES) return decided(null)
     const grip = median(gripLines)!
-    if (grip >= 90 - FLAG_GRIP_SLACK_DEG) return 'bottom'
-    if (grip <= FLAG_GRIP_SLACK_DEG) return 'right'
-    return null
+    if (grip >= 90 - FLAG_GRIP_SLACK_DEG) return decided('bottom')
+    if (grip <= FLAG_GRIP_SLACK_DEG) return decided('right')
+    return decided(null)
   }
-  if (trunks.length < MIN_FRAMES) return null
+  if (trunks.length < MIN_FRAMES) return decided(null)
   if (posture === 'inverted') {
     // On the hands with the body above them, the arms point at the floor —
     // straight down in a handstand, within about 20° of it in a wall plank,
     // whose trunk can lie anywhere from a low incline to upright and so says
-    // nothing reliable (a shallow wall plank on a tilted phone read as a
-    // handstand filmed on its side). Arms pointing across the picture, the
-    // phone was on its side, and they point at the edge the floor is on; up
-    // the picture, it is upside down.
-    const arm = median(arms)!
-    if (arm <= INVERTED_ARM_SLACK_DEG) return 'bottom'
-    if (arm >= 180 - INVERTED_ARM_SLACK_DEG) return 'top'
-    return median(armAcross)! >= 0 ? 'right' : 'left'
+    // nothing reliable. Arms pointing any other way, the picture is on its
+    // side or upside down — or this is not a handstand — and nothing in the
+    // joints can say which.
+    return median(arms)! <= INVERTED_ARM_SLACK_DEG ? decided('bottom') : { floor: null, refusal: 'not-upright' }
   }
   if (posture === 'hang') {
-    // Under a bar the hands are above the shoulders, so everything the arms
-    // say about the floor is the other way round.
-    if (median(trunks)! >= SIDEWAYS_TRUNK_DEG) return median(armAcross)! >= 0 ? 'left' : 'right'
-    return median(arms)! <= 180 - UPSIDE_DOWN_ARM_DEG ? 'top' : 'bottom'
+    // A body hanging still has its centre of mass directly below its hands:
+    // the line from the hands to it is a plumb line, whatever shape the body
+    // makes — a dead hang, a tuck, a level lever, a pike. That is the gravity
+    // reference the trunk could never be, and it needs no tuned number: the
+    // plumb line simply points at the nearest edge of the picture, and stays
+    // right until the phone is rolled past 45°. (The arms alone are not
+    // enough — a long lever's lean 20–42° from vertical, real and synthetic,
+    // and turned a quarter they are almost as close to "up" again.)
+    if (plumbX.length < MIN_FRAMES) return decided(null)
+    const gx = median(plumbX)!
+    const gy = median(plumbY)!
+    if (Math.abs(gy) >= Math.abs(gx)) {
+      // Weight below the hands down the picture: upright. Above them: this is
+      // a body supported on its hands, not hanging from them.
+      return gy > 0 ? decided('bottom') : { floor: null, refusal: 'not-hanging' }
+    }
+    return decided(gx > 0 ? 'right' : 'left')
   }
-  if (median(trunks)! >= SIDEWAYS_TRUNK_DEG) return median(armAcross)! >= 0 ? 'right' : 'left'
-  if (median(arms)! >= UPSIDE_DOWN_ARM_DEG) return 'top'
-  return 'bottom'
+  if (median(trunks)! >= SIDEWAYS_TRUNK_DEG) return decided(median(armAcross)! >= 0 ? 'right' : 'left')
+  if (median(arms)! >= UPSIDE_DOWN_ARM_DEG) return decided('top')
+  return decided('bottom')
 }
 
 /**
@@ -2144,6 +2238,14 @@ function noChecksReason(exerciseId: string, profile: PoseProfile): string {
   return exerciseId === 'frog-stand'
     ? `A ${profile.label.toLowerCase()} is about balance rather than a fixed shape, so there is nothing here the camera can judge for you. Rate it yourself.`
     : `A ${profile.label.toLowerCase()} has no fixed shape the camera can grade honestly, so there is nothing here for it to judge. Watch the replay against the checklist and rate it yourself.`
+}
+
+/** Why a clip whose gravity cannot be accepted is not judged, in the athlete's words. */
+const FLOOR_REFUSAL: Record<FloorRefusal, string> = {
+  'not-hanging':
+    'Your weight is above your hands in this clip, so it is not a hang the camera can check as a lever. If the phone was upside down, film again with it the right way up.',
+  'not-upright':
+    'This clip is not the right way up — your hands are not at the bottom of the picture — and from there the camera cannot tell a handstand from someone standing or lying down. Stand the phone upright (turn rotation lock off if the picture comes out sideways) and film again.',
 }
 
 /** A flag filmed at an angle: readable as a flag, not measurable as one. */
@@ -2533,7 +2635,11 @@ export function judgeTrackedFrames(
 
   // Measure in a picture whose floor runs along the bottom. The track above
   // keeps the frame as recorded, because it is drawn over the video.
-  const floor = floorEdge(tracked, posture)
+  const gravity = readFloor(tracked, posture)
+  if (gravity.refusal) {
+    return { ...empty, framesSampled: times.length, track, reason: FLOOR_REFUSAL[gravity.refusal] }
+  }
+  const floor = gravity.floor
   const frameTurned = floor && floor !== 'bottom' ? floor : undefined
   if (frameTurned) for (const frame of tracked) frame.kps = turnUpright(frame.kps, frameTurned)
   /** A flag's level is measured against the pole; without the hands there is no level to measure. */
@@ -3653,6 +3759,8 @@ export function judgeTrackedFrames(
 
   const uniqueIssues = [...new Set(issues)]
   const fix = pickFixFirst(uniqueIssues, posture)
+  // Judged, but with a deadband wide enough to hide a real bend.
+  const readCoarsely = coarseElbow(profile) && judged.elbow && profile.minElbowDeg !== undefined ? ['elbows'] : []
   // "Held clean" is the camera-verified share, never the raw envelope time:
   // a held arm fault means none of it was verified, and elbows the camera did
   // not judge — or a hold it mostly did not see — mean it does not know. The
@@ -3676,6 +3784,7 @@ export function judgeTrackedFrames(
     tiltDeg: reportedTiltDeg,
     drift,
     cleanRatio: verifiedCleanShare,
+    armsNamed: namedFaults.has('arms'),
   })
 
   return {
@@ -3734,6 +3843,7 @@ export function judgeTrackedFrames(
     good,
     details,
     unseen,
+    ...(readCoarsely.length ? { coarse: readCoarsely } : {}),
     ...(frameTurned ? { frameTurned } : {}),
   }
 }
@@ -4094,6 +4204,13 @@ const SCORE_WEIGHTS: Record<FormSubscore['key'], number> = {
   steadiness: 5,
 }
 
+/**
+ * What the clean-time subscore is called where the elbows are read coarsely.
+ * "Verified clean" there read 100 beside arms bent 30° in a lever: the camera
+ * had verified the line, not the arms.
+ */
+export const COARSE_CLEAN_LABEL = 'Shape held'
+
 const SUBSCORE_LABELS: Record<FormSubscore['key'], string> = {
   elbow: 'Straight arms',
   angle: 'Elbow angle',
@@ -4129,11 +4246,14 @@ export function computeFormScore(parts: {
   tiltDeg?: number
   drift?: number
   cleanRatio?: number
+  /** A bent-arm fault was named on this reading (aggregate or sustained). */
+  armsNamed?: boolean
 }): { score: number; subscores: FormSubscore[] } | null {
   const { profile, judged } = parts
   const subscores: FormSubscore[] = []
-  const add = (key: FormSubscore['key'], score: number) =>
-    subscores.push({ key, label: SUBSCORE_LABELS[key], score: Math.round(score) })
+  const coarse = coarseElbow(profile)
+  const add = (key: FormSubscore['key'], score: number, label = SUBSCORE_LABELS[key]) =>
+    subscores.push({ key, label, score: Math.round(score) })
 
   if (judged.elbow && profile.minElbowDeg !== undefined && parts.elbowDeg !== undefined) {
     // Once a persistent bend clears the tight camera deadband it should
@@ -4142,9 +4262,12 @@ export function computeFormScore(parts: {
     // Outside a support hold a straight arm reads well short of 180 (see
     // POSTURE_TOLERANCE), so nothing is deducted until the reading nears the
     // bar where a bend is named.
-    const shortfall =
-      profile.minElbowDeg - parts.elbowDeg - (coarseElbow(profile) ? Math.max(0, elbowSlack(profile) - 6) : 0)
-    add('elbow', bandedScore(Math.max(0, shortfall) * 2))
+    const shortfall = profile.minElbowDeg - parts.elbowDeg - (coarse ? Math.max(0, elbowSlack(profile) - 6) : 0)
+    // And there, nothing is *awarded* either. A reading inside that wide band
+    // is every arm from locked to bent thirty degrees; "Straight arms 100" for
+    // all of them was a number with nothing behind it. Only a bend the camera
+    // stands behind — one it has named — is scored, as the deduction it is.
+    if (!coarse || parts.armsNamed) add('elbow', bandedScore(Math.max(0, shortfall) * 2))
   }
   if (judged.elbow && profile.elbowTargetDeg !== undefined && parts.elbowDeg !== undefined) {
     // Free inside half the band; the band's edge is a small deduction.
@@ -4183,7 +4306,11 @@ export function computeFormScore(parts: {
     )
   }
   if (parts.cleanRatio !== undefined) {
-    add('cleanTime', Math.max(0, Math.min(1, parts.cleanRatio)) * 100)
+    add(
+      'cleanTime',
+      Math.max(0, Math.min(1, parts.cleanRatio)) * 100,
+      coarse && profile.minElbowDeg !== undefined ? COARSE_CLEAN_LABEL : SUBSCORE_LABELS.cleanTime,
+    )
   }
 
   if (!subscores.length) return null

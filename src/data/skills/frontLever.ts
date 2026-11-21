@@ -582,7 +582,7 @@ export const FRONT_LEVER: SkillDef = {
     view: 'side',
     placement: 'Phone side-on to the bar at about chest height, far enough back to keep hands and feet in frame.',
     honesty:
-      'From the side the camera reads elbow lock, hip opening, straight legs and whether hips and shoulders are level. It cannot see the shoulder blades, and it cannot tell a foot brushing the floor or a band from a free hold — you confirm those.',
+      'From the side the camera reads hip opening, straight legs and whether hips and shoulders are level — a hang with the hips low is named, not passed. Of your arms it sees only a large bend: hanging, a small one does not show, so you confirm the lockout on the replay. It cannot see the shoulder blades, and it cannot tell a foot brushing the floor or a band from a free hold — you confirm those too.',
   },
   sourcing:
     'Coaches share the outline — tuck, a flat-backed tuck, then longer shapes to the full lever — and differ on the middle and on every number: named coaches’ hold-time bars run from 10–15 seconds to 60, and two of the most systematic sources set none. The bars here are this app’s choices inside that spread; no study of the hold was found.',

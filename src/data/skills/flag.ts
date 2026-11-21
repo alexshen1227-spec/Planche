@@ -375,7 +375,7 @@ export const FLAG: SkillDef = {
     placement:
       'Phone facing you square-on — looking at your chest, the pole at one side of the picture — far enough back for hands and feet to be in frame.',
     honesty:
-      'From the front the camera reads how level the body is, whether it stays one straight line, and both arms. It cannot see you rolling toward the floor or the camera — a flag filmed from the side cannot be judged at all — and it is the least-proven of the app’s checks, so it never stands alone: your own Clean rating, and your confirmation of anything it could not see, are needed with it.',
+      'From the front the camera reads how level the body is, whether it stays one straight line, and a large bend in either arm — a small one does not show, so you confirm both arms stayed straight. It cannot see you rolling toward the floor or the camera — a flag filmed from the side cannot be judged at all — and it is the least-proven of the app’s checks, so it never stands alone: your own Clean rating, and your confirmation of anything it could not see, are needed with it.',
   },
   sourcing:
     'Thinly sourced: the order — near vertical first, then down toward level with the legs shortened — is what the coaches who teach it share, but the only named-coach numbers are for the early holds, and no verified standard exists for the full flag. Every bar past the vertical flag is this app’s design; no study of the hold was found.',

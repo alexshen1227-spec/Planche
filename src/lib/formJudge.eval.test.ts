@@ -948,6 +948,15 @@ describe('a phone on its side', () => {
           expect(upright.frameTurned, id).toBeUndefined()
           for (const how of ['cw', 'ccw', 'flip'] as const) {
             const turned = judgeTrackedFrames(turn(clip, how), id)
+            // Two turns are refused rather than undone, because nothing in the
+            // joints can tell them from another position altogether: a
+            // handstand off its upright (standing, or lying down), and a hang
+            // with the weight above the hands (a support hold).
+            if (postureFor(id) === 'inverted' || (postureFor(id) === 'hang' && how === 'flip')) {
+              expect(turned.ok, `${id} ${how}`).toBe(false)
+              expect(turned.reason, `${id} ${how}`).toMatch(postureFor(id) === 'inverted' ? /right way up/ : /not a hang/)
+              continue
+            }
             expect(turned.frameTurned, `${id} ${how}`).toBe(turnReported(id, how))
             expect([...turned.issues].sort(), `${id} ${how} seed ${seed}`).toEqual([...upright.issues].sort())
             if (upright.leanRatio !== undefined) expect(turned.leanRatio).toBeCloseTo(upright.leanRatio, 6)
@@ -977,6 +986,74 @@ describe('a phone on its side', () => {
             expect(floorEdge(clip.tracked, posture), `${id} roll ${rollDeg}`).toBe('bottom')
           }
     }
+  })
+
+  it('reads a hang for what it is, whichever way the phone was held', () => {
+    // The trunk once decided where the floor was. A trunk pointing up the
+    // picture was taken for a phone on its side — so a dead hang was turned a
+    // quarter and certified as a perfect, level front lever, score 100. The
+    // plumb line from the hands to the body's weight decides now.
+    const levers = GRADED.filter((id) => postureFor(id) === 'hang')
+    expect(levers.length).toBeGreaterThanOrEqual(5)
+    for (const id of levers) {
+      for (const [name, hipOffset] of [
+        ['a dead hang', -0.95],
+        ['a hang with the hips well below level', -0.7],
+      ] as const) {
+        for (const rollDeg of [-12, 0, 12]) {
+          const clip = synthesizeClip({ ...IDEAL[id], hipOffset, rollDeg, seed: 4, noise: 0.015 })
+          expect(floorEdge(clip.tracked, 'hang'), `${id}: ${name}, roll ${rollDeg}`).toBe('bottom')
+          for (const view of [clip, turn(clip, 'cw'), turn(clip, 'ccw')]) {
+            const result = judgeTrackedFrames(view, id)
+            // Named as hanging low — never a pass, and never a clean second.
+            expect(result.ok, `${id}: ${name}`).toBe(true)
+            expect(result.issues, `${id}: ${name}, roll ${rollDeg}`).toContain('sag')
+            expect(result.cleanRatio, `${id}: ${name}, roll ${rollDeg}`).toBe(0)
+            // Measured: 50–58 for the dead hang, 64–70 for the low one. It was 100.
+            expect(result.score ?? 100, `${id}: ${name}, roll ${rollDeg}`).toBeLessThanOrEqual(75)
+          }
+        }
+      }
+      // And a level lever is still level, upright or on its side.
+      for (const rollDeg of [-12, 0, 12]) {
+        const level = synthesizeClip({ ...IDEAL[id], rollDeg, seed: 4, noise: 0.015 })
+        expect(floorEdge(level.tracked, 'hang'), `${id} roll ${rollDeg}`).toBe('bottom')
+        expect(floorEdge(turn(level, 'cw').tracked, 'hang'), `${id} cw`).toBe('left')
+        expect(floorEdge(turn(level, 'ccw').tracked, 'hang'), `${id} ccw`).toBe('right')
+      }
+    }
+  })
+
+  it('does not pass a real hang, or a real standing body, as a lever or a handstand', () => {
+    // A real photograph of someone hanging from a bar, judged as each lever.
+    for (const id of ['tuck-front-lever', 'adv-tuck-front-lever', 'front-lever']) {
+      const result = judgeTrackedFrames(realClip('weightedPullup', { jitter: 0.01 }), id)
+      expect(result.ok && result.issues.length === 0, `weighted pull-up as ${id}`).toBe(false)
+    }
+    // A real straight handstand turned over is, joint for joint, a body
+    // hanging at full stretch: as a lever it must be named, not certified.
+    const upright = realClip('handstandStraight', { jitter: 0.01 })
+    const hanging = turn(upright, 'flip')
+    for (const id of ['tuck-front-lever', 'front-lever']) {
+      const result = judgeTrackedFrames(hanging, id)
+      expect(result.ok && result.issues.length === 0, `an upside-down handstand photo as ${id}`).toBe(false)
+    }
+    // The same turned photo is also someone standing with their arms
+    // overhead; on its side, someone lying down. Neither is a handstand the
+    // camera can vouch for, and it says so instead of scoring it.
+    for (const id of ['wall-handstand', 'freestanding-handstand']) {
+      expect(judgeTrackedFrames(upright, id).ok, `${id} upright`).toBe(true)
+      for (const how of ['flip', 'cw', 'ccw'] as const) {
+        const result = judgeTrackedFrames(turn(upright, how), id)
+        expect(result.ok, `${id} ${how}`).toBe(false)
+        expect(result.reason, `${id} ${how}`).toMatch(/right way up/)
+        expect(result.score, `${id} ${how}`).toBeUndefined()
+      }
+    }
+    // A support hold filmed as a lever has its weight above its hands.
+    const support = judgeTrackedFrames(realClip('plancheLean', { jitter: 0.01 }), 'front-lever')
+    expect(support.ok).toBe(false)
+    expect(support.reason).toMatch(/not a hang/)
   })
 
   it('turns the real photographs back and keeps their verdicts', () => {

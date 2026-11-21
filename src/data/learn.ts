@@ -367,9 +367,10 @@ const HAND_WRITTEN_GUIDES: Guide[] = [
         heading: 'Other skills, other views',
         body: 'The planche and the 90° hold are judged side-on in a support position. The other skills are different shapes seen from different places, and each is held to what the camera can actually see from there.',
         bullets: [
-          'Front lever: side-on to the bar. Hanging arms point toward the camera more than supporting ones, so elbows are read coarsely — only a clear bend is called.',
-          'Handstand: side-on, phone upright. The camera reads the line from wrist to shoulder to hip to ankle and how far the whole body sits off vertical. It cannot tell a foot resting on the wall from a free balance — you confirm that.',
+          'Front lever: side-on to the bar. Which way is down is worked out from where your weight hangs below your hands, so a plain hang is read as a hang with the hips low — not as a level lever filmed on its side — whichever way the phone was held.',
+          'Handstand: side-on, with the picture the right way up. The camera reads how open the shoulders are and whether hips and legs continue that line. A picture on its side or upside down is refused: from the joints alone, a handstand turned over is someone standing with their arms up. It cannot tell a foot resting on the wall from a free balance — you confirm that.',
           'Human flag: front-on, facing your chest — the one skill a side view is useless for. The pole is taken from the line between your hands, and an oblique shot is refused.',
+          'In all three, elbows are read coarsely: a straight arm that is hanging, upside down or seen from the front already reads well short of straight through the model, so only a large bend is called. The result shows no score for the arms there, and a hold counts toward the next step only once you have watched the replay and confirmed the lockout yourself.',
           'A plain hang, the frog stand and the first flag positions have no shape the camera can grade honestly. They are filmed all the same, and your own check of the replay against a short list is the evidence.',
           'Push-up sets on the handstand push-up and 90° push-up lines are filmed for you, not for the camera: it does not count reps. You watch the replay and pass the set against that rung’s list.',
         ],
@@ -596,7 +597,7 @@ export const GLOSSARY: GlossaryTerm[] = [
     term: 'Stacked',
     short: 'Hands, shoulders, hips and feet in one vertical line',
     detail:
-      'The handstand’s standard. From the side the camera reads how open the shoulders are and whether the hips and legs continue the line; a banana-shaped back shows up as closed shoulders or a body off vertical.',
+      'The handstand’s standard. From the side the camera reads how open the shoulders are and whether the hips and legs continue the line; a banana-shaped back shows up as closed shoulders or hips out of line.',
   },
   {
     term: 'Bail',

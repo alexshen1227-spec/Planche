@@ -1,6 +1,6 @@
 import type { AppState, LineupRole, Session, SetLog, Section, SkillId, StrategyId } from '../types'
 import { applySession } from '../lib/engine'
-import { isReviewOnly, requiresFlightConfirmation } from '../lib/progression'
+import { isReviewOnly, requiresArmsConfirmation, requiresFlightConfirmation } from '../lib/progression'
 import { ladderStatus } from '../lib/repLadder'
 import { addTrack, sessionSkillSteps, stepOfSkill } from '../lib/skills'
 import { initialState } from '../lib/store'
@@ -30,6 +30,8 @@ function holdSet(exerciseId: string, value: number, target: number, section: Sec
           confirmed: true,
           // Support contact cannot be seen in a 2D pose; the athlete confirms it.
           ...(requiresFlightConfirmation(exerciseId) ? { flightConfirmed: true } : {}),
+          // A small elbow bend cannot be seen in a hang or a handstand; the athlete confirms the lock.
+          ...(requiresArmsConfirmation(exerciseId) ? { armsConfirmed: true } : {}),
           auto: {
             issues: [],
             confidence: 0.9,

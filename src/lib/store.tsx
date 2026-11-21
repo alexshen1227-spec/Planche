@@ -249,6 +249,14 @@ function sanitizeAuto(a: unknown, repairs: string[]): AutoForm | undefined {
     else unseen = (c.unseen as string[]).slice(0, 8)
   }
 
+  // Losing this list would turn "only a large bend would have shown" back into
+  // a plain pass for the arms, so a damaged one is malformed like `unseen`.
+  let coarse: string[] = []
+  if (c.coarse !== undefined) {
+    if (!Array.isArray(c.coarse) || c.coarse.some((u) => typeof u !== 'string')) flag('coarse')
+    else coarse = (c.coarse as string[]).slice(0, 8)
+  }
+
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
   /** A measurement that gates credit: present but unusable is malformed, not absent. */
   const gating = (field: 'cleanSeconds' | 'cleanRatio' | 'confidence' | 'coverage', lo: number, hi: number) => {
@@ -267,6 +275,7 @@ function sanitizeAuto(a: unknown, repairs: string[]): AutoForm | undefined {
     issues,
     ...(heldIssues ? { heldIssues } : {}),
     ...(unseen.length ? { unseen } : {}),
+    ...(coarse.length ? { coarse } : {}),
     confidence: confidence ?? 0,
     score: clampOptional(c.score, 0, 100),
     cleanSeconds: gating('cleanSeconds', 0, 3600),
@@ -316,6 +325,7 @@ function sanitizeForm(f: unknown, repairs: string[]): FormCheck | undefined {
   if (typeof c.visualReviewPassed === 'boolean') out.visualReviewPassed = c.visualReviewPassed
   if (typeof c.flightConfirmed === 'boolean') out.flightConfirmed = c.flightConfirmed
   if (typeof c.variantConfirmed === 'boolean') out.variantConfirmed = c.variantConfirmed
+  if (typeof c.armsConfirmed === 'boolean') out.armsConfirmed = c.armsConfirmed
   if (c.issues !== undefined) {
     if (!Array.isArray(c.issues)) repairs.push('form.issues')
     else {

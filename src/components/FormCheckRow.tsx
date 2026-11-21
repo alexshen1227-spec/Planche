@@ -14,12 +14,15 @@ import {
 import { saveProblemReport } from '../lib/problemReports'
 import { pushToast } from '../lib/toast'
 import {
+  athleteConfirmationLabel,
+  athleteConfirmationPrompt,
+  athleteConfirmed,
   cleanEvidence,
-  FLIGHT_PROMPT,
-  flightLabel,
+  hasArmFault,
   isReviewOnly,
   passesProgressionFormCheck,
   progressionRelevantIssues,
+  requiresArmsConfirmation,
   requiresFlightConfirmation,
   REVIEW_PROMPT,
   unseenVariantCriteria,
@@ -121,6 +124,7 @@ export interface HumanReview {
   visualReviewPassed?: boolean
   flightConfirmed?: boolean
   variantConfirmed?: boolean
+  armsConfirmed?: boolean
   clipKey?: string
   /** The row's own reading, used only when the set has none on file yet. */
   auto?: AutoForm
@@ -169,6 +173,7 @@ export function mergeHumanReview(current: FormCheck | undefined, review: HumanRe
     ...(clean && review.visualReviewPassed ? { visualReviewPassed: true } : {}),
     ...(clean && review.flightConfirmed ? { flightConfirmed: true } : {}),
     ...(clean && review.variantConfirmed ? { variantConfirmed: true } : {}),
+    ...(clean && review.armsConfirmed ? { armsConfirmed: true } : {}),
     ...(review.issues.length ? { issues: review.issues } : {}),
     ...(clipKey ? { clipKey } : {}),
     ...(auto ? { auto } : {}),
@@ -211,6 +216,7 @@ export function autoFromResult(res: PoseFormResult, analysedSec: number, analyse
     ...(res.model ? { model: res.model } : {}),
     judge: JUDGE_VERSION,
     ...(res.unseen.length ? { unseen: res.unseen } : {}),
+    ...(res.coarse?.length ? { coarse: res.coarse } : {}),
   }
 }
 
@@ -289,6 +295,7 @@ export function FormCheckRow({
   const [visualReviewPassed, setVisualReviewPassed] = useState(value?.visualReviewPassed === true)
   const [flightConfirmed, setFlightConfirmed] = useState(value?.flightConfirmed === true)
   const [variantConfirmed, setVariantConfirmed] = useState(value?.variantConfirmed === true)
+  const [armsConfirmed, setArmsConfirmed] = useState(value?.armsConfirmed === true)
   const autoRanRef = useRef(false)
   /** Raw poses and technical wording stay out of the normal UI but make a reported verdict reproducible. */
   const diagnosticRef = useRef<ClipAnalysis | null>(null)
@@ -299,8 +306,12 @@ export function FormCheckRow({
   const visualReviewRef = useRef(value?.visualReviewPassed === true)
   const flightConfirmedRef = useRef(value?.flightConfirmed === true)
   const variantConfirmedRef = useRef(value?.variantConfirmed === true)
+  const armsConfirmedRef = useRef(value?.armsConfirmed === true)
   const needsManualReplayReview = isReviewOnly(exerciseId)
   const needsFlightConfirmation = requiresFlightConfirmation(exerciseId)
+  const needsArmsConfirmation = requiresArmsConfirmation(exerciseId)
+  /** What the athlete vouches for themselves: nothing helping, and arms the camera cannot see finely. */
+  const needsAthleteConfirmation = needsFlightConfirmation || needsArmsConfirmation
   const handleClipAvailability = useCallback((available: boolean) => setClipAvailable(available), [])
   const analysing = status !== 'idle'
   const windowSec = Math.max(0, analysisWindowSec ?? creditedHoldSec)
@@ -496,6 +507,7 @@ export function FormCheckRow({
     replayPassed = visualReviewRef.current,
     flightPassed = flightConfirmedRef.current,
     variantPassed = variantConfirmedRef.current,
+    armsPassed = armsConfirmedRef.current,
   ) => {
     humanRef.current = true
     onHuman({
@@ -504,6 +516,7 @@ export function FormCheckRow({
       visualReviewPassed: replayPassed,
       flightConfirmed: flightPassed,
       variantConfirmed: variantPassed,
+      armsConfirmed: armsPassed,
       ...(clipKey ? { clipKey } : {}),
       ...(analysis?.ok ? { auto: autoFromResult(analysis, windowSec, analysisWindowStartSec) } : {}),
     })
@@ -518,6 +531,11 @@ export function FormCheckRow({
 
   const progressionFormPassed = passesProgressionFormCheck(value, exerciseId)
   const progressionCameraIssues = value?.auto ? progressionRelevantIssues(value.auto) : []
+  // A bend the camera did see settles the arms; asking the athlete to vouch
+  // for a lockout it has just measured as bent would be asking for a false tap.
+  const cameraSawBentArms = hasArmFault(progressionCameraIssues)
+  const athleteHasConfirmed =
+    (!needsFlightConfirmation || flightConfirmed) && (!needsArmsConfirmation || armsConfirmed)
   const variantGaps = unseenVariantCriteria(exerciseId, value?.auto ?? (analysis?.ok ? { issues: analysis.issues, confidence: analysis.confidence, unseen: analysis.unseen } : undefined))
   const analysedSec = value?.auto?.analysedSec
   // Stale when the hold now counts more than was checked, or was re-timed to
@@ -638,6 +656,8 @@ export function FormCheckRow({
                 setFlightConfirmed(false)
                 variantConfirmedRef.current = false
                 setVariantConfirmed(false)
+                armsConfirmedRef.current = false
+                setArmsConfirmed(false)
               }
               setRating(id)
               commit(id, nextIssues)
@@ -679,26 +699,38 @@ export function FormCheckRow({
           </button>
         </div>
       ) : null}
-      {needsFlightConfirmation && rating === 'clean' && confirmedByHuman ? (
+      {needsAthleteConfirmation && rating === 'clean' && confirmedByHuman && !cameraSawBentArms ? (
         <div className="mt-3 rounded-xl border border-line bg-raised p-3">
           <p className="text-[12.5px] leading-relaxed text-ink2">
-            The camera can judge your shape, but it cannot reliably tell whether anything was helping.{' '}
-            {FLIGHT_PROMPT[exerciseId]}
+            {needsFlightConfirmation
+              ? 'The camera can judge your shape, but it cannot reliably tell whether anything was helping. '
+              : ''}
+            {athleteConfirmationPrompt(exerciseId)}
           </p>
           <button
             onClick={() => {
-              flightConfirmedRef.current = true
-              setFlightConfirmed(true)
-              commit('clean', [], visualReviewRef.current, true)
+              // One tap for every part: credit needs all of them, so a hold
+              // that fails any one is simply not confirmed.
+              if (needsFlightConfirmation) {
+                flightConfirmedRef.current = true
+                setFlightConfirmed(true)
+              }
+              if (needsArmsConfirmation) {
+                armsConfirmedRef.current = true
+                setArmsConfirmed(true)
+              }
+              commit('clean', [], visualReviewRef.current, flightConfirmedRef.current, variantConfirmedRef.current, armsConfirmedRef.current)
             }}
-            aria-pressed={flightConfirmed}
+            aria-pressed={athleteHasConfirmed}
             className={`mt-2 min-h-11 w-full rounded-xl border px-3 py-2 text-[12.5px] font-semibold transition ${
-              flightConfirmed
+              athleteHasConfirmed
                 ? 'border-ok/40 bg-ok-soft text-ok-text'
                 : 'border-line-strong bg-surface text-ink hover:border-accent'
             }`}
           >
-            {flightConfirmed ? `Confirmed — ${flightLabel(exerciseId).toLowerCase()}` : flightLabel(exerciseId)}
+            {athleteHasConfirmed
+              ? `Confirmed — ${athleteConfirmationLabel(exerciseId).toLowerCase()}`
+              : athleteConfirmationLabel(exerciseId)}
           </button>
         </div>
       ) : null}
@@ -732,11 +764,15 @@ export function FormCheckRow({
               ? `Evidence complete — ${value.auto.cleanSeconds.toFixed(1)}s of this hold count toward progression before the sustained breakdown.`
               : progressionCameraIssues.length === 1
                 ? 'Progression evidence complete — your Clean rating plus one isolated camera flag.'
-                : 'Progression evidence complete — athlete and filmed form checks agree.'
+                : needsArmsConfirmation
+                  ? 'Progression evidence complete — the camera checked the shape, and you confirmed the arms.'
+                  : 'Progression evidence complete — athlete and filmed form checks agree.'
             : needsManualReplayReview
               ? 'Your Clean rating is saved. Review the replay above for this hold to count toward progression.'
-              : needsFlightConfirmation && value?.flightConfirmed !== true
-                ? `Your Clean rating is saved. Confirm the hold was unsupported (“${flightLabel(exerciseId)}”) for it to count.`
+              : !cameraSawBentArms && !athleteConfirmed(value, exerciseId)
+                ? needsArmsConfirmation
+                  ? `Your Clean rating is saved. Confirm what the camera cannot see (“${athleteConfirmationLabel(exerciseId)}”) for it to count.`
+                  : `Your Clean rating is saved. Confirm the hold was unsupported (“${athleteConfirmationLabel(exerciseId)}”) for it to count.`
                 : variantGaps.length > 0 && value?.variantConfirmed !== true
                   ? 'Your Clean rating is saved. The camera could not see part of the shape — confirm it above for this hold to count.'
                   : progressionCameraIssues.includes('arms')
@@ -876,6 +912,7 @@ function SavedReading({ auto, creditedHoldSec }: { auto: AutoForm; creditedHoldS
           ? `Flagged: ${auto.issues.map((i) => FORM_ISSUE_LABEL[i].toLowerCase()).join(', ')}.`
           : 'No measured issue.'}
         {auto.unseen?.length ? ` Not judged: ${auto.unseen.join(', ')}.` : ''}
+        {auto.coarse?.length ? ` Read only coarsely: ${auto.coarse.join(', ')}.` : ''}
       </div>
     </div>
   )
@@ -1021,6 +1058,7 @@ function readingOf(analysis: PoseFormResult): AutoForm {
     cleanRatio: analysis.cleanRatio,
     ...(analysis.coverage !== undefined ? { coverage: analysis.coverage } : {}),
     ...(analysis.unseen.length ? { unseen: analysis.unseen } : {}),
+    ...(analysis.coarse?.length ? { coarse: analysis.coarse } : {}),
   }
 }
 
@@ -1028,7 +1066,9 @@ function readingOf(analysis: PoseFormResult): AutoForm {
 function cleanEvidenceLine(evidence: CleanEvidence, creditedHoldSec: number): string {
   switch (evidence.state) {
     case 'verified':
-      return `Camera-verified clean ${evidence.seconds.toFixed(1)}s of ${creditedHoldSec.toFixed(1)}s.`
+      return evidence.armsUnmeasured
+        ? `The shape held ${evidence.seconds.toFixed(1)}s of ${creditedHoldSec.toFixed(1)}s on camera — elbows not included, only a large bend would show.`
+        : `Camera-verified clean ${evidence.seconds.toFixed(1)}s of ${creditedHoldSec.toFixed(1)}s.`
     case 'fault':
       return 'Camera-verified clean: none — the elbows were bent inside the hold.'
     case 'unknown':
@@ -1072,6 +1112,21 @@ function CleanWindow({ evidence, creditedHoldSec }: { evidence: CleanEvidence; c
               ? 'the camera saw the whole position in too few of the sampled moments to vouch for the time between them.'
               : 'this reading cannot verify clean time.'}{' '}
           Your {creditedHoldSec.toFixed(1)}s still count as training.
+        </span>
+      </div>
+    )
+  }
+  if (evidence.armsUnmeasured) {
+    // Not green, however long it held: the criterion that defines the skill
+    // is the one this window does not cover.
+    return (
+      <div className="mb-2 rounded-lg bg-raised px-2.5 py-2 text-ink2">
+        <span className="font-semibold">Shape held on camera: {evidence.seconds.toFixed(1)}s</span>
+        <span className="text-[11.5px]">
+          {' '}
+          of {creditedHoldSec.toFixed(1)}s — everything the camera can measure here. Your elbows are not part of it:
+          in this position it would show a large bend, not a small one, so it cannot call the arms locked. That part is
+          yours to confirm on the replay.
         </span>
       </div>
     )

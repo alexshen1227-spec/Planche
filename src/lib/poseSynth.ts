@@ -116,6 +116,13 @@ export interface SynthParams {
    * both sides of the body laid out.
    */
   posture?: Posture
+  /**
+   * Hang only. A body hanging still has its weight under its hands, so where
+   * the hands sit along it follows from its shape and is worked out here.
+   * `false` leaves them where `leanRatio` puts them, even when no bar could
+   * hold that skeleton — for showing the judge an impossible one on purpose.
+   */
+  balanced?: boolean
   /** Inverted: elbow–shoulder–hip, degrees. 180 = arms in line with the trunk. */
   shoulderDeg?: Track
   /** Inverted: how far the trunk leans from straight up, degrees (a wall plank's incline). */
@@ -275,8 +282,50 @@ export function buildTruePose(params: SynthParams, progress = 0): TruePose {
   const posture = params.posture ?? 'support'
   if (posture === 'inverted') return buildInvertedPose(params, progress)
   if (posture === 'flag') return buildFlagPose(params, progress)
-  if (posture === 'hang') return hung(buildSupportPose({ ...params, hipOffset: negated(params.hipOffset) }, progress))
+  if (posture === 'hang') {
+    const hang = (leanRatio: Track | undefined) =>
+      hung(buildSupportPose({ ...params, leanRatio, hipOffset: negated(params.hipOffset) }, progress))
+    if (params.balanced === false) return hang(params.leanRatio)
+    // The lean is not a free choice under a bar: the hands sit over the centre
+    // of mass, whatever the shape. Each textbook lever names a lean close to
+    // that; a shape changed from it — a pike, a sag, a dead hang — is balanced
+    // again here, or the skeleton would be one nothing could hang.
+    const facing = params.facing ?? 1
+    let lean = at(params.leanRatio, progress, SYNTH_DEFAULTS.leanRatio)
+    let pose = hang(lean)
+    for (let i = 0; i < 5; i++) {
+      const weight = centreOfMass(pose)
+      lean = Math.max(0, Math.min(1.1, lean + ((pose.wrist.x - weight.x) * facing) / pose.torso))
+      pose = hang(lean)
+    }
+    return pose
+  }
   return buildSupportPose(params, progress)
+}
+
+/**
+ * Where a skeleton's weight sits: each segment's share of body mass and how
+ * far along it its centre lies (Winter's anthropometric table, rounded). Kept
+ * apart from the judge's own copy on purpose — the generator must not borrow
+ * the thing it tests.
+ */
+function centreOfMass(pose: TruePose): Vec {
+  const mix = (a: Vec, b: Vec, t: number): Vec => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })
+  const mean = (a: Vec, b: Vec | undefined): Vec => (b ? mix(a, b, 0.5) : a)
+  const knee = mean(pose.knee, pose.secondKnee)
+  const ankle = mean(pose.ankle, pose.secondAnkle)
+  const parts: [number, Vec][] = [
+    [0.08, mix(pose.shoulder, pose.hip, -0.25)],
+    [0.5, mix(pose.shoulder, pose.hip, 0.5)],
+    [0.1, mix(pose.shoulder, pose.wrist, 0.5)],
+    [0.2, mix(pose.hip, knee, 0.43)],
+    [0.12, mix(knee, ankle, 0.6)],
+  ]
+  const mass = parts.reduce((sum, [m]) => sum + m, 0)
+  return {
+    x: parts.reduce((sum, [m, v]) => sum + m * v.x, 0) / mass,
+    y: parts.reduce((sum, [m, v]) => sum + m * v.y, 0) / mass,
+  }
 }
 
 /** A track with its sign flipped. */

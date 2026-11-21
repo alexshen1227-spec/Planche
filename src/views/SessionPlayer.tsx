@@ -65,7 +65,7 @@ import {
   endedForNonCapacityReason,
   humanRating,
   readingFitsWindow,
-  requiresFlightConfirmation,
+  athleteConfirmed,
   setNeedsProgressionFormEvidence,
   unseenVariantCriteria,
 } from '../lib/progression'
@@ -2553,7 +2553,7 @@ export function SessionPlayer({
       if (log.form?.confirmed !== true) return true
       if (isReviewOnly(log.exerciseId)) return log.form.visualReviewPassed !== true
       if (!log.form.auto) return true
-      if (requiresFlightConfirmation(log.exerciseId) && log.form.flightConfirmed !== true) return true
+      if (!athleteConfirmed(log.form, log.exerciseId)) return true
       return unseenVariantCriteria(log.exerciseId, log.form.auto).length > 0 && log.form.variantConfirmed !== true
     })
     const formLogs = lastMain

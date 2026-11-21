@@ -18,6 +18,18 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-11-20',
+    title: 'A hang is not a lever, and the camera says what it cannot see',
+    area: 'camera',
+    notes: [
+      'A plain hang filmed as a front lever is now read as a hang with the hips low. Before, a body hanging straight down could be taken for a level lever filmed with the phone on its side, and score 100. The camera now works out which way is down from where your weight hangs below your hands, so it is right whichever way the phone was held.',
+      'A handstand clip has to be the right way up. A picture on its side or upside down is refused instead of scored: from the joints alone, a handstand turned over is someone standing with their arms up, and the camera will not vouch for that. If your recordings come out sideways, turn rotation lock off.',
+      'In a lever, a handstand or a flag, the result no longer shows “Straight arms” or “Verified clean”. The camera can only see a large elbow bend in those positions, so it shows how long the shape held and says the arms are not part of that. A bend it can see is still named, and still stops the hold counting.',
+      'Those holds now count toward the next step only once you have watched the replay and confirmed your elbows stayed locked. It is the same button as “hung free” or “clear of the wall” — one tap for everything only you can vouch for.',
+      'Planche and 90° hold checks are unchanged: side-on on your hands is the one view where the camera reads an elbow to within a few degrees.',
+    ],
+  },
+  {
     date: '2026-11-18',
     title: 'Five skills, one app',
     area: 'training',

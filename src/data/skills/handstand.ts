@@ -429,7 +429,7 @@ export const HANDSTAND: SkillDef = {
     view: 'side',
     placement: 'Phone side-on, low, far enough back that hands and toes are both in frame when you are upside down.',
     honesty:
-      'From the side the camera reads elbow lock, how open the shoulders are, and whether hips and legs continue the line. It cannot see whether a toe is still touching the wall — you confirm the free part. It does not count push-up reps: those sets are filmed so that you can check them on the replay.',
+      'From the side, with the picture the right way up, the camera reads how open the shoulders are and whether hips and legs continue the line. Of your arms it sees only a large bend — upside down, a small one does not show — so you confirm the lockout on the replay. It cannot see whether a toe is still touching the wall — you confirm the free part. It does not count push-up reps: those sets are filmed so that you can check them on the replay.',
   },
   sourcing:
     'The order — wall line, a bail, balance drills at the wall, then free — is what coaches broadly agree on. The numbers are convention: wall-hold standards alone run from sets of 20 seconds to three minutes.',
