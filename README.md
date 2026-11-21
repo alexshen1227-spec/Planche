@@ -41,7 +41,7 @@ Then open http://localhost:5173.
 - **Progress** — per-skill hold trends and form trends, weekly volume, a consistency heatmap, PR board, 60 achievements (a skill's badges only show for athletes who train it), what the coach has measured per strategy, and full session history showing what each set stands on (delete recalculates everything).
 - **Settings** — skills and their order, theme, sounds, rest durations, weekly goal, session length, equipment and injury profile, stop-latency and walk-back calibration, "Check this phone", one-tap download of the camera checker for offline use, clip storage, JSON export/import backup, sample data, full reset.
 - **Crash-proof sessions** — the live workout is mirrored to storage on every set and again the moment the page is hidden, so a phone that sleeps or a tab the OS discards resumes where it left off.
-- **Safe on device** — a full PWA: a service worker precaches everything so it opens with no signal; every change is mirrored to a second on-device copy in IndexedDB; saved data that cannot be read is kept aside untouched rather than overwritten; two open tabs merge field by field; and the dashboard nudges you to export a backup once real history accumulates.
+- **Safe on device** — a full PWA: a service worker precaches the app so it opens with no signal (the camera checker is a separate download on first use, or one tap in Settings); every change is mirrored to a second on-device copy in IndexedDB; saved data that cannot be read is kept aside untouched rather than overwritten; two open tabs merge field by field; and the dashboard nudges you to export a backup once real history accumulates.
 
 ## How sure is any of this?
 

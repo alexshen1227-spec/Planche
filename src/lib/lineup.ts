@@ -1,6 +1,7 @@
 import type { AppState, Block, LineupRole, SetLog, SkillId, WorkoutRequest } from '../types'
 import { skillOfStep } from '../data/progressions'
 import { missingKit, skillOfExercise, SKILLS } from '../data/skills'
+import { fullParts, roomIn, shortDoses } from './sessionRoom'
 import { niggleRegionsToday } from './signals'
 import { activeSkills, focusSkill, wholeState } from './skills'
 import { todaysDay, WEEKDAY_NAMES } from './weekPlan'
@@ -137,22 +138,7 @@ export function rolesTrained(
   return roles
 }
 
-/** Skills that get a full part of a session this long: their holds and the strength work behind them. */
-export function fullParts(minutes: number): number {
-  return minutes < 25 ? 1 : 2
-}
-
-/** Short doses a session this long carries beside its full parts: two sets, or a few minutes of balance practice. */
-export function shortDoses(minutes: number): number {
-  return minutes < 30 ? 0 : minutes <= 50 ? 1 : 2
-}
-
-/** What a session of this length has room for, in words. */
-export function roomIn(minutes: number): string {
-  if (fullParts(minutes) === 1) return 'one skill'
-  const doses = shortDoses(minutes)
-  return `two skills in full${doses === 0 ? '' : doses === 1 ? ' and one short dose' : ' and two short doses'}`
-}
+export { fullParts, roomIn, shortDoses }
 
 /** Skills the athlete trains *and* has the kit for, focus first. */
 export function trainableActiveSkills(stateIn: AppState): SkillId[] {

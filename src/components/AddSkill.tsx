@@ -3,7 +3,7 @@ import type { SkillId } from '../types'
 import { useStore } from '../lib/store'
 import { STEP_BY_ID } from '../data/progressions'
 import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
-import { equipmentLabel } from '../data/equipment'
+import { kitNeedsPhrase } from '../data/equipment'
 import { activeSkills, hasTrack, stepOfSkill } from '../lib/skills'
 import {
   ladderItem,
@@ -73,8 +73,7 @@ export function AddSkill({ onClose, onAdded }: { onClose: () => void; onAdded: (
                   <div className="mt-0.5 text-[13px] leading-relaxed text-ink2">{def.tagline}</div>
                   {gap.length ? (
                     <div className="mt-1 text-[12px] leading-relaxed text-accent-text">
-                      Needs {gap.map((options) => options.map((id) => equipmentLabel(id)).join(' or ')).join(', and ')} — you
-                      have not listed it yet.
+                      Needs {kitNeedsPhrase(gap)} — not on your equipment list yet.
                     </div>
                   ) : null}
                 </div>

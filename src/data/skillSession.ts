@@ -1,5 +1,6 @@
 import type { AppState, Block, BlockRole, Section, SkillId, StepDef, StepId, Workout } from '../types'
 import { hold, reps } from './blocks'
+import { withKitArticles } from './equipment'
 import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID, stepAfter, stepBefore } from './progressions'
 import { pressingChoiceFor } from './pressing'
@@ -471,7 +472,10 @@ export function skillSession(
   const needs = [...new Set(kit.left.map((entry) => entry.needs))]
   for (const need of needs) {
     const names = kit.left.filter((entry) => entry.needs === need).map((entry) => entry.name.toLowerCase())
-    adjustments.push(`Left out — ${names.length === 1 ? 'it needs' : 'they need'} ${need}: ${joinWords(names)}.`)
+    // `need` arrives as bare kit names; "it needs pull-up bar" was the result.
+    adjustments.push(
+      `Left out — ${names.length === 1 ? 'it needs' : 'they need'} ${withKitArticles(need)}: ${joinWords(names)}.`,
+    )
   }
   kit.notes.forEach((note, i) => {
     const subject = kit.about[i]

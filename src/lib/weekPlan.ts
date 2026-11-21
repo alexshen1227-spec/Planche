@@ -1,6 +1,7 @@
 import type { AppState, DayPlan, SkillId, WeekPlan, Weekday } from '../types'
 import { SKILL_IDS } from '../types'
 import { missingKit, skillOfExercise, SKILLS } from '../data/skills'
+import { fullParts, roomIn, shortDoses } from './sessionRoom'
 import { activeSkills, wholeState } from './skills'
 import { addDays, weekStart } from './time'
 
@@ -120,27 +121,70 @@ export function nextPlannedDay(state: AppState, now = Date.now()): { weekday: We
 }
 
 export interface PlanCoverage {
-  /** Per skill the athlete trains: days a week it has a full part (first or second on a day), and days it has a short dose (third). */
-  skills: { skill: SkillId; full: number; short: number }[]
+  /**
+   * Per skill the athlete trains, days a week it would have: a full part
+   * (`full`), a short dose (`short`), a place on the list the session length
+   * has no room for (`leftOut`), or a day it is listed on but cannot train for
+   * want of kit (`unavailable`).
+   */
+  skills: { skill: SkillId; full: number; short: number; leftOut: number; unavailable: number }[]
+  /** Days at least one listed skill can train. */
   trainingDays: number
   restDays: number
-  /** Days left to the coach — who trains on them is not fixed, so they are not counted for any skill. */
+  /** Days left to the coach — unassigned, or assigned only to skills that cannot train. Counted for no skill: who trains on them is not fixed. */
   openDays: number
 }
 
-/** How the plan, as written, spreads the athlete's skills over the week. */
-export function planCoverage(stateIn: AppState, plan: WeekPlan | undefined = wholeState(stateIn).settings.weekPlan): PlanCoverage {
+/**
+ * How a plan would spread the athlete's skills over the week — as the
+ * sessions would really be built, not as the plan is written. Counted from the
+ * list alone, a twenty-minute athlete was told "Planche 3 days" while the
+ * planche was second on a day with room for one skill, and an athlete with no
+ * bar "Front lever 2 days". The same rules the line-up uses decide here: who
+ * can train (`readDay`), and how many the session length has room for.
+ *
+ * The plan is always passed: an edited draft is not the saved plan, and an
+ * emptied one is `{}`, not "whatever is saved".
+ */
+export function planCoverage(stateIn: AppState, plan: WeekPlan | undefined): PlanCoverage {
   const state = wholeState(stateIn)
-  const days = WEEKDAYS.map((day) => plan?.[day])
-  const count = (skill: SkillId, positions: (index: number) => boolean) =>
-    days.filter((day) => Array.isArray(day) && day.some((entry, index) => entry === skill && positions(index))).length
-  return {
-    skills: activeSkills(state).map((skill) => ({ skill, full: count(skill, (i) => i < 2), short: count(skill, (i) => i >= 2) })),
-    trainingDays: days.filter((day) => Array.isArray(day) && day.length > 0).length,
-    restDays: days.filter((day) => day === 'rest').length,
-    openDays: days.filter((day) => day === undefined || (Array.isArray(day) && day.length === 0)).length,
+  const active = activeSkills(state)
+  const can = (skill: SkillId) => active.includes(skill) && missingKit(skill, state.profile.equipment).length === 0
+  const minutes = state.settings.sessionMinutes
+  const two = fullParts(minutes) >= 2
+  const rows = new Map(active.map((skill) => [skill, { skill, full: 0, short: 0, leftOut: 0, unavailable: 0 }]))
+  let trainingDays = 0
+  let restDays = 0
+  let openDays = 0
+  for (const weekday of WEEKDAYS) {
+    const day = plan?.[weekday]
+    if (day === 'rest') {
+      restDays += 1
+      continue
+    }
+    if (!day?.length) {
+      openDays += 1
+      continue
+    }
+    for (const skill of day) if (!can(skill)) rows.get(skill) && (rows.get(skill)!.unavailable += 1)
+    const available = day.filter(can)
+    if (!available.length) {
+      openDays += 1
+      continue
+    }
+    trainingDays += 1
+    available.forEach((skill, place) => {
+      const row = rows.get(skill)
+      if (!row) return
+      if (place === 0 || (place === 1 && two)) row.full += 1
+      else if (two && place < 2 + shortDoses(minutes)) row.short += 1
+      else row.leftOut += 1
+    })
   }
+  return { skills: [...rows.values()], trainingDays, restDays, openDays }
 }
+
+const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
 /**
  * What is worth saying about a plan before it is saved — only when the plan
@@ -151,12 +195,34 @@ export function planCoverage(stateIn: AppState, plan: WeekPlan | undefined = who
  */
 export function coverageNotes(state: AppState, plan: WeekPlan | undefined): string[] {
   const coverage = planCoverage(state, plan)
-  if (coverage.trainingDays === 0 || coverage.openDays > 0) return []
+  const minutes = wholeState(state).settings.sessionMinutes
   const notes: string[] = []
-  for (const { skill, full, short } of coverage.skills) {
+  // Facts about days already written, whatever else is still open.
+  for (const { skill, leftOut, unavailable } of coverage.skills) {
+    const name = SKILLS[skill].name
+    if (unavailable > 0) {
+      notes.push(
+        `${name} is on ${counted(unavailable, 'day')} of this plan but is waiting for kit, so it does not train on ${
+          unavailable === 1 ? 'that day' : 'those days'
+        } until the kit is on your equipment list.`,
+      )
+    }
+    if (leftOut > 0) {
+      notes.push(
+        `${name} is left out on ${counted(leftOut, 'day')} of this plan: a ${minutes}-minute session has room for ${roomIn(minutes)}. Put it first${
+          fullParts(minutes) >= 2 ? ' or second' : ''
+        } on a day, or set a longer session in Settings.`,
+      )
+    }
+  }
+  if (coverage.trainingDays === 0 || coverage.openDays > 0) return notes
+  for (const { skill, full, short, leftOut, unavailable } of coverage.skills) {
     const name = SKILLS[skill].name
     if (full === 0 && short === 0) {
-      notes.push(`${name} is in none of your days, so with this plan it is not trained at all. Add it to a day, or leave a day to the coach.`)
+      // Listed but never trained has been said above, with its reason.
+      if (leftOut === 0 && unavailable === 0) {
+        notes.push(`${name} is in none of your days, so with this plan it is not trained at all. Add it to a day, or leave a day to the coach.`)
+      }
     } else if (full === 0) {
       notes.push(`${name} only ever gets a short dose in this plan — enough to keep a position, not to build one.`)
     } else if (full === 1) {

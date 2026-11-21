@@ -786,6 +786,14 @@ export interface Settings {
    */
   soundThroughSilent?: boolean
   /**
+   * The weekly goal that applied before the latest change to it, and when it
+   * changed. Weeks finished before then are still judged against the goal
+   * they were trained under: without this, raising the goal — or saving a
+   * week plan with more days in it — re-judged every past week against the
+   * new number, and an eight-week streak read 0 the moment Save was pressed.
+   */
+  goalBefore?: { goal: number; until: number }
+  /**
    * Which skills each weekday is for, when the athlete has said. Absent, or a
    * day left out of it, the coach shares sessions between skills by priority.
    */

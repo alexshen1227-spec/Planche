@@ -16,7 +16,14 @@ import {
   sessionHoldSec,
   sessionDurationSec,
 } from '../lib/stats'
-import { armStats, STRATEGY_BY_ID, formatStrategyEvidence, buildPlan } from '../lib/coach'
+import {
+  armStats,
+  STRATEGY_BY_ID,
+  formatStrategyEvidence,
+  buildPlan,
+  strategyStanding,
+  type NoLeaderReason,
+} from '../lib/coach'
 import { diagnose } from '../lib/diagnose'
 import { PLATEAU_LABEL } from '../lib/plateau'
 import { PROGRESSION_STOP_LATENCY_SEC } from '../lib/sessionTiming'
@@ -46,6 +53,17 @@ import { programmedPress } from '../data/workouts'
 
 /** Categories whose logs are prescribed counts, not efforts worth a record. */
 const UNTRACKED_RECORD_CATEGORIES = new Set<Exercise['category']>(['general', 'wrist', 'mobility'])
+
+/** Why no approach is marked as leading, in the athlete's words (the rule is the coach's: `strategyStanding`). */
+const NO_LEADER: Record<NoLeaderReason, string> = {
+  unmeasured: 'No approach has a measured result yet, so there is nothing to rank.',
+  alone: 'Only one approach has a measured result so far, so there is nothing to rank it against.',
+  level:
+    'No approach is ahead yet: on the coach’s ranking, which pulls thinly measured results toward the average, the best of them are too close to call — so none is marked as leading.',
+  split:
+    'No approach is marked as leading: the one the coach ranks first does not show the biggest gain. Its ranking is more than the observed rate — clearing the bar, effort, joint reports and filmed form all count — so the two can differ.',
+  flat: 'No approach is marked as leading: none has a measurable gain after it yet.',
+}
 
 /**
  * Form over weeks, per position.
@@ -439,7 +457,10 @@ export function Stats({
   const triedArms = useMemo(() => arms.filter((arm) => arm.attempts > 0).length, [arms])
   const measuredArms = useMemo(() => arms.filter((arm) => arm.n > 0).length, [arms])
   const coachPick = useMemo(() => buildPlan(state), [state])
-  const bestArm = useMemo(() => [...arms].filter((a) => a.n > 0).sort((a, b) => b.mean - a.mean)[0], [arms])
+  const standing = useMemo(
+    () => strategyStanding(arms, STEP_BY_ID[state.stepId]?.unlockSec ?? 20),
+    [arms, state.stepId],
+  )
   const maxArmRate = useMemo(() => Math.max(0.001, ...arms.map((a) => Math.abs(a.secPerWeek ?? 0))), [arms])
   const diag = useMemo(() => diagnose(state, Date.now(), coachPick.plateau), [state, coachPick])
   const weightNow = useMemo(() => lastOf(state, 'weightKg'), [state])
@@ -797,22 +818,30 @@ export function Stats({
             <span className="text-ink3">A try becomes measurable after a later key-hold session.</span>
           ) : null}
         </div>
+        {/* A ranking with no leader says so, and why — it is not left to the
+            absence of a badge. */}
+        {standing.leader === null ? (
+          <p className="mt-2 text-[12.5px] leading-relaxed text-ink2" role="status">
+            {NO_LEADER[standing.why]}
+          </p>
+        ) : null}
 
         <div className="mt-4 space-y-2.5">
           {arms.map((a) => {
             const def = STRATEGY_BY_ID[a.id]
-            const isBest = bestArm && a.id === bestArm.id && a.n > 0
+            const isLeading = standing.leader === a.id
             return (
               <div key={a.id} className="rounded-2xl border border-line bg-raised p-3.5">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-semibold text-ink">{def.name}</span>
-                    {isBest && measuredArms > 1 ? (
-                      // "Leading", not "fastest": the ranking is the coach's
-                      // utility, and a lead inside the noise is not a speed.
+                    {isLeading ? (
+                      // "Leading", not "fastest": ranked first by the coach,
+                      // clear of the next, with the biggest observed gain — and
+                      // still an observation, not a cause.
                       <span
                         className="rounded-full bg-ok-soft px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-ok-text"
-                        title="Highest measured result so far — not proof it causes faster gains"
+                        title="Ranked first by the coach, clear of the next, with the biggest observed gain so far — not proof it causes faster gains"
                       >
                         leading
                       </span>
@@ -830,7 +859,7 @@ export function Stats({
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
                   <div
                     className={`h-full rounded-full ${
-                      (a.secPerWeek ?? 0) < 0 ? 'bg-danger/60' : isBest ? 'bg-ok' : 'bg-accent/60'
+                      (a.secPerWeek ?? 0) < 0 ? 'bg-danger/60' : isLeading ? 'bg-ok' : 'bg-accent/60'
                     }`}
                     style={{
                       width: `${

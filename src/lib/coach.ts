@@ -135,6 +135,47 @@ const PRIOR_WINDOW_DAYS = 28
 /** Exploration weight, scaled to the reward range. */
 const UCB_C = 0.06
 
+/** The lead on the coach's own score below which it calls two approaches neck and neck. */
+export const DECIDED_LEAD_SEC_PER_WEEK = 0.5
+
+/** The gain a rate is printed as one from; at or under it a screen says "no measurable gain". */
+const SHOWN_AS_GAIN = 0.05
+
+/** Why no approach is marked as leading. */
+export type NoLeaderReason = 'unmeasured' | 'alone' | 'level' | 'split' | 'flat'
+
+/**
+ * The approach that is genuinely ahead — or why none is.
+ *
+ * "Leading" once went to whichever measured approach sorted first. With five
+ * approaches on one result each and the coach's scores level, that was simply
+ * the first in the list, badged beside the smallest observed gain of the five.
+ * A leader has to be clear of the next on the coach's score (the same bar
+ * `pickStrategy` uses), have a gain that was actually observed, and show a
+ * bigger one than every other approach — so the badge cannot sit beside a
+ * number that contradicts it.
+ */
+export function strategyStanding(
+  arms: readonly Pick<ArmStats, 'id' | 'n' | 'mean' | 'secPerWeek'>[],
+  unlockSec: number,
+): { leader: StrategyId } | { leader: null; why: NoLeaderReason } {
+  const measured = arms.filter((arm) => arm.n > 0).sort((a, b) => b.mean - a.mean)
+  if (measured.length === 0) return { leader: null, why: 'unmeasured' }
+  if (measured.length === 1) return { leader: null, why: 'alone' }
+  const [first, next] = measured
+  if ((first.mean - next.mean) * unlockSec < DECIDED_LEAD_SEC_PER_WEEK) return { leader: null, why: 'level' }
+  // Compared as printed, to a tenth of a second: two approaches showing the
+  // same figure are not told apart by a badge.
+  const shown = (arm: (typeof measured)[number]) => (arm.secPerWeek === null ? null : Math.round(arm.secPerWeek * 10) / 10)
+  const others = measured.slice(1)
+  const firstShown = shown(first)
+  if (firstShown === null || first.secPerWeek! <= SHOWN_AS_GAIN) {
+    return { leader: null, why: others.some((arm) => (arm.secPerWeek ?? 0) > SHOWN_AS_GAIN) ? 'split' : 'flat' }
+  }
+  if (others.some((arm) => (shown(arm) ?? -Infinity) >= firstShown)) return { leader: null, why: 'split' }
+  return { leader: first.id }
+}
+
 export interface ArmStats {
   id: StrategyId
   /** Sessions in which this strategy was actually attempted on this step. */
@@ -507,7 +548,7 @@ export function pickStrategy(state: AppState): CoachPick {
   const unlockSec = STEP_BY_ID[state.stepId]?.unlockSec ?? 20
   const runnerUp = ranked.find((arm) => arm.id !== best.id)
   const leadSecPerWeek = runnerUp ? (best.mean - runnerUp.mean) * unlockSec : Infinity
-  const decided = leadSecPerWeek >= 0.5
+  const decided = leadSecPerWeek >= DECIDED_LEAD_SEC_PER_WEEK
   const evaluated = stats.reduce((t, s) => t + s.n, 0)
 
   return {

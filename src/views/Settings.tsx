@@ -15,7 +15,7 @@ import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
 import { activeSkills, stepOfSkill } from '../lib/skills'
 import { AddSkill } from '../components/AddSkill'
 import { APP_NAME } from '../data/app'
-import { defaultSurface, EQUIPMENT_OPTIONS, equipmentLabel, TRAINING_SURFACES } from '../data/equipment'
+import { defaultSurface, EQUIPMENT_OPTIONS, kitNeedsPhrase, TRAINING_SURFACES } from '../data/equipment'
 import { exportData, readImportFile, validateImport } from '../lib/exportImport'
 import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
 import { INSTALL_STEPS, installState } from '../lib/install'
@@ -25,7 +25,7 @@ import {
   exportProblemReports,
   listProblemReports,
 } from '../lib/problemReports'
-import { downloadPoseModel, poseModelReady, verifyOfflineReady } from '../lib/poseBackend'
+import { downloadPoseModel, POSE_DOWNLOAD_HOSTS, poseModelReady, verifyOfflineReady } from '../lib/poseBackend'
 import { fmtDate } from '../lib/time'
 import { fmtWeight } from '../lib/units'
 import { MeasurePrompt, lastOf } from '../components/MeasurePrompt'
@@ -510,55 +510,68 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           hint="The order is the priority: the first leads every session and the rest rotate in behind it. Dropping a skill keeps its progress — it comes back where you left it. Steps and goals are changed on the Path tab."
           stack
         >
-          <ol className="space-y-2">
+          {/* The list takes the row's width and no more. Left to size itself it
+              grew to its longest line — "Waiting for a pull-up bar or gymnastic
+              rings" — and on a phone that pushed the last button, and the page
+              with it, past the right edge. */}
+          <ol className="w-full min-w-0 max-w-md space-y-2">
             {skillOrder.map((skill, index) => {
               const def = SKILLS[skill]
               const step = STEP_BY_ID[stepOfSkill(state, skill)]
               const waiting = missingKit(skill, state.profile.equipment)
               return (
-                <li key={skill} className="flex items-center gap-2 rounded-xl border border-line bg-raised px-3 py-2">
-                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-surface text-[11.5px] font-bold text-ink2 tnum">
-                    {index + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13.5px] font-semibold text-ink">
-                      {def.name}
-                      {index === 0 ? <span className="ml-1.5 text-[11px] font-medium text-accent-text">main</span> : null}
-                    </div>
-                    <div className="truncate text-[12px] text-ink3">
-                      {waiting.length
-                        ? `Waiting for ${waiting.map((options) => options.map((id) => equipmentLabel(id)).join(' or ')).join(', and ')}`
-                        : `On ${step.name}`}
+                // The controls drop under the text when the two cannot share a
+                // line, so the name and what the skill is waiting for are read
+                // in full instead of being cut to fit beside three buttons.
+                <li
+                  key={skill}
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-line bg-raised px-3 py-2"
+                >
+                  {/* Number and text stay together; only the controls wrap. */}
+                  <div className="flex min-w-0 flex-1 basis-56 items-center gap-2">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-surface text-[11.5px] font-bold text-ink2 tnum">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-[13.5px] font-semibold text-ink">
+                        {def.name}
+                        {index === 0 ? <span className="ml-1.5 text-[11px] font-medium text-accent-text">main</span> : null}
+                      </div>
+                      <div className="text-[12px] leading-snug text-ink3">
+                        {waiting.length ? `Waiting for ${kitNeedsPhrase(waiting)}` : `On ${step.name}`}
+                      </div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => moveSkill(index, -1)}
-                    disabled={index === 0}
-                    aria-label={`Move ${def.name} up`}
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
-                  >
-                    <Icon name="chevronR" size={14} className="-rotate-90" />
-                  </button>
-                  <button
-                    onClick={() => moveSkill(index, 1)}
-                    disabled={index === skillOrder.length - 1}
-                    aria-label={`Move ${def.name} down`}
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
-                  >
-                    <Icon name="chevronR" size={14} className="rotate-90" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      dispatch({ type: 'SET_SKILLS', skills: skillOrder.filter((id) => id !== skill) })
-                      pushToast(`${def.name} is off your list. Its progress is kept.`, 'success', 5000)
-                    }}
-                    disabled={skillOrder.length === 1}
-                    aria-label={`Stop training ${def.name}`}
-                    title={skillOrder.length === 1 ? 'At least one skill stays on the list' : undefined}
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
-                  >
-                    <Icon name="x" size={14} />
-                  </button>
+                  <div className="ml-auto flex shrink-0 gap-2">
+                    <button
+                      onClick={() => moveSkill(index, -1)}
+                      disabled={index === 0}
+                      aria-label={`Move ${def.name} up`}
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
+                    >
+                      <Icon name="chevronR" size={14} className="-rotate-90" />
+                    </button>
+                    <button
+                      onClick={() => moveSkill(index, 1)}
+                      disabled={index === skillOrder.length - 1}
+                      aria-label={`Move ${def.name} down`}
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
+                    >
+                      <Icon name="chevronR" size={14} className="rotate-90" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        dispatch({ type: 'SET_SKILLS', skills: skillOrder.filter((id) => id !== skill) })
+                        pushToast(`${def.name} is off your list. Its progress is kept.`, 'success', 5000)
+                      }}
+                      disabled={skillOrder.length === 1}
+                      aria-label={`Stop training ${def.name}`}
+                      title={skillOrder.length === 1 ? 'At least one skill stays on the list' : undefined}
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
+                    >
+                      <Icon name="x" size={14} />
+                    </button>
+                  </div>
                 </li>
               )
             })}
@@ -788,7 +801,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </Row>
         <Row
           label="Auto form check"
-          hint="Analyses each supported filmed hold as soon as the clip is ready. When enabled, the first check may download the on-device pose model; later checks are faster."
+          hint="Analyses each supported filmed hold as soon as the clip is ready, on this device. The first check downloads the checker if it is not here yet (see Camera checker download, below); later checks are faster."
         >
           <Toggle label="Auto form check" on={s.autoAnalyze} onChange={(v) => set({ autoAnalyze: v })} />
         </Row>
@@ -809,7 +822,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                   : offline === 'checking'
                     ? 'Previously downloaded. Checking whether its files are still cached…'
                     : 'Previously downloaded. This browser cannot confirm the files are still cached, so offline use is not guaranteed.'
-              : 'The form checker is a one-off multi-megabyte download. Fetch it here on a connection you trust instead of mid-workout on gym wi-fi; afterwards it works offline.'
+              : `The form checker is not built into the app: the first time it runs, this device fetches it — the pose model from Google’s file hosting (${POSE_DOWNLOAD_HOSTS.model}) and the code that runs it from jsDelivr (${POSE_DOWNLOAD_HOSTS.runtime}), a multi-megabyte download. Only the request for those files goes out; nothing you film or log is sent. Fetch it here on a connection you trust instead of mid-workout on gym wi-fi; afterwards it is kept on this device and works offline.`
           }
         >
           <button
@@ -1080,8 +1093,8 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           label="Install on this device"
           hint={
             installed === 'installed'
-              ? 'Installed — it opens full-screen and works without signal.'
-              : `${INSTALL_STEPS[installed]} An installed app opens full-screen and works without signal${
+              ? 'Installed — it opens full-screen and works without signal (the camera check too, once its checker has been downloaded here).'
+              : `${INSTALL_STEPS[installed]} An installed app opens full-screen and works without signal (the camera check too, once its checker has been downloaded there)${
                   installed === 'ios-tab'
                     ? ', and Safari’s clean-up of sites not opened for about a week does not apply to it. It starts empty — export a backup here first, then choose “I have a backup file” on its first screen. Afterwards, run Check this phone once.'
                     : '.'
@@ -1180,8 +1193,14 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       <div className="rounded-2xl border border-line bg-surface p-5 text-[13.5px] leading-relaxed text-ink2 shadow-card">
         <p>
           <span className="font-display font-semibold text-ink">{APP_NAME}</span> · a local-first training companion
-          for the planche, front lever, handstand push-up, 90° hold and human flag. All data lives in your browser —
-          nothing leaves your machine.
+          for the planche, front lever, handstand push-up, 90° hold and human flag. Everything you log and film is
+          kept in this browser: there is no account, and none of it is uploaded.
+        </p>
+        <p className="mt-2">
+          One part of the app is fetched separately. The camera form checker is downloaded the first time it runs — the
+          pose model from Google’s file hosting ({POSE_DOWNLOAD_HOSTS.model}), the code that runs it from jsDelivr (
+          {POSE_DOWNLOAD_HOSTS.runtime}) — and from then on it works on this device. That download is a request for
+          files, as loading the app itself is; your clips and your log are not part of it.
         </p>
         <p className="mt-2">
           Progressions follow common gymnastics-strength practice (leans → frog → tuck → advanced tuck → one-leg →

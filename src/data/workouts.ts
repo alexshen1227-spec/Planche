@@ -14,7 +14,7 @@ import type {
 import { hold, reps } from './blocks'
 import { EXERCISE_BY_ID } from './exercises'
 import { skillOfStep, STEP_BY_ID, stepAfter, stepBefore } from './progressions'
-import { defaultSurface, equipmentLabel } from './equipment'
+import { defaultSurface, equipmentLabel, equipmentPhrase } from './equipment'
 import { PRESS_LADDER, pressingChoiceFor } from './pressing'
 import { ownsKit, SKILLS } from './skills'
 import { skillSession, skillWarmup } from './skillSession'
@@ -592,7 +592,9 @@ export function resolveEquipment(
       continue
     }
     const exercise = EXERCISE_BY_ID[block.exerciseId]
-    const missing = (exercise?.requires ?? []).filter((id) => !ownsKit(equipment, id)).map(equipmentLabel)
+    const lacking = (exercise?.requires ?? []).filter((id) => !ownsKit(equipment, id))
+    // "It needs a pull-up bar", not "it needs pull-up bar".
+    const missing = lacking.map(equipmentPhrase)
     const substitute = (EQUIPMENT_SUBSTITUTES[block.exerciseId] ?? []).find(
       ({ id }) =>
         hasEquipmentFor(id, equipment) && !blocks.some((b) => b.exerciseId === id) && !out.some((b) => b.exerciseId === id),
@@ -608,7 +610,7 @@ export function resolveEquipment(
             : sub.type === 'hold'
               ? hold(15)
               : reps(6),
-        note: `${missing.join(' and ')} not in your equipment — ${sub.name.toLowerCase()} instead.`,
+        note: `No ${lacking.map(equipmentLabel).join(' or ').toLowerCase()} on your equipment list — ${sub.name.toLowerCase()} instead.`,
       })
       notes.push(
         `${exercise?.name ?? block.exerciseId} needs ${missing.join(' and ')}, so ${sub.name.toLowerCase()} is used instead.`,

@@ -3,7 +3,7 @@ import type { SkillId, Tab, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
 import { STEP_BY_ID, stepAfter, stepsOf } from '../data/progressions'
 import { missingKit, SKILLS } from '../data/skills'
-import { equipmentLabel } from '../data/equipment'
+import { kitNeedsPhrase } from '../data/equipment'
 import { activeSkills, skillView } from '../lib/skills'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import {
@@ -31,6 +31,7 @@ import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { Modal, ProgressRing, Stat, SectionTitle } from '../components/ui'
 import { AddSkill } from '../components/AddSkill'
+import { WeekPlanCard } from '../components/WeekPlanCard'
 import { INSTALL_STEPS, installState } from '../lib/install'
 import { WalkBackCalibrator } from '../components/WalkBackCalibrator'
 import { walkMeasureDue } from '../lib/sessionTiming'
@@ -483,7 +484,7 @@ export function Dashboard({
         {waiting.map(({ skill, missing }) => (
           <p key={skill} className="relative mt-2 rounded-xl border border-accent/30 bg-accent-soft px-3 py-2 text-[12.5px] leading-relaxed text-ink">
             <span className="font-semibold">{SKILLS[skill].name} is waiting for kit.</span>{' '}
-            {SKILLS[skill].requiresNote ?? `It needs ${missing.map((options) => options.map((id) => equipmentLabel(id)).join(' or ')).join(', and ')}.`}{' '}
+            {SKILLS[skill].requiresNote ?? `It needs ${kitNeedsPhrase(missing)}.`}{' '}
             Add it under Settings → Equipment and it joins your sessions.
           </p>
         ))}
@@ -593,6 +594,15 @@ export function Dashboard({
           </div>
         ) : null}
       </div>
+
+      {/* The athlete's own week, directly under today. It is told what the
+          session above trains once the rails have run, so it never names a
+          skill day beside a pain-safe session. */}
+      <WeekPlanCard
+        className="animate-rise mt-4"
+        style={{ animationDelay: '10ms' }}
+        sessionSkills={lineup.map((entry) => entry.skill)}
+      />
 
       {/* A named stall, or a real jump. Neither is filler: the card only
           exists when the log supports one, so an athlete who is simply

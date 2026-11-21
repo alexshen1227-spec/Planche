@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { STEP_BY_ID, stepBefore, stepsOf } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
-import { equipmentLabel } from '../data/equipment'
+import { kitNeedsPhrase } from '../data/equipment'
 import { activeSkills, skillView, viewForStep } from '../lib/skills'
 import { ladderStatus, type LadderStatus } from '../lib/repLadder'
 import { goalChoices } from '../lib/placement'
@@ -181,8 +181,7 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
       {kitGap.length ? (
         <p className="mt-3 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3 text-[13px] leading-relaxed text-ink" role="status">
           <span className="font-semibold">{skillDef.name} is waiting for kit.</span>{' '}
-          {skillDef.requiresNote ??
-            `It needs ${kitGap.map((options) => options.map((id) => equipmentLabel(id)).join(' or ')).join(', and ')}.`}{' '}
+          {skillDef.requiresNote ?? `It needs ${kitNeedsPhrase(kitGap)}.`}{' '}
           Add it under Settings → Equipment and it joins your sessions; until then it is left out of them.
         </p>
       ) : null}

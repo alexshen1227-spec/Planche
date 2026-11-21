@@ -72,7 +72,7 @@ export function levelItem(skill: SkillId): InterviewItem {
     skill,
     question: `${def.name}: which is the hardest of these you can already hold?`,
     standard:
-      'Pick the last one you are sure of — held clean for the whole time shown, not the best you have ever touched. Anything you pick is checked on camera in your first sessions.',
+      'Pick the last one you are sure of — held clean for the whole time shown, not the best you have ever touched. From your first sessions these holds are filmed: the camera checks the ones it can judge, and you check the rest yourself on the replay.',
     options: [
       { label: 'None of these yet', value: 0, hint: 'Start at the beginning of the road' },
       ...def.steps.map((step, index) => ({

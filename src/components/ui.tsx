@@ -207,6 +207,35 @@ export function Stat({ label, value, sub }: { label: string; value: ReactNode; s
   )
 }
 
+/**
+ * The one work target worth reading before a session starts: the movement,
+ * what each set asks for, and how many.
+ *
+ * The name wraps; it is never cut. Beside a fixed right-hand column a phone
+ * left it 71px, so "Pseudo Planche Plank" read "Pseudo P…" and "Planche Lean"
+ * read "Planche …" on the one line meant to say what today is for. On a narrow
+ * screen the numbers go under the name instead of beside it.
+ */
+export function MainTarget({ name, target, detail }: { name: string; target: string; detail: string }) {
+  return (
+    <div className="mt-4 flex items-center gap-3 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-on-accent">
+        <Icon name="target" size={18} />
+      </span>
+      <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-3">
+        <div className="min-w-0 sm:flex-1">
+          <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent-text">Main target</div>
+          <div className="text-[14px] font-semibold leading-snug text-ink">{name}</div>
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 sm:mt-0 sm:block sm:shrink-0 sm:text-right">
+          <div className="text-[15px] font-bold text-ink tnum">{target}</div>
+          <div className="text-[11.5px] text-ink3 tnum">{detail}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function SectionTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
     <div className="mb-3 mt-8 flex items-end justify-between gap-3 first:mt-0">

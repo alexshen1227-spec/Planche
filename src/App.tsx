@@ -351,6 +351,13 @@ export default function App() {
   // rather than flashing a placeholder over the whole page.
   const setTab = (next: Tab) => startTransition(() => setTabNow(next))
   const devLab = useDevLabRoute()
+  // A fresh start opens on Home. The tab outlives a reset — this component
+  // stays mounted and only swaps its screens for onboarding — so an athlete
+  // who reset from Settings and set up again was dropped back on the Settings
+  // tab, at the button they had just pressed.
+  useEffect(() => {
+    if (!state.onboarded) setTabNow('home')
+  }, [state.onboarded])
   usePrefetchScreens(state.onboarded && boot.phase === 'ready' && !devLab)
   // An interrupted session (phone slept, tab discarded) is picked back up
   // automatically on the next load instead of being silently lost.

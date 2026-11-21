@@ -10,6 +10,7 @@ import {
   countRounds,
   challengeBlockedReason,
   finalizeFromPlan,
+  isPainSafe,
   planForToday,
 } from '../data/workouts'
 import { missingKit, SKILLS } from '../data/skills'
@@ -29,12 +30,13 @@ import { confetti } from '../lib/confetti'
 import { sfx } from '../lib/audio'
 import { fmtHold } from '../lib/time'
 import { Icon } from '../components/Icon'
-import { Modal, SectionTitle } from '../components/ui'
+import { MainTarget, Modal, SectionTitle } from '../components/ui'
 import { defaultSurface, surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 import { recordForSurface } from '../lib/records'
 import { STRATEGY_BY_ID } from '../lib/coach'
 import { useToday } from '../lib/useToday'
 import { ASSIST_LABEL } from '../components/SetupRow'
+import { WeekPlanCard } from '../components/WeekPlanCard'
 
 const SECTION_LABEL: Record<Section, string> = {
   warmup: 'Warm-up',
@@ -47,21 +49,12 @@ const SECTION_LABEL: Record<Section, string> = {
 function WorkoutTarget({ workout }: { workout: Workout }) {
   const target = primaryTargetBlock(workout)
   if (!target) return null
-  const exercise = EXERCISE_BY_ID[target.exerciseId]
   return (
-    <div className="mt-4 flex items-center gap-3 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3">
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-on-accent">
-        <Icon name="target" size={18} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent-text">Main target</div>
-        <div className="truncate text-[14px] font-semibold text-ink">{exercise.name}</div>
-      </div>
-      <div className="shrink-0 text-right">
-        <div className="text-[15px] font-bold text-ink tnum">{describeTarget(target)}</div>
-        <div className="text-[11.5px] text-ink3 tnum">{describeBlock(target)}</div>
-      </div>
-    </div>
+    <MainTarget
+      name={EXERCISE_BY_ID[target.exerciseId].name}
+      target={describeTarget(target)}
+      detail={describeBlock(target)}
+    />
   )
 }
 
@@ -99,6 +92,9 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
     }
   }, [state, plan])
   const today = finalized.today
+  // What the recommended session trains once the rails have run — none of the
+  // skills on a pain-safe day — for the week card's sentence about today.
+  const todaySkills = isPainSafe(today) ? [] : (today.lineup?.map((entry) => entry.skill) ?? today.skills)
   const testBlocked = challengeBlockedReason(plan)
   const preview: Workout | null = useMemo(
     () =>
@@ -207,6 +203,10 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
           )}
         </div>
       </div>
+
+      {/* The athlete's own week — which day is for which skill — above the
+          one-off choice of skills for today. */}
+      <WeekPlanCard className="mt-4" sessionSkills={todaySkills} />
 
       {trainable.length > 1 ? (
         <>

@@ -1004,11 +1004,15 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
   // review counts alongside it.
   'supported-flag': {
     label: 'Supported flag hold',
+    // Not graded, but filmed like every flag: front-on. Without a posture the
+    // set screen asked for a side view of it.
+    posture: 'flag',
     noChecks: true,
     checkShrug: false,
   },
   'vertical-flag': {
     label: 'Vertical flag',
+    posture: 'flag',
     noChecks: true,
     checkShrug: false,
   },

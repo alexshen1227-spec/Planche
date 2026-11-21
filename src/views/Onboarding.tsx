@@ -3,15 +3,16 @@ import type { AssessmentRecord, EquipmentId, SkillId, StepId, Units } from '../t
 import { normalizeStateWithReport, rebuildDerivedState, reportHasLosses, useStore } from '../lib/store'
 import { readImportFile, validateImport } from '../lib/exportImport'
 import { pushToast } from '../lib/toast'
-import { STEPS, STEP_BY_ID } from '../data/progressions'
-import { EQUIPMENT_OPTIONS, equipmentLabel } from '../data/equipment'
+import { ALL_STEPS, STEPS, STEP_BY_ID } from '../data/progressions'
+import { EXERCISE_BY_ID } from '../data/exercises'
+import { EQUIPMENT_OPTIONS, equipmentPhrase, kitNeedsPhrase } from '../data/equipment'
 import { APP_NAME, APP_TAGLINE } from '../data/app'
 import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
 import { displayToKg, CM_PER_IN } from '../lib/units'
 import type { Placement } from '../lib/assessment'
+import { fullParts, roomIn } from '../lib/lineup'
 import {
   goalChoices,
-  interviewProgress,
   nextInterviewItem,
   placementRecord,
   placeSkill,
@@ -53,12 +54,52 @@ const STAGE_ORDER: Stage[] = ['welcome', 'skills', 'goal', 'interview', 'result'
 
 const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th']
 
-/** "a pull-up bar or gymnastic rings" — what would meet one of a skill's kit needs. */
-const kitPhrase = (options: EquipmentId[]) =>
-  options
-    .map((id) => equipmentLabel(id))
-    .map((label, index) => (index === 0 && !/s$/.test(label.split(' ')[label.split(' ').length - 1]) ? `a ${label}` : label))
-    .join(' or ')
+/**
+ * How many questions the interview has, counting the ones already answered:
+ * the fewest it can still end on and the most it can still run to.
+ *
+ * The two differ only while the planche ladder is open, because it stops at the
+ * first hold answered "not yet". The counter used to add one rung to its total
+ * with each rung cleared, so an interview of nineteen questions opened on "of
+ * about 12" and read "of about 20" on its last. An upper bound is what can be
+ * promised: it is never less than the question on screen, and an answer can
+ * only bring it down.
+ */
+function interviewLength(skills: SkillId[], answers: InterviewAnswers): { atLeast: number; atMost: number } {
+  const asked = Object.keys(answers).length
+  const run = (pick: (values: number[]) => number) => {
+    const sim: InterviewAnswers = { ...answers }
+    let more = 0
+    // Bounded: no interview is this long, and a stuck one must not spin.
+    for (let item = nextInterviewItem(skills, sim); item && more < 60; item = nextInterviewItem(skills, sim)) {
+      sim[item.id] = pick(item.options.map((option) => option.value))
+      more += 1
+    }
+    return asked + more
+  }
+  const shortest = run((values) => Math.min(...values))
+  const longest = run((values) => Math.max(...values))
+  return { atLeast: Math.min(shortest, longest), atMost: Math.max(shortest, longest) }
+}
+
+/** "planche, front lever and human flag" — skills named inside a sentence. */
+function skillNames(skills: SkillId[]): string {
+  const names = skills.map((skill) => SKILLS[skill].name.toLowerCase())
+  return names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
+
+const capitalised = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`
+
+/**
+ * A step's key hold, when the step's name alone does not say what it is:
+ * every road opens on a step called "Foundations", so a plan for five skills
+ * listed the same word five times.
+ */
+function holdBehind(stepId: StepId): string | undefined {
+  const step = STEP_BY_ID[stepId]
+  if (ALL_STEPS.filter((other) => other.name === step.name).length < 2) return undefined
+  return EXERCISE_BY_ID[step.keyExerciseId]?.name.toLowerCase()
+}
 
 /** The self-declared fallback, kept for anyone who skips the interview. */
 const PLACEMENTS: { stepId: StepId; label: string; desc: string }[] = [
@@ -160,7 +201,12 @@ export function Onboarding() {
     [skills, answers],
   )
   const currentItem = useMemo(() => nextInterviewItem(skills, answers), [skills, answers])
-  const progress = useMemo(() => interviewProgress(skills, answers), [skills, answers])
+  const questionCount = useMemo(() => interviewLength(skills, answers), [skills, answers])
+  const questionNumber = Object.keys(answers).length + 1
+  /** "Question 5 of up to 19" while the ladder is open, "Question 5 of 12" once the rest is certain. */
+  const questionProgress = `Question ${questionNumber} of ${
+    questionCount.atLeast === questionCount.atMost ? '' : 'up to '
+  }${Math.max(questionNumber, questionCount.atMost)}`
 
   useEffect(() => {
     headingRef.current?.focus()
@@ -172,6 +218,60 @@ export function Onboarding() {
   const kitGaps = skills
     .map((skill) => ({ skill, missing: missingKit(skill, equipment.length ? equipment : ['floor']) }))
     .filter((gap) => gap.missing.length > 0)
+  const waitingSkills = kitGaps.map((gap) => gap.skill)
+  /**
+   * The chosen skills that kit can train, in the order picked. Sessions are
+   * built from these alone, and the first of them leads — which is the first
+   * skill picked only while its own kit is ticked.
+   */
+  const trainable = skills.filter((skill) => !waitingSkills.includes(skill))
+  const lead: SkillId = trainable[0] ?? focus
+  /** One skill at a time: sessions too short to hold a second in full. */
+  const takesTurns = fullParts(minutes) === 1
+  /**
+   * What a session of the chosen length holds when several skills can train,
+   * in the line-up's own terms (`lib/lineup`), so this screen cannot promise a
+   * session the app will not build. It once said "room for two skills" of a
+   * length the line-up fills with two in full and a short dose of a third.
+   */
+  const sessionRoom = takesTurns
+    ? `Room for one skill a session: your main one gets the most turns, and ${
+        trainable.length === 2 ? 'the other takes its turn' : 'the others take theirs'
+      } in between.`
+    : trainable.length === 2
+      ? 'Room for both skills in every session, your main one first and fullest.'
+      : `Room for ${roomIn(minutes)} a session — your main skill every time, the others in turn.`
+  const named = (skill: SkillId) => SKILLS[skill].name.toLowerCase()
+  /**
+   * How the skills that can train share the sessions — counted from the kit
+   * ticked, not from everything picked: "With 5 skills" was once said to an
+   * athlete whose kit trained two. Two skills are named, since the second is
+   * not "the others" and at this length it does not take turns.
+   */
+  const sharing =
+    trainable.length > 2
+      ? `With ${trainable.length} skills to train, ${named(lead)} ${
+          takesTurns
+            ? 'gets the most sessions and the others take theirs in between'
+            : 'is in every session and the others take turns behind it'
+        }.`
+      : trainable.length === 2
+        ? `With 2 skills to train, ${named(lead)} ${
+            takesTurns
+              ? `gets the most sessions and ${named(trainable[1])} takes its turn in between`
+              : `leads every session and ${named(trainable[1])} follows it`
+          }.`
+        : trainable.length === 1 && skills.length > 1
+          ? `With the kit you ticked, ${named(lead)} is the one skill your sessions can train for now.`
+          : ''
+  /** Which of the chosen skills are waiting for kit, and what that means for the sessions. */
+  const waitingNote = waitingSkills.length
+    ? `${capitalised(skillNames(waitingSkills))} ${waitingSkills.length === 1 ? 'is' : 'are'} waiting for kit${
+        trainable.length
+          ? ` and ${waitingSkills.length === 1 ? 'joins' : 'join'} your sessions once you have it`
+          : ', so until you have it your sessions are support work only'
+      } — your plan below says what ${waitingSkills.length === 1 ? 'it needs' : 'each needs'}.`
+    : ''
 
   const parsedWeight = (() => {
     const n = parseFloat(weight)
@@ -285,8 +385,8 @@ export function Onboarding() {
             inside one stage, so a region that only said "Step 3 of 6" went
             silent for every question after the first. */}
         <div className="sr-only" aria-live="polite">
-          {stage === 'interview' && currentItem
-            ? `Question ${progress.answered + 1} of about ${progress.likelyTotal}. ${currentItem.question}`
+          {stage === 'interview' && currentItem && !skippedInterview
+            ? `${questionProgress}. ${currentItem.question}`
             : `Step ${stageIndex + 1} of ${STAGE_ORDER.length}`}
         </div>
 
@@ -300,8 +400,14 @@ export function Onboarding() {
             </div>
             <h1 className="font-display text-[34px] font-bold leading-tight text-ink">{APP_NAME}</h1>
             <p className="mx-auto mt-2 max-w-md text-[15px] leading-relaxed text-ink2">{APP_TAGLINE}</p>
+            {/* Both halves, plainly: nothing the athlete records goes anywhere,
+                and the checker is fetched from two outside hosts on first use
+                (poseBackend's WASM_BASE and MODEL_URL). "No server" said the
+                first and hid the second. */}
             <p className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-ink3">
-              Everything stays on this device. No account, no server, nothing to cancel.
+              No account, nothing to cancel. What you log and film stays on this device — none of it is uploaded. The
+              camera form checker is downloaded the first time you use it, from Google’s file hosting and jsDelivr, and
+              then runs here.
             </p>
             <div className="mx-auto mt-7 max-w-sm text-left">
               <label htmlFor="ob-name" className="text-[13.5px] font-medium text-ink2">
@@ -378,7 +484,7 @@ export function Onboarding() {
                       <div className="text-[15px] font-semibold text-ink">{def.name}</div>
                       <div className="mt-0.5 text-[13px] leading-relaxed text-ink2">{def.tagline}</div>
                       <div className="mt-1 text-[12px] leading-relaxed text-ink3">
-                        {def.requires.length ? `Needs ${def.requires.map(kitPhrase).join(', and ')}` : 'Floor space is enough'}
+                        {def.requires.length ? `Needs ${kitNeedsPhrase(def.requires)}` : 'Floor space is enough'}
                       </div>
                     </div>
                     <span
@@ -495,7 +601,7 @@ export function Onboarding() {
             <div className="animate-rise">
               <div className="text-center">
                 <div className="text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
-                  Question {progress.answered + 1} of about {progress.likelyTotal}
+                  {questionProgress}
                 </div>
                 <h1
                   ref={headingRef}
@@ -575,9 +681,9 @@ export function Onboarding() {
                 </button>
               </div>
               <p className="mt-4 text-center text-[12px] leading-relaxed text-ink3">
-                Answer honestly rather than optimistically — everything here is checked against a stopwatch later.
-                Placed a step low, a filmed clean hold at the bar moves you up the same day; placed a step high, the
-                first weeks go on holds you cannot keep clean.
+                Answer honestly rather than optimistically — the holds you claim here are timed for real in your first
+                sessions. Placed a step low, a filmed clean hold at the bar moves you up; placed a step high, the first
+                weeks go on holds you cannot keep clean.
               </p>
             </div>
           ) : null
@@ -839,19 +945,19 @@ export function Onboarding() {
                   {kitGaps.map(({ skill, missing }) => (
                     <div key={skill} className="rounded-xl border border-accent/30 bg-accent-soft px-3 py-2.5">
                       <p className="text-[12.5px] leading-relaxed text-ink">
-                        <span className="font-semibold">{SKILLS[skill].name}</span> needs {missing.map(kitPhrase).join(', and ')}.
-                        Without it this skill waits in your list{skills.length > 1 ? ' and your other skills train as normal' : ''} —
-                        tick it if you have one.
+                        <span className="font-semibold">{SKILLS[skill].name}</span> needs {kitNeedsPhrase(missing)}.
+                        Without it this skill waits in your list
+                        {trainable.length ? ` and ${trainable.length === 1 ? 'your other skill trains' : 'your other skills train'} as normal` : ''}{' '}
+                        — tick it if you have it.
                       </p>
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
                         {missing.flat().map((id) => (
                           <button
                             key={id}
                             onClick={() => setEquipment((v) => (v.includes(id) ? v : [...v, id]))}
-                            className="min-h-9 rounded-lg border border-line bg-surface px-2.5 py-1 text-[12px] font-semibold text-ink hover:border-line-strong"
+                            className="min-h-9 rounded-lg border border-line bg-surface px-2.5 py-1 text-left text-[12px] font-semibold text-ink hover:border-line-strong"
                           >
-                            I have {/s$/.test(equipmentLabel(id)) ? '' : 'a '}
-                            {equipmentLabel(id)}
+                            I have {equipmentPhrase(id)}
                           </button>
                         ))}
                       </div>
@@ -904,9 +1010,8 @@ export function Onboarding() {
             <p className="mx-auto mt-1 max-w-md text-[14px] leading-relaxed text-ink2">
               Sessions per week. Three is the number most coaching sources land on for straight-arm work — but with
               total work equal, frequency itself makes little measured difference, so pick the number you will keep.
-              {skills.length > 1
-                ? ` With ${skills.length} skills, ${SKILLS[focus].name.toLowerCase()} is in every session and the others take turns behind it.`
-                : ''}
+              {sharing ? ` ${sharing}` : ''}
+              {waitingNote ? ` ${waitingNote}` : ''}
             </p>
             <div className="mt-7 flex justify-center gap-2.5" role="group" aria-label="Sessions per week">
               {[2, 3, 4, 5].map((n) => (
@@ -945,25 +1050,24 @@ export function Onboarding() {
               ))}
             </div>
             <div className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-ink3" aria-live="polite">
-              {skills.length > 1
-                ? minutes <= 20
-                  ? 'Room for one skill a session: your main one about two times in three, the others taking a turn in between.'
-                  : minutes <= 45
-                    ? 'Room for two skills a session — your main one, and one more that loads different joints.'
-                    : 'Room for up to three skills a session, the main one first and fullest.'
-                : focus !== 'planche'
-                  ? minutes <= 20
-                    ? 'Key holds plus the most important strength work. Short sessions you actually do beat long ones you skip.'
-                    : minutes <= 30
-                      ? 'Key holds, the strength work for your step and some accessories — the extras come off on full days.'
-                      : 'The full session: key holds, the strength work for your step, support work and core.'
-                  : minutes <= 20
-                    ? 'Key holds plus the most important strength work. Short sessions you actually do beat long ones you skip.'
-                    : minutes <= 30
-                      ? 'Key holds, the push-up version and some accessory work — leans or core may come off on full days.'
-                      : minutes <= 45
-                        ? 'The full session: key holds, the push-up version of your step, pseudo planche push-ups, leans and core.'
-                        : 'Everything, with room for extra sets on volume days.'}{' '}
+              {trainable.length > 1
+                ? sessionRoom
+                : trainable.length === 0
+                  ? // Nothing picked can be trained yet: no key holds to describe.
+                    'Until that kit is on your list, sessions are the support work that needs none of it.'
+                  : lead !== 'planche'
+                    ? minutes <= 20
+                      ? 'Key holds plus the most important strength work. Short sessions you actually do beat long ones you skip.'
+                      : minutes <= 30
+                        ? 'Key holds, the strength work for your step and some accessories — the extras come off on full days.'
+                        : 'The full session: key holds, the strength work for your step, support work and core.'
+                    : minutes <= 20
+                      ? 'Key holds plus the most important strength work. Short sessions you actually do beat long ones you skip.'
+                      : minutes <= 30
+                        ? 'Key holds, the push-up version and some accessory work — leans or core may come off on full days.'
+                        : minutes <= 45
+                          ? 'The full session: key holds, the push-up version of your step, pseudo planche push-ups, leans and core.'
+                          : 'Everything, with room for extra sets on volume days.'}{' '}
               Change it any time in Settings.
             </div>
             <div className="mx-auto mt-7 max-w-md rounded-2xl border border-line bg-surface p-4 text-left">
@@ -972,19 +1076,31 @@ export function Onboarding() {
                 const from = STEP_BY_ID[placedFor(skill)]
                 const to = STEP_BY_ID[goalFor(skill)]
                 const stepsToGo = Math.max(0, to.order - from.order)
-                const waiting = kitGaps.some((gap) => gap.skill === skill)
+                const missing = kitGaps.find((gap) => gap.skill === skill)?.missing
+                const several = skills.length > 1
+                // "Foundations" is the first step of every road: say which hold it is.
+                const hold = holdBehind(from.id)
                 return (
-                  <div key={skill} className="mt-1.5 flex items-center gap-3">
+                  <div key={skill} className={`flex items-center gap-3 ${several ? 'mt-3' : 'mt-1.5'}`}>
                     <Figure step={from.id} className="h-12 w-16 shrink-0 text-accent-text" />
                     <div className="min-w-0">
+                      {/* With several skills each row is headed by its skill
+                          and names where that skill starts. */}
                       <div className="font-display text-[17px] font-semibold text-ink">
-                        {skills.length > 1 ? `${SKILLS[skill].short} · ` : ''}
-                        {from.name}
+                        {several ? SKILLS[skill].name : from.name}
                       </div>
+                      {several || hold ? (
+                        <div className="text-[13px] text-ink">
+                          {several ? `Starts at ${from.name}` : 'Key hold'}
+                          {hold ? `${several ? ' — ' : ': '}${hold}` : ''}
+                        </div>
+                      ) : null}
                       <div className="text-[13px] text-ink2">
-                        {waiting
-                          ? 'Waiting for its kit — it joins your sessions once you add it in Settings.'
-                          : `Aiming at ${to.name} · ${stepsToGo} step${stepsToGo === 1 ? '' : 's'} to go`}
+                        {missing
+                          ? `Waiting for ${kitNeedsPhrase(missing)} — it joins your sessions once that is on your equipment list.`
+                          : stepsToGo === 0
+                            ? `Placed at your goal: ${to.name}`
+                            : `Aiming at ${to.name} · ${stepsToGo} step${stepsToGo === 1 ? '' : 's'} to go`}
                       </div>
                     </div>
                   </div>

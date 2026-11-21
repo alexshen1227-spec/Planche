@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { AppState, Session, WeekPlan } from '../types'
 import { skillOfExercise } from '../data/skills'
 import { finalizeWorkoutWithPlan, planForToday } from '../data/workouts'
 import { lineupFor, todaysLineup } from './lineup'
 import { startingState } from './skillLoop'
+import { weekStreak } from './stats'
 import { normalizeState, reducer } from './store'
 import {
   coverageNotes,
@@ -173,11 +174,12 @@ describe('the athlete’s own week', () => {
   it('says how a plan spreads the skills, only when the plan itself settles it', () => {
     const state = startingState({ skills: ['planche', 'frontlever', 'handstand'] })
     // The asked-for week leaves four days to the coach: nothing to say yet.
+    const none = { leftOut: 0, unavailable: 0 }
     expect(planCoverage(state, PLAN)).toEqual({
       skills: [
-        { skill: 'planche', full: 2, short: 0 },
-        { skill: 'frontlever', full: 2, short: 0 },
-        { skill: 'handstand', full: 0, short: 0 },
+        { skill: 'planche', full: 2, short: 0, ...none },
+        { skill: 'frontlever', full: 2, short: 0, ...none },
+        { skill: 'handstand', full: 0, short: 0, ...none },
       ],
       trainingDays: 3,
       restDays: 0,
@@ -185,6 +187,10 @@ describe('the athlete’s own week', () => {
     })
     expect(coverageNotes(state, PLAN)).toEqual([])
     expect(coverageNotes(state, undefined)).toEqual([])
+    // The plan handed in is the plan described — never "whatever is saved".
+    const saved = reducer(state, { type: 'SET_WEEK_PLAN', plan: PLAN })
+    expect(planCoverage(saved, undefined).trainingDays).toBe(0)
+    expect(planCoverage(saved, {}).trainingDays).toBe(0)
     // The same week with every other day a rest day is the whole week.
     const whole: WeekPlan = { ...PLAN, 1: 'rest', 2: 'rest', 4: 'rest', 5: 'rest' }
     const notes = coverageNotes(state, whole)
@@ -196,6 +202,78 @@ describe('the athlete’s own week', () => {
     expect(said.find((note) => note.startsWith('Planche'))).toBeUndefined()
     expect(said.find((note) => note.startsWith('Front lever'))).toMatch(/one full day a week.*a convention, not something a trial has tested/)
     expect(said.find((note) => note.startsWith('Handstand'))).toMatch(/only ever gets a short dose/)
+  })
+
+  it('counts a plan as its sessions would really be built', () => {
+    // Twenty minutes is one skill a session: second on the list is left out,
+    // and was once counted as a training day all the same.
+    const short = startingState({ skills: ['planche', 'frontlever'], sessionMinutes: 20 })
+    const shared = planCoverage(short, PLAN)
+    expect(shared.skills).toEqual([
+      { skill: 'planche', full: 2, short: 0, leftOut: 0, unavailable: 0 },
+      { skill: 'frontlever', full: 1, short: 0, leftOut: 1, unavailable: 0 },
+    ])
+    expect(coverageNotes(short, PLAN).join(' ')).toMatch(/Front lever is left out on 1 day of this plan: a 20-minute session has room for one skill\. Put it first on a day/)
+    // No bar: the lever's own day goes back to the coach, and the plan says the lever cannot train.
+    const noBar = startingState({ skills: ['planche', 'frontlever'], equipment: ['floor'] })
+    const kitless = planCoverage(noBar, PLAN)
+    expect(kitless.skills).toEqual([
+      { skill: 'planche', full: 2, short: 0, leftOut: 0, unavailable: 0 },
+      { skill: 'frontlever', full: 0, short: 0, leftOut: 0, unavailable: 2 },
+    ])
+    expect(kitless).toMatchObject({ trainingDays: 2, openDays: 5 })
+    expect(coverageNotes(noBar, PLAN).join(' ')).toMatch(/Front lever is on 2 days of this plan but is waiting for kit/)
+    // A third place has room from thirty minutes, and none at twenty-six.
+    const three: WeekPlan = { 3: ['planche', 'frontlever', 'handstand'] }
+    const at = (sessionMinutes: number) =>
+      planCoverage(startingState({ skills: ['planche', 'frontlever', 'handstand'], sessionMinutes }), three).skills.find((row) => row.skill === 'handstand')
+    expect(at(45)).toMatchObject({ short: 1, leftOut: 0 })
+    expect(at(26)).toMatchObject({ short: 0, leftOut: 1 })
+    // A skill the athlete no longer trains is nobody's row.
+    const dropped = reducer(startingState({ skills: ['planche', 'frontlever'] }), { type: 'SET_SKILLS', skills: ['planche'] })
+    expect(planCoverage(dropped, PLAN).skills.map((row) => row.skill)).toEqual(['planche'])
+  })
+
+  it('does not re-judge the weeks already trained when the goal changes', () => {
+    // Three sessions a week for four weeks, under a goal of three.
+    const base = startingState({ skills: ['planche', 'frontlever'] })
+    const sessions: Session[] = []
+    for (let week = 1; week <= 4; week++) {
+      for (const day of [0, 2, 4]) {
+        const at = MON - week * 7 * DAY + day * DAY
+        sessions.push({ id: `w${week}d${day}`, startedAt: at, endedAt: at + 1, workoutName: 'x', workoutKind: 'auto', stepId: 'foundations', sets: [] })
+      }
+    }
+    const trained = { ...base, sessions }
+    expect(weekStreak(trained, MON).weeks).toBe(4)
+    // A four-day plan makes the goal four. The streak once read 0 on Save.
+    vi.useFakeTimers()
+    vi.setSystemTime(MON)
+    try {
+      const fourDays = reducer(trained, { type: 'SET_WEEK_PLAN', plan: { ...PLAN, 5: ['planche'] } })
+      expect(fourDays.settings.weeklyGoal).toBe(4)
+      expect(fourDays.settings.goalBefore).toEqual({ goal: 3, until: MON })
+      expect(weekStreak(fourDays, MON).weeks).toBe(4)
+      // The week the goal changed in is held to the new goal, and so are later ones.
+      expect(weekStreak(fourDays, MON).currentMet).toBe(false)
+      const nextWeek = MON + 7 * DAY
+      const threeMore: Session[] = [0, 2, 4].map((day) => ({ ...sessions[0], id: `n${day}`, startedAt: MON + day * DAY, endedAt: MON + day * DAY + 1 }))
+      expect(weekStreak({ ...fourDays, sessions: [...sessions, ...threeMore] }, nextWeek).weeks).toBe(0)
+      // The same from Settings, and changed twice in one week it still remembers the goal from before.
+      const viaSettings = reducer(trained, { type: 'SET_SETTINGS', patch: { weeklyGoal: 5 } })
+      expect(weekStreak(viaSettings, MON).weeks).toBe(4)
+      vi.setSystemTime(MON + DAY)
+      const again = reducer(viaSettings, { type: 'SET_SETTINGS', patch: { weeklyGoal: 6 } })
+      expect(again.settings.goalBefore).toEqual({ goal: 3, until: MON + DAY })
+      expect(weekStreak(again, MON + DAY).weeks).toBe(4)
+      // Saved and loaded; a damaged record is dropped rather than trusted.
+      expect(normalizeState(JSON.parse(JSON.stringify(again))).settings.goalBefore).toEqual({ goal: 3, until: MON + DAY })
+      const raw = JSON.parse(JSON.stringify(again))
+      raw.settings.goalBefore = { goal: 'three', until: null }
+      expect(normalizeState(raw).settings.goalBefore).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('lays the week out Monday to Sunday with what was planned and what was done', () => {

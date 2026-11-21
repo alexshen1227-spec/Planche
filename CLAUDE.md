@@ -679,11 +679,28 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
   full parts is dropped whole and said. `finalizeFromPlan` hands back the
   line-up of the session it *built* (empty for the pain-safe one), and saved
   roles come from what was logged (`rolesTrained`), not what was planned.
-- **One or two sessions are not a level** (`SETTLED_SESSIONS`, `toldHold`):
-  until a step has three logged sessions, the placement answer for that exact
-  hold stands beside them in `adaptiveTarget` and `capacityOn`. One 2s hold in
-  a first session once became "the most they have shown" and the next session
-  asked for five sets of one second.
+- **One or two sessions are not a level, and floors never are** (`settled`,
+  `toldHold`): until a step has three logged sessions *and* one of them is a
+  measurement (not a hold stopped at its call), the placement answer for that
+  exact hold stands beside them in `adaptiveTarget` and `capacityOn`. One 2s
+  hold in a first session once became "the most they have shown" and the next
+  session asked for five sets of one second; and an athlete who said ten
+  seconds, then stopped every working set at its six-second call, had "shown
+  six" — next-shape practice opened for two sessions and shut until the first
+  re-test.
+- **The athlete's own week** (`lib/weekPlan.ts`, `settings.weekPlan`,
+  `SET_WEEK_PLAN`). Each weekday can be given up to three skills in order, or
+  marked rest; a day left out is the coach's. `todaysLineup` trains an
+  assigned day as written (first leads, second partners, third a short dose;
+  only the minutes can leave one out, and the reason says so) and falls back
+  to the priority line-up on open and rest days. An explicit pick on the Train
+  tab still outranks the plan. Saving a plan sets the weekly goal to its
+  training days. Skills the athlete dropped or has no kit for are filtered at
+  read time (`readDay` → `unavailable`), never trained because a plan names
+  them. Copy says "your plan" — nothing about a schedule being best
+  (`coverageNotes` is CONSENSUS and says so). The season eval runs twelve weeks
+  on a Saturday-lever / Sunday-planche / Wednesday-both plan
+  (`runSkillLoop({ trainOn, weekPlan })`).
 - **One maximal effort a session** (`data/mixedSession.ts`, `effortSkill`):
   the lead's by default; when the lead held it last session and another skill
   has one queued, that skill takes today's. Only a max effort raises a target,

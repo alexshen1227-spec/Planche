@@ -43,7 +43,7 @@ import { applySession } from './engine'
 import { configureAudio } from './audio'
 import { clearMirror, readMirror, requestPersistence, writeMirror } from './persist'
 import { pushToast } from './toast'
-import { CLOCK_SKEW_MS } from './time'
+import { CLOCK_SKEW_MS, weekStart } from './time'
 import { plannedTrainingDays, sanitizeWeekPlan } from './weekPlan'
 import { WALK_BACK_MAX_SEC, WALK_BACK_MIN_SEC } from './sessionTiming'
 import { activeSkills, addTrack, trackOf, trackedSkills, withTrack } from './skills'
@@ -848,6 +848,12 @@ export function normalizeStateWithReport(
         : undefined,
     // Validated day by day; an unknown skill or weekday is dropped, not kept.
     weekPlan: sanitizeWeekPlan(rawSettings.weekPlan),
+    goalBefore: (() => {
+      const raw = rawSettings.goalBefore as { goal?: unknown; until?: unknown } | undefined
+      return raw && typeof raw === 'object' && typeof raw.goal === 'number' && Number.isFinite(raw.goal) && typeof raw.until === 'number' && Number.isFinite(raw.until)
+        ? { goal: Math.min(14, Math.max(1, Math.round(raw.goal))), until: raw.until }
+        : undefined
+    })(),
   }
   // One-time migration: anyone still carrying the old optimistic default gets
   // the realistic one. Deliberate choices made after this are left alone.
@@ -1279,6 +1285,18 @@ function stepField(skill: SkillId): string {
   return skill === 'planche' ? 'step' : `track.${skill}`
 }
 
+/**
+ * A change of weekly goal, remembering the goal the finished weeks were
+ * trained under. Changed again in the same week, the remembered goal is still
+ * the one from before that week.
+ */
+function goalChange(state: AppState, goal: number, at = Date.now()): Partial<Settings> {
+  if (!Number.isFinite(goal) || goal === state.settings.weeklyGoal) return {}
+  const prior = state.settings.goalBefore
+  const sameWeek = prior !== undefined && weekStart(prior.until) === weekStart(at)
+  return { weeklyGoal: goal, goalBefore: { goal: sameWeek ? prior.goal : state.settings.weeklyGoal, until: at } }
+}
+
 function stamp(state: AppState, keys: string[], at = Date.now()): Record<string, number> {
   const times = { ...(state.fieldTimes ?? {}) }
   for (const key of keys) times[key] = at
@@ -1498,22 +1516,27 @@ function reduceAction(state: AppState, action: Action): AppState {
         state.sessions.filter((s) => s.id !== action.id),
       )
     }
-    case 'SET_SETTINGS':
+    case 'SET_SETTINGS': {
+      const patch: Partial<Settings> = {
+        ...action.patch,
+        ...(typeof action.patch.weeklyGoal === 'number' ? goalChange(state, action.patch.weeklyGoal) : {}),
+      }
       return {
         ...state,
-        settings: { ...state.settings, ...action.patch },
-        fieldTimes: stamp(state, Object.keys(action.patch).map((k) => `settings.${k}`)),
+        settings: { ...state.settings, ...patch },
+        fieldTimes: stamp(state, Object.keys(patch).map((k) => `settings.${k}`)),
       }
+    }
     case 'SET_WEEK_PLAN': {
       const weekPlan = sanitizeWeekPlan(action.plan)
       // The days the athlete has named are the sessions they mean to do: the
       // weekly goal follows, or it would go on asking for a different number.
       const days = plannedTrainingDays(weekPlan)
-      const goal = days > 0 && days !== state.settings.weeklyGoal ? { weeklyGoal: days } : {}
+      const goal = days > 0 ? goalChange(state, days) : {}
       return {
         ...state,
         settings: { ...state.settings, weekPlan, ...goal },
-        fieldTimes: stamp(state, ['settings.weekPlan', ...(days > 0 && 'weeklyGoal' in goal ? ['settings.weeklyGoal'] : [])]),
+        fieldTimes: stamp(state, ['settings.weekPlan', ...Object.keys(goal).map((k) => `settings.${k}`)]),
       }
     }
     case 'SET_STEP': {

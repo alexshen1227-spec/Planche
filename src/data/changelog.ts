@@ -18,6 +18,19 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-11-21',
+    title: 'Your week, your way',
+    area: 'training',
+    notes: [
+      'Give each training day its skill. Home and Train have a “Your week” strip: tap it and set, say, Saturday to front lever, Sunday to planche and Wednesday to both. A day with one skill gets a whole session built around it; a day with two is shared, the first one leading; a third gets a short dose.',
+      'Days you leave alone are still shared by the coach, by your priority order and by what has waited longest. You can also mark a day as rest — starting a session on it still works, and the coach then decides.',
+      'Saving a plan sets your weekly goal to the number of training days in it. Picking skills by hand on the Train tab still overrides the plan for that day.',
+      'The editor shows how many days a week each skill gets, and says so when a skill you are building has only one full day — as the coaching convention it is, not a tested rule.',
+      'Only the session length can leave a planned skill out, and the session says who was left out and why.',
+      'If you told the app at setup how long you can hold something, that now stands until a hold is actually measured. Before, a few working sets stopped at the target call counted as “the most you have shown”, and next-shape practice could open for two sessions and then close for weeks.',
+    ],
+  },
+  {
     date: '2026-11-20',
     title: 'Sessions that share the time properly',
     area: 'training',
@@ -556,7 +569,7 @@ export const CHANGELOG: ChangeEntry[] = [
     area: 'app',
     notes: [
       'Holding the space bar or double-tapping Stop logged a set per press — five taps wrote five sets, four of them phantom zero-second holds that then counted in your totals and your history. A hold is now stopped once, however many times you hit the button.',
-      'The app works offline from the moment you install it. The service worker was only being set up after you finished onboarding, so a fresh install had nothing cached — now verified by pulling the network entirely and reloading.',
+      'The app works offline from the moment you install it (the camera checker is a separate download the first time it runs). The service worker was only being set up after you finished onboarding, so a fresh install had nothing cached — now verified by pulling the network entirely and reloading.',
       'The coach no longer claims “no hard training in 99 days” to someone who trained two days ago. That number was a placeholder meaning “never”, and it was being printed as though it were real.',
       'The hold trend chart used to tell you to log sessions you had already logged. It only plots form-qualified sets, so it now says that plainly instead of looking broken.',
       'Backups download reliably on iPhone and Firefox, the mid-workout buttons are big enough to actually hit, and your saved data now survives a full storage drive.',
@@ -962,7 +975,7 @@ export const CHANGELOG: ChangeEntry[] = [
     area: 'app',
     notes: [
       'A session interrupted by the phone sleeping is picked back up where it left off instead of vanishing.',
-      'Works fully offline, with a self-restoring backup if storage is ever cleared.',
+      'Works offline, with a self-restoring backup if storage is ever cleared.',
     ],
   },
   {

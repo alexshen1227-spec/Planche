@@ -48,7 +48,7 @@ import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { ShareProgress } from '../components/ShareProgress'
-import { ProgressRing, Modal } from '../components/ui'
+import { MainTarget, ProgressRing, Modal } from '../components/ui'
 import { FramingCheck } from '../components/FramingCheck'
 import {
   FormCheckRow,
@@ -1812,8 +1812,35 @@ export function SessionPlayer({
       // work starts, which is several sets in and easy to be surprised by.
       const filmedBlocks = workout.blocks.filter((b) => b.section === 'main' && isFilmable(b.exerciseId))
       const willFilm = cameraOn && recorder.supported && filmedBlocks.length > 0
-      // One line per camera position this session needs, in the order it comes up.
+      // The camera positions this session needs, in the order they come up.
       const filmingViews = [...new Set(filmedBlocks.map((b) => postureFor(b.exerciseId)))]
+      // More than one position: a row per skill, named, in the running order.
+      // The placements were once joined into one paragraph — "Put the phone
+      // directly beside you, low, standing upright. Put the phone directly
+      // beside you." — with nothing to say which sentence was whose.
+      const filmedOwner = (b: Block) => b.skill ?? skillOfExercise(b.exerciseId)
+      const filmingRows =
+        filmingViews.length > 1
+          ? [...new Set(filmedBlocks.map(filmedOwner))].map((owner) => {
+              const own = filmedBlocks.filter((b) => filmedOwner(b) === owner)
+              const views = [...new Set(own.map((b) => postureFor(b.exerciseId)))]
+              const holdsFilmedAs = (view: Posture) =>
+                [
+                  ...new Set(
+                    own
+                      .filter((b) => postureFor(b.exerciseId) === view)
+                      .map((b) => EXERCISE_BY_ID[b.exerciseId]?.name ?? b.exerciseId),
+                  ),
+                ].join(', ')
+              return {
+                label: owner ? SKILLS[owner].name : 'Other holds',
+                // One skill filmed from two places says which hold is which.
+                lines: views.map((view) =>
+                  views.length > 1 ? `${holdsFilmedAs(view)}: ${FILMING[view].intro}` : FILMING[view].intro,
+                ),
+              }
+            })
+          : []
       // The push-up line's sets are filmed too, for the replay review.
       const filmedRung = workout.blocks.find((b) => b.target.kind === 'reps' && rungInPlay(state, b.exerciseId, b))
       const filmsRung = cameraOn && recorder.supported && filmedRung !== undefined
@@ -1884,33 +1911,41 @@ export function SessionPlayer({
               </div>
             ) : null}
             {primaryTarget && primaryExercise ? (
-              <div className="mt-4 flex items-center gap-3 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-on-accent">
-                  <Icon name="target" size={18} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent-text">Main target</div>
-                  <div className="truncate text-[14px] font-semibold text-ink">{primaryExercise.name}</div>
-                </div>
-                <div className="shrink-0 text-right">
-                  <div className="text-[15px] font-bold text-ink tnum">{describeTarget(primaryTarget)}</div>
-                  <div className="text-[11.5px] text-ink3 tnum">{describeBlock(primaryTarget)}</div>
-                </div>
-              </div>
+              <MainTarget
+                name={primaryExercise.name}
+                target={describeTarget(primaryTarget)}
+                detail={describeBlock(primaryTarget)}
+              />
             ) : null}
             {willFilm ? (
               <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-line bg-raised px-4 py-3 text-left">
                 <Icon name="monitor" size={16} className="mt-0.5 shrink-0 text-accent-text" />
-                <div>
+                <div className="min-w-0">
                   <div className="text-[13.5px] font-medium text-ink">
                     {filmingViews.length === 1
                       ? `${filmingViews[0] === 'flag' ? 'Front-view' : 'Side-view'} camera check on main sets`
                       : 'Camera check on main sets'}
                   </div>
-                  <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink2">
-                    {filmingViews.map((view) => FILMING[view].intro).join(' ')}
-                    {filmingViews.length > 1 ? ' Each set says which before it starts.' : ''} Filming starts only once
-                    the camera is actually live — if it cannot open, the set runs on the timer and says so.
+                  {filmingRows.length ? (
+                    <ul className="mt-1.5 space-y-1.5">
+                      {filmingRows.map((row) => (
+                        <li key={row.label} className="text-[12.5px] leading-relaxed text-ink2">
+                          <span className="block font-semibold text-ink">{row.label}</span>
+                          {row.lines.map((line) => (
+                            <span key={line} className="block">
+                              {line}
+                            </span>
+                          ))}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <p className={`${filmingRows.length ? 'mt-1.5' : 'mt-0.5'} text-[12.5px] leading-relaxed text-ink2`}>
+                    {filmingRows.length
+                      ? 'Each set says where the phone goes before it starts.'
+                      : FILMING[filmingViews[0]].intro}{' '}
+                    Filming starts only once the camera is actually live — if it cannot open, the set runs on the timer
+                    and says so.
                   </p>
                 </div>
               </div>

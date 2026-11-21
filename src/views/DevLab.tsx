@@ -554,8 +554,9 @@ export function DevLab({ onClose }: { onClose: () => void }) {
               This is the test bench the form judge is built against — the same one used to set every
               threshold from measurement. Build a pose whose true angles you choose and read the verdict
               beside it, or run the self-test: the judge’s promises, checked on your device, including
-              against real photographs it must keep getting right. Everything runs locally; nothing leaves
-              this browser.
+              against real photographs it must keep getting right. Everything here runs in this browser, and
+              nothing you build or load is uploaded. Checking a real photo or clip uses the same checker as a
+              workout, which is downloaded the first time it is needed.
             </p>
           </div>
           <div className="flex shrink-0 flex-col items-stretch gap-1.5">

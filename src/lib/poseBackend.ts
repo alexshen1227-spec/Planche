@@ -65,6 +65,27 @@ const WASM_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TASKS_
 const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task'
 
+/**
+ * Where the checker's files come from the first time it runs.
+ *
+ * The app says that nothing an athlete records leaves the device, and that is
+ * true — but it also said "no server", while this download goes to two outside
+ * hosts. Wherever the copy now states both facts it names the hosts from here,
+ * so the sentence cannot drift from the addresses actually fetched.
+ */
+export const POSE_DOWNLOAD_HOSTS = {
+  /** The MediaPipe WASM runtime that executes the model. */
+  runtime: new URL(WASM_BASE).host,
+  /** The pose model's weights. */
+  model: new URL(MODEL_URL).host,
+  /**
+   * The fallback model (MoveNet), fetched only when the first cannot track a
+   * clip. Its library asks TensorFlow Hub, which hands the download on to
+   * Google's other model hosts (see the runtime cache pattern in vite.config).
+   */
+  fallbackModel: 'tfhub.dev',
+} as const
+
 /** Stored with every camera reading, so a later model change is visible in history. */
 export const MEDIAPIPE_MODEL_ID = 'blazepose-full-f16@1'
 export const MOVENET_MODEL_ID = 'movenet-thunder'

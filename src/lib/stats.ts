@@ -33,10 +33,15 @@ export function sessionsInWeekOf(state: AppState, ts: number, now = Date.now()):
  */
 export function weekStreak(state: AppState, now = Date.now()): { weeks: number; currentMet: boolean } {
   const goal = state.settings.weeklyGoal
-  const currentMet = sessionsInWeekOf(state, now, now).length >= goal
+  // A week is judged against the goal it was trained under: weeks that ended
+  // before the goal last changed keep the goal they had (`Settings.goalBefore`).
+  const before = state.settings.goalBefore
+  const changedIn = before ? weekStart(before.until) : Number.NEGATIVE_INFINITY
+  const goalFor = (weekStartsAt: number) => (before && weekStartsAt < changedIn ? before.goal : goal)
+  const currentMet = sessionsInWeekOf(state, now, now).length >= goalFor(weekStart(now))
   let weeks = 0
   let cursor = addDays(weekStart(now), -7)
-  while (sessionsInWeekOf(state, cursor, now).length >= goal) {
+  while (sessionsInWeekOf(state, cursor, now).length >= goalFor(cursor)) {
     weeks += 1
     cursor = addDays(cursor, -7)
     if (weeks > 520) break

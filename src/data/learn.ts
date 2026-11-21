@@ -1,4 +1,5 @@
 import type { SkillId } from '../types'
+import { POSE_DOWNLOAD_HOSTS } from '../lib/poseBackend'
 import { EXERCISE_BY_ID } from './exercises'
 import { SKILL_LIST, type SkillDef } from './skills'
 
@@ -334,7 +335,17 @@ const HAND_WRITTEN_GUIDES: Guide[] = [
     sections: [
       {
         heading: 'What happens when you film a set',
-        body: 'Everything runs on your device. The clip is sampled a few times per second, a pose model estimates where your joints are in each sampled frame, and plain geometry turns those points into angles: how straight the elbows were, where the hips sat relative to the shoulders, how far the shoulders travelled past the hands. No footage, landmarks or results ever leave your phone — there is no server to send them to.',
+        body: 'The check runs on your device. The clip is sampled a few times per second, a pose model estimates where your joints are in each sampled frame, and plain geometry turns those points into angles: how straight the elbows were, where the hips sat relative to the shoulders, how far the shoulders travelled past the hands. No footage, landmarks or results ever leave your phone — nothing is uploaded, and the app has no server that could receive them.',
+      },
+      {
+        heading: 'Where the checker comes from',
+        body: 'The checker is not built into the app. The first time a check runs, your phone fetches it — a multi-megabyte download — and from then on it is stored on the phone and works offline.',
+        bullets: [
+          `The pose model comes from Google’s file hosting (${POSE_DOWNLOAD_HOSTS.model}), and the code that runs it from jsDelivr (${POSE_DOWNLOAD_HOSTS.runtime}), a public file network.`,
+          `If that model cannot follow a clip, a second one is tried, and it is downloaded the same way — also from Google (${POSE_DOWNLOAD_HOSTS.fallbackModel}).`,
+          'Each download is a request for files and nothing more: as when loading any web page, those hosts see that a device asked for them. Your clips, your log and your results are not part of it.',
+          'Settings → Camera checker download fetches the checker ahead of time, on a connection you choose, and says whether it is still stored — a browser can clear it, and then it is downloaded again.',
+        ],
       },
       {
         heading: 'Each position is judged by its own rules',
