@@ -14,6 +14,13 @@ export type SkillId = 'planche' | 'frontlever' | 'handstand' | 'ninety' | 'flag'
 
 export const SKILL_IDS: SkillId[] = ['planche', 'frontlever', 'handstand', 'ninety', 'flag']
 
+/** A weekday as `Date#getDay()` numbers it: 0 is Sunday, 6 is Saturday. */
+export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6
+/** What one weekday is set aside for: skills in order (the first leads), or planned rest. */
+export type DayPlan = SkillId[] | 'rest'
+/** The athlete's own week. A weekday left out is the coach's to decide. See `lib/weekPlan.ts`. */
+export type WeekPlan = Partial<Record<Weekday, DayPlan>>
+
 export type PlancheStepId =
   | 'foundations'
   | 'lean'
@@ -778,6 +785,11 @@ export interface Settings {
    * so it is the athlete's choice; off keeps Safari's default.
    */
   soundThroughSilent?: boolean
+  /**
+   * Which skills each weekday is for, when the athlete has said. Absent, or a
+   * day left out of it, the coach shares sessions between skills by priority.
+   */
+  weekPlan?: WeekPlan
 }
 
 export interface AppState {

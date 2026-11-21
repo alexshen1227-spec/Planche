@@ -44,6 +44,7 @@ import { configureAudio } from './audio'
 import { clearMirror, readMirror, requestPersistence, writeMirror } from './persist'
 import { pushToast } from './toast'
 import { CLOCK_SKEW_MS } from './time'
+import { plannedTrainingDays, sanitizeWeekPlan } from './weekPlan'
 import { WALK_BACK_MAX_SEC, WALK_BACK_MIN_SEC } from './sessionTiming'
 import { activeSkills, addTrack, trackOf, trackedSkills, withTrack } from './skills'
 
@@ -845,6 +846,8 @@ export function normalizeStateWithReport(
       typeof rawSettings.walkBackSec === 'number' && Number.isFinite(rawSettings.walkBackSec)
         ? Math.min(WALK_BACK_MAX_SEC, Math.max(WALK_BACK_MIN_SEC, rawSettings.walkBackSec))
         : undefined,
+    // Validated day by day; an unknown skill or weekday is dropped, not kept.
+    weekPlan: sanitizeWeekPlan(rawSettings.weekPlan),
   }
   // One-time migration: anyone still carrying the old optimistic default gets
   // the realistic one. Deliberate choices made after this are left alone.
@@ -1215,6 +1218,8 @@ export type Action =
   | { type: 'SAVE_SESSION'; session: Session }
   | { type: 'DELETE_SESSION'; id: string }
   | { type: 'SET_SETTINGS'; patch: Partial<Settings> }
+  /** Set (or, with nothing left in it, clear) the athlete's week plan. */
+  | { type: 'SET_WEEK_PLAN'; plan: unknown }
   | { type: 'SET_STEP'; stepId: StepId }
   | { type: 'SKIP_TO_STEP'; stepId: StepId }
   | {
@@ -1499,6 +1504,18 @@ function reduceAction(state: AppState, action: Action): AppState {
         settings: { ...state.settings, ...action.patch },
         fieldTimes: stamp(state, Object.keys(action.patch).map((k) => `settings.${k}`)),
       }
+    case 'SET_WEEK_PLAN': {
+      const weekPlan = sanitizeWeekPlan(action.plan)
+      // The days the athlete has named are the sessions they mean to do: the
+      // weekly goal follows, or it would go on asking for a different number.
+      const days = plannedTrainingDays(weekPlan)
+      const goal = days > 0 && days !== state.settings.weeklyGoal ? { weeklyGoal: days } : {}
+      return {
+        ...state,
+        settings: { ...state.settings, weekPlan, ...goal },
+        fieldTimes: stamp(state, ['settings.weekPlan', ...(days > 0 && 'weeklyGoal' in goal ? ['settings.weeklyGoal'] : [])]),
+      }
+    }
     case 'SET_STEP': {
       const skill = skillOfStep(action.stepId)
       if (!STEP_BY_ID[action.stepId] || !trackOf(state, skill).unlocked.includes(action.stepId)) return state

@@ -698,7 +698,13 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
   `verifiedReps` credits nothing else. `rungInPlay` decides whether a rep set
   is worth filming — the current rung of an active skill, in real work — and a
   count raised after a review loses the review. Do not add a count without the
-  sampling study the ledger names.
+  sampling study the ledger names. **A rung can wait for a hold**
+  (`RepRung.needsStep`): on the skill's own road, or on another's — the 90°
+  push-up's last rungs start and finish in a handstand, so they wait for the
+  handstand road. A placement answer does not open a gate: the line starts
+  below the first closed one (`LadderStatus.placedPastGate`). It once started
+  an athlete on a freestanding handstand push-up with no freestanding
+  handstand.
 - **Judge postures** (`Posture = support | hang | inverted | flag`, judge v6).
   The view gate, the floor rule and the elbow reading are per posture. A
   hanging, inverted or front-on elbow is read coarsely (`coarseElbow`,
@@ -714,7 +720,13 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
   coarse profiles. The flag is judged front-on
   (`MIN_FRONT_VIEW_RATIO`–`MAX_FRONT_VIEW_RATIO`, an oblique shot refused) and
   its floor comes from the wrist-to-wrist line; a hang's from the plumb line
-  and a handstand only upright (invariant 8). `shoulderOpeningDeg` and `tiltDeg` are the handstand's and
+  and a handstand only upright (invariant 8). An inverted hold is judged only
+  when the body rises from shoulders to feet by `MIN_INVERTED_RISE_DEG` (judge
+  v7; measured: floor planks and leans −13° to 14°, wall planks 36°+, real
+  handstands 59°+) — a plank on the floor once passed clean as a wall plank.
+  `skills.test` carries a judged synthetic clip through the stored reading to
+  `progressionCredit` for every graded hold of the new skills: add a hold, and
+  that test must cover it. `shoulderOpeningDeg` and `tiltDeg` are the handstand's and
   flag's own criteria. Review-only holds (`isReviewOnly`: frog stand, active
   hang, supported and vertical flag) carry `noChecks` profiles, and a test
   keeps the two lists in step.
@@ -769,7 +781,8 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
 - User-facing changes get an entry in `src/data/changelog.ts`, written in the
   athlete's language, newest first.
 - New achievements require bumping `ACHIEVEMENT_VERSION` so saved history is
-  reconciled once. A badge or tip about one skill carries `skill`, and is only
+  reconciled once (also the way to recount records: warm-up and cooldown sets
+  never set one). A badge or tip about one skill carries `skill`, and is only
   shown to an athlete who trains it.
 - Never pass regular expressions or backslashes through a shell heredoc: a
   `\b` became a backspace character inside a pattern, which nothing shows in

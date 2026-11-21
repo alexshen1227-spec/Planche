@@ -3,6 +3,7 @@ import { skillOfStep } from '../data/progressions'
 import { missingKit, skillOfExercise, SKILLS } from '../data/skills'
 import { niggleRegionsToday } from './signals'
 import { activeSkills, focusSkill, wholeState } from './skills'
+import { todaysDay, WEEKDAY_NAMES } from './weekPlan'
 
 /**
  * Which skills today's session trains, and how much of each.
@@ -36,6 +37,12 @@ import { activeSkills, focusSkill, wholeState } from './skills'
  * How much fits is a function of the time available, nothing cleverer: one
  * skill under 25 minutes, two in full from there, plus one short dose from 30
  * minutes and two beyond 50.
+ *
+ * **The athlete's own week comes first.** A weekday they have assigned
+ * (`lib/weekPlan.ts`) is trained as written — their first skill leads, a
+ * second gets the other full part, a third a short dose — and only the time
+ * available can leave one out. Everything above is what happens on a day they
+ * left to the coach.
  */
 
 /**
@@ -191,6 +198,64 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
 
   const minutes = minutesOverride ?? state.settings.sessionMinutes
   const slots = fullParts(minutes)
+
+  // ——— A day the athlete has assigned is trained as written ———
+  const day = todaysDay(state, now)
+  if (day.kind === 'skills') {
+    const dayName = WEEKDAY_NAMES[day.weekday]
+    const [first, ...rest] = day.skills
+    const sore = niggleRegionsToday(state, now)
+    const partnerSkill = slots >= 2 ? rest[0] : undefined
+    // Short doses are optional work: none for a skill that loads what is sore today.
+    const doses = rest
+      .slice(partnerSkill ? 1 : 0)
+      .filter((skill) => slots >= 2 && !sore.some((region) => SKILLS[skill].loads.includes(region)))
+      .slice(0, shortDoses(minutes))
+    const included = [first, ...(partnerSkill ? [partnerSkill] : []), ...doses]
+    const squeezed = day.skills.filter((skill) => !included.includes(skill))
+    const planned: LineupEntry[] = [
+      {
+        skill: first,
+        role: 'lead',
+        reason:
+          day.skills.length === 1
+            ? `${dayName} is your ${SKILLS[first].name.toLowerCase()} day in your week plan, so the whole session is built around it.`
+            : `${dayName} is set to ${joinNames(day.skills)} in your week plan, ${SKILLS[first].name.toLowerCase()} first.${
+                squeezed.length
+                  ? ` ${joinNames(squeezed)[0].toUpperCase()}${joinNames(squeezed).slice(1)} ${squeezed.length === 1 ? 'is' : 'are'} left out today: a ${minutes}-minute session has room for ${roomIn(minutes)}${
+                      sore.length && squeezed.some((skill) => sore.some((region) => SKILLS[skill].loads.includes(region)))
+                        ? ', and a short dose is not given to a skill that loads the joint you flagged'
+                        : ''
+                    }.`
+                  : ''
+              }`,
+      },
+    ]
+    if (partnerSkill) {
+      planned.push({
+        skill: partnerSkill,
+        role: 'partner',
+        reason: `${SKILLS[partnerSkill].name} is the second skill in your plan for ${dayName}: a full part after the ${SKILLS[first].holdName}.`,
+      })
+    }
+    for (const skill of doses) {
+      const def = SKILLS[skill]
+      if (def.family === 'balance') {
+        planned.splice(1, 0, {
+          skill,
+          role: 'practice',
+          reason: `A few minutes of ${def.holdName} balance practice first, while you are fresh — it is in your plan for ${dayName}.`,
+        })
+      } else {
+        planned.push({
+          skill,
+          role: 'maintenance',
+          reason: `${def.name} gets a short dose — a couple of sets at your current step — as the third skill in your plan for ${dayName}.`,
+        })
+      }
+    }
+    return planned
+  }
 
   // ——— Sessions that only ever fit one skill ———
   // "The priority skill leads every session" then means the others are never
