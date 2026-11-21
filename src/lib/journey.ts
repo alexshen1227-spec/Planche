@@ -1,6 +1,8 @@
-import type { AppState, StepId } from '../types'
-import { STEPS, STEP_BY_ID } from '../data/progressions'
+import type { AppState, Session, SkillId, SkillTrack, StepId } from '../types'
+import { skillOfStep, STEPS, STEP_BY_ID, stepsOf } from '../data/progressions'
+import { skillOfExercise } from '../data/skills'
 import { applySession } from './engine'
+import { skillOfState, trackedSkills, trackOf, wholeState } from './skills'
 
 const DAY = 86_400_000
 
@@ -48,39 +50,79 @@ function startingStep(state: AppState): StepId {
     .reduce<StepId>((highest, id) => (STEP_BY_ID[id].order > STEP_BY_ID[highest].order ? id : highest), 'foundations')
 }
 
-export function readJourney(state: AppState, now = Date.now()): Journey {
-  const sessions = [...state.sessions].filter((s) => s.startedAt <= now).sort((a, b) => a.startedAt - b.startedAt)
-  const base = startingStep(state)
+/** Whether a session did any of a skill's own work. */
+function trained(session: Session, skill: SkillId): boolean {
+  return session.sets.some((set) => skillOfExercise(set.exerciseId) === skill)
+}
+
+/**
+ * One skill's road so far. Read for the skill the state is viewed as unless
+ * told otherwise; history is always replayed whole, because one session can
+ * open a step on two roads.
+ */
+export function readJourney(stateIn: AppState, now = Date.now(), skill: SkillId = skillOfState(stateIn)): Journey {
+  const state = wholeState(stateIn)
+  const road = stepsOf(skill)
+  const track = trackOf(state, skill)
+  const tracked = trackedSkills(state)
+  // With one road every session is that road's; with several, a step's
+  // sessions are the ones that trained its skill.
+  const all = [...state.sessions].filter((s) => s.startedAt <= now).sort((a, b) => a.startedAt - b.startedAt)
+  const sessions = tracked.length > 1 ? all.filter((s) => trained(s, skill)) : all
+  const plancheBase = startingStep(state)
+  const base = skill === 'planche' ? plancheBase : track.baseStepId
   const baseOrder = STEP_BY_ID[base].order
+  // Every road rewound to where it started — the replay `rebuildDerivedState` runs.
+  const rewound: Partial<Record<SkillId, SkillTrack>> = {}
+  for (const other of tracked) {
+    if (other === 'planche') continue
+    const t = trackOf(state, other)
+    const from = STEP_BY_ID[t.baseStepId] ?? stepsOf(other)[0]
+    rewound[other] = {
+      ...t,
+      stepId: from.id,
+      unlocked: stepsOf(other).filter((s) => s.order <= from.order).map((s) => s.id),
+    }
+  }
   let acc: AppState = {
     ...state,
     sessions: [],
     prs: {},
     achievements: {},
-    stepId: base,
-    unlocked: STEPS.filter((s) => s.order <= baseOrder).map((s) => s.id),
+    stepId: plancheBase,
+    unlocked: STEPS.filter((s) => s.order <= STEP_BY_ID[plancheBase].order).map((s) => s.id),
+    ...(state.tracks ? { tracks: rewound } : {}),
   }
   const opened = new Map<StepId, { at: number; via: 'bar' | 'next-shape'; index: number }>()
-  sessions.forEach((session, index) => {
+  for (const session of all) {
     const { next, events } = applySession(acc, session)
     acc = next
-    if (events.unlockedStep && !opened.has(events.unlockedStep)) {
-      opened.set(events.unlockedStep, { at: session.startedAt, via: events.unlockedVia ?? 'bar', index })
+    const unlocks =
+      events.unlocks ?? (events.unlockedStep ? [{ stepId: events.unlockedStep, via: events.unlockedVia ?? ('bar' as const) }] : [])
+    for (const unlock of unlocks) {
+      if (skillOfStep(unlock.stepId) !== skill || opened.has(unlock.stepId)) continue
+      // Counted among this road's own sessions; the earning session is one of them.
+      const index = Math.max(0, sessions.indexOf(session))
+      opened.set(unlock.stepId, { at: session.startedAt, via: unlock.via, index })
     }
-  })
+  }
 
   const firstSessionAt = sessions[0]?.startedAt
   // Training logged on a lower step than the base means the base was reached
   // by a jump, not where training began.
-  const jumpedToBase = sessions.some((s) => STEP_BY_ID[s.stepId] && STEP_BY_ID[s.stepId].order < baseOrder)
+  const stepThen = (s: Session) => (skill === 'planche' ? s.stepId : s.skills?.[skill]?.stepId)
+  const jumpedToBase = sessions.some((s) => {
+    const then = stepThen(s)
+    return then !== undefined && STEP_BY_ID[then] !== undefined && skillOfStep(then) === skill && STEP_BY_ID[then].order < baseOrder
+  })
   const highest = Math.max(
     baseOrder,
-    ...state.unlocked.map((id) => STEP_BY_ID[id]?.order ?? 0),
+    ...track.unlocked.map((id) => STEP_BY_ID[id]?.order ?? 0),
     ...[...opened.keys()].map((id) => STEP_BY_ID[id].order),
   )
 
-  const stops: (JourneyStop & { index?: number })[] = STEPS.filter((s) => s.order <= highest).map((step) => {
-    const current = state.stepId === step.id
+  const stops: (JourneyStop & { index?: number })[] = road.filter((s) => s.order <= highest).map((step) => {
+    const current = track.stepId === step.id
     const earned = opened.get(step.id)
     if (earned) return { stepId: step.id, via: earned.via, openedAt: earned.at, index: earned.index, current }
     if (step.id === base && !jumpedToBase && firstSessionAt !== undefined) {

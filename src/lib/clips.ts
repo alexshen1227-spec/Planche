@@ -23,6 +23,8 @@ export interface ClipMeta {
   exerciseId: string
   at: number
   seconds: number
+  /** Reps logged for the set, when the clip is of a rep set rather than a hold. */
+  reps?: number
   bytes: number
   /** Pinned clips are never auto-evicted — the reference to compare against. */
   pinned?: boolean
@@ -148,12 +150,19 @@ export async function setPinned(key: string, pinned: boolean): Promise<boolean> 
 }
 
 /** Save a clip and evict the oldest unpinned ones for that exercise. */
-export async function saveClip(exerciseId: string, blob: Blob, seconds: number): Promise<string | null> {
+export async function saveClip(exerciseId: string, blob: Blob, seconds: number, reps?: number): Promise<string | null> {
   const key = `${exerciseId}:${Date.now()}`
   try {
     await withTx([BLOBS, META], 'readwrite', (tx) => {
       tx.objectStore(BLOBS).put(blob, key)
-      tx.objectStore(META).put({ key, exerciseId, at: Date.now(), seconds, bytes: blob.size } satisfies ClipMeta)
+      tx.objectStore(META).put({
+        key,
+        exerciseId,
+        at: Date.now(),
+        seconds,
+        ...(reps !== undefined ? { reps } : {}),
+        bytes: blob.size,
+      } satisfies ClipMeta)
     })
   } catch {
     return null // quota or storage failure: no dangling reference is handed back

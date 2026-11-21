@@ -15,7 +15,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('Planche Lab crashed:', error, info.componentStack)
+    console.error('Calisthenics Lab crashed:', error, info.componentStack)
   }
 
   private save = (raw: string, filename: string) => {
@@ -40,7 +40,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
     } catch {
       /* storage blocked — the empty file still says so */
     }
-    this.save(raw, 'planche-lab-rescue.json')
+    this.save(raw, 'calisthenics-lab-rescue.json')
   }
 
   /** Roll back to the snapshot taken before the last version upgrade. */
@@ -81,7 +81,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
         </button>
         {kept ? (
           <button
-            onClick={() => this.save(kept.raw, 'planche-lab-unreadable-data.json')}
+            onClick={() => this.save(kept.raw, 'calisthenics-lab-unreadable-data.json')}
             className="mt-2 rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink"
           >
             Download the original data kept aside on {new Date(kept.at).toLocaleDateString()}

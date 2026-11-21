@@ -1,6 +1,7 @@
-import type { AppState, AutoForm } from '../types'
+import type { AppState, AutoForm, SkillId } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { MATERIAL_TOLERANCE, POSE_PROFILES } from './poseForm'
+import { skillOfExercise } from '../data/skills'
+import { elbowSlack, kneeSlack, MATERIAL_TOLERANCE, POSE_PROFILES } from './poseForm'
 import { robustSlopePerWeek } from './signals'
 import { verifiedCleanRatio } from './progression'
 
@@ -34,7 +35,17 @@ const DAY = 86_400_000
 export const MIN_TREND_POINTS = 4
 export const MIN_TREND_SPAN_DAYS = 14
 
-export type FormCriterionId = 'elbow' | 'lean' | 'line' | 'shrug' | 'knees' | 'score' | 'clean'
+export type FormCriterionId =
+  | 'elbow'
+  | 'angle'
+  | 'shoulders'
+  | 'tilt'
+  | 'lean'
+  | 'line'
+  | 'shrug'
+  | 'knees'
+  | 'score'
+  | 'clean'
 
 interface CriterionSpec {
   id: FormCriterionId
@@ -66,6 +77,39 @@ const CRITERIA: CriterionSpec[] = [
     higherIsBetter: true,
     deadband: MATERIAL_TOLERANCE.elbowDeg,
     betterMeans: 'arms straighter — 180° is fully locked',
+  },
+  {
+    // A bent-arm hold: how far the elbows sit from the angle the hold asks
+    // for, either side of it. Built per position in `criteriaFor`.
+    id: 'angle',
+    label: 'Elbow angle',
+    unit: 'deg',
+    field: 'elbowDeg',
+    unseenLabel: 'elbows',
+    higherIsBetter: false,
+    deadband: MATERIAL_TOLERANCE.angleDeg,
+    betterMeans: 'elbows closer to the right angle this hold is built on',
+  },
+  {
+    id: 'shoulders',
+    label: 'Shoulder opening',
+    unit: 'deg',
+    field: 'shoulderDeg',
+    unseenLabel: 'shoulder opening',
+    higherIsBetter: true,
+    deadband: MATERIAL_TOLERANCE.shoulderDeg,
+    betterMeans: 'arms closer to in line with your body — 180° is fully open',
+  },
+  {
+    id: 'tilt',
+    label: 'Off level',
+    unit: 'deg',
+    field: 'tiltDeg',
+    unseenLabel: 'level line',
+    // Degrees away from level, so smaller is flatter.
+    higherIsBetter: false,
+    deadband: MATERIAL_TOLERANCE.tiltDeg,
+    betterMeans: 'your body closer to level',
   },
   {
     id: 'lean',
@@ -230,6 +274,12 @@ function criteriaFor(exerciseId: string): CriterionSpec[] {
     switch (spec.id) {
       case 'elbow':
         return profile.minElbowDeg !== undefined
+      case 'angle':
+        return profile.elbowTargetDeg !== undefined
+      case 'shoulders':
+        return profile.minShoulderDeg !== undefined
+      case 'tilt':
+        return profile.maxTiltDeg !== undefined
       case 'lean':
         return profile.minLeanRatio !== undefined
       case 'line':
@@ -241,6 +291,22 @@ function criteriaFor(exerciseId: string): CriterionSpec[] {
       default:
         return true
     }
+  }).map((spec) => {
+    if (!profile) return spec
+    // The camera's error is the posture's, not the planche's: a hung or
+    // upside-down elbow is read far more coarsely than a support hold's, and a
+    // change inside that error is "steady" there too.
+    if (spec.id === 'elbow') return { ...spec, deadband: elbowSlack(profile) }
+    if (spec.id === 'knees') return { ...spec, deadband: kneeSlack(profile) }
+    if (spec.id === 'angle') {
+      const target = profile.elbowTargetDeg!
+      return {
+        ...spec,
+        read: (auto: AutoForm) => (auto.elbowDeg === undefined ? undefined : Math.abs(auto.elbowDeg - target)),
+        betterMeans: `elbows closer to the ${target}° this hold is built on`,
+      }
+    }
+    return spec
   })
 }
 
@@ -451,6 +517,17 @@ export function filmedExercises(state: Pick<AppState, 'sessions'>): string[] {
     }
   }
   return [...lastSeen.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id)
+}
+
+/**
+ * The filmed positions with one skill's first, each group most recently filmed
+ * first. The form-trend card opens on the skill being looked at: switching
+ * skill used to leave it on whichever position had been filmed last, on any
+ * road.
+ */
+export function filmedExercisesFor(state: Pick<AppState, 'sessions'>, skill: SkillId): string[] {
+  const all = filmedExercises(state)
+  return [...all.filter((id) => skillOfExercise(id) === skill), ...all.filter((id) => skillOfExercise(id) !== skill)]
 }
 
 /** How a value reads on screen. */

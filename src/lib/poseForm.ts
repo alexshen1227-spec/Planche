@@ -39,8 +39,14 @@ export { MIN_VERIFIED_COVERAGE }
  *     hands, so a moving phone mostly cancels; and "Held clean" means
  *     camera-verified clean — a held arm fault reads zero, unjudged elbows
  *     read unknown.
+ * 5 - positions that are not a side-on support hold (2026-11): a hung body, a
+ *     handstand and a front-on flag each get their own posture, view gate and
+ *     floor rule, and their own elbow and knee deadbands measured on real
+ *     photographs (`POSTURE_TOLERANCE`). The planche family's verdicts are
+ *     unchanged by it; the number moves because readings of the new positions
+ *     did not exist before, and a stored reading says which judge made it.
  */
-export const JUDGE_VERSION = 4
+export const JUDGE_VERSION = 5
 
 /**
  * Automatic form analysis from a recorded clip.
@@ -114,6 +120,10 @@ export interface PoseFormResult {
   leanRatio?: number
   /** Shoulder-to-ear gap over torso length; small means shrugged. */
   shrugRatio?: number
+  /** Elbow–shoulder–hip angle: how open the shoulders are (a handstand's line). */
+  shoulderDeg?: number
+  /** Degrees the body sat off level (a flag's line out from the pole). */
+  tiltDeg?: number
   /**
    * Robust spread of shoulder and hip positions measured from the planted
    * hand, over torso length (judge v4+). Describes movement, not its cause.
@@ -256,7 +266,18 @@ export function replayKeypointsAtTime(track: PoseTrack, time: number, maxSpanSec
 }
 
 export interface FormSubscore {
-  key: 'elbow' | 'knee' | 'hipAngle' | 'line' | 'lean' | 'shrug' | 'steadiness' | 'cleanTime'
+  key:
+    | 'elbow'
+    | 'angle'
+    | 'knee'
+    | 'hipAngle'
+    | 'line'
+    | 'lean'
+    | 'shrug'
+    | 'shoulder'
+    | 'tilt'
+    | 'steadiness'
+    | 'cleanTime'
   label: string
   score: number
 }
@@ -265,12 +286,43 @@ export interface FormSubscore {
  * What "correct" means for each position. Only the checks listed run, which
  * is what stops the analyser flagging the deliberate shapes of a progression.
  */
+/**
+ * How the body is carried in a position — which way up it is expected to be,
+ * which view the camera needs, and how the arms can be read.
+ *
+ * - `support`: on the hands, body across gravity, seen from the side (the
+ *   planche and the 90° hold). The original contract; absent means this.
+ * - `hang`: under a bar, body across gravity, seen from the side (the front
+ *   lever). Measured exactly like a support hold — the hands are simply above
+ *   the shoulders, so "which way is the floor" is read the other way round.
+ * - `inverted`: on the hands with the body up the picture, seen from the side
+ *   (the handstand). The trunk is in line with the arms, so the hips cannot
+ *   say which way an elbow bends: the elbow is a plain angle, with a wider
+ *   deadband to match.
+ * - `flag`: out sideways from a pole, seen from the **front**. Both sides of
+ *   the body are in view, so measurements run through the midpoints of the
+ *   shoulders, hips and feet, and a side-on clip is the one refused.
+ */
+export type Posture = 'support' | 'hang' | 'inverted' | 'flag'
+
 export interface PoseProfile {
   label: string
   /** No geometric checks apply — say so rather than implying it looked good. */
   noChecks?: boolean
+  /** How the body is carried. Absent = `support`. */
+  posture?: Posture
   /** Straight-arm target (180 degrees). Undefined = do not check. */
   minElbowDeg?: number
+  /**
+   * Bent-arm positions: the elbow angle the position is defined by, and how
+   * far either side of it still counts. Used instead of `minElbowDeg`.
+   */
+  elbowTargetDeg?: number
+  elbowBandDeg?: number
+  /** Shoulders at least this open: elbow–shoulder–hip, degrees (180 = arms in line with the body). */
+  minShoulderDeg?: number
+  /** The body within this many degrees of level (a flag's line out from the pole). */
+  maxTiltDeg?: number
   /** Knee angle below this counts as bent. Undefined = legs are meant to bend. */
   minKneeDeg?: number
   /** Allowed |hip − shoulder| height, as a fraction of torso. */
@@ -292,6 +344,43 @@ export interface FrameReading {
   hipOffset?: number
   leanRatio?: number
   shrugRatio?: number
+  /** Elbow–shoulder–hip: how open the shoulders are. */
+  shoulderDeg?: number
+  /** Degrees the body sits off level. */
+  tiltDeg?: number
+}
+
+/** The posture a profile is judged in. */
+export function postureOf(profile: PoseProfile): Posture {
+  return profile.posture ?? 'support'
+}
+
+/**
+ * Whether a posture's elbow is read as a plain three-point angle. In a side-on
+ * support or hang the hips sit off the arm's line, and which side of that line
+ * the elbow lies on says flexion from hyperextension. Upside down the trunk
+ * continues the arm, and in a flag the arms are seen from the front: there is
+ * nothing to sign the bend with.
+ */
+export function unsignedElbow(profile: PoseProfile): boolean {
+  const posture = postureOf(profile)
+  return posture === 'inverted' || posture === 'flag'
+}
+
+/**
+ * Whether a posture's elbow is read coarsely: every posture but the side-on
+ * support hold, which is the one pose the model reads to within a few degrees
+ * (see POSTURE_TOLERANCE). A coarse elbow gets a wide deadband and none of the
+ * fine machinery built on the tight one — late softening, near/far arm
+ * disagreement, the borderline-spread rule.
+ */
+export function coarseElbow(profile: PoseProfile): boolean {
+  return postureOf(profile) !== 'support'
+}
+
+/** Whether a profile has an elbow criterion at all: locked arms, or a target angle. */
+function hasElbowCriterion(profile: PoseProfile): boolean {
+  return profile.minElbowDeg !== undefined || profile.elbowTargetDeg !== undefined
 }
 
 export interface SideViewLegReading {
@@ -395,6 +484,17 @@ export const MATERIAL_TOLERANCE = {
   // head-down push-up that involves no shrug at all. Only a gap below anything
   // a head position alone can explain is worth naming.
   shrugRatio: 0.1,
+  // Shoulder opening in a handstand (elbow–shoulder–hip). Real side-on frames
+  // of straight handstands read 164–179° through the same model, and a visibly
+  // arched, closed-shoulder one read 110°: the profile floor sits under the
+  // straight ones, and this is the margin a fault must clear beyond it.
+  shoulderDeg: 10,
+  // How far off level a flag sits is measured against the picture's horizontal,
+  // so it inherits the phone's tilt exactly as hip height does. A few degrees
+  // of propped-phone roll must not name a fault.
+  tiltDeg: 6,
+  // A bent-arm hold's elbow angle, beyond the band the profile allows.
+  angleDeg: 8,
 } as const
 
 /**
@@ -409,6 +509,93 @@ export const MOMENTARY_MATERIAL_TOLERANCE = {
   ...MATERIAL_TOLERANCE,
   elbowDeg: 16,
 } as const
+
+/**
+ * How much landmark error the elbow and knee readings carry outside a support
+ * hold, measured on real photographs through the same model
+ * (realPoses.fixture.ts) rather than assumed.
+ *
+ * The side-on support hold is the pose the model reads best: its straight arms
+ * read within a few degrees of 180, which is what MATERIAL_TOLERANCE's 8° rests
+ * on. Every other posture is worse, and by different amounts:
+ *
+ * - hang: under a bar, face up, the model sets the shoulder points on the chest
+ *   rather than at the top of the arms, and splits the hips. The one clean
+ *   side-on front lever available read its visibly straight arms at 154–158°
+ *   and its straight legs at 166–168° in every frame rotation — a steady bias,
+ *   not jitter. One photograph is thin evidence, which is why these two sit
+ *   well clear of it rather than just under.
+ * - inverted: visibly straight arms read 160–176° in side-on handstands, and a
+ *   silhouette whose arms could not be made out read 155°. (A plain angle also
+ *   half-wave-rectifies landmark error: noise either side of straight reads as
+ *   a bend.)
+ * - flag: seen from the front, straight arms read 160–179° across twelve
+ *   flags; a visibly bent top arm read 148–152°, arms folded at the pole
+ *   under 50°. Straight legs read 168–179°, and because the verdict takes the
+ *   more bent of the two legs, measured tracker jitter pulled the lowest of
+ *   those down to 162°.
+ *
+ * So a bend is only *named* once it is past anything a straight arm produced
+ * in that posture. A smaller one is not the camera's to call from there — the
+ * verdict says so, and the athlete's own check of the replay covers it.
+ */
+export const POSTURE_TOLERANCE: Record<
+  Exclude<Posture, 'support'>,
+  { elbowDeg: number; momentaryElbowDeg: number; kneeDeg: number }
+> = {
+  hang: { elbowDeg: 36, momentaryElbowDeg: 44, kneeDeg: 18 },
+  inverted: { elbowDeg: 30, momentaryElbowDeg: 38, kneeDeg: MATERIAL_TOLERANCE.kneeDeg },
+  flag: { elbowDeg: 24, momentaryElbowDeg: 32, kneeDeg: 15 },
+}
+
+/** The elbow deadband for a profile: the support hold's tight one, or its posture's measured one. */
+export function elbowSlack(
+  profile: PoseProfile,
+  tolerance: typeof MATERIAL_TOLERANCE | typeof MOMENTARY_MATERIAL_TOLERANCE = MATERIAL_TOLERANCE,
+): number {
+  const posture = postureOf(profile)
+  if (posture === 'support') return tolerance.elbowDeg
+  const slack = POSTURE_TOLERANCE[posture]
+  return tolerance === MOMENTARY_MATERIAL_TOLERANCE ? slack.momentaryElbowDeg : slack.elbowDeg
+}
+
+/** The knee deadband for a profile's posture. */
+export function kneeSlack(profile: PoseProfile): number {
+  const posture = postureOf(profile)
+  return posture === 'support' ? MATERIAL_TOLERANCE.kneeDeg : POSTURE_TOLERANCE[posture].kneeDeg
+}
+
+/**
+ * Above this bilateral span a handstand is not side-on. Lower than the general
+ * side-view bar because arms overhead draw the shoulders together: a handstand
+ * filmed from behind read 0.36 — inside the planche's 0.42 — while true side-on
+ * ones read 0.06–0.25.
+ */
+export const MAX_INVERTED_SIDE_VIEW_RATIO = 0.3
+
+/**
+ * Below this bilateral span a flag is not front-on. Real front-on flags read
+ * 0.46–0.70 through the model (one read 0.38 in one frame rotation), and a
+ * side-on body under 0.25.
+ */
+export const MIN_FRONT_VIEW_RATIO = 0.33
+
+/**
+ * Above this span the body is pointing toward or away from the camera: the
+ * trunk is foreshortened while the shoulders, stacked along the pole, are not.
+ * Twelve flags filmed square-on read 0.46–0.70; the two filmed at an angle
+ * both read 0.86, and their legs — pointing at the lens — read as bent.
+ */
+export const MAX_FRONT_VIEW_RATIO = 0.8
+
+/**
+ * How far from the picture's vertical (or its horizontal) the line between the
+ * two hands may sit and still say which way up a flag clip is. On real flags
+ * the hands sat 0–22° off vertical — a leaning tree, a ladder's rungs — and in
+ * a photograph stored on its side 6° off horizontal. People who were not
+ * holding a pole at all read 33–52°: between the two, the clip does not say.
+ */
+export const FLAG_GRIP_SLACK_DEG = 30
 
 /** Past this robust spread, a borderline elbow aggregate is detector drift. */
 export const MAX_STABLE_ELBOW_IQR_DEG = 7
@@ -631,6 +818,227 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
     minLeanRatio: 0.45,
     checkShrug: true,
   },
+
+  // ————— Front lever —————
+  // Hung, seen from the side: straight arms, hips level with the shoulders,
+  // hips open and legs straight where the shape asks for them. There is no
+  // lean to grade and the shoulder blades cannot be seen. The model reads a
+  // hung, face-up body less well than a support hold (POSTURE_TOLERANCE): a
+  // real level lever on rings, feet a touch high, read 165° at the hip and
+  // 0.06 of a torso off level, so the hip floors sit a little under the
+  // planche's shape for shape.
+  'active-hang': {
+    // A plain hang has no shape the camera can be wrong about in a useful way.
+    label: 'Active hang',
+    noChecks: true,
+    checkShrug: false,
+  },
+  'tuck-front-lever': {
+    label: 'Tuck front lever',
+    posture: 'hang',
+    minElbowDeg: 180,
+    levelTolerance: 0.3,
+    checkShrug: false,
+  },
+  'adv-tuck-front-lever': {
+    label: 'Advanced tuck front lever',
+    posture: 'hang',
+    minElbowDeg: 180,
+    levelTolerance: 0.2,
+    minHipAngleDeg: 82,
+    checkShrug: false,
+  },
+  'one-leg-front-lever': {
+    label: 'One-leg front lever',
+    posture: 'hang',
+    minElbowDeg: 180,
+    minKneeDeg: 180,
+    levelTolerance: 0.16,
+    minHipAngleDeg: 168,
+    oneLeg: true,
+    checkShrug: false,
+  },
+  'straddle-front-lever': {
+    label: 'Straddle front lever',
+    posture: 'hang',
+    minElbowDeg: 180,
+    minKneeDeg: 180,
+    levelTolerance: 0.14,
+    minHipAngleDeg: 168,
+    checkShrug: false,
+  },
+  'band-front-lever': {
+    label: 'Band-assisted front lever',
+    posture: 'hang',
+    minElbowDeg: 180,
+    minKneeDeg: 180,
+    levelTolerance: 0.16,
+    minHipAngleDeg: 166,
+    checkShrug: false,
+  },
+  'front-lever': {
+    label: 'Front lever',
+    posture: 'hang',
+    minElbowDeg: 180,
+    minKneeDeg: 180,
+    levelTolerance: 0.12,
+    minHipAngleDeg: 170,
+    checkShrug: false,
+  },
+
+  // ————— Handstand —————
+  // Upside down, seen from the side: locked arms, shoulders open so the arms
+  // continue the trunk, hips in line, straight legs. Real side-on handstands
+  // read 164–179° at the shoulder and 174–178° at the hip through the model;
+  // an arched, closed-shoulder one read 110° and 140°. Head position is not
+  // graded — coaches and the small studies on it disagree.
+  'wall-plank': {
+    // An incline, not a handstand: where the hands sit decides the shoulder
+    // angle, so only the arms and the line are graded.
+    label: 'Wall plank',
+    posture: 'inverted',
+    minElbowDeg: 180,
+    minKneeDeg: 172,
+    minHipAngleDeg: 165,
+    checkShrug: false,
+  },
+  'wall-handstand': {
+    label: 'Wall handstand',
+    posture: 'inverted',
+    minElbowDeg: 180,
+    minKneeDeg: 172,
+    minHipAngleDeg: 165,
+    minShoulderDeg: 160,
+    checkShrug: false,
+  },
+  'wall-float': {
+    label: 'Wall float',
+    posture: 'inverted',
+    minElbowDeg: 180,
+    minKneeDeg: 172,
+    minHipAngleDeg: 165,
+    minShoulderDeg: 160,
+    checkShrug: false,
+  },
+  'freestanding-handstand': {
+    label: 'Freestanding handstand',
+    posture: 'inverted',
+    minElbowDeg: 180,
+    minKneeDeg: 172,
+    minHipAngleDeg: 165,
+    minShoulderDeg: 160,
+    checkShrug: false,
+  },
+
+  // ————— 90° hold —————
+  // A support hold whose elbows are *meant* to bend: the criterion is an angle
+  // near a right angle, either side of it, rather than a lock. Nothing here
+  // asks for an upright forearm — no source states one, and with a straight
+  // body the hand sits under the centre of mass, behind the elbow.
+  'bent-arm-lean-hold': {
+    label: 'Bent-arm lean hold',
+    elbowTargetDeg: 90,
+    elbowBandDeg: 20,
+    minKneeDeg: 180,
+    levelTolerance: 0.35,
+    minHipAngleDeg: 168,
+    minLeanRatio: 0.25,
+    checkShrug: false,
+  },
+  'elbow-lever': {
+    label: 'Elbow lever',
+    elbowTargetDeg: 90,
+    elbowBandDeg: 25,
+    minKneeDeg: 180,
+    levelTolerance: 0.22,
+    minHipAngleDeg: 165,
+    checkShrug: false,
+  },
+  'tuck-ninety-hold': {
+    label: 'Tuck 90° hold',
+    elbowTargetDeg: 90,
+    elbowBandDeg: 20,
+    levelTolerance: 0.25,
+    checkShrug: false,
+  },
+  'adv-tuck-ninety-hold': {
+    label: 'Advanced tuck 90° hold',
+    elbowTargetDeg: 90,
+    elbowBandDeg: 20,
+    levelTolerance: 0.18,
+    minHipAngleDeg: 82,
+    checkShrug: false,
+  },
+  'straddle-ninety-hold': {
+    label: 'Straddle 90° hold',
+    elbowTargetDeg: 90,
+    elbowBandDeg: 20,
+    minKneeDeg: 180,
+    levelTolerance: 0.15,
+    minHipAngleDeg: 172,
+    checkShrug: false,
+  },
+  'ninety-hold': {
+    label: '90° hold',
+    elbowTargetDeg: 90,
+    elbowBandDeg: 20,
+    minKneeDeg: 180,
+    levelTolerance: 0.12,
+    minHipAngleDeg: 175,
+    checkShrug: false,
+  },
+
+  // ————— Human flag —————
+  // Seen from the front: how level the body is, whether it folds at the waist,
+  // both arms, and the legs. A clean level flag read 3–5° off level with a 176°
+  // line on a real photo, competent ones 12–15° and 164–168°, a deliberately
+  // angled one 37°. The least-proven of the checks: the athlete's own replay
+  // review counts alongside it.
+  'supported-flag': {
+    label: 'Supported flag hold',
+    noChecks: true,
+    checkShrug: false,
+  },
+  'vertical-flag': {
+    label: 'Vertical flag',
+    noChecks: true,
+    checkShrug: false,
+  },
+  'tuck-flag': {
+    label: 'Tuck flag',
+    posture: 'flag',
+    minElbowDeg: 180,
+    maxTiltDeg: 14,
+    checkShrug: false,
+  },
+  'one-leg-flag': {
+    label: 'One-leg flag',
+    posture: 'flag',
+    minElbowDeg: 180,
+    minKneeDeg: 175,
+    minHipAngleDeg: 162,
+    maxTiltDeg: 14,
+    oneLeg: true,
+    checkShrug: false,
+  },
+  'straddle-flag': {
+    label: 'Straddle flag',
+    posture: 'flag',
+    minElbowDeg: 180,
+    minKneeDeg: 175,
+    minHipAngleDeg: 162,
+    maxTiltDeg: 12,
+    checkShrug: false,
+  },
+  'human-flag': {
+    label: 'Human flag',
+    posture: 'flag',
+    minElbowDeg: 180,
+    minKneeDeg: 175,
+    minHipAngleDeg: 164,
+    maxTiltDeg: 10,
+    checkShrug: false,
+  },
 }
 
 /** Which of a position's criteria the camera saw well enough to grade. */
@@ -641,6 +1049,9 @@ export interface JudgedCriteria {
   line: boolean
   lean: boolean
   shrug: boolean
+  /** Absent on records from before the handstand and flag criteria existed. */
+  shoulder?: boolean
+  tilt?: boolean
 }
 
 /** How many frames carried each measurement. */
@@ -651,6 +1062,9 @@ export interface CoverageCounts {
   hipOffsets: number
   leans: number
   shrugs: number
+  /** Absent on callers that predate the handstand and flag criteria. */
+  shoulders?: number
+  tilts?: number
 }
 
 /**
@@ -669,7 +1083,7 @@ export function gradeCoverage(
   const need = Math.max(MIN_FRAMES, Math.ceil(framesUsed * 0.55))
   const applies = (threshold: number | undefined, seen: number) => threshold !== undefined && seen >= need
   const judged: JudgedCriteria = {
-    elbow: applies(profile.minElbowDeg, counts.elbows),
+    elbow: applies(profile.minElbowDeg ?? profile.elbowTargetDeg, counts.elbows),
     knee: applies(profile.minKneeDeg, counts.knees),
     hipAngle: applies(profile.minHipAngleDeg, counts.hipAngles),
     line: applies(profile.levelTolerance, counts.hipOffsets),
@@ -678,14 +1092,18 @@ export function gradeCoverage(
     // frames used to be enough for a confident shrug accusation while the
     // identical elbow evidence was correctly refused.
     shrug: profile.checkShrug && counts.shrugs >= need,
+    shoulder: applies(profile.minShoulderDeg, counts.shoulders ?? 0),
+    tilt: applies(profile.maxTiltDeg, counts.tilts ?? 0),
   }
   const unseen: string[] = []
-  if (profile.minElbowDeg !== undefined && !judged.elbow) unseen.push('elbows')
+  if (hasElbowCriterion(profile) && !judged.elbow) unseen.push('elbows')
   if (profile.minKneeDeg !== undefined && !judged.knee) unseen.push('knees')
   if (profile.minHipAngleDeg !== undefined && !judged.hipAngle) unseen.push('hips')
   if (profile.levelTolerance !== undefined && !judged.line) unseen.push('body line')
   if (profile.minLeanRatio !== undefined && !judged.lean) unseen.push('forward lean')
   if (profile.checkShrug && !judged.shrug) unseen.push('shoulder-to-ear line')
+  if (profile.minShoulderDeg !== undefined && !judged.shoulder) unseen.push('shoulder opening')
+  if (profile.maxTiltDeg !== undefined && !judged.tilt) unseen.push('level line')
   return { judged, unseen }
 }
 
@@ -710,15 +1128,39 @@ export function materialIssuesForReading(
     judged.elbow &&
     profile.minElbowDeg !== undefined &&
     frame.elbowDeg !== undefined &&
-    frame.elbowDeg < profile.minElbowDeg - tolerance.elbowDeg
+    frame.elbowDeg < profile.minElbowDeg - elbowSlack(profile, tolerance)
   ) {
     issues.push('arms')
+  }
+  if (
+    judged.elbow &&
+    profile.elbowTargetDeg !== undefined &&
+    frame.elbowDeg !== undefined &&
+    Math.abs(frame.elbowDeg - profile.elbowTargetDeg) > (profile.elbowBandDeg ?? 0) + tolerance.angleDeg
+  ) {
+    issues.push('angle')
+  }
+  if (
+    judged.shoulder &&
+    profile.minShoulderDeg !== undefined &&
+    frame.shoulderDeg !== undefined &&
+    frame.shoulderDeg < profile.minShoulderDeg - tolerance.shoulderDeg
+  ) {
+    issues.push('shoulders')
+  }
+  if (
+    judged.tilt &&
+    profile.maxTiltDeg !== undefined &&
+    frame.tiltDeg !== undefined &&
+    frame.tiltDeg > profile.maxTiltDeg + tolerance.tiltDeg
+  ) {
+    issues.push('tilt')
   }
   if (
     judged.knee &&
     profile.minKneeDeg !== undefined &&
     frame.kneeDeg !== undefined &&
-    frame.kneeDeg < profile.minKneeDeg - tolerance.kneeDeg
+    frame.kneeDeg < profile.minKneeDeg - kneeSlack(profile)
   ) {
     issues.push('knees')
   }
@@ -797,7 +1239,9 @@ function materiallyOutsideEnvelope(
   judged: JudgedCriteria,
 ): boolean | null {
   const required: (number | undefined)[] = []
-  if (profile.minElbowDeg !== undefined && judged.elbow) required.push(frame.elbowDeg)
+  if (hasElbowCriterion(profile) && judged.elbow) required.push(frame.elbowDeg)
+  if (profile.minShoulderDeg !== undefined && judged.shoulder) required.push(frame.shoulderDeg)
+  if (profile.maxTiltDeg !== undefined && judged.tilt) required.push(frame.tiltDeg)
   if (profile.minKneeDeg !== undefined && judged.knee) required.push(frame.kneeDeg)
   if (profile.minHipAngleDeg !== undefined && judged.hipAngle) required.push(frame.hipAngleDeg)
   if (profile.levelTolerance !== undefined && judged.line) required.push(frame.hipOffset)
@@ -824,6 +1268,8 @@ export function suppressIsolatedMetricSpikes(
     hipOffset: 0.32,
     leanRatio: 0.32,
     shrugRatio: 0.2,
+    shoulderDeg: 26,
+    tiltDeg: 20,
   }
   const source = frames.map((frame) => ({ ...frame }))
   const touched = new Set<number>()
@@ -927,7 +1373,7 @@ export function trimTerminalDismountFrames(
 ): FrameReading[] {
   if (frames.length < 6 || !Number.isFinite(creditedHoldSec)) return frames
 
-  const angularKeys = ['elbowDeg', 'kneeDeg', 'hipAngleDeg'] as const
+  const angularKeys = ['elbowDeg', 'kneeDeg', 'hipAngleDeg', 'shoulderDeg'] as const
   for (let index = 3; index < frames.length; index++) {
     const current = frames[index]
     if (creditedHoldSec - current.t > maxTailSec || current.t > creditedHoldSec + 0.05) continue
@@ -1003,6 +1449,24 @@ export function reliableJointAngle(a: Kp, b: Kp, c: Kp, bodyScale: number): numb
     return undefined
   }
   const angle = angleDeg(a, b, c)
+  return Number.isFinite(angle) ? angle : undefined
+}
+
+/**
+ * How open the shoulder is: the angle between the upper arm and the trunk.
+ *
+ * Its two segments are meant to differ — the trunk is nearly twice the upper
+ * arm — so the limb-ratio gate `reliableJointAngle` applies to elbows and knees
+ * throws away exactly the well-formed readings: real straight handstands came
+ * back with their shoulders unseen, and only an arched one, whose arm the
+ * model drew long, was measured. Here only an upper arm too short or too long
+ * to be one is rejected.
+ */
+export function shoulderOpeningDeg(elbow: Kp, shoulder: Kp, hip: Kp, torso: number): number | undefined {
+  if (!Number.isFinite(torso) || torso <= 0) return undefined
+  const upperArm = Math.hypot(elbow.x - shoulder.x, elbow.y - shoulder.y)
+  if (upperArm < torso * 0.25 || upperArm > torso) return undefined
+  const angle = angleDeg(elbow, shoulder, hip)
   return Number.isFinite(angle) ? angle : undefined
 }
 
@@ -1446,6 +1910,14 @@ export const SIDEWAYS_TRUNK_DEG = 68
 export const UPSIDE_DOWN_ARM_DEG = 120
 
 /**
+ * How far from straight down a handstand's or wall plank's arms may point and
+ * still be standing on the picture's bottom edge. Half-way to sideways: upright
+ * synthetic holds on a phone tilted 15° stayed under 36°, and turned a quarter
+ * the same holds read 54° or more.
+ */
+export const INVERTED_ARM_SLACK_DEG = 45
+
+/**
  * Where the floor is in the picture, read from the body itself.
  *
  * The app suggests turning the phone on its side, and with rotation lock on a
@@ -1457,11 +1929,24 @@ export const UPSIDE_DOWN_ARM_DEG = 120
  * be on its side, which way the arms point says which side the floor is on.
  * `null` when too few moments resolve shoulder, wrist and hip to say.
  */
-export function floorEdge(frames: { kps: Kp[] }[]): FloorEdge | null {
+export function floorEdge(frames: { kps: Kp[] }[], posture: Posture = 'support'): FloorEdge | null {
   const trunks: number[] = []
   const arms: number[] = []
   const armAcross: number[] = []
+  /** How far the hips sit up the picture from the shoulders (+1 = straight up), and across it. */
+  const trunkUp: number[] = []
+  const trunkAcross: number[] = []
+  /** The line between the two hands, in degrees from the picture's horizontal. */
+  const gripLines: number[] = []
   for (const { kps } of frames) {
+    if (posture === 'flag') {
+      const lw = byName(kps, 'left_wrist', MIN_PRECISE_KP_SCORE)
+      const rw = byName(kps, 'right_wrist', MIN_PRECISE_KP_SCORE)
+      if (lw && rw && Math.hypot(lw.x - rw.x, lw.y - rw.y) >= 1) {
+        gripLines.push((Math.atan2(Math.abs(lw.y - rw.y), Math.abs(lw.x - rw.x)) * 180) / Math.PI)
+      }
+      continue
+    }
     let best: { s: Kp; w: Kp; h: Kp; q: number } | undefined
     for (const side of ['left', 'right'] as const) {
       const s = byName(kps, `${side}_shoulder`, MIN_PRECISE_KP_SCORE)
@@ -1483,8 +1968,46 @@ export function floorEdge(frames: { kps: Kp[] }[]): FloorEdge | null {
     // Degrees from the picture's horizontal (0) to its vertical (90).
     trunks.push((Math.atan2(Math.abs(ty), Math.abs(tx)) * 180) / Math.PI)
     armAcross.push(ax / armLength)
+    const trunkLength = Math.hypot(tx, ty)
+    trunkUp.push(-ty / trunkLength)
+    trunkAcross.push(tx / trunkLength)
+  }
+  if (posture === 'flag') {
+    // A flag's body lies across the picture *if* it is level — and a clip of a
+    // body pointing up the picture is either a phone on its side or an athlete
+    // who is not level, which the trunk alone cannot tell apart: a vertical
+    // hold on a pole was read as a perfect level flag that way. The pole can.
+    // Both hands are on it, so the line between them is the upright, however
+    // the body hangs. Which side the floor is on does not matter to anything a
+    // flag is measured by (angles to the horizontal, straightness), so one
+    // quarter-turn serves. Hands that are neither stacked nor side by side
+    // say nothing, and then how level the body is goes unjudged.
+    if (gripLines.length < MIN_FRAMES) return null
+    const grip = median(gripLines)!
+    if (grip >= 90 - FLAG_GRIP_SLACK_DEG) return 'bottom'
+    if (grip <= FLAG_GRIP_SLACK_DEG) return 'right'
+    return null
   }
   if (trunks.length < MIN_FRAMES) return null
+  if (posture === 'inverted') {
+    // On the hands with the body above them, the arms point at the floor —
+    // straight down in a handstand, within about 20° of it in a wall plank,
+    // whose trunk can lie anywhere from a low incline to upright and so says
+    // nothing reliable (a shallow wall plank on a tilted phone read as a
+    // handstand filmed on its side). Arms pointing across the picture, the
+    // phone was on its side, and they point at the edge the floor is on; up
+    // the picture, it is upside down.
+    const arm = median(arms)!
+    if (arm <= INVERTED_ARM_SLACK_DEG) return 'bottom'
+    if (arm >= 180 - INVERTED_ARM_SLACK_DEG) return 'top'
+    return median(armAcross)! >= 0 ? 'right' : 'left'
+  }
+  if (posture === 'hang') {
+    // Under a bar the hands are above the shoulders, so everything the arms
+    // say about the floor is the other way round.
+    if (median(trunks)! >= SIDEWAYS_TRUNK_DEG) return median(armAcross)! >= 0 ? 'left' : 'right'
+    return median(arms)! <= 180 - UPSIDE_DOWN_ARM_DEG ? 'top' : 'bottom'
+  }
   if (median(trunks)! >= SIDEWAYS_TRUNK_DEG) return median(armAcross)! >= 0 ? 'right' : 'left'
   if (median(arms)! >= UPSIDE_DOWN_ARM_DEG) return 'top'
   return 'bottom'
@@ -1616,6 +2139,211 @@ export function widestSamplingGap(times: number[], until = Infinity): number {
  * Everything the verdict needs that is not a pose: the sampling window the
  * clip was read over and which detector produced it.
  */
+/** Why a position with no geometric checks is not graded, in the athlete's words. */
+function noChecksReason(exerciseId: string, profile: PoseProfile): string {
+  return exerciseId === 'frog-stand'
+    ? `A ${profile.label.toLowerCase()} is about balance rather than a fixed shape, so there is nothing here the camera can judge for you. Rate it yourself.`
+    : `A ${profile.label.toLowerCase()} has no fixed shape the camera can grade honestly, so there is nothing here for it to judge. Watch the replay against the checklist and rate it yourself.`
+}
+
+/** A flag filmed at an angle: readable as a flag, not measurable as one. */
+const FLAG_OBLIQUE_VIEW =
+  'This clip is at an angle to you: your body is pointing toward or away from the camera, which shortens every line this check reads and makes straight legs look bent. Put the phone square in front of the pole, facing your chest, and retry.'
+
+/** What each posture's refusals and notes say about the view it needs. */
+const POSTURE_COPY: Record<
+  Posture,
+  {
+    /** "side-on" / "front-on". */
+    view: string
+    viewNoun: string
+    from: string
+    wrongView: string
+    fitInFrame: string
+    /** Why a softened elbow matters here, completing "Elbows softened … — ". */
+    softElbows: string
+    /** What this check cannot see, said plainly at the end of every verdict. */
+    unmeasured: string
+  }
+> = {
+  support: {
+    view: 'side-on',
+    viewNoun: 'side view',
+    from: 'from the side',
+    wrongView:
+      'This clip is not fully side-on. Elbow, hip and lean angles are foreshortened from the front or a strong three-quarter view — put the phone directly beside you and retry.',
+    fitInFrame: 'Move the phone further back and turn it on its side so the whole body fits end to end.',
+    softElbows: 'even a small bend changes this from straight-arm work',
+    unmeasured: 'Scapular protraction is not measured by this camera check — confirm it yourself.',
+  },
+  hang: {
+    view: 'side-on',
+    viewNoun: 'side view',
+    from: 'from the side',
+    wrongView:
+      'This clip is not fully side-on. Elbow and hip angles are foreshortened from the front or a strong three-quarter view — put the phone directly beside the bar, level with your chest, and retry.',
+    fitInFrame: 'Move the phone further back and turn it on its side so the whole body and your hands on the bar fit in the picture.',
+    softElbows: 'a lever is held on straight arms, and a bend turns it into the top of a row',
+    unmeasured: 'Shoulder-blade position is not measured by this camera check — confirm it yourself.',
+  },
+  inverted: {
+    view: 'side-on',
+    viewNoun: 'side view',
+    from: 'from the side',
+    wrongView:
+      'This clip is not side-on enough. A handstand’s line cannot be read from the front or the back — put the phone directly beside you, low, and retry.',
+    fitInFrame: 'Move the phone further back and keep it upright so your hands and toes both fit in the picture.',
+    softElbows: 'a handstand rests on locked arms',
+    unmeasured: 'How tall the shoulders are pushed is not measured by this camera check — confirm it yourself.',
+  },
+  flag: {
+    view: 'front-on',
+    viewNoun: 'front view',
+    from: 'from the front',
+    wrongView:
+      'This clip is not front-on. A flag lies in the plane of its pole, so it can only be read facing you — put the phone square in front of you, looking at your chest, and retry.',
+    fitInFrame: 'Move the phone further back and turn it on its side so your hands and feet both fit in the picture.',
+    softElbows: 'a bent bottom arm lets the body sink toward the pole',
+    unmeasured:
+      'Rolling toward the floor or toward the camera cannot be seen from the front — confirm your chest stayed square.',
+  },
+}
+
+interface FlagFrame {
+  reading: FrameReading
+  observed: Partial<Record<ReadingMetric, boolean>>
+  confidence: number
+  torso: number
+  shoulder: { x: number; y: number }
+  hip: { x: number; y: number }
+  /** The midpoint of the hands on the pole, when both were seen: the fixed reference for steadiness. */
+  anchor?: { x: number; y: number }
+}
+
+/**
+ * One moment of a flag, read from the front.
+ *
+ * Both sides of the body are in view, so the line runs through midpoints: the
+ * middle of the shoulders, the middle of the hips, the middle of the feet.
+ * How far that line sits off the picture's horizontal is the tilt; the angle at
+ * the hips is the fold at the waist. Each arm is its own plain angle and the
+ * verdict takes the more bent of the two — a locked bottom arm is the one that
+ * matters, and a straight arm must not hide a bent one. Legs are read one at a
+ * time for the same reason; a one-leg shape grades the leg whose reach shows
+ * it is the extended one, exactly as the side-view judge does.
+ */
+function flagReading(kps: Kp[], t: number, profile: PoseProfile, levelKnown: boolean): FlagFrame | null {
+  const P = (name: string) => byName(kps, name, MIN_PRECISE_KP_SCORE)
+  const sides = ['left', 'right'] as const
+  /** How many of these points were filled in from their neighbours rather than seen. */
+  const filled = (...points: (Kp | undefined)[]) => points.filter((point) => point?.origin).length
+  const mid = (a: Kp | undefined, b: Kp | undefined) =>
+    a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, filled: filled(a, b) } : undefined
+  const S = mid(P('left_shoulder'), P('right_shoulder'))
+  const H = mid(P('left_hip'), P('right_hip'))
+  if (!S || !H) return null
+  const torso = Math.hypot(S.x - H.x, S.y - H.y)
+  if (torso < 1) return null
+
+  // ——— Arms: each on its own, the more bent of the two is the reading ———
+  const arms = sides
+    .map((side) => {
+      const s = P(`${side}_shoulder`)
+      const e = P(`${side}_elbow`)
+      const w = P(`${side}_wrist`)
+      if (!s || !e || !w) return undefined
+      const angle = reliableJointAngle(s, e, w, torso)
+      return angle === undefined ? undefined : { angle, wrist: w, filled: filled(s, e, w), wristSeen: !w.origin }
+    })
+    .filter((arm): arm is NonNullable<typeof arm> => arm !== undefined)
+  // Both arms or neither: a straight arm must not stand in for one the model
+  // lost, which in a flag is usually the one that matters.
+  const elbowDeg = arms.length === 2 ? Math.min(...arms.map((arm) => arm.angle)) : undefined
+
+  // ——— Legs: each on its own ———
+  const legs = sides
+    .map((side) => {
+      const h = P(`${side}_hip`)
+      const k = P(`${side}_knee`)
+      const a = P(`${side}_ankle`)
+      if (!h || !k || !a) return undefined
+      return {
+        knee: reliableJointAngle(h, k, a, torso),
+        reach: Math.hypot(h.x - a.x, h.y - a.y) / torso,
+        ankle: a,
+        filled: filled(h, k, a),
+        /** The knee and ankle alone: the hips are counted once, with the trunk. */
+        filledBelowHip: filled(k, a),
+      }
+    })
+    .filter((leg): leg is NonNullable<typeof leg> => leg !== undefined)
+  // A one-leg shape grades the leg whose reach shows it is the extended one.
+  // Every other shape needs both legs: with one out of shot the middle of the
+  // feet is not the body's line, and a straight leg must not stand in for a
+  // bent one — so the legs and the line go unseen rather than half-seen.
+  const graded = profile.oneLeg
+    ? legs.filter((leg) => leg.reach >= MIN_EXTENDED_LEG_REACH).sort((a, b) => b.reach - a.reach).slice(0, 1)
+    : legs.length === 2
+      ? legs
+      : []
+  const kneeAngles = graded.map((leg) => leg.knee).filter((v): v is number => v !== undefined)
+  const kneeDeg = kneeAngles.length === graded.length && graded.length ? Math.min(...kneeAngles) : undefined
+  // Where the body line ends: the middle of the graded feet.
+  const feet = graded.length
+    ? {
+        x: graded.reduce((total, leg) => total + leg.ankle.x, 0) / graded.length,
+        y: graded.reduce((total, leg) => total + leg.ankle.y, 0) / graded.length,
+        filled: graded.reduce((total, leg) => total + leg.filledBelowHip, 0),
+      }
+    : undefined
+  // A front view asks each criterion for six or eight joints at once, where a
+  // side view asks for three or four. Holding it to "every joint seen" would
+  // throw a moment away for one joint bridged across a third of a second —
+  // which is good evidence — so a moment here counts as seen while at most one
+  // of the joints behind it was filled in. Two or more, and it is continuity
+  // for the replay rather than observation.
+  const seen = (filledJoints: number) => filledJoints <= 1
+
+  // The fold at the waist: shoulders–hips–feet, a plain angle on long segments.
+  const hipAngleDeg = feet ? angleDeg(S as Kp, H as Kp, feet as Kp) : undefined
+  // Off level: the whole line where both legs are long, the trunk otherwise
+  // (a tuck's knees and a one-leg shape's tucked leg are not on the line).
+  const lineEnd = feet && profile.minKneeDeg !== undefined && !profile.oneLeg ? feet : H
+  // Only when the hands on the pole said which way is up (see `floorEdge`).
+  const tiltDeg = levelKnown
+    ? (Math.atan2(Math.abs(lineEnd.y - S.y), Math.abs(lineEnd.x - S.x)) * 180) / Math.PI
+    : NaN
+
+  const scored = [P('left_shoulder'), P('right_shoulder'), P('left_hip'), P('right_hip'), ...sides.flatMap((side) => [P(`${side}_elbow`), P(`${side}_wrist`)])].filter(
+    (point): point is Kp => point !== undefined,
+  )
+  const bothWrists = arms.length === 2 && arms.every((arm) => arm.wristSeen)
+  const armsFilled = arms.reduce((total, arm) => total + arm.filled, 0)
+  const lineFilled = S.filled + H.filled + (feet?.filled ?? 0)
+  return {
+    reading: {
+      t,
+      ...(elbowDeg !== undefined ? { elbowDeg } : {}),
+      ...(kneeDeg !== undefined ? { kneeDeg } : {}),
+      ...(hipAngleDeg !== undefined && Number.isFinite(hipAngleDeg) ? { hipAngleDeg } : {}),
+      ...(Number.isFinite(tiltDeg) ? { tiltDeg } : {}),
+    },
+    observed: {
+      elbowDeg: elbowDeg !== undefined && seen(armsFilled),
+      kneeDeg: kneeDeg !== undefined && seen(graded.reduce((total, leg) => total + leg.filled, 0)),
+      hipAngleDeg: hipAngleDeg !== undefined && feet !== undefined && seen(lineFilled),
+      tiltDeg: levelKnown && (lineEnd === H ? seen(S.filled + H.filled) : feet !== undefined && seen(lineFilled)),
+    },
+    confidence: scored.reduce((total, point) => total + (point.score ?? 0), 0) / Math.max(1, scored.length),
+    torso,
+    shoulder: S,
+    hip: H,
+    ...(bothWrists
+      ? { anchor: { x: (arms[0].wrist.x + arms[1].wrist.x) / 2, y: (arms[0].wrist.y + arms[1].wrist.y) / 2 } }
+      : {}),
+  }
+}
+
 export interface JudgeInput {
   /** Raw detections in source-frame pixels, one entry per moment that found a body. */
   tracked: { t: number; kps: Kp[] }[]
@@ -1665,7 +2393,7 @@ export function judgeTrackedFrames(
   if (profile.noChecks) {
     return {
       ...empty,
-      reason: `A ${profile.label.toLowerCase()} is about balance rather than a fixed shape, so there is nothing here the camera can judge for you. Rate it yourself.`,
+      reason: noChecksReason(exerciseId, profile),
     }
   }
 
@@ -1718,12 +2446,16 @@ export function judgeTrackedFrames(
     }
   }
 
+  const posture = postureOf(profile)
+  const copy = POSTURE_COPY[posture]
   const elbows: number[] = []
   const knees: number[] = []
   const hipAngles: number[] = []
   const hipOffsets: number[] = []
   const leans: number[] = []
   const shrugs: number[] = []
+  const shoulderAngles: number[] = []
+  const tilts: number[] = []
   const confidences: number[] = []
   /** Shoulder and hip positions measured from the visible wrist, per moment. */
   const handRelative: { sx: number; sy: number; hx: number; hy: number; torso: number }[] = []
@@ -1739,6 +2471,8 @@ export function judgeTrackedFrames(
   let nonSideFrames = 0
   /** Moments whose side-on view could not be checked either way. */
   let viewUnknownFrames = 0
+  /** Flag moments refused because the body pointed toward or away from the camera. */
+  let obliqueFrames = 0
   /**
    * Which of each moment's measurements rest only on observed points. Filled
    * and repaired points keep the replay continuous, but coverage — whether a
@@ -1769,7 +2503,11 @@ export function judgeTrackedFrames(
   // evidence and leaving verdicts resting on a handful of samples.
   const bridgedJoints = bridgeKeypointGaps(tracked)
   const keypointStats = stabilizeKeypointSpikes(tracked)
-  trackedSide = pickStableSide(tracked)
+  // One stable side, and the far side's stacked guesses ignored — for a side
+  // view. Seen from the front both sides are real and in plain sight, and feet
+  // held together are *supposed* to land on nearly the same pixels: treating
+  // that as a collision threw away a real flag's legs on a third of noisy runs.
+  trackedSide = posture === 'flag' ? null : pickStableSide(tracked)
   const collisionStats = trackedSide
     ? suppressBilateralCollisions(tracked, trackedSide)
     : { jointsIgnored: 0, framesTouched: 0 }
@@ -1795,9 +2533,11 @@ export function judgeTrackedFrames(
 
   // Measure in a picture whose floor runs along the bottom. The track above
   // keeps the frame as recorded, because it is drawn over the video.
-  const floor = floorEdge(tracked)
+  const floor = floorEdge(tracked, posture)
   const frameTurned = floor && floor !== 'bottom' ? floor : undefined
   if (frameTurned) for (const frame of tracked) frame.kps = turnUpright(frame.kps, frameTurned)
+  /** A flag's level is measured against the pole; without the hands there is no level to measure. */
+  const flagLevelKnown = posture !== 'flag' || floor !== null
 
   const isObserved = (...points: (Kp | undefined)[]) => points.every((point) => point !== undefined && !point.origin)
   for (const { t, kps } of tracked) {
@@ -1811,12 +2551,40 @@ export function judgeTrackedFrames(
       apparentBodyWidthRatio(kps, MIN_PRECISE_KP_SCORE) ?? apparentBodyWidthRatio(kps, MIN_KP_SCORE)
     if (bodyWidth !== undefined) {
       orientationFrames++
-      if (bodyWidth > MAX_SIDE_VIEW_RATIO) {
+      // The view each posture needs: side-on for everything but the flag,
+      // which lies in the plane of its pole and is only readable from the front.
+      const oblique = posture === 'flag' && bodyWidth > MAX_FRONT_VIEW_RATIO
+      const wrongView =
+        posture === 'flag'
+          ? bodyWidth < MIN_FRONT_VIEW_RATIO || oblique
+          : bodyWidth > (posture === 'inverted' ? MAX_INVERTED_SIDE_VIEW_RATIO : MAX_SIDE_VIEW_RATIO)
+      if (wrongView) {
         nonSideFrames++
+        if (oblique) obliqueFrames++
         continue
       }
     } else {
       viewUnknownFrames++
+    }
+
+    if (posture === 'flag') {
+      // Front-on, both sides of the body are in view: measured through the
+      // midpoints rather than one stable side.
+      const flag = flagReading(kps, t, profile, flagLevelKnown)
+      if (!flag) continue
+      confidences.push(flag.confidence)
+      frameObserved.set(t, flag.observed)
+      frameReadings.push(flag.reading)
+      if (flag.anchor && t <= (creditedHoldSec ?? Infinity) + 0.05) {
+        handRelative.push({
+          sx: flag.shoulder.x - flag.anchor.x,
+          sy: flag.shoulder.y - flag.anchor.y,
+          hx: flag.hip.x - flag.anchor.x,
+          hy: flag.hip.y - flag.anchor.y,
+          torso: flag.torso,
+        })
+      }
+      continue
     }
     // Keep anatomical identity stable through the clip. Switching to
     // whichever side scores higher on each frame creates fake angle jumps.
@@ -1860,8 +2628,15 @@ export function judgeTrackedFrames(
     // that made the far arm untrustworthy in the first place.
     const armBends: number[] = []
     let armObserved = false
+    const bendOf = (s: Kp, e: Kp, w: Kp, h: Kp): number | undefined => {
+      if (!unsignedElbow(profile)) return signedElbowBend(s, e, w, h, torso)
+      // Upside down the trunk continues the arm, so the hips cannot say which
+      // way the elbow bends: a plain angle, judged against a wider deadband.
+      const angle = reliableJointAngle(s, e, w, torso)
+      return angle === undefined ? undefined : 180 - angle
+    }
     if (preciseShoulder && preciseElbow && preciseWrist && preciseHip) {
-      const near = signedElbowBend(preciseShoulder, preciseElbow, preciseWrist, preciseHip, torso)
+      const near = bendOf(preciseShoulder, preciseElbow, preciseWrist, preciseHip)
       if (near !== undefined) {
         armBends.push(near)
         armObserved = isObserved(preciseShoulder, preciseElbow, preciseWrist, preciseHip)
@@ -1873,7 +2648,7 @@ export function judgeTrackedFrames(
       const farWrist = byName(kps, `${farSide}_wrist`, MIN_FAR_KP_SCORE)
       const farHip = byName(kps, `${farSide}_hip`, MIN_FAR_KP_SCORE)
       if (farShoulder && farElbow && farWrist && farHip) {
-        const far = signedElbowBend(farShoulder, farElbow, farWrist, farHip, torso)
+        const far = bendOf(farShoulder, farElbow, farWrist, farHip)
         if (far !== undefined) armBends.push(far)
       }
     }
@@ -1897,7 +2672,7 @@ export function judgeTrackedFrames(
       const [first, second] = armBends
       const resolvedBendAgainstExtension =
         armBends.length === 2 &&
-        Math.max(first, second) > MATERIAL_TOLERANCE.elbowDeg &&
+        Math.max(first, second) > elbowSlack(profile) &&
         Math.min(first, second) < 0
       const combined = resolvedBendAgainstExtension
         ? (Math.max(first, 0) + Math.max(second, 0)) / 2
@@ -1987,6 +2762,14 @@ export function judgeTrackedFrames(
         leanSeries.push({ t, v: lean })
       }
     }
+    // How open the shoulders are: the angle between the upper arm and the
+    // trunk. Only where the position asks for it (a handstand's line).
+    const frameShoulderDeg =
+      profile.minShoulderDeg !== undefined && preciseElbow && preciseShoulder && preciseHip
+        ? shoulderOpeningDeg(preciseElbow, preciseShoulder, preciseHip, torso)
+        : undefined
+    if (frameShoulderDeg !== undefined) push(shoulderAngles, frameShoulderDeg)
+
     // Ear only — the nose sits much further from the shoulder, so falling
     // back to it against the same threshold always reads as "not shrugged".
     const preciseEar = byName(kps, `${side}_ear`, MIN_PRECISE_KP_SCORE)
@@ -2002,6 +2785,7 @@ export function judgeTrackedFrames(
       hipOffset: frameHipOffset !== undefined && isObserved(preciseShoulder, preciseHip),
       leanRatio: frameLeanRatio !== undefined && isObserved(preciseShoulder, preciseWrist, preciseHip),
       shrugRatio: frameShrugRatio !== undefined && isObserved(preciseEar, preciseShoulder),
+      shoulderDeg: frameShoulderDeg !== undefined && isObserved(preciseElbow, preciseShoulder, preciseHip),
     })
     frameReadings.push({
       t,
@@ -2011,6 +2795,7 @@ export function judgeTrackedFrames(
       hipOffset: frameHipOffset,
       leanRatio: frameLeanRatio,
       shrugRatio: frameShrugRatio,
+      ...(frameShoulderDeg !== undefined ? { shoulderDeg: frameShoulderDeg } : {}),
     })
 
     // Where the shoulders and hips sit *relative to the hands*. In a planche
@@ -2041,7 +2826,11 @@ export function judgeTrackedFrames(
   // go unjudged.
   let farArmContradicts = false
   let nearArmOnly = false
-  if (armPairs.length >= Math.max(MIN_FRAMES, Math.ceil(confidences.length * 0.55))) {
+  if (
+    profile.minElbowDeg !== undefined &&
+    !coarseElbow(profile) &&
+    armPairs.length >= Math.max(MIN_FRAMES, Math.ceil(confidences.length * 0.55))
+  ) {
     const nearMedian = median(armPairs.map((pair) => pair.near))!
     const farMedian = median(armPairs.map((pair) => pair.far))!
     if (nearMedian - farMedian >= ARM_DISAGREEMENT_DEG && nearMedian > MATERIAL_TOLERANCE.elbowDeg) {
@@ -2068,6 +2857,8 @@ export function judgeTrackedFrames(
   hipOffsets.length = 0
   leans.length = 0
   shrugs.length = 0
+  shoulderAngles.length = 0
+  tilts.length = 0
   elbowSeries.length = 0
   kneeSeries.length = 0
   hipAngleSeries.length = 0
@@ -2095,6 +2886,8 @@ export function judgeTrackedFrames(
       leanSeries.push({ t: frame.t, v: frame.leanRatio })
     }
     if (frame.shrugRatio !== undefined) push(shrugs, frame.shrugRatio)
+    if (frame.shoulderDeg !== undefined) push(shoulderAngles, frame.shoulderDeg)
+    if (frame.tiltDeg !== undefined) push(tilts, frame.tiltDeg)
   }
 
   const framesUsed = confidences.length
@@ -2110,8 +2903,7 @@ export function judgeTrackedFrames(
       framesUsed,
       framesSampled: n,
       track,
-      reason:
-        'This clip is not fully side-on. Elbow, hip and lean angles are foreshortened from the front or a strong three-quarter view — put the phone directly beside you and retry.',
+      reason: obliqueFrames > nonSideFrames / 2 ? FLAG_OBLIQUE_VIEW : copy.wrongView,
     }
   }
   if (framesUsed < MIN_FRAMES) {
@@ -2120,10 +2912,10 @@ export function judgeTrackedFrames(
     const seen = [...regionsSeen]
     const reason =
       posesSeen === 0
-        ? 'No body was found in this clip at all. Move the phone back until your whole body — hands to feet — fits in the frame, and film from the side.'
+        ? `No body was found in this clip at all. Move the phone back until your whole body — hands to feet — fits in the frame, and film ${copy.from}.`
         : seen.length
-          ? `Only your ${listPhrase(seen)} stayed in frame. Move the phone further back and turn it on its side so the whole body fits end to end.`
-          : 'Could not track your body reliably. Film side-on, whole body in frame, with the light in front of you rather than behind.'
+          ? `Only your ${listPhrase(seen)} stayed in frame. ${copy.fitInFrame}`
+          : `Could not track your body reliably. Film ${copy.view}, whole body in frame, with the light in front of you rather than behind.`
     return { ...empty, framesUsed, framesSampled: n, reason, track }
   }
 
@@ -2139,8 +2931,7 @@ export function judgeTrackedFrames(
       framesSampled: n,
       confidence,
       track,
-      reason:
-        'Tracking jumped between different body shapes too often to judge this clip reliably. Check the skeleton replay, then try brighter light, more distance, and a clear side view.',
+      reason: `Tracking jumped between different body shapes too often to judge this clip reliably. Check the skeleton replay, then try brighter light, more distance, and a clear ${copy.viewNoun}.`,
     }
   }
   // A criterion is graded when it was observable for a majority of tracked
@@ -2165,7 +2956,7 @@ export function judgeTrackedFrames(
         t: frame.t,
         issues:
           frame.elbowDeg !== undefined &&
-          frame.elbowDeg < profile.minElbowDeg! - MOMENTARY_MATERIAL_TOLERANCE.elbowDeg
+          frame.elbowDeg < profile.minElbowDeg! - elbowSlack(profile, MOMENTARY_MATERIAL_TOLERANCE)
             ? (['arms'] as FormIssue[])
             : [],
       })),
@@ -2179,6 +2970,9 @@ export function judgeTrackedFrames(
   // contradictory criterion becomes unseen.
   const elbowTrackingUncertain =
     profile.minElbowDeg !== undefined &&
+    // Only where the elbow is read finely: a coarse posture's spread is
+    // expected, and its wider deadband already absorbs it.
+    !coarseElbow(profile) &&
     wholeClipElbow !== undefined &&
     wholeClipElbow < profile.minElbowDeg - MATERIAL_TOLERANCE.elbowDeg &&
     elbowIqr !== undefined &&
@@ -2211,13 +3005,17 @@ export function judgeTrackedFrames(
       hipOffsets: observedCount('hipOffset'),
       leans: observedCount('leanRatio'),
       shrugs: observedCount('shrugRatio'),
+      shoulders: observedCount('shoulderDeg'),
+      tilts: observedCount('tiltDeg'),
     },
     framesUsed,
   )
   const filledReadings = frameReadings.reduce(
     (total, frame) =>
       total +
-      (['elbowDeg', 'kneeDeg', 'hipAngleDeg', 'hipOffset', 'leanRatio', 'shrugRatio'] as ReadingMetric[]).filter(
+      (
+        ['elbowDeg', 'kneeDeg', 'hipAngleDeg', 'hipOffset', 'leanRatio', 'shrugRatio', 'shoulderDeg', 'tiltDeg'] as ReadingMetric[]
+      ).filter(
         (key) => frame[key] !== undefined && frameObserved.get(frame.t)?.[key] !== true,
       ).length,
     0,
@@ -2233,7 +3031,7 @@ export function judgeTrackedFrames(
       confidence,
       unseen,
       track,
-      reason: `Could not see your ${listPhrase(unseen)} well enough to judge anything here. Keep your whole body and both hands in frame, side-on.`,
+      reason: `Could not see your ${listPhrase(unseen)} well enough to judge anything here. Keep your whole body and both hands in frame, ${copy.view}.`,
     }
   }
 
@@ -2266,7 +3064,7 @@ export function judgeTrackedFrames(
   // A late softening the momentary envelope is too coarse to see ends clean
   // time where it starts; the seconds before it stay verified.
   const softeningAt =
-    judged.elbow && profile.minElbowDeg !== undefined
+    judged.elbow && profile.minElbowDeg !== undefined && !coarseElbow(profile)
       ? sustainedSofteningStart(frameReadings, profile.minElbowDeg, creditedSeconds)
       : null
   const cleanCutoffSeconds = softeningAt !== null ? Math.min(envelopeCutoff, softeningAt) : envelopeCutoff
@@ -2353,6 +3151,8 @@ export function judgeTrackedFrames(
   const hipOffset = median(pick('hipOffset')) ?? median(hipOffsets)
   const leanRatio = median(pick('leanRatio')) ?? median(leans)
   const shrugRatio = median(pick('shrugRatio')) ?? median(shrugs)
+  const shoulderDeg = sustainedTypical(pick('shoulderDeg')) ?? sustainedTypical(shoulderAngles)
+  const tiltDeg = median(pick('tiltDeg')) ?? median(tilts)
   // Steadiness: the robust spread of the body's position against the planted
   // hands, over torso length. Replayed on the audit's real footage - one hold
   // re-framed fixed, panning and oscillating - the old picture-frame speed read
@@ -2399,7 +3199,7 @@ export function judgeTrackedFrames(
   const details: string[] = []
   const aggregateFaults = new Set(
     materialIssuesForReading(
-      { t: 0, elbowDeg, kneeDeg, hipAngleDeg, hipOffset, leanRatio, shrugRatio },
+      { t: 0, elbowDeg, kneeDeg, hipAngleDeg, hipOffset, leanRatio, shrugRatio, shoulderDeg, tiltDeg },
       profile,
       judged,
     ),
@@ -2420,7 +3220,11 @@ export function judgeTrackedFrames(
   // When a fault appeared after an initially clean position, expose the
   // sustained faulty measurement rather than returning a pristine pre-fault
   // median next to a red issue label.
-  const rawReportedElbowDeg = namedFaults.has('arms') ? faultMetric('arms', 'elbowDeg') ?? elbowDeg : elbowDeg
+  const rawReportedElbowDeg = namedFaults.has('arms')
+    ? faultMetric('arms', 'elbowDeg') ?? elbowDeg
+    : namedFaults.has('angle')
+      ? faultMetric('angle', 'elbowDeg') ?? elbowDeg
+      : elbowDeg
   const reportedElbowDeg = rawReportedElbowDeg === undefined ? undefined : Math.min(180, rawReportedElbowDeg)
   const displayedElbowPeak = elbowPeak === undefined ? undefined : Math.min(180, elbowPeak)
   const reportedKneeDeg = namedFaults.has('knees') ? faultMetric('knees', 'kneeDeg') ?? kneeDeg : kneeDeg
@@ -2436,14 +3240,18 @@ export function judgeTrackedFrames(
   const reportedShrugRatio = namedFaults.has('shrug')
     ? faultMetric('shrug', 'shrugRatio') ?? shrugRatio
     : shrugRatio
+  const reportedShoulderDeg = namedFaults.has('shoulders') ? faultMetric('shoulders', 'shoulderDeg') ?? shoulderDeg : shoulderDeg
+  const reportedTiltDeg = namedFaults.has('tilt') ? faultMetric('tilt', 'tiltDeg') ?? tiltDeg : tiltDeg
 
   if (judged.elbow && profile.minElbowDeg !== undefined && reportedElbowDeg !== undefined) {
     if (namedFaults.has('arms')) {
       issues.push('arms')
       notes.push(
-        sustainedFaults.has('arms') && !aggregateFaults.has('arms')
-          ? `Elbows softened to about ${Math.round(reportedElbowDeg)}° for a sustained part of the hold — even a small bend changes this from straight-arm work.`
-          : elbowPeak !== undefined && elbowPeak >= profile.minElbowDeg - MATERIAL_TOLERANCE.elbowDeg
+        coarseElbow(profile)
+          ? `Elbows read about ${Math.round(reportedElbowDeg)}° — past anything a straight arm reads ${copy.from} (${Math.round(profile.minElbowDeg - elbowSlack(profile))}° and up), so this is a real bend: ${copy.softElbows}.`
+          : sustainedFaults.has('arms') && !aggregateFaults.has('arms')
+          ? `Elbows softened to about ${Math.round(reportedElbowDeg)}° for a sustained part of the hold — ${copy.softElbows}.`
+          : elbowPeak !== undefined && elbowPeak >= profile.minElbowDeg - elbowSlack(profile)
             ? `Elbows locked at their best (${Math.round(displayedElbowPeak!)}°) but sat nearer ${Math.round(reportedElbowDeg)}° for much of the hold — keep the lock the whole way.`
             : `Elbows reached about ${Math.round(displayedElbowPeak ?? reportedElbowDeg)}° at their straightest — locked reads near 180°.`,
       )
@@ -2453,9 +3261,34 @@ export function judgeTrackedFrames(
       // between there and the tolerance a bend was measured but is too small
       // for the camera to stand behind.
       good.push(
-        reportedElbowDeg >= profile.minElbowDeg - MATERIAL_TOLERANCE.elbowDeg / 2
-          ? `Elbows locked (${Math.round(reportedElbowDeg)}°)`
-          : `No reliable elbow bend detected (${Math.round(reportedElbowDeg)}°)`,
+        coarseElbow(profile)
+          ? 'No elbow bend the camera could call'
+          : reportedElbowDeg >= profile.minElbowDeg - elbowSlack(profile) / 2
+            ? `Elbows locked (${Math.round(reportedElbowDeg)}°)`
+            : `No reliable elbow bend detected (${Math.round(reportedElbowDeg)}°)`,
+      )
+      if (coarseElbow(profile)) {
+        details.push(
+          `${copy.viewNoun[0].toUpperCase()}${copy.viewNoun.slice(1)} elbows here are read coarsely: the camera only calls a bend past about ${Math.round(elbowSlack(profile))}°, because a straight arm in this position already reads short of 180° through the model. A small bend is yours to check on the replay.`,
+        )
+      }
+    }
+  }
+
+  if (judged.elbow && profile.elbowTargetDeg !== undefined && reportedElbowDeg !== undefined) {
+    const target = profile.elbowTargetDeg
+    if (namedFaults.has('angle')) {
+      issues.push('angle')
+      notes.push(
+        reportedElbowDeg > target
+          ? `Elbows sat near ${Math.round(reportedElbowDeg)}° — more open than the ${target}° this hold is defined by. Opening toward straight turns it into a different, straight-arm position.`
+          : `Elbows sat near ${Math.round(reportedElbowDeg)}° — more closed than ${target}°, which lets the body sink toward the arms.`,
+      )
+    } else {
+      good.push(
+        Math.abs(reportedElbowDeg - target) <= (profile.elbowBandDeg ?? 0)
+          ? `Elbows near ${target}° (${Math.round(reportedElbowDeg)}°)`
+          : `Elbow angle within camera tolerance (${Math.round(reportedElbowDeg)}°)`,
       )
     }
   }
@@ -2485,7 +3318,11 @@ export function judgeTrackedFrames(
       // body is still folded, which is the opposite complaint.
       issues.push('closed')
       notes.push(
-        sustainedFaults.has('closed') && !aggregateFaults.has('closed')
+        posture === 'inverted' || posture === 'flag'
+          ? // A plain angle: upside down or seen from the front, an arch and a
+            // fold read the same, so the note names the break and not its direction.
+            `The line broke at the ${posture === 'flag' ? 'waist' : 'hips'} — about ${Math.round(reportedHipAngleDeg)}°, where a straight body reads close to 180°. The camera cannot tell ${posture === 'flag' ? 'a fold from a twist' : 'an arch from a pike'} from this view; the replay will show which.`
+          : sustainedFaults.has('closed') && !aggregateFaults.has('closed')
           ? `The hip angle closed to about ${Math.round(reportedHipAngleDeg)}° for a sustained part of the hold.`
           : hipAnglePeak !== undefined && hipAnglePeak - reportedHipAngleDeg >= 4
             ? `Hips opened to about ${Math.round(hipAnglePeak)}° at their best but sat nearer ${Math.round(reportedHipAngleDeg)}° for much of the hold — this position wants ${profile.minHipAngleDeg}°+ held, not visited.`
@@ -2493,9 +3330,11 @@ export function judgeTrackedFrames(
       )
     } else {
       good.push(
-        reportedHipAngleDeg >= profile.minHipAngleDeg
-          ? `Hips open (${Math.round(reportedHipAngleDeg)}°)`
-          : `Hip angle within camera tolerance (${Math.round(reportedHipAngleDeg)}°)`,
+        posture === 'inverted' || posture === 'flag'
+          ? `Straight through the ${posture === 'flag' ? 'waist' : 'hips'} (${Math.round(reportedHipAngleDeg)}°)`
+          : reportedHipAngleDeg >= profile.minHipAngleDeg
+            ? `Hips open (${Math.round(reportedHipAngleDeg)}°)`
+            : `Hip angle within camera tolerance (${Math.round(reportedHipAngleDeg)}°)`,
       )
     }
   }
@@ -2538,10 +3377,42 @@ export function judgeTrackedFrames(
     }
   }
 
+  if (judged.shoulder && profile.minShoulderDeg !== undefined && reportedShoulderDeg !== undefined) {
+    if (namedFaults.has('shoulders')) {
+      issues.push('shoulders')
+      notes.push(
+        `Shoulders were about ${Math.round(reportedShoulderDeg)}° open — in a straight line the arms continue the body, close to 180°. Push tall and bring the chest through the arms.`,
+      )
+    } else {
+      good.push(
+        reportedShoulderDeg >= profile.minShoulderDeg
+          ? `Shoulders open (${Math.round(reportedShoulderDeg)}°)`
+          : `Shoulder opening within camera tolerance (${Math.round(reportedShoulderDeg)}°)`,
+      )
+    }
+  }
+
+  if (judged.tilt && profile.maxTiltDeg !== undefined && reportedTiltDeg !== undefined) {
+    if (namedFaults.has('tilt')) {
+      issues.push('tilt')
+      notes.push(
+        `The body sat about ${Math.round(reportedTiltDeg)}° off level — this position is held level out from the pole.`,
+      )
+    } else {
+      good.push(
+        reportedTiltDeg <= profile.maxTiltDeg
+          ? `Level (${Math.round(reportedTiltDeg)}° off)`
+          : `Level within camera tolerance (${Math.round(reportedTiltDeg)}° off)`,
+      )
+    }
+  }
+
   details.push(
-    profile.oneLeg
-      ? 'Side-view mode graded the stable visible-side arm and only treated a leg as extended when its full reach was visible.'
-      : 'Side-view mode graded the stable visible-side arm, leg and hip height; overlapped rear-side landmarks were not treated as separate evidence.',
+    posture === 'flag'
+      ? 'Front-view mode graded both arms and the line through the shoulders, hips and feet. It cannot see the body rolling toward or away from the camera.'
+      : profile.oneLeg
+        ? 'Side-view mode graded the stable visible-side arm and only treated a leg as extended when its full reach was visible.'
+        : 'Side-view mode graded the stable visible-side arm, leg and hip height; overlapped rear-side landmarks were not treated as separate evidence.',
   )
 
   // Said as what was measured — movement of the body against the hands — and
@@ -2602,7 +3473,7 @@ export function judgeTrackedFrames(
     elbowTrend &&
     profile.minElbowDeg !== undefined &&
     elbowTrend.early - elbowTrend.late > 8 &&
-    elbowTrend.late < profile.minElbowDeg - MATERIAL_TOLERANCE.elbowDeg
+    elbowTrend.late < profile.minElbowDeg - elbowSlack(profile)
   ) {
     fadeSeen = true
     if (!issues.includes('arms')) {
@@ -2615,8 +3486,8 @@ export function judgeTrackedFrames(
     judged.knee &&
     kneeTrend &&
     profile.minKneeDeg !== undefined &&
-    kneeTrend.early - kneeTrend.late > MATERIAL_TOLERANCE.kneeDeg &&
-    kneeTrend.late < profile.minKneeDeg - MATERIAL_TOLERANCE.kneeDeg
+    kneeTrend.early - kneeTrend.late > kneeSlack(profile) &&
+    kneeTrend.late < profile.minKneeDeg - kneeSlack(profile)
   ) {
     fadeSeen = true
     if (!issues.includes('knees')) {
@@ -2734,11 +3605,11 @@ export function judgeTrackedFrames(
   }
   if (nonSideFrames > 0) {
     details.push(
-      `${nonSideFrames} ${nonSideFrames === 1 ? 'moment was' : 'moments were'} not side-on enough to measure and counted as unverified, not as clean.`,
+      `${nonSideFrames} ${nonSideFrames === 1 ? 'moment was' : 'moments were'} not ${copy.view} enough to measure and counted as unverified, not as clean.`,
     )
   }
   if (viewUnknownFrames > framesUsed / 2) {
-    details.push('For most of the clip the camera could not confirm the side-on view either way; the verdict assumes it from the near side alone.')
+    details.push(`For most of the clip the camera could not confirm the ${copy.viewNoun} either way; the verdict assumes it from the near side alone.`)
   }
   if (input.decodeMisses) {
     details.push(
@@ -2759,7 +3630,7 @@ export function judgeTrackedFrames(
       ).toFixed(1)}s could fall between them.`,
     )
   }
-  details.push('Scapular protraction is not measured by this camera check — confirm it yourself.')
+  details.push(copy.unmeasured)
   details.push(
     `Tracked with ${backend.id === 'mediapipe' ? 'BlazePose (MediaPipe)' : 'MoveNet'}${
       rotation === 0 ? '' : `, reading the frame rotated ${rotation}° so your body sat upright to the model`
@@ -2781,16 +3652,17 @@ export function judgeTrackedFrames(
   }
 
   const uniqueIssues = [...new Set(issues)]
-  const fix = pickFixFirst(uniqueIssues)
+  const fix = pickFixFirst(uniqueIssues, posture)
   // "Held clean" is the camera-verified share, never the raw envelope time:
   // a held arm fault means none of it was verified, and elbows the camera did
   // not judge — or a hold it mostly did not see — mean it does not know. The
   // raw `cleanRatio` stays on the result as the training-dose number.
-  const verifiedCleanShare = aggregateFaults.has('arms')
-    ? 0
-    : (profile.minElbowDeg !== undefined && !judged.elbow) || (coverage !== undefined && coverage < MIN_VERIFIED_COVERAGE)
-      ? undefined
-      : cleanRatio
+  const verifiedCleanShare =
+    aggregateFaults.has('arms') || aggregateFaults.has('angle')
+      ? 0
+      : (hasElbowCriterion(profile) && !judged.elbow) || (coverage !== undefined && coverage < MIN_VERIFIED_COVERAGE)
+        ? undefined
+        : cleanRatio
   const scored = computeFormScore({
     profile,
     judged,
@@ -2800,6 +3672,8 @@ export function judgeTrackedFrames(
     hipOffset: reportedHipOffset,
     leanRatio: reportedLeanRatio,
     shrugRatio: reportedShrugRatio,
+    shoulderDeg: reportedShoulderDeg,
+    tiltDeg: reportedTiltDeg,
     drift,
     cleanRatio: verifiedCleanShare,
   })
@@ -2846,6 +3720,8 @@ export function judgeTrackedFrames(
     hipOffset: reportedHipOffset,
     leanRatio: reportedLeanRatio,
     shrugRatio: reportedShrugRatio,
+    ...(reportedShoulderDeg !== undefined ? { shoulderDeg: reportedShoulderDeg } : {}),
+    ...(reportedTiltDeg !== undefined ? { tiltDeg: reportedTiltDeg } : {}),
     ...(drift !== undefined ? { drift: Math.round(drift * 1000) / 1000 } : {}),
     issues: uniqueIssues,
     // Aggregate faults are computed from `verdictFrames`, which ends at the
@@ -2889,7 +3765,7 @@ async function analyseClipNow(
     return {
       result: {
         ...empty,
-        reason: `A ${profile.label.toLowerCase()} is about balance rather than a fixed shape, so there is nothing here the camera can judge for you. Rate it yourself.`,
+        reason: noChecksReason(exerciseId, profile),
       },
     }
   }
@@ -3205,6 +4081,10 @@ const RATIO_TO_DEG = { line: 80, lean: 60, shrug: 100 } as const
  */
 const SCORE_WEIGHTS: Record<FormSubscore['key'], number> = {
   elbow: 28,
+  // A bent-arm hold is defined by its elbow angle the way a planche is by a lock.
+  angle: 28,
+  shoulder: 16,
+  tilt: 18,
   line: 18,
   cleanTime: 15,
   lean: 14,
@@ -3216,6 +4096,9 @@ const SCORE_WEIGHTS: Record<FormSubscore['key'], number> = {
 
 const SUBSCORE_LABELS: Record<FormSubscore['key'], string> = {
   elbow: 'Straight arms',
+  angle: 'Elbow angle',
+  shoulder: 'Shoulders open',
+  tilt: 'Level',
   knee: 'Straight legs',
   hipAngle: 'Hip opening',
   // This is shoulder-versus-hip height, not shoulder–hip–ankle collinearity.
@@ -3242,6 +4125,8 @@ export function computeFormScore(parts: {
   hipOffset?: number
   leanRatio?: number
   shrugRatio?: number
+  shoulderDeg?: number
+  tiltDeg?: number
   drift?: number
   cleanRatio?: number
 }): { score: number; subscores: FormSubscore[] } | null {
@@ -3254,7 +4139,23 @@ export function computeFormScore(parts: {
     // Once a persistent bend clears the tight camera deadband it should
     // matter visibly in the score: bent-arm planche is a different skill, not
     // merely a cosmetic line deduction.
-    add('elbow', bandedScore((profile.minElbowDeg - parts.elbowDeg) * 2))
+    // Outside a support hold a straight arm reads well short of 180 (see
+    // POSTURE_TOLERANCE), so nothing is deducted until the reading nears the
+    // bar where a bend is named.
+    const shortfall =
+      profile.minElbowDeg - parts.elbowDeg - (coarseElbow(profile) ? Math.max(0, elbowSlack(profile) - 6) : 0)
+    add('elbow', bandedScore(Math.max(0, shortfall) * 2))
+  }
+  if (judged.elbow && profile.elbowTargetDeg !== undefined && parts.elbowDeg !== undefined) {
+    // Free inside half the band; the band's edge is a small deduction.
+    const off = Math.abs(parts.elbowDeg - profile.elbowTargetDeg) - (profile.elbowBandDeg ?? 0) / 2
+    add('angle', bandedScore(Math.max(0, off) * 1.5))
+  }
+  if (judged.shoulder && profile.minShoulderDeg !== undefined && parts.shoulderDeg !== undefined) {
+    add('shoulder', bandedScore(profile.minShoulderDeg - parts.shoulderDeg))
+  }
+  if (judged.tilt && profile.maxTiltDeg !== undefined && parts.tiltDeg !== undefined) {
+    add('tilt', bandedScore((parts.tiltDeg - profile.maxTiltDeg) * 1.5))
   }
   if (judged.knee && profile.minKneeDeg !== undefined && parts.kneeDeg !== undefined) {
     add('knee', bandedScore(profile.minKneeDeg - parts.kneeDeg))
@@ -3302,7 +4203,10 @@ export function computeFormScore(parts: {
  */
 export const FIX_PRIORITY: { issue: FormIssue; cue: string }[] = [
   { issue: 'arms', cue: 'Lock the elbows — squeeze the triceps and keep them locked all the way to the end.' },
+  { issue: 'angle', cue: 'Set the elbows at a right angle beside your ribs and keep them there — not straighter, not deeper.' },
   { issue: 'shrug', cue: 'Push the floor away and keep the shoulders down away from your ears.' },
+  { issue: 'shoulders', cue: 'Open the shoulders — push tall until your arms continue the line of your body.' },
+  { issue: 'tilt', cue: 'Bring the body level — lift from the side of the trunk until shoulders, hips and feet line up.' },
   { issue: 'sag', cue: 'Squeeze glutes and abs to bring the hips up level with the shoulders.' },
   { issue: 'pike', cue: 'Let the hips drop level — hold the height with lean, not by folding.' },
   { issue: 'closed', cue: 'Open the hips — drive the knees away from the chest and flatten the back.' },
@@ -3311,8 +4215,29 @@ export const FIX_PRIORITY: { issue: FormIssue; cue: string }[] = [
   { issue: 'knees', cue: 'Squeeze the knees dead straight and point the toes.' },
 ]
 
-export function pickFixFirst(issues: FormIssue[]): { issue: FormIssue; cue: string } | null {
-  return FIX_PRIORITY.find((f) => issues.includes(f.issue)) ?? null
+/** Cues that read differently when the body is not on its hands, seen from the side. */
+const POSTURE_CUES: Partial<Record<Posture, Partial<Record<FormIssue, string>>>> = {
+  hang: {
+    arms: 'Lock the elbows — pull with straight arms. The moment they bend it is a row, not a lever.',
+    sag: 'Squeeze the glutes and pull the bar toward your hips until the hips are level with the shoulders.',
+    pike: 'Open the hips and bring them down level with the shoulders.',
+    closed: 'Open the hips — push the feet away until the body is one line.',
+  },
+  inverted: {
+    arms: 'Lock the elbows and push tall — a handstand rests on straight arms.',
+    closed: 'Bring the hips into line — ribs in, glutes on, legs continuing the body.',
+    knees: 'Squeeze the knees straight and the legs together, toes pointed.',
+  },
+  flag: {
+    arms: 'Lock both arms — push with the bottom one, pull with the top one.',
+    closed: 'Take the fold out of the waist — lift the hips and legs into line with the shoulders.',
+  },
+}
+
+export function pickFixFirst(issues: FormIssue[], posture: Posture = 'support'): { issue: FormIssue; cue: string } | null {
+  const first = FIX_PRIORITY.find((f) => issues.includes(f.issue))
+  if (!first) return null
+  return { issue: first.issue, cue: POSTURE_CUES[posture]?.[first.issue] ?? first.cue }
 }
 
 /**

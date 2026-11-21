@@ -1,78 +1,76 @@
-import type { AppState, Session, SetLog, Section, StrategyId } from '../types'
+import type { AppState, LineupRole, Session, SetLog, Section, SkillId, StrategyId } from '../types'
 import { applySession } from '../lib/engine'
+import { isReviewOnly, requiresFlightConfirmation } from '../lib/progression'
+import { ladderStatus } from '../lib/repLadder'
+import { addTrack, sessionSkillSteps, stepOfSkill } from '../lib/skills'
 import { initialState } from '../lib/store'
 import { addDays } from '../lib/time'
-import { STEP_BY_ID } from './progressions'
+import { STEP_BY_ID, stepForKeyExercise } from './progressions'
+import { SKILLS } from './skills'
 
 let idCounter = 1
 function sid() {
   return `sample-${idCounter++}`
 }
 
+/**
+ * A hold as the app would have logged it. A main-work hold on any road's key
+ * position carries the evidence an unlock asks for — a camera reading, or the
+ * athlete's own replay review where the camera cannot grade the shape — so the
+ * demo exercises the same paths a really filmed set would.
+ */
 function holdSet(exerciseId: string, value: number, target: number, section: Section, at: number): SetLog {
-  const progressionEvidence =
-    section === 'main' && exerciseId === 'frog-stand'
-      ? {
-          form: {
-            rating: 'clean' as const,
-            confirmed: true,
-            visualReviewPassed: true,
+  const keyHold = section === 'main' && stepForKeyExercise(exerciseId) !== undefined
+  const form: SetLog['form'] | undefined = !keyHold
+    ? undefined
+    : isReviewOnly(exerciseId)
+      ? { rating: 'clean', confirmed: true, visualReviewPassed: true }
+      : {
+          rating: 'clean',
+          confirmed: true,
+          // Support contact cannot be seen in a 2D pose; the athlete confirms it.
+          ...(requiresFlightConfirmation(exerciseId) ? { flightConfirmed: true } : {}),
+          auto: {
+            issues: [],
+            confidence: 0.9,
+            score: 84 + (Math.round(value) % 9),
+            cleanSeconds: value,
+            cleanRatio: 1,
           },
         }
-      : section === 'main' &&
-          [
-            'ppp-hold',
-            'planche-lean',
-            'tuck-planche',
-            'adv-tuck-planche',
-            'one-leg-planche',
-            'straddle-planche',
-            'full-planche',
-          ].includes(exerciseId)
-        ? {
-            form: {
-              rating: 'clean' as const,
-              confirmed: true,
-              // True-flight skills need the athlete to confirm both feet were
-              // genuinely off the floor — 2D pose cannot see ground contact.
-              ...(['tuck-planche', 'adv-tuck-planche', 'one-leg-planche', 'straddle-planche', 'full-planche'].includes(
-                exerciseId,
-              )
-                ? { flightConfirmed: true }
-                : {}),
-              // Plausible camera evidence so the demo exercises the same
-              // score/clean-window paths a really filmed set would.
-              auto: {
-                issues: [],
-                confidence: 0.9,
-                score: 84 + (Math.round(value) % 9),
-                cleanSeconds: value,
-                cleanRatio: 1,
-              },
-            },
-          }
-        : {}
-  return { exerciseId, kind: 'hold', value, target, section, at, ...progressionEvidence }
+  return { exerciseId, kind: 'hold', value, target, section, at, ...(form ? { form } : {}) }
 }
-function repSet(exerciseId: string, value: number, target: number, section: Section, at: number): SetLog {
-  return { exerciseId, kind: 'reps', value, target, section, at }
+
+function repSet(exerciseId: string, value: number, target: number, section: Section, at: number, reviewed = false): SetLog {
+  return {
+    exerciseId,
+    kind: 'reps',
+    value,
+    target,
+    section,
+    at,
+    // A filmed set the athlete passed on the replay — what a rung's standard asks for.
+    ...(reviewed ? { form: { rating: 'clean' as const, confirmed: true, visualReviewPassed: true } } : {}),
+  }
 }
 
 /**
- * ~9 weeks of plausible history: foundations → lean → frog → tuck,
- * finishing with a growing tuck planche. Replayed through the real engine so
- * PRs, unlocks and achievements are all consistent.
+ * About nine weeks of plausible history for an athlete training three skills:
+ * the planche first (foundations → lean → frog → tuck), the front lever beside
+ * it on two days a week (hang → tuck), and the handstand with its push-up line
+ * on the third. Each session is built from where the athlete stands at that
+ * moment and replayed through the real engine, so steps, rungs, PRs and
+ * achievements are all the app's own derivations rather than typed-in results.
  */
 export function buildSampleState(): AppState {
   idCounter = 1
-  const sessions: Session[] = []
   const now = Date.now()
   const start = addDays(now, -62)
 
-  const weekPlan: { day: number; hour: number }[] = [
-    { day: 0, hour: 7 },
-    { day: 2, hour: 18 },
-    { day: 4, hour: 18 },
+  const weekPlan: { day: number; hour: number; partner: SkillId }[] = [
+    { day: 0, hour: 7, partner: 'frontlever' },
+    { day: 2, hour: 18, partner: 'handstand' },
+    { day: 4, hour: 18, partner: 'frontlever' },
   ]
 
   // Rotate strategies and let this simulated athlete respond best to volume,
@@ -80,6 +78,38 @@ export function buildSampleState(): AppState {
   const rotation: StrategyId[] = ['balanced', 'volume', 'intensity', 'density', 'technique']
   let rotIdx = 0
   let prevStrategy: StrategyId | null = null
+
+  // A weekly weigh-in that drifts slightly, so the bodyweight panel and the
+  // coach's strength-to-weight reading have something real to work with.
+  const measurements = Array.from({ length: 9 }, (_, w) => ({
+    at: addDays(start, w * 7),
+    weightKg: Math.round((72 - w * 0.15 + (Math.random() - 0.5) * 0.6) * 10) / 10,
+    ...(w === 0 ? { heightCm: 178 } : {}),
+  })).filter((m) => m.at <= now)
+
+  let state: AppState = {
+    ...initialState(),
+    onboarded: true,
+    name: 'Sample Athlete',
+    startedAt: start,
+    profile: {
+      equipment: ['floor', 'parallettes', 'pullup-bar', 'wall'],
+      heightCm: 178,
+      skills: ['planche', 'frontlever', 'handstand'],
+    },
+    measurements,
+  }
+  state = addTrack(state, 'frontlever', start)
+  state = addTrack(state, 'handstand', start)
+
+  /** Sessions spent on each step so far, so a hold grows from where its step started. */
+  const sessionsOn: Record<string, number> = {}
+  const visit = (stepId: string) => {
+    const n = sessionsOn[stepId] ?? 0
+    sessionsOn[stepId] = n + 1
+    return n
+  }
+  const jitter = (v: number, j: number) => Math.max(2, Math.round(v + (Math.random() - 0.5) * 2 * j))
 
   for (let week = 0; week < 9; week++) {
     for (const slot of weekPlan) {
@@ -105,8 +135,7 @@ export function buildSampleState(): AppState {
       add(repSet('wrist-rocks', 8, 8, 'warmup', clock))
       add(repSet('scap-pushup', 8, 8, 'warmup', clock))
 
-      // Progress curves per phase of the sample story.
-      const jitter = (v: number, j: number) => Math.max(2, Math.round(v + (Math.random() - 0.5) * 2 * j))
+      // ——— The planche leads every session ———
       if (week === 0) {
         const best = 22 + week * 6
         for (let i = 0; i < 4; i++) add(holdSet('ppp-hold', jitter(best * 0.7, 3), 20, 'main', clock))
@@ -128,52 +157,73 @@ export function buildSampleState(): AppState {
         add(holdSet('planche-lean', jitter(31, 3), 20, 'main', clock))
       }
 
+      // ——— Today's second skill, from the step it is on right now ———
+      if (slot.partner === 'frontlever') {
+        const stepId = stepOfSkill(state, 'frontlever')
+        const n = visit(stepId)
+        const key = STEP_BY_ID[stepId].keyExerciseId
+        // A hang that clears its 30s bar in the second week, then a tuck lever
+        // that grows about a second a session and is still short of its bar.
+        const best = stepId === 'fl-hang' ? 18 + n * 5 : Math.min(18, 4 + n)
+        const working = Math.max(2, Math.round(best * 0.65))
+        add(repSet('scap-pull', 8, 8, 'warmup', clock))
+        for (let i = 0; i < 3; i++) add(holdSet(key, jitter(working, 1), working, 'main', clock))
+        add(holdSet(key, best, working, 'main', clock))
+        add(repSet('pullup', jitter(5 + week * 0.3, 1), 5, 'strength', clock))
+        add(repSet('pullup', jitter(5 + week * 0.3, 1), 5, 'strength', clock))
+      } else {
+        const stepId = stepOfSkill(state, 'handstand')
+        const n = visit(stepId)
+        const key = STEP_BY_ID[stepId].keyExerciseId
+        // A wall plank past its bar in the fourth week, then wall handstands.
+        const best = stepId === 'hs-foundations' ? 16 + n * 6 : Math.min(48, 20 + n * 4)
+        const working = Math.round(best * 0.65)
+        for (let i = 0; i < 2; i++) add(holdSet(key, jitter(working, 2), working, 'main', clock))
+        add(holdSet(key, best, working, 'main', clock))
+        // The push-up line: filmed and passed on the replay from the fifth
+        // week, so the first rung opens on its standard and the next begins.
+        const rung = ladderStatus(state, 'handstand')?.rung
+        if (rung) {
+          const m = visit(`rung:${rung.exerciseId}`)
+          const reps = Math.min(rung.standardReps, rung.startReps + Math.floor(m / 2))
+          const filmed = week >= 4
+          add(repSet(rung.exerciseId, Math.max(1, reps - 1), rung.startReps, 'strength', clock, filmed))
+          add(repSet(rung.exerciseId, reps, rung.startReps, 'strength', clock, filmed))
+        }
+      }
+
       add(repSet('pppu', jitter(5 + week * 0.4, 1), 6, 'strength', clock))
       add(repSet('pppu', jitter(5 + week * 0.4, 1), 6, 'strength', clock))
-      add(repSet('pike-pushup', jitter(8, 2), 8, 'strength', clock))
       add(holdSet('hollow-hold', jitter(30 + week, 4), 30, 'core', clock))
       add(holdSet('hollow-hold', jitter(30 + week, 4), 30, 'core', clock))
       add(holdSet('wrist-stretch', 30, 30, 'cooldown', clock))
 
-      sessions.push({
+      const roles: Partial<Record<SkillId, LineupRole>> = { planche: 'lead', [slot.partner]: 'partner' }
+      const session: Session = {
         id: sid(),
         startedAt: begin,
         endedAt: clock,
-        workoutName: 'Training Day',
+        workoutName: `Planche + ${SKILLS[slot.partner].name}`,
         workoutKind: 'auto',
-        // The step this session was actually trained at, tracking the story
-        // above. A real session stamps the athlete's current step, and the
-        // coach only learns from sessions matching the step it is planning
-        // for — so hard-coding "foundations" here left every strategy reading
-        // "not tested yet" no matter how much sample history existed.
-        stepId: week === 0 ? 'foundations' : week <= 3 ? 'lean' : week <= 5 ? 'frog' : 'tuck',
+        // The steps this session was actually trained at. The coach only learns
+        // from sessions matching the step it is planning for, so each session
+        // is stamped with where the athlete stood when it began.
+        stepId: state.stepId,
         sets,
         rpe: 7 + Math.round(Math.random()),
         strategy,
-      })
+        // The partner's part was shaped by the same approach, as a real mixed
+        // session records it — so the coach has something to read on every road.
+        skills: Object.fromEntries(
+          Object.entries(sessionSkillSteps(state)).map(([skill, note]) => [
+            skill,
+            skill === slot.partner ? { ...note, strategy } : note,
+          ]),
+        ),
+        roles,
+      }
+      state = applySession(state, session).next
     }
-  }
-
-  // A weekly weigh-in that drifts slightly, so the bodyweight panel and the
-  // coach's strength-to-weight reading have something real to work with.
-  const measurements = Array.from({ length: 9 }, (_, w) => ({
-    at: addDays(start, w * 7),
-    weightKg: Math.round((72 - w * 0.15 + (Math.random() - 0.5) * 0.6) * 10) / 10,
-    ...(w === 0 ? { heightCm: 178 } : {}),
-  })).filter((m) => m.at <= now)
-
-  let state: AppState = {
-    ...initialState(),
-    onboarded: true,
-    name: 'Sample Athlete',
-    startedAt: start,
-    profile: { equipment: ['floor', 'parallettes'], heightCm: 178 },
-    measurements,
-  }
-  for (const s of sessions) {
-    s.stepId = state.stepId
-    s.workoutName = `${STEP_BY_ID[state.stepId].name} Day`
-    state = applySession(state, s).next
   }
   return state
 }

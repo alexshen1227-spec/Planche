@@ -15,13 +15,19 @@ import { saveProblemReport } from '../lib/problemReports'
 import { pushToast } from '../lib/toast'
 import {
   cleanEvidence,
+  FLIGHT_PROMPT,
+  flightLabel,
+  isReviewOnly,
   passesProgressionFormCheck,
   progressionRelevantIssues,
   requiresFlightConfirmation,
+  REVIEW_PROMPT,
   unseenVariantCriteria,
   VARIANT_CRITICAL,
   type CleanEvidence,
 } from '../lib/progression'
+import { POSE_PROFILES } from '../lib/poseForm'
+import { SKILLS, skillOfExercise } from '../data/skills'
 import { Icon } from './Icon'
 import { Modal } from './ui'
 import { ClipPlayer, type ClipInterval } from './ClipPlayer'
@@ -39,6 +45,12 @@ export const FORM_ISSUE_LABEL: Record<FormIssue, string> = {
   narrow: 'Straddle too narrow',
   hips: 'Hips sagged',
   level: 'Not level',
+  shoulders: 'Shoulders not open',
+  tilt: 'Body off its line',
+  angle: 'Elbows off a right angle',
+  depth: 'Reps short of full depth',
+  lockout: 'Reps not locked out',
+  kip: 'Kicked or bounced',
 }
 
 const COMMON_ISSUES: FormIssue[] = ['arms', 'scapula', 'shrug', 'pike', 'sag', 'lean', 'twist']
@@ -52,8 +64,33 @@ const ISSUES_BY_EXERCISE: Record<string, FormIssue[]> = {
   'full-planche': [...COMMON_ISSUES, 'closed', 'knees'],
 }
 
-function issuesFor(exerciseId: string): { id: FormIssue; label: string }[] {
-  return (ISSUES_BY_EXERCISE[exerciseId] ?? COMMON_ISSUES).map((id) => ({ id, label: FORM_ISSUE_LABEL[id] }))
+/**
+ * The faults an athlete can name for a hold.
+ *
+ * The planche line keeps its own lists. Every other skill offers the faults
+ * its definition coaches, in its own words — "a fold at the waist" for a flag,
+ * not "hips not open enough" — and only where the shape can have them: a tuck
+ * is meant to have bent knees and folded hips.
+ */
+export function issuesFor(exerciseId: string): { id: FormIssue; label: string }[] {
+  const skill = skillOfExercise(exerciseId)
+  if (!skill || skill === 'planche') {
+    return (ISSUES_BY_EXERCISE[exerciseId] ?? COMMON_ISSUES).map((id) => ({ id, label: FORM_ISSUE_LABEL[id] }))
+  }
+  if (isReviewOnly(exerciseId)) return []
+  const profile = POSE_PROFILES[exerciseId]
+  const guidance = SKILLS[skill].issues ?? {}
+  const offered = (Object.keys(guidance) as FormIssue[]).filter((issue) => {
+    if (!profile) return true
+    if (issue === 'knees') return profile.minKneeDeg !== undefined
+    if (issue === 'closed') return profile.minHipAngleDeg !== undefined
+    return true
+  })
+  const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
+  return [
+    ...offered.map((id) => ({ id, label: sentence(guidance[id]?.label ?? FORM_ISSUE_LABEL[id]) })),
+    { id: 'twist' as FormIssue, label: FORM_ISSUE_LABEL.twist },
+  ]
 }
 
 /**
@@ -165,6 +202,8 @@ export function autoFromResult(res: PoseFormResult, analysedSec: number, analyse
     hipOffset: res.hipOffset,
     leanRatio: res.leanRatio,
     shrugRatio: res.shrugRatio,
+    ...(res.shoulderDeg !== undefined ? { shoulderDeg: res.shoulderDeg } : {}),
+    ...(res.tiltDeg !== undefined ? { tiltDeg: res.tiltDeg } : {}),
     ...(res.drift !== undefined ? { drift: res.drift } : {}),
     analysedSec: Math.round(analysedSec * 10) / 10,
     ...(analysedFromSec > 0 ? { analysedFromSec: Math.round(analysedFromSec * 100) / 100 } : {}),
@@ -260,7 +299,7 @@ export function FormCheckRow({
   const visualReviewRef = useRef(value?.visualReviewPassed === true)
   const flightConfirmedRef = useRef(value?.flightConfirmed === true)
   const variantConfirmedRef = useRef(value?.variantConfirmed === true)
-  const needsManualReplayReview = exerciseId === 'frog-stand'
+  const needsManualReplayReview = isReviewOnly(exerciseId)
   const needsFlightConfirmation = requiresFlightConfirmation(exerciseId)
   const handleClipAvailability = useCallback((available: boolean) => setClipAvailable(available), [])
   const analysing = status !== 'idle'
@@ -620,8 +659,8 @@ export function FormCheckRow({
       {needsManualReplayReview && clipAvailable && rating === 'clean' && confirmedByHuman ? (
         <div className="mt-3 rounded-xl border border-line bg-raised p-3">
           <p className="text-[12.5px] leading-relaxed text-ink2">
-            Frog Stand has no fixed geometry the camera can grade honestly. Watch the replay and check that balance
-            stayed controlled, with no uncontrolled collapse.
+            {REVIEW_PROMPT[exerciseId] ??
+              'The camera does not grade this hold. Watch the replay and check the position held for the counted time.'}
           </p>
           <button
             onClick={() => {
@@ -643,8 +682,8 @@ export function FormCheckRow({
       {needsFlightConfirmation && rating === 'clean' && confirmedByHuman ? (
         <div className="mt-3 rounded-xl border border-line bg-raised p-3">
           <p className="text-[12.5px] leading-relaxed text-ink2">
-            The camera can judge your shape, but it cannot reliably tell whether a toe was helping. Confirm that both
-            feet stayed fully off the floor for the camera-verified window.
+            The camera can judge your shape, but it cannot reliably tell whether anything was helping.{' '}
+            {FLIGHT_PROMPT[exerciseId]}
           </p>
           <button
             onClick={() => {
@@ -659,7 +698,7 @@ export function FormCheckRow({
                 : 'border-line-strong bg-surface text-ink hover:border-accent'
             }`}
           >
-            {flightConfirmed ? 'Flight confirmed — no foot support' : 'Both feet stayed completely off the floor'}
+            {flightConfirmed ? `Confirmed — ${flightLabel(exerciseId).toLowerCase()}` : flightLabel(exerciseId)}
           </button>
         </div>
       ) : null}
@@ -697,11 +736,13 @@ export function FormCheckRow({
             : needsManualReplayReview
               ? 'Your Clean rating is saved. Review the replay above for this hold to count toward progression.'
               : needsFlightConfirmation && value?.flightConfirmed !== true
-                ? 'Your Clean rating is saved. Confirm that both feet stayed off the floor for this hold to count.'
+                ? `Your Clean rating is saved. Confirm the hold was unsupported (“${flightLabel(exerciseId)}”) for it to count.`
                 : variantGaps.length > 0 && value?.variantConfirmed !== true
                   ? 'Your Clean rating is saved. The camera could not see part of the shape — confirm it above for this hold to count.'
                   : progressionCameraIssues.includes('arms')
                     ? 'Saved as a PR, but the camera measured elbows that were not fully locked in the credited window, so this hold will not unlock.'
+                    : progressionCameraIssues.includes('angle')
+                      ? 'Saved as a PR, but the camera measured elbows well away from a right angle in the credited window, so this hold will not unlock.'
                     : value?.auto && progressionCameraIssues.length > 1
                       ? 'Saved as a PR, but the camera found multiple form flags, so this hold will not unlock.'
                       : 'Your Clean rating is saved. A successful camera check is still needed for progression.'}

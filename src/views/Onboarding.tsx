@@ -1,23 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AssessmentRecord, EquipmentId, StepId, Units } from '../types'
-import { useStore } from '../lib/store'
+import type { AssessmentRecord, EquipmentId, SkillId, StepId, Units } from '../types'
+import { normalizeStateWithReport, rebuildDerivedState, reportHasLosses, useStore } from '../lib/store'
+import { readImportFile, validateImport } from '../lib/exportImport'
+import { pushToast } from '../lib/toast'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
-import { EQUIPMENT_OPTIONS } from '../data/equipment'
+import { EQUIPMENT_OPTIONS, equipmentLabel } from '../data/equipment'
+import { APP_NAME, APP_TAGLINE } from '../data/app'
+import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
 import { displayToKg, CM_PER_IN } from '../lib/units'
+import type { Placement } from '../lib/assessment'
 import {
-  assessmentProgress,
-  nextAssessmentItem,
-  placeFromAssessment,
-  type AssessmentAnswers,
-} from '../lib/assessment'
+  goalChoices,
+  interviewProgress,
+  nextInterviewItem,
+  placementRecord,
+  placeSkill,
+  type InterviewAnswers,
+} from '../lib/placement'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 
 /**
  * Onboarding, in the order the answers actually matter.
  *
- * Goal first, because it is one tap and it makes everything after it feel like
- * it is about something. Then the placement interview, which is the part that
+ * Skills first — which of the five roads to train, in priority order, because
+ * everything after it depends on the answer. Then the goal, because it is one
+ * tap and it makes everything after it feel like it is about something. Then
+ * the placement interview, which is the part that
  * earns its keep: the previous screen asked the athlete to pick which of five
  * descriptions sounded like them, and self-placement fails in both directions.
  * Place too high and every prescribed set is a failure; place too low and the
@@ -38,9 +47,18 @@ const GOAL_BLURB: Record<string, string> = {
   full: 'Legs together, body level. The summit, and a multi-year project.',
 }
 
-type Stage = 'welcome' | 'goal' | 'interview' | 'result' | 'details' | 'frequency'
+type Stage = 'welcome' | 'skills' | 'goal' | 'interview' | 'result' | 'details' | 'frequency'
 
-const STAGE_ORDER: Stage[] = ['welcome', 'goal', 'interview', 'result', 'details', 'frequency']
+const STAGE_ORDER: Stage[] = ['welcome', 'skills', 'goal', 'interview', 'result', 'details', 'frequency']
+
+const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th']
+
+/** "a pull-up bar or gymnastic rings" — what would meet one of a skill's kit needs. */
+const kitPhrase = (options: EquipmentId[]) =>
+  options
+    .map((id) => equipmentLabel(id))
+    .map((label, index) => (index === 0 && !/s$/.test(label.split(' ')[label.split(' ').length - 1]) ? `a ${label}` : label))
+    .join(' or ')
 
 /** The self-declared fallback, kept for anyone who skips the interview. */
 const PLACEMENTS: { stepId: StepId; label: string; desc: string }[] = [
@@ -72,13 +90,52 @@ const PLACEMENTS: { stepId: StepId; label: string; desc: string }[] = [
 ]
 
 export function Onboarding() {
-  const { dispatch } = useStore()
+  const { dispatch, getState } = useStore()
+  const restoreRef = useRef<HTMLInputElement | null>(null)
+  const [restoring, setRestoring] = useState(false)
+  /**
+   * Start from a backup instead of from the interview — how an athlete moves
+   * to a new phone, or from a browser tab to the installed app, which keeps
+   * its own storage. Nothing is here to lose yet, so the file is applied as
+   * soon as it checks out; the same validation and repair as Settings → Import.
+   */
+  const restore = async (file: File) => {
+    setRestoring(true)
+    try {
+      const raw = await readImportFile(file)
+      validateImport(raw)
+      const { state: normalized, report } = normalizeStateWithReport(raw)
+      const before = getState()
+      dispatch({ type: 'IMPORT_REPLACE', state: rebuildDerivedState(normalized), expectedRev: before.rev ?? 0 })
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+      if (getState().epoch === before.epoch) {
+        pushToast('That backup could not be applied. Try picking the file again.', 'danger', 7000)
+        return
+      }
+      const count = report.sessionsKept
+      pushToast(
+        `Backup restored — ${count} session${count === 1 ? '' : 's'}.${
+          reportHasLosses(report) ? ' Some entries in the file could not be read and were left out.' : ''
+        }`,
+        'success',
+        7000,
+      )
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : 'That backup could not be read.', 'danger', 7000)
+    } finally {
+      setRestoring(false)
+    }
+  }
   const [stage, setStage] = useState<Stage>('welcome')
   const [name, setName] = useState('')
-  const [goalStepId, setGoalStepId] = useState<StepId>('straddle')
-  const [answers, setAnswers] = useState<AssessmentAnswers>({})
+  /** The skills chosen, in the order they were picked: the first is the focus. */
+  const [skills, setSkills] = useState<SkillId[]>([])
+  const [goals, setGoals] = useState<Partial<Record<SkillId, StepId>>>({})
+  const [answers, setAnswers] = useState<InterviewAnswers>({})
   const [skippedInterview, setSkippedInterview] = useState(false)
-  const [manualPlacement, setManualPlacement] = useState<StepId>('foundations')
+  const [manual, setManual] = useState<Partial<Record<SkillId, StepId>>>({})
+  /** Which skill the manual picker is on, when the interview was skipped. */
+  const [manualIndex, setManualIndex] = useState(0)
   const [goal, setGoal] = useState(3)
   const [minutes, setMinutes] = useState(45)
   const [units, setUnits] = useState<Units>('metric')
@@ -96,14 +153,25 @@ export function Onboarding() {
   // so keying this on `stage` alone fired exactly once for eleven questions.
   const headingRef = useRef<HTMLDivElement | null>(null)
 
-  const placement = useMemo(() => placeFromAssessment(answers), [answers])
-  const currentItem = useMemo(() => nextAssessmentItem(answers), [answers])
-  const progress = useMemo(() => assessmentProgress(answers), [answers])
+  const focus: SkillId = skills[0] ?? 'planche'
+  const goalFor = (skill: SkillId): StepId => goals[skill] ?? (skill === 'planche' ? 'straddle' : SKILLS[skill].defaultGoal)
+  const placements = useMemo(
+    () => Object.fromEntries(skills.map((skill) => [skill, placeSkill(skill, answers)])) as Partial<Record<SkillId, Placement>>,
+    [skills, answers],
+  )
+  const currentItem = useMemo(() => nextInterviewItem(skills, answers), [skills, answers])
+  const progress = useMemo(() => interviewProgress(skills, answers), [skills, answers])
 
   useEffect(() => {
     headingRef.current?.focus()
-  }, [stage, currentItem?.id, skippedInterview])
-  const placedStepId = skippedInterview ? manualPlacement : placement.stepId
+  }, [stage, currentItem?.id, skippedInterview, manualIndex])
+  const placedFor = (skill: SkillId): StepId =>
+    skippedInterview ? (manual[skill] ?? SKILLS[skill].steps[0].id) : (placements[skill]?.stepId ?? SKILLS[skill].steps[0].id)
+  const goalStepId = goalFor(focus)
+  /** Chosen skills whose road cannot be trained with the kit ticked so far. */
+  const kitGaps = skills
+    .map((skill) => ({ skill, missing: missingKit(skill, equipment.length ? equipment : ['floor']) }))
+    .filter((gap) => gap.missing.length > 0)
 
   const parsedWeight = (() => {
     const n = parseFloat(weight)
@@ -144,15 +212,10 @@ export function Onboarding() {
   }
 
   const finish = () => {
-    const assessment: AssessmentRecord | undefined = skippedInterview
-      ? undefined
-      : {
-          at: Date.now(),
-          answers: answers as Record<string, number>,
-          placedStepId: placement.stepId,
-          confidence: placement.confidence,
-          gapIds: placement.gaps.map((g) => g.id),
-        }
+    const chosen: SkillId[] = skills.length ? skills : ['planche']
+    const plancheChosen = chosen.includes('planche')
+    const assessment: AssessmentRecord | undefined =
+      skippedInterview || !plancheChosen ? undefined : placementRecord('planche', answers, Date.now())
     // The wrist answer is a joint report, not just a placement input: it has
     // to reach the first session's safety rails. It used to shape only the
     // placement copy, so "it hurts" at setup was followed by loaded planche work.
@@ -167,7 +230,21 @@ export function Onboarding() {
             ? [{ at: reportedAt, joints: 'niggle', regions: ['wrist'], source: 'onboarding' }]
             : [],
       name: name.trim(),
-      stepId: placedStepId,
+      // The top-level step is the planche's; without the planche it rests at its first step.
+      stepId: plancheChosen ? placedFor('planche') : 'foundations',
+      skills: chosen,
+      placements: Object.fromEntries(
+        chosen
+          .filter((skill) => skill !== 'planche')
+          .map((skill) => [
+            skill,
+            {
+              stepId: placedFor(skill),
+              goalStepId: goalFor(skill),
+              ...(skippedInterview ? {} : { assessment: placementRecord(skill, answers, reportedAt) }),
+            },
+          ]),
+      ),
       weeklyGoal: goal,
       sessionMinutes: minutes,
       units,
@@ -177,7 +254,7 @@ export function Onboarding() {
       profile: {
         equipment: equipment.length ? equipment : ['floor'],
         preferredSurface: equipment.includes('parallettes') ? 'parallettes' : 'floor',
-        goalStepId,
+        goalStepId: goalFor('planche'),
         injuryNote: injuryNote.trim() || undefined,
         heightCm: parsedHeight,
         trainingAgeMonths: answers.experience,
@@ -221,11 +298,8 @@ export function Onboarding() {
             >
               <Figure step="full" className="h-10 w-12" />
             </div>
-            <h1 className="font-display text-[34px] font-bold leading-tight text-ink">Planche Lab</h1>
-            <p className="mx-auto mt-2 max-w-md text-[15px] leading-relaxed text-ink2">
-              A focused, adaptive road toward the planche — guided sessions, honest form tracking, and every hold
-              timed.
-            </p>
+            <h1 className="font-display text-[34px] font-bold leading-tight text-ink">{APP_NAME}</h1>
+            <p className="mx-auto mt-2 max-w-md text-[15px] leading-relaxed text-ink2">{APP_TAGLINE}</p>
             <p className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-ink3">
               Everything stays on this device. No account, no server, nothing to cancel.
             </p>
@@ -242,12 +316,102 @@ export function Onboarding() {
               />
             </div>
             <button
-              onClick={() => setStage('goal')}
+              onClick={() => setStage('skills')}
               className={`${primaryBtn} mx-auto mt-6 w-full max-w-sm`}
               style={{ background: 'var(--t-btn-accent)' }}
             >
               Let's go <Icon name="arrowR" size={17} />
             </button>
+            <input
+              ref={restoreRef}
+              type="file"
+              accept="application/json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) void restore(file)
+                e.target.value = ''
+              }}
+            />
+            <button
+              onClick={() => restoreRef.current?.click()}
+              disabled={restoring}
+              className="mx-auto mt-3 block min-h-11 px-3 py-2 text-[13.5px] font-medium text-ink2 underline-offset-2 hover:text-ink hover:underline disabled:opacity-60"
+            >
+              {restoring ? 'Reading the backup…' : 'I have a backup file'}
+            </button>
+          </div>
+        ) : null}
+
+        {stage === 'skills' ? (
+          <div className="animate-rise">
+            <h1 ref={headingRef} tabIndex={-1} className="text-center font-display text-[26px] font-bold text-ink outline-none">
+              What do you want to train?
+            </h1>
+            <p className="mt-1 text-center text-[14px] leading-relaxed text-ink2">
+              Pick one or several. The first one you pick leads every session; the others rotate in behind it. You can
+              add, drop or reorder them later.
+            </p>
+            <div className="mt-6 space-y-2.5" role="group" aria-label="Skills to train">
+              {SKILL_LIST.map((def) => {
+                const position = skills.indexOf(def.id)
+                const active = position >= 0
+                const summit = def.steps[def.steps.length - 1].id
+                return (
+                  <button
+                    key={def.id}
+                    aria-pressed={active}
+                    onClick={() => {
+                      setSkills((current) => (active ? current.filter((id) => id !== def.id) : [...current, def.id]))
+                      // Answers given for a different set of skills place a
+                      // different athlete: start the interview over.
+                      setAnswers({})
+                      setSkippedInterview(false)
+                      setManualIndex(0)
+                    }}
+                    className={`flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition ${
+                      active ? 'border-accent bg-accent-soft shadow-card' : 'border-line bg-surface hover:border-line-strong'
+                    }`}
+                  >
+                    <Figure step={summit} className={`h-14 w-[70px] shrink-0 ${active ? 'text-accent-text' : 'text-ink2'}`} />
+                    <div className="min-w-0">
+                      <div className="text-[15px] font-semibold text-ink">{def.name}</div>
+                      <div className="mt-0.5 text-[13px] leading-relaxed text-ink2">{def.tagline}</div>
+                      <div className="mt-1 text-[12px] leading-relaxed text-ink3">
+                        {def.requires.length ? `Needs ${def.requires.map(kitPhrase).join(', and ')}` : 'Floor space is enough'}
+                      </div>
+                    </div>
+                    <span
+                      className={`ml-auto grid h-7 min-w-7 shrink-0 place-items-center rounded-full border-2 px-1.5 text-[11.5px] font-bold ${
+                        active ? 'border-accent bg-accent text-on-accent' : 'border-line-strong text-transparent'
+                      }`}
+                    >
+                      {active ? ORDINAL[position] : '·'}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-3 text-center text-[12.5px] leading-relaxed text-ink3" aria-live="polite">
+              {skills.length === 0
+                ? 'Choose at least one.'
+                : skills.length === 1
+                  ? `${SKILLS[focus].name} only — every session is built around it.`
+                  : `${SKILLS[focus].name} leads. No trial has tested how best to combine skills like these; the mix follows what coaches broadly do — one main skill a session, a second that loads different joints.`}
+            </p>
+            <div className="mt-5 flex gap-2.5">
+              <button onClick={() => setStage('welcome')} className={backBtn}>
+                Back
+              </button>
+              <button
+                onClick={() => setStage('goal')}
+                disabled={skills.length === 0}
+                className={`${primaryBtn} disabled:opacity-50`}
+                style={{ background: 'var(--t-btn-accent)' }}
+              >
+                Continue <Icon name="arrowR" size={16} />
+              </button>
+            </div>
           </div>
         ) : null}
 
@@ -257,17 +421,19 @@ export function Onboarding() {
               What are you chasing?
             </h1>
             <p className="mt-1 text-center text-[14px] text-ink2">
-              This sets your destination, not your starting point. You can change it any time.
+              {skills.length > 1
+                ? `The destination on your main skill, ${SKILLS[focus].name.toLowerCase()} — not your starting point. Your other skills aim at the top of their roads until you say otherwise.`
+                : 'This sets your destination, not your starting point. You can change it any time.'}
             </p>
             <div className="mt-6 space-y-2.5" role="group" aria-label="Training goal">
-              {GOAL_CHOICES.map((id) => {
+              {(focus === 'planche' ? GOAL_CHOICES : goalChoices(focus)).map((id) => {
                 const step = STEP_BY_ID[id]
                 const active = goalStepId === id
                 return (
                   <button
                     key={id}
                     aria-pressed={active}
-                    onClick={() => setGoalStepId(id)}
+                    onClick={() => setGoals((current) => ({ ...current, [focus]: id }))}
                     className={`flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition ${
                       active ? 'border-accent bg-accent-soft shadow-card' : 'border-line bg-surface hover:border-line-strong'
                     }`}
@@ -275,7 +441,7 @@ export function Onboarding() {
                     <Figure step={id} className={`h-14 w-[70px] shrink-0 ${active ? 'text-accent-text' : 'text-ink2'}`} />
                     <div className="min-w-0">
                       <div className="text-[15px] font-semibold text-ink">{step.name}</div>
-                      <div className="mt-0.5 text-[13px] leading-relaxed text-ink2">{GOAL_BLURB[id]}</div>
+                      <div className="mt-0.5 text-[13px] leading-relaxed text-ink2">{GOAL_BLURB[id] ?? step.tagline}</div>
                     </div>
                     <span
                       className={`ml-auto grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 ${
@@ -289,7 +455,7 @@ export function Onboarding() {
               })}
             </div>
             <div className="mt-6 flex gap-2.5">
-              <button onClick={() => setStage('welcome')} className={backBtn}>
+              <button onClick={() => setStage('skills')} className={backBtn}>
                 Back
               </button>
               <button onClick={() => setStage('interview')} className={primaryBtn} style={{ background: 'var(--t-btn-accent)' }}>
@@ -302,15 +468,26 @@ export function Onboarding() {
         {stage === 'interview' ? (
           skippedInterview ? (
             <ManualPlacement
+              // One screen per chosen skill, in priority order.
+              key={skills[manualIndex] ?? focus}
               headingRef={headingRef}
-              placement={manualPlacement}
-              onPick={setManualPlacement}
+              skill={skills[manualIndex] ?? focus}
+              several={skills.length > 1}
+              placement={placedFor(skills[manualIndex] ?? focus)}
+              onPick={(id) => setManual((current) => ({ ...current, [skills[manualIndex] ?? focus]: id }))}
               onBack={() => {
+                if (manualIndex > 0) {
+                  setManualIndex(manualIndex - 1)
+                  return
+                }
                 setSkippedInterview(false)
                 setAnswers({})
                 setStage('goal')
               }}
-              onContinue={() => setStage('result')}
+              onContinue={() => {
+                if (manualIndex < skills.length - 1) setManualIndex(manualIndex + 1)
+                else setStage('result')
+              }}
               primaryBtn={primaryBtn}
               backBtn={backBtn}
             />
@@ -358,7 +535,7 @@ export function Onboarding() {
                       // the answer just given.
                       const next = { ...answers, [currentItem.id]: opt.value }
                       setAnswers(next)
-                      if (nextAssessmentItem(next) === null) setStage('result')
+                      if (nextInterviewItem(skills, next) === null) setStage('result')
                     }}
                     className="flex w-full items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4 text-left transition hover:border-accent hover:bg-accent-soft"
                   >
@@ -379,7 +556,7 @@ export function Onboarding() {
                       return
                     }
                     const next = { ...answers }
-                    delete next[asked[asked.length - 1] as keyof AssessmentAnswers]
+                    delete next[asked[asked.length - 1]]
                     setAnswers(next)
                   }}
                   className="rounded-xl border border-line bg-surface px-4 py-2.5 text-[13.5px] font-medium text-ink2 hover:text-ink"
@@ -389,6 +566,7 @@ export function Onboarding() {
                 <button
                   onClick={() => {
                     setSkippedInterview(true)
+                    setManualIndex(0)
                     setAnswers({})
                   }}
                   className="px-1 py-2 text-[13px] font-medium text-ink3 underline underline-offset-4 hover:text-ink"
@@ -414,76 +592,107 @@ export function Onboarding() {
             >
               {skippedInterview ? 'Your starting point' : "Here's where you start"}
             </h1>
-            <div className="mt-5 rounded-2xl border border-line bg-surface p-5 shadow-card">
-              <div className="flex items-center gap-4">
-                <Figure step={placedStepId} className="h-16 w-20 shrink-0 text-accent-text" />
-                <div className="min-w-0">
-                  <div className="font-display text-[20px] font-bold text-ink">{STEP_BY_ID[placedStepId].name}</div>
-                  <div className="text-[13px] text-ink2">{STEP_BY_ID[placedStepId].tagline}</div>
-                </div>
-              </div>
-              <p className="mt-3 text-[13.5px] leading-relaxed text-ink2">
-                {skippedInterview
-                  ? 'You picked this yourself, so the app treats it as a starting guess and nothing more. Your first filmed sets are what confirm it.'
-                  : placement.reason}
-              </p>
-              {!skippedInterview ? (
-                <div className="mt-3 flex items-center gap-2 rounded-xl border border-line bg-raised px-3 py-2">
-                  <Icon
-                    name={placement.confidence === 'good' ? 'check' : 'info'}
-                    size={15}
-                    className={placement.confidence === 'good' ? 'text-ok-text' : 'text-ink3'}
-                  />
-                  <span className="text-[12.5px] leading-relaxed text-ink2">
-                    {placement.confidence === 'good'
-                      ? 'Your answers were consistent, so this is a confident starting point — still provisional until a filmed set backs it up.'
-                      : placement.confidence === 'moderate'
-                        ? 'A reasonable starting point from what you told us. The first sessions will confirm or correct it.'
-                        : 'Low confidence — either the answers were thin or some of them disagreed. Expect the first week to adjust this.'}
-                  </span>
-                </div>
-              ) : null}
-            </div>
-
-            {placement.inconsistencies.length > 0 && !skippedInterview ? (
-              <div className="mt-3 rounded-2xl border border-danger/30 bg-danger-soft p-4">
-                <div className="text-[13px] font-semibold text-ink">Worth double-checking</div>
-                <ul className="mt-1.5 space-y-1">
-                  {placement.inconsistencies.map((t) => (
-                    <li key={t} className="text-[13px] leading-relaxed text-ink2">
-                      {t}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {placement.caveats.length > 0 && !skippedInterview ? (
-              <div className="mt-3 space-y-2">
-                {placement.caveats.map((t) => (
-                  <div key={t} className="rounded-2xl border border-line bg-surface p-4 text-[13px] leading-relaxed text-ink2">
-                    {t}
+            {skills.map((skill, index) => {
+              const def = SKILLS[skill]
+              const stepId = placedFor(skill)
+              const placement = placements[skill]
+              const several = skills.length > 1
+              return (
+                <section key={skill} className={index ? 'mt-5' : 'mt-5'} aria-label={def.name}>
+                  <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+                    {several ? (
+                      <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-accent-text">
+                        {def.name}
+                        {index === 0 ? ' · leads your sessions' : ''}
+                      </div>
+                    ) : null}
+                    <div className="flex items-center gap-4">
+                      <Figure step={stepId} className="h-16 w-20 shrink-0 text-accent-text" />
+                      <div className="min-w-0">
+                        <div className="font-display text-[20px] font-bold text-ink">{STEP_BY_ID[stepId].name}</div>
+                        <div className="text-[13px] text-ink2">{STEP_BY_ID[stepId].tagline}</div>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-[13.5px] leading-relaxed text-ink2">
+                      {skippedInterview || !placement
+                        ? 'You picked this yourself, so the app treats it as a starting guess and nothing more. Your first filmed sets are what confirm it.'
+                        : placement.reason}
+                    </p>
+                    {!skippedInterview && placement ? (
+                      <div className="mt-3 flex items-center gap-2 rounded-xl border border-line bg-raised px-3 py-2">
+                        <Icon
+                          name={placement.confidence === 'good' ? 'check' : 'info'}
+                          size={15}
+                          className={placement.confidence === 'good' ? 'text-ok-text' : 'text-ink3'}
+                        />
+                        <span className="text-[12.5px] leading-relaxed text-ink2">
+                          {placement.confidence === 'good'
+                            ? 'Your answers were consistent, so this is a confident starting point — still provisional until a filmed set backs it up.'
+                            : placement.confidence === 'moderate'
+                              ? 'A reasonable starting point from what you told us. The first sessions will confirm or correct it.'
+                              : 'Low confidence — either the answers were thin or some of them disagreed. Expect the first week to adjust this.'}
+                        </span>
+                      </div>
+                    ) : null}
+                    {skill !== 'planche' ? (
+                      <details className="mt-3 rounded-xl border border-line bg-raised px-3 py-2">
+                        <summary className="cursor-pointer text-[12.5px] font-semibold text-ink">
+                          Worth knowing before you train {def.holdName === 'handstand' ? 'upside down' : `the ${def.holdName}`}
+                        </summary>
+                        <ul className="mt-2 space-y-1.5">
+                          {def.safety.map((line) => (
+                            <li key={line} className="text-[12.5px] leading-relaxed text-ink2">
+                              {line}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="mt-2 text-[12px] leading-relaxed text-ink3">{def.sourcing}</p>
+                      </details>
+                    ) : null}
                   </div>
-                ))}
-              </div>
-            ) : null}
 
-            {placement.gaps.length > 0 && !skippedInterview ? (
-              <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
-                <div className="text-[13px] font-semibold text-ink">What will actually limit you</div>
-                <p className="mt-0.5 text-[12.5px] text-ink3">
-                  Not blockers — these get built into your sessions from day one.
-                </p>
-                <ul className="mt-2 space-y-2">
-                  {placement.gaps.map((g) => (
-                    <li key={g.id}>
-                      <div className="text-[13.5px] font-medium text-ink">{g.label}</div>
-                      <div className="text-[12.5px] leading-relaxed text-ink2">{g.detail}</div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
+                  {placement && placement.inconsistencies.length > 0 && !skippedInterview ? (
+                    <div className="mt-3 rounded-2xl border border-danger/30 bg-danger-soft p-4">
+                      <div className="text-[13px] font-semibold text-ink">Worth double-checking</div>
+                      <ul className="mt-1.5 space-y-1">
+                        {placement.inconsistencies.map((t) => (
+                          <li key={t} className="text-[13px] leading-relaxed text-ink2">
+                            {t}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {placement && placement.caveats.length > 0 && !skippedInterview ? (
+                    <div className="mt-3 space-y-2">
+                      {placement.caveats.map((t) => (
+                        <div key={t} className="rounded-2xl border border-line bg-surface p-4 text-[13px] leading-relaxed text-ink2">
+                          {t}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {placement && placement.gaps.length > 0 && !skippedInterview ? (
+                    <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
+                      <div className="text-[13px] font-semibold text-ink">What will actually limit you</div>
+                      <p className="mt-0.5 text-[12.5px] text-ink3">
+                        Not blockers — these get built into your sessions from day one.
+                      </p>
+                      <ul className="mt-2 space-y-2">
+                        {placement.gaps.map((g) => (
+                          <li key={g.id}>
+                            <div className="text-[13.5px] font-medium text-ink">{g.label}</div>
+                            <div className="text-[12.5px] leading-relaxed text-ink2">{g.detail}</div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </section>
+              )
+            })}
 
             <div className="mt-6 flex gap-2.5">
               <button
@@ -495,9 +704,11 @@ export function Onboarding() {
                     const asked = Object.keys(answers)
                     if (asked.length > 0) {
                       const next = { ...answers }
-                      delete next[asked[asked.length - 1] as keyof AssessmentAnswers]
+                      delete next[asked[asked.length - 1]]
                       setAnswers(next)
                     }
+                  } else {
+                    setManualIndex(Math.max(0, skills.length - 1))
                   }
                   setStage('interview')
                 }}
@@ -556,7 +767,7 @@ export function Onboarding() {
                   className="mt-1.5 w-full rounded-xl border border-line bg-raised px-3 py-2.5 text-[15px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
                 />
                 <span className="mt-1 block text-[12px] text-ink3">
-                  Planche is strength-to-weight — this is one of the biggest levers there is.
+                  These skills are strength-to-weight — bodyweight is one of the biggest levers there is.
                 </span>
               </label>
               <label className="rounded-2xl border border-line bg-surface p-4">
@@ -623,6 +834,31 @@ export function Onboarding() {
                   .filter(Boolean)
                   .join(' · ') || 'Pick everything you can get to — sessions substitute around what is missing.'}
               </p>
+              {kitGaps.length ? (
+                <div className="mt-3 space-y-2" role="status">
+                  {kitGaps.map(({ skill, missing }) => (
+                    <div key={skill} className="rounded-xl border border-accent/30 bg-accent-soft px-3 py-2.5">
+                      <p className="text-[12.5px] leading-relaxed text-ink">
+                        <span className="font-semibold">{SKILLS[skill].name}</span> needs {missing.map(kitPhrase).join(', and ')}.
+                        Without it this skill waits in your list{skills.length > 1 ? ' and your other skills train as normal' : ''} —
+                        tick it if you have one.
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {missing.flat().map((id) => (
+                          <button
+                            key={id}
+                            onClick={() => setEquipment((v) => (v.includes(id) ? v : [...v, id]))}
+                            className="min-h-9 rounded-lg border border-line bg-surface px-2.5 py-1 text-[12px] font-semibold text-ink hover:border-line-strong"
+                          >
+                            I have {/s$/.test(equipmentLabel(id)) ? '' : 'a '}
+                            {equipmentLabel(id)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             <label className="mt-3 block rounded-2xl border border-line bg-surface p-4">
@@ -668,6 +904,9 @@ export function Onboarding() {
             <p className="mx-auto mt-1 max-w-md text-[14px] leading-relaxed text-ink2">
               Sessions per week. Three is the number most coaching sources land on for straight-arm work — but with
               total work equal, frequency itself makes little measured difference, so pick the number you will keep.
+              {skills.length > 1
+                ? ` With ${skills.length} skills, ${SKILLS[focus].name.toLowerCase()} is in every session and the others take turns behind it.`
+                : ''}
             </p>
             <div className="mt-7 flex justify-center gap-2.5" role="group" aria-label="Sessions per week">
               {[2, 3, 4, 5].map((n) => (
@@ -706,30 +945,51 @@ export function Onboarding() {
               ))}
             </div>
             <div className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-ink3" aria-live="polite">
-              {minutes <= 20
-                ? 'Key holds plus the most important strength work. Short sessions you actually do beat long ones you skip.'
-                : minutes <= 30
-                  ? 'Key holds, the push-up version and some accessory work — leans or core may come off on full days.'
+              {skills.length > 1
+                ? minutes <= 20
+                  ? 'Room for one skill a session: your main one about two times in three, the others taking a turn in between.'
                   : minutes <= 45
-                    ? 'The full session: key holds, the push-up version of your step, pseudo planche push-ups, leans and core.'
-                    : 'Everything, with room for extra sets on volume days.'}{' '}
+                    ? 'Room for two skills a session — your main one, and one more that loads different joints.'
+                    : 'Room for up to three skills a session, the main one first and fullest.'
+                : focus !== 'planche'
+                  ? minutes <= 20
+                    ? 'Key holds plus the most important strength work. Short sessions you actually do beat long ones you skip.'
+                    : minutes <= 30
+                      ? 'Key holds, the strength work for your step and some accessories — the extras come off on full days.'
+                      : 'The full session: key holds, the strength work for your step, support work and core.'
+                  : minutes <= 20
+                    ? 'Key holds plus the most important strength work. Short sessions you actually do beat long ones you skip.'
+                    : minutes <= 30
+                      ? 'Key holds, the push-up version and some accessory work — leans or core may come off on full days.'
+                      : minutes <= 45
+                        ? 'The full session: key holds, the push-up version of your step, pseudo planche push-ups, leans and core.'
+                        : 'Everything, with room for extra sets on volume days.'}{' '}
               Change it any time in Settings.
             </div>
             <div className="mx-auto mt-7 max-w-md rounded-2xl border border-line bg-surface p-4 text-left">
               <div className="text-[13px] font-semibold uppercase tracking-wide text-ink3">Your plan</div>
-              <div className="mt-1.5 flex items-center gap-3">
-                <Figure step={placedStepId} className="h-12 w-16 text-accent-text" />
-                <div className="min-w-0">
-                  <div className="font-display text-[17px] font-semibold text-ink">
-                    {STEP_BY_ID[placedStepId].name}
+              {skills.map((skill) => {
+                const from = STEP_BY_ID[placedFor(skill)]
+                const to = STEP_BY_ID[goalFor(skill)]
+                const stepsToGo = Math.max(0, to.order - from.order)
+                const waiting = kitGaps.some((gap) => gap.skill === skill)
+                return (
+                  <div key={skill} className="mt-1.5 flex items-center gap-3">
+                    <Figure step={from.id} className="h-12 w-16 shrink-0 text-accent-text" />
+                    <div className="min-w-0">
+                      <div className="font-display text-[17px] font-semibold text-ink">
+                        {skills.length > 1 ? `${SKILLS[skill].short} · ` : ''}
+                        {from.name}
+                      </div>
+                      <div className="text-[13px] text-ink2">
+                        {waiting
+                          ? 'Waiting for its kit — it joins your sessions once you add it in Settings.'
+                          : `Aiming at ${to.name} · ${stepsToGo} step${stepsToGo === 1 ? '' : 's'} to go`}
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-[13px] text-ink2">
-                    Aiming at {STEP_BY_ID[goalStepId].name} ·{' '}
-                    {Math.max(0, STEP_BY_ID[goalStepId].order - STEP_BY_ID[placedStepId].order)} step
-                    {Math.max(0, STEP_BY_ID[goalStepId].order - STEP_BY_ID[placedStepId].order) === 1 ? '' : 's'} to go
-                  </div>
-                </div>
-              </div>
+                )
+              })}
               <p className="mt-2.5 text-[12.5px] leading-relaxed text-ink3">
                 The coach needs a handful of sessions before it can tell which kind of training you respond to. Until
                 then it runs a sensible default and says so rather than pretending to know.
@@ -752,6 +1012,8 @@ export function Onboarding() {
 
 function ManualPlacement({
   headingRef,
+  skill,
+  several,
   placement,
   onPick,
   onBack,
@@ -760,6 +1022,9 @@ function ManualPlacement({
   backBtn,
 }: {
   headingRef: React.RefObject<HTMLDivElement | null>
+  skill: SkillId
+  /** More than one skill was chosen, so the heading names which this is. */
+  several: boolean
   placement: StepId
   onPick: (id: StepId) => void
   onBack: () => void
@@ -767,16 +1032,21 @@ function ManualPlacement({
   primaryBtn: string
   backBtn: string
 }) {
+  // The planche keeps its described levels; every other road lists its own steps.
+  const choices =
+    skill === 'planche'
+      ? PLACEMENTS
+      : SKILLS[skill].steps.map((step) => ({ stepId: step.id, label: step.name, desc: step.tagline }))
   return (
     <div className="animate-rise">
       <h1 ref={headingRef} tabIndex={-1} className="text-center font-display text-[26px] font-bold text-ink outline-none">
-        Where are you starting?
+        {several ? `${SKILLS[skill].name}: where are you starting?` : 'Where are you starting?'}
       </h1>
       <p className="mt-1 text-center text-[14px] text-ink2">
         Honest placement beats ambitious placement — you can test up any time.
       </p>
       <div className="mt-6 space-y-2.5" role="group" aria-label="Starting step">
-        {PLACEMENTS.map((p) => {
+        {choices.map((p) => {
           const active = placement === p.stepId
           return (
             <button

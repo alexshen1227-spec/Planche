@@ -1,6 +1,15 @@
 import type { Exercise } from '../types'
+import { FRONT_LEVER } from './skills/frontLever'
+import { HANDSTAND } from './skills/handstand'
+import { NINETY } from './skills/ninety'
+import { FLAG } from './skills/flag'
 
-export const EXERCISES: Exercise[] = [
+/**
+ * The planche line and the shared supporting cast. The other skills keep
+ * their own movements beside their roads (`data/skills/*`); `EXERCISES` below
+ * is every movement the app knows, in one list.
+ */
+const CORE_EXERCISES: Exercise[] = [
   // ————— Planche line —————
   {
     id: 'planche-lean',
@@ -360,21 +369,26 @@ export const EXERCISES: Exercise[] = [
     muscles: ['The whole chain', 'Front delts', 'Triceps', 'Chest'],
   },
   {
+    // The id predates the handstand road; it is that road's wall step now.
     id: 'wall-handstand',
     name: 'Wall Handstand',
-    category: 'push',
+    category: 'handstand',
+    skill: 'handstand',
     type: 'hold',
     difficulty: 2,
     equipment: ['Wall'],
-    blurb: 'Chest-to-wall handstand hold. General overhead strength and body-line practice.',
+    requires: ['wall'],
+    blurb:
+      'Chest-to-wall handstand hold: wrists, shoulders, hips and ankles stacked on one line, only the toes on the wall. Where the handstand’s shape and endurance are built.',
     howTo: [
-      'Walk your feet up a wall until your chest faces it, hands ~30cm out.',
-      'Push tall through the shoulders, ribs in, glutes on.',
-      'Hold a straight line; walk back down with control.',
+      'From a push-up position with your feet at the wall, walk the feet up and the hands in until your chest faces the wall, hands about a hand-length out.',
+      'Lock the arms and push tall through the shoulders; ribs in, glutes on.',
+      'Hold a straight line with only the toes touching.',
+      'Walk back down under control, or turn a quarter and step out. Come down before the arms tire.',
     ],
-    cues: ['Push the floor away', 'Ribs down', 'Point the toes'],
-    mistakes: ['Banana back', 'Shoulders sinking'],
-    muscles: ['Delts', 'Traps', 'Core'],
+    cues: ['Push the floor away', 'Ribs in, glutes on', 'Point the toes'],
+    mistakes: ['Banana back', 'Shoulders sinking', 'Staying up until the arms give out'],
+    muscles: ['Delts', 'Traps', 'Core', 'Wrists'],
   },
   // ————— Scapula & straight-arm —————
   {
@@ -751,6 +765,14 @@ export const EXERCISES: Exercise[] = [
   },
 ]
 
+export const EXERCISES: Exercise[] = [
+  ...CORE_EXERCISES,
+  ...FRONT_LEVER.exercises,
+  ...HANDSTAND.exercises,
+  ...NINETY.exercises,
+  ...FLAG.exercises,
+]
+
 export const EXERCISE_BY_ID: Record<string, Exercise> = Object.fromEntries(
   EXERCISES.map((e) => [e.id, e]),
 )
@@ -758,7 +780,12 @@ export const EXERCISE_BY_ID: Record<string, Exercise> = Object.fromEntries(
 export const CATEGORY_LABEL: Record<Exercise['category'], string> = {
   general: 'General warm-up',
   planche: 'Planche line',
+  lever: 'Front lever line',
+  handstand: 'Handstand line',
+  ninety: '90° hold line',
+  flag: 'Human flag line',
   push: 'Pushing strength',
+  pull: 'Pulling strength',
   scapula: 'Scapula',
   core: 'Core',
   wrist: 'Wrists & prehab',

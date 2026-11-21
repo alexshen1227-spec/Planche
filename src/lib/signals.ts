@@ -1,6 +1,8 @@
 import type { AppState, BodyRegion, CheckIn, Session, SetLog, TrainingSurface } from '../types'
-import { STEP_BY_ID } from '../data/progressions'
+import { skillOfStep, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
+import { isSkillWork } from './skills'
+import { workSets } from './volume'
 import { defaultSurface } from '../data/equipment'
 import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
 import { capacityReading, isBarAttempt, learningSeries, measuredMaxIn, testWasAttempted, verifiedCleanRatio } from './progression'
@@ -97,6 +99,16 @@ export function observedRestSec(
  */
 const CATEGORY_STRAIN: Record<string, number> = {
   planche: 1.5,
+  // The other skill lines. Without these they fell to the default 0.3, and a
+  // front lever session read as a fifth of the planche session it matched —
+  // so the day after it was planned as if nothing hard had happened. The
+  // levers, the 90° hold and the flag are held near their limit like a
+  // planche; handstand practice is mostly balance at bodyweight, and lighter.
+  lever: 1.5,
+  ninety: 1.5,
+  flag: 1.5,
+  handstand: 0.8,
+  pull: 1.0,
   push: 1.0,
   scapula: 0.8,
   core: 0.5,
@@ -135,10 +147,10 @@ export const LOADED_STRAIN = 60
 export function isHardSession(session: Session): boolean {
   if (strainOf(session) >= LOADED_STRAIN) return true
   if (testWasAttempted(session)) return true
-  const mainPlanche = session.sets.some(
-    (set) => set.section === 'main' && EXERCISE_BY_ID[set.exerciseId]?.category === 'planche' && set.value > 0,
+  const mainSkillWork = session.sets.some(
+    (set) => set.section === 'main' && isSkillWork(EXERCISE_BY_ID[set.exerciseId]) && set.value > 0,
   )
-  return mainPlanche && (session.rpe ?? 0) >= 9
+  return mainSkillWork && (session.rpe ?? 0) >= 9
 }
 
 /** Linear slope (units per week) over timestamped points. */
@@ -575,7 +587,13 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   }
 
   // ——— Accessory pressing work ———
-  const pressIds = ['pppu', 'pike-pushup', 'tuck-planche-pushup', 'pushup', 'dip']
+  // The planche's pressing accessories, or the strength movements of whichever
+  // skill this state is read as — a lever's rows and pull-ups, a flag's negatives.
+  const viewedSkill = skillOfStep(state.stepId)
+  const pressIds =
+    viewedSkill === 'planche'
+      ? ['pppu', 'pike-pushup', 'tuck-planche-pushup', 'pushup', 'dip']
+      : [...workSets(viewedSkill).strength]
   const recentPressSessions = sessions.slice(-12)
   const pressId =
     pressIds
@@ -764,7 +782,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
         x.section !== 'warmup' &&
         x.section !== 'cooldown' &&
         x.value > 0 &&
-        (x.exerciseId === keyId || EXERCISE_BY_ID[x.exerciseId]?.category === 'planche'),
+        (x.exerciseId === keyId || isSkillWork(EXERCISE_BY_ID[x.exerciseId])),
     )
   const warmedUp = (s: Session) =>
     s.sets.some(

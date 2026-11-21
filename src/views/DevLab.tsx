@@ -6,7 +6,11 @@ import {
   judgeTrackedFrames,
   MAX_STABLE_ELBOW_IQR_DEG,
   MATERIAL_TOLERANCE,
+  MAX_FRONT_VIEW_RATIO,
+  MAX_INVERTED_SIDE_VIEW_RATIO,
   MIN_EXTENDED_LEG_REACH,
+  MIN_FRONT_VIEW_RATIO,
+  POSTURE_TOLERANCE,
   MIN_VERIFIABLE_HOLD_SEC,
   MOMENTARY_MATERIAL_TOLERANCE,
   POSE_PROFILES,
@@ -319,6 +323,11 @@ export function DevLab({ onClose }: { onClose: () => void }) {
           shrugMinRatio: SHRUG_MIN_RATIO,
           minExtendedLegReach: MIN_EXTENDED_LEG_REACH,
           minVerifiableHoldSec: MIN_VERIFIABLE_HOLD_SEC,
+          // Hung, inverted and front-on positions: their own measured elbow
+          // and knee deadbands, and the view each one is refused outside.
+          posture: POSTURE_TOLERANCE,
+          maxInvertedSideViewRatio: MAX_INVERTED_SIDE_VIEW_RATIO,
+          frontViewRatio: [MIN_FRONT_VIEW_RATIO, MAX_FRONT_VIEW_RATIO],
         },
         positions: GRADED,
       },

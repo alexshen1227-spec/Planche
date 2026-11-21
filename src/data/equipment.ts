@@ -4,9 +4,16 @@ export const EQUIPMENT_OPTIONS: { id: EquipmentId; label: string; hint: string }
   { id: 'floor', label: 'Floor', hint: 'Always available; useful for wrist-specific carryover' },
   { id: 'parallettes', label: 'Parallettes', hint: 'A different wrist angle and extra clearance for tuck work' },
   { id: 'band', label: 'Resistance band', hint: 'Assisted longer-lever work later on' },
-  { id: 'pullup-bar', label: 'Pull-up bar', hint: 'A place to anchor assistance bands' },
+  { id: 'pullup-bar', label: 'Pull-up bar', hint: 'Front lever and pulling work; also anchors assistance bands' },
+  { id: 'rings', label: 'Gymnastic rings', hint: 'Somewhere to hang from — counts as a bar for front lever work' },
   { id: 'dip-bars', label: 'Dip bars', hint: 'Extra pressing volume' },
-  { id: 'box', label: 'Stable box or step', hint: 'A fixed foot support for supported lean variations' },
+  { id: 'box', label: 'Stable box or step', hint: 'A fixed foot support for pike push-ups and supported leans' },
+  { id: 'wall', label: 'Clear wall', hint: 'Wall handstands and wall handstand push-ups' },
+  {
+    id: 'pole',
+    label: 'Sturdy pole or stall bars',
+    hint: 'An upright that takes your whole weight pulling sideways — needed for the human flag',
+  },
 ]
 
 const LABEL: Record<EquipmentId, string> = Object.fromEntries(

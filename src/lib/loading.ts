@@ -61,6 +61,38 @@ export const LEVER_FRACTION: Record<string, number> = {
   'band-straddle-planche': 0.6,
   'straddle-planche': 0.91,
   'full-planche': 1,
+
+  // ——— The other roads (2026-11) ———
+  // The front lever and the 90° hold put the same body shapes about the
+  // shoulder as the planche does, so they take the planche's shape fractions:
+  // the same rigid-body INFERENCE, each relative to its own summit. The flag's
+  // and the handstand's are rougher placements — a flag's torque is about the
+  // grip, a handstand is balance at bodyweight — set only so that their held
+  // seconds count toward the week at all. Without entries these holds weighed
+  // nothing, and the load rails never saw a front lever week ramp.
+  'active-hang': 0.15,
+  'tuck-front-lever': 0.54,
+  'adv-tuck-front-lever': 0.72,
+  'one-leg-front-lever': 0.8,
+  'band-front-lever': 0.6,
+  'straddle-front-lever': 0.91,
+  'front-lever': 1,
+  'bent-arm-lean-hold': 0.35,
+  'elbow-lever': 0.2,
+  'tuck-ninety-hold': 0.54,
+  'adv-tuck-ninety-hold': 0.72,
+  'straddle-ninety-hold': 0.91,
+  'ninety-hold': 1,
+  'supported-flag': 0.2,
+  'vertical-flag': 0.3,
+  'tuck-flag': 0.5,
+  'one-leg-flag': 0.75,
+  'straddle-flag': 0.85,
+  'human-flag': 1,
+  'wall-plank': 0.2,
+  'wall-handstand': 0.3,
+  'wall-float': 0.3,
+  'freestanding-handstand': 0.3,
 }
 
 /** Positions whose difficulty genuinely moves with a joint angle we can see. */

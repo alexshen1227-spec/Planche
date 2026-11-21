@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { BODY_REGIONS, CURRENT_STATE_VERSION } from '../types'
+import { BODY_REGIONS, CURRENT_STATE_VERSION, SKILL_IDS } from '../types'
 import type {
   AppState,
   AssessmentRecord,
@@ -25,15 +25,18 @@ import type {
   Measurement,
   Profile,
   Session,
+  SessionSkill,
   SetLog,
   SetTiming,
   Settings,
+  SkillId,
+  SkillTrack,
   StepId,
   SymptomEvent,
   TrainingSurface,
   Units,
 } from '../types'
-import { STEPS, STEP_BY_ID } from '../data/progressions'
+import { firstStep, roadOf, skillOfStep, STEP_BY_ID, stepsOf } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { ACHIEVEMENT_VERSION, REVALIDATED_ACHIEVEMENTS } from '../data/achievements'
 import { applySession } from './engine'
@@ -42,6 +45,7 @@ import { clearMirror, readMirror, requestPersistence, writeMirror } from './pers
 import { pushToast } from './toast'
 import { CLOCK_SKEW_MS } from './time'
 import { WALK_BACK_MAX_SEC, WALK_BACK_MIN_SEC } from './sessionTiming'
+import { activeSkills, addTrack, trackOf, trackedSkills, withTrack } from './skills'
 
 const STORAGE_KEY = 'planchelab.v1'
 const THEME_KEY = 'planchelab.theme'
@@ -154,8 +158,38 @@ const FORM_ISSUES = new Set<FormIssue>([
   'narrow',
   'hips',
   'level',
+  'shoulders',
+  'tilt',
+  'angle',
+  'depth',
+  'lockout',
+  'kip',
 ])
-const EQUIPMENT_IDS = new Set<EquipmentId>(['floor', 'parallettes', 'band', 'pullup-bar', 'dip-bars', 'box'])
+const EQUIPMENT_IDS = new Set<EquipmentId>([
+  'floor',
+  'parallettes',
+  'band',
+  'pullup-bar',
+  'rings',
+  'dip-bars',
+  'box',
+  'wall',
+  'pole',
+])
+const SKILL_ID_SET = new Set<SkillId>(SKILL_IDS)
+
+/** A step id that exists and belongs to the given skill's road. */
+function isStepOf(id: unknown, skill: SkillId): id is StepId {
+  return typeof id === 'string' && STEP_BY_ID[id as StepId]?.skill === skill
+}
+
+/** Every step of a road up to and including `stepId`. */
+function roadUpTo(stepId: StepId): StepId[] {
+  const target = STEP_BY_ID[stepId]
+  return roadOf(stepId)
+    .filter((s) => s.order <= target.order)
+    .map((s) => s.id)
+}
 const TRAINING_SURFACES = new Set<TrainingSurface>(['floor', 'parallettes'])
 const SECTIONS = new Set(['warmup', 'main', 'strength', 'core', 'cooldown'])
 const STRATEGIES = new Set(['balanced', 'volume', 'intensity', 'density', 'technique'])
@@ -246,6 +280,8 @@ function sanitizeAuto(a: unknown, repairs: string[]): AutoForm | undefined {
     hipOffset: num(c.hipOffset),
     leanRatio: num(c.leanRatio),
     shrugRatio: num(c.shrugRatio),
+    ...(num(c.shoulderDeg) !== undefined ? { shoulderDeg: num(c.shoulderDeg) } : {}),
+    ...(num(c.tiltDeg) !== undefined ? { tiltDeg: num(c.tiltDeg) } : {}),
     asymmetry: num(c.asymmetry),
     wobble: num(c.wobble),
     ...(num(c.drift) !== undefined ? { drift: num(c.drift) } : {}),
@@ -357,11 +393,12 @@ function sanitizeSymptoms(raw: unknown): SymptomEvent[] {
 }
 
 /** Placement answers are numbers keyed by known item ids; anything else goes. */
-function sanitizeAssessment(raw: unknown): AssessmentRecord | undefined {
+function sanitizeAssessment(raw: unknown, skill: SkillId = 'planche'): AssessmentRecord | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
   const c = raw as Partial<AssessmentRecord>
   if (!isTime(c.at)) return undefined
-  if (typeof c.placedStepId !== 'string' || !STEP_BY_ID[c.placedStepId as StepId]) return undefined
+  // A placement is on one road; one that names another road's step is not this skill's.
+  if (!isStepOf(c.placedStepId, skill)) return undefined
   const answers: Record<string, number> = {}
   if (typeof c.answers === 'object' && c.answers !== null) {
     for (const [k, v] of Object.entries(c.answers)) {
@@ -583,7 +620,8 @@ function sanitizeSessions(
         : {}),
       workoutName: typeof c.workoutName === 'string' ? c.workoutName : 'Session',
       workoutKind: c.workoutKind === 'template' || c.workoutKind === 'test' || c.workoutKind === 'micro' ? c.workoutKind : 'auto',
-      stepId: c.stepId && STEP_BY_ID[c.stepId] ? c.stepId : 'foundations',
+      // The top-level step is the planche's; another road's step here is not one.
+      stepId: isStepOf(c.stepId, 'planche') ? c.stepId : 'foundations',
       sets,
       rpe: typeof c.rpe === 'number' && Number.isFinite(c.rpe) ? clampNum(c.rpe, 1, 10, 8) : undefined,
       notes: typeof c.notes === 'string' ? c.notes : undefined,
@@ -600,6 +638,8 @@ function sanitizeSessions(
         : {}),
       ...(c.retestOffered === true ? { retestOffered: true } : {}),
       ...(c.plannedDeload === true ? { plannedDeload: true } : {}),
+      ...(sanitizeSessionSkills(c.skills) ? { skills: sanitizeSessionSkills(c.skills) } : {}),
+      ...(sanitizeSessionRoles(c.roles) ? { roles: sanitizeSessionRoles(c.roles) } : {}),
     }
     if (tombstones.has(session.id)) return
     const fingerprint = JSON.stringify(session)
@@ -626,6 +666,69 @@ function sanitizeSessions(
   })
   report.sessionsKept = out.length
   return out
+}
+
+const LINEUP_ROLES = new Set(['lead', 'partner', 'maintenance', 'practice'])
+
+/** What each skill's part of a session was, for known skills and known roles only. */
+function sanitizeSessionRoles(raw: unknown): Session['roles'] | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const out: NonNullable<Session['roles']> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    const skill = key as SkillId
+    if (SKILL_ID_SET.has(skill) && typeof value === 'string' && LINEUP_ROLES.has(value)) {
+      out[skill] = value as NonNullable<Session['roles']>[SkillId]
+    }
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+/** A session's notes for the skills other than the planche, each bound to its own road. */
+function sanitizeSessionSkills(raw: unknown): Session['skills'] | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const out: NonNullable<Session['skills']> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    const skill = key as SkillId
+    if (!SKILL_ID_SET.has(skill) || skill === 'planche' || typeof value !== 'object' || value === null) continue
+    const v = value as Partial<SessionSkill>
+    if (!isStepOf(v.stepId, skill)) continue
+    out[skill] = {
+      stepId: v.stepId,
+      ...(typeof v.strategy === 'string' && STRATEGIES.has(v.strategy) ? { strategy: v.strategy } : {}),
+      ...(typeof v.baseTargetSec === 'number' && Number.isFinite(v.baseTargetSec) && v.baseTargetSec > 0
+        ? { baseTargetSec: clampNum(v.baseTargetSec, 1, 600, 1) }
+        : {}),
+      ...(v.retestOffered === true ? { retestOffered: true } : {}),
+    }
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+/** Stored progress on the skills other than the planche, each validated against its own road. */
+function sanitizeTracks(raw: unknown, startedAt: number): AppState['tracks'] | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const out: NonNullable<AppState['tracks']> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    const skill = key as SkillId
+    if (!SKILL_ID_SET.has(skill) || skill === 'planche' || typeof value !== 'object' || value === null) continue
+    const v = value as Partial<SkillTrack>
+    const first = firstStep(skill).id
+    const stepId = isStepOf(v.stepId, skill) ? v.stepId : first
+    const unlocked = Array.isArray(v.unlocked) ? [...new Set(v.unlocked.filter((id): id is StepId => isStepOf(id, skill)))] : []
+    if (!unlocked.includes(first)) unlocked.unshift(first)
+    if (!unlocked.includes(stepId)) unlocked.push(stepId)
+    const assessment = sanitizeAssessment(v.assessment, skill)
+    out[skill] = {
+      stepId,
+      // A track without a base is anchored where it stands, like an old save.
+      baseStepId: isStepOf(v.baseStepId, skill) ? v.baseStepId : stepId,
+      unlocked,
+      ...(isStepOf(v.goalStepId, skill) ? { goalStepId: v.goalStepId } : {}),
+      ...(assessment ? { assessment } : {}),
+      addedAt: isTime(v.addedAt) ? v.addedAt : startedAt,
+    }
+  }
+  return Object.keys(out).length ? out : undefined
 }
 
 function sanitizeSetups(raw: unknown): Record<string, ExerciseSetup> {
@@ -676,9 +779,9 @@ export function normalizeStateWithReport(
   if (typeof raw !== 'object' || raw === null) return { state: base, report }
   const r = raw as Partial<AppState> & Record<string, unknown>
   const priorVersion = typeof r.version === 'number' ? r.version : 1
-  const stepId: StepId = typeof r.stepId === 'string' && STEP_BY_ID[r.stepId] ? r.stepId : 'foundations'
+  const stepId: StepId = isStepOf(r.stepId, 'planche') ? r.stepId : 'foundations'
   const unlocked = Array.isArray(r.unlocked)
-    ? (r.unlocked.filter((id): id is StepId => typeof id === 'string' && id in STEP_BY_ID) as StepId[])
+    ? [...new Set(r.unlocked.filter((id): id is StepId => isStepOf(id, 'planche')))]
     : []
   if (!unlocked.includes('foundations')) unlocked.unshift('foundations')
   if (!unlocked.includes(stepId)) unlocked.push(stepId)
@@ -695,8 +798,8 @@ export function normalizeStateWithReport(
     // ever moves up, and it grants access, not verified evidence.
     priorVersion < CURRENT_STATE_VERSION
       ? highestUnlocked
-      : typeof r.grandfatheredStepId === 'string' && STEP_BY_ID[r.grandfatheredStepId as StepId]
-        ? (r.grandfatheredStepId as StepId)
+      : isStepOf(r.grandfatheredStepId, 'planche')
+        ? r.grandfatheredStepId
         : undefined
 
   const rawSettings = (typeof r.settings === 'object' && r.settings !== null ? r.settings : {}) as Partial<Settings>
@@ -758,6 +861,22 @@ export function normalizeStateWithReport(
         ? 'parallettes'
         : 'floor'
 
+  const startedAt = isTime(r.startedAt) ? r.startedAt : Date.now()
+  const tracks = sanitizeTracks(r.tracks, startedAt)
+  // The skills trained, in the athlete's order. Only skills with a road here
+  // can be listed: a name with no track behind it would train from nowhere.
+  const skills = (() => {
+    if (!Array.isArray(rawProfile.skills)) return undefined
+    const listed = [
+      ...new Set(
+        rawProfile.skills.filter(
+          (id): id is SkillId => SKILL_ID_SET.has(id as SkillId) && (id === 'planche' || Boolean(tracks?.[id as SkillId])),
+        ),
+      ),
+    ]
+    return listed.length ? listed : undefined
+  })()
+
   const tombstones = stringList(r.deletedSessionIds, MAX_TOMBSTONES)
   const sessions = sanitizeSessions(r.sessions, report, new Set(tombstones), now)
   const legacyEpoch = `legacy-${typeof r.startedAt === 'number' ? Math.round(r.startedAt) : 0}`
@@ -766,14 +885,14 @@ export function normalizeStateWithReport(
     version: CURRENT_STATE_VERSION,
     onboarded: Boolean(r.onboarded),
     name: typeof r.name === 'string' ? r.name : '',
-    startedAt: isTime(r.startedAt) ? r.startedAt : Date.now(),
+    startedAt,
     lastBackupAt: isTime(r.lastBackupAt) ? r.lastBackupAt : undefined,
     measureSnoozedAt: isTime(r.measureSnoozedAt) ? r.measureSnoozedAt : undefined,
     ...(sanitizeAssessment(r.assessment) ? { assessment: sanitizeAssessment(r.assessment) } : {}),
     stepId,
     // Older saves predate this field and their placement is unrecoverable, so
     // anchor at the current step: never demote someone who is already there.
-    baseStepId: typeof r.baseStepId === 'string' && STEP_BY_ID[r.baseStepId as StepId] ? (r.baseStepId as StepId) : stepId,
+    baseStepId: isStepOf(r.baseStepId, 'planche') ? r.baseStepId : stepId,
     ...(grandfatheredStepId ? { grandfatheredStepId } : {}),
     unlocked,
     sessions,
@@ -832,10 +951,8 @@ export function normalizeStateWithReport(
       birthYear: clampOptional(rawProfile.birthYear, 1920, new Date().getFullYear()),
       trainingAgeMonths: clampOptional(rawProfile.trainingAgeMonths, 0, 1200),
       preferredSurface,
-      goalStepId:
-        typeof rawProfile.goalStepId === 'string' && STEP_BY_ID[rawProfile.goalStepId as StepId]
-          ? (rawProfile.goalStepId as StepId)
-          : 'straddle',
+      goalStepId: isStepOf(rawProfile.goalStepId, 'planche') ? rawProfile.goalStepId : 'straddle',
+      ...(skills ? { skills } : {}),
     },
     measurements: Array.isArray(r.measurements)
       ? r.measurements
@@ -859,6 +976,7 @@ export function normalizeStateWithReport(
     deletedSessionIds: tombstones,
     symptoms: sanitizeSymptoms(r.symptoms),
     setups: sanitizeSetups(r.setups),
+    ...(tracks ? { tracks } : {}),
   }
   return { state, report }
 }
@@ -939,7 +1057,7 @@ function loadState(): LoadResult {
     // exact original bytes whenever normalizing dropped or repaired anything.
     if (reportHasLosses(report)) {
       quarantine(raw, 'Some saved records needed repair when this version loaded them.')
-      console.warn('Planche Lab: saved data needed repair; the original was kept aside.', report)
+      console.warn('Calisthenics Lab: saved data needed repair; the original was kept aside.', report)
     }
     return { state: next, empty: false }
   } catch (err) {
@@ -988,18 +1106,33 @@ export async function eraseRecoveryCopies(): Promise<{ failed: string[] }> {
 
 /** Rebuild PRs / unlocks / achievements by replaying history (after deletes/imports). */
 export function rebuildDerivedState(state: AppState, sessions = state.sessions): AppState {
-  const startingCandidates = [state.baseStepId, state.grandfatheredStepId].filter(
-    (id): id is StepId => Boolean(id && STEP_BY_ID[id]),
+  const startingCandidates = [state.baseStepId, state.grandfatheredStepId].filter((id): id is StepId =>
+    isStepOf(id, 'planche'),
   )
   const base = startingCandidates.reduce<StepId>(
     (highest, id) => (STEP_BY_ID[id].order > STEP_BY_ID[highest].order ? id : highest),
     'foundations',
   )
-  const baseOrder = STEP_BY_ID[base].order
-  const selectedStep = state.stepId
-  const selectedWasIntentionalLowerStep = state.unlocked.some(
-    (id) => STEP_BY_ID[id].order > STEP_BY_ID[selectedStep].order,
-  )
+  // Where the athlete had chosen to stand on each road. A step below the
+  // highest unlocked one is a deliberate choice, and survives the replay.
+  const selected = trackedSkills(state).map((skill) => {
+    const track = trackOf(state, skill)
+    const chosen = STEP_BY_ID[track.stepId]
+    return {
+      skill,
+      stepId: track.stepId,
+      intentionalLower: track.unlocked.some((id) => (STEP_BY_ID[id]?.order ?? -1) > (chosen?.order ?? 0)),
+    }
+  })
+  // Every other road rewinds to its own base, exactly as the planche does.
+  const tracks = state.tracks
+    ? (Object.fromEntries(
+        Object.entries(state.tracks).map(([skill, track]) => [
+          skill,
+          { ...track, stepId: track.baseStepId, unlocked: roadUpTo(track.baseStepId) },
+        ]),
+      ) as NonNullable<AppState['tracks']>)
+    : undefined
   let acc: AppState = {
     ...state,
     sessions: [],
@@ -1007,14 +1140,18 @@ export function rebuildDerivedState(state: AppState, sessions = state.sessions):
     achievementVersion: ACHIEVEMENT_VERSION,
     achievements: {},
     stepId: base,
-    unlocked: STEPS.filter((s) => s.order <= baseOrder).map((s) => s.id),
+    unlocked: roadUpTo(base),
+    ...(tracks ? { tracks } : {}),
   }
   for (const s of [...sessions].sort((a, b) => a.startedAt - b.startedAt)) {
     acc = applySession(acc, s).next
   }
-  return selectedWasIntentionalLowerStep && acc.unlocked.includes(selectedStep)
-    ? { ...acc, stepId: selectedStep }
-    : acc
+  for (const choice of selected) {
+    if (choice.intentionalLower && trackOf(acc, choice.skill).unlocked.includes(choice.stepId)) {
+      acc = withTrack(acc, choice.skill, { stepId: choice.stepId })
+    }
+  }
+  return acc
 }
 
 /**
@@ -1051,12 +1188,14 @@ export function reconcileAchievements(state: AppState): AppState {
  */
 export function skipToStep(state: AppState, stepId: StepId): AppState {
   const target = STEP_BY_ID[stepId]
-  const currentBase = STEP_BY_ID[state.baseStepId] ?? STEP_BY_ID.foundations
+  if (!target) return state
+  const track = trackOf(state, target.skill)
+  const currentBase = STEP_BY_ID[track.baseStepId] ?? firstStep(target.skill)
   const baseStepId = target.order > currentBase.order ? target.id : currentBase.id
-  const unlocked = STEPS.filter((step) => state.unlocked.includes(step.id) || step.order <= target.order).map(
-    (step) => step.id,
-  )
-  return { ...state, stepId: target.id, baseStepId, unlocked }
+  const unlocked = stepsOf(target.skill)
+    .filter((step) => track.unlocked.includes(step.id) || step.order <= target.order)
+    .map((step) => step.id)
+  return withTrack(state, target.skill, { stepId: target.id, baseStepId, unlocked })
 }
 
 /** A symptom report as the reducer accepts it; the id is assigned here. */
@@ -1083,7 +1222,17 @@ export type Action =
       assessment?: AssessmentRecord
       /** Joint reports made during onboarding, so they reach the first session's rails. */
       symptoms?: SymptomInput[]
+      /** The skills chosen, focus first. Absent = the planche alone. */
+      skills?: SkillId[]
+      /** Where each chosen skill other than the planche was placed. */
+      placements?: Partial<Record<SkillId, { stepId: StepId; assessment?: AssessmentRecord; goalStepId?: StepId }>>
     }
+  /** Start training a skill, placed on its road. Adds it to the end of the athlete's order. */
+  | { type: 'ADD_SKILL'; skill: SkillId; stepId?: StepId; assessment?: AssessmentRecord; goalStepId?: StepId }
+  /** The skills trained, in priority order (focus first). A skill left out keeps its progress. */
+  | { type: 'SET_SKILLS'; skills: SkillId[] }
+  /** The long-term destination on one road (the step's own skill). */
+  | { type: 'SET_GOAL'; stepId: StepId }
   | { type: 'SET_VIDEO'; exerciseId: string; url: string | null }
   | { type: 'LOG_MEASUREMENT'; weightKg?: number; heightCm?: number }
   | { type: 'SNOOZE_MEASURE' }
@@ -1109,6 +1258,11 @@ export type Action =
   /** An import, applied only if nothing changed since it was staged. */
   | { type: 'IMPORT_REPLACE'; state: AppState; expectedRev: number }
   | { type: 'RESET' }
+
+/** The field-time key for a skill's place on its road: `step` for the planche, as it always was. */
+function stepField(skill: SkillId): string {
+  return skill === 'planche' ? 'step' : `track.${skill}`
+}
 
 function stamp(state: AppState, keys: string[], at = Date.now()): Record<string, number> {
   const times = { ...(state.fieldTimes ?? {}) }
@@ -1252,6 +1406,25 @@ export function mergeExternalState(local: AppState, incoming: AppState): AppStat
     fieldsChanged = true
   }
 
+  // The other roads converge the same way: the newer write of a track wins,
+  // and a track only the other tab has is adopted. History is then replayed,
+  // so unlocks follow the merged sessions rather than either tab's snapshot.
+  let tracks = local.tracks
+  let tracksChanged = false
+  for (const skill of SKILL_IDS) {
+    if (skill === 'planche') continue
+    const theirs = incoming.tracks?.[skill]
+    if (!theirs) continue
+    const key = stepField(skill)
+    if (!local.tracks?.[skill] || newer(key)) {
+      if (JSON.stringify(local.tracks?.[skill]) === JSON.stringify(theirs)) continue
+      tracks = { ...tracks, [skill]: theirs }
+      if (it[key] !== undefined) fieldTimes[key] = it[key]
+      tracksChanged = true
+      fieldsChanged = true
+    }
+  }
+
   const symptomIds = new Set((local.symptoms ?? []).map((s) => s.id))
   const newSymptoms = (incoming.symptoms ?? []).filter((s) => !symptomIds.has(s.id))
   const measurementTimes = new Set(local.measurements.map((m) => m.at))
@@ -1292,8 +1465,9 @@ export function mergeExternalState(local: AppState, incoming: AppState): AppStat
     lastBackupAt,
     measureSnoozedAt,
     ...(assessment ? { assessment } : {}),
+    ...(tracks ? { tracks } : {}),
   }
-  return sessionsChanged || stepFields.stepId !== local.stepId
+  return sessionsChanged || tracksChanged || stepFields.stepId !== local.stepId
     ? rebuildDerivedState(merged, [...byId.values()].sort((a, b) => a.startedAt - b.startedAt))
     : merged
 }
@@ -1316,24 +1490,67 @@ function reduceAction(state: AppState, action: Action): AppState {
         fieldTimes: stamp(state, Object.keys(action.patch).map((k) => `settings.${k}`)),
       }
     case 'SET_STEP': {
-      if (!state.unlocked.includes(action.stepId)) return state
-      return { ...state, stepId: action.stepId, fieldTimes: stamp(state, ['step']) }
+      const skill = skillOfStep(action.stepId)
+      if (!STEP_BY_ID[action.stepId] || !trackOf(state, skill).unlocked.includes(action.stepId)) return state
+      return { ...withTrack(state, skill, { stepId: action.stepId }), fieldTimes: stamp(state, [stepField(skill)]) }
     }
     case 'SKIP_TO_STEP':
-      return { ...skipToStep(state, action.stepId), fieldTimes: stamp(state, ['step']) }
+      return {
+        ...skipToStep(state, action.stepId),
+        fieldTimes: stamp(state, [stepField(skillOfStep(action.stepId))]),
+      }
+    case 'ADD_SKILL': {
+      if (!SKILL_ID_SET.has(action.skill)) return state
+      const placed = addTrack(state, action.skill, Date.now(), action.stepId, action.assessment)
+      const goal =
+        action.goalStepId && isStepOf(action.goalStepId, action.skill) && action.skill !== 'planche'
+          ? withTrack(placed, action.skill, { goalStepId: action.goalStepId })
+          : placed
+      const current = activeSkills(goal)
+      const skills = current.includes(action.skill) ? current : [...current, action.skill]
+      return {
+        ...goal,
+        profile: { ...goal.profile, skills },
+        fieldTimes: stamp(state, ['profile.skills', stepField(action.skill)]),
+      }
+    }
+    case 'SET_SKILLS': {
+      const wanted = [...new Set(action.skills.filter((id) => SKILL_ID_SET.has(id)))]
+      if (!wanted.length) return state
+      // A skill listed for the first time starts at the beginning of its road.
+      let next = state
+      for (const skill of wanted) next = addTrack(next, skill, Date.now())
+      return {
+        ...next,
+        profile: { ...next.profile, skills: wanted },
+        fieldTimes: stamp(state, ['profile.skills']),
+      }
+    }
+    case 'SET_GOAL': {
+      const skill = skillOfStep(action.stepId)
+      if (!STEP_BY_ID[action.stepId]) return state
+      return {
+        ...withTrack(state, skill, { goalStepId: action.stepId }),
+        fieldTimes: stamp(state, [skill === 'planche' ? 'profile.goalStepId' : stepField(skill)]),
+      }
+    }
     case 'COMPLETE_ONBOARDING': {
-      const target = STEP_BY_ID[action.stepId]
-      const unlocked = STEPS.filter((s) => s.order <= target.order).map((s) => s.id)
+      // The top-level step is the planche's; an athlete who did not choose the
+      // planche keeps it at its first step, untrained and out of the way.
+      const target = isStepOf(action.stepId, 'planche') ? STEP_BY_ID[action.stepId] : STEP_BY_ID.foundations
+      const unlocked = roadUpTo(target.id)
+      const chosen = [...new Set((action.skills ?? ['planche']).filter((id) => SKILL_ID_SET.has(id)))]
+      const skills: SkillId[] = chosen.length ? chosen : ['planche']
       let next: AppState = {
         ...state,
         onboarded: true,
         name: action.name,
         startedAt: Date.now(),
-        stepId: action.stepId,
-        baseStepId: action.stepId,
+        stepId: target.id,
+        baseStepId: target.id,
         unlocked,
         ...(action.assessment ? { assessment: action.assessment } : {}),
-        profile: { ...action.profile, heightCm: action.heightCm ?? action.profile.heightCm },
+        profile: { ...action.profile, heightCm: action.heightCm ?? action.profile.heightCm, skills },
         measurements:
           action.weightKg !== undefined || action.heightCm !== undefined
             ? [{ at: Date.now(), weightKg: action.weightKg, heightCm: action.heightCm }]
@@ -1352,8 +1569,18 @@ function reduceAction(state: AppState, action: Action): AppState {
           'settings.weeklyGoal',
           'settings.units',
           ...(action.sessionMinutes !== undefined ? ['settings.sessionMinutes'] : []),
+          'profile.skills',
+          ...skills.filter((skill) => skill !== 'planche').map(stepField),
           ...Object.keys(action.profile).map((k) => `profile.${k}`),
         ]),
+      }
+      for (const skill of skills) {
+        if (skill === 'planche') continue
+        const placement = action.placements?.[skill]
+        next = addTrack(next, skill, Date.now(), placement?.stepId, placement?.assessment)
+        if (placement?.goalStepId && isStepOf(placement.goalStepId, skill)) {
+          next = withTrack(next, skill, { goalStepId: placement.goalStepId })
+        }
       }
       for (const event of action.symptoms ?? []) next = appendSymptom(next, event)
       return next

@@ -1,5 +1,5 @@
 import type { Kp } from './poseBackend'
-import type { JudgeInput } from './poseForm'
+import type { JudgeInput, Posture } from './poseForm'
 
 /**
  * Synthetic side-view poses with known ground truth.
@@ -48,6 +48,13 @@ export const PROPORTIONS = {
    * MAX_SIDE_VIEW_RATIO between them.
    */
   bodyWidth: 0.16,
+  /**
+   * Shoulder and hip width seen from the front, as the model reports them on
+   * real front-on flags: the widest bilateral span over torso read 0.46–0.87,
+   * and the hips sit closer together than the shoulders.
+   */
+  shoulderWidth: 0.62,
+  hipWidth: 0.4,
 } as const
 
 /** A parameter that may hold steady or move across the hold. */
@@ -101,6 +108,24 @@ export interface SynthParams {
   torso?: number
   frames?: number
   durationSec?: number
+
+  /**
+   * How the body is carried (see `Posture` in lib/poseForm). `support` is the
+   * original side-on hold on the hands; `hang` is the same skeleton hung under
+   * a bar; `inverted` is a side-on handstand; `flag` is a front-on flag, with
+   * both sides of the body laid out.
+   */
+  posture?: Posture
+  /** Inverted: elbow–shoulder–hip, degrees. 180 = arms in line with the trunk. */
+  shoulderDeg?: Track
+  /** Inverted: how far the trunk leans from straight up, degrees (a wall plank's incline). */
+  trunkLeanDeg?: Track
+  /** Flag: degrees the body sits off level. */
+  tiltDeg?: Track
+  /** Flag: both knees tucked to the chest. */
+  tucked?: boolean
+  /** Flag: half-angle between the legs, degrees. */
+  straddleDeg?: number
 
   /**
    * Degrees away from a locked elbow. Positive is flexion, which moves the
@@ -218,7 +243,14 @@ export interface TruePose {
     leanRatio: number
     shrugRatio: number
     secondElbowDeg?: number
+    shoulderDeg?: number
+    tiltDeg?: number
   }
+  /**
+   * Every joint by its detector name, for postures seen from the front, where
+   * the two sides of the body are not one stacked on the other.
+   */
+  joints?: Record<string, Vec>
 }
 
 function angleAt(a: Vec, b: Vec, c: Vec): number {
@@ -240,6 +272,230 @@ function angleAt(a: Vec, b: Vec, c: Vec): number {
  * shoulder–wrist chord the requested bend sign calls for.
  */
 export function buildTruePose(params: SynthParams, progress = 0): TruePose {
+  const posture = params.posture ?? 'support'
+  if (posture === 'inverted') return buildInvertedPose(params, progress)
+  if (posture === 'flag') return buildFlagPose(params, progress)
+  if (posture === 'hang') return hung(buildSupportPose({ ...params, hipOffset: negated(params.hipOffset) }, progress))
+  return buildSupportPose(params, progress)
+}
+
+/** A track with its sign flipped. */
+function negated(track: Track | undefined): Track | undefined {
+  if (track === undefined) return undefined
+  return typeof track === 'function' ? (progress: number) => -track(progress) : -track
+}
+
+/**
+ * A support pose hung under a bar: the same skeleton with the picture's
+ * vertical flipped, so the hands are above the shoulders and the chest faces
+ * up. A front lever really is a planche's mirror in this sense — straight
+ * arms, a level trunk, the hands over the body's centre of mass — which is why
+ * one layout serves both. `hipOffset` keeps its meaning (positive = hips above
+ * the shoulders): the support pose is built with it negated, then flipped.
+ */
+function hung(pose: TruePose): TruePose {
+  const flip = (v: Vec): Vec => ({ x: v.x, y: -v.y })
+  const maybe = (v: Vec | undefined) => (v ? flip(v) : undefined)
+  const shoulder = flip(pose.shoulder)
+  const hip = flip(pose.hip)
+  return {
+    ...pose,
+    shoulder,
+    elbow: flip(pose.elbow),
+    wrist: flip(pose.wrist),
+    hip,
+    knee: flip(pose.knee),
+    ankle: flip(pose.ankle),
+    ear: flip(pose.ear),
+    secondKnee: maybe(pose.secondKnee),
+    secondAnkle: maybe(pose.secondAnkle),
+    secondElbow: maybe(pose.secondElbow),
+    secondWrist: maybe(pose.secondWrist),
+    truth: { ...pose.truth, hipOffset: (shoulder.y - hip.y) / pose.torso },
+  }
+}
+
+/**
+ * A side-on handstand: hands planted, the arm running up to the shoulder, the
+ * trunk continuing it (or leaning off it by a closed shoulder), legs above.
+ * The elbow bends toward the side the athlete faces, the shoulders close by
+ * tipping the trunk the other way, and the hips fold the legs forward — so each
+ * fault moves its own joint and nothing else.
+ */
+function buildInvertedPose(params: SynthParams, progress: number): TruePose {
+  const torso = params.torso ?? 220
+  const facing = params.facing ?? 1
+  const bend = Math.abs(at(params.elbowBendDeg, progress, SYNTH_DEFAULTS.elbowBendDeg))
+  const shoulderDeg = at(params.shoulderDeg, progress, 180)
+  const lean = at(params.trunkLeanDeg, progress, 0)
+  const upperArm = PROPORTIONS.upperArm * torso
+  const forearm = PROPORTIONS.forearm * torso
+  const up: Vec = { x: 0, y: -1 }
+
+  const wrist: Vec = { x: 0, y: 0 }
+  // The arm stays over the hand; a bend shortens it and pushes the elbow forward.
+  const elbowAngle = 180 - bend
+  const span = Math.sqrt(upperArm ** 2 + forearm ** 2 - 2 * upperArm * forearm * Math.cos((elbowAngle * Math.PI) / 180))
+  const shoulder = add(wrist, up, span)
+  const along = (forearm ** 2 - upperArm ** 2 + span ** 2) / (2 * span)
+  const off = Math.sqrt(Math.max(0, forearm ** 2 - along ** 2))
+  const elbow: Vec = { x: wrist.x + off * facing, y: wrist.y - along }
+
+  // The trunk: in line with the upper arm when the shoulders are open, tipped
+  // back from it as they close; `trunkLeanDeg` leans the whole body (a wall plank).
+  const upperArmDir = unit(elbow, shoulder)
+  const trunkDir = rotate(upperArmDir, (180 - shoulderDeg + lean) * -facing)
+  const hip = add(shoulder, trunkDir, torso)
+
+  const leg = (spec: SynthLeg) => {
+    const hipAngle = at(spec.hipAngleDeg, progress, SYNTH_DEFAULTS.hipAngleDeg)
+    const kneeBend = at(spec.kneeBendDeg, progress, SYNTH_DEFAULTS.kneeBendDeg)
+    const thigh = PROPORTIONS.thigh * torso
+    const shank = PROPORTIONS.shank * torso
+    // Folding at the hips brings the legs forward of the trunk's line.
+    const thighDir = rotate(trunkDir, (180 - hipAngle) * facing)
+    const knee = add(hip, thighDir, thigh)
+    const ankle = add(knee, rotate(thighDir, -kneeBend * facing), shank)
+    return { knee, ankle }
+  }
+  const primary = leg({ hipAngleDeg: params.hipAngleDeg, kneeBendDeg: params.kneeBendDeg })
+  const second = params.secondLeg ? leg(params.secondLeg) : undefined
+  // Head between the arms, a little forward of the shoulder.
+  const ear = add(shoulder, rotate(unit(shoulder, wrist), 25 * facing), PROPORTIONS.earGap * torso)
+
+  return {
+    shoulder,
+    elbow,
+    wrist,
+    hip,
+    knee: primary.knee,
+    ankle: primary.ankle,
+    ear,
+    secondKnee: second?.knee,
+    secondAnkle: second?.ankle,
+    torso,
+    truth: {
+      elbowDeg: angleAt(shoulder, elbow, wrist),
+      kneeDeg: angleAt(hip, primary.knee, primary.ankle),
+      hipAngleDeg: angleAt(shoulder, hip, primary.knee),
+      hipOffset: (shoulder.y - hip.y) / torso,
+      leanRatio: 0,
+      shrugRatio: Math.hypot(shoulder.x - ear.x, shoulder.y - ear.y) / torso,
+      shoulderDeg: angleAt(elbow, shoulder, hip),
+    },
+  }
+}
+
+/**
+ * A flag seen from the front: a pole up the picture at x = 0, the body out to
+ * one side of it, both sides of the body laid out. The top side of the body is
+ * given the `left_` names and the bottom side `right_` — which is which does
+ * not matter to anything measured.
+ */
+function buildFlagPose(params: SynthParams, progress: number): TruePose {
+  const torso = params.torso ?? 220
+  const bend = Math.abs(at(params.elbowBendDeg, progress, SYNTH_DEFAULTS.elbowBendDeg))
+  const bend2 = params.secondArm ? Math.abs(at(params.secondArm.elbowBendDeg, progress, 0)) : bend
+  const tilt = at(params.tiltDeg, progress, 0)
+  const hipAngle = at(params.hipAngleDeg, progress, SYNTH_DEFAULTS.hipAngleDeg)
+  const kneeBend = at(params.kneeBendDeg, progress, SYNTH_DEFAULTS.kneeBendDeg)
+  const upperArm = PROPORTIONS.upperArm * torso
+  const forearm = PROPORTIONS.forearm * torso
+  const thigh = PROPORTIONS.thigh * torso
+  const shank = PROPORTIONS.shank * torso
+
+  // The body's long axis, pointing away from the pole; positive tilt hangs the feet low.
+  const axis = rotate({ x: 1, y: 0 }, tilt)
+  const across: Vec = { x: -axis.y, y: axis.x } // toward the bottom side
+  // How far the shoulders hang from the pole. Real flags gripped it about
+  // 1.6–2.3 torsos apart (hand to hand), which puts the shoulders nearly a
+  // torso out with the arms reaching back to it.
+  const S: Vec = { x: 0.95 * torso, y: 0 }
+  const H = add(S, axis, torso)
+  // `bodyWidth` narrows the body as a turn away from the camera would.
+  const shoulderWidth = at(params.bodyWidth, progress, PROPORTIONS.shoulderWidth)
+  const halfShoulders = (shoulderWidth * torso) / 2
+  const halfHips = ((shoulderWidth * PROPORTIONS.hipWidth) / PROPORTIONS.shoulderWidth) * torso * 0.5
+  const topShoulder = add(S, across, -halfShoulders)
+  const bottomShoulder = add(S, across, halfShoulders)
+  const topHip = add(H, across, -halfHips)
+  const bottomHip = add(H, across, halfHips)
+
+  // An arm from its shoulder to the pole: the hand sits where the arm's span
+  // reaches x = 0, above the shoulder for the top arm and below for the bottom.
+  const arm = (shoulder: Vec, bendDeg: number, direction: -1 | 1) => {
+    const elbowAngle = 180 - bendDeg
+    const span = Math.sqrt(upperArm ** 2 + forearm ** 2 - 2 * upperArm * forearm * Math.cos((elbowAngle * Math.PI) / 180))
+    const rise = Math.sqrt(Math.max(0, span ** 2 - shoulder.x ** 2))
+    const wrist: Vec = { x: 0, y: shoulder.y + rise * direction }
+    const u = unit(shoulder, wrist)
+    const along = (upperArm ** 2 - forearm ** 2 + span ** 2) / (2 * span)
+    const off = Math.sqrt(Math.max(0, upperArm ** 2 - along ** 2))
+    // The elbow leaves the chord on the side away from the pole.
+    const n: Vec = -u.y >= 0 ? { x: -u.y, y: u.x } : { x: u.y, y: -u.x }
+    const elbow: Vec = { x: shoulder.x + u.x * along + n.x * off, y: shoulder.y + u.y * along + n.y * off }
+    return { elbow, wrist }
+  }
+  const topArm = arm(topShoulder, bend, -1)
+  const bottomArm = arm(bottomShoulder, bend2, 1)
+
+  // Legs: along the body's axis, folded at the waist by the hip angle (toward
+  // the floor), spread by the straddle, tucked when asked.
+  const legDir = rotate(axis, 180 - hipAngle)
+  const leg = (hip: Vec, spread: number, tucked: boolean, bendDeg: number) => {
+    const dir = tucked ? rotate(axis, 150) : rotate(legDir, spread)
+    const knee = add(hip, dir, tucked ? thigh * 0.55 : thigh)
+    const ankle = tucked ? add(knee, rotate(dir, 150), shank * 0.6) : add(knee, rotate(dir, bendDeg), shank)
+    return { knee, ankle }
+  }
+  const straddle = params.straddleDeg ?? 0
+  const topLeg = leg(topHip, -straddle, Boolean(params.tucked), kneeBend)
+  const secondTucked = Boolean(params.tucked) || params.secondLeg !== undefined
+  const bottomLeg = leg(bottomHip, straddle, secondTucked, kneeBend)
+
+  const head = add(S, axis, -PROPORTIONS.earGap * torso)
+  const joints: Record<string, Vec> = {
+    left_shoulder: topShoulder,
+    right_shoulder: bottomShoulder,
+    left_elbow: topArm.elbow,
+    right_elbow: bottomArm.elbow,
+    left_wrist: topArm.wrist,
+    right_wrist: bottomArm.wrist,
+    left_hip: topHip,
+    right_hip: bottomHip,
+    left_knee: topLeg.knee,
+    right_knee: bottomLeg.knee,
+    left_ankle: topLeg.ankle,
+    right_ankle: bottomLeg.ankle,
+    left_ear: add(head, across, -0.08 * torso),
+    right_ear: add(head, across, 0.08 * torso),
+  }
+  const feet: Vec = secondTucked && !params.tucked ? topLeg.ankle : { x: (topLeg.ankle.x + bottomLeg.ankle.x) / 2, y: (topLeg.ankle.y + bottomLeg.ankle.y) / 2 }
+  const lineEnd = params.tucked || secondTucked ? H : feet
+  return {
+    shoulder: S,
+    elbow: topArm.elbow,
+    wrist: topArm.wrist,
+    hip: H,
+    knee: topLeg.knee,
+    ankle: topLeg.ankle,
+    ear: head,
+    torso,
+    joints,
+    truth: {
+      elbowDeg: Math.min(angleAt(topShoulder, topArm.elbow, topArm.wrist), angleAt(bottomShoulder, bottomArm.elbow, bottomArm.wrist)),
+      kneeDeg: Math.min(angleAt(topHip, topLeg.knee, topLeg.ankle), secondTucked ? 180 : angleAt(bottomHip, bottomLeg.knee, bottomLeg.ankle)),
+      hipAngleDeg: angleAt(S, H, feet),
+      hipOffset: 0,
+      leanRatio: 0,
+      shrugRatio: PROPORTIONS.earGap,
+      tiltDeg: (Math.atan2(Math.abs(lineEnd.y - S.y), Math.abs(lineEnd.x - S.x)) * 180) / Math.PI,
+    },
+  }
+}
+
+/** The original layout: a side-on hold on the hands. */
+function buildSupportPose(params: SynthParams, progress = 0): TruePose {
   const torso = params.torso ?? 220
   const facing = params.facing ?? 1
   const bend = at(params.elbowBendDeg, progress, SYNTH_DEFAULTS.elbowBendDeg)
@@ -376,9 +632,14 @@ type JointName = (typeof JOINT_ORDER)[number]
 export function synthesizeClip(params: SynthParams = {}): JudgeInput & { truth: TruePose[] } {
   const frames = params.frames ?? 24
   const duration = params.durationSec ?? 10
-  const torso = params.torso ?? 220
-  const width = params.width ?? 1280
-  const height = params.height ?? 720
+  // A flag spreads both ways from its pole — arms up and down it, body out
+  // from it — so it is drawn smaller to keep a folded or tilted one in shot.
+  const torso = params.torso ?? (params.posture === 'flag' ? 160 : 220)
+  // A handstand is nearly four torsos tall: it is filmed with the phone
+  // upright, and laid out here in a portrait frame so it fits.
+  const portrait = params.posture === 'inverted'
+  const width = params.width ?? (portrait ? 720 : 1280)
+  const height = params.height ?? (portrait ? 1280 : 720)
   const side = params.side ?? 'left'
   const far = side === 'left' ? 'right' : 'left'
   const noise = params.noise ?? SYNTH_DEFAULTS.noise
@@ -399,7 +660,7 @@ export function synthesizeClip(params: SynthParams = {}): JudgeInput & { truth: 
     return next
   }
 
-  const centre: Vec = { x: width * 0.5, y: height * 0.45 }
+  const centre: Vec = portrait ? { x: width * 0.5, y: height * 0.9 } : { x: width * 0.5, y: height * 0.45 }
   const times: number[] = []
   const tracked: { t: number; kps: Kp[] }[] = []
   const truth: TruePose[] = []
@@ -408,7 +669,8 @@ export function synthesizeClip(params: SynthParams = {}): JudgeInput & { truth: 
     const progress = frames === 1 ? 0 : i / (frames - 1)
     const t = Math.round(duration * progress * 1000) / 1000
     times.push(t)
-    const pose = buildTruePose(params, progress)
+    // Built at the size it is drawn at: the noise below is a share of it.
+    const pose = buildTruePose(params.torso === undefined ? { ...params, torso } : params, progress)
     truth.push(pose)
 
     const spread = at(params.bodyWidth, progress, SYNTH_DEFAULTS.bodyWidth) * torso
@@ -435,6 +697,25 @@ export function synthesizeClip(params: SynthParams = {}): JudgeInput & { truth: 
         y: centre.y + rolled.y + jitter.y,
         score: dropped ? 0.05 : Math.max(0, Math.min(1, base)),
       })
+    }
+
+    if (pose.joints) {
+      // Seen from the front: every joint is its own point, all of them in view.
+      for (const [name, point] of Object.entries(pose.joints)) {
+        const jitter = step(name)
+        const rolled = rotate(point, params.rollDeg ?? SYNTH_DEFAULTS.rollDeg)
+        const scoreTrack = params.jointScores?.[name] ?? params.jointScores?.[name.replace(/^(left|right)_/, '')]
+        const base = scoreTrack !== undefined ? at(scoreTrack, progress, 0.9) : at(params.nearScore, progress, SYNTH_DEFAULTS.nearScore)
+        const dropped = dropoutRate > 0 && rand() < dropoutRate
+        kps.push({
+          name,
+          x: centre.x - torso + rolled.x + jitter.x,
+          y: centre.y + rolled.y + jitter.y,
+          score: dropped ? 0.05 : Math.max(0, Math.min(1, base)),
+        })
+      }
+      tracked.push({ t, kps })
+      continue
     }
 
     place('shoulder', pose.shoulder, 'near')
@@ -522,4 +803,48 @@ export const IDEAL: Record<string, SynthParams> = {
     foreshorten: 0.75,
   },
   'full-planche': { elbowBendDeg: -2, hipAngleDeg: 179, kneeBendDeg: 1, hipOffset: 0.01, leanRatio: 0.95 },
+
+  // ——— Front lever: the same skeleton, hung. `leanRatio` here is how far
+  // toward the hips the hands sit — the bar hangs over the body's centre of
+  // mass, further down the body as the lever lengthens.
+  'tuck-front-lever': { posture: 'hang', elbowBendDeg: -2, hipAngleDeg: 70, kneeBendDeg: 110, hipOffset: -0.08, leanRatio: 0.4 },
+  'adv-tuck-front-lever': { posture: 'hang', elbowBendDeg: -2, hipAngleDeg: 95, kneeBendDeg: 95, hipOffset: -0.04, leanRatio: 0.5 },
+  'one-leg-front-lever': {
+    posture: 'hang',
+    elbowBendDeg: -2,
+    hipAngleDeg: 177,
+    kneeBendDeg: 1,
+    hipOffset: -0.02,
+    leanRatio: 0.65,
+    secondLeg: { hipAngleDeg: 80, kneeBendDeg: 110 },
+  },
+  'straddle-front-lever': { posture: 'hang', elbowBendDeg: -2, hipAngleDeg: 177, kneeBendDeg: 1, hipOffset: -0.02, leanRatio: 0.7, foreshorten: 0.72 },
+  'band-front-lever': { posture: 'hang', elbowBendDeg: -2, hipAngleDeg: 175, kneeBendDeg: 1, hipOffset: -0.03, leanRatio: 0.65, foreshorten: 0.75 },
+  'front-lever': { posture: 'hang', elbowBendDeg: -2, hipAngleDeg: 178, kneeBendDeg: 1, hipOffset: -0.01, leanRatio: 0.8 },
+
+  // ——— Handstand: a small unsigned bend is what a straight arm really reads
+  // (real side-on handstands: 160–176°), and shoulders a few degrees short of
+  // a straight line (164–179°).
+  // An incline rather than a handstand: wider than it is tall, so it gets a wider frame.
+  'wall-plank': { posture: 'inverted', elbowBendDeg: 6, shoulderDeg: 150, trunkLeanDeg: 10, hipAngleDeg: 177, kneeBendDeg: 2, width: 1280, height: 1280 },
+  'wall-handstand': { posture: 'inverted', elbowBendDeg: 6, shoulderDeg: 173, hipAngleDeg: 177, kneeBendDeg: 2 },
+  'wall-float': { posture: 'inverted', elbowBendDeg: 6, shoulderDeg: 174, hipAngleDeg: 177, kneeBendDeg: 2 },
+  'freestanding-handstand': { posture: 'inverted', elbowBendDeg: 6, shoulderDeg: 175, hipAngleDeg: 177, kneeBendDeg: 2 },
+
+  // ——— 90° hold: a support hold whose elbows are meant to bend. With a
+  // straight body the hands sit under the centre of mass, well back from the
+  // shoulders, so the forearm leans rather than standing upright.
+  'bent-arm-lean-hold': { elbowBendDeg: 90, hipAngleDeg: 177, kneeBendDeg: 1, hipOffset: 0.03, leanRatio: 0.5 },
+  'elbow-lever': { elbowBendDeg: 95, hipAngleDeg: 176, kneeBendDeg: 1, hipOffset: 0.0, leanRatio: 0.55 },
+  'tuck-ninety-hold': { elbowBendDeg: 90, hipAngleDeg: 70, kneeBendDeg: 110, hipOffset: 0.05, leanRatio: 0.35 },
+  'adv-tuck-ninety-hold': { elbowBendDeg: 90, hipAngleDeg: 95, kneeBendDeg: 95, hipOffset: 0.03, leanRatio: 0.45 },
+  'straddle-ninety-hold': { elbowBendDeg: 90, hipAngleDeg: 178, kneeBendDeg: 1, hipOffset: 0.01, leanRatio: 0.6, foreshorten: 0.72 },
+  'ninety-hold': { elbowBendDeg: 90, hipAngleDeg: 179, kneeBendDeg: 1, hipOffset: 0.01, leanRatio: 0.68 },
+
+  // ——— Human flag, front-on. A clean level flag read 3–5° off level and a
+  // 176° line on a real photo; arms that are straight read 164–179°.
+  'tuck-flag': { posture: 'flag', elbowBendDeg: 6, tiltDeg: 4, tucked: true },
+  'one-leg-flag': { posture: 'flag', elbowBendDeg: 6, tiltDeg: 4, hipAngleDeg: 175, kneeBendDeg: 2, secondLeg: { hipAngleDeg: 80 } },
+  'straddle-flag': { posture: 'flag', elbowBendDeg: 6, tiltDeg: 4, hipAngleDeg: 175, kneeBendDeg: 2, straddleDeg: 22 },
+  'human-flag': { posture: 'flag', elbowBendDeg: 6, tiltDeg: 3, hipAngleDeg: 176, kneeBendDeg: 2 },
 }

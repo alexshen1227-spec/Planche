@@ -76,7 +76,7 @@ describe('the share card', () => {
     const data = shareCardData(state, NOW, { stepId: 'advtuck', via: 'bar' })
     expect(data).toMatchObject({ stepName: 'Advanced Tuck', stepNumber: 5, milestone: { fromName: 'Tuck Planche', fromBest: 20, early: false } })
     const lines = shareCardLines(data)
-    expect(lines.label).toBe('NEW STEP · 5 OF 8')
+    expect(lines.label).toBe('PLANCHE · NEW STEP · 5 OF 8')
     expect(lines.headline).toBe('20s')
     expect(lines.caption).toBe('verified tuck planche · Advanced Tuck opened')
     const early = shareCardLines(shareCardData(state, NOW, { stepId: 'advtuck', via: 'next-shape' }))

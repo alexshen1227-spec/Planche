@@ -2,13 +2,19 @@ import { describe, expect, it } from 'vitest'
 import type { FormIssue } from '../types'
 import {
   chooseSampleCount,
+  coarseElbow,
+  elbowSlack,
   floorEdge,
   judgeTrackedFrames,
   type JudgeInput,
   MATERIAL_TOLERANCE,
+  MAX_FRONT_VIEW_RATIO,
   minimumBadSamplesFor,
   POSE_PROFILES,
+  postureOf,
+  POSTURE_TOLERANCE,
   SHRUG_MIN_RATIO,
+  shoulderOpeningDeg,
 } from './poseForm'
 import { REAL_POSES, realClip } from './realPoses.fixture'
 import { REAL_CLIPS } from './realClips.fixture'
@@ -24,6 +30,17 @@ import { buildTruePose, IDEAL, PROPORTIONS, SYNTH_DEFAULTS, synthesizeClip, type
  */
 
 const GRADED = Object.keys(POSE_PROFILES).filter((id) => !POSE_PROFILES[id].noChecks)
+/**
+ * The positions whose elbows are read finely: side-on support holds on locked
+ * arms — the planche family. Everything the judge does at the scale of a few
+ * degrees (a 10° softening, near and far arms disagreeing) applies to these
+ * and to nothing else; the other postures get the coarser bar their own
+ * photographs measured (POSTURE_TOLERANCE).
+ */
+const FINE_ELBOW = GRADED.filter((id) => POSE_PROFILES[id].minElbowDeg !== undefined && !coarseElbow(POSE_PROFILES[id]))
+const postureFor = (id: string) => postureOf(POSE_PROFILES[id])
+/** A bend well past the bar this position's elbows are named at. */
+const clearBend = (id: string, past = 14) => elbowSlack(POSE_PROFILES[id]) + past
 
 describe('synthetic pose fidelity', () => {
   it('lays out skeletons that really have the requested measurements', () => {
@@ -154,16 +171,57 @@ describe('form judge accuracy — a good rep must read clean', () => {
  */
 function faultScenarios(id: string): { issue: FormIssue; label: string; params: SynthParams }[] {
   const profile = POSE_PROFILES[id]
-  const cases: { issue: FormIssue; label: string; params: SynthParams }[] = [
-    { issue: 'arms', label: 'clearly bent arms', params: { elbowBendDeg: 20 } },
-    {
+  const cases: { issue: FormIssue; label: string; params: SynthParams }[] = []
+  if (profile.minElbowDeg !== undefined) {
+    // Sized to the posture: 20° is plain in a planche, and inside what a
+    // straight arm reads through the model in a handstand or under a bar.
+    cases.push({
+      issue: 'arms',
+      label: 'clearly bent arms',
+      params: { elbowBendDeg: coarseElbow(profile) ? clearBend(id) : 20 },
+    })
+  }
+  if (profile.elbowTargetDeg !== undefined) {
+    const band = profile.elbowBandDeg ?? 0
+    cases.push(
+      {
+        issue: 'angle',
+        label: 'arms nearly straight where a right angle is the hold',
+        params: { elbowBendDeg: 180 - (profile.elbowTargetDeg + band + 22) },
+      },
+      {
+        // With the shoulders only a little past the hands: an arm folded this
+        // far cannot reach a deep lean at all, and the generator would quietly
+        // open it again to make the shape possible.
+        issue: 'angle',
+        label: 'elbows folded far past a right angle',
+        params: { elbowBendDeg: 180 - (profile.elbowTargetDeg - band - 22), leanRatio: 0.3 },
+      },
+    )
+  }
+  if (profile.checkShrug) {
+    cases.push({
       // Below anything head position alone produces on real footage, which is
       // the only size of shrug this metric can honestly claim to see.
       issue: 'shrug',
       label: 'shoulders shrugged to the ears',
       params: { shrugGap: SHRUG_MIN_RATIO - 0.15 },
-    },
-  ]
+    })
+  }
+  if (profile.minShoulderDeg !== undefined) {
+    cases.push({
+      issue: 'shoulders',
+      label: 'shoulders closed, chest pushed through',
+      params: { shoulderDeg: profile.minShoulderDeg - 28 },
+    })
+  }
+  if (profile.maxTiltDeg !== undefined) {
+    cases.push({
+      issue: 'tilt',
+      label: 'body well off level',
+      params: { tiltDeg: profile.maxTiltDeg + 16 },
+    })
+  }
   if (profile.levelTolerance !== undefined) {
     cases.push(
       {
@@ -196,6 +254,17 @@ function faultScenarios(id: string): { issue: FormIssue; label: string; params: 
     })
   }
   return cases
+}
+
+/** Everything wrong at once, in the terms each posture is judged in. */
+function collapsed(id: string): SynthParams {
+  const profile = POSE_PROFILES[id]
+  const posture = postureFor(id)
+  const arms: SynthParams =
+    profile.elbowTargetDeg !== undefined ? { elbowBendDeg: 25 } : { elbowBendDeg: coarseElbow(profile) ? clearBend(id, 20) : 35 }
+  if (posture === 'inverted') return { ...arms, shoulderDeg: 120, hipAngleDeg: 130 }
+  if (posture === 'flag') return { ...arms, tiltDeg: 38, hipAngleDeg: 135 }
+  return { ...arms, hipOffset: -0.45, leanRatio: 0.05 }
 }
 
 describe('form judge accuracy — a real fault must be named', () => {
@@ -374,7 +443,9 @@ describe('form judge — degraded tracking must fail gracefully, not collapse', 
 
   it('still names a gross fault when tracking is poor', () => {
     for (const id of GRADED) {
-      const runs = across(id, { noise: 0.02, elbowBendDeg: 25 }, 20)
+      const profile = POSE_PROFILES[id]
+      if (profile.minElbowDeg === undefined) continue
+      const runs = across(id, { noise: 0.02, elbowBendDeg: coarseElbow(profile) ? clearBend(id) : 25 }, 20)
       expect(`${id} ${rate(runs, (r) => r.issues.includes('arms'))}`).toBe(`${id} 1`)
     }
   })
@@ -404,7 +475,7 @@ describe('form judge — clean time and the one cue that matters', () => {
   })
 
   it('still rejects a visible persistent elbow softening', () => {
-    for (const id of GRADED) {
+    for (const id of FINE_ELBOW) {
       const runs = across(id, { elbowBendDeg: 10, noise: 0.01 }, 20)
       expect(`${id} ${rate(runs, (run) => run.heldIssues.includes('arms'))}`).toBe(`${id} 1`)
     }
@@ -423,9 +494,7 @@ describe('form judge — clean time and the one cue that matters', () => {
   it('scores a textbook hold near the top and a collapsed one far below it', () => {
     for (const id of GRADED) {
       const good = across(id).map((r) => r.score ?? 0)
-      const bad = across(id, { elbowBendDeg: 35, hipOffset: -0.45, leanRatio: 0.05 }).map(
-        (r) => r.score ?? 0,
-      )
+      const bad = across(id, collapsed(id)).map((r) => r.score ?? 0)
       expect(`${id} good=${Math.min(...good) >= 90} bad=${Math.max(...bad) <= 60}`).toBe(
         `${id} good=true bad=true`,
       )
@@ -855,22 +924,36 @@ describe('a phone on its side', () => {
     })),
   })
   const floorFor = { cw: 'left', ccw: 'right', flip: 'top' } as const
+  /**
+   * What the judge reports for each turn. A flag is measured by angles to the
+   * horizontal and by straightness, so one quarter-turn serves either way and
+   * an upside-down picture needs none.
+   */
+  const turnReported = (id: string, how: 'cw' | 'ccw' | 'flip') =>
+    postureFor(id) === 'flag' ? (how === 'flip' ? undefined : 'right') : floorFor[how]
 
   it('gives a turned clip the verdict it gives the same clip upright', () => {
     for (const id of GRADED) {
       const base = IDEAL[id]
-      const shapes: SynthParams[] = [base, { ...base, hipOffset: -0.35 }, { ...base, leanRatio: 0.1 }, { ...base, elbowBendDeg: 25 }]
+      const shapes: SynthParams[] =
+        postureFor(id) === 'flag'
+          ? [base, { ...base, tiltDeg: 30 }, { ...base, elbowBendDeg: clearBend(id) }]
+          : postureFor(id) === 'inverted'
+            ? [base, { ...base, shoulderDeg: 130 }, { ...base, elbowBendDeg: clearBend(id) }]
+            : [base, { ...base, hipOffset: -0.35 }, { ...base, leanRatio: 0.1 }, { ...base, elbowBendDeg: 25 }]
       for (const params of shapes) {
         for (const seed of [1, 2]) {
           const clip = synthesizeClip({ ...params, seed, noise: 0.015 })
           const upright = judgeTrackedFrames(clip, id)
-          expect(upright.frameTurned).toBeUndefined()
+          expect(upright.frameTurned, id).toBeUndefined()
           for (const how of ['cw', 'ccw', 'flip'] as const) {
             const turned = judgeTrackedFrames(turn(clip, how), id)
-            expect(turned.frameTurned, `${id} ${how}`).toBe(floorFor[how])
+            expect(turned.frameTurned, `${id} ${how}`).toBe(turnReported(id, how))
             expect([...turned.issues].sort(), `${id} ${how} seed ${seed}`).toEqual([...upright.issues].sort())
-            expect(turned.leanRatio).toBeCloseTo(upright.leanRatio!, 6)
-            expect(turned.hipOffset).toBeCloseTo(upright.hipOffset!, 6)
+            if (upright.leanRatio !== undefined) expect(turned.leanRatio).toBeCloseTo(upright.leanRatio, 6)
+            if (upright.hipOffset !== undefined) expect(turned.hipOffset).toBeCloseTo(upright.hipOffset, 6)
+            if (upright.tiltDeg !== undefined) expect(turned.tiltDeg).toBeCloseTo(upright.tiltDeg, 6)
+            if (upright.shoulderDeg !== undefined) expect(turned.shoulderDeg).toBeCloseTo(upright.shoulderDeg, 6)
           }
         }
       }
@@ -880,17 +963,18 @@ describe('a phone on its side', () => {
   it('never turns an upright hold, however extreme the shape or the phone tilt', () => {
     for (const id of GRADED) {
       const base = IDEAL[id]
-      const shapes: SynthParams[] = [
-        base,
-        { ...base, leanRatio: 1.2 },
-        { ...base, hipOffset: 0.7, hipAngleDeg: 120 },
-        { ...base, hipOffset: -0.35 },
-      ]
+      const posture = postureFor(id)
+      const shapes: SynthParams[] =
+        posture === 'flag'
+          ? [base, { ...base, tiltDeg: 40 }, { ...base, hipAngleDeg: 130 }]
+          : posture === 'inverted'
+            ? [base, { ...base, shoulderDeg: 125 }, { ...base, hipAngleDeg: 130 }]
+            : [base, { ...base, leanRatio: 1.2 }, { ...base, hipOffset: 0.7, hipAngleDeg: 120 }, { ...base, hipOffset: -0.35 }]
       for (const params of shapes)
         for (const rollDeg of [-15, 0, 15])
           for (const facing of [1, -1] as const) {
             const clip = synthesizeClip({ ...params, rollDeg, facing, seed: 3, noise: 0.025 })
-            expect(floorEdge(clip.tracked), `${id} roll ${rollDeg}`).toBe('bottom')
+            expect(floorEdge(clip.tracked, posture), `${id} roll ${rollDeg}`).toBe('bottom')
           }
     }
   })
@@ -954,5 +1038,252 @@ describe('a phone on its side', () => {
   it('does not decide from a couple of moments', () => {
     const clip = synthesizeClip({ ...IDEAL['tuck-planche'], frames: 2 })
     expect(floorEdge(turn(clip, 'cw').tracked)).toBeNull()
+  })
+
+  // A flag is the one position whose trunk cannot say which way is up: a body
+  // running up the picture is either a phone on its side or an athlete who is
+  // not level. The pole can — both hands are on it.
+  it('reads a flag\'s level from the hands on the pole, not from the trunk', () => {
+    const level = synthesizeClip({ ...IDEAL['human-flag'], seed: 4 })
+    expect(floorEdge(level.tracked, 'flag')).toBe('bottom')
+    expect(floorEdge(turn(level, 'cw').tracked, 'flag')).toBe('right')
+    // The same athlete nowhere near level: the hands still sit one above the
+    // other, so the picture is not turned and the tilt is the athlete's.
+    const upright = synthesizeClip({ ...IDEAL['human-flag'], tiltDeg: 80, seed: 4 })
+    expect(floorEdge(upright.tracked, 'flag')).toBe('bottom')
+    const verdict = judgeTrackedFrames(upright, 'human-flag')
+    expect(verdict.frameTurned).toBeUndefined()
+    expect(verdict.issues).toContain('tilt')
+    expect(verdict.tiltDeg!).toBeGreaterThan(60)
+  })
+
+  it('leaves a flag\'s level unjudged when the hands say nothing about which way is up', () => {
+    // Rolled 45°, the line between the hands is neither upright nor flat.
+    const clip = synthesizeClip({ ...IDEAL['human-flag'], rollDeg: 45, seed: 2 })
+    expect(floorEdge(clip.tracked, 'flag')).toBeNull()
+    const verdict = judgeTrackedFrames(clip, 'human-flag')
+    expect(verdict.tiltDeg).toBeUndefined()
+    expect(verdict.issues).not.toContain('tilt')
+    expect(verdict.unseen).toContain('level line')
+  })
+})
+
+describe('positions that are not a side-on support hold', () => {
+  it('measures a shoulder angle on arms of any plausible length', () => {
+    // The limb-ratio gate that suits elbows and knees threw away every
+    // well-formed shoulder: a trunk is nearly twice an upper arm.
+    const kp = (x: number, y: number) => ({ name: 'p', x, y, score: 1 })
+    const shoulder = kp(0, 0)
+    const hip = kp(0, -100)
+    for (const upperArm of [30, 42, 59, 80]) {
+      expect(shoulderOpeningDeg(kp(0, upperArm), shoulder, hip, 100)).toBeCloseTo(180, 5)
+      expect(shoulderOpeningDeg(kp(upperArm, 0), shoulder, hip, 100)).toBeCloseTo(90, 5)
+    }
+    // An "arm" a tenth of the trunk, or longer than it, is not an arm.
+    expect(shoulderOpeningDeg(kp(0, 10), shoulder, hip, 100)).toBeUndefined()
+    expect(shoulderOpeningDeg(kp(0, 140), shoulder, hip, 100)).toBeUndefined()
+  })
+
+  it('never names a bend inside what a straight arm reads in that posture', () => {
+    for (const id of GRADED) {
+      const profile = POSE_PROFILES[id]
+      if (!coarseElbow(profile) || profile.minElbowDeg === undefined) continue
+      // Eight degrees inside the bar, at measured landmark noise.
+      const runs = across(id, { elbowBendDeg: elbowSlack(profile) - 8, noise: 0.015 }, 20)
+      expect(`${id} accused=${rate(runs, (r) => r.issues.includes('arms'))}`).toBe(`${id} accused=0`)
+    }
+  })
+
+  it('says the elbows were read coarsely rather than claiming a lock', () => {
+    for (const id of ['front-lever', 'freestanding-handstand', 'human-flag']) {
+      const verdict = judgeTrackedFrames(synthesizeClip({ ...IDEAL[id], seed: 2 }), id)
+      expect(verdict.issues).toEqual([])
+      expect(verdict.good.join(' | ')).not.toMatch(/Elbows locked/)
+      expect(verdict.details.join(' ')).toMatch(/read coarsely/)
+    }
+  })
+
+  it('names a 90° hold\'s elbows on either side of the angle, and neither inside the band', () => {
+    for (const id of GRADED.filter((candidate) => POSE_PROFILES[candidate].elbowTargetDeg !== undefined)) {
+      const profile = POSE_PROFILES[id]
+      const band = profile.elbowBandDeg ?? 0
+      for (const off of [-(band - 6), 0, band - 6]) {
+        const runs = across(id, { elbowBendDeg: 180 - (profile.elbowTargetDeg! + off), noise: 0.015 })
+        expect(`${id} ${off}: ${rate(runs, (r) => r.issues.includes('angle'))}`).toBe(`${id} ${off}: 0`)
+      }
+      // A 90° hold is never accused of "bent arms" for bending them.
+      expect(across(id).some((r) => r.issues.includes('arms'))).toBe(false)
+    }
+  })
+
+  it('refuses each posture\'s wrong view, and a flag filmed at an angle', () => {
+    for (const id of GRADED) {
+      const posture = postureFor(id)
+      const wrong = judge(id, { bodyWidth: posture === 'flag' ? 0.12 : 0.75 })
+      expect(wrong.ok, id).toBe(false)
+      expect(wrong.reason, id).toMatch(posture === 'flag' ? /not front-on/ : /side-on/)
+    }
+    const oblique = judge('human-flag', { bodyWidth: MAX_FRONT_VIEW_RATIO + 0.1 })
+    expect(oblique.ok).toBe(false)
+    expect(oblique.reason).toMatch(/at an angle/)
+    // A handstand from behind is narrower than a planche filmed three-quarter:
+    // its own, lower bar refuses what the general one would let through.
+    const fromBehind = judge('freestanding-handstand', { bodyWidth: 0.36 })
+    expect(fromBehind.ok).toBe(false)
+    expect(judge('tuck-planche', { bodyWidth: 0.36 }).ok).toBe(true)
+  })
+
+  it('needs both arms and both legs of a flag: one seen limb cannot stand in for the other', () => {
+    const noTopArm = judge('human-flag', { jointScores: { left_elbow: 0.1 } })
+    expect(noTopArm.ok).toBe(true)
+    expect(noTopArm.unseen).toContain('elbows')
+    expect(noTopArm.issues).not.toContain('arms')
+    const noLeg = judge('human-flag', { jointScores: { right_ankle: 0.1 } })
+    expect(noLeg.unseen).toEqual(expect.arrayContaining(['knees', 'hips']))
+  })
+
+  it('takes the more bent of a flag\'s two arms', () => {
+    const verdict = judge('human-flag', { secondArm: { elbowBendDeg: clearBend('human-flag') } })
+    expect(verdict.issues).toContain('arms')
+  })
+})
+
+describe('real photographs of handstands, flags and a front lever', () => {
+  const verdictOf = (key: keyof typeof REAL_POSES, id: string, options = {}) =>
+    judgeTrackedFrames(realClip(key, options), id)
+
+  it('passes straight side-on handstands, with the shoulders measured', () => {
+    for (const key of ['handstandStraight', 'handstandOnWedge'] as const) {
+      const verdict = verdictOf(key, 'freestanding-handstand')
+      expect(`${key} ok=${verdict.ok} issues=${verdict.issues} unseen=${verdict.unseen}`).toBe(`${key} ok=true issues= unseen=`)
+      expect(verdict.shoulderDeg!).toBeGreaterThan(160)
+      expect(verdict.score!).toBeGreaterThanOrEqual(90)
+    }
+  })
+
+  it('names the closed shoulders of an arched handstand, and not its straight arms', () => {
+    const verdict = verdictOf('handstandArched', 'freestanding-handstand')
+    expect(verdict.ok).toBe(true)
+    expect(verdict.issues).toContain('shoulders')
+    expect(verdict.issues).not.toContain('arms')
+    expect(verdict.shoulderDeg!).toBeLessThan(130)
+  })
+
+  it('does not accuse a silhouette of bent arms it cannot see', () => {
+    // The arms merge with the rocks behind them. The model still answers, with
+    // full confidence, at 155° — inside what a straight arm reads upside down.
+    const verdict = verdictOf('handstandSilhouette', 'freestanding-handstand')
+    expect(verdict.ok).toBe(true)
+    expect(verdict.issues).not.toContain('arms')
+  })
+
+  it('refuses a handstand photographed from behind or from the front', () => {
+    for (const key of ['handstandFromBehind', 'handstandStraddleFront'] as const) {
+      const verdict = verdictOf(key, 'freestanding-handstand')
+      expect(verdict.ok, key).toBe(false)
+      expect(verdict.reason, key).toMatch(/not side-on enough/)
+    }
+  })
+
+  it('passes real level flags filmed from the front', () => {
+    for (const key of ['flagLevel', 'flagOnFrame', 'flagOnBars', 'flagSlightlyLow', 'flagFeetHigh'] as const) {
+      const verdict = verdictOf(key, 'human-flag')
+      expect(`${key} ok=${verdict.ok} issues=${verdict.issues} unseen=${verdict.unseen}`).toBe(`${key} ok=true issues= unseen=`)
+      expect(verdict.tiltDeg!).toBeLessThan(16)
+      // Clear of the bars by more than tracker jitter moves them: these are
+      // straight arms and straight legs, and the lowest of them read 160° and 168°.
+      const profile = POSE_PROFILES['human-flag']
+      expect(verdict.elbowDeg! - (profile.minElbowDeg! - elbowSlack(profile)), `${key} elbows`).toBeGreaterThan(3)
+      expect(verdict.kneeDeg! - (profile.minKneeDeg! - POSTURE_TOLERANCE.flag.kneeDeg), `${key} knees`).toBeGreaterThan(6)
+    }
+    // The textbook one reads level to within a few degrees.
+    expect(verdictOf('flagLevel', 'human-flag').tiltDeg!).toBeLessThan(8)
+  })
+
+  it('names a flag pointing well below level', () => {
+    const verdict = verdictOf('flagAngledDown', 'human-flag')
+    expect(verdict.issues).toEqual(['tilt'])
+    expect(verdict.tiltDeg!).toBeGreaterThan(30)
+  })
+
+  it('never reads a body running up a pole as a level flag', () => {
+    // The fault this fixture found: the trunk was vertical, so the picture was
+    // assumed to be on its side, turned, and scored 100 for being level.
+    const verdict = verdictOf('poleHoldUpright', 'human-flag')
+    expect(verdict.frameTurned).toBeUndefined()
+    expect(verdict.issues).toContain('tilt')
+    expect(verdict.tiltDeg!).toBeGreaterThan(75)
+  })
+
+  it('names bent arms a flag really has — one soft, one pair folded', () => {
+    const soft = verdictOf('flagBentTopArm', 'human-flag')
+    expect(soft.issues).toEqual(['arms'])
+    const folded = verdictOf('flagFoldedArms', 'human-flag')
+    expect(folded.issues).toContain('arms')
+    expect(folded.elbowDeg!).toBeLessThan(90)
+  })
+
+  it('refuses a flag photographed at an angle instead of calling its legs bent', () => {
+    const verdict = verdictOf('flagOblique', 'human-flag')
+    expect(verdict.ok).toBe(false)
+    expect(verdict.reason).toMatch(/at an angle/)
+  })
+
+  it('reads a real level flag the same with the picture on its side', () => {
+    const upright = verdictOf('flagLevel', 'human-flag')
+    const clip = realClip('flagLevel')
+    const onItsSide: JudgeInput = {
+      ...clip,
+      width: clip.height,
+      height: clip.width,
+      tracked: clip.tracked.map((frame) => ({ t: frame.t, kps: frame.kps.map((k) => ({ ...k, x: clip.height - k.y, y: k.x })) })),
+    }
+    const turned = judgeTrackedFrames(onItsSide, 'human-flag')
+    expect(turned.frameTurned).toBe('right')
+    expect(turned.issues).toEqual(upright.issues)
+    expect(turned.tiltDeg!).toBeCloseTo(upright.tiltDeg!, 6)
+  })
+
+  it('does not accuse a real straight-armed front lever of bent arms or bent knees', () => {
+    // Hung and face up, the model sets the shoulders on the chest and splits
+    // the hips: these straight arms read 158° and these straight legs 168°.
+    // The planche's 8° and 11° deadbands called both a fault.
+    const verdict = verdictOf('frontLeverRings', 'front-lever')
+    expect(`ok=${verdict.ok} issues=${verdict.issues} unseen=${verdict.unseen}`).toBe('ok=true issues= unseen=')
+    expect(Math.abs(verdict.hipOffset!)).toBeLessThan(0.15)
+    expect(verdict.elbowDeg!).toBeLessThan(165)
+    expect(verdict.elbowDeg!).toBeGreaterThan(180 - POSTURE_TOLERANCE.hang.elbowDeg)
+  })
+
+  it('refuses front levers photographed from a three-quarter angle or from below', () => {
+    for (const key of ['frontLeverThreeQuarter', 'frontLeverFromBelow'] as const) {
+      const verdict = verdictOf(key, 'front-lever')
+      expect(verdict.ok, key).toBe(false)
+      expect(verdict.reason, key).toMatch(/not fully side-on/)
+    }
+  })
+
+  it('holds every one of those verdicts when the tracker will not sit still', () => {
+    const expected: [keyof typeof REAL_POSES, string, FormIssue[]][] = [
+      ['handstandStraight', 'freestanding-handstand', []],
+      ['handstandOnWedge', 'freestanding-handstand', []],
+      ['flagLevel', 'human-flag', []],
+      ['flagOnFrame', 'human-flag', []],
+      ['flagOnBars', 'human-flag', []],
+      ['flagFeetHigh', 'human-flag', []],
+      ['flagBentTopArm', 'human-flag', ['arms']],
+      ['poleHoldUpright', 'human-flag', ['tilt']],
+      ['frontLeverRings', 'front-lever', []],
+    ]
+    for (const [key, id, issues] of expected) {
+      for (let seed = 1; seed <= 12; seed++) {
+        const verdict = verdictOf(key, id, { jitter: 0.015, seed })
+        // Nothing may quietly go unseen either: feet held together once read
+        // as one side's joints colliding with the other's, and a real flag
+        // lost its legs on a third of noisy runs.
+        const read = verdict.ok ? `${verdict.issues.join('+')} unseen:${verdict.unseen.join('+')}` : 'refused'
+        expect(`${key} seed ${seed}: ${read}`).toBe(`${key} seed ${seed}: ${issues.join('+')} unseen:`)
+      }
+    }
   })
 })

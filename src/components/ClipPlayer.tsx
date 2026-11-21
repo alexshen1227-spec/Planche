@@ -298,7 +298,7 @@ export function ClipPlayer({
               </button>
               <a
                 href={state.url}
-                download={`planche-form-${clipKey.replace(/[^a-z0-9-]/gi, '-')}.${state.blob.type.includes('mp4') ? 'mp4' : 'webm'}`}
+                download={`form-clip-${clipKey.replace(/[^a-z0-9-]/gi, '-')}.${state.blob.type.includes('mp4') ? 'mp4' : 'webm'}`}
                 className="rounded-md border border-white/20 px-2 py-1 font-semibold text-white"
               >
                 Download

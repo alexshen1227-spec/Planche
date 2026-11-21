@@ -119,6 +119,54 @@ const RULES: Rule[] = [
     pattern: /\b(next (one|step)|everything after (them|it)) arrives? faster\b|\bfastest way to (stall|progress|improve)\b|\bshortest path\b|\bsingle most (important|useful)\b|\bthe best dynamic\b/i,
     why: 'Progression-specific advice is CONSENSUS at best; it must not be phrased as a measured result.',
   },
+  {
+    id: 'camera-counts-reps',
+    // The camera (or "it", of the camera) as the one counting — not an
+    // instruction to the athlete to count their own reps on the replay.
+    pattern: /\b(camera|judge|checker|model|app)\b[^.,;:]{0,30}\bcount(s|ed|ing)?\b.{0,30}\breps?\b|\bit counts\b.{0,20}\breps?\b/i,
+    why: 'Ledger §13: no camera rep count exists — at three samples a second the judge cannot vouch for the bottom of a rep. The replay review is the evidence.',
+    unlessNegated: true,
+  },
+  {
+    id: 'no-research-absolute',
+    pattern: /\b(there is|there's|there are) no (research|stud(y|ies)|evidence)\b|\bno research (covers|exists)\b|\b(has|have) never been studied\b/i,
+    why: 'Ledger §13.10 rule 17 (and the 2026-10-05 audit): a search that found nothing is "none was found", never "there is no research".',
+  },
+  {
+    id: 'research-shows',
+    pattern: /\b(research|science|EMG|studies) (shows?|proves?|confirms?|says?)\b/i,
+    why: 'Ledger §13.10 rule 17: no study of these holds or push-ups was found, so nothing may be introduced as what research shows.',
+    unlessNegated: true,
+  },
+  {
+    id: 'gear-prevents-pain',
+    pattern: /\b(parallettes|wrist wraps?|wraps|braces?|blocks|push-up handles)\b.{0,50}\b(prevents?|protects?)\b/i,
+    why: 'Ledger §13.10 rule 23: the one handstand survey found no association between wrist pain and warming up, braces or parallettes.',
+    unlessNegated: true,
+  },
+  {
+    id: 'inversion-health-claims',
+    pattern: /\b(handstands?|inversions?|being upside down)\b.{0,50}\b(improves? (your |the )?(circulation|brain|balance|blood flow)|(damages?|harms?) (your |the )?eyes)\b/i,
+    why: 'Ledger §13.10 rule 26: no study links handstand practice to eye harm or to any health benefit.',
+    unlessNegated: true,
+  },
+  {
+    id: 'pose-accuracy-figures',
+    pattern: /\b(PDJ|PCK)\b|\b\d{2}(\.\d)?\s?% (accurate|accuracy)\b/i,
+    why: 'Ledger §13.10 rule 19: no accuracy figure exists for inverted, hanging or flag poses; the vendor numbers are another task on private data.',
+  },
+  {
+    id: 'maintenance-proven',
+    pattern: /\b(one|a single) set (a|per) week\b.{0,50}\b(maintains?|keeps?|is enough)\b/i,
+    why: 'Ledger §13.10 rule 21: no maintenance dose has been measured for any of these skills.',
+    unlessNegated: true,
+  },
+  {
+    id: 'skill-timelines',
+    pattern: /\b(front lever|human flag|handstand|90° hold)\b.{0,60}\b(takes?|in)\b.{0,12}\b\d+\s*(weeks?|months?)\b/i,
+    why: 'Ledger §13: no source gives a defensible timeline for the front lever, flag, handstand or 90° hold; do not quote one.',
+    unlessNegated: true,
+  },
 ]
 
 const NEGATION = /\b(no|not|never|nor|none|nobody|neither|without)\b|n['’]t\b/i
@@ -175,6 +223,29 @@ function copyIn(file: string): string[] {
   return out.filter((text) => /[a-z]{3,} [a-z]{2,} [a-z]{2,}/i.test(text))
 }
 
+describe('source hygiene', () => {
+  it('has no stray control characters in any source file', () => {
+    // A backspace once landed inside a regular expression: a shell had eaten
+    // the backslash of a "\b", and the pattern silently stopped matching.
+    // Nothing a person can see in a diff, so it is checked here.
+    const offenders: string[] = []
+    const walk = (dir: string): string[] =>
+      readdirSync(dir).flatMap((name) => {
+        const path = join(dir, name)
+        if (statSync(path).isDirectory()) return walk(path)
+        return /\.(tsx?|css)$/.test(name) ? [path] : []
+      })
+    for (const file of walk(SRC)) {
+      const text = readFileSync(file, 'utf8')
+      // Tab, line feed and carriage return are the only control characters source needs.
+      // eslint-disable-next-line no-control-regex
+      const found = text.match(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/)
+      if (found) offenders.push(`${relative(SRC, file)}: U+${found[0].charCodeAt(0).toString(16).padStart(4, '0')}`)
+    }
+    expect(offenders).toEqual([])
+  })
+})
+
 describe('claims the app must not make', () => {
   it('appear nowhere in the text the app can show', () => {
     const files = sourceFiles(SRC)
@@ -215,6 +286,16 @@ describe('claims the app must not make', () => {
       'Take a Deload Flow week at roughly half volume. Strength is expressed after recovery, not during accumulation.',
       'Spikes like this are where progress stalls and joints complain.',
       'Raises body temperature and heart rate so everything that follows is safer.',
+      'It cannot see whether a toe is still touching the wall — you confirm the free part — and for push-ups it counts the reps it can see reach the bottom and lock out.',
+      'The camera counted eight reps reaching the bottom.',
+      'A front lever takes 6 months for most people.',
+      'There is no research on the human flag.',
+      'The 90° hold has never been studied.',
+      'Research shows the front lever builds the lats better than rows.',
+      'Parallettes prevent wrist pain in handstands.',
+      'Handstands improve circulation and balance.',
+      'The pose model is 96.6% accurate on fitness poses.',
+      'One set a week maintains a front lever.',
     ]
     for (const sentence of removed) {
       expect(breaches(sentence).length, sentence).toBeGreaterThan(0)
@@ -232,6 +313,13 @@ describe('claims the app must not make', () => {
       'Strength arrives faster than the structures carrying it.',
       'Gone: a warm-up that “protects” the wrists and wrist pain as “the #1 reason people quit”.',
       'No routine can keep you injury-free, so it no longer promises to.',
+      'The camera does not count reps — the replay does.',
+      'It does not count push-up reps: those sets are filmed so that you can check them on the replay.',
+      'No source gives a timeline for the human flag, so none is quoted: nobody can say it takes 6 months.',
+      'Thinly sourced: no research on it was found and no named coach publishes hold times for it, so every bar here is this app’s own design.',
+      'Wrist pain is common among people who practise handstands, and no study has shown that warming up, wraps or parallettes prevent it.',
+      'No study of the hold was found.',
+      'No maintenance dose has been measured for these skills, so a couple of sets is this app’s choice.',
     ]
     for (const sentence of allowed) {
       expect(breaches(sentence).map((rule) => rule.id), sentence).toEqual([])

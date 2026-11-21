@@ -319,7 +319,7 @@ export async function exportProblemReports(): Promise<number> {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `planche-lab-problem-reports-${dayKey(Date.now())}.json`
+  anchor.download = `calisthenics-lab-problem-reports-${dayKey(Date.now())}.json`
   anchor.rel = 'noopener'
   anchor.style.display = 'none'
   document.body.appendChild(anchor)

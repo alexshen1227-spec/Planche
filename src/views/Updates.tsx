@@ -2,6 +2,7 @@ import type { Tab } from '../types'
 import { CHANGELOG, AREA_LABEL, type ChangeEntry } from '../data/changelog'
 import { fmtDate } from '../lib/time'
 import { Icon } from '../components/Icon'
+import { APP_NAME } from '../data/app'
 
 const AREA_STYLE: Record<ChangeEntry['area'], string> = {
   camera: 'border-accent/30 bg-accent-soft text-accent-text',
@@ -27,7 +28,7 @@ export function Updates({ go }: { go: (t: Tab) => void }) {
 
       <h1 className="font-display text-[28px] font-bold leading-tight text-ink">Update log</h1>
       <p className="mt-1 max-w-2xl text-[14px] leading-relaxed text-ink2">
-        Everything that has changed in Planche Lab, newest first. Your training data carries across every one of
+        Everything that has changed in {APP_NAME}, newest first. Your training data carries across every one of
         these — sessions, records and clips are never reset by an update.
       </p>
 

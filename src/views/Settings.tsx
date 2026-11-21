@@ -10,10 +10,15 @@ import {
   useStore,
   type NormalizeReport,
 } from '../lib/store'
-import { STEPS, STEP_BY_ID } from '../data/progressions'
-import { defaultSurface, EQUIPMENT_OPTIONS, TRAINING_SURFACES } from '../data/equipment'
+import { STEP_BY_ID } from '../data/progressions'
+import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
+import { activeSkills, stepOfSkill } from '../lib/skills'
+import { AddSkill } from '../components/AddSkill'
+import { APP_NAME } from '../data/app'
+import { defaultSurface, EQUIPMENT_OPTIONS, equipmentLabel, TRAINING_SURFACES } from '../data/equipment'
 import { exportData, readImportFile, validateImport } from '../lib/exportImport'
 import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
+import { INSTALL_STEPS, installState } from '../lib/install'
 import { listClips, clearAllClips, CLIP_RETENTION_DAYS } from '../lib/clips'
 import {
   clearAllProblemReports,
@@ -269,6 +274,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   const [injuryNote, setInjuryNote] = useState(state.profile.injuryNote ?? '')
   const [birthYear, setBirthYear] = useState(state.profile.birthYear?.toString() ?? '')
   const [storage, setStorage] = useState<StorageInfo | null>(null)
+  const installed = installState()
   const [calibrating, setCalibrating] = useState(false)
   const [measuringWalk, setMeasuringWalk] = useState(false)
   const [checkingDevice, setCheckingDevice] = useState(false)
@@ -326,6 +332,16 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   }, [state.name, state.profile.injuryNote, state.profile.birthYear])
 
   const set = (patch: Partial<SettingsShape>) => dispatch({ type: 'SET_SETTINGS', patch })
+  // The skills trained, in priority order — the first leads every session.
+  const skillOrder = activeSkills(state)
+  const [addingSkill, setAddingSkill] = useState(false)
+  const moveSkill = (index: number, by: -1 | 1) => {
+    const to = index + by
+    if (to < 0 || to >= skillOrder.length) return
+    const next = [...skillOrder]
+    ;[next[index], next[to]] = [next[to], next[index]]
+    dispatch({ type: 'SET_SKILLS', skills: next })
+  }
   const toggleEquipment = (id: EquipmentId) => {
     const selected = state.profile.equipment.includes(id)
     const changed = selected ? state.profile.equipment.filter((item) => item !== id) : [...state.profile.equipment, id]
@@ -490,28 +506,71 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           </button>
         </Row>
         <Row
-          label="Current step"
-          hint="Change it from the Path tab. Pick any available step, or open a locked one to skip ahead after the safety check."
+          label="Skills"
+          hint="The order is the priority: the first leads every session and the rest rotate in behind it. Dropping a skill keeps its progress — it comes back where you left it. Steps and goals are changed on the Path tab."
+          stack
         >
-          <span className="rounded-full border border-line bg-raised px-3.5 py-1.5 text-[13.5px] font-medium text-ink">
-            {STEP_BY_ID[state.stepId].name}
-          </span>
-        </Row>
-        <Row label="Goal skill" hint="Keeps the app focused on where you actually want the progression to lead.">
-          <select
-            value={state.profile.goalStepId ?? 'straddle'}
-            aria-label="Goal skill"
-            onChange={(event) =>
-              dispatch({ type: 'SET_PROFILE', patch: { goalStepId: event.target.value as typeof state.stepId } })
-            }
-            className="rounded-xl border border-line bg-raised px-3 py-2 text-[13.5px] text-ink outline-none focus:border-accent"
-          >
-            {STEPS.filter((step) => step.order >= 3).map((step) => (
-              <option key={step.id} value={step.id}>
-                {step.name}
-              </option>
-            ))}
-          </select>
+          <ol className="space-y-2">
+            {skillOrder.map((skill, index) => {
+              const def = SKILLS[skill]
+              const step = STEP_BY_ID[stepOfSkill(state, skill)]
+              const waiting = missingKit(skill, state.profile.equipment)
+              return (
+                <li key={skill} className="flex items-center gap-2 rounded-xl border border-line bg-raised px-3 py-2">
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-surface text-[11.5px] font-bold text-ink2 tnum">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13.5px] font-semibold text-ink">
+                      {def.name}
+                      {index === 0 ? <span className="ml-1.5 text-[11px] font-medium text-accent-text">main</span> : null}
+                    </div>
+                    <div className="truncate text-[12px] text-ink3">
+                      {waiting.length
+                        ? `Waiting for ${waiting.map((options) => options.map((id) => equipmentLabel(id)).join(' or ')).join(', and ')}`
+                        : `On ${step.name}`}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => moveSkill(index, -1)}
+                    disabled={index === 0}
+                    aria-label={`Move ${def.name} up`}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
+                  >
+                    <Icon name="chevronR" size={14} className="-rotate-90" />
+                  </button>
+                  <button
+                    onClick={() => moveSkill(index, 1)}
+                    disabled={index === skillOrder.length - 1}
+                    aria-label={`Move ${def.name} down`}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
+                  >
+                    <Icon name="chevronR" size={14} className="rotate-90" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      dispatch({ type: 'SET_SKILLS', skills: skillOrder.filter((id) => id !== skill) })
+                      pushToast(`${def.name} is off your list. Its progress is kept.`, 'success', 5000)
+                    }}
+                    disabled={skillOrder.length === 1}
+                    aria-label={`Stop training ${def.name}`}
+                    title={skillOrder.length === 1 ? 'At least one skill stays on the list' : undefined}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
+                  >
+                    <Icon name="x" size={14} />
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+          {skillOrder.length < SKILL_LIST.length ? (
+            <button
+              onClick={() => setAddingSkill(true)}
+              className="mt-2 inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-dashed border-line-strong px-3.5 py-2 text-[13px] font-semibold text-ink2 hover:text-ink"
+            >
+              <Icon name="plus" size={14} /> Add a skill
+            </button>
+          ) : null}
         </Row>
         <Row label="Weekly session goal" hint="Drives the streak. Coaching sources mostly land on three a week for straight-arm work; with total work equal, frequency makes little measured difference — pick what you will keep.">
           <Stepper
@@ -549,8 +608,8 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           </div>
         </Row>
         <Row
-          label="Default planche surface"
-          hint="New planche sets and records are tagged separately; you can still switch it during a session."
+          label="Default surface"
+          hint="For holds done on the hands — the planche line and the 90° hold. Sets and records are tagged per surface; you can still switch it during a session."
         >
           <div className="flex overflow-hidden rounded-xl border border-line">
             {TRAINING_SURFACES.map((item) => {
@@ -723,7 +782,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </Row>
         <Row
           label="Film main holds"
-          hint="Records a short clip of planche holds for form review. A filmed check is required for future progression unlocks; sets still save as PRs when filming is off. Clips stay on this device."
+          hint="Records a short clip of your main holds, and of push-up sets on a rung, for form review. A filmed check is required for progression unlocks; sets still save as PRs when filming is off. Clips stay on this device."
         >
           <Toggle label="Film main holds" on={s.recordForm} onChange={(v) => set({ recordForm: v })} />
         </Row>
@@ -844,7 +903,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           hint={
             s.phoneWithinReach
               ? 'Your calibrated delay, now used for every timed hold including main Path holds.'
-              : `Your calibrated delay for regular holds, including Planche Lean. Main Path holds use ${(s.walkBackSec ?? PROGRESSION_STOP_LATENCY_SEC).toFixed(1)}s instead — see the setting above.`
+              : `Your calibrated delay for regular holds — ones you stop with the phone in reach, such as a lean. Main Path holds use ${(s.walkBackSec ?? PROGRESSION_STOP_LATENCY_SEC).toFixed(1)}s instead — see the setting above.`
           }
         >
           <button
@@ -1018,6 +1077,22 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           )}
         </Row>
         <Row
+          label="Install on this device"
+          hint={
+            installed === 'installed'
+              ? 'Installed — it opens full-screen and works without signal.'
+              : `${INSTALL_STEPS[installed]} An installed app opens full-screen and works without signal${
+                  installed === 'ios-tab'
+                    ? ', and Safari’s clean-up of sites not opened for about a week does not apply to it. It starts empty — export a backup here first, then choose “I have a backup file” on its first screen. Afterwards, run Check this phone once.'
+                    : '.'
+                }`
+          }
+        >
+          <span className={`text-[13px] font-semibold ${installed === 'installed' ? 'text-ok-text' : 'text-ink3'}`}>
+            {installed === 'installed' ? '✓ Installed' : 'In a browser tab'}
+          </span>
+        </Row>
+        <Row
           label="Export backup"
           hint={`Everything — sessions, records, achievements — as a JSON file. Last export: ${state.lastBackupAt ? fmtDate(state.lastBackupAt) : 'never'}.`}
         >
@@ -1069,7 +1144,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 const url = URL.createObjectURL(new Blob([quarantine.raw], { type: 'application/json' }))
                 const a = document.createElement('a')
                 a.href = url
-                a.download = 'planche-lab-unreadable-data.json'
+                a.download = 'calisthenics-lab-unreadable-data.json'
                 document.body.appendChild(a)
                 a.click()
                 a.remove()
@@ -1104,8 +1179,9 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       <SectionTitle>About</SectionTitle>
       <div className="rounded-2xl border border-line bg-surface p-5 text-[13.5px] leading-relaxed text-ink2 shadow-card">
         <p>
-          <span className="font-display font-semibold text-ink">Planche Lab</span> · a local-first training companion
-          for learning the planche. All data lives in your browser — nothing leaves your machine.
+          <span className="font-display font-semibold text-ink">{APP_NAME}</span> · a local-first training companion
+          for the planche, front lever, handstand push-up, 90° hold and human flag. All data lives in your browser —
+          nothing leaves your machine.
         </p>
         <p className="mt-2">
           Progressions follow common gymnastics-strength practice (leans → frog → tuck → advanced tuck → one-leg →
@@ -1190,6 +1266,9 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             setLastCheck(readDeviceCheck())
           }}
         />
+      </Modal>
+      <Modal open={addingSkill} onClose={() => setAddingSkill(false)} label="Add a skill" wide>
+        {addingSkill ? <AddSkill onClose={() => setAddingSkill(false)} onAdded={() => setAddingSkill(false)} /> : null}
       </Modal>
       <Modal open={measuringWalk} onClose={() => setMeasuringWalk(false)} label="Measure your walk back">
         <WalkBackCalibrator

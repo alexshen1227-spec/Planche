@@ -1,8 +1,9 @@
 import type { AppState, PR, Session, SessionEvents, StepId, TrainingSurface } from '../types'
 import { ACHIEVEMENTS } from '../data/achievements'
 import { STEP_BY_ID, stepAfter } from '../data/progressions'
-import { isQualifyingSet, qualifyingProgress } from './progression'
+import { barMet, isQualifyingSet } from './progression'
 import { earlyPromotionEarned } from './bridge'
+import { trackOf, trackedSkills, withTrack } from './skills'
 
 /**
  * Pure state transition for saving a session: updates history and PRs,
@@ -51,9 +52,9 @@ export function applySession(state: AppState, session: Session): { next: AppStat
     }
     if (nextPr.bySurface && Object.keys(nextPr.bySurface).length === 0) delete nextPr.bySurface
     prs[exId] = nextPr
-    // Old logs and non-planche exercises have no surface. Preserve the
-    // existing event behavior for them; surface-tagged records get one clear
-    // floor/parallettes celebration instead of a duplicate overall one.
+    // Old logs and exercises without a hand support have no surface. Preserve
+    // the existing event behavior for them; surface-tagged records get one
+    // clear floor/parallettes celebration instead of a duplicate overall one.
     if (overallImproved && !surfacedEvent) {
       events.prs.push({ exerciseId: exId, value: best.overall, previous: current?.value })
     }
@@ -70,28 +71,34 @@ export function applySession(state: AppState, session: Session): { next: AppStat
   // shape itself — its opening dose held with full evidence while the current
   // hold is past half its bar (see lib/bridge). The bar is a convention; the
   // next shape held clean is the readiness it stands in for.
-  const unlocked = [...state.unlocked]
-  let stepId: StepId = state.stepId
-  let unlockedStep: StepId | undefined
-  let unlockedVia: SessionEvents['unlockedVia']
-  for (let guard = 0; guard < 10; guard++) {
-    const cur = STEP_BY_ID[stepId]
-    const following = stepAfter(stepId)
-    if (!following) break
-    // Saving unrelated work must not snap an athlete back up after they
-    // deliberately selected a lower unlocked step.
-    const showsCurrent = session.sets.some((set) => isQualifyingSet(set, cur.keyExerciseId))
-    const showsNext = session.sets.some((set) => isQualifyingSet(set, following.keyExerciseId))
-    if (session.workoutName === 'Quick Log' || (!showsCurrent && !showsNext)) break
-    const qualified = qualifyingProgress(state, stepId, [session])
-    const viaBar = showsCurrent && qualified.value >= cur.unlockSec
-    if (!viaBar && !earlyPromotionEarned(state, stepId, [session])) break
-    if (!unlocked.includes(following.id)) unlocked.push(following.id)
-    stepId = following.id
-    unlockedStep = following.id
-    unlockedVia = viaBar ? 'bar' : 'next-shape'
+  //
+  // Every skill the athlete has a road on is walked the same way, each from
+  // its own step: key exercises are unique to a road, so a session's holds can
+  // only ever advance the skill they belong to.
+  const unlocks: NonNullable<SessionEvents['unlocks']> = []
+  for (const skill of trackedSkills(state)) {
+    const track = trackOf(state, skill)
+    const unlocked = [...track.unlocked]
+    let stepId: StepId = track.stepId
+    for (let guard = 0; guard < 10; guard++) {
+      const cur = STEP_BY_ID[stepId]
+      const following = stepAfter(stepId)
+      if (!cur || !following) break
+      // Saving unrelated work must not snap an athlete back up after they
+      // deliberately selected a lower unlocked step.
+      const showsCurrent = session.sets.some((set) => isQualifyingSet(set, cur.keyExerciseId))
+      const showsNext = session.sets.some((set) => isQualifyingSet(set, following.keyExerciseId))
+      if (session.workoutName === 'Quick Log' || (!showsCurrent && !showsNext)) break
+      const viaBar = showsCurrent && barMet(state, stepId, [session])
+      if (!viaBar && !earlyPromotionEarned(state, stepId, [session])) break
+      if (!unlocked.includes(following.id)) unlocked.push(following.id)
+      stepId = following.id
+      unlocks.push({ stepId: following.id, via: viaBar ? 'bar' : 'next-shape' })
+    }
+    if (stepId !== track.stepId || unlocked.length !== track.unlocked.length) {
+      next = withTrack(next, skill, { stepId, unlocked })
+    }
   }
-  next = { ...next, unlocked, stepId }
 
   const achievements = { ...state.achievements }
   for (const a of ACHIEVEMENTS) {
@@ -102,9 +109,15 @@ export function applySession(state: AppState, session: Session): { next: AppStat
     }
   }
   next = { ...next, achievements }
-  if (unlockedStep) {
-    events.unlockedStep = unlockedStep
-    if (unlockedVia) events.unlockedVia = unlockedVia
+  if (unlocks.length) {
+    // The last step a road reached is the one worth showing; `unlockedStep`
+    // keeps the planche's when it moved, else the first skill's that did.
+    const lastPerSkill = new Map<string, (typeof unlocks)[number]>()
+    for (const unlock of unlocks) lastPerSkill.set(STEP_BY_ID[unlock.stepId].skill, unlock)
+    const shown = [...lastPerSkill.values()]
+    events.unlocks = shown
+    events.unlockedStep = shown[0].stepId
+    events.unlockedVia = shown[0].via
   }
   return { next, events }
 }

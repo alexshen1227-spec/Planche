@@ -1,14 +1,24 @@
-import type { StepDef, StepId } from '../types'
+import type { SkillId, StepDef, StepId } from '../types'
+import { FRONT_LEVER_STEPS } from './skills/frontLever'
+import { HANDSTAND_STEPS } from './skills/handstand'
+import { NINETY_STEPS } from './skills/ninety'
+import { FLAG_STEPS } from './skills/flag'
 
 /**
  * The planche road, in order. Unlock targets follow common calisthenics
  * practice: own a position comfortably before loading the next one.
+ *
+ * `STEPS` is this road alone — the name predates the other skills and a great
+ * deal of planche-specific code indexes it. Anything written for "the athlete's
+ * road" in general should use `stepsOf(skill)` or `roadOf(stepId)` instead.
  */
 export const STEPS: StepDef[] = [
   {
     id: 'foundations',
+    skill: 'planche',
     order: 0,
     name: 'Foundations',
+    short: 'Foundations',
     tagline: 'Wrists, scapula, hollow body',
     keyExerciseId: 'ppp-hold',
     unlockSec: 30,
@@ -32,8 +42,10 @@ export const STEPS: StepDef[] = [
   },
   {
     id: 'lean',
+    skill: 'planche',
     order: 1,
     name: 'Planche Lean',
+    short: 'Lean',
     tagline: 'Load the lean, own the position',
     keyExerciseId: 'planche-lean',
     unlockSec: 30,
@@ -57,8 +69,10 @@ export const STEPS: StepDef[] = [
   },
   {
     id: 'frog',
+    skill: 'planche',
     order: 2,
     name: 'Frog Stand',
+    short: 'Frog',
     tagline: 'Hand balance, knees on the elbows',
     keyExerciseId: 'frog-stand',
     unlockSec: 30,
@@ -82,8 +96,10 @@ export const STEPS: StepDef[] = [
   },
   {
     id: 'tuck',
+    skill: 'planche',
     order: 3,
     name: 'Tuck Planche',
+    short: 'Tuck',
     tagline: 'First real flight',
     keyExerciseId: 'tuck-planche',
     unlockSec: 20,
@@ -107,8 +123,10 @@ export const STEPS: StepDef[] = [
   },
   {
     id: 'advtuck',
+    skill: 'planche',
     order: 4,
     name: 'Advanced Tuck',
+    short: 'Adv. tuck',
     tagline: 'Flatten the back, open the hips',
     keyExerciseId: 'adv-tuck-planche',
     unlockSec: 20,
@@ -132,8 +150,10 @@ export const STEPS: StepDef[] = [
   },
   {
     id: 'oneleg',
+    skill: 'planche',
     order: 5,
     name: 'One-Leg Extension',
+    short: 'One-leg',
     tagline: 'Lengthen the lever, one side at a time',
     keyExerciseId: 'one-leg-planche',
     unlockSec: 12,
@@ -157,8 +177,10 @@ export const STEPS: StepDef[] = [
   },
   {
     id: 'straddle',
+    skill: 'planche',
     order: 6,
     name: 'Straddle Planche',
+    short: 'Straddle',
     tagline: 'Legs out wide — real flight',
     keyExerciseId: 'straddle-planche',
     unlockSec: 15,
@@ -182,8 +204,10 @@ export const STEPS: StepDef[] = [
   },
   {
     id: 'full',
+    skill: 'planche',
     order: 7,
     name: 'Full Planche',
+    short: 'Full',
     tagline: 'Legs together. The summit.',
     keyExerciseId: 'full-planche',
     unlockSec: 10,
@@ -207,16 +231,66 @@ export const STEPS: StepDef[] = [
   },
 ]
 
-export const STEP_BY_ID: Record<StepId, StepDef> = Object.fromEntries(
-  STEPS.map((s) => [s.id, s]),
-) as Record<StepId, StepDef>
-
-export function stepAfter(id: StepId): StepDef | undefined {
-  const s = STEP_BY_ID[id]
-  return STEPS.find((x) => x.order === s.order + 1)
+/** Every skill's road, each in order. */
+export const STEPS_BY_SKILL: Record<SkillId, StepDef[]> = {
+  planche: STEPS,
+  frontlever: FRONT_LEVER_STEPS,
+  handstand: HANDSTAND_STEPS,
+  ninety: NINETY_STEPS,
+  flag: FLAG_STEPS,
 }
 
+/** Every step of every skill. Step ids are unique across skills. */
+export const ALL_STEPS: StepDef[] = Object.values(STEPS_BY_SKILL).flat()
+
+export const STEP_BY_ID: Record<StepId, StepDef> = Object.fromEntries(
+  ALL_STEPS.map((s) => [s.id, s]),
+) as Record<StepId, StepDef>
+
+/** One skill's road, first step to summit. */
+export function stepsOf(skill: SkillId): StepDef[] {
+  return STEPS_BY_SKILL[skill]
+}
+
+/** The skill a step belongs to. An unknown id reads as the planche, the original road. */
+export function skillOfStep(id: StepId): SkillId {
+  return STEP_BY_ID[id]?.skill ?? 'planche'
+}
+
+/** The road a step is on: every step of its skill, in order. */
+export function roadOf(id: StepId): StepDef[] {
+  return STEPS_BY_SKILL[skillOfStep(id)]
+}
+
+/** A skill's first step, where an athlete with no placement starts. */
+export function firstStep(skill: SkillId): StepDef {
+  return STEPS_BY_SKILL[skill][0]
+}
+
+/** A skill's last step: the summit. */
+export function summitOf(skill: SkillId): StepDef {
+  const road = STEPS_BY_SKILL[skill]
+  return road[road.length - 1]
+}
+
+/** The next step on the same road; undefined at the summit. */
+export function stepAfter(id: StepId): StepDef | undefined {
+  const s = STEP_BY_ID[id]
+  if (!s) return undefined
+  return STEPS_BY_SKILL[s.skill].find((x) => x.order === s.order + 1)
+}
+
+/** The step before, on the same road; undefined at its start. */
 export function stepBefore(id: StepId): StepDef | undefined {
   const s = STEP_BY_ID[id]
-  return STEPS.find((x) => x.order === s.order - 1)
+  if (!s) return undefined
+  return STEPS_BY_SKILL[s.skill].find((x) => x.order === s.order - 1)
+}
+
+/** The exercise ids that are some step's key hold, on any road. */
+export const KEY_EXERCISE_IDS: ReadonlySet<string> = new Set(ALL_STEPS.map((s) => s.keyExerciseId))
+
+/** The step whose key hold an exercise is, when it is one. */
+export function stepForKeyExercise(exerciseId: string): StepDef | undefined {
+  return ALL_STEPS.find((s) => s.keyExerciseId === exerciseId)
 }

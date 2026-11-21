@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { StepId } from '../types'
+import type { SkillId, StepId } from '../types'
+import { skillOfStep } from '../data/progressions'
+import { SKILLS } from '../data/skills'
 import { useStore } from '../lib/store'
 import { shareCardData, shareCardFile } from '../lib/shareCard'
+import { activeSkills } from '../lib/skills'
 import { pushToast } from '../lib/toast'
 import { Icon } from './Icon'
 import { Modal } from './ui'
@@ -17,13 +20,18 @@ export function ShareProgress({
   className = '',
   label = 'Share progress',
   opened,
+  skill,
 }: {
   className?: string
   label?: string
   /** The step that just opened, for the unlock card. */
   opened?: { stepId: StepId; via?: 'bar' | 'next-shape' }
+  /** The road the card is for; the athlete's first priority when not said. */
+  skill?: SkillId
 }) {
   const { state } = useStore()
+  const cardSkill: SkillId = opened ? skillOfStep(opened.stepId) : (skill ?? activeSkills(state)[0])
+  const holdName = SKILLS[cardSkill].holdName
   const [open, setOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState<string | null>(null)
@@ -34,7 +42,7 @@ export function ShareProgress({
     let cancelled = false
     setFile(null)
     setError(null)
-    shareCardFile(shareCardData(state, Date.now(), opened))
+    shareCardFile(shareCardData(state, Date.now(), opened, cardSkill))
       .then((made) => {
         if (cancelled) return
         setFile(made)
@@ -62,7 +70,7 @@ export function ShareProgress({
   const share = async () => {
     if (!file) return
     try {
-      await navigator.share({ files: [file], title: 'My planche progress' })
+      await navigator.share({ files: [file], title: `My ${holdName} progress` })
     } catch (err) {
       // Closing the share sheet is not an error worth announcing.
       if (err instanceof DOMException && err.name === 'AbortError') return
@@ -87,7 +95,7 @@ export function ShareProgress({
           </p>
           <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-raised">
             {url ? (
-              <img src={url} alt="Your planche progress card" className="block h-auto w-full" />
+              <img src={url} alt={`Your ${holdName} progress card`} className="block h-auto w-full" />
             ) : (
               <div className="grid aspect-[4/5] place-items-center text-[13px] text-ink3">
                 {error ?? 'Drawing your card…'}

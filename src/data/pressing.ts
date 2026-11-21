@@ -1,5 +1,6 @@
-import type { StepId } from '../types'
+import type { PlancheStepId, StepId } from '../types'
 import { STEP_BY_ID, stepBefore } from './progressions'
+import { SKILLS } from './skills'
 
 /**
  * The push-up version of every step on the road.
@@ -15,7 +16,7 @@ import { STEP_BY_ID, stepBefore } from './progressions'
  * movement that trains the same lean: a push-up at Foundations, the pseudo
  * planche push-up at the lean and frog stand.
  */
-export const PUSHUP_VERSION: Record<StepId, string> = {
+export const PUSHUP_VERSION: Record<PlancheStepId, string> = {
   foundations: 'pushup',
   lean: 'pppu',
   frog: 'pppu',
@@ -26,6 +27,18 @@ export const PUSHUP_VERSION: Record<StepId, string> = {
   oneleg: 'adv-tuck-planche-pushup',
   straddle: 'straddle-planche-pushup',
   full: 'full-planche-pushup',
+}
+
+/**
+ * The moving version of a step's hold, on any road: the planche's push-up, a
+ * lever's row. Undefined where the step has none of its own — the handstand
+ * and 90° roads press on a rep ladder that follows its own standards instead
+ * (see `lib/repLadder`).
+ */
+export function twinOf(stepId: StepId): string | undefined {
+  if (stepId in PUSHUP_VERSION) return PUSHUP_VERSION[stepId as PlancheStepId]
+  const step = STEP_BY_ID[stepId]
+  return step ? SKILLS[step.skill].program?.steps[stepId]?.twin?.exerciseId : undefined
 }
 
 /**
@@ -67,19 +80,33 @@ export interface PressingChoice {
  */
 export function pressingChoiceFor(stepId: StepId, holdSec: number | undefined): PressingChoice {
   const step = STEP_BY_ID[stepId]
-  const own = PUSHUP_VERSION[stepId]
+  const own = twinOf(stepId) ?? 'pushup'
   const prev = stepBefore(stepId)
-  const behind = prev ? PUSHUP_VERSION[prev.id] : own
-  // Steps whose twin is not a planche-shaped press have nothing to trail.
-  if (own === behind || step.order <= STEP_BY_ID.frog.order) {
-    return { exerciseId: own, atLevel: true, reason: 'The pressing twin of this step.' }
+  const behind = (prev ? twinOf(prev.id) : undefined) ?? own
+  // Steps whose twin is not shaped like their hold have nothing to trail: the
+  // planche's early steps press in a lean whatever the hold is.
+  if (own === behind || (step.skill === 'planche' && step.order <= STEP_BY_ID.frog.order)) {
+    // "The pressing and pulling twin" is not a sentence: a skill with two
+    // kinds of strength work just says what the block is.
+    const strength = SKILLS[step.skill].words.strength
+    return {
+      exerciseId: own,
+      atLevel: true,
+      reason: strength.includes(' and ') ? 'Strength work for this step.' : `The ${strength} twin of this step.`,
+    }
   }
   const bar = step.unlockSec * PRESS_AT_LEVEL_SHARE
+  const words = SKILLS[step.skill].words
+  const verb = words.strengthVerb
+  const Verbing = `${words.strength[0].toUpperCase()}${words.strength.slice(1)}`
   if (holdSec !== undefined && holdSec >= bar) {
     return {
       exerciseId: own,
       atLevel: true,
-      reason: `Your ${step.name.toLowerCase()} is solid enough to press in — the push-up version of the hold you are building.`,
+      reason:
+        step.skill === 'planche'
+          ? `Your ${step.name.toLowerCase()} is solid enough to press in — the push-up version of the hold you are building.`
+          : `Your ${step.name.toLowerCase()} is solid enough to ${verb} in — the moving version of the hold you are building.`,
     }
   }
   return {
@@ -87,7 +114,7 @@ export function pressingChoiceFor(stepId: StepId, holdSec: number | undefined): 
     atLevel: false,
     reason:
       holdSec === undefined
-        ? `Pressing one step behind until your ${step.name.toLowerCase()} has a measured hold — the press usually trails the hold by a progression.`
-        : `Pressing one step behind until your ${step.name.toLowerCase()} reaches about ${Math.round(bar)}s — the press usually trails the hold by a progression.`,
+        ? `${Verbing} one step behind until your ${step.name.toLowerCase()} has a measured hold — the ${verb} usually trails the hold by a progression.`
+        : `${Verbing} one step behind until your ${step.name.toLowerCase()} reaches about ${Math.round(bar)}s — the ${verb} usually trails the hold by a progression.`,
   }
 }

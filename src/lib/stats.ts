@@ -2,6 +2,7 @@ import type { AppState, Session, TrainingSurface } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { addDays, CLOCK_SKEW_MS, weekStart } from './time'
 import { progressionCredit } from './progression'
+import { isSkillHold } from './skills'
 
 export function totalHoldSec(state: AppState): number {
   let t = 0
@@ -62,7 +63,8 @@ export function weekStreak(state: AppState, now = Date.now()): { weeks: number; 
  * quantity from the line.
  */
 export function plotsProgressionCredit(exerciseId: string): boolean {
-  return EXERCISE_BY_ID[exerciseId]?.category === 'planche' || exerciseId === 'ppp-hold'
+  // Every skill line's own holds — a tuck planche, a front lever, a handstand.
+  return isSkillHold(EXERCISE_BY_ID[exerciseId]) || exerciseId === 'ppp-hold'
 }
 
 export function bestSeries(
@@ -92,7 +94,8 @@ export function bestSeries(
 
 export interface WeekVolume {
   start: number
-  plancheSec: number
+  /** Seconds held in the skill lines' own positions — planche, lever, handstand, 90° hold, flag. */
+  skillSec: number
   otherSec: number
 }
 
@@ -101,7 +104,7 @@ export function weeklyVolume(state: AppState, weeks = 12, now = Date.now()): Wee
   const out: WeekVolume[] = []
   for (let i = weeks - 1; i >= 0; i--) {
     const start = addDays(weekStart(now), -7 * i)
-    out.push({ start, plancheSec: 0, otherSec: 0 })
+    out.push({ start, skillSec: 0, otherSec: 0 })
   }
   const first = out[0].start
   for (const s of state.sessions) {
@@ -111,24 +114,24 @@ export function weeklyVolume(state: AppState, weeks = 12, now = Date.now()): Wee
     for (const set of s.sets) {
       if (set.kind !== 'hold') continue
       const ex = EXERCISE_BY_ID[set.exerciseId]
-      if (ex?.category === 'planche') out[idx].plancheSec += set.value
+      if (isSkillHold(ex)) out[idx].skillSec += set.value
       else out[idx].otherSec += set.value
     }
   }
   for (const w of out) {
-    w.plancheSec = Math.round(w.plancheSec)
+    w.skillSec = Math.round(w.skillSec)
     w.otherSec = Math.round(w.otherSec)
   }
   return out
 }
 
-/** Biggest planche-line hold in a session (for feed summaries). */
+/** Biggest hold on a skill line in a session (for feed summaries). */
 export function sessionHighlight(session: Session): { exerciseId: string; value: number } | undefined {
   let best: { exerciseId: string; value: number } | undefined
   for (const set of session.sets) {
     if (set.kind !== 'hold') continue
     const ex = EXERCISE_BY_ID[set.exerciseId]
-    if (ex?.category !== 'planche') continue
+    if (!isSkillHold(ex)) continue
     if (!best || set.value > best.value) best = { exerciseId: set.exerciseId, value: set.value }
   }
   return best

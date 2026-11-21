@@ -1,7 +1,10 @@
-import type { AppState, StepId } from '../types'
-import { STEPS, STEP_BY_ID } from '../data/progressions'
+import type { AppState, SkillId, StepId } from '../types'
+import { APP_NAME } from '../data/app'
+import { skillOfStep, STEP_BY_ID, stepsOf } from '../data/progressions'
+import { SKILLS } from '../data/skills'
 import { qualifyingProgress } from './progression'
 import { readJourney } from './journey'
+import { skillOfState, skillView, wholeState } from './skills'
 import { totalHoldSec } from './stats'
 import { fmtDuration, fmtHold } from './time'
 import { figureParts } from './figure'
@@ -15,6 +18,9 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
  * absent: no verified hold yet says so rather than printing a zero.
  */
 export interface ShareCardData {
+  /** The road the card is about — a step name like "Foundations" says nothing without it. */
+  skill: SkillId
+  skillName: string
   stepId: StepId
   stepName: string
   /** 1-based position on the road. */
@@ -37,23 +43,38 @@ export interface ShareCardData {
   milestone?: { fromName: string; fromBest?: number; early: boolean }
 }
 
+/**
+ * The card for one road: the step that just opened when there is one, else
+ * the skill asked for, else the skill the state is viewed as.
+ *
+ * Everything on it comes from that road. It once read the planche's steps
+ * whatever was asked, so a front lever step that had just opened was drawn
+ * with planche figures and captioned with a planche hold of the same number.
+ */
 export function shareCardData(
-  state: AppState,
+  stateIn: AppState,
   now = Date.now(),
   opened?: { stepId: StepId; via?: 'bar' | 'next-shape' },
+  skill?: SkillId,
 ): ShareCardData {
+  const whole = wholeState(stateIn)
+  const cardSkill: SkillId = opened ? skillOfStep(opened.stepId) : (skill ?? skillOfState(stateIn))
+  const state = skillView(whole, cardSkill)
+  const road = stepsOf(cardSkill)
   const step = STEP_BY_ID[opened?.stepId ?? state.stepId]
-  const from = opened ? STEPS.find((s) => s.order === step.order - 1) : undefined
+  const from = opened ? road.find((s) => s.order === step.order - 1) : undefined
   const fromBest = from ? qualifyingProgress(state, from.id).value : 0
   const best = qualifyingProgress(state, step.id).value
-  const next = STEPS.find((s) => s.order === step.order + 1)
-  const journey = readJourney(state, now)
+  const next = road.find((s) => s.order === step.order + 1)
+  const journey = readJourney(whole, now, cardSkill)
   const d = new Date(now)
   return {
+    skill: cardSkill,
+    skillName: SKILLS[cardSkill].name,
     stepId: step.id,
     stepName: step.name,
     stepNumber: step.order + 1,
-    totalSteps: STEPS.length,
+    totalSteps: road.length,
     ...(best > 0 ? { verifiedBest: best } : {}),
     bar: step.unlockSec,
     ...(next ? { nextName: next.name } : {}),
@@ -62,7 +83,7 @@ export function shareCardData(
       : {}),
     sessions: journey.totalSessions,
     heldSec: totalHoldSec(state),
-    ladder: STEPS.map((s) => ({
+    ladder: road.map((s) => ({
       stepId: s.id,
       state: s.id === step.id ? 'current' : s.order < step.order ? 'cleared' : 'ahead',
     })),
@@ -75,7 +96,7 @@ export function shareCardData(
 
 /** The card's lines of text, decided apart from the drawing so they can be tested. */
 export function shareCardLines(data: ShareCardData): { label: string; headline: string; caption: string; footer: string } {
-  const label = `${data.milestone ? 'NEW STEP · ' : 'STEP '}${data.stepNumber} OF ${data.totalSteps}`
+  const label = `${data.skillName.toUpperCase()} · ${data.milestone ? 'NEW STEP · ' : 'STEP '}${data.stepNumber} OF ${data.totalSteps}`
   const m = data.milestone
   const headline = m ? (m.fromBest !== undefined ? fmtHold(m.fromBest) : '—') : data.verifiedBest !== undefined ? fmtHold(data.verifiedBest) : '—'
   const caption = m
@@ -122,7 +143,8 @@ function drawFigure(
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
   const base = opts.faint ?? 1
-  if (opts.ground !== false) {
+  // A figure hung from a bar stands on no floor, so it has no ground line to draw.
+  if (opts.ground !== false && !parts.noGround) {
     ctx.globalAlpha = 0.16 * base
     ctx.strokeStyle = '#ffffff'
     ctx.lineWidth = 2.5
@@ -136,6 +158,13 @@ function drawFigure(
     ctx.strokeStyle = '#ffffff'
     ctx.lineWidth = 2.2
     ctx.stroke(new Path2D(parts.bars))
+  }
+  // An overhead bar, a wall or a pole: drawn like the parallettes, with or without the floor line.
+  for (const piece of parts.apparatus ?? []) {
+    ctx.globalAlpha = 0.34 * base
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = piece.width
+    ctx.stroke(new Path2D(piece.d))
   }
   ctx.strokeStyle = ink
   ctx.fillStyle = ink
@@ -208,7 +237,7 @@ export async function drawShareCard(canvas: HTMLCanvasElement, data: ShareCardDa
   ctx.fillStyle = 'rgba(255,255,255,0.62)'
   ctx.font = `700 30px ${DISPLAY}`
   ctx.textAlign = 'left'
-  ctx.fillText('PLANCHE  LAB', 80, 110)
+  ctx.fillText(APP_NAME.toUpperCase().replace(' ', '  '), 80, 110)
   ctx.textAlign = 'right'
   ctx.font = `500 30px ${SANS}`
   ctx.fillText(data.date, CARD_W - 80, 110)
@@ -233,7 +262,7 @@ export async function drawShareCard(canvas: HTMLCanvasElement, data: ShareCardDa
   // Step and name.
   ctx.textAlign = 'left'
   ctx.fillStyle = ACCENT
-  ctx.font = `700 32px ${DISPLAY}`
+  fitText(ctx, lines.label, 700, 32, DISPLAY, CARD_W - 160)
   ctx.fillText(lines.label, 80, 930)
   ctx.fillStyle = '#ffffff'
   fitText(ctx, data.stepName, 700, 100, DISPLAY, CARD_W - 160)
@@ -273,5 +302,5 @@ export async function shareCardFile(data: ShareCardData): Promise<File> {
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
   if (!blob) throw new Error('The card could not be made on this device.')
   const slug = data.stepName.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-  return new File([blob], `planche-lab-${slug}.png`, { type: 'image/png' })
+  return new File([blob], `calisthenics-lab-${slug}.png`, { type: 'image/png' })
 }

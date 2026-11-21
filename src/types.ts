@@ -4,7 +4,17 @@
  */
 export type Tab = 'home' | 'train' | 'path' | 'library' | 'stats' | 'settings' | 'updates'
 
-export type StepId =
+/**
+ * A skill the app coaches: one road of holds from first shape to summit,
+ * usually with a pressing or pulling twin beside it. The planche was the only
+ * one until state v8; its progress keeps the top-level fields it always had,
+ * and every other skill lives in `AppState.tracks`.
+ */
+export type SkillId = 'planche' | 'frontlever' | 'handstand' | 'ninety' | 'flag'
+
+export const SKILL_IDS: SkillId[] = ['planche', 'frontlever', 'handstand', 'ninety', 'flag']
+
+export type PlancheStepId =
   | 'foundations'
   | 'lean'
   | 'frog'
@@ -14,11 +24,54 @@ export type StepId =
   | 'straddle'
   | 'full'
 
-export type Category = 'planche' | 'push' | 'scapula' | 'core' | 'wrist' | 'mobility' | 'general'
+export type FrontLeverStepId = 'fl-hang' | 'fl-tuck' | 'fl-advtuck' | 'fl-oneleg' | 'fl-straddle' | 'fl-full'
+
+export type HandstandStepId = 'hs-foundations' | 'hs-wall' | 'hs-float' | 'hs-free'
+
+export type NinetyStepId = 'n90-lean' | 'n90-tuck' | 'n90-advtuck' | 'n90-straddle' | 'n90-full'
+
+export type FlagStepId =
+  | 'flag-foundations'
+  | 'flag-vertical'
+  | 'flag-tuck'
+  | 'flag-oneleg'
+  | 'flag-straddle'
+  | 'flag-full'
+
+/** Step ids are unique across skills, so a step id alone says which road it is on. */
+export type StepId = PlancheStepId | FrontLeverStepId | HandstandStepId | NinetyStepId | FlagStepId
+
+/**
+ * What a movement is, for grouping and load. The five skill lines each have
+ * their own (`planche`, `lever`, `handstand`, `ninety`, `flag`); the rest is
+ * the supporting cast.
+ */
+export type Category =
+  | 'planche'
+  | 'lever'
+  | 'handstand'
+  | 'ninety'
+  | 'flag'
+  | 'push'
+  | 'pull'
+  | 'scapula'
+  | 'core'
+  | 'wrist'
+  | 'mobility'
+  | 'general'
 
 export type Units = 'metric' | 'imperial'
 
-export type EquipmentId = 'floor' | 'parallettes' | 'band' | 'pullup-bar' | 'dip-bars' | 'box'
+export type EquipmentId =
+  | 'floor'
+  | 'parallettes'
+  | 'band'
+  | 'pullup-bar'
+  | 'rings'
+  | 'dip-bars'
+  | 'box'
+  | 'wall'
+  | 'pole'
 export type TrainingSurface = 'floor' | 'parallettes'
 
 /**
@@ -27,8 +80,13 @@ export type TrainingSurface = 'floor' | 'parallettes'
  * tabs and imports from overwriting newer work. Every addition is optional, so
  * a v6 save loads unchanged; the bump exists for the pre-upgrade snapshot and
  * so stricter evidence rules cannot silently demote an earned step.
+ *
+ * v8 adds the other skills: `tracks` (a road per skill beside the planche's
+ * top-level fields), `profile.skills` (which are trained, in priority order)
+ * and per-skill session notes. Again every addition is optional — a v7 save is
+ * a planche-only athlete and loads as one.
  */
-export const CURRENT_STATE_VERSION = 7 as const
+export const CURRENT_STATE_VERSION = 8 as const
 
 export interface Measurement {
   at: number
@@ -44,6 +102,12 @@ export interface Profile {
   preferredSurface?: TrainingSurface
   /** Long-term destination used to keep the coach and dashboard goal-aware. */
   goalStepId?: StepId
+  /**
+   * The skills this athlete trains, most important first. The first is the
+   * focus: it leads every mixed session and gets the fullest dose. Absent on
+   * saves from before the other skills existed, which means the planche alone.
+   */
+  skills?: SkillId[]
   /** Free-text note about anything currently sore or previously injured. */
   injuryNote?: string
   /** Optional local context; it never changes an earned progression result. */
@@ -73,6 +137,18 @@ export type FormIssue =
   | 'narrow'
   | 'hips'
   | 'level'
+  /** Shoulders not open (a handstand's arm-to-torso angle short of a straight line). */
+  | 'shoulders'
+  /** The body off its line as a whole: a handstand off vertical, a flag off level. */
+  | 'tilt'
+  /** Elbow angle away from the one the position is defined by (a 90° hold). */
+  | 'angle'
+  /** Reps that stopped short of the bottom of the range. */
+  | 'depth'
+  /** Reps that did not finish at locked-out arms. */
+  | 'lockout'
+  /** Reps helped by a kick, a bounce or a swing. */
+  | 'kip'
 
 export type FormRating = 'clean' | 'slipped' | 'broke'
 
@@ -119,6 +195,10 @@ export interface AutoForm {
   leanRatio?: number
   /** Shoulder-to-ear gap over torso length; small means shrugged. */
   shrugRatio?: number
+  /** Wrist–shoulder–hip angle: how open the shoulders are (a handstand's line). */
+  shoulderDeg?: number
+  /** Degrees the whole body sits off the line the position asks for (vertical or level). */
+  tiltDeg?: number
   /** Legacy pre-side-view camera field, kept so older logs still import. */
   asymmetry?: number
   /**
@@ -274,6 +354,8 @@ export interface Exercise {
   id: string
   name: string
   category: Category
+  /** The skill this movement belongs to, when it is part of one skill's road rather than shared support work. */
+  skill?: SkillId
   type: ExerciseType
   difficulty: 1 | 2 | 3 | 4 | 5
   /** Human-readable kit description, shown in Learn. */
@@ -299,14 +381,25 @@ export interface Exercise {
 
 export interface StepDef {
   id: StepId
+  /** Which skill's road this step is on. */
+  skill: SkillId
   order: number
   name: string
+  /** A name that fits under a small figure: "Adv. tuck". */
+  short: string
   tagline: string
   keyExerciseId: string
   /** Hold (seconds) on the key exercise required to unlock the next step. */
   unlockSec: number
   /** Sensible first working-set target when there is no history yet. */
   startSec: number
+  /**
+   * How many different days the bar must be shown on before the step opens.
+   * Absent = one. Balance holds ask for two: a balance held once can be luck —
+   * coaches describe "having" a handstand by how often it stays up, not by one
+   * best hold — so a single long float does not open the next step by itself.
+   */
+  repeatDays?: number
   description: string
   formChecks: string[]
   mistakes: string[]
@@ -364,6 +457,8 @@ export interface Block {
    * it is for.
    */
   retest?: boolean
+  /** The skill this block trains, in a session that mixes several. Absent on shared work and older workouts. */
+  skill?: SkillId
 }
 
 /**
@@ -381,6 +476,11 @@ export interface WorkoutRequest {
   stepId?: StepId
   /** One-off shorter budget for today. Absent = the profile default. */
   minutes?: number
+  /**
+   * Which skills this session is for. Absent = the coach picks today's line-up
+   * from the athlete's priorities; one skill = a session for that skill alone.
+   */
+  skills?: SkillId[]
 }
 
 export interface Workout {
@@ -404,6 +504,27 @@ export interface Workout {
   baseTargetSec?: number
   /** Built on a day the coach scheduled as part of an easy week (`dayType` deload). */
   plannedDeload?: boolean
+  /** The skills this session trains, lead first. Absent = the planche alone (older workouts). */
+  skills?: SkillId[]
+  /**
+   * Why each skill is in a mixed session and how much of it: the lead, its
+   * partner, a maintenance dose, or balance practice. Shown before the session.
+   */
+  lineup?: { skill: SkillId; role: LineupRole; reason: string }[]
+  /**
+   * What each skill other than the planche was given: the strategy that shaped
+   * its work and its key hold's base target — the planche's sit at the top
+   * level, where they always were.
+   */
+  skillMeta?: Partial<Record<SkillId, WorkoutSkillMeta>>
+}
+
+/** One skill's share of a workout's coaching record. */
+export interface WorkoutSkillMeta {
+  strategy?: StrategyId
+  baseTargetSec?: number
+  /** The session opened this skill's work with a re-test. */
+  retest?: boolean
 }
 
 /** Why an attempt ended, when the athlete chose to say. Unanswered stays unknown. */
@@ -537,6 +658,50 @@ export interface Session {
    * line — so shorter-session athletes stayed in a deload that never ended.
    */
   plannedDeload?: boolean
+  /**
+   * The other skills' side of this session: the step each was on, and what the
+   * coach gave it. `stepId`, `strategy`, `baseTargetSec` and `retestOffered`
+   * above are the planche's, as they always were; reading a session for
+   * another skill goes through `skillView` (lib/skills), never these directly.
+   */
+  skills?: Partial<Record<SkillId, SessionSkill>>
+  /**
+   * What each skill's share of this session was: led it, partnered it, a
+   * maintenance dose, or balance practice. The line-up reads it to tell a full
+   * training day from a couple of sets kept ticking over — without it, a
+   * maintenance dose counted as "trained", and a third skill never came round
+   * for real work. Absent on sessions from before it was kept.
+   */
+  roles?: Partial<Record<SkillId, LineupRole>>
+}
+
+/** What a skill's share of a mixed session is for. */
+export type LineupRole = 'lead' | 'partner' | 'maintenance' | 'practice'
+
+/** One skill's record inside a session. */
+export interface SessionSkill {
+  /** The step this skill was on when the session was trained. */
+  stepId: StepId
+  strategy?: StrategyId
+  baseTargetSec?: number
+  retestOffered?: boolean
+}
+
+/**
+ * Where an athlete stands on one skill's road (every skill but the planche,
+ * whose progress keeps the top-level `stepId` / `baseStepId` / `unlocked`).
+ * Derived by replaying history from `baseStepId`, like the planche's.
+ */
+export interface SkillTrack {
+  stepId: StepId
+  /** Where placement put the athlete; replay never rewinds below it. */
+  baseStepId: StepId
+  unlocked: StepId[]
+  goalStepId?: StepId
+  /** The placement interview for this skill, when one was taken. */
+  assessment?: AssessmentRecord
+  /** When the athlete added the skill. */
+  addedAt: number
 }
 
 export interface PRMark {
@@ -667,6 +832,12 @@ export interface AppState {
   symptoms?: SymptomEvent[]
   /** Remembered per-exercise setup, so assistance is asked once rather than every set. */
   setups?: Record<string, ExerciseSetup>
+  /**
+   * Progress on every skill other than the planche. A skill appears here once
+   * the athlete has set it up; taking it off `profile.skills` keeps its track,
+   * so what was earned is still there if they come back.
+   */
+  tracks?: Partial<Record<SkillId, SkillTrack>>
 }
 
 /** A remembered setup for one exercise. Changing it never relabels earlier sets. */
@@ -687,4 +858,9 @@ export interface SessionEvents {
    * was shown with full evidence while the current hold was past half its bar.
    */
   unlockedVia?: 'bar' | 'next-shape'
+  /**
+   * Every step this session opened, across skills. `unlockedStep` is the first
+   * of them, kept for readers that show one.
+   */
+  unlocks?: { stepId: StepId; via: 'bar' | 'next-shape' }[]
 }

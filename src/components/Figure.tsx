@@ -32,20 +32,26 @@ export function Figure({
           </linearGradient>
         </defs>
       ) : null}
-      <line
-        x1={parts.ground.x1}
-        y1={parts.ground.y}
-        x2={parts.ground.x2}
-        y2={parts.ground.y}
-        stroke="currentColor"
-        strokeWidth={2.5}
-        strokeLinecap="round"
-        opacity={0.18}
-      />
+      {parts.noGround ? null : (
+        <line
+          x1={parts.ground.x1}
+          y1={parts.ground.y}
+          x2={parts.ground.x2}
+          y2={parts.ground.y}
+          stroke="currentColor"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          opacity={0.18}
+        />
+      )}
       {parts.bars ? (
         // A parallette in profile: the grip, and its two feet.
         <path d={parts.bars} stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.38} />
       ) : null}
+      {/* Whatever else the position is held on — an overhead bar, a wall, a pole — as lightly as the parallettes. */}
+      {parts.apparatus?.map((piece, i) => (
+        <path key={i} d={piece.d} stroke="currentColor" strokeWidth={piece.width} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={0.38} />
+      ))}
       {parts.strokes.map((stroke, i) => (
         <path
           key={i}

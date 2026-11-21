@@ -71,8 +71,22 @@ import {
 } from '../lib/progression'
 import { adjustsSetToSet, adviseNextHold, adviseNextReps, type NextSetAdvice, type SetOutcome } from '../lib/autoregulate'
 import { useLiveElbowCue } from '../components/useLiveElbowCue'
-import { POSE_PROFILES } from '../lib/poseForm'
-import type { Block } from '../types'
+import { POSE_PROFILES, postureOf, type Posture } from '../lib/poseForm'
+import { isReviewOnly } from '../lib/progression'
+import { repSetsToReview, rungInPlay, rungOutcome, rungsOpenedBy, withRepCount } from '../lib/repLadder'
+import { RepReviewRow } from '../components/RepReviewRow'
+import {
+  assistAppliesTo,
+  currentStepForExercise,
+  isSkillHold,
+  isSurfaceAware,
+  sessionSkillSteps,
+  skillView,
+  trackedSkills,
+} from '../lib/skills'
+import { SKILLS, skillOfExercise, type RepRung } from '../data/skills'
+import { stepForKeyExercise } from '../data/progressions'
+import type { Block, SkillId, StepId } from '../types'
 
 export type { CheckInContext } from '../components/CheckInForm'
 
@@ -107,10 +121,29 @@ function blockLabel(block: Block): string | undefined {
   // A re-test is an attempt at the bar, but "Unlock attempt" over a 5s target
   // promised a step the athlete was nowhere near.
   if (block.retest) return 'Max clean hold'
-  return block.role ? ROLE_LABEL[block.role] : undefined
+  if (!block.role) return undefined
+  // The planche's names for its strength blocks are its own: a pull-up is not
+  // a "push-up version", and a hang is not "straight-arm" in the lean's sense.
+  const skill = block.skill ?? skillOfExercise(block.exerciseId)
+  if (skill && skill !== 'planche') {
+    const words = SKILLS[skill].words
+    const strength = `${words.strength.charAt(0).toUpperCase()}${words.strength.slice(1)}`
+    if (block.role === 'press') return `Moving version · ${words.strength}`
+    if (block.role === 'pressing') return strength
+    if (block.role === 'straight-arm') return 'Support work'
+  }
+  return ROLE_LABEL[block.role]
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10
+
+/** What each place in a mixed session's line-up is called. */
+const LINEUP_ROLE_LABEL = {
+  lead: 'Leads',
+  partner: 'Second',
+  maintenance: 'Kept ticking over',
+  practice: 'Balance practice',
+} as const
 
 /** What the athlete can do about a camera that is not live, by cause. */
 const CAMERA_FAILURE: Partial<Record<RecorderStatus, string>> = {
@@ -122,8 +155,72 @@ const CAMERA_FAILURE: Partial<Record<RecorderStatus, string>> = {
 }
 
 /** Holds where a remembered setup (assistance) is worth asking about. */
-function assistApplies(ex: Exercise | undefined): boolean {
-  return Boolean(ex && ex.type === 'hold' && ex.category === 'planche' && ex.id !== 'frog-stand')
+const assistApplies = assistAppliesTo
+
+/** How each posture is filmed: what goes in the box, and which way the phone sits. */
+const FILMING: Record<Posture, { box: string; turn: 'landscape' | 'portrait'; turnWhy: string; intro: string }> = {
+  support: {
+    box: 'Side-on · whole body and both hands inside the box · phone level.',
+    turn: 'landscape',
+    turnWhy: 'This is a wide shape, and an upright frame cuts off your hands or your feet.',
+    intro: 'Put the phone directly beside you.',
+  },
+  hang: {
+    box: 'Side-on · whole body and your hands on the bar inside the box · phone level with your chest.',
+    turn: 'landscape',
+    turnWhy: 'A lever is a wide shape, and an upright frame cuts off your hands or your feet.',
+    intro: 'Put the phone directly beside the bar, about chest height.',
+  },
+  inverted: {
+    box: 'Side-on · hands and toes both inside the box · phone upright, low and level.',
+    turn: 'portrait',
+    turnWhy: 'A handstand is a tall shape, and a phone on its side cuts off your hands or your feet.',
+    intro: 'Put the phone directly beside you, low, standing upright.',
+  },
+  flag: {
+    box: 'Front-on · facing your chest · both hands and both feet inside the box · phone level.',
+    turn: 'landscape',
+    turnWhy: 'A flag is a wide shape, and an upright frame cuts off your hands or your feet.',
+    intro: 'Put the phone square in front of the pole, facing your chest.',
+  },
+}
+
+/** The posture a movement is judged in — a support hold when it has no camera profile. */
+function postureFor(exerciseId: string | undefined): Posture {
+  const profile = exerciseId ? POSE_PROFILES[exerciseId] : undefined
+  return profile ? postureOf(profile) : 'support'
+}
+
+/**
+ * How a rung's rep set is filmed. Nothing is measured from it — the replay is
+ * for the athlete — so the only question is the shape it makes in the picture.
+ */
+const REP_FILMING: Record<RepRung['frame'], { box: string; turn: 'landscape' | 'portrait'; turnWhy: string; posture: Posture }> = {
+  wide: {
+    box: 'Side-on · your whole body and both hands inside the box for every rep.',
+    turn: 'landscape',
+    turnWhy: 'This is a wide shape, and an upright frame cuts off your hands or your feet.',
+    posture: 'support',
+  },
+  tall: {
+    box: 'Side-on · hands and toes inside the box from the top of the rep to the bottom.',
+    turn: 'portrait',
+    turnWhy: 'The rep starts tall, and a phone on its side cuts off your hands or your feet.',
+    posture: 'inverted',
+  },
+}
+
+/** The step whose pictogram shows this movement, when one does. */
+const FIGURE_FOR: Record<string, StepId> = {
+  'planche-lean': 'lean',
+  'ppp-hold': 'foundations',
+  'one-leg-lean': 'lean',
+  'band-straddle-planche': 'straddle',
+  'band-front-lever': 'fl-full',
+  'wall-handstand': 'hs-wall',
+}
+function figureFor(exerciseId: string): StepId | undefined {
+  return FIGURE_FOR[exerciseId] ?? stepForKeyExercise(exerciseId)?.id
 }
 
 interface LogExtra {
@@ -303,6 +400,12 @@ export function SessionPlayer({
   const [walkedBack, setWalkedBack] = useState(restoredSetup.walkedBack)
   /** Clips still being finalised and stored. */
   const [clipsFinalizing, setClipsFinalizing] = useState(0)
+  /** Whether the rep set in progress is being filmed, or lost its recording part-way. */
+  const [repFilming, setRepFilming] = useState<'off' | 'on' | 'lost'>('off')
+  /** Rep sets whose clip is still being written, by log time. */
+  const [pendingRepClips, setPendingRepClips] = useState<ReadonlySet<number>>(() => new Set())
+  /** Rungs of a push-up line this session opened, for the celebration. */
+  const [rungsOpened, setRungsOpened] = useState<ReturnType<typeof rungsOpenedBy>>([])
   /**
    * Form checks in flight, by operation. Only the operation that set busy can
    * clear it: keying by set let an older check finish and clear the flag while
@@ -385,6 +488,13 @@ export function SessionPlayer({
     sessionRef.current?.focus()
   }, [])
 
+  // A swipe that ran past the end of a session screen used to scroll the page
+  // lying behind it.
+  useEffect(() => {
+    document.documentElement.classList.add('session-open')
+    return () => document.documentElement.classList.remove('session-open')
+  }, [])
+
   /**
    * Set-to-set advice for a block: the next target and why, read from the
    * sets already logged in it (which blocks qualify: `adjustsSetToSet`).
@@ -409,11 +519,15 @@ export function SessionPlayer({
         }))
       if (!done.length) return null
       if (planned.target.kind === 'hold') {
-        return adviseNextHold(planned.target.sec, done, setToSetCeiling(STEP_BY_ID[state.stepId], planned.exerciseId))
+        return adviseNextHold(
+          planned.target.sec,
+          done,
+          setToSetCeiling(currentStepForExercise(state, planned.exerciseId), planned.exerciseId),
+        )
       }
       return adviseNextReps(planned.target.reps, done)
     },
-    [workout, blockLogAts, state.stepId],
+    [workout, blockLogAts, state],
   )
   /** A block as it stands now: the plan, with the target the session has moved it to. */
   const blockAt = useCallback(
@@ -456,7 +570,7 @@ export function SessionPlayer({
   // otherwise a second, weaker set would celebrate as a PR too.
   const bestBefore = useMemo(() => {
     if (!exercise) return undefined
-    const surfaceAware = exercise.category === 'planche'
+    const surfaceAware = isSurfaceAware(exercise)
     const stored = surfaceAware
       ? recordForSurface(state.prs[exercise.id], surface)?.value
       : state.prs[exercise.id]?.value
@@ -481,23 +595,28 @@ export function SessionPlayer({
     exercise?.type === 'hold'
       ? stopLatencySecondsFor(exercise.id, state.settings.stopLatencySec, !walkedBack, state.settings.walkBackSec)
       : 0
+  // A rung of a push-up line the athlete is on. Its sets are filmed too: the
+  // replay, checked by the athlete, is the only evidence a rep standard has.
+  const rung = useMemo(
+    () => (block && exercise?.type === 'reps' ? rungInPlay(state, exercise.id, block) : null),
+    [state, block, exercise],
+  )
   // Film every key hold on the road. Most use pose geometry; Frog Stand keeps
   // the replay for an explicit checklist review instead.
-  const filmable = Boolean(block?.section === 'main' && exercise && isFilmable(exercise.id))
+  const filmable = Boolean(exercise && ((block?.section === 'main' && isFilmable(exercise.id)) || rung))
   /** The athlete wants this set filmed — intent, not capability. */
   const wantsFilm = Boolean(filmable && cameraOn && recorder.supported)
   const cameraLive = recorder.status === 'live' || recorder.status === 'recording'
   const cameraFailure = wantsFilm ? CAMERA_FAILURE[recorder.status] : undefined
   /** A filmed attempt waits for a live camera; a timer-only one never does. */
-  const startWaitsForCamera =
-    exercise?.type === 'hold' && wantsFilm && (recorder.status === 'starting' || recorder.status === 'off')
+  const startWaitsForCamera = wantsFilm && (recorder.status === 'starting' || recorder.status === 'off')
   const setup = exercise && assistApplies(exercise) ? state.setups?.[exercise.id] : undefined
 
   // Spin the pose model up while the athlete is still getting into position,
   // so an automatic check lands right after the clip instead of stalling on
   // the model load.
   useEffect(() => {
-    if (wantsFilm && state.settings.autoAnalyze && exercise?.id !== 'frog-stand') warmDetector()
+    if (wantsFilm && state.settings.autoAnalyze && exercise && isFilmable(exercise.id) && !isReviewOnly(exercise.id)) warmDetector()
   }, [wantsFilm, state.settings.autoAnalyze, exercise?.id])
 
   // Shared 100ms clock (also keeps the header session-elapsed ticking).
@@ -603,6 +722,13 @@ export function SessionPlayer({
       } else if (phase === 'lead') {
         filmAttemptRef.current = false
         setPhase('ready')
+      } else if (phase === 'reps' && filmAttemptRef.current) {
+        // The footage ends where the app was hidden, so it cannot show the
+        // whole set. The set is still logged by hand; it just has no replay.
+        void recorder.stop()
+        filmAttemptRef.current = false
+        recordingRef.current = null
+        setRepFilming('lost')
       }
       recorder.release()
       setSuspended(true)
@@ -694,7 +820,7 @@ export function SessionPlayer({
     if (phase === 'ready') {
       if (wantsFilm) void prepareCamera()
       else releaseCamera()
-    } else if (phase !== 'lead' && phase !== 'hold') {
+    } else if (phase !== 'lead' && phase !== 'hold' && !(phase === 'reps' && filmAttemptRef.current)) {
       releaseCamera()
     }
   }, [phase, wantsFilm, suspended, prepareCamera, releaseCamera])
@@ -904,7 +1030,7 @@ export function SessionPlayer({
         value,
         ...(raw !== undefined && Math.abs(raw - value) > 0.05 ? { raw } : {}),
         ...(ex.perSide ? { side: sideFor(setIndex) } : {}),
-        ...(ex.category === 'planche' ? { surface } : {}),
+        ...(isSurfaceAware(ex) ? { surface } : {}),
         ...(ex.type === 'hold' && leadInSec !== undefined && leadInSec !== null ? { leadInSec: round1(leadInSec) } : {}),
         ...(ex.type === 'hold' && timing ? { timing } : {}),
         ...(remembered ? { assist: remembered.assist } : {}),
@@ -1025,10 +1151,63 @@ export function SessionPlayer({
         setPhase('lead')
       } else {
         setPendingReps(block.target.kind === 'reps' ? block.target.reps : 0)
+        // A rung's set is filmed from Begin to Log — and, exactly as for a
+        // hold, only from a camera that is already live.
+        const filming = film && recorder.status === 'live'
+        filmAttemptRef.current = filming
+        recordingRef.current = null
+        setRepFilming(filming ? 'on' : 'off')
+        if (filming) {
+          void recorder.start().then((ok) => {
+            if (ok || !filmAttemptRef.current) return
+            filmAttemptRef.current = false
+            setRepFilming('lost')
+          })
+        }
         setPhase('reps')
       }
     },
-    [block, exercise, leadSec, recorder.status, bi, si],
+    [block, exercise, leadSec, recorder, bi, si],
+  )
+
+  /** Log a rep set, and close its recording when it had one. */
+  const logReps = useCallback(
+    (value: number) => {
+      const loggedAt = Date.now()
+      recordingRef.current = null
+      if (filmAttemptRef.current && exercise) {
+        filmAttemptRef.current = false
+        const exId = exercise.id
+        // A set with nothing in it has no rep to check, so its footage is not kept.
+        const keep = value > 0
+        setClipsFinalizing((n) => n + 1)
+        if (keep) setPendingRepClips((current) => new Set(current).add(loggedAt))
+        void recorder
+          .stop()
+          .then(async (blob) => {
+            if (!blob || !keep) return
+            const key = await saveClip(exId, blob, 0, value)
+            if (!key) {
+              pushToast('The clip could not be saved. Your set is still logged.', 'danger', 5000)
+              return
+            }
+            setLogs((current) => current.map((log) => (log.at === loggedAt ? { ...log, clipKey: key } : log)))
+            const sessionId = savedSessionIdRef.current
+            if (sessionId) dispatch({ type: 'ATTACH_SET_CLIP', sessionId, setAt: loggedAt, clipKey: key })
+          })
+          .finally(() => {
+            setClipsFinalizing((n) => Math.max(0, n - 1))
+            setPendingRepClips((current) => {
+              const next = new Set(current)
+              next.delete(loggedAt)
+              return next
+            })
+          })
+      }
+      setRepFilming('off')
+      logSet(value, { at: loggedAt })
+    },
+    [exercise, recorder, logSet, dispatch],
   )
 
   /** Back out of a countdown; nothing has been done yet, so nothing is logged. */
@@ -1158,7 +1337,9 @@ export function SessionPlayer({
       // A hand edit replaces the value, not the observation: the timer's raw
       // reading stays on record and the set says it was edited, instead of
       // the reading being thrown away.
-      return [...l.slice(0, -1), { ...last, value, ...(last.kind === 'hold' ? { timing: { method: 'edited' as const } } : {}) }]
+      // A rep count raised past what a replay review covered loses that review.
+      if (last.kind === 'reps') return [...l.slice(0, -1), withRepCount(last, value)]
+      return [...l.slice(0, -1), { ...last, value, timing: { method: 'edited' as const } }]
     })
   }, [])
 
@@ -1307,6 +1488,20 @@ export function SessionPlayer({
     const savedAt = Date.now()
     const endedAt = endedAtRef.current || savedAt
     const partial = finishedEarly || logs.length < totalSets
+    const lead: SkillId = workout.skills?.[0] ?? 'planche'
+    // What each other skill was on, and what the coach gave it today.
+    const skillNotes = sessionSkillSteps(state)
+    for (const skill of Object.keys(skillNotes) as SkillId[]) {
+      const meta = workout.skillMeta?.[skill]
+      const note = skillNotes[skill]
+      if (!meta || !note) continue
+      skillNotes[skill] = {
+        ...note,
+        ...(meta.strategy ? { strategy: meta.strategy } : {}),
+        ...(meta.baseTargetSec !== undefined ? { baseTargetSec: meta.baseTargetSec } : {}),
+        ...(meta.retest ? { retestOffered: true } : {}),
+      }
+    }
     const session: Session = {
       id: crypto.randomUUID(),
       // Never 0 in practice — a session cannot reach the summary without
@@ -1327,43 +1522,61 @@ export function SessionPlayer({
       completion: partial ? 'partial' : 'full',
       plannedRounds: totalSets,
       ...(workout.baseTargetSec !== undefined ? { baseTargetSec: workout.baseTargetSec } : {}),
-      ...(workout.blocks.some((b) => b.retest) ? { retestOffered: true } : {}),
+      // The top-level re-test flag is the planche's; another skill's is in its own notes.
+      ...(workout.blocks.some((b) => b.retest && (b.skill ?? workout.skills?.[0] ?? 'planche') === 'planche')
+        ? { retestOffered: true }
+        : {}),
       ...(workout.plannedDeload ? { plannedDeload: true } : {}),
+      ...(Object.keys(skillNotes).length ? { skills: skillNotes } : {}),
+      // What each skill's part was, so the line-up can tell a full training
+      // day from a maintenance dose.
+      ...(workout.kind === 'auto' || workout.kind === 'test'
+        ? {
+            roles: workout.lineup?.length
+              ? Object.fromEntries(workout.lineup.map((entry) => [entry.skill, entry.role]))
+              : { [lead]: 'lead' as const },
+          }
+        : {}),
     }
     const { next, events: raw } = applySession(state, session)
-    // The coach reacts to every finished session, whatever kind it was.
-    const targetBefore = adaptiveTarget(state, state.stepId)
-    const targetAfter = next.stepId === state.stepId ? adaptiveTarget(next, next.stepId) : undefined
-    setDebrief(debriefSession(state, next, session, { before: targetBefore, after: targetAfter }))
+    // The coach reacts to every finished session, whatever kind it was — read
+    // as the skill that led it, so a front lever day is debriefed as one.
+    const before = skillView(state, lead)
+    const after = skillView(next, lead)
+    const viewed = after.sessions.find((s) => s.id === session.id) ?? session
+    const targetBefore = adaptiveTarget(before, before.stepId)
+    const targetAfter = after.stepId === before.stepId ? adaptiveTarget(after, after.stepId) : undefined
+    setDebrief(debriefSession(before, after, viewed, { before: targetBefore, after: targetAfter }))
     // First-ever values on accessories are technically PRs but not worth a
-    // party — celebrate improvements, plus any first planche-line numbers.
+    // party — celebrate improvements, plus any first number on a skill line.
     const ev: SessionEvents = {
       ...raw,
-      prs: raw.prs.filter(
-        (p) => p.previous !== undefined || EXERCISE_BY_ID[p.exerciseId]?.category === 'planche',
-      ),
+      prs: raw.prs.filter((p) => p.previous !== undefined || isSkillHold(EXERCISE_BY_ID[p.exerciseId])),
     }
     // Compare against the last run of this same workout — but not a partial
     // one: stopping early is not "down" on the full version.
-    const plancheHold = (s: Session) =>
+    const skillHold = (s: Session) =>
       Math.round(
         s.sets
-          .filter((x) => x.kind === 'hold' && EXERCISE_BY_ID[x.exerciseId]?.category === 'planche')
+          .filter((x) => x.kind === 'hold' && isSkillHold(EXERCISE_BY_ID[x.exerciseId]))
           .reduce((t, x) => t + x.value, 0),
       )
+    const holdName = workout.skills && workout.skills.length === 1 ? SKILLS[lead].holdName : 'skill'
     const prevSame = [...state.sessions]
       .filter((s) => s.workoutName === workout.name && s.completion !== 'partial')
       .sort((a, b) => b.startedAt - a.startedAt)[0]
     if (prevSame && !partial) {
-      const delta = plancheHold(session) - plancheHold(prevSame)
+      const delta = skillHold(session) - skillHold(prevSame)
       setInsight({
         delta,
         label:
           delta >= 0
-            ? `+${delta}s planche hold time vs your last ${workout.name}`
-            : `${delta}s planche hold time vs last time — down days are part of it`,
+            ? `+${delta}s ${holdName} hold time vs your last ${workout.name}`
+            : `${delta}s ${holdName} hold time vs last time — down days are part of it`,
       })
     }
+    const rungs = rungsOpenedBy(state, session)
+    setRungsOpened(rungs)
     savedSessionIdRef.current = session.id
     dispatch({ type: 'SAVE_SESSION', session })
     clearDraft()
@@ -1373,7 +1586,7 @@ export function SessionPlayer({
     setPhase('celebrate')
     sfx.done()
     if (ev.unlockedStep) confetti(2)
-    else if (ev.prs.length > 0) confetti(1)
+    else if (ev.prs.length > 0 || rungs.length > 0) confetti(1)
   }, [workout, state, logs, rpe, notes, dispatch, checkIn, finishedEarly, totalSets])
 
   // Keyboard shortcuts.
@@ -1405,7 +1618,7 @@ export function SessionPlayer({
         if (phase === 'intro') startSession()
         else if (phase === 'ready') beginSet(wantsFilm && cameraLive)
         else if (phase === 'hold') stopHold()
-        else if (phase === 'reps') logSet(pendingReps)
+        else if (phase === 'reps') logReps(pendingReps)
       } else if (e.key.toLowerCase() === 's' && phase === 'rest') {
         setRestEnd(Date.now())
       } else if (e.key === 'Escape' && phase !== 'celebrate') {
@@ -1418,7 +1631,7 @@ export function SessionPlayer({
     phase,
     beginSet,
     stopHold,
-    logSet,
+    logReps,
     pendingReps,
     showCheckIn,
     showDemo,
@@ -1554,6 +1767,34 @@ export function SessionPlayer({
     )
   }
 
+  /** The replay review of a filmed rep set on a rung; nothing when the set has no clip to check. */
+  const repRowFor = (log: SetLog, rest: boolean) => {
+    const clipKey = log.clipKey ?? log.form?.clipKey ?? null
+    const pending = pendingRepClips.has(log.at)
+    if (!clipKey && !pending) return null
+    const status = rungInPlay(state, log.exerciseId, log)
+    if (!status) return null
+    const outcome = rungOutcome(status, log.value)
+    const name = EXERCISE_BY_ID[log.exerciseId]?.name.toLowerCase() ?? 'rep'
+    return (
+      <RepReviewRow
+        key={`reps-${log.at}`}
+        clipKey={clipKey}
+        clipPending={pending}
+        exerciseId={log.exerciseId}
+        rung={status.rung}
+        count={log.value}
+        outcome={outcome}
+        waitsFor={outcome === 'waits' && status.next?.needsStep ? STEP_BY_ID[status.next.needsStep].name : undefined}
+        value={log.form}
+        canLower={rest}
+        onHuman={(review) => applyHuman(log.at, review)}
+        onReviewOpenChange={setReviewOpen}
+        {...(rest ? {} : { setLabel: log.value === 1 ? `your ${name}` : `your ${log.value} ${name}s` })}
+      />
+    )
+  }
+
   function body() {
     if (phase === 'intro') {
       const sections = [...new Set(workout.blocks.map((b) => b.section))]
@@ -1561,8 +1802,15 @@ export function SessionPlayer({
       const primaryExercise = primaryTarget ? EXERCISE_BY_ID[primaryTarget.exerciseId] : undefined
       // Say up front that filming happens — it only appears once the main
       // work starts, which is several sets in and easy to be surprised by.
-      const willFilm =
-        cameraOn && recorder.supported && workout.blocks.some((b) => b.section === 'main' && isFilmable(b.exerciseId))
+      const filmedBlocks = workout.blocks.filter((b) => b.section === 'main' && isFilmable(b.exerciseId))
+      const willFilm = cameraOn && recorder.supported && filmedBlocks.length > 0
+      // One line per camera position this session needs, in the order it comes up.
+      const filmingViews = [...new Set(filmedBlocks.map((b) => postureFor(b.exerciseId)))]
+      // The push-up line's sets are filmed too, for the replay review.
+      const filmedRung = workout.blocks.find((b) => b.target.kind === 'reps' && rungInPlay(state, b.exerciseId, b))
+      const filmsRung = cameraOn && recorder.supported && filmedRung !== undefined
+      const lineup = workout.lineup && workout.lineup.length > 1 ? workout.lineup : undefined
+      const mixed = (workout.skills?.length ?? 1) > 1
       const requested =
         workout.request?.minutes ?? (workout.kind === 'auto' ? state.settings.sessionMinutes : undefined)
       const overBudget = requested !== undefined && workout.minutes > requested + 1
@@ -1590,8 +1838,39 @@ export function SessionPlayer({
               <div className="mt-3 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3">
                 <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent-text">Adjusted for today</div>
                 <ul className="mt-1 space-y-1 text-[13px] leading-relaxed text-ink">
-                  {workout.adjustments.map((line) => (
+                  {workout.adjustments.slice(0, 3).map((line) => (
                     <li key={line}>{line}</li>
+                  ))}
+                </ul>
+                {workout.adjustments.length > 3 ? (
+                  // A first session with several skills can carry six or
+                  // seven of these; all of them matter, but not above the
+                  // button that starts the session.
+                  <details className="mt-1">
+                    <summary className="cursor-pointer py-1 text-[12.5px] font-semibold text-accent-text">
+                      {workout.adjustments.length - 3} more
+                    </summary>
+                    <ul className="mt-1 space-y-1 text-[13px] leading-relaxed text-ink">
+                      {workout.adjustments.slice(3).map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </div>
+            ) : null}
+            {lineup ? (
+              <div className="mt-3 rounded-2xl border border-line bg-raised px-4 py-3">
+                <div className="text-[10.5px] font-bold uppercase tracking-wider text-ink3">Today's skills</div>
+                <ul className="mt-1.5 space-y-2">
+                  {lineup.map((entry) => (
+                    <li key={entry.skill} className="text-[13px] leading-relaxed text-ink2">
+                      <span className="font-semibold text-ink">{SKILLS[entry.skill].name}</span>
+                      <span className="ml-1.5 rounded-full bg-surface px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-ink3">
+                        {LINEUP_ROLE_LABEL[entry.role]}
+                      </span>
+                      <span className="mt-0.5 block">{entry.reason}</span>
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -1615,10 +1894,29 @@ export function SessionPlayer({
               <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-line bg-raised px-4 py-3 text-left">
                 <Icon name="monitor" size={16} className="mt-0.5 shrink-0 text-accent-text" />
                 <div>
-                  <div className="text-[13.5px] font-medium text-ink">Side-view camera check on main sets</div>
+                  <div className="text-[13.5px] font-medium text-ink">
+                    {filmingViews.length === 1
+                      ? `${filmingViews[0] === 'flag' ? 'Front-view' : 'Side-view'} camera check on main sets`
+                      : 'Camera check on main sets'}
+                  </div>
                   <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink2">
-                    Put the phone directly beside you. Filming starts only once the camera is actually live — if it
-                    cannot open, the set runs on the timer and says so.
+                    {filmingViews.map((view) => FILMING[view].intro).join(' ')}
+                    {filmingViews.length > 1 ? ' Each set says which before it starts.' : ''} Filming starts only once
+                    the camera is actually live — if it cannot open, the set runs on the timer and says so.
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            {filmsRung ? (
+              <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-line bg-raised px-4 py-3 text-left">
+                <Icon name="monitor" size={16} className="mt-0.5 shrink-0 text-accent-text" />
+                <div>
+                  <div className="text-[13.5px] font-medium text-ink">
+                    Your {EXERCISE_BY_ID[filmedRung.exerciseId]?.name.toLowerCase() ?? 'push-up'} sets are filmed too
+                  </div>
+                  <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink2">
+                    The camera does not count reps. You check each set on its replay, and a set you pass is what counts
+                    toward the next rung.
                   </p>
                 </div>
               </div>
@@ -1645,10 +1943,17 @@ export function SessionPlayer({
                       .map((b, i) => {
                         const ex = EXERCISE_BY_ID[b.exerciseId]
                         const label = blockLabel(b)
+                        // In a mixed session, say whose work each skill block is.
+                        const owner = mixed ? (b.skill ?? skillOfExercise(b.exerciseId)) : undefined
                         return (
                           <div key={i} className="flex items-baseline justify-between gap-3 text-[14px]">
                             <span className="min-w-0 text-ink">
                               {ex.name}
+                              {owner && b.section !== 'warmup' && b.section !== 'cooldown' ? (
+                                <span className="ml-2 whitespace-nowrap rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink3">
+                                  {SKILLS[owner].short}
+                                </span>
+                              ) : null}
                               {label ? (
                                 <span className="ml-2 whitespace-nowrap rounded-full bg-raised px-2 py-0.5 text-[11px] font-medium text-ink3">
                                   {label}
@@ -1676,6 +1981,9 @@ export function SessionPlayer({
       const isHold = exercise.type === 'hold'
       const target = block.target.kind === 'hold' ? `${block.target.sec}s` : `${block.target.reps} reps`
       const filmingThis = wantsFilm && cameraLive
+      // Where the phone goes: the judged view for a hold, the shape of the rep for a rung.
+      const filming = rung ? REP_FILMING[rung.rung.frame] : FILMING[postureFor(exercise.id)]
+      const filmPosture = rung ? REP_FILMING[rung.rung.frame].posture : postureFor(exercise.id)
       return (
         <div className="mx-auto w-full max-w-lg px-5 pb-10 text-center">
           <div className="mt-4 text-[13px] font-semibold uppercase tracking-wide text-accent-text">
@@ -1704,11 +2012,11 @@ export function SessionPlayer({
           </div>
           {bestBefore ? (
             <div className="mt-1.5 text-[12.5px] text-ink3 tnum">
-              {exercise.category === 'planche' ? `${surfaceLabel(surface)} ` : ''}best{' '}
+              {isSurfaceAware(exercise) ? `${surfaceLabel(surface)} ` : ''}best{' '}
               {exercise.type === 'hold' ? fmtHold(bestBefore) : `${bestBefore} reps`}
             </div>
           ) : null}
-          {exercise.category === 'planche' && state.profile.equipment.includes('parallettes') ? (
+          {isSurfaceAware(exercise) && state.profile.equipment.includes('parallettes') ? (
             <div
               className="mt-2 inline-flex overflow-hidden rounded-xl border border-line"
               role="group"
@@ -1736,8 +2044,8 @@ export function SessionPlayer({
               onSave={(next) => dispatch({ type: 'SET_SETUP', exerciseId: exercise.id, setup: next })}
             />
           ) : null}
-          {exercise.category === 'planche' ? (
-            <Figure step={figureFor(exercise.id)} className="mx-auto mt-2 h-36 w-44 text-ink" />
+          {figureFor(exercise.id) ? (
+            <Figure step={figureFor(exercise.id)!} className="mx-auto mt-2 h-36 w-44 text-ink" />
           ) : (
             <div className="mt-6" />
           )}
@@ -1760,7 +2068,9 @@ export function SessionPlayer({
                 <span className="flex min-w-0 items-center gap-2 text-left text-[13.5px] text-ink2" role="status">
                   <Icon name="monitor" size={15} className={filmingThis ? 'shrink-0 text-accent-text' : 'shrink-0 text-ink3'} />
                   {!cameraOn
-                    ? 'Camera off — this set is timed only'
+                    ? rung
+                      ? 'Camera off — this set cannot count toward the next rung'
+                      : 'Camera off — this set is timed only'
                     : filmingThis
                       ? 'Camera live — this set will be filmed'
                       : cameraFailure
@@ -1803,6 +2113,7 @@ export function SessionPlayer({
                   <FramingCheck
                     videoRef={recorder.videoRef}
                     active={recorder.status === 'live'}
+                    posture={filmPosture}
                     onFloorChange={(floor) => setPreviewOnItsSide(floor === 'left' || floor === 'right')}
                   />
                   {!cameraLive ? (
@@ -1811,7 +2122,7 @@ export function SessionPlayer({
                     </div>
                   ) : null}
                   <div className="absolute inset-x-0 bottom-0 bg-black/55 px-3 py-1.5 text-[11.5px] text-white/85">
-                    Side-on · whole body and both hands inside the box · phone level.
+                    {filming.box}
                   </div>
                 </div>
               ) : null}
@@ -1838,11 +2149,17 @@ export function SessionPlayer({
                   </button>
                 </div>
               ) : null}
-              {cameraOn && cameraLive && recorder.portrait && !previewOnItsSide ? (
+              {cameraOn &&
+              cameraLive &&
+              (filming.turn === 'landscape'
+                ? recorder.portrait && !previewOnItsSide
+                : // A tall shape wants the phone upright: a landscape frame, or
+                  // an upright one whose scene is lying on its side, is turned.
+                  recorder.frame !== undefined && (!recorder.portrait || previewOnItsSide)) ? (
                 <p className="mt-1.5 flex items-start gap-1.5 text-left text-[12.5px] leading-relaxed text-accent-text">
                   <Icon name="rotate" size={14} className="mt-0.5 shrink-0" />
-                  Turn the phone on its side. A planche is a wide shape, and an upright frame cuts off your hands or
-                  your feet.
+                  {filming.turn === 'landscape' ? 'Turn the phone on its side. ' : 'Stand the phone upright. '}
+                  {filming.turnWhy}
                 </p>
               ) : null}
               {cameraOn && cameraFailure ? (
@@ -1887,10 +2204,12 @@ export function SessionPlayer({
               style={{ background: 'var(--t-btn-accent)' }}
             >
               <Icon name="play" size={18} />
-              {!isHold
-                ? 'Begin set'
-                : startWaitsForCamera
-                  ? 'Waiting for the camera…'
+              {startWaitsForCamera
+                ? 'Waiting for the camera…'
+                : !isHold
+                  ? wantsFilm && !cameraLive
+                    ? 'Begin set without filming'
+                    : 'Begin set'
                   : wantsFilm && !cameraLive
                     ? `Start without filming · ${leadSec}s lead-in`
                     : `Start · ${leadSec}s lead-in`}
@@ -2026,7 +2345,23 @@ export function SessionPlayer({
             {exercise.name} · Set {displaySet}/{displayTotal}
             {perSide ? ` · ${side === 'left' ? 'Left' : 'Right'}` : ''}
           </div>
+          {repFilming === 'on' ? (
+            <div className="mt-1 inline-flex items-center gap-1.5 text-[12px] font-medium text-danger-text">
+              <span className="h-2 w-2 rounded-full bg-danger" aria-hidden="true" /> Filming until you log the set
+            </div>
+          ) : repFilming === 'lost' ? (
+            <div className="mt-1 max-w-xs text-[12px] leading-relaxed text-ink3" role="status">
+              Filming stopped, so this set has no replay to check. Log it as usual.
+            </div>
+          ) : null}
           <div className="mt-2 text-[15px] text-ink2">Do your set, then log the reps.</div>
+          {rung && repFilming === 'on' ? (
+            <div className="mt-1 max-w-xs text-[12.5px] leading-relaxed text-ink3">
+              {rung.next
+                ? `${rung.rung.standardReps} full rep${rung.rung.standardReps === 1 ? '' : 's'} in one set, checked on the replay, opens the next rung.`
+                : 'Log only full reps — you check them on the replay next.'}
+            </div>
+          ) : null}
           <div className="mt-6 flex items-center gap-5">
             <button
               onClick={() => setPendingReps((r) => Math.max(0, r - 1))}
@@ -2048,7 +2383,7 @@ export function SessionPlayer({
           </div>
           <div className="mt-1 text-[13px] text-ink3 tnum">target {block.target.kind === 'reps' ? block.target.reps : 0}</div>
           <button
-            onClick={() => logSet(pendingReps)}
+            onClick={() => logReps(pendingReps)}
             className="mt-8 inline-flex w-full max-w-sm items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99]"
             style={{ background: 'var(--t-btn-accent)' }}
           >
@@ -2125,9 +2460,10 @@ export function SessionPlayer({
           ) : null}
           {lastLog?.kind === 'hold' &&
           lastLog.section === 'main' &&
-          (lastLog.exerciseId === STEP_BY_ID[state.stepId].keyExerciseId || isFilmable(lastLog.exerciseId))
+          (currentStepForExercise(state, lastLog.exerciseId) !== undefined || isFilmable(lastLog.exerciseId))
             ? formRowFor(lastLog, true)
             : null}
+          {lastLog?.kind === 'reps' ? repRowFor(lastLog, true) : null}
 
           <div className="mt-5 text-[14px] text-ink2">
             Next: <span className="font-medium text-ink">{nx.name}</span>
@@ -2208,14 +2544,14 @@ export function SessionPlayer({
         (l) =>
           l.kind === 'hold' &&
           l.section === 'main' &&
-          (l.exerciseId === STEP_BY_ID[state.stepId].keyExerciseId || isFilmable(l.exerciseId)),
+          (currentStepForExercise(state, l.exerciseId) !== undefined || isFilmable(l.exerciseId)),
       )
     const blocking = logs.filter((log) => setNeedsProgressionFormEvidence(log, state))
     const unreviewedFilmed = logs.filter((log) => {
       const hasClip = Boolean(log.clipKey ?? log.form?.clipKey)
       if (!hasClip || log.kind !== 'hold' || log.section !== 'main' || !isFilmable(log.exerciseId)) return false
       if (log.form?.confirmed !== true) return true
-      if (log.exerciseId === 'frog-stand') return log.form.visualReviewPassed !== true
+      if (isReviewOnly(log.exerciseId)) return log.form.visualReviewPassed !== true
       if (!log.form.auto) return true
       if (requiresFlightConfirmation(log.exerciseId) && log.form.flightConfirmed !== true) return true
       return unseenVariantCriteria(log.exerciseId, log.form.auto).length > 0 && log.form.variantConfirmed !== true
@@ -2225,6 +2561,15 @@ export function SessionPlayer({
           (log, index, all) => all.findIndex((candidate) => candidate.at === log.at) === index,
         )
       : []
+    // Filmed rep sets on a rung: the best one per movement that has not been
+    // rated down. A standard is met on the best set, so that is the review
+    // that matters — and it stays in place once it is given.
+    const repLogs = repSetsToReview(
+      logs,
+      (log) =>
+        Boolean(log.clipKey ?? log.form?.clipKey ?? pendingRepClips.has(log.at)) &&
+        rungInPlay(state, log.exerciseId, log) !== null,
+    )
     const lastNote = lastLog ? timingNote(lastLog) : null
     return (
       <div className="mx-auto w-full max-w-lg px-5 pb-10">
@@ -2279,6 +2624,7 @@ export function SessionPlayer({
           </div>
         ) : null}
         {formLogs.map((log) => formRowFor(log, false))}
+        {repLogs.map((log) => repRowFor(log, false))}
 
         <div className="mt-5">
           <div className="mb-2 flex items-center justify-center gap-2 text-[14px] font-medium text-ink" id="rpe-label">
@@ -2365,32 +2711,59 @@ export function SessionPlayer({
 
   function celebrate() {
     if (!events || !savedSession) return null
-    const unlocked = events.unlockedStep ? STEP_BY_ID[events.unlockedStep] : undefined
+    // Every step this session opened, on whichever road. One session can open
+    // a step on two skills; the first is the hero and the rest follow it.
+    const opened = (
+      events.unlocks?.length
+        ? events.unlocks
+        : events.unlockedStep
+          ? [{ stepId: events.unlockedStep, via: events.unlockedVia ?? ('bar' as const) }]
+          : []
+    ).filter((entry) => STEP_BY_ID[entry.stepId] !== undefined)
+    const severalRoads = trackedSkills(state).length > 1
     return (
       <div className="mx-auto w-full max-w-lg px-5 pb-10 text-center">
-        {unlocked ? (
-          <div className="mt-6 rounded-3xl border border-accent/30 bg-accent-soft p-6">
-            <div className="text-[13px] font-semibold uppercase tracking-wide text-accent-text">Step unlocked</div>
-            <Figure step={unlocked.id} tone="accent" className="mx-auto mt-2 h-32 w-40 text-ink animate-floaty" />
-            <div className="font-display text-[26px] font-bold text-ink">{unlocked.name}</div>
-            <p className="mt-1 text-[14px] text-ink2">{unlocked.tagline}</p>
-            <ShareProgress
-              label="Share this"
-              opened={{ stepId: unlocked.id, ...(events.unlockedVia ? { via: events.unlockedVia } : {}) }}
-              className="mt-3"
-            />
-            {events.unlockedVia === 'next-shape' ? (
-              <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-ink2">
-                Opened early: you held its opening dose clean on camera while your last step was past half its bar.
-                That is the readiness the bar only predicts — keep the previous step in your sessions for a while.
-              </p>
-            ) : null}
-          </div>
+        {opened.length ? (
+          opened.map((entry, index) => {
+            const unlocked = STEP_BY_ID[entry.stepId]
+            return (
+              <div key={entry.stepId} className={`${index ? 'mt-3' : 'mt-6'} rounded-3xl border border-accent/30 bg-accent-soft p-6`}>
+                <div className="text-[13px] font-semibold uppercase tracking-wide text-accent-text">
+                  {severalRoads ? `${SKILLS[unlocked.skill].name} · step unlocked` : 'Step unlocked'}
+                </div>
+                <Figure
+                  step={unlocked.id}
+                  tone={index === 0 ? 'accent' : undefined}
+                  className={`mx-auto mt-2 h-32 w-40 text-ink ${index === 0 ? 'animate-floaty' : ''}`}
+                />
+                <div className="font-display text-[26px] font-bold text-ink">{unlocked.name}</div>
+                <p className="mt-1 text-[14px] text-ink2">{unlocked.tagline}</p>
+                <ShareProgress label="Share this" opened={{ stepId: unlocked.id, via: entry.via }} className="mt-3" />
+                {entry.via === 'next-shape' ? (
+                  <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-ink2">
+                    Opened early: you held its opening dose clean on camera while your last step was past half its bar.
+                    That is the readiness the bar only predicts — keep the previous step in your sessions for a while.
+                  </p>
+                ) : null}
+              </div>
+            )
+          })
         ) : (
           <h1 className="mt-8 font-display text-[26px] font-bold text-ink">
             {persist.primary === 'ok' ? 'Saved ✓' : 'Saved in the app'}
           </h1>
         )}
+        {rungsOpened.map(({ skill, rung: openedRung }) => (
+          <div key={openedRung.exerciseId} className="mt-3 rounded-3xl border border-accent/30 bg-accent-soft p-5">
+            <div className="text-[13px] font-semibold uppercase tracking-wide text-accent-text">
+              {SKILLS[skill].ladder?.name ?? 'Push-up'} line · rung opened
+            </div>
+            <div className="mt-1 font-display text-[22px] font-bold text-ink">
+              {EXERCISE_BY_ID[openedRung.exerciseId]?.name ?? openedRung.exerciseId}
+            </div>
+            <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">{openedRung.why}</p>
+          </div>
+        ))}
         <p className="mt-1 text-[12.5px] text-ink3" role="status">
           {persist.primary === 'ok'
             ? 'Stored on this device.'
@@ -2496,7 +2869,7 @@ export function SessionPlayer({
       aria-hidden={layerOpen ? true : undefined}
       inert={layerOpen ? true : undefined}
       tabIndex={-1}
-      className="fixed inset-0 z-40 overflow-y-auto bg-bg outline-none"
+      className="fixed inset-0 z-40 overflow-y-auto overscroll-contain bg-bg outline-none"
     >
       <div className="app-ambient min-h-full pb-8">
         {header}
@@ -2701,25 +3074,4 @@ function DemoHelp({ exercise, pinnedUrl }: { exercise: Exercise; pinnedUrl?: str
   )
 }
 
-/** Map planche-line exercise ids onto the figure pictograms. */
-function figureFor(exerciseId: string) {
-  switch (exerciseId) {
-    case 'planche-lean':
-      return 'lean' as const
-    case 'frog-stand':
-      return 'frog' as const
-    case 'tuck-planche':
-      return 'tuck' as const
-    case 'adv-tuck-planche':
-      return 'advtuck' as const
-    case 'one-leg-planche':
-      return 'oneleg' as const
-    case 'straddle-planche':
-    case 'band-straddle-planche':
-      return 'straddle' as const
-    case 'full-planche':
-      return 'full' as const
-    default:
-      return 'lean' as const
-  }
-}
+

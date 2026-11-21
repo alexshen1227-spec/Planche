@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { Category, Exercise } from '../types'
 import { useStore } from '../lib/store'
 import { EXERCISES, CATEGORY_LABEL } from '../data/exercises'
-import { GUIDES, GLOSSARY, type Guide } from '../data/learn'
+import { GUIDES, GUIDE_GROUPS, GLOSSARY, type Guide } from '../data/learn'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { pushToast } from '../lib/toast'
 import { fmtHold, fmtDate } from '../lib/time'
@@ -10,8 +10,24 @@ import { Icon } from '../components/Icon'
 import { Modal, Chip } from '../components/ui'
 import { ClipGallery } from '../components/ClipGallery'
 import { isFilmable } from '../lib/poseForm'
+import { ladderOfExercise } from '../lib/repLadder'
+import { activeSkills } from '../lib/skills'
 
-const CATS: (Category | 'all')[] = ['all', 'planche', 'push', 'scapula', 'core', 'wrist', 'general', 'mobility']
+const CATS: (Category | 'all')[] = [
+  'all',
+  'planche',
+  'lever',
+  'handstand',
+  'ninety',
+  'flag',
+  'push',
+  'pull',
+  'scapula',
+  'core',
+  'wrist',
+  'general',
+  'mobility',
+]
 
 export function Library() {
   const [pane, setPane] = useState<'exercises' | 'basics'>('exercises')
@@ -302,13 +318,15 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
 
       <VideoPanel exercise={e} />
 
-      {isFilmable(e.id) ? (
+      {isFilmable(e.id) || ladderOfExercise(e.id) ? (
         <div className="mt-4 rounded-2xl border border-line bg-raised p-4">
           <div className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
             <Icon name="monitor" size={14} className="text-accent-text" /> Your recorded sets
           </div>
           <p className="mt-1 text-[12.5px] leading-relaxed text-ink3">
-            Compare your current position against an older one — pin a clip to keep it as your reference.
+            {isFilmable(e.id)
+              ? 'Compare your current position against an older one — pin a clip to keep it as your reference.'
+              : 'Replays of your filmed sets. A set still in your history can be reviewed here, and one you pass counts toward its rung.'}
           </p>
           <ClipGallery exerciseId={e.id} />
         </div>
@@ -364,6 +382,8 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
 }
 
 function BasicsPane() {
+  const { state } = useStore()
+  const mine = activeSkills(state)
   const [guide, setGuide] = useState<Guide | null>(null)
   const [term, setTerm] = useState('')
 
@@ -377,22 +397,43 @@ function BasicsPane() {
 
   return (
     <>
-      <div className="mt-5 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-        {GUIDES.map((g) => (
-          <button
-            key={g.id}
-            onClick={() => setGuide(g)}
-            className="card-int rounded-2xl border border-line bg-surface p-5 text-left shadow-card"
-          >
-            <div className="text-[26px]">{g.icon}</div>
-            <div className="mt-1.5 font-display text-[16px] font-semibold text-ink">{g.title}</div>
-            <p className="mt-1 text-[13px] leading-relaxed text-ink2">{g.summary}</p>
-            <div className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-accent-text">
-              Read <Icon name="chevronR" size={14} />
+      {GUIDE_GROUPS.map((group) => {
+        // The roads the athlete trains come first; the rest are still there to read.
+        const guides = GUIDES.filter((g) => g.group === group.id).sort(
+          (a, b) => Number(Boolean(b.skill && mine.includes(b.skill))) - Number(Boolean(a.skill && mine.includes(a.skill))),
+        )
+        return (
+          <section key={group.id} className="mt-6" aria-labelledby={`guides-${group.id}`}>
+            <h2 id={`guides-${group.id}`} className="font-display text-[17px] font-semibold text-ink">
+              {group.title}
+            </h2>
+            <p className="mt-0.5 text-[13px] text-ink3">{group.blurb}</p>
+            <div className="mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {guides.map((g) => (
+                <button
+                  key={g.id}
+                  onClick={() => setGuide(g)}
+                  className="card-int rounded-2xl border border-line bg-surface p-5 text-left shadow-card"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-[26px]">{g.icon}</div>
+                    {g.skill && mine.includes(g.skill) ? (
+                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-text">
+                        you train this
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-1.5 font-display text-[16px] font-semibold text-ink">{g.title}</div>
+                  <p className="mt-1 text-[13px] leading-relaxed text-ink2">{g.summary}</p>
+                  <div className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-accent-text">
+                    Read <Icon name="chevronR" size={14} />
+                  </div>
+                </button>
+              ))}
             </div>
-          </button>
-        ))}
-      </div>
+          </section>
+        )
+      })}
 
       <div className="mb-3 mt-8 flex flex-wrap items-end justify-between gap-3">
         <h2 className="font-display text-[17px] font-semibold text-ink">Glossary</h2>

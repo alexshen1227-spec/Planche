@@ -1,15 +1,26 @@
 import { useMemo, useState } from 'react'
-import type { AssistType, Section, Session, SetLog, TrainingSurface, Workout, WorkoutRequest } from '../types'
+import type { AssistType, Section, Session, SetLog, SkillId, TrainingSurface, Workout, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
 import {
   TEMPLATES,
+  templatesFor,
   describeBlock,
   describeTarget,
   primaryTargetBlock,
   countRounds,
   challengeBlockedReason,
   finalizeFromPlan,
+  planForToday,
 } from '../data/workouts'
+import { missingKit, SKILLS } from '../data/skills'
+import {
+  activeSkills,
+  assistAppliesTo,
+  isSkillHold,
+  isSurfaceAware,
+  sessionSkillSteps,
+  stepOfSkill,
+} from '../lib/skills'
 import { EXERCISES, EXERCISE_BY_ID, CATEGORY_LABEL } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { applySession } from '../lib/engine'
@@ -21,7 +32,7 @@ import { Icon } from '../components/Icon'
 import { Modal, SectionTitle } from '../components/ui'
 import { defaultSurface, surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 import { recordForSurface } from '../lib/records'
-import { buildPlan, STRATEGY_BY_ID } from '../lib/coach'
+import { STRATEGY_BY_ID } from '../lib/coach'
 import { useToday } from '../lib/useToday'
 import { ASSIST_LABEL } from '../components/SetupRow'
 
@@ -56,7 +67,7 @@ function WorkoutTarget({ workout }: { workout: Workout }) {
 
 /** Request identity for the preview, so a fresh decision is made per card. */
 function requestKey(request: WorkoutRequest): string {
-  return `${request.source}:${request.templateId ?? ''}:${request.stepId ?? ''}:${request.minutes ?? ''}`
+  return `${request.source}:${request.templateId ?? ''}:${request.stepId ?? ''}:${request.minutes ?? ''}:${(request.skills ?? []).join('+')}`
 }
 
 export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest) => void }) {
@@ -69,7 +80,15 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
   // what would actually run — after equipment, readiness and capacity — not
   // the template as written.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const plan = useMemo(() => buildPlan(state), [state, todayKey])
+  const plan = useMemo(() => planForToday(state, Date.now()), [state, todayKey])
+  // The skills the athlete trains, and which of them can train with the kit
+  // listed: a skill waiting for a bar is not offered a session.
+  const skills = activeSkills(state)
+  const trainable = skills.filter((skill) => missingKit(skill, state.profile.equipment).length === 0)
+  const [testPick, setTestPick] = useState<SkillId | null>(null)
+  const testSkill: SkillId = testPick && trainable.includes(testPick) ? testPick : (trainable[0] ?? skills[0])
+  const [mix, setMix] = useState<SkillId[]>([])
+  const mixed = mix.filter((skill) => trainable.includes(skill))
   const finalized = useMemo(() => {
     const now = Date.now()
     const build = (request: WorkoutRequest) => finalizeFromPlan(state, request, plan, now).workout
@@ -93,7 +112,7 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [previewRequest && requestKey(previewRequest), finalized],
   )
-  const step = STEP_BY_ID[state.stepId]
+  const step = STEP_BY_ID[stepOfSkill(state, testSkill)]
 
   return (
     <div className="animate-rise">
@@ -123,6 +142,15 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
             </div>
             <div className="mt-1.5 font-display text-[22px] font-bold text-ink">{today.name}</div>
             <p className="mt-1 max-w-lg text-[14px] leading-relaxed text-ink2">{today.focus}</p>
+            {today.lineup && today.lineup.length > 1 ? (
+              <ul className="mt-2 max-w-lg space-y-1">
+                {today.lineup.map((entry) => (
+                  <li key={entry.skill} className="text-[12.5px] leading-relaxed text-ink3">
+                    <span className="font-semibold text-ink2">{SKILLS[entry.skill].name}</span> — {entry.reason}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             <div className="mt-4 flex flex-wrap items-center gap-2 text-[13px] text-ink2">
               {today.strategy ? (
                 <span className="rounded-full border border-accent/30 bg-accent-soft px-3 py-1 font-semibold text-accent-text">
@@ -141,13 +169,26 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
             </div>
           </div>
         </button>
-        <button
-          onClick={() => setPreviewRequest({ source: 'test', stepId: state.stepId })}
-          className="card-int group rounded-3xl border border-line bg-surface p-6 text-left shadow-card"
-        >
+        <div className="card-int group rounded-3xl border border-line bg-surface p-6 text-left shadow-card">
           <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-ink3">
             <Icon name="target" size={14} /> Test day
           </div>
+          {trainable.length > 1 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Skill to test">
+              {trainable.map((skill) => (
+                <button
+                  key={skill}
+                  aria-pressed={skill === testSkill}
+                  onClick={() => setTestPick(skill)}
+                  className={`min-h-9 rounded-full border px-3 py-1 text-[12.5px] font-semibold transition ${
+                    skill === testSkill ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2 hover:text-ink'
+                  }`}
+                >
+                  {SKILLS[skill].short}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="mt-1.5 font-display text-[22px] font-bold text-ink">Max Test</div>
           <p className="mt-1 text-[14px] leading-relaxed text-ink2">
             {EXERCISE_BY_ID[step.keyExerciseId].perSide ? 'Two fresh attempts per side' : 'Three fresh attempts'} at
@@ -157,16 +198,74 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
           {testBlocked ? (
             <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">Not today — {testBlocked}.</p>
           ) : (
-            <div className="mt-4 inline-flex items-center gap-1.5 text-[14px] font-medium text-accent-text">
+            <button
+              onClick={() => setPreviewRequest({ source: 'test', stepId: step.id })}
+              className="mt-4 inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[14px] font-medium text-accent-text transition hover:border-line-strong"
+            >
               Test yourself <Icon name="arrowR" size={15} />
-            </div>
+            </button>
           )}
-        </button>
+        </div>
       </div>
+
+      {trainable.length > 1 ? (
+        <>
+          <SectionTitle>Choose today's skills</SectionTitle>
+          <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+            <p className="text-[13.5px] leading-relaxed text-ink2">
+              The recommended session picks these for you by priority and by what has gone longest untrained. To
+              train something else today, pick it here — one skill for a session built around it, or several in the
+              order you tap them.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Skills for a session of your own">
+              {trainable.map((skill) => {
+                const position = mixed.indexOf(skill)
+                const on = position >= 0
+                return (
+                  <button
+                    key={skill}
+                    aria-pressed={on}
+                    onClick={() => setMix((current) => (on ? current.filter((id) => id !== skill) : [...current, skill]))}
+                    className={`min-h-10 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${
+                      on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2 hover:text-ink'
+                    }`}
+                  >
+                    {on ? `${position + 1}. ` : ''}
+                    {SKILLS[skill].name}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => setPreviewRequest({ source: 'auto', skills: mixed })}
+                disabled={mixed.length === 0}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 font-display text-[14.5px] font-semibold text-on-accent shadow-card transition hover:brightness-105 disabled:opacity-40"
+                style={{ background: 'var(--t-btn-accent)' }}
+              >
+                <Icon name="play" size={15} /> Preview this session
+              </button>
+              <span className="text-[12.5px] leading-relaxed text-ink3">
+                {mixed.length === 0
+                  ? 'Nothing picked.'
+                  : mixed.length === 1
+                    ? `${SKILLS[mixed[0]].name} on its own — the full session for that skill.`
+                    : `${SKILLS[mixed[0]].name} leads; the rest follow in the order picked.`}
+              </span>
+            </div>
+            {skills.length > trainable.length ? (
+              <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">
+                Not listed: {skills.filter((skill) => !trainable.includes(skill)).map((skill) => SKILLS[skill].name).join(', ')} —
+                waiting for kit. Add it under Settings → Equipment.
+              </p>
+            ) : null}
+          </div>
+        </>
+      ) : null}
 
       <SectionTitle>Focused sessions</SectionTitle>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {TEMPLATES.map((t) => {
+        {templatesFor(state).map((t) => {
           const built = finalized.templates.get(t.id) ?? t
           const changed = Boolean(built.adjustments?.length) || built.id !== t.id
           return (
@@ -200,6 +299,15 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
             <div className="pr-10">
               <h2 className="font-display text-[22px] font-bold text-ink">{preview.name}</h2>
               <p className="mt-1 text-[14px] text-ink2">{preview.focus}</p>
+              {preview.lineup && preview.lineup.length > 1 ? (
+                <ul className="mt-2 space-y-1">
+                  {preview.lineup.map((entry) => (
+                    <li key={entry.skill} className="text-[12.5px] leading-relaxed text-ink3">
+                      <span className="font-semibold text-ink2">{SKILLS[entry.skill].name}</span> — {entry.reason}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               <div className="mt-2 text-[13px] text-ink3 tnum">
                 ~{preview.minutes} min · {countRounds(preview.blocks)} sets
               </div>
@@ -226,9 +334,17 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
                       .filter((b) => b.section === sec)
                       .map((b, i) => {
                         const ex = EXERCISE_BY_ID[b.exerciseId]
+                        const owner = (preview.skills?.length ?? 1) > 1 && sec !== 'warmup' && sec !== 'cooldown' ? b.skill : undefined
                         return (
                           <div key={i} className="flex items-baseline justify-between gap-3 text-[14px]">
-                            <span className="text-ink">{ex.name}</span>
+                            <span className="text-ink">
+                              {ex.name}
+                              {owner ? (
+                                <span className="ml-2 whitespace-nowrap rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink3">
+                                  {SKILLS[owner].short}
+                                </span>
+                              ) : null}
+                            </span>
                             <span className="shrink-0 text-ink2 tnum">{describeBlock(b)}</span>
                           </div>
                         )
@@ -278,7 +394,9 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
     const best = state.prs[id]?.value
     return best !== undefined && best > 0 ? Math.max(1, Math.round(best)) : EXERCISE_BY_ID[id].type === 'hold' ? 10 : 8
   }
-  const [exerciseId, setExerciseId] = useState(() => STEP_BY_ID[state.stepId]?.keyExerciseId ?? 'planche-lean')
+  const [exerciseId, setExerciseId] = useState(
+    () => STEP_BY_ID[stepOfSkill(state, activeSkills(state)[0])]?.keyExerciseId ?? 'planche-lean',
+  )
   const [value, setValue] = useState(() => startValue(exerciseId))
   const [surface, setSurface] = useState<TrainingSurface>(() =>
     defaultSurface(state.profile.equipment, state.profile.preferredSurface),
@@ -286,9 +404,9 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
   const [side, setSide] = useState<'left' | 'right' | null>(null)
   const [assist, setAssist] = useState<AssistType | null>(null)
   const ex = EXERCISE_BY_ID[exerciseId]
-  const surfaceAware = ex.category === 'planche'
+  const surfaceAware = isSurfaceAware(ex)
   /** Assistance matters only where it changes what a hold proves. */
-  const assistAware = ex.type === 'hold' && ex.category === 'planche' && ex.id !== 'frog-stand'
+  const assistAware = assistAppliesTo(ex)
   // A one-sided value without a side cannot be compared with anything, and
   // used to be filed as if it were both.
   const needsSide = Boolean(ex.perSide)
@@ -305,6 +423,8 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
       workoutName: 'Quick Log',
       workoutKind: 'auto',
       stepId: state.stepId,
+      // The step every other skill was on, so the set is read on the right road.
+      ...(Object.keys(sessionSkillSteps(state)).length ? { skills: sessionSkillSteps(state) } : {}),
       sets: [
         {
           exerciseId,
@@ -326,7 +446,7 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
     const pr = events.prs.find(
       (record) =>
         record.exerciseId === exerciseId &&
-        (record.previous !== undefined || EXERCISE_BY_ID[record.exerciseId]?.category === 'planche'),
+        (record.previous !== undefined || isSkillHold(EXERCISE_BY_ID[record.exerciseId])),
     )
     if (pr) {
       sfx.pr()

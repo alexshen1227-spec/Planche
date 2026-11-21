@@ -14,17 +14,98 @@ export interface Qualification {
 export const MIN_PROGRESSION_FORM_CONFIDENCE = 0.35
 /** One isolated secondary flag is tolerated; two means the shape is not mastered. */
 export const MAX_PROGRESSION_FORM_ISSUES = 1
-const TRUE_FLIGHT_EXERCISES = new Set([
-  'tuck-planche',
-  'adv-tuck-planche',
-  'one-leg-planche',
-  'straddle-planche',
-  'full-planche',
-])
+/**
+ * What the athlete must confirm about a hold that no single camera can see:
+ * that it was unsupported. Each skill has its own version of the question — a
+ * toe on the floor under a planche, a toe on the wall in a handstand, the body
+ * resting on the elbows in a 90° hold, a foot on the ground beside a flag pole.
+ * The stored answer is `FormCheck.flightConfirmed` for all of them.
+ */
+const PLANCHE_FLIGHT =
+  'Confirm your feet stayed off the floor and nothing else supported you for the counted time — the camera cannot see contact from the side.'
+const LEVER_FLIGHT =
+  'Confirm you hung free for the counted time — feet clear of the floor, no band, nothing else taking weight. The camera cannot see contact from the side.'
+const HANDSTAND_FLIGHT =
+  'Confirm both feet were clear of the wall for the counted time. A toe resting on the wall looks the same to the camera as a free balance.'
+const NINETY_FLIGHT =
+  'Confirm your feet were off the floor and your body was not resting on your elbows for the counted time — with the elbows as a shelf it is an elbow lever, a different hold.'
+const FLAG_FLIGHT =
+  'Confirm both feet were off the ground and only your hands were on the pole for the counted time.'
 
-/** Ground contact is not observable enough in a side-on 2D pose to infer. */
+export const FLIGHT_PROMPT: Record<string, string> = {
+  'tuck-planche': PLANCHE_FLIGHT,
+  'adv-tuck-planche': PLANCHE_FLIGHT,
+  'one-leg-planche': PLANCHE_FLIGHT,
+  'straddle-planche': PLANCHE_FLIGHT,
+  'full-planche': PLANCHE_FLIGHT,
+  'tuck-front-lever': LEVER_FLIGHT,
+  'adv-tuck-front-lever': LEVER_FLIGHT,
+  'one-leg-front-lever': LEVER_FLIGHT,
+  'straddle-front-lever': LEVER_FLIGHT,
+  'front-lever': LEVER_FLIGHT,
+  'wall-float': HANDSTAND_FLIGHT,
+  'freestanding-handstand': HANDSTAND_FLIGHT,
+  'tuck-ninety-hold': NINETY_FLIGHT,
+  'adv-tuck-ninety-hold': NINETY_FLIGHT,
+  'straddle-ninety-hold': NINETY_FLIGHT,
+  'ninety-hold': NINETY_FLIGHT,
+  'tuck-flag': FLAG_FLIGHT,
+  'one-leg-flag': FLAG_FLIGHT,
+  'straddle-flag': FLAG_FLIGHT,
+  'human-flag': FLAG_FLIGHT,
+}
+
+/** Support contact is not observable enough in a 2D pose to infer; the athlete confirms it. */
 export function requiresFlightConfirmation(exerciseId: string): boolean {
-  return TRUE_FLIGHT_EXERCISES.has(exerciseId)
+  return exerciseId in FLIGHT_PROMPT
+}
+
+/** A short label for the confirmation, for a checkbox or a badge. */
+export function flightLabel(exerciseId: string): string {
+  const prompt = FLIGHT_PROMPT[exerciseId]
+  if (prompt === HANDSTAND_FLIGHT) return 'Feet stayed clear of the wall'
+  if (prompt === NINETY_FLIGHT) return 'Feet up, nothing resting on the elbows'
+  if (prompt === LEVER_FLIGHT) return 'Hung free — no floor, no band'
+  if (prompt === FLAG_FLIGHT) return 'Feet off the ground, hands only'
+  return 'Feet stayed off the floor'
+}
+
+/**
+ * Holds with no fixed geometry the camera can honestly grade — a balance drill
+ * with bent arms, a plain hang, the upside-down position on a flag pole. They
+ * are still filmed, and the athlete's review of the replay against the
+ * checklist is the evidence, exactly as it has always been for the frog stand.
+ * Their camera profiles say `noChecks`; a test keeps the two lists in step.
+ */
+const REVIEW_ONLY_EXERCISES = new Set(['frog-stand', 'active-hang', 'supported-flag', 'vertical-flag'])
+
+/** Whether a hold is verified by the athlete's replay review rather than by measured geometry. */
+export function isReviewOnly(exerciseId: string): boolean {
+  return REVIEW_ONLY_EXERCISES.has(exerciseId)
+}
+
+/** What the athlete checks on the replay of a hold the camera does not grade. */
+export const REVIEW_PROMPT: Record<string, string> = {
+  'frog-stand':
+    'Frog Stand has no fixed geometry the camera can grade honestly. Watch the replay and check that balance stayed controlled, with no uncontrolled collapse.',
+  'active-hang':
+    'A hang has no shape the camera can be usefully wrong about. Watch the replay and check your shoulders stayed pulled down away from your ears and your arms stayed straight for the counted time.',
+  'supported-flag':
+    'With your feet on the ground there is no line for the camera to grade. Watch the replay and check both arms stayed straight — the bottom one pushing — and your body stayed side-on to the pole without sagging toward it.',
+  'vertical-flag':
+    'Upside down along the pole there is no level line to grade. Watch the replay and check both arms stayed straight and your body stayed in one line with the pole, without swinging.',
+}
+
+/**
+ * Faults in the arms that define the skill: a bent elbow in a straight-arm
+ * hold, an elbow away from a right angle in a 90° hold. Never tolerated for
+ * progression credit, and clean time with one present is not clean time.
+ */
+export const ARM_FAULTS: readonly FormIssue[] = ['arms', 'angle']
+
+/** Whether a list of camera issues includes a fault in the arms. */
+export function hasArmFault(issues: readonly FormIssue[]): boolean {
+  return issues.some((issue) => ARM_FAULTS.includes(issue))
 }
 
 /**
@@ -76,6 +157,93 @@ export const VARIANT_CRITICAL: Record<string, { criteria: string[]; prompt: stri
     prompt:
       'The camera could not see your legs well enough. Confirm your legs stayed straight and together and your hips stayed open.',
   },
+  // ——— Front lever ———
+  'tuck-front-lever': {
+    criteria: ['body line'],
+    prompt:
+      'The camera could not see your hip height. Confirm your hips stayed up near shoulder height — with the hips hanging low it is a knee raise, not a lever.',
+  },
+  'adv-tuck-front-lever': {
+    criteria: ['hips', 'body line'],
+    prompt:
+      'The camera could not see your back and hips well enough. Confirm your back stayed flat and level and your hips open — a rounded back is a tuck, not an advanced tuck.',
+  },
+  'one-leg-front-lever': {
+    criteria: ['knees', 'hips'],
+    prompt:
+      'The camera could not see your extended leg well enough. Confirm it stayed straight and level with your body for the counted time.',
+  },
+  'straddle-front-lever': {
+    criteria: ['knees', 'hips'],
+    prompt: 'The camera could not see your legs well enough. Confirm both legs stayed straight and your hips stayed open and level.',
+  },
+  'front-lever': {
+    criteria: ['knees', 'hips'],
+    prompt:
+      'The camera could not see your legs well enough. Confirm your legs stayed straight and together and your hips stayed open and level.',
+  },
+  // ——— Handstand ———
+  'wall-plank': {
+    criteria: ['hips'],
+    prompt: 'The camera could not see your line well enough. Confirm your body stayed one straight line from shoulders to feet, with no fold or arch at the hips.',
+  },
+  'wall-handstand': {
+    criteria: ['shoulder opening', 'hips'],
+    prompt:
+      'The camera could not see your line well enough. Confirm your shoulders stayed open and your hips in line — a straight body, not an arched one.',
+  },
+  'wall-float': {
+    criteria: ['shoulder opening', 'hips'],
+    prompt:
+      'The camera could not see your line well enough. Confirm your shoulders stayed open and your hips in line while you were free of the wall.',
+  },
+  'freestanding-handstand': {
+    criteria: ['shoulder opening', 'hips'],
+    prompt: 'The camera could not see your line well enough. Confirm your shoulders stayed open and your hips in line for the counted time.',
+  },
+  // ——— 90° hold ———
+  'bent-arm-lean-hold': {
+    criteria: ['forward lean'],
+    prompt:
+      'The camera could not see your lean. Confirm your shoulders stayed ahead of your hands — with the shoulders over the hands it is a low plank, a different exercise.',
+  },
+  'elbow-lever': {
+    criteria: ['body line'],
+    prompt: 'The camera could not see whether you were level. Confirm your body stayed level, with the feet as high as the shoulders.',
+  },
+  'tuck-ninety-hold': {
+    criteria: ['body line'],
+    prompt: 'The camera could not see your hip height. Confirm your hips stayed up near shoulder height for the counted time.',
+  },
+  'adv-tuck-ninety-hold': {
+    criteria: ['hips', 'body line'],
+    prompt: 'The camera could not see your back and hips well enough. Confirm your back stayed flat and level and your hips open.',
+  },
+  'straddle-ninety-hold': {
+    criteria: ['knees', 'hips'],
+    prompt: 'The camera could not see your legs well enough. Confirm both legs stayed straight and your hips stayed open.',
+  },
+  'ninety-hold': {
+    criteria: ['knees', 'hips'],
+    prompt: 'The camera could not see your legs well enough. Confirm your legs stayed straight and together and your hips stayed open.',
+  },
+  // ——— Human flag ———
+  'tuck-flag': {
+    criteria: ['level line'],
+    prompt: 'The camera could not see whether you were level. Confirm your trunk stayed level out from the pole for the counted time.',
+  },
+  'one-leg-flag': {
+    criteria: ['level line', 'knees'],
+    prompt: 'The camera could not see your line well enough. Confirm your trunk stayed level and your extended leg straight.',
+  },
+  'straddle-flag': {
+    criteria: ['level line', 'knees'],
+    prompt: 'The camera could not see your line well enough. Confirm your body stayed level and both legs straight.',
+  },
+  'human-flag': {
+    criteria: ['level line', 'knees'],
+    prompt: 'The camera could not see your line well enough. Confirm your body stayed level and your legs straight and together.',
+  },
 }
 
 /** Variant-defining criteria this reading could not see, in the camera's own words. */
@@ -122,14 +290,14 @@ export function progressionRelevantIssues(
  */
 export function verifiedCleanRatio(auto: AutoForm | undefined): number | undefined {
   if (!auto || auto.cleanRatio === undefined) return undefined
-  if (progressionRelevantIssues(auto).includes('arms')) return 0
+  if (hasArmFault(progressionRelevantIssues(auto))) return 0
   return cleanTimeVerifiable(auto) ? auto.cleanRatio : undefined
 }
 
 /** `verifiedCleanRatio`, in seconds. */
 export function verifiedCleanSeconds(auto: AutoForm | undefined): number | undefined {
   if (!auto || auto.cleanSeconds === undefined) return undefined
-  if (progressionRelevantIssues(auto).includes('arms')) return 0
+  if (hasArmFault(progressionRelevantIssues(auto))) return 0
   return cleanTimeVerifiable(auto) ? auto.cleanSeconds : undefined
 }
 
@@ -163,7 +331,7 @@ export type CleanEvidence =
 export function cleanEvidence(auto: AutoForm | undefined): CleanEvidence {
   if (!auto || auto.cleanSeconds === undefined || auto.cleanRatio === undefined) return { state: 'unknown', reason: 'missing' }
   if (auto.malformed) return { state: 'unknown', reason: 'malformed' }
-  if (progressionRelevantIssues(auto).includes('arms')) return { state: 'fault', seconds: 0 }
+  if (hasArmFault(progressionRelevantIssues(auto))) return { state: 'fault', seconds: 0 }
   if (auto.unseen?.includes('elbows')) return { state: 'unknown', reason: 'elbows' }
   if (auto.coverage !== undefined && auto.coverage < MIN_VERIFIED_COVERAGE) return { state: 'unknown', reason: 'coverage' }
   return { state: 'verified', seconds: auto.cleanSeconds, ratio: auto.cleanRatio }
@@ -201,7 +369,7 @@ export function isAssisted(set: Pick<SetLog, 'assist'>): boolean {
  */
 export function passesProgressionFormCheck(form: SetLog['form'], exerciseId: string): boolean {
   if (!form) return false
-  if (exerciseId === 'frog-stand') {
+  if (isReviewOnly(exerciseId)) {
     return form.visualReviewPassed === true
   }
   if (requiresFlightConfirmation(exerciseId) && form.flightConfirmed !== true) return false
@@ -211,7 +379,7 @@ export function passesProgressionFormCheck(form: SetLog['form'], exerciseId: str
   return Boolean(
     form.auto.confidence >= MIN_PROGRESSION_FORM_CONFIDENCE &&
       issues.length <= MAX_PROGRESSION_FORM_ISSUES &&
-      !issues.includes('arms') &&
+      !hasArmFault(issues) &&
       formEvidenceCoversArms(form.auto) &&
       // A hold the camera mostly did not see is not a verified one, however
       // clean the moments it did see were (judge v4+; older readings carry no
@@ -331,6 +499,52 @@ export function qualifyingProgress(
 export function qualifyingSessionValue(session: Session, stepId: StepId): number {
   const state = { sessions: [session] }
   return qualifyingProgress(state, stepId).value
+}
+
+/** Sessions closer together than this are the same day's practice, wherever the clock is. */
+const SEPARATE_DAYS_MS = 18 * 3_600_000
+
+/**
+ * How many separate days a step's bar has been shown on with full evidence.
+ *
+ * "Separate" is eighteen hours or more apart rather than a calendar date, so
+ * replaying the same history gives the same answer in every time zone.
+ */
+export function daysAtBar(
+  state: Pick<AppState, 'sessions'>,
+  stepId: StepId,
+  extraSessions: Session[] = [],
+): number {
+  const step = STEP_BY_ID[stepId]
+  if (!step) return 0
+  const at = [...state.sessions, ...extraSessions]
+    .filter((session) => session.workoutName !== 'Quick Log' && qualifyingSessionValue(session, stepId) >= step.unlockSec)
+    .map((session) => session.startedAt)
+    .sort((a, b) => a - b)
+  let days = 0
+  let last = Number.NEGATIVE_INFINITY
+  for (const t of at) {
+    if (t - last >= SEPARATE_DAYS_MS) {
+      days += 1
+      last = t
+    }
+  }
+  return days
+}
+
+/**
+ * Whether a step's bar is met: the hold, shown on as many separate days as the
+ * step asks for. One day for the strength holds; two for the balance holds,
+ * where a single long float can be luck (see `StepDef.repeatDays`).
+ */
+export function barMet(state: Pick<AppState, 'sessions'>, stepId: StepId, extraSessions: Session[] = []): boolean {
+  const step = STEP_BY_ID[stepId]
+  if (!step) return false
+  if (qualifyingProgress(state, stepId, extraSessions).value < step.unlockSec) return false
+  // One day is the hold itself, however it was put together — a unilateral
+  // hold's two sides may have been shown in different sessions.
+  const days = step.repeatDays ?? 1
+  return days <= 1 || daysAtBar(state, stepId, extraSessions) >= days
 }
 
 /**
@@ -912,13 +1126,17 @@ export function isBarAttempt(set: SetLog, stepId: StepId): boolean {
   )
 }
 
-export function setNeedsProgressionFormEvidence(set: SetLog, state: Pick<AppState, 'stepId'>): boolean {
-  const step = STEP_BY_ID[state.stepId]
-  return (
-    set.exerciseId === step.keyExerciseId &&
-    set.kind === 'hold' &&
-    set.section === 'main' &&
-    set.value >= step.unlockSec &&
-    !isQualifyingSet(set, step.keyExerciseId)
-  )
+export function setNeedsProgressionFormEvidence(set: SetLog, state: Pick<AppState, 'stepId' | 'tracks'>): boolean {
+  if (set.kind !== 'hold' || set.section !== 'main') return false
+  // Every road the athlete is on: the planche's step, and each other skill's.
+  const stepIds = [state.stepId, ...Object.values(state.tracks ?? {}).map((track) => track.stepId)]
+  return stepIds.some((stepId) => {
+    const step = STEP_BY_ID[stepId]
+    return (
+      step !== undefined &&
+      set.exerciseId === step.keyExerciseId &&
+      set.value >= step.unlockSec &&
+      !isQualifyingSet(set, step.keyExerciseId)
+    )
+  })
 }

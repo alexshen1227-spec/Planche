@@ -1,6 +1,10 @@
-# Planche Lab — working notes for agents and developers
+# Calisthenics Lab — working notes for agents and developers
 
-Local-first planche-training PWA. Vite + React 19 + TypeScript + Tailwind v4.
+Local-first calisthenics-skills PWA (the planche, front lever, handstand and
+handstand push-up, 90° hold and human flag). It was Planche Lab until 2026-11:
+the name lives in `src/data/app.ts`, while storage keys keep their
+`planchelab.` prefix and `window.__planche` its name, so nothing saved moved.
+Vite + React 19 + TypeScript + Tailwind v4.
 No backend, no router, no state library: one reducer over localStorage, with an
 IndexedDB mirror for crash safety. Nothing a user does ever leaves their device.
 
@@ -9,6 +13,17 @@ IndexedDB mirror for crash safety. Nothing a user does ever leaves their device.
 - `npm run dev` — dev server (honors `PORT`; defaults to 5173, strictPort)
 - `npm run test` — vitest suite (pure logic; no DOM, no model downloads)
 - `npm run check` — tests, then `tsc --noEmit` + production build
+- `npm run test:clock` — the suite run as if on twenty other days and in five
+  other timezones (each weekday, midnights, a year end, a leap day, both
+  daylight-saving changes; UTC is what the deploy workflow runs in).
+  `FAKE_NOW=<date> npm run test` does one. Run it after touching anything that
+  reads the calendar: one coach eval failed on Thursdays only, two tests built
+  on a fixed date were weeks from failing for good — which would have blocked
+  every deploy — and the tip of the day changed at midnight in Greenwich.
+  Nothing showed any of it until the suite was run on other days. A function
+  that plans or builds for a time takes that time (`now`) and passes it down,
+  never `Date.now()` halfway through; "today" is the athlete's local calendar
+  day, never `Math.floor(now / DAY)`.
 - Deploy: push to `main` → GitHub Actions → GitHub Pages. Clients poll
   `version.json` and offer a refresh.
 
@@ -115,7 +130,8 @@ decision is added.
 
 ### Evidence tiers
 
-`docs/research-ledger.md` has **two** passes. The second (2026-08-05) was
+`docs/research-ledger.md` has four passes; §13 (2026-11) is the multi-skill
+one, with its full reports under `docs/research/`. The second (2026-08-05) was
 adversarially verified and its most important output is a **null result**:
 nothing could be established about any competitor's actual mechanics from
 public sources — every such claim failed 3-vote verification, almost all
@@ -397,6 +413,15 @@ summary. iOS context it guards: audio and speech start only from a gesture
 iOS 18.4 refused wake locks. None of it has been verified on a physical iPhone
 from this repo — the check exists so the athlete can.
 
+`lib/install.ts` says whether the app is installed. It matters because the
+history *is* the browser's storage: Safari clears a site's script-written
+storage after about a week of use in which the site was not opened, and a
+Home Screen app is exempt — but it also starts **empty** (it does not share
+the tab's storage), so the guidance is export → Add to Home Screen → “I have
+a backup file” on the first screen (`Onboarding`'s restore path, the same
+validation as Settings → Import). Never tell an athlete their data moves
+across on its own. The PNG icons come from `scripts/make-icons.mjs`.
+
 ## Testing tools
 
 - `#devlab` (linked from Settings → About and the Learn guide "How the camera
@@ -593,6 +618,87 @@ from this repo — the check exists so the athlete can.
   and a late reading whose start no longer matches the hold's
   (`readingFitsWindow`) is refused at every merge boundary.
 
+## Five skills (2026-11, "Calisthenics Lab")
+
+- **The skill of a state is the skill of its `stepId`.** `SkillId = planche |
+  frontlever | handstand | ninety | flag`; step ids are unique across roads.
+  The planche keeps the top-level fields — a save from before the upgrade is,
+  unchanged, a planche-only athlete — and every other skill lives in
+  `AppState.tracks[skill]`. `skillView(state, skill)` (`lib/skills.ts`)
+  projects the athlete *as* one skill, so the coach, forecast, plateau, signals
+  and form trends run on a view without knowing it; `wholeState(view)` recovers
+  the rest. `profile.skills` is the priority order; a dropped skill keeps its
+  track for when it is added back. State version 8.
+- **A skill is a definition** (`data/skills/<skill>.ts`, `SkillDef`): steps,
+  exercises, the session's shape per step (`program`), camera placement and
+  honesty copy, prerequisites, safety, sourcing, each fault's limiter and
+  prescription (`issues`), and optionally a rep ladder. `skillSession` builds
+  any non-planche session from it; the planche's is still built by hand in
+  `workouts.ts`. Screens print the definition's own sentences, and a skill's
+  Learn guide is *generated* from it (`skillGuide`), so the two cannot drift —
+  the handstand guide once promised a camera rep count the app does not have,
+  because the sentence lived in one place and the decision in another.
+- **Sessions record every skill.** `Session.skills[skill]` holds its step,
+  strategy, `baseTargetSec` and `retestOffered`; `Session.roles[skill]` what
+  its part was (`lead | partner | maintenance | practice`). The base target is
+  kept for *every* role: without it a maintenance dose done exactly as asked
+  came back 40% shorter each session (15s → 1s, simulated).
+- **The line-up** (`lib/lineup.ts`). The first priority leads every session.
+  `strengthSlots(minutes)` is 1 under 25, 2 up to 50, 3 beyond. The partner
+  slot goes by days since a *full* part (`daysSinceFullPart`: led or partnered
+  — a maintenance dose keeps a position, it does not train it) × priority ×
+  a bonus for a different family (a pull beside a push) × joint overlap. A
+  third skill gets maintenance; handstand balance rides as `practice`. With
+  one slot the skills take turns, the first priority at weight 2. All of it is
+  CONSENSUS or the app's design (ledger §13.2) and the copy says so.
+- **One maximal effort a session** (`data/mixedSession.ts`, `effortSkill`):
+  the lead's by default; when the lead held it last session and another skill
+  has one queued, that skill takes today's. Only a max effort raises a target,
+  so a skill that never leads must still get its turn.
+- **Rep ladders** (`lib/repLadder.ts`): the handstand push-up and 90° push-up
+  lines move on their own standards, derived by replay like every unlock.
+  **The camera does not count reps.** The judge samples three moments a
+  second; no source measured depth or lockout near that rate and the bottom of
+  a two-second rep can fall between samples (ledger §13.8). So a rung's
+  evidence is the frog stand's: a filmed set, rated Clean, that the athlete
+  passes on the replay against the rung's `check` list (`RepReviewRow`), and
+  `verifiedReps` credits nothing else. `rungInPlay` decides whether a rep set
+  is worth filming — the current rung of an active skill, in real work — and a
+  count raised after a review loses the review. Do not add a count without the
+  sampling study the ledger names.
+- **Judge postures** (`Posture = support | hang | inverted | flag`, judge v5).
+  The view gate, the floor rule and the elbow reading are per posture. A
+  hanging, inverted or front-on elbow is read coarsely (`coarseElbow`,
+  `POSTURE_TOLERANCE`, measured on real photos: hang 36° / 44° momentary,
+  inverted 30° / 38°, flag 24° / 32°). The flag is judged front-on
+  (`MIN_FRONT_VIEW_RATIO`–`MAX_FRONT_VIEW_RATIO`, an oblique shot refused) and
+  its floor comes from the wrist-to-wrist line; an inverted floor comes from
+  the arm direction. `shoulderOpeningDeg` and `tiltDeg` are the handstand's and
+  flag's own criteria. Review-only holds (`isReviewOnly`: frog stand, active
+  hang, supported and vertical flag) carry `noChecks` profiles, and a test
+  keeps the two lists in step.
+- **Limits, said plainly.** Only one clean side-on real front-lever photo was
+  found, so its thresholds sit well clear of it; the 90° hold has no real-photo
+  fixture; straddle shapes show about 3% false "knees" at 2% noise; and the
+  filming flow — hold and rep sets alike — has been driven end to end only
+  with a simulated camera (a canvas stream behind `getUserMedia`), never a
+  physical phone.
+- **Fuzz.** `multiSkill.fuzz.test.ts` runs 120 seeded athletes nobody designed
+  for — any skills in any order, any subset of the kit, ten to ninety minutes,
+  any starting step — and holds every generated session to the same few
+  rules: no movement that needs kit the athlete lacks, only trainable skills
+  in the line-up, one maximal effort, the time asked for. It found the lone
+  skill with no kit (a front lever, no bar) being handed a session named and
+  purposed as lever practice over arm circles and a hollow hold; that session
+  is now "waiting for kit" and says so (`skillSession`).
+- **Evals.** `multiSkill.eval.test.ts` runs closed-loop seasons through
+  `lib/skillLoop.ts` (each skill alone, three and five skills, 20-minute
+  sessions) and `skills.test.ts` covers the registry, tracks, placement,
+  ladders, line-up, guides, badges and tips. Both were mutation-checked; the
+  seasons found four faults no unit test could (targets decaying to 1s, a
+  re-test that never came, a third skill never trained in full, a second skill
+  never trained in short sessions).
+
 ## Figures, the road and the share card (2026-11)
 
 - `lib/figure.ts` builds every position's side view from body geometry:
@@ -622,7 +728,11 @@ from this repo — the check exists so the athlete can.
 - User-facing changes get an entry in `src/data/changelog.ts`, written in the
   athlete's language, newest first.
 - New achievements require bumping `ACHIEVEMENT_VERSION` so saved history is
-  reconciled once.
+  reconciled once. A badge or tip about one skill carries `skill`, and is only
+  shown to an athlete who trains it.
+- Never pass regular expressions or backslashes through a shell heredoc: a
+  `\b` became a backspace character inside a pattern, which nothing shows in
+  a diff. `claims.test.ts` now fails on any control character in `src`.
 - `AutoForm` fields must be listed in `store.tsx`'s `sanitizeAuto` or imports
   strip them. `PoseFormResult.track`/`explain` are transient — never persist.
 - Progression credit demands: athlete-confirmed Clean + camera pass (no

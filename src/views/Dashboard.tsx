@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react'
-import type { Tab, WorkoutRequest } from '../types'
+import type { SkillId, Tab, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
-import { STEP_BY_ID, stepAfter } from '../data/progressions'
+import { STEP_BY_ID, stepAfter, stepsOf } from '../data/progressions'
+import { missingKit, SKILLS } from '../data/skills'
+import { equipmentLabel } from '../data/equipment'
+import { activeSkills, skillView } from '../lib/skills'
+import { lineupFor } from '../lib/lineup'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { challengeBlockedReason, finalizeFromPlan, microBlockedReason, microDoseWorkout } from '../data/workouts'
-import { weekPlan, weekWork } from '../lib/volume'
+import { weekPlan, weekWork, workSets } from '../lib/volume'
 import { BridgeCard } from '../components/BridgeCard'
 import { BASIS_LABEL, tipOfTheDay } from '../data/tips'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
@@ -20,6 +24,8 @@ import { pushToast } from '../lib/toast'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { Modal, ProgressRing, Stat, SectionTitle } from '../components/ui'
+import { AddSkill } from '../components/AddSkill'
+import { INSTALL_STEPS, installState } from '../lib/install'
 import { WalkBackCalibrator } from '../components/WalkBackCalibrator'
 import { walkMeasureDue } from '../lib/sessionTiming'
 
@@ -48,6 +54,28 @@ const WALK_NOTICE_KEY = 'planchelab.notice.measure-walk'
 function walkNoticeDismissed(): boolean {
   try {
     return localStorage.getItem(WALK_NOTICE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** Per-device memory of the "more skills" card shown to athletes from before the other roads existed. */
+const SKILLS_NOTICE_KEY = 'planchelab.notice.more-skills'
+
+function skillsNoticeDismissed(): boolean {
+  try {
+    return localStorage.getItem(SKILLS_NOTICE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** Per-device memory of the "add to Home Screen" card. */
+const INSTALL_NOTICE_KEY = 'planchelab.notice.install'
+
+function installNoticeDismissed(): boolean {
+  try {
+    return localStorage.getItem(INSTALL_NOTICE_KEY) === '1'
   } catch {
     return false
   }
@@ -122,18 +150,35 @@ export function Dashboard({
   go: (t: Tab) => void
   viewSession: (sessionId: string) => void
 }) {
-  const { state, dispatch } = useStore()
+  const { state: whole, dispatch } = useStore()
   // Everything date-dependent is keyed on today too: a screen left open
   // overnight used to offer yesterday's plan.
   const today = useToday()
+  // One skill is on screen at a time; the rest are a tap away. Everything
+  // below that reads "the step", "the plan" or "the forecast" reads it for
+  // this skill, through the same view the coach itself uses.
+  const skills = activeSkills(whole)
+  const [pickedSkill, setPickedSkill] = useState<SkillId | null>(null)
+  const viewSkill: SkillId = pickedSkill && skills.includes(pickedSkill) ? pickedSkill : skills[0]
+  const state = useMemo(() => skillView(whole, viewSkill), [whole, viewSkill])
+  const skillDef = SKILLS[viewSkill]
+  const several = skills.length > 1
   const step = STEP_BY_ID[state.stepId]
+  const road = stepsOf(viewSkill)
   const keyEx = EXERCISE_BY_ID[step.keyExerciseId]
   const prBest = state.prs[step.keyExerciseId]?.value ?? 0
   const qualified = qualifyingProgress(state, state.stepId)
   const best = qualified.value
   const unlockPct = Math.min(1, best / step.unlockSec)
   const next = stepAfter(state.stepId)
-  const goalStep = STEP_BY_ID[state.profile.goalStepId ?? 'straddle']
+  const goalStep = STEP_BY_ID[state.profile.goalStepId ?? skillDef.defaultGoal] ?? road[road.length - 1]
+  // Who trains today, and why — only worth a card when there is a choice.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const lineup = useMemo(() => lineupFor(whole, { source: 'auto' }, Date.now()), [whole, today])
+  /** Chosen skills that cannot train until some kit is added. */
+  const waiting = skills
+    .map((skill) => ({ skill, missing: missingKit(skill, whole.profile.equipment) }))
+    .filter((entry) => entry.missing.length > 0)
 
   const hour = new Date().getHours()
   const greeting = hour < 5 ? 'Burning the midnight oil' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
@@ -150,7 +195,7 @@ export function Dashboard({
     [state.sessions, today],
   )
   const trainedToday = todaysLatest !== null
-  const tip = tipOfTheDay()
+  const tip = tipOfTheDay(Date.now(), skills)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const forecast = useMemo(() => forecastUnlock(state), [state, today])
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,17 +210,48 @@ export function Dashboard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const breakthrough = useMemo(() => recentBreakthrough(state), [state, today])
   const confidence = useMemo(() => coachConfidence(state), [state])
+  // An athlete who set up before the other roads existed was never asked which
+  // skills they want — their save has no list at all. They are told once, here,
+  // rather than left to find "Add a skill" on the Path.
+  const [skillsNoticeClosed, setSkillsNoticeClosed] = useState(skillsNoticeDismissed)
+  const [addingSkill, setAddingSkill] = useState(false)
+  const showSkillsNotice = !skillsNoticeClosed && whole.profile.skills === undefined
+  const closeSkillsNotice = () => {
+    try {
+      localStorage.setItem(SKILLS_NOTICE_KEY, '1')
+    } catch {
+      /* private mode: the card simply returns next launch */
+    }
+    setSkillsNoticeClosed(true)
+  }
   // Derived from the current state on every render: decided once at mount,
   // it never appeared for someone whose first session was saved on this screen.
   const [noticeClosed, setNoticeClosed] = useState(noticeSeen)
-  const showSessionsNotice = !noticeClosed && state.sessions.length > 0 && state.settings.sessionMinutes < 40
+  const showSessionsNotice =
+    !noticeClosed &&
+    !showSkillsNotice &&
+    !several &&
+    viewSkill === 'planche' &&
+    state.sessions.length > 0 &&
+    state.settings.sessionMinutes < 40
   const closeSessionsNotice = () => {
     markNoticeSeen()
     setNoticeClosed(true)
   }
+  const [installNoticeClosed, setInstallNoticeClosed] = useState(installNoticeDismissed)
+  const showInstallNotice = !installNoticeClosed && installState() === 'ios-tab'
+  const closeInstallNotice = () => {
+    try {
+      localStorage.setItem(INSTALL_NOTICE_KEY, '1')
+    } catch {
+      /* private mode: the card simply returns next launch */
+    }
+    setInstallNoticeClosed(true)
+  }
   const [walkNoticeClosed, setWalkNoticeClosed] = useState(walkNoticeDismissed)
   const [measuringWalk, setMeasuringWalk] = useState(false)
-  const showWalkNotice = !walkNoticeClosed && !showSessionsNotice && walkMeasureDue(state)
+  // One card at a time: the new roads first, then the session-length offer, then the walk.
+  const showWalkNotice = !walkNoticeClosed && !showSessionsNotice && !showSkillsNotice && walkMeasureDue(state)
   const closeWalkNotice = () => {
     try {
       localStorage.setItem(WALK_NOTICE_KEY, '1')
@@ -192,13 +268,16 @@ export function Dashboard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const work = useMemo(() => weekWork(state), [state, today])
   const loadedDay = plan.loadPermission === 'normal' && (plan.dayType === 'push' || plan.dayType === 'build')
+  // With several skills the week's plan moves with the line-up — "today's
+  // plan times your sessions" is no longer a week — so only what was done is
+  // shown, and nothing is invented to compare it with.
   const planned = useMemo(
     () =>
-      loadedDay
-        ? weekPlan(finalizeFromPlan(state, { source: 'auto' }, plan).workout, step.keyExerciseId, goal)
+      loadedDay && !several
+        ? weekPlan(finalizeFromPlan(whole, { source: 'auto' }, plan).workout, step.keyExerciseId, goal)
         : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, plan, loadedDay, goal],
+    [whole, plan, loadedDay, goal, several],
   )
   const testBlocked = challengeBlockedReason(plan)
   // Only three decisions fit the card. Warnings are picked first — a safety
@@ -241,13 +320,34 @@ export function Dashboard({
         <div className="flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-[13.5px] font-medium text-ink2">
           <Icon name="flame" size={16} className={streak.weeks > 0 ? 'text-accent-text' : 'text-ink3'} />
           <span className="tnum">
-            {streak.weeks} week{streak.weeks === 1 ? '' : 's'} streak
+            {streak.weeks}-week streak
           </span>
         </div>
       </div>
 
+      {several ? (
+        <div className="mt-4 flex flex-wrap gap-1.5" role="group" aria-label="Skill shown">
+          {skills.map((skill, index) => {
+            const on = skill === viewSkill
+            return (
+              <button
+                key={skill}
+                aria-pressed={on}
+                onClick={() => setPickedSkill(skill)}
+                className={`min-h-10 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${
+                  on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-surface text-ink2 hover:text-ink'
+                }`}
+              >
+                {SKILLS[skill].name}
+                {index === 0 ? <span className={`ml-1.5 text-[11px] font-medium ${on ? 'opacity-80' : 'text-ink3'}`}>main</span> : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+
       {/* Current step hero */}
-      <div className="card-sheen relative mt-5 overflow-clip rounded-3xl border border-line bg-surface p-6 shadow-card sm:p-7">
+      <div className={`card-sheen relative ${several ? 'mt-3' : 'mt-5'} overflow-clip rounded-3xl border border-line bg-surface p-6 shadow-card sm:p-7`}>
         <div className="pointer-events-none absolute -right-10 -top-16 h-56 w-56 rounded-full bg-accent-soft blur-2xl" />
         <div className="pointer-events-none absolute -left-16 -bottom-20 h-48 w-48 rounded-full blur-3xl" style={{ background: 'var(--t-glow2)' }} />
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center">
@@ -255,7 +355,7 @@ export function Dashboard({
             <Figure step={step.id} tone="accent" className="h-28 w-32 shrink-0 text-ink animate-floaty" />
             <div>
               <div className="text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
-                Step {step.order + 1} of 8 · current
+                {several ? `${skillDef.name} · ` : ''}Step {step.order + 1} of {road.length} · current
                 {goalStep.order > step.order ? ` · goal ${goalStep.name}` : ' · goal reached'}
               </div>
               <div className="font-display text-[24px] font-bold leading-tight text-ink">{step.name}</div>
@@ -332,7 +432,7 @@ export function Dashboard({
               onClick={() => startWorkout({ source: 'test', stepId: state.stepId })}
               className="inline-flex items-center gap-2 rounded-xl border border-line bg-raised px-5 py-3 text-[15px] font-medium text-ink transition hover:border-line-strong"
             >
-              <Icon name="target" size={16} /> Max test
+              <Icon name="target" size={16} /> Max test{several ? ` · ${skillDef.short}` : ''}
             </button>
           )}
           <button
@@ -350,6 +450,29 @@ export function Dashboard({
             No max test today — {testBlocked}.
           </p>
         ) : null}
+        {lineup.length > 1 ? (
+          <div className="relative mt-3 rounded-xl border border-line bg-raised p-3">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-ink3">Today's session trains</div>
+            <ul className="mt-1.5 space-y-1.5">
+              {lineup.map((entry) => (
+                <li key={entry.skill} className="text-[12.5px] leading-relaxed text-ink2">
+                  <span className="font-semibold text-ink">{SKILLS[entry.skill].name}</span> — {entry.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : several && lineup[0] ? (
+          <p className="relative mt-2 text-[12.5px] leading-relaxed text-ink3">
+            Today's session: {SKILLS[lineup[0].skill].name}. {lineup[0].reason}
+          </p>
+        ) : null}
+        {waiting.map(({ skill, missing }) => (
+          <p key={skill} className="relative mt-2 rounded-xl border border-accent/30 bg-accent-soft px-3 py-2 text-[12.5px] leading-relaxed text-ink">
+            <span className="font-semibold">{SKILLS[skill].name} is waiting for kit.</span>{' '}
+            {SKILLS[skill].requiresNote ?? `It needs ${missing.map((options) => options.map((id) => equipmentLabel(id)).join(' or ')).join(', and ')}.`}{' '}
+            Add it under Settings → Equipment and it joins your sessions.
+          </p>
+        ))}
         {showSessionsNotice ? (
           <div className="relative mt-3 rounded-xl border border-accent/30 bg-accent-soft p-3 text-[13px] leading-relaxed text-ink">
             <div className="font-semibold">Sessions are complete at every level now</div>
@@ -375,6 +498,31 @@ export function Dashboard({
                 Keep {state.settings.sessionMinutes}
               </button>
             </div>
+          </div>
+        ) : null}
+        {showSkillsNotice ? (
+          <div className="relative mt-3 rounded-xl border border-accent/30 bg-accent-soft p-3 text-[13px] leading-relaxed text-ink">
+            <div className="font-semibold">New: four more skills</div>
+            <p className="mt-0.5 text-ink2">
+              The front lever, the handstand and handstand push-up, the 90° hold and the human flag each have their own
+              road now. Add one and it gets a share of your sessions — your planche stays exactly where it is, and stays
+              first unless you change the order.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => setAddingSkill(true)}
+                className="min-h-10 rounded-lg bg-accent px-3 py-1.5 font-semibold text-on-accent"
+              >
+                Add a skill
+              </button>
+              <button
+                onClick={closeSkillsNotice}
+                className="min-h-10 rounded-lg border border-line bg-surface px-3 py-1.5 font-medium text-ink2 hover:text-ink"
+              >
+                Not now
+              </button>
+            </div>
+            <p className="mt-1.5 text-[12px] text-ink3">You can add one any time from the Path or Settings.</p>
           </div>
         ) : null}
         {showWalkNotice ? (
@@ -419,7 +567,7 @@ export function Dashboard({
           <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px]">
             <span className="text-ink3">No full session today?</span>
             <button
-              onClick={() => startWorkout({ source: 'micro' })}
+              onClick={() => startWorkout({ source: 'micro', ...(several ? { skills: [viewSkill] } : {}) })}
               className="min-h-10 rounded-lg border border-line bg-raised px-3 py-1.5 font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
             >
               Minimum dose · {microMinutes} min
@@ -496,6 +644,55 @@ export function Dashboard({
         </div>
       ) : null}
 
+      {/* An iPhone tab's history is one quiet week from being cleared by Safari;
+          said once there is something to lose, and only where it applies. */}
+      {showInstallNotice ? (
+        <div className="animate-rise mt-4 rounded-2xl border border-accent/30 bg-accent-soft px-5 py-3.5 text-[13.5px] leading-relaxed text-ink" style={{ animationDelay: '20ms' }}>
+          <div className="font-semibold">Add this app to your Home Screen</div>
+          <p className="mt-0.5 text-ink2">
+            Your training is stored on this phone and nowhere else. Safari can clear a website’s saved data after about a
+            week without a visit; an app on your Home Screen keeps its own data, opens full-screen and works without
+            signal.
+          </p>
+          {whole.sessions.length > 0 ? (
+            <ol className="mt-1.5 list-decimal space-y-0.5 pl-5 text-ink2">
+              <li>
+                Export a backup — the Home Screen app starts empty; it does not share this tab’s data. Saved clips do
+                not move with it.
+              </li>
+              <li>{INSTALL_STEPS['ios-tab']}</li>
+              <li>Open the new app, choose “I have a backup file” on its first screen, and pick the file.</li>
+            </ol>
+          ) : (
+            <p className="mt-1 text-ink2">
+              {INSTALL_STEPS['ios-tab']} Do it before you log anything: the Home Screen app keeps its own data, and what
+              you log in this tab will not move over by itself.
+            </p>
+          )}
+          <div className="mt-2 flex flex-wrap gap-2">
+            {whole.sessions.length > 0 ? (
+              <button
+                onClick={() => {
+                  const at = Date.now()
+                  exportData({ ...whole, lastBackupAt: at })
+                  dispatch({ type: 'STAMP_BACKUP', at })
+                  pushToast('Backup exported.', 'success')
+                }}
+                className="min-h-10 rounded-lg bg-accent px-3 py-1.5 font-semibold text-on-accent"
+              >
+                Export backup
+              </button>
+            ) : null}
+            <button
+              onClick={closeInstallNotice}
+              className="min-h-10 rounded-lg border border-line bg-surface px-3 py-1.5 font-medium text-ink2 hover:text-ink"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Backup nudge once real history has accumulated */}
       {state.sessions.length >= 8 &&
       (!state.lastBackupAt || Date.now() - state.lastBackupAt > 30 * 86_400_000) ? (
@@ -510,7 +707,8 @@ export function Dashboard({
           <button
             onClick={() => {
               const at = Date.now()
-              exportData({ ...state, lastBackupAt: at })
+              // The whole athlete, never the one-skill view this screen reads.
+              exportData({ ...whole, lastBackupAt: at })
               dispatch({ type: 'STAMP_BACKUP', at })
               pushToast('Backup exported.', 'success')
             }}
@@ -607,11 +805,27 @@ export function Dashboard({
         </div>
         <div className="mt-3 space-y-3">
           <WorkBar label={`${keyEx.name} practice`} done={work.skillSec} planned={planned?.skillSec ?? 0} unit="s" />
-          <WorkBar label="Pressing — push-up versions, PPPU" done={work.pressReps} planned={planned?.pressReps ?? 0} unit=" reps" />
-          <WorkBar label="Straight-arm work — leans and holds" done={work.straightArmSec} planned={planned?.straightArmSec ?? 0} unit="s" />
+          <WorkBar
+            label={viewSkill === 'planche' ? 'Pressing — push-up versions, PPPU' : 'Strength and drill reps'}
+            done={work.pressReps}
+            planned={planned?.pressReps ?? 0}
+            unit=" reps"
+          />
+          {/* Only where the skill has accessory holds at all: a lever's support
+              work is negatives and scapular pulls, counted in reps above. */}
+          {workSets(viewSkill).support.size > 0 ? (
+            <WorkBar
+              label={viewSkill === 'planche' ? 'Straight-arm work — leans and holds' : `Support holds — ${skillDef.words.support}`}
+              done={work.straightArmSec}
+              planned={planned?.straightArmSec ?? 0}
+              unit="s"
+            />
+          ) : null}
         </div>
         <p className="mt-3 text-[11.5px] leading-relaxed text-ink3">
-          {planned
+          {several
+            ? `What you have done on ${skillDef.name.toLowerCase()} this week. With several skills the week's plan follows the line-up day by day, so there is no weekly target to hold it against.`
+            : planned
             ? `About: today’s plan × your ${goal} sessions a week, and each day re-plans from what you did. A planning aid — no study sets these numbers.`
             : todaysLatest
               ? 'Today is done — the weekly targets come back with your next full session.'
@@ -811,6 +1025,9 @@ export function Dashboard({
           })}
         </div>
       )}
+      <Modal open={addingSkill} onClose={() => setAddingSkill(false)} label="Add a skill" wide>
+        {addingSkill ? <AddSkill onClose={() => setAddingSkill(false)} onAdded={() => setAddingSkill(false)} /> : null}
+      </Modal>
       <Modal open={measuringWalk} onClose={() => setMeasuringWalk(false)} label="Measure your walk back">
         <WalkBackCalibrator
           onDone={(sec) => {

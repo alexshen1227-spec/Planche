@@ -331,12 +331,12 @@ export function TrainingHeatmap({ sessions, weeks = 16 }: { sessions: Session[];
   )
 }
 
-/** Stacked weekly hold-volume columns: planche line vs everything else. */
+/** Stacked weekly hold-volume columns: the skill lines' own holds vs everything else. */
 export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; height?: number }) {
   const { ref, width } = useWidth<HTMLDivElement>()
   const [tip, setTip] = useState<TipState | null>(null)
 
-  const totals = weeks.map((w) => w.plancheSec + w.otherSec)
+  const totals = weeks.map((w) => w.skillSec + w.otherSec)
   const any = totals.some((t) => t > 0)
   if (!any) {
     return (
@@ -362,11 +362,11 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
   const bw = Math.min(24, slot * 0.55)
   const y = (sec: number) => pad.t + ih - (sec / maxV) * ih
 
-  const totalPlanche = weeks.reduce((t, wk) => t + wk.plancheSec, 0)
+  const totalSkill = weeks.reduce((t, wk) => t + wk.skillSec, 0)
   const totalOther = weeks.reduce((t, wk) => t + wk.otherSec, 0)
   const summary = `Weekly hold volume over ${weeks.length} weeks: ${Math.round(
-    totalPlanche / 60,
-  )} minutes of planche holds and ${Math.round(totalOther / 60)} minutes of accessory holds in total.`
+    totalSkill / 60,
+  )} minutes of skill holds and ${Math.round(totalOther / 60)} minutes of accessory holds in total.`
 
   return (
     <div ref={ref} className="relative">
@@ -376,7 +376,7 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
       <div className="mb-1 flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[12px] text-ink2">
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: 'var(--t-chart1)' }} />
-          Planche holds
+          Skill holds
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: 'var(--t-chart2)' }} />
@@ -407,16 +407,16 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
           const cx = pad.l + slot * i + slot / 2
           const px = cx - bw / 2
           const baseY = pad.t + ih
-          const ph = ((wk.plancheSec / maxV) * ih) || 0
+          const ph = ((wk.skillSec / maxV) * ih) || 0
           const oh = ((wk.otherSec / maxV) * ih) || 0
           const gap = oh > 0 && ph > 0 ? 2 : 0
           const hover = () =>
             setTip({
               x: cx,
-              y: y(wk.plancheSec + wk.otherSec),
+              y: y(wk.skillSec + wk.otherSec),
               lines: [
                 `Week of ${fmtShortDay(wk.start)}`,
-                `Planche ${fmtDuration(wk.plancheSec)} · Accessory ${fmtDuration(wk.otherSec)}`,
+                `Skill holds ${fmtDuration(wk.skillSec)} · Accessory ${fmtDuration(wk.otherSec)}`,
               ],
             })
           return (

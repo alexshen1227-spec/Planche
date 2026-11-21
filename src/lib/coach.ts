@@ -1,5 +1,17 @@
-import type { AppState, BodyRegion, CheckIn, EquipmentId, Session, StepId, StrategyId, SymptomEvent } from '../types'
+import type {
+  AppState,
+  BodyRegion,
+  CheckIn,
+  EquipmentId,
+  Session,
+  SkillId,
+  StepId,
+  StrategyId,
+  SymptomEvent,
+} from '../types'
 import { STEP_BY_ID, stepAfter } from '../data/progressions'
+import { SKILLS } from '../data/skills'
+import { activeSkills } from './skills'
 import { EXERCISE_BY_ID as EXERCISE_BY_ID_COACH } from '../data/exercises'
 import { defaultSurface } from '../data/equipment'
 import { diagnosePlateau, type PlateauVerdict } from './plateau'
@@ -24,9 +36,11 @@ import {
   type Signals,
 } from './signals'
 import {
+  barMet,
   humanRating,
   isBarAttempt,
   isQualifyingSet,
+  isReviewOnly,
   requiresFlightConfirmation as requiresFlight,
   qualifyingProgress,
   qualifyingSessionValue,
@@ -590,6 +604,8 @@ export interface CoachLimiter {
 }
 
 export interface CoachPlan {
+  /** The skill this plan is for: the skill of the state it was built from. */
+  skill: SkillId
   dayType: DayType
   dayReason: string
   strategy: StrategyId
@@ -775,6 +791,14 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const step = STEP_BY_ID[state.stepId]
   const pick = pickStrategy(state)
   const decisions: CoachDecision[] = []
+  // The words this plan uses for the skill it is for: "planche" and "pressing"
+  // for a planche, "front lever" and "pulling" for a lever. An athlete with
+  // several skills is told about "skill work" where the rail is the body's.
+  const skillDef = SKILLS[step.skill]
+  const holdName = skillDef.holdName
+  const strengthWord = skillDef.words.strength
+  const severalSkills = activeSkills(state).length > 1
+  const loadedWork = severalSkills ? 'skill work' : `${holdName} work`
 
   let strategy = pick.strategy
   let dayType: DayType = 'build'
@@ -983,6 +1007,20 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       prescription: 'Low-fatigue position practice gets priority over more grinding.',
     },
   }
+  // Every other skill names its faults, and what to do about them, in its own
+  // terms: a soft elbow under a bar is fixed with negatives and hangs, not
+  // with planche leans.
+  if (step.skill !== 'planche') {
+    for (const [issue, guidance] of Object.entries(SKILLS[step.skill].issues ?? {})) {
+      if (!guidance) continue
+      FORM_LABEL[issue] = guidance.label
+      LIMITER_BY_ISSUE[issue] = {
+        label: guidance.limiter,
+        emphasis: guidance.emphasis,
+        prescription: guidance.prescription,
+      }
+    }
+  }
   let formRepairNeeded = false
   if (sig.formDegrading) {
     targetFactor = Math.min(targetFactor, 0.9)
@@ -1160,12 +1198,15 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   if (sig.pressingLags && accessoryEmphasis === 'none') {
     accessoryEmphasis = 'pressing'
     limiter ??= {
-      label: 'Pressing strength',
-      evidence: 'The key hold and repeated pressing work have both flattened.',
-      prescription: 'Planche-specific pressing volume increases while max attempts stay controlled.',
+      label: `${strengthWord.charAt(0).toUpperCase()}${strengthWord.slice(1)} strength`,
+      evidence: `The key hold and repeated ${strengthWord} work have both flattened.`,
+      prescription:
+        step.skill === 'planche'
+          ? 'Planche-specific pressing volume increases while max attempts stay controlled.'
+          : `${strengthWord.charAt(0).toUpperCase()}${strengthWord.slice(1)} volume for the ${holdName} increases while max attempts stay controlled.`,
     }
     decisions.push({
-      text: 'Your holds and your pressing numbers have both flattened — adding pressing volume, a common coaching response when both stall rather than a proven fix.',
+      text: `Your holds and your ${strengthWord} numbers have both flattened — adding ${strengthWord} volume, a common coaching response when both stall rather than a proven fix.`,
       kind: 'info',
       source: 'load-advice',
     })
@@ -1231,7 +1272,8 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   if (
     dayType === 'push' &&
     best >= step.unlockSec * 0.85 &&
-    best < step.unlockSec &&
+    // Short of the bar — or at it, on a step that asks to see it on a second day.
+    !barMet(state, state.stepId) &&
     !sig.noisy &&
     !formRepairNeeded
   ) {
@@ -1306,8 +1348,8 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   if (checkInFresh && joints === 'pain') {
     dayType = 'recovery'
     dayReason = fromSetup
-      ? 'At setup you said a plain push-up position hurts your wrists, so loaded planche work is off until a check-in says otherwise. Use only pain-free recovery movement.'
-      : 'You reported joint pain — loaded planche work is off today. Use only pain-free recovery movement.'
+      ? `At setup you said a plain push-up position hurts your wrists, so loaded ${loadedWork} is off until a check-in says otherwise. Use only pain-free recovery movement.`
+      : `You reported joint pain — loaded ${loadedWork} is off today. Use only pain-free recovery movement.`
     strategy = 'technique'
     targetFactor = 0.6
     volumeFactor = 0.5
@@ -1318,7 +1360,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     // swelling in a wrist or elbow is the point where professional guidance
     // says to get it looked at, and that is what this says.
     decisions.push({
-      text: `Joint pain reported — no loaded planche, pressing or wrist work today. Stop any movement that reproduces it. If it is still there the next day, keeps coming back, or there is swelling, get it checked by a qualified clinician; severe pain, numbness or a joint you cannot use normally needs prompt care.${youthNote}`,
+      text: `Joint pain reported — no loaded ${holdName}, ${strengthWord} or wrist work today. Stop any movement that reproduces it. If it is still there the next day, keeps coming back, or there is swelling, get it checked by a qualified clinician; severe pain, numbness or a joint you cannot use normally needs prompt care.${youthNote}`,
       kind: 'warn',
     })
     for (const region of painRegions) {
@@ -1533,7 +1575,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     const rampPct = Math.round(ramp.ratio * 100)
     const limitPct = Math.round(MAX_WEEKLY_LOAD_RAMP * 100)
     decisions.push({
-      text: `Last week's planche-specific load was ${rampPct > limitPct ? `${rampPct}%` : `just over ${limitPct}%`} of your typical week over the month before — above the ${limitPct}% this app allows. That limit is a cautious design choice, not a proven safety threshold — the 10%-a-week rule it resembles did not reduce injuries in its trial. Today is trimmed to bring it back in line. Load here is weighted by how hard each position is, so a long easy lean does not count the same as a short advanced tuck.`,
+      text: `Last week's ${severalSkills ? 'skill-hold' : step.skill === 'planche' ? 'planche-specific' : holdName} load was ${rampPct > limitPct ? `${rampPct}%` : `just over ${limitPct}%`} of your typical week over the month before — above the ${limitPct}% this app allows. That limit is a cautious design choice, not a proven safety threshold — the 10%-a-week rule it resembles did not reduce injuries in its trial. Today is trimmed to bring it back in line. Load here is weighted by how hard each position is, so a long easy lean does not count the same as a short advanced tuck.`,
       kind: 'warn',
     })
   }
@@ -1794,7 +1836,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     // hold that passed but shorter, or a clip never checked all got "what the
     // camera flags". A frog stand is never graded by the camera; it opens on a
     // filmed hold the athlete reviews against the checklist.
-    const frog = step.keyExerciseId === 'frog-stand'
+    const frog = isReviewOnly(step.keyExerciseId)
     const filmedMaxFailed = state.sessions
       .filter((s) => s.stepId === state.stepId && s.startedAt <= now)
       .slice(-6)
@@ -1863,6 +1905,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   }
 
   return {
+    skill: step.skill,
     dayType,
     dayReason,
     strategy,
@@ -1990,7 +2033,7 @@ export function debriefSession(
       // camera pass — it opens the step early" read as a report of what had
       // happened, after attempts nobody filmed or rated. The frog stand is
       // verified by reviewing its replay, not by the pose check.
-      const review = nextKey === 'frog-stand'
+      const review = isReviewOnly(nextKey)
       const bar = `${nextStep.startSec}s${EXERCISE_BY_ID_COACH[nextKey]?.perSide ? ' each side' : ''}`
       const evidence = review
         ? 'filmed, rated Clean and checked against the replay checklist'

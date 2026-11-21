@@ -328,13 +328,38 @@ describe('the coach never says anything untrue', () => {
 
 describe('the plan is stable and proportionate', () => {
   it('does not swing wildly from one day to the next for a steady athlete', () => {
-    const state = synthesizeAthleteState({ weeks: 14, noise: 0.05, seed: 12 })
-    const now = Date.now()
-    const factors: number[] = []
-    for (let day = 0; day < 5; day++) factors.push(buildPlan(state, now + day * 86_400_000).targetFactor)
-    const swing = Math.max(...factors) - Math.min(...factors)
-    // The athlete has not trained in between, so nothing justifies a lurch.
-    expect(swing).toBeLessThanOrEqual(0.2)
+    // Every day of the week, on a fixed calendar. This once ran on the real
+    // clock and failed on Thursdays only: the easy-week rule walks calendar
+    // weeks (CLAUDE.md, "An easy week counts by its load"), so a history that
+    // stops on a Thursday leaves a light week behind it, and the Monday five
+    // days on is — correctly — no longer an easy day. A change like that is
+    // the one thing that may move the target without any training in between,
+    // so the test now says so instead of depending on the date it is run.
+    const DAY = 86_400_000
+    const steadiness: number[] = []
+    for (let weekday = 0; weekday < 7; weekday++) {
+      const now = new Date(2026, 10, 16 + weekday, 12, 0).getTime() // Mon 16 Nov 2026 onward
+      const state = synthesizeAthleteState({ weeks: 14, noise: 0.05, seed: 12, now })
+      const plans = [0, 1, 2, 3, 4].map((day) => buildPlan(state, now + day * DAY))
+      // Within one kind of day, nothing justifies a lurch.
+      const byType = new Map<string, number[]>()
+      for (const plan of plans) byType.set(plan.dayType, [...(byType.get(plan.dayType) ?? []), plan.targetFactor])
+      for (const [type, factors] of byType) {
+        expect(Math.max(...factors) - Math.min(...factors), `weekday ${weekday}, ${type} days`).toBeLessThanOrEqual(0.2)
+      }
+      // The kind of day may change — a calendar week ends — but once, not back and forth.
+      const changes = plans.filter((plan, i) => i > 0 && plan.dayType !== plans[i - 1].dayType)
+      expect(changes.length, `weekday ${weekday}`).toBeLessThanOrEqual(1)
+      // And only at the start of a new calendar week.
+      for (const plan of changes) {
+        const at = now + plans.indexOf(plan) * DAY
+        expect(new Date(at).getDay(), `weekday ${weekday}: the day the plan changed`).toBe(1)
+      }
+      steadiness.push(changes.length)
+    }
+    // Not vacuous either way: most weekdays see no change at all, and at least one sees the week turn.
+    expect(steadiness.filter((n) => n === 0).length).toBeGreaterThanOrEqual(4)
+    expect(steadiness.some((n) => n === 1)).toBe(true)
   })
 
   it('keeps the briefing short enough to read between sets', () => {

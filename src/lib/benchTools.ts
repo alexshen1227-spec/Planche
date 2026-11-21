@@ -126,6 +126,15 @@ export function selfTestJudge(seeds = 3): SelfTestReport {
     { name: 'Bent knees are named where legs must be straight', id: 'full-planche', extra: { kneeBendDeg: 30 }, issue: 'knees' },
     { name: 'Closed hips are named where they must be open', id: 'straddle-planche', extra: { hipAngleDeg: 140 }, issue: 'closed' },
     { name: 'A real shrug is named', id: 'full-planche', extra: { shrugGap: 0.18 }, issue: 'shrug' },
+    // The positions that are not a side-on support hold, each with the fault
+    // only it has — and bends sized to the coarser bar those postures get.
+    { name: 'Clearly bent arms are named under a bar', id: 'front-lever', extra: { elbowBendDeg: 55 }, issue: 'arms' },
+    { name: 'Sagging hips are named in a front lever', id: 'front-lever', extra: { hipOffset: -0.4 }, issue: 'sag' },
+    { name: 'Clearly bent arms are named in a handstand', id: 'freestanding-handstand', extra: { elbowBendDeg: 48 }, issue: 'arms' },
+    { name: 'Closed shoulders are named in a handstand', id: 'freestanding-handstand', extra: { shoulderDeg: 130 }, issue: 'shoulders' },
+    { name: 'A 90° hold on nearly straight arms is named', id: 'ninety-hold', extra: { elbowBendDeg: 40 }, issue: 'angle' },
+    { name: 'A flag well off level is named', id: 'human-flag', extra: { tiltDeg: 30 }, issue: 'tilt' },
+    { name: 'A clearly bent arm is named in a flag', id: 'human-flag', extra: { elbowBendDeg: 42 }, issue: 'arms' },
   ]
   for (const fault of faults) {
     let failure: string | undefined
@@ -155,6 +164,32 @@ export function selfTestJudge(seeds = 3): SelfTestReport {
       'A front-on clip is refused rather than misread',
       !v.ok && /side-on/.test(v.reason ?? ''),
       v.ok ? 'was graded' : `unexpected reason: ${v.reason}`,
+    )
+  }
+
+  {
+    const v = judgeSynth('human-flag', { bodyWidth: 0.12 }, 1)
+    add(
+      'A flag filmed from the side is refused rather than misread',
+      !v.ok && /front-on/.test(v.reason ?? ''),
+      v.ok ? 'was graded' : `unexpected reason: ${v.reason}`,
+    )
+  }
+  {
+    const v = judgeSynth('human-flag', { tiltDeg: 80 }, 1)
+    add(
+      'A body running up the pole is called off level, not a turned phone',
+      v.ok && v.issues.includes('tilt') && v.frameTurned === undefined,
+      `ok=${v.ok} issues=[${v.issues.join(', ')}] turned=${v.frameTurned ?? 'no'}`,
+    )
+  }
+  {
+    // A 90° hold bends its arms on purpose.
+    const v = judgeSynth('ninety-hold', {}, 1)
+    add(
+      'A 90° hold is never accused of bent arms',
+      v.ok && !v.issues.includes('arms') && !v.issues.includes('angle'),
+      `got [${v.issues.join(', ')}]`,
     )
   }
 
@@ -196,6 +231,54 @@ export function selfTestJudge(seeds = 3): SelfTestReport {
       'The hallucinated L-sit photo never passes clean',
       !cleanPass,
       `ok=${v.ok} issues=[${v.issues.join(', ')}] score=${v.score}`,
+    )
+  }
+  {
+    const v = judgeTrackedFrames(realClip('handstandStraight'), 'freestanding-handstand')
+    add(
+      'The real straight handstand photo passes, shoulders measured',
+      v.ok && v.issues.length === 0 && v.unseen.length === 0 && (v.shoulderDeg ?? 0) > 160,
+      `ok=${v.ok} issues=[${v.issues.join(', ')}] unseen=[${v.unseen.join(', ')}] shoulder=${v.shoulderDeg?.toFixed(0)}`,
+    )
+  }
+  {
+    const v = judgeTrackedFrames(realClip('handstandArched'), 'freestanding-handstand')
+    add(
+      'The real arched handstand photo has its closed shoulders named',
+      v.ok && v.issues.includes('shoulders') && !v.issues.includes('arms'),
+      `ok=${v.ok} issues=[${v.issues.join(', ')}]`,
+    )
+  }
+  {
+    const v = judgeTrackedFrames(realClip('flagLevel'), 'human-flag')
+    add(
+      'The real level flag photo passes clean',
+      v.ok && v.issues.length === 0 && v.unseen.length === 0,
+      `ok=${v.ok} issues=[${v.issues.join(', ')}] unseen=[${v.unseen.join(', ')}]`,
+    )
+  }
+  {
+    const v = judgeTrackedFrames(realClip('poleHoldUpright'), 'human-flag')
+    add(
+      'The real upright pole hold is never read as a level flag',
+      v.ok && v.issues.includes('tilt'),
+      `ok=${v.ok} issues=[${v.issues.join(', ')}] tilt=${v.tiltDeg?.toFixed(0)}`,
+    )
+  }
+  {
+    const v = judgeTrackedFrames(realClip('flagOblique'), 'human-flag')
+    add(
+      'The real flag filmed at an angle is refused',
+      !v.ok && /at an angle/.test(v.reason ?? ''),
+      v.ok ? `was graded: [${v.issues.join(', ')}]` : `unexpected reason: ${v.reason}`,
+    )
+  }
+  {
+    const v = judgeTrackedFrames(realClip('frontLeverRings'), 'front-lever')
+    add(
+      'The real straight-armed front lever photo is not accused',
+      v.ok && v.issues.length === 0,
+      `ok=${v.ok} issues=[${v.issues.join(', ')}] elbow=${v.elbowDeg?.toFixed(0)} knee=${v.kneeDeg?.toFixed(0)}`,
     )
   }
 

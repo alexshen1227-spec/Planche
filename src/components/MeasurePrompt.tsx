@@ -149,8 +149,8 @@ function MeasureForm({ onSaved, onDismiss }: { onSaved: () => void; onDismiss: (
         </div>
         <h2 className="mt-1 font-display text-[20px] font-bold text-ink">Where are you at?</h2>
         <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">
-          Planche is strength-to-weight, so bodyweight helps you interpret the same hold over time. Skip it any
-          time — it is never a target, just context.
+          These skills are strength against your own weight, so bodyweight helps you interpret the same hold over
+          time. Skip it any time — it is never a target, just context.
         </p>
       </div>
 

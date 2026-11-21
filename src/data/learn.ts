@@ -1,3 +1,7 @@
+import type { SkillId } from '../types'
+import { EXERCISE_BY_ID } from './exercises'
+import { SKILL_LIST, type SkillDef } from './skills'
+
 export interface GuideSection {
   heading: string
   body: string
@@ -8,19 +12,122 @@ export interface GuideSection {
 
 export interface Guide {
   id: string
+  /** Where it is shelved: getting started, one skill's road, or how the app works. */
+  group: 'start' | 'skill' | 'method'
+  /** The skill a road guide is about. */
+  skill?: SkillId
   icon: string
   title: string
   summary: string
   sections: GuideSection[]
 }
 
-export const GUIDES: Guide[] = [
+export const GUIDE_GROUPS: { id: Guide['group']; title: string; blurb: string }[] = [
+  { id: 'start', title: 'Getting started', blurb: 'What to read first.' },
+  { id: 'skill', title: 'The skills', blurb: 'One guide per road: what it is, what it asks first, how it is filmed.' },
+  { id: 'method', title: 'How the app works', blurb: 'What it measures, what it decides, and how sure any of it is.' },
+]
+
+const SKILL_ICON: Record<SkillId, string> = {
+  planche: '🤸',
+  frontlever: '🪝',
+  handstand: '🙃',
+  ninety: '📐',
+  flag: '🚩',
+}
+
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1)
+/** Whether two sentences name the same piece of kit. */
+const KIT_WORDS = /\b(pole|wall|bar|rings|parallettes|band|box)\b/gi
+const sharesKitWord = (a: string, b: string) => {
+  const inB = new Set((b.match(KIT_WORDS) ?? []).map((word) => word.toLowerCase()))
+  return (a.match(KIT_WORDS) ?? []).some((word) => inB.has(word.toLowerCase()))
+}
+const fullReps = (n: number) => `${n} full rep${n === 1 ? '' : 's'}`
+
+/**
+ * A skill's guide, written from its definition.
+ *
+ * The definition is where a road's claims were sourced and worded — what
+ * coaches ask for first, what the camera can see, how thin the evidence is —
+ * and its screens already print those sentences. Building the guide from the
+ * same fields means the Learn tab cannot drift into saying something the road
+ * itself does not.
+ */
+export function skillGuide(def: SkillDef): Guide {
+  const lastStep = def.steps.length - 1
+  const ladder = def.ladder
+  const twoDays = def.steps.filter((step) => (step.repeatDays ?? 1) > 1)
+  return {
+    id: `skill-${def.id}`,
+    group: 'skill',
+    skill: def.id,
+    icon: SKILL_ICON[def.id],
+    title: def.name,
+    summary: `${def.tagline}. The road, what it asks of you first, how it is filmed — and how sure any of it is.`,
+    sections: [
+      { heading: 'What it is', body: def.blurb },
+      {
+        heading: 'The road',
+        body: `${def.steps.length} steps. A step opens the next when its hold clears the bar shown, rated Clean by you and backed by film: a passing camera check, or your own review of the replay where the camera cannot grade the shape. The bars are convention, not measured thresholds.${
+          twoDays.length
+            ? ` ${twoDays.map((step) => step.name).join(' and ')} ask${twoDays.length === 1 ? 's' : ''} for the bar on two separate days — one long balance can be luck.`
+            : ''
+        }`,
+        bullets: def.steps.map(
+          (step, index) =>
+            `${step.name} — ${lowerFirst(step.tagline).replace(/\.$/, '')}.${
+              index < lastStep ? ` Bar: ${step.unlockSec}s.` : /summit/i.test(step.tagline) ? '' : ' The summit.'
+            }`,
+        ),
+      },
+      ...(ladder
+        ? [
+            {
+              heading: `The ${lowerFirst(ladder.name)} line`,
+              body: `Beside the holds runs a line of push-ups that works up to ${ladder.summit}. It moves on its own standards, not behind the holds: one filmed set of the reps shown, rated Clean and checked by you on the replay, opens the next rung. The camera does not count reps — at a few samples a second it cannot vouch for the bottom of one. ${ladder.sourcing}`,
+              bullets: ladder.rungs.map((rung, index) => {
+                const name = EXERCISE_BY_ID[rung.exerciseId]?.name ?? rung.exerciseId
+                return index < ladder.rungs.length - 1
+                  ? `${name} — ${fullReps(rung.standardReps)} in one set opens the next rung.`
+                  : `${name} — ${fullReps(rung.standardReps)}: the top of the line.`
+              }),
+            },
+          ]
+        : []),
+      {
+        heading: 'Before you start',
+        body: 'What coaches commonly ask for first. It is advice, not a gate — the app never locks a road.',
+        // The kit sentence, unless a prerequisite already says it.
+        bullets: [
+          ...def.prerequisites,
+          ...(def.requiresNote && !def.prerequisites.some((line) => sharesKitWord(line, def.requiresNote!)) ? [def.requiresNote] : []),
+        ],
+      },
+      { heading: 'How often', body: def.frequency },
+      { heading: 'Filming it', body: `${def.camera.placement} ${def.camera.honesty}` },
+      {
+        heading: 'Looking after yourself',
+        body: 'Nothing here makes injury impossible. What is worth knowing before you load it:',
+        bullets: def.safety,
+      },
+      { heading: 'How sure is any of this?', body: def.sourcing },
+    ],
+  }
+}
+
+const HAND_WRITTEN_GUIDES: Guide[] = [
   {
     id: 'start-here',
+    group: 'start',
     icon: '🚦',
     title: 'Start here',
-    summary: 'Never trained for a planche before? Read this once and you will know exactly what you are doing.',
+    summary: 'New to straight-arm skills? Read this once and you will know exactly what you are doing.',
     sections: [
+      {
+        heading: 'What this app trains',
+        body: 'Five bodyweight skills, each as its own road of positions from easy to hard: the planche, the front lever, the handstand and handstand push-up, the 90° hold and the human flag. You pick the ones you want and put them in order; the first one leads every session. Each has its own guide under The skills. The rest of this page uses the planche as the example, and the same rules run every road.',
+      },
       {
         heading: 'What a planche actually is',
         body: 'Holding your whole body horizontal in the air, parallel to the floor, supported only by your hands — with your arms completely straight. The straight arms are what make it so hard: the whole body is levered out in front of the shoulders, and the elbows stay locked the entire time.',
@@ -50,7 +157,43 @@ export const GUIDES: Guide[] = [
     ],
   },
   {
+    id: 'mixing-skills',
+    group: 'start',
+    icon: '🧩',
+    title: 'Training more than one skill',
+    summary: 'How a session is shared between your skills, why the order you put them in matters, and what is convention rather than evidence.',
+    sections: [
+      {
+        heading: 'Your order is the plan',
+        body: 'The first skill in your list leads every session: it comes first while you are fresh and gets the fullest dose. Change the order in Settings whenever your priority changes — nothing is lost, each road keeps its own step, records and history.',
+      },
+      {
+        heading: 'How many skills fit in a session',
+        body: 'It depends on the time you gave the app. Under 25 minutes there is room for one strength skill; up to 50, two; longer than that, three. Those cut-offs are this app’s design: coaches’ own figures for how many skills to train at once differ — one or two, two to four, up to five — and none of them was measured.',
+        bullets: [
+          'The second place goes to the skill that has waited longest for a full part, weighted by your order — your second priority gets it about twice as often as your third — with a preference for a skill that loads different joints, such as a pull beside a push.',
+          'A third skill gets a maintenance dose: its key hold, a couple of sets, nothing else. Coaches report that about once a week holds a movement while it progresses slowly; that has been measured for ordinary strength training, not for these holds. It does not count as having trained the skill.',
+          'Handstand balance practice rides along at the start of a session. It is light on the joints and is practised best fresh.',
+          'When a session only fits one skill, your skills take turns, and your first priority still comes round about twice as often as the others.',
+        ],
+      },
+      {
+        heading: 'One maximal effort a session',
+        body: 'An unlock attempt or a max re-test is an all-out hold, and a session holds one. It is your lead skill’s by default; when the lead had it last time and another skill has one waiting, that skill takes today’s. Every skill is measured in turn, so no road’s targets are left to go stale.',
+      },
+      {
+        heading: 'A sore joint changes every skill that loads it',
+        body: 'Each skill names the joints it loads hardest. Report an elbow and the planche, the front lever, the 90° hold and the flag are all lightened or left out for the day — a different skill is not a way around a joint that hurts.',
+      },
+      {
+        heading: 'How sure is any of this?',
+        body: 'Which skills share a session, in what order and at what share of the time follows common coaching practice and this app’s own design. No trial has compared ways of combining these skills, so read the line-up as a sensible default rather than a finding.',
+      },
+    ],
+  },
+  {
     id: 'safety',
+    group: 'method',
     icon: '🛡️',
     title: 'Looking after your joints',
     summary: 'No routine makes injury impossible. What the app does to keep the risk down, and what to do when something hurts.',
@@ -81,6 +224,7 @@ export const GUIDES: Guide[] = [
   },
   {
     id: 'how-progress-works',
+    group: 'method',
     icon: '📈',
     title: 'How progress actually happens',
     summary: 'Why seconds bounce around, what to measure, and when to move up.',
@@ -109,10 +253,11 @@ export const GUIDES: Guide[] = [
   },
   {
     id: 'fastest-path',
+    group: 'method',
     icon: '🚀',
     title: 'The fastest honest path',
     summary:
-      'How every session is built, why the next shape is practised early, and what the app does at each transition — lean to frog, frog to tuck, tuck to advanced tuck and on to full.',
+      'How every session is built, why the next shape is practised early, and what the app does at each transition. Written around the planche — lean to frog, frog to tuck, tuck to advanced tuck and on to full — and the same ideas shape every road.',
     sections: [
       {
         heading: 'Every session, every level',
@@ -153,6 +298,7 @@ export const GUIDES: Guide[] = [
   },
   {
     id: 'rpe',
+    group: 'method',
     icon: '🎚️',
     title: 'Understanding RPE',
     summary: 'The 6–10 score you give after each session, and why it changes your next one.',
@@ -180,6 +326,7 @@ export const GUIDES: Guide[] = [
   },
   {
     id: 'camera-judge',
+    group: 'method',
     icon: '🎥',
     title: 'How the camera judge works',
     summary:
@@ -217,6 +364,17 @@ export const GUIDES: Guide[] = [
         ],
       },
       {
+        heading: 'Other skills, other views',
+        body: 'The planche and the 90° hold are judged side-on in a support position. The other skills are different shapes seen from different places, and each is held to what the camera can actually see from there.',
+        bullets: [
+          'Front lever: side-on to the bar. Hanging arms point toward the camera more than supporting ones, so elbows are read coarsely — only a clear bend is called.',
+          'Handstand: side-on, phone upright. The camera reads the line from wrist to shoulder to hip to ankle and how far the whole body sits off vertical. It cannot tell a foot resting on the wall from a free balance — you confirm that.',
+          'Human flag: front-on, facing your chest — the one skill a side view is useless for. The pole is taken from the line between your hands, and an oblique shot is refused.',
+          'A plain hang, the frog stand and the first flag positions have no shape the camera can grade honestly. They are filmed all the same, and your own check of the replay against a short list is the evidence.',
+          'Push-up sets on the handstand push-up and 90° push-up lines are filmed for you, not for the camera: it does not count reps. You watch the replay and pass the set against that rung’s list.',
+        ],
+      },
+      {
         heading: 'If you cannot film',
         body: 'Unlocks ask for a filmed check because "verified" has to mean something, and a 2D side view is the only evidence the app can actually inspect. But training somewhere you will not set up a phone is a normal situation, not a failure — so it is not a dead end.',
         bullets: [
@@ -234,6 +392,7 @@ export const GUIDES: Guide[] = [
   },
   {
     id: 'equipment',
+    group: 'start',
     icon: '🧰',
     title: 'Equipment guide',
     summary: 'What is worth buying, when, and what you can safely ignore.',
@@ -251,13 +410,24 @@ export const GUIDES: Guide[] = [
         body: 'Hung from a pull-up bar and looped under your hips, a band lets you rehearse the true straddle shape long before you can hold it unassisted. Put the band at the hips, never the knees — at the knees it tips you forward.',
       },
       {
+        heading: 'For the other skills',
+        body: 'Each road says what it cannot be trained without, and the app holds a skill back rather than programme work you have no kit for.',
+        bullets: [
+          'Front lever: something to hang from — a pull-up bar or rings. A long resistance band helps rehearse the longer shapes.',
+          'Handstand and handstand push-up: a clear wall. A stable box or step opens the feet-elevated pike push-up; parallettes open the deficit rung.',
+          '90° hold: floor space is enough. Parallettes make the tuck versions easier on the wrists.',
+          'Human flag: a vertical pole or a ladder-style frame that is anchored and will not turn in your hands. Check it before every session.',
+        ],
+      },
+      {
         heading: 'Nice to have',
-        body: 'A phone tripod (for the side-view videos that keep you honest) and chalk if your hands sweat. That is genuinely the whole list. You do not need rings, weights, or a gym membership for any of this.',
+        body: 'A phone tripod (for the videos that keep you honest) and chalk if your hands sweat. That is genuinely the whole list. You do not need weights or a gym membership for any of this.',
       },
     ],
   },
   {
     id: 'free-references',
+    group: 'method',
     icon: '🎬',
     title: 'Free references worth watching',
     summary: 'Six screened free videos for specific questions — what each is good for, and what not to take from it.',
@@ -298,11 +468,14 @@ export const GUIDES: Guide[] = [
       },
       {
         heading: 'What these do not cover',
-        body: 'Scapular regressions, hollow-body options, a supported L-sit and wrist preparation are better learned from the exercise cards here. Watching a video never establishes readiness — your own controlled, filmed holds do.',
+        body: 'Scapular regressions, hollow-body options, a supported L-sit and wrist preparation are better learned from the exercise cards here. These six are all about the planche: no video for the other four skills has been screened to the same standard yet, so none is listed. Watching a video never establishes readiness — your own controlled, filmed holds do.',
       },
     ],
   },
 ]
+
+/** Every guide: the hand-written ones, and one per skill built from its definition. */
+export const GUIDES: Guide[] = [...HAND_WRITTEN_GUIDES, ...SKILL_LIST.map(skillGuide)]
 
 export interface GlossaryTerm {
   term: string
@@ -406,5 +579,65 @@ export const GLOSSARY: GlossaryTerm[] = [
     short: 'Gradually asking for slightly more',
     detail:
       'Adding a little time, a little lean, or a longer lever over weeks. The app handles this for you: working targets follow your recent bests, and a max clean hold about every three weeks — inside a session — re-measures the ceiling.',
+  },
+  {
+    term: 'Front lever',
+    short: 'Level under a bar, face up, arms straight',
+    detail:
+      'The planche’s pulling counterpart: hanging with the body held level. The road goes tuck, advanced tuck, one leg, straddle, full — the same lever-lengthening idea as the planche.',
+  },
+  {
+    term: 'Depression (shoulders)',
+    short: 'Pulling the shoulders down, away from the ears',
+    detail:
+      'What an active hang and every lever start with. A side-on camera cannot see the shoulder blades, so it is part of your own Clean rating.',
+  },
+  {
+    term: 'Stacked',
+    short: 'Hands, shoulders, hips and feet in one vertical line',
+    detail:
+      'The handstand’s standard. From the side the camera reads how open the shoulders are and whether the hips and legs continue the line; a banana-shaped back shows up as closed shoulders or a body off vertical.',
+  },
+  {
+    term: 'Bail',
+    short: 'A planned way out of a handstand',
+    detail:
+      'Stepping down from the wall, or a quarter-turn out of a free handstand. Coaches teach it before the balance itself.',
+  },
+  {
+    term: 'Kip',
+    short: 'A kick or swing that helps a rep',
+    detail:
+      'Using the legs or momentum to get through the hard part of a push-up or pull. A kipped rep is a different, easier rep — the push-up lines count strict reps only.',
+  },
+  {
+    term: 'Negative',
+    short: 'Only the lowering half of a rep',
+    detail:
+      'Lowering slowly through a movement you cannot yet press back out of. The handstand push-up and 90° push-up lines both use them as a rung.',
+  },
+  {
+    term: 'Rung',
+    short: 'One movement on a push-up line',
+    detail:
+      'The handstand push-up and 90° push-up lines are ladders of movements. A rung opens the next one on a standard: one filmed set of that many full reps, rated Clean and checked by you on the replay.',
+  },
+  {
+    term: 'Line-up',
+    short: 'Which skills share today’s session',
+    detail:
+      'With more than one skill, each session has a lead (your first priority), often a partner with a full part of its own, and sometimes a maintenance dose for a third. The session screen says who is doing what, and why.',
+  },
+  {
+    term: 'Maintenance dose',
+    short: 'A couple of sets to keep a position',
+    detail:
+      'A skill’s key hold at its current step, two sets, nothing else — meant to keep the position practised on days the skill is not being trained in full. What dose actually maintains one of these holds has not been measured. It does not count as a training day for that skill.',
+  },
+  {
+    term: 'Replay review',
+    short: 'Your own check of the clip',
+    detail:
+      'Where the camera cannot grade a shape honestly — a plain hang, the frog stand, the first flag holds, and every push-up set — the set is still filmed, and you pass it against a short list while watching the replay. That review is the evidence.',
   },
 ]

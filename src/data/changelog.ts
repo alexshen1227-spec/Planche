@@ -18,6 +18,40 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-11-18',
+    title: 'Five skills, one app',
+    area: 'training',
+    major: {
+      version: '4.0',
+      blurb:
+        'Planche Lab is now Calisthenics Lab: the front lever, the handstand and handstand push-up, the 90° hold and the human flag each have a full road beside the planche, sessions that share the time between the skills you choose, and a camera judge that knows a hang, a handstand and a flag from a support hold.',
+    },
+    notes: [
+      'Four new roads. Front lever (hang to full lever), handstand (wall plank to a freestanding handstand, with a handstand push-up line beside it), 90° hold (lean to the full hold, with a 90° push-up line) and human flag (pole work to the full flag). Each has its own steps, unlock bars, drills, warm-up, safety notes and pictograms — and each says how thinly its numbers are sourced.',
+      'Nothing about your planche changed. Your history, records, step and settings are exactly where they were; the planche is simply the first skill in your list.',
+      'Choose your skills and their order. Setup asks which skills you want and places you on each with a short interview; add or drop a skill later from the Path or Settings. A skill you dropped keeps its place for when you come back. If you set up before this update, Home offers the new skills once — nothing is added unless you add it.',
+      'Sessions share the time. Your first skill leads every session. A second skill gets a full part when the session is long enough — the one that has waited longest, preferring a pull beside a push — and a third gets a short maintenance dose. In a short session your skills take turns. The session says who is doing what and why.',
+      'One all-out hold a session. An unlock attempt or re-test goes to one skill at a time and alternates, so every road gets measured without stacking maximal efforts.',
+      'The camera judges each skill from where it can be seen. Levers and handstands are filmed from the side, the flag from the front, and the phone guide on the set screen says which. A hanging or upside-down elbow is read more coarsely than a support hold’s — only a clear bend is called — because that is as much as one camera can honestly see there. Those looser bars were measured on real photographs of handstands, flags and a front lever and on synthetic holds of known angle. It is a small set of photographs, so the bars sit well clear of what it shows.',
+      'Some positions are yours to check. A plain hang and the first flag holds have no shape a camera can grade honestly, so they are filmed and you pass them on the replay against a short list, as the frog stand always was.',
+      'Push-up lines move on filmed sets. A set of pike push-ups, wall handstand push-ups or 90° push-ups on your current rung is filmed from Begin to Log. The camera does not count reps — it cannot vouch for the bottom of one — so you watch the replay, pass the set against that rung’s list, and a passed set at the standard opens the next rung.',
+      'A sore joint reaches every skill that loads it. Reporting an elbow eases the planche, the lever, the 90° hold and the flag together.',
+      'Home, Path, Train and Progress each have a skill switcher. Forecasts, plateau reads, weekly work and form trends are per skill; history, records and badges are all of you.',
+      'New badges for every skill — verified holds, replay-checked push-ups, and training more than one road — and badges for roads you do not train stay out of the way. The camera badges now count any skill’s holds.',
+      'Learn has a guide for each skill, written from the same definitions the road screens use, plus “Training more than one skill”. Tips are only shown for skills you train.',
+      'Focused sessions on the Train tab are the ones that serve a skill you train — a pulling session for the lever and the flag, and no planche-lean sessions for someone who does not train the planche.',
+      'The progress card you can share is made for the road you are looking at — its own steps, its own best verified hold — and says which skill it is.',
+      'History shows what each set stands on: “verified” for a hold with full evidence, “replay checked” for a passed push-up set, or just your rating.',
+      'The hold picker on the Progress chart now lists the road you are looking at and the holds you have actually logged, instead of every hold in the app.',
+      'On an iPhone, Home now explains how to add the app to your Home Screen, and why: Safari can clear a website’s saved data after about a week without a visit, and everything you log lives only on your phone. Settings shows whether the app is installed.',
+      'The first screen has “I have a backup file”, so a new phone — or the Home Screen app, which starts empty — can pick up your history without going through setup again.',
+      'Added to your Home Screen, the app now has a proper icon on iPhone instead of a thumbnail of the page.',
+      'If the one skill you train is missing its kit — a front lever with no bar listed — the session now says it is support work while the skill waits, instead of being named after a hold it could not include. What your kit left out is listed once, by what it needs.',
+      'Fixed: at the planche’s first step, a very hard session (RPE 9 or more) was not counted as hard, so the next day was planned as usual. It now eases the next day, as every other step always did.',
+      'Fixed: the page behind a running session could scroll when you swiped past the end of a screen, and Home said “8 weeks streak”. The tip of the day now changes at your own midnight rather than midnight in Greenwich.',
+    ],
+  },
+  {
     date: '2026-11-01',
     title: 'The camera’s clock, not the clip’s',
     area: 'camera',

@@ -220,6 +220,12 @@ html {
   scroll-padding-bottom: 6rem;
 }
 
+/* The page behind a running session must not scroll beneath it. On <html>
+   rather than <body>, whose overflow the modals set and restore themselves. */
+html.session-open {
+  overflow: hidden;
+}
+
 body {
   background: var(--t-bg);
   color: var(--t-ink);

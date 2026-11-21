@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AppState, Block, Session, SetLog } from '../types'
+import type { AppState, Block, PlancheStepId, Session, SetLog } from '../types'
 import { initialState } from './store'
 import { buildPlan } from './coach'
 import {
@@ -24,6 +24,15 @@ import { STEPS, STEP_BY_ID } from '../data/progressions'
 
 const DAY = 86_400_000
 const NOW = Date.UTC(2026, 10, 1, 12)
+
+/**
+ * The session as built on the fixtures' own date. The builder reads "recent"
+ * work against the clock, so building for whatever day the suite happens to
+ * run let these fixtures age out of that window: two tests here passed in
+ * November 2026 and were due to fail from late December.
+ */
+const sessionAt = (state: AppState, plan?: Parameters<typeof todaysSession>[1], minutes?: number) =>
+  todaysSession(state, plan, minutes, { now: NOW })
 
 function athlete(stepId: AppState['stepId'], overrides: Partial<AppState> = {}): AppState {
   const base = initialState()
@@ -63,7 +72,7 @@ function session(sets: Partial<SetLog>[], daysAgo: number, stepId: AppState['ste
 describe('the push-up version of every step', () => {
   it('has a pressing twin for every step on the road, and every twin is a real rep exercise', () => {
     for (const step of STEPS) {
-      const id = PUSHUP_VERSION[step.id]
+      const id = PUSHUP_VERSION[step.id as PlancheStepId]
       expect(EXERCISE_BY_ID[id]?.type).toBe('reps')
       expect(PRESS_LADDER).toContain(id)
     }
@@ -88,7 +97,7 @@ describe('the push-up version of every step', () => {
       profile: { equipment: ['floor'] } as AppState['profile'],
       settings: { sessionMinutes: 90 } as AppState['settings'],
     })
-    const workout = todaysSession(floorOnly, buildPlan(floorOnly, NOW))
+    const workout = sessionAt(floorOnly, buildPlan(floorOnly, NOW))
     const press = workout.blocks.find((b) => b.role === 'press')!
     expect((EXERCISE_BY_ID[press.exerciseId].requires ?? []).every((id) => floorOnly.profile.equipment.includes(id))).toBe(true)
   })
@@ -100,11 +109,11 @@ describe('the push-up version of every step', () => {
         session([{ exerciseId: 'tuck-planche', kind: 'hold', value: 12, target: 8, section: 'main', surface: 'parallettes' }], 3),
       ],
     })
-    const normal = todaysSession(strong, { ...buildPlan(strong, NOW), strategy: 'balanced' })
+    const normal = sessionAt(strong, { ...buildPlan(strong, NOW), strategy: 'balanced' })
     expect(normal.blocks.find((b) => b.role === 'press')!.exerciseId).toBe('tuck-planche-pushup')
     const niggle = buildPlan(strong, NOW, { joints: 'niggle', energy: 'ok', at: NOW, regions: ['wrist'] })
     expect(niggle.loadPermission).toBe('reduced')
-    const eased = todaysSession(strong, niggle)
+    const eased = sessionAt(strong, niggle)
     expect(eased.blocks.find((b) => b.role === 'press')!.exerciseId).toBe('pppu')
     expect(eased.blocks.some((b) => b.exerciseId === 'tuck-planche-pushup')).toBe(false)
   })
@@ -115,8 +124,8 @@ describe('the push-up version of every step', () => {
       settings: { sessionMinutes: 90 } as AppState['settings'],
     })
     const plain = athlete('straddle', { settings: { sessionMinutes: 90 } as AppState['settings'] })
-    const withBand = todaysSession(banded, { ...buildPlan(banded, NOW), strategy: 'balanced' })
-    const without = todaysSession(plain, { ...buildPlan(plain, NOW), strategy: 'balanced' })
+    const withBand = sessionAt(banded, { ...buildPlan(banded, NOW), strategy: 'balanced' })
+    const without = sessionAt(plain, { ...buildPlan(plain, NOW), strategy: 'balanced' })
     expect(withBand.blocks.some((b) => b.exerciseId === 'band-straddle-planche' && b.role === 'assisted')).toBe(true)
     expect(without.blocks.some((b) => b.exerciseId === 'band-straddle-planche')).toBe(false)
   })
@@ -149,7 +158,7 @@ describe('soft elbows get lockout work, not more bent-arm pressing', () => {
     const plan = buildPlan(state, NOW)
     expect(plan.limiter?.label).toBe('Straight-arm strength')
     expect(plan.accessoryEmphasis).toBe('lockout')
-    const workout = todaysSession(state, { ...plan, strategy: 'balanced', dayType: 'build' })
+    const workout = sessionAt(state, { ...plan, strategy: 'balanced', dayType: 'build' })
     const lean = workout.blocks.find((b) => b.exerciseId === 'planche-lean' && b.section === 'strength')!
     expect(lean.emphasis).toBe(true)
     expect(lean.sets).toBeGreaterThanOrEqual(4)
@@ -187,7 +196,7 @@ describe('soft elbows get lockout work, not more bent-arm pressing', () => {
     const plan = buildPlan(state, NOW)
     expect(plan.strategy).toBe('technique')
     expect(plan.dayType === 'technique' || plan.dayType === 'deload').toBe(false)
-    const workout = todaysSession(state, plan)
+    const workout = sessionAt(state, plan)
     const lean = workout.blocks.find((b) => b.exerciseId === 'planche-lean' && b.section === 'strength')!
     expect(lean.emphasis).toBe(true)
     expect(lean.sets).toBeGreaterThanOrEqual(4)
@@ -226,7 +235,7 @@ describe('a fatigue day keeps the session’s shape at a light dose', () => {
     const state = athlete('tuck', { settings: { sessionMinutes: 90 } as AppState['settings'], sessions: [yesterday] })
     const plan = buildPlan(state, NOW)
     expect(plan.dayType).toBe('technique')
-    const workout = todaysSession(state, plan)
+    const workout = sessionAt(state, plan)
     const press = workout.blocks.find((b) => b.role === 'press')!
     const lean = workout.blocks.find((b) => b.exerciseId === 'planche-lean' && b.section === 'strength')!
     expect(press.light && lean.light).toBe(true)
@@ -257,7 +266,7 @@ describe('a fatigue day keeps the session’s shape at a light dose', () => {
     const state = athlete('tuck', { settings: { sessionMinutes: 90 } as AppState['settings'], sessions: [yesterday] })
     const plan = buildPlan(state, NOW)
     expect(plan.dayType).toBe('technique')
-    const core = todaysSession(state, plan).blocks.find((b) => b.exerciseId === 'hollow-hold')!
+    const core = sessionAt(state, plan).blocks.find((b) => b.exerciseId === 'hollow-hold')!
     expect(core.light).toBe(true)
     // 40s hit on every set → progression's 44s, of which the light share.
     expect(core.target).toEqual({ kind: 'hold', sec: Math.round(44 * 0.7) })
@@ -279,8 +288,8 @@ describe('a fatigue day keeps the session’s shape at a light dose', () => {
     const freshPlan = buildPlan(fresh, NOW)
     expect(tiredPlan.dayType).toBe('technique')
     expect(freshPlan.dayType === 'technique' || freshPlan.dayType === 'deload').toBe(false)
-    expect(todaysSession(fresh, freshPlan).blocks.find((b) => b.role === 'press')!.exerciseId).toBe('tuck-planche-pushup')
-    expect(todaysSession(tired, tiredPlan).blocks.find((b) => b.role === 'press')!.exerciseId).toBe('pppu')
+    expect(sessionAt(fresh, freshPlan).blocks.find((b) => b.role === 'press')!.exerciseId).toBe('tuck-planche-pushup')
+    expect(sessionAt(tired, tiredPlan).blocks.find((b) => b.role === 'press')!.exerciseId).toBe('pppu')
   })
 
   it('keeps a second session on the same day to skill work: no pressing at all', () => {
@@ -302,7 +311,7 @@ describe('a fatigue day keeps the session’s shape at a light dose', () => {
     const plan = buildPlan(state, evening)
     expect(plan.dayType).toBe('technique')
     expect(plan.signals.daysSinceLoaded).toBe(0)
-    const workout = todaysSession(state, plan)
+    const workout = sessionAt(state, plan)
     expect(workout.blocks.some((b) => b.role === 'press' || b.role === 'pressing')).toBe(false)
     expect(workout.blocks.some((b) => b.exerciseId === 'frog-stand' && b.role === 'balance')).toBe(true)
   })
@@ -467,7 +476,7 @@ describe('trimming to a time budget', () => {
       settings: { sessionMinutes: 20 } as AppState['settings'],
       sessions: [session([{}, {}, {}], 3)],
     })
-    const workout = todaysSession(tight, buildPlan(tight, NOW))
+    const workout = sessionAt(tight, buildPlan(tight, NOW))
     const present = new Set(workout.blocks.filter((b) => b.section !== 'warmup').map((b) => b.exerciseId))
     const lines = workout.adjustments ?? []
     expect(lines.some((line) => /^Left out to fit/.test(line))).toBe(true)

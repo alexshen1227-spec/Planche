@@ -35,9 +35,19 @@ export default defineConfig({
       registerType: 'prompt',
       // public/manifest.webmanifest is hand-maintained; don't generate one.
       manifest: false,
-      includeAssets: ['icon.svg', 'manifest.webmanifest'],
+      // The PNGs are drawn from the SVG's geometry by scripts/make-icons.mjs:
+      // iOS ignores an SVG icon, and without apple-touch-icon.png the home
+      // screen shows a thumbnail of the page.
+      includeAssets: [
+        'icon.svg',
+        'icon-192.png',
+        'icon-512.png',
+        'icon-maskable-512.png',
+        'apple-touch-icon.png',
+        'manifest.webmanifest',
+      ],
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,woff2,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,webmanifest}'],
         globIgnores: [
           // version.json must always come from the network — it is the update signal.
           '**/version.json',
@@ -109,5 +119,7 @@ export default defineConfig({
   // athletes: ~1.5s each alone, but 6–9s under a full parallel run on a busy
   // machine, past the 5s default. The assertions are unchanged; only the time
   // allowed to reach them is.
-  test: { testTimeout: 20_000 },
+  // The setup file only acts when FAKE_NOW is set: `npm run test:clock` uses it
+  // to run the suite as if on other days (see src/lib/testClock.setup.ts).
+  test: { testTimeout: 20_000, setupFiles: ['./src/lib/testClock.setup.ts'] },
 })

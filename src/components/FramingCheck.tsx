@@ -7,7 +7,14 @@ import {
   trackingScore,
   type Kp,
 } from '../lib/poseBackend'
-import { floorEdge, type FloorEdge } from '../lib/poseForm'
+import {
+  floorEdge,
+  MAX_FRONT_VIEW_RATIO,
+  MAX_INVERTED_SIDE_VIEW_RATIO,
+  MIN_FRONT_VIEW_RATIO,
+  type FloorEdge,
+  type Posture,
+} from '../lib/poseForm'
 import { Icon } from './Icon'
 
 /**
@@ -50,7 +57,7 @@ interface Reading {
   height: number
   person: boolean
   missing: string[]
-  /** Same validity contract as the judge: side-on, not side-on, or cannot tell. */
+  /** Same validity contract as the judge: the view the position needs, not that view, or cannot tell. */
   view: 'side' | 'not-side' | 'unknown'
   /** Where the floor is in the preview, over the last few readings; null until known. */
   floor: FloorEdge | null
@@ -65,10 +72,13 @@ const FLOOR_WINDOW = 5
  * a confirmed side-on shot. Now it is checked at the looser bar too, and what
  * still cannot be measured is said to be unknown.
  */
-export function viewOf(kps: Kp[]): Reading['view'] {
+export function viewOf(kps: Kp[], posture: Posture = 'support'): Reading['view'] {
   const ratio = apparentBodyWidthRatio(kps) ?? apparentBodyWidthRatio(kps, MIN_SCORE)
   if (ratio === undefined) return 'unknown'
-  return ratio > MAX_SIDE_VIEW_RATIO ? 'not-side' : 'side'
+  // 'side' here means "the view this position is judged from": front-on for a
+  // flag, side-on for everything else — with the handstand's own, lower bar.
+  if (posture === 'flag') return ratio < MIN_FRONT_VIEW_RATIO || ratio > MAX_FRONT_VIEW_RATIO ? 'not-side' : 'side'
+  return ratio > (posture === 'inverted' ? MAX_INVERTED_SIDE_VIEW_RATIO : MAX_SIDE_VIEW_RATIO) ? 'not-side' : 'side'
 }
 
 /** Seen with confidence *and* actually inside the frame — models place joints off-screen too. */
@@ -82,10 +92,13 @@ function inFrame(k: Kp | undefined, width: number, height: number): boolean {
 export function FramingCheck({
   videoRef,
   active,
+  posture = 'support',
   onFloorChange,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>
   active: boolean
+  /** How the position about to be filmed is judged: its view and its floor rule. */
+  posture?: Posture
   /**
    * Where the floor sits in the live picture, once known. The player uses it
    * to stop asking for the phone to be turned on its side after it has been:
@@ -128,7 +141,7 @@ export function FramingCheck({
         if (person) recent.current = [...recent.current, kps].slice(-FLOOR_WINDOW)
         // The judge's own rule, over the last few readings — one frame of a
         // live preview is too little to say which way the floor is.
-        const floor = floorEdge(recent.current.map((points) => ({ kps: points })))
+        const floor = floorEdge(recent.current.map((points) => ({ kps: points })), posture)
         onFloorRef.current?.(floor)
         setReading({
           kps,
@@ -136,7 +149,7 @@ export function FramingCheck({
           height,
           person,
           missing: REGIONS.filter((r) => !seen(r.joints)).map((r) => r.label),
-          view: viewOf(kps),
+          view: viewOf(kps, posture),
           floor,
         })
       } catch {
@@ -153,7 +166,7 @@ export function FramingCheck({
       window.clearInterval(timer)
       recent.current = []
     }
-  }, [active, available, videoRef])
+  }, [active, available, videoRef, posture])
 
   // Dots over the joints the model currently sees, so "out of shot" is
   // visible rather than asserted.
@@ -185,6 +198,8 @@ export function FramingCheck({
   const inShot = reading.person && reading.missing.length === 0
   const good = inShot && reading.view === 'side'
   const onItsSide = reading.floor === 'left' || reading.floor === 'right'
+  const frontOn = posture === 'flag'
+  const viewName = frontOn ? 'Front-on' : 'Side-on'
   return (
     <>
       <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
@@ -198,14 +213,16 @@ export function FramingCheck({
         {!reading.person
           ? 'Step back until your whole body fits'
           : reading.view === 'not-side'
-            ? 'Turn fully side-on to the camera'
+            ? frontOn
+              ? 'Face the camera square-on, chest toward it'
+              : 'Turn fully side-on to the camera'
             : reading.missing.length
               ? `Out of shot: ${reading.missing.join(', ')}`
               : good
                 ? onItsSide
-                  ? 'Side-on · whole body in frame · phone on its side is fine'
-                  : 'Side-on · whole body in frame'
-                : 'Whole body in frame · side-on view not confirmed'}
+                  ? `${viewName} · whole body in frame · phone on its side is fine`
+                  : `${viewName} · whole body in frame`
+                : `Whole body in frame · ${viewName.toLowerCase()} view not confirmed`}
       </div>
     </>
   )

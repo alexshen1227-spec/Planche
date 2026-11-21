@@ -2,27 +2,31 @@ import type {
   AppState,
   Block,
   BlockRole,
-  BlockTarget,
   BodyRegion,
   CheckIn,
   EquipmentId,
+  SkillId,
   StepId,
+  StrategyId,
   Workout,
   WorkoutRequest,
 } from '../types'
+import { hold, reps } from './blocks'
 import { EXERCISE_BY_ID } from './exercises'
-import { STEP_BY_ID, stepAfter, stepBefore } from './progressions'
+import { skillOfStep, STEP_BY_ID, stepAfter, stepBefore } from './progressions'
 import { defaultSurface, equipmentLabel } from './equipment'
 import { PRESS_LADDER, pressingChoiceFor } from './pressing'
+import { ownsKit, SKILLS } from './skills'
+import { skillSession, skillWarmup } from './skillSession'
+import { mixedSession } from './mixedSession'
 import { bridgeStatus, capacityOn } from '../lib/bridge'
 import { buildPlan, STRATEGY_BY_ID, type CoachPlan, type WarmupLevel } from '../lib/coach'
 import { median } from '../lib/signals'
 import { capacityReading, endedForNonCapacityReason, isAssisted } from '../lib/progression'
 import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
 import { adaptiveTarget, workingTargetSec } from '../lib/workingTarget'
-
-const hold = (sec: number): BlockTarget => ({ kind: 'hold', sec })
-const reps = (n: number): BlockTarget => ({ kind: 'reps', reps: n })
+import { skillView, wholeState } from '../lib/skills'
+import { lineupFor, type LineupEntry } from '../lib/lineup'
 
 const DAY = 86_400_000
 
@@ -34,7 +38,7 @@ function clamp(v: number, lo: number, hi: number) {
  * Unilateral work is stored as two rounds per set — left then right — so the
  * player can label each side and both get logged separately.
  */
-function withSides(blocks: Block[]): Block[] {
+export function withSides(blocks: Block[]): Block[] {
   return blocks.map((b) =>
     EXERCISE_BY_ID[b.exerciseId]?.perSide
       ? { ...b, sets: b.sets * 2, ...(b.reach ? { reach: b.reach * 2 } : {}) }
@@ -56,8 +60,12 @@ export function describeBlock(b: Block): string {
 /** The single work target worth surfacing before a session starts. */
 export function primaryTargetBlock(workout: Workout): Block | undefined {
   // The key hold, not merely the first main block: next-shape attempts and an
-  // unlock attempt come first in the session but are not today's target.
+  // unlock attempt come first in the session but are not today's target. In a
+  // session that mixes skills it is the lead skill's hold, wherever balance
+  // practice for another skill sits in the running order.
+  const lead = workout.skills?.[0]
   return (
+    (lead ? workout.blocks.find((block) => block.role === 'skill' && block.skill === lead) : undefined) ??
     workout.blocks.find((block) => block.role === 'skill') ??
     workout.blocks.find((block) => block.section === 'main') ??
     workout.blocks.find((block) => block.section === 'strength') ??
@@ -147,6 +155,10 @@ function regressionFor(exerciseId: string, state: AppState, now: number): string
     }
     case 'hollow-hold':
       return 'tuck-hollow-hold'
+    case 'pullup':
+      return 'negative-pullup'
+    case 'hanging-leg-raise':
+      return 'hanging-knee-raise'
     default:
       return undefined
   }
@@ -181,6 +193,47 @@ const ACCESSORY_CEILING: Record<string, number> = {
   'l-sit': 20,
   'hollow-rocks': 20,
   'leg-lifts': 15,
+  // Front lever
+  'active-hang': 45,
+  'dead-hang': 45,
+  'scap-pull': 12,
+  pullup: 12,
+  'negative-pullup': 8,
+  'tuck-fl-row': 8,
+  'adv-tuck-fl-row': 6,
+  'straddle-fl-row': 5,
+  'fl-row': 3,
+  'fl-negative': 5,
+  'band-front-lever': 15,
+  'hanging-knee-raise': 15,
+  'hanging-leg-raise': 12,
+  // Handstand and its push-up ladder: a rung stops growing just past its
+  // standard — past that the next rung is the better use of the set.
+  'wall-plank': 45,
+  'wall-handstand': 60,
+  'kick-up': 8,
+  'handstand-bail': 5,
+  'heel-pull': 8,
+  'wall-shoulder-tap': 12,
+  'pike-shrug': 15,
+  'elevated-pike-pushup': 10,
+  'wall-hspu-negative': 4,
+  'wall-hspu': 8,
+  'deficit-wall-hspu': 6,
+  'freestanding-hspu': 5,
+  // 90° hold and its push-up ladder
+  'bent-arm-lean-hold': 25,
+  'elbow-lever': 30,
+  'tuck-ninety-pushup': 6,
+  'ninety-negative': 4,
+  'straddle-ninety-pushup': 4,
+  'ninety-pushup': 3,
+  // Human flag
+  'side-plank': 60,
+  'supported-flag': 20,
+  'vertical-flag': 25,
+  'flag-negative': 5,
+  'hanging-side-raise': 12,
 }
 
 export interface AccessoryProgression {
@@ -199,7 +252,7 @@ export interface AccessoryProgression {
 export const LIGHT_DOSE_SHARE = 0.7
 
 /** An accessory block at a light day's share of the dose capacity chose. */
-function lightDose(block: Block): Block {
+export function lightDose(block: Block): Block {
   const target =
     block.target.kind === 'reps'
       ? reps(Math.max(2, Math.round(block.target.reps * LIGHT_DOSE_SHARE)))
@@ -294,6 +347,10 @@ const READ_FROM_EASIER: Record<string, { from: string; divisor: number }> = {
   pppu: { from: 'pushup', divisor: 3 },
   'pike-pushup': { from: 'pushup', divisor: 2 },
   'hollow-hold': { from: 'tuck-hollow-hold', divisor: 2 },
+  // Slow lowerings read cautiously upward: five controlled negatives is the
+  // usual coaching mark for a first pull-up, so a third of the count.
+  pullup: { from: 'negative-pullup', divisor: 3 },
+  'hanging-leg-raise': { from: 'hanging-knee-raise', divisor: 2 },
 }
 
 interface AccessoryCapacity {
@@ -338,6 +395,12 @@ function placementCapacity(state: AppState, exerciseId: string): AccessoryCapaci
       return fromPlacement(pushups === undefined ? undefined : Math.floor(pushups / 2))
     case 'hollow-hold':
       return fromPlacement(a.hollow)
+    case 'pullup':
+      return fromPlacement(a.pullups)
+    case 'hanging-leg-raise':
+      // Straight-leg raises are far harder than a pull-up count suggests; a
+      // third of it is a deliberately cautious read, like the push-up's.
+      return fromPlacement(a.pullups === undefined ? undefined : Math.floor(a.pullups / 3))
     default:
       return undefined
   }
@@ -348,6 +411,8 @@ const PLACEMENT_BAND: Record<string, (v: number) => string> = {
   pppu: () => 'push-up count',
   'pike-pushup': () => 'push-up count',
   'hollow-hold': (v) => (v < 15 ? 'a hollow hold under 15s' : `a hollow hold of about ${v}s`),
+  pullup: (v) => (v < 1 ? 'no pull-ups yet' : `about ${v} pull-ups`),
+  'hanging-leg-raise': () => 'pull-up count',
 }
 
 /**
@@ -486,11 +551,22 @@ const EQUIPMENT_SUBSTITUTES: Record<string, { id: string; repsFactor: number }[]
   ],
   'band-straddle-planche': [],
   'supported-tuck-lean': [],
+  'band-front-lever': [],
+  // No box: the floor version of the same press.
+  'elevated-pike-pushup': [{ id: 'pike-pushup', repsFactor: 1.5 }],
+  // No bar for hanging raises: trunk work on the floor instead.
+  'hanging-knee-raise': [{ id: 'leg-lifts', repsFactor: 1 }],
+  'hanging-leg-raise': [{ id: 'leg-lifts', repsFactor: 1 }],
+  'hanging-side-raise': [{ id: 'side-plank', repsFactor: 1 }],
+  'dead-hang': [],
 }
 
-/** Whether every piece of kit this exercise needs is in the profile. */
+/**
+ * Whether every piece of kit this exercise needs is in the profile — or
+ * something that does its job (rings are a bar to hang from).
+ */
 export function hasEquipmentFor(exerciseId: string, equipment: EquipmentId[]): boolean {
-  return (EXERCISE_BY_ID[exerciseId]?.requires ?? []).every((id) => equipment.includes(id))
+  return (EXERCISE_BY_ID[exerciseId]?.requires ?? []).every((id) => ownsKit(equipment, id))
 }
 
 /**
@@ -503,10 +579,12 @@ export function hasEquipmentFor(exerciseId: string, equipment: EquipmentId[]): b
 export function resolveEquipment(
   blocks: Block[],
   equipment: EquipmentId[],
-): { blocks: Block[]; notes: string[]; about: (string | undefined)[] } {
+): { blocks: Block[]; notes: string[]; about: (string | undefined)[]; left: { name: string; needs: string }[] } {
   const notes: string[] = []
   /** The substitute each note introduced; undefined for a note about something left out. */
   const about: (string | undefined)[] = []
+  /** What was left out for want of kit, once each, for a caller that says it in one line. */
+  const left: { name: string; needs: string }[] = []
   const out: Block[] = []
   for (const block of blocks) {
     if (hasEquipmentFor(block.exerciseId, equipment)) {
@@ -514,7 +592,7 @@ export function resolveEquipment(
       continue
     }
     const exercise = EXERCISE_BY_ID[block.exerciseId]
-    const missing = (exercise?.requires ?? []).filter((id) => !equipment.includes(id)).map(equipmentLabel)
+    const missing = (exercise?.requires ?? []).filter((id) => !ownsKit(equipment, id)).map(equipmentLabel)
     const substitute = (EQUIPMENT_SUBSTITUTES[block.exerciseId] ?? []).find(
       ({ id }) =>
         hasEquipmentFor(id, equipment) && !blocks.some((b) => b.exerciseId === id) && !out.some((b) => b.exerciseId === id),
@@ -537,11 +615,16 @@ export function resolveEquipment(
       )
       about.push(substitute.id)
     } else {
-      notes.push(`${exercise?.name ?? block.exerciseId} was left out — it needs ${missing.join(' and ')}.`)
+      const name = exercise?.name ?? block.exerciseId
+      // The same movement can sit in two blocks (a hang in the warm-up and the
+      // cool-down); it was once listed as left out twice.
+      if (left.some((entry) => entry.name === name)) continue
+      left.push({ name, needs: missing.join(' and ') })
+      notes.push(`${name} was left out — it needs ${missing.join(' and ')}.`)
       about.push(undefined)
     }
   }
-  return { blocks: out, notes, about }
+  return { blocks: out, notes, about, left }
 }
 
 /**
@@ -808,7 +891,7 @@ export function painSafeRecoveryWorkout(regions: BodyRegion[] = []): Workout {
   }
 }
 
-function joinWords(words: string[]): string {
+export function joinWords(words: string[]): string {
   if (words.length <= 1) return words[0] ?? ''
   return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`
 }
@@ -816,7 +899,17 @@ function joinWords(words: string[]): string {
 /** Movements that put load through the upper body, for template scaling. */
 function upperLoaded(exerciseId: string): boolean {
   const category = EXERCISE_BY_ID[exerciseId]?.category
-  return category === 'planche' || category === 'push' || category === 'scapula' || category === 'wrist'
+  return (
+    category === 'planche' ||
+    category === 'lever' ||
+    category === 'handstand' ||
+    category === 'ninety' ||
+    category === 'flag' ||
+    category === 'push' ||
+    category === 'pull' ||
+    category === 'scapula' ||
+    category === 'wrist'
+  )
 }
 
 /**
@@ -908,8 +1001,9 @@ export function mainHoldSets(
   setsDelta: number,
   volumeFactor: number,
   unlockQueued = false,
+  aggregateSec = KEY_HOLD_AGGREGATE_SEC,
 ): number {
-  const base = clamp(Math.ceil(KEY_HOLD_AGGREGATE_SEC / Math.max(1, targetSec)), 3, 6)
+  const base = clamp(Math.ceil(aggregateSec / Math.max(1, targetSec)), 3, 6)
   return clamp(Math.max(1, Math.round(((unlockQueued ? base - 1 : base) + setsDelta) * volumeFactor)), 2, 8)
 }
 
@@ -1012,6 +1106,26 @@ function leanAccessoryNote(stepId: StepId): string {
   return 'Straight-arm conditioning at a deep lean — shoulders well past the fingertips, elbows locked, the lean you can return from under control. It keeps feeding the position after the main work, at a load you can repeat.'
 }
 
+/** How a single-skill session is being built. */
+export interface SessionBuildOptions {
+  /**
+   * Built as one skill's part of a mixed session: the time given is used as
+   * it stands (the mixed session chooses what goes in, across its skills), and
+   * anything left out is described for a session with other skills in it
+   * rather than as a shortened day.
+   */
+  part?: boolean
+  /**
+   * The moment the session is built for; the real clock when absent. A plan
+   * made for a stated time must be turned into a session for that same time:
+   * the builder once read the clock itself, so a session planned for a past
+   * or simulated day sized its accessories from "recent" work measured
+   * against today — and two tests built on a fixed date were due to start
+   * failing a few weeks later, when their fixtures aged out of that window.
+   */
+  now?: number
+}
+
 /**
  * The recommended session, assembled from the coach's plan for today.
  *
@@ -1036,14 +1150,23 @@ function leanAccessoryNote(stepId: StepId): string {
  * session teaches the coach nothing — so re-scoping today beats re-planning
  * the week.
  */
-export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverride?: number): Workout {
+export function todaysSession(
+  state: AppState,
+  planIn?: CoachPlan,
+  minutesOverride?: number,
+  options: SessionBuildOptions = {},
+): Workout {
+  // One skill's session: the planche's is assembled here by hand; every other
+  // skill's comes from its description (data/skillSession). The state says
+  // which — a state viewed as the front lever is on a front lever step.
+  if (skillOfStep(state.stepId) !== 'planche') return skillSession(state, planIn, minutesOverride, options)
   const stepId = state.stepId
   const step = STEP_BY_ID[stepId]
-  const plan = planIn ?? buildPlan(state)
+  const now = options.now ?? Date.now()
+  const plan = planIn ?? buildPlan(state, now)
   if (plan.loadPermission === 'none') {
     return painSafeRecoveryWorkout(plan.signals.lastCheckIn?.regions ?? [])
   }
-  const now = Date.now()
   const rMain = plan.restMainSec
   const rAcc = plan.restAccessorySec
   const vol = plan.volumeFactor
@@ -1555,7 +1678,14 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
 
   // Shorter than a full day, long enough for the whole shape at its light dose.
   const baseBudget = light ? Math.min(30, state.settings.sessionMinutes) : state.settings.sessionMinutes
-  const budget = minutesOverride !== undefined ? Math.min(baseBudget, Math.max(8, minutesOverride)) : baseBudget
+  // One part of a mixed session is built at whatever it is given: the mixed
+  // session decides what goes in, across all of its skills.
+  const budget =
+    options.part && minutesOverride !== undefined
+      ? minutesOverride
+      : minutesOverride !== undefined
+        ? Math.min(baseBudget, Math.max(8, minutesOverride))
+        : baseBudget
   // Sides are expanded before trimming, so the budget accounts for the fact
   // that unilateral work costs twice as long.
   const fit = fitToBudget(
@@ -1588,11 +1718,13 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
     .filter((name): name is string => Boolean(name))
   if (droppedNames.length) {
     adjustments.push(
-      `Left out to fit ${budget} minutes: ${joinWords(droppedNames)}. ${
-        minutesOverride !== undefined
-          ? 'They come back on a full-length day.'
-          : 'A longer session length in Settings keeps them.'
-      }`,
+      options.part
+        ? `Left out of the planche part to make room for today's other skills: ${joinWords(droppedNames)}. They come back on a planche-only day.`
+        : `Left out to fit ${budget} minutes: ${joinWords(droppedNames)}. ${
+            minutesOverride !== undefined
+              ? 'They come back on a full-length day.'
+              : 'A longer session length in Settings keeps them.'
+          }`,
     )
   }
 
@@ -1602,7 +1734,7 @@ export function todaysSession(state: AppState, planIn?: CoachPlan, minutesOverri
   // and promising "about 15 minutes" for a 20-minute session is the kind of
   // number this app is not allowed to invent.
   const fittedMinutes = estimateMinutes(fitted, state.settings.stopLatencySec, state.settings.phoneWithinReach)
-  const shortened = minutesOverride !== undefined && fittedMinutes < baseBudget
+  const shortened = minutesOverride !== undefined && fittedMinutes < baseBudget && !options.part
   const strategy = STRATEGY_BY_ID[plan.strategy]
   const strategyContext = `${strategy.blurb} ${plan.dayReason}`
   return {
@@ -1642,22 +1774,32 @@ export function maxTestWorkout(stepId: StepId): Workout {
   // unlock could be earned off the strong side alone.
   const perSide = EXERCISE_BY_ID[step.keyExerciseId]?.perSide
   const attempts = perSide ? 4 : 3
+  const skill = SKILLS[step.skill]
+  // The short warm-up for the skill being tested: wrists for a hand support,
+  // a hang for a bar, and so on.
+  const warmup: Block[] =
+    step.skill === 'planche'
+      ? [
+          { exerciseId: 'wrist-circles', sets: 1, target: reps(10), restSec: 15, section: 'warmup' },
+          { exerciseId: 'wrist-rocks', sets: 1, target: reps(8), restSec: 20, section: 'warmup' },
+        ]
+      : skillWarmup(step.skill, stepId, 'short')
   const blocks: Block[] = [
-    { exerciseId: 'wrist-circles', sets: 1, target: reps(10), restSec: 15, section: 'warmup' },
-    { exerciseId: 'wrist-rocks', sets: 1, target: reps(8), restSec: 20, section: 'warmup' },
+    ...warmup,
     {
       exerciseId: step.keyExerciseId,
       sets: attempts,
       target: hold(step.unlockSec),
       restSec: 180,
       section: 'main',
+      skill: step.skill,
       note: 'Film the attempt. Hold only while the shape stays clean, then confirm your rating and form check. Stopping early for pain or a lost position is the right call, not a failed test.',
     },
   ]
   return {
     id: `test-${stepId}`,
-    name: `Max Test · ${step.name}`,
-    focus: `${perSide ? 'Two fresh max attempts per side' : 'Three fresh max attempts'} at the ${EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. Hit ${step.unlockSec}s with athlete + filmed form confirmation to ${stepAfter(stepId) ? 'unlock the next step' : 'meet the full planche’s bar'}.`,
+    name: `Max Test · ${step.name === 'Foundations' ? `${skill.name} foundations` : step.name}`,
+    focus: `${perSide ? 'Two fresh max attempts per side' : 'Three fresh max attempts'} at the ${EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. Hit ${step.unlockSec}s with athlete + filmed form confirmation to ${stepAfter(stepId) ? 'unlock the next step' : `meet ${skill.words.summit}’s bar`}.`,
     minutes: estimateMinutes(blocks),
     kind: 'test',
     blocks,
@@ -1718,10 +1860,12 @@ export function microDoseWorkout(state: AppState, plan: CoachPlan): Workout {
       : next
         ? clamp(Math.round(next.startSec * 0.4), 1, MICRO_HOLD_SEC)
         : MICRO_HOLD_SEC
+  const skill = SKILLS[step.skill]
+  const warmLevel: WarmupLevel = plan.warmup === 'extended' ? 'extended' : 'short'
   const blocks: Block[] = [
     // Wrists and a primer lean are the warm-up three-second holds need; a coach
     // that asked for the extended one (skipped warm-ups, a cold start) gets it.
-    ...warmupFor(step.id, plan.warmup === 'extended' ? 'extended' : 'short'),
+    ...(step.skill === 'planche' ? warmupFor(step.id, warmLevel) : skillWarmup(step.skill, step.id, warmLevel, adaptiveTarget(state, step.id))),
     {
       exerciseId: shape.keyExerciseId,
       // A per-side hold is a pair of rounds a set.
@@ -1732,17 +1876,27 @@ export function microDoseWorkout(state: AppState, plan: CoachPlan): Workout {
       role: next ? 'bridge' : 'skill',
       note: next
         ? `Short, hard holds at the ${exercise.name.toLowerCase()} — the shape you are building toward. About ${target}s each, and stop the moment the shape goes. Filmed and held clean, they count like any other attempt.`
-        : `Short, hard holds: lean further than in your working sets, until about ${target}s is all you could hold clean. Stop the moment the shape goes — a held position, not a struggle.`,
+        : step.skill === 'planche'
+          ? `Short, hard holds: lean further than in your working sets, until about ${target}s is all you could hold clean. Stop the moment the shape goes — a held position, not a struggle.`
+          : `Short, hard holds: the hardest version of the position you can keep clean for about ${target}s. Stop the moment the shape goes — a held position, not a struggle.`,
     },
-    { exerciseId: 'wrist-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
+    step.skill === 'planche' || !skill.program?.cooldown[0]
+      ? { exerciseId: 'wrist-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' }
+      : {
+          exerciseId: skill.program.cooldown[0].exerciseId,
+          sets: 1,
+          target: hold(skill.program.cooldown[0].amount),
+          restSec: 10,
+          section: 'cooldown',
+        },
   ]
   scaleLeanPrimer(blocks, step.id, adaptiveTarget(state, step.id))
   const kit = resolveEquipment(blocks, state.profile.equipment)
   const sided = withSides(kit.blocks)
   return {
     id: `micro-${step.id}`,
-    name: `${step.name} · Minimum dose`,
-    focus: `A few short, maximal holds for a day a full session will not happen — it does not replace your sessions. Brief maximal holds raised strength in small trials on simpler movements; none tested the planche.`,
+    name: `${step.name === 'Foundations' ? `${skill.name} foundations` : step.name} · Minimum dose`,
+    focus: `A few short, maximal holds for a day a full session will not happen — it does not replace your sessions. Brief maximal holds raised strength in small trials on simpler movements; none tested the ${skill.name.toLowerCase()}.`,
     minutes: estimateMinutes(sided, state.settings.stopLatencySec, state.settings.phoneWithinReach),
     kind: 'micro',
     blocks: sided,
@@ -1790,6 +1944,21 @@ export const TEMPLATES: Workout[] = [
       { exerciseId: 'dip', sets: 3, target: reps(8), restSec: 120, section: 'strength' },
       { exerciseId: 'pushup', sets: 2, target: reps(15), restSec: 90, section: 'strength' },
       { exerciseId: 'shoulder-extension-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
+    ],
+  }),
+  template({
+    id: 'pull-strength',
+    name: 'Pull Strength',
+    focus: 'Pulling volume for the days you want to build the base under a front lever or a flag, not test the skill.',
+    purpose: 'Bent-arm pulling support, kept separate from straight-arm lever time.',
+    blocks: [
+      { exerciseId: 'arm-circles', sets: 1, target: reps(10), restSec: 15, section: 'warmup' },
+      { exerciseId: 'dead-hang', sets: 1, target: hold(20), restSec: 30, section: 'warmup' },
+      { exerciseId: 'scap-pull', sets: 3, target: reps(8), restSec: 60, section: 'main' },
+      { exerciseId: 'pullup', sets: 4, target: reps(5), restSec: 150, section: 'main' },
+      { exerciseId: 'negative-pullup', sets: 2, target: reps(3), restSec: 120, section: 'strength' },
+      { exerciseId: 'hanging-knee-raise', sets: 3, target: reps(8), restSec: 75, section: 'core' },
+      { exerciseId: 'lat-stretch', sets: 1, target: hold(30), restSec: 10, section: 'cooldown' },
     ],
   }),
   template({
@@ -1880,6 +2049,37 @@ export const TEMPLATES: Workout[] = [
 export const TEMPLATE_BY_ID: Record<string, Workout> = Object.fromEntries(TEMPLATES.map((t) => [t.id, t]))
 
 /**
+ * The skills a focused session serves; a template not listed serves everyone.
+ * Most of these were written for the planche — leans, frog stands, planche
+ * push-ups — and offering "Quick Ten: planche leans" to someone training only
+ * the front lever is offering them another athlete's session.
+ */
+export const TEMPLATE_SKILLS: Record<string, SkillId[]> = {
+  'wrist-armor': ['planche', 'handstand', 'ninety'],
+  'push-strength': ['planche', 'handstand', 'ninety'],
+  'pull-strength': ['frontlever', 'flag'],
+  'setup-practice': ['planche'],
+  'balance-skill': ['planche', 'handstand'],
+  deload: ['planche'],
+  'quick-ten': ['planche'],
+}
+
+/**
+ * The focused sessions worth offering this athlete: those that serve a skill
+ * they train, and whose main work they have the kit for. A template started
+ * some other way (an old link, a saved request) still resolves by id.
+ */
+export function templatesFor(state: Pick<AppState, 'profile'>): Workout[] {
+  const skills = state.profile.skills?.length ? state.profile.skills : (['planche'] as SkillId[])
+  return TEMPLATES.filter((t) => {
+    const serves = TEMPLATE_SKILLS[t.id]
+    if (serves && !serves.some((skill) => skills.includes(skill))) return false
+    const main = t.blocks.filter((block) => block.section === 'main')
+    return main.some((block) => (EXERCISE_BY_ID[block.exerciseId]?.requires ?? []).every((id) => ownsKit(state.profile.equipment, id)))
+  })
+}
+
+/**
  * Why a maximal test is not on today, in the athlete's words — or null when it is.
  */
 export function challengeBlockedReason(plan: CoachPlan): string | null {
@@ -1927,21 +2127,97 @@ export function finalizeWorkoutWithPlan(
   request: WorkoutRequest,
   freshCheckIn?: CheckIn,
   now = Date.now(),
-): { workout: Workout; plan: CoachPlan } {
-  return finalizeFromPlan(state, request, buildPlan(state, now, freshCheckIn), now)
+): { workout: Workout; plan: CoachPlan; lineup: LineupEntry[] } {
+  return finalizeFromPlan(state, request, planForToday(state, now, freshCheckIn, request), now, freshCheckIn)
+}
+
+/**
+ * The plan for the skill that leads a session — what the screens show as
+ * "today". For an athlete training the planche alone this is `buildPlan(state)`;
+ * with several skills it is the plan of whichever leads the line-up.
+ */
+export function planForToday(
+  stateIn: AppState,
+  now = Date.now(),
+  freshCheckIn?: CheckIn,
+  request: WorkoutRequest = { source: 'auto' },
+): CoachPlan {
+  const state = wholeState(stateIn)
+  const lead = lineupFor(state, request, now)[0].skill
+  return buildPlan(skillView(state, lead), now, freshCheckIn)
+}
+
+/**
+ * The strategy that shaped a workout's lead skill: the planche's sits at the
+ * top level, every other skill's in its own notes.
+ */
+export function leadStrategy(workout: Pick<Workout, 'strategy' | 'skills' | 'skillMeta'>): StrategyId | undefined {
+  const lead = workout.skills?.[0]
+  if (!lead || lead === 'planche') return workout.strategy
+  return workout.skillMeta?.[lead]?.strategy
+}
+
+/**
+ * Put a single-skill workout's coaching record where its skill's lives: the
+ * planche's at the top level (where it has always been), any other skill's in
+ * `skillMeta` — so a front lever day is never read as a planche strategy trial.
+ */
+function recordFor(workout: Workout, skill: SkillId): Workout {
+  if (workout.skills) return workout
+  if (skill === 'planche') return { ...workout, skills: ['planche'] }
+  const { strategy, baseTargetSec, ...rest } = workout
+  const retest = workout.blocks.some((b) => b.retest)
+  // The pain-safe session carries a strategy label for display only; it was
+  // not shaped for this skill and records nothing against it.
+  const shaped = workout.kind === 'auto' && !workout.id.startsWith('pain-safe-recovery')
+  return {
+    ...rest,
+    skills: [skill],
+    ...(shaped
+      ? {
+          skillMeta: {
+            [skill]: {
+              ...(strategy ? { strategy } : {}),
+              ...(baseTargetSec !== undefined ? { baseTargetSec } : {}),
+              ...(retest ? { retest: true } : {}),
+            },
+          },
+        }
+      : {}),
+  }
 }
 
 /**
  * The same decision from a plan already built for this state and moment —
  * for screens that preview several requests at once (one plan, many cards).
- * The plan must come from `buildPlan(state, now)`; nothing else is valid.
+ * The plan must come from `planForToday(state, now)`; a plan built for a skill
+ * other than the one that leads this request is rebuilt rather than trusted.
+ *
+ * With several skills in the line-up the session is a mixed one: each skill's
+ * part is built from its own plan, and the rails are the body's — a no-load
+ * day is a no-load day for every skill.
  */
 export function finalizeFromPlan(
-  state: AppState,
+  stateIn: AppState,
   request: WorkoutRequest,
-  plan: CoachPlan,
+  planIn: CoachPlan,
   now = Date.now(),
-): { workout: Workout; plan: CoachPlan } {
+  freshCheckIn?: CheckIn,
+): { workout: Workout; plan: CoachPlan; lineup: LineupEntry[] } {
+  const whole = wholeState(stateIn)
+  const lineup = lineupFor(whole, request, now)
+  const lead = lineup[0].skill
+  const state = skillView(whole, lead)
+  const plan = planIn.skill === lead ? planIn : buildPlan(state, now, freshCheckIn)
+  /** Today's coach-built session: one skill, or the line-up mixed. */
+  const coachSession = (): Workout => {
+    if (lineup.length === 1) return todaysSession(state, plan, request.minutes, { now })
+    const plans: Partial<Record<SkillId, CoachPlan>> = { [lead]: plan }
+    for (const entry of lineup) {
+      plans[entry.skill] ??= buildPlan(skillView(whole, entry.skill), now, freshCheckIn)
+    }
+    return mixedSession(whole, lineup, plans, (view, p, minutes) => todaysSession(view, p, minutes, { part: true, now }), request.minutes)
+  }
   const adjustments: string[] = []
   let workout: Workout
 
@@ -1957,7 +2233,7 @@ export function finalizeFromPlan(
   } else if (request.source === 'test') {
     const blocked = challengeBlockedReason(plan)
     if (blocked) {
-      workout = todaysSession(state, plan, request.minutes)
+      workout = coachSession()
       adjustments.push(`No max test today because ${blocked} — this is an ordinary session instead, with no maximal attempt.`)
     } else {
       workout = maxTestWorkout(request.stepId ?? state.stepId)
@@ -1965,7 +2241,7 @@ export function finalizeFromPlan(
   } else if (request.source === 'template') {
     const chosen = TEMPLATE_BY_ID[request.templateId ?? '']
     if (!chosen) {
-      workout = todaysSession(state, plan, request.minutes)
+      workout = coachSession()
     } else {
       const restricted = restrictTemplate(chosen, plan)
       if (restricted.id === 'pain-safe-recovery' || restricted.id.startsWith('pain-safe-recovery-')) {
@@ -1985,17 +2261,19 @@ export function finalizeFromPlan(
   } else if (request.source === 'micro') {
     const blocked = microBlockedReason(state, plan, now)
     if (blocked) {
-      workout = todaysSession(state, plan, request.minutes)
+      workout = coachSession()
       adjustments.push(`No minimum dose today because ${blocked} — this is an ordinary session instead.`)
     } else {
       workout = microDoseWorkout(state, plan)
     }
   } else {
-    workout = todaysSession(state, plan, request.minutes)
+    workout = coachSession()
   }
 
   const all = [...(workout.adjustments ?? []), ...adjustments]
-  return { workout: { ...workout, request, ...(all.length ? { adjustments: all } : {}) }, plan }
+  // A template is not any one skill's session; everything else is the lead's.
+  const recorded = workout.kind === 'template' ? workout : recordFor(workout, lead)
+  return { workout: { ...recorded, request, ...(all.length ? { adjustments: all } : {}) }, plan, lineup }
 }
 
 /**

@@ -20,7 +20,9 @@ import {
   bandedScore,
   bridgeKeypointGaps,
   chooseSampleCount,
+  coarseElbow,
   computeFormScore,
+  elbowSlack,
   gradeCoverage,
   hasVerifiableHoldDuration,
   materialIssuesForReading,
@@ -983,15 +985,26 @@ describe('camera evaluator primitives', () => {
         'full-planche',
       ]),
     )
-    expect(graded.every(([, profile]) => profile.minElbowDeg === 180)).toBe(true)
+    // Every position either asks for locked arms or — the 90° holds — for a
+    // bent-arm angle. Nothing asks for "nearly straight".
+    for (const [id, profile] of graded) {
+      expect(profile.minElbowDeg === 180 || profile.elbowTargetDeg !== undefined, id).toBe(true)
+      expect(profile.minElbowDeg !== undefined && profile.elbowTargetDeg !== undefined, id).toBe(false)
+    }
 
     // The accusation threshold is set from measured estimator error, not from
     // how tidy the number looks: a bend this side of it is inside what a
     // monocular side view can resolve, so naming it would be inventing a fault.
     const elbowOnly = { elbow: true, knee: false, hipAngle: false, line: false, lean: false, shrug: false }
-    for (const [, profile] of graded) {
-      expect(materialIssuesForReading({ t: 0, elbowDeg: 173 }, profile, elbowOnly)).not.toContain('arms')
-      expect(materialIssuesForReading({ t: 0, elbowDeg: 171 }, profile, elbowOnly)).toContain('arms')
+    for (const [id, profile] of graded) {
+      if (profile.minElbowDeg === undefined) continue
+      // A side-on support hold reads its elbows to a few degrees; every other
+      // posture has the wider bar its own photographs measured.
+      const bar = 180 - elbowSlack(profile)
+      if (!coarseElbow(profile)) expect(bar, id).toBe(172)
+      else expect(bar, id).toBeLessThanOrEqual(156)
+      expect(materialIssuesForReading({ t: 0, elbowDeg: bar + 1 }, profile, elbowOnly), id).not.toContain('arms')
+      expect(materialIssuesForReading({ t: 0, elbowDeg: bar - 1 }, profile, elbowOnly), id).toContain('arms')
     }
   })
 
@@ -2233,7 +2246,7 @@ describe('coach learning', () => {
 
 describe('backup validation and normalization', () => {
   it('rejects unrelated valid JSON before destructive import work', () => {
-    expect(() => validateImport({})).toThrow(/Planche Lab backup/)
+    expect(() => validateImport({})).toThrow(/Calisthenics Lab backup/)
   })
 
   it('carries the new session settings through a normalize round-trip', () => {

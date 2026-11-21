@@ -11,7 +11,9 @@ import { Icon } from './Icon'
 import { Modal } from './ui'
 import { ClipPlayer } from './ClipPlayer'
 import { FormCheckRow, mergeHumanReview, mergeModelReading } from './FormCheckRow'
+import { RepReviewRow } from './RepReviewRow'
 import { countedClipWindow, readingFitsWindow } from '../lib/progression'
+import { ladderOfExercise } from '../lib/repLadder'
 
 /** The saved set a clip was recorded for, when it is still in history. */
 interface ClipOwner {
@@ -29,6 +31,10 @@ interface ClipOwner {
  * is written to that set, so evidence that timed out mid-workout can still be
  * completed later. A clip with no saved set left only gets an advisory check:
  * a score here cannot become evidence on its own.
+ *
+ * A rep movement's clips are of whole sets on a push-up line. Nothing is
+ * measured from those — the review is the athlete's own check of the replay —
+ * so they get the rep review and no camera check.
  */
 export function ClipGallery({ exerciseId }: { exerciseId: string }) {
   const { state, dispatch, getState } = useStore()
@@ -78,6 +84,17 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
   }
   useEffect(load, [exerciseId])
 
+  const repMovement = EXERCISE_BY_ID[exerciseId]?.type === 'reps'
+  const rung = repMovement ? ladderOfExercise(exerciseId)?.rung : undefined
+  /** What a clip shows: a hold's seconds, or a set's reps. */
+  const amount = (clip: ClipMeta, owner: ClipOwner | undefined) =>
+    repMovement
+      ? owner
+        ? `${owner.set.value} rep${owner.set.value === 1 ? '' : 's'}`
+        : clip.reps !== undefined
+          ? `${clip.reps} rep${clip.reps === 1 ? '' : 's'}`
+          : 'rep set'
+      : fmtHold(owner ? owner.set.value : clip.seconds)
   const reviewOwner = reviewing ? owners.get(reviewing) : undefined
   const reviewTiming = reviewOwner?.set.timing
   const videoInterval =
@@ -89,7 +106,9 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
   if (clips.length === 0) {
     return (
       <p className="mt-2 text-[13px] leading-relaxed text-ink2">
-        No clips yet. Film a main set with the camera on and it will show up here to compare against.
+        {repMovement
+          ? 'No clips yet. Film a set of this with the camera on and its replay will show up here.'
+          : 'No clips yet. Film a main set with the camera on and it will show up here to compare against.'}
       </p>
     )
   }
@@ -102,7 +121,7 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
           <div key={c.key} className="rounded-xl border border-line bg-surface p-2">
             <ClipPlayer
               clipKey={c.key}
-              label={`${fmtDate(c.at)} ${fmtHold(c.seconds)} form check`}
+              label={`${fmtDate(c.at)} ${repMovement ? amount(c, owner) : fmtHold(c.seconds)} ${repMovement ? 'replay' : 'form check'}`}
               overlay={analysis[c.key]?.track}
               overlayIssues={analysis[c.key]?.issues}
             />
@@ -121,7 +140,7 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
             {owner ? (
               <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-raised px-2 py-1.5 text-[12px] text-ink2">
                 <span className="min-w-0">
-                  From {owner.session.workoutName} · {fmtHold(owner.set.value)}
+                  From {owner.session.workoutName} · {amount(c, owner)}
                   {owner.set.side ? ` · ${owner.set.side}` : ''}
                   {owner.set.form?.confirmed ? (
                     <span className="text-ink3"> · rated {owner.set.form.rating}</span>
@@ -139,10 +158,10 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
             ) : null}
             <div className="mt-1.5 flex items-center justify-between gap-2 px-0.5">
               <span className="text-[12.5px] text-ink2 tnum">
-                {fmtDate(c.at)} · {fmtHold(c.seconds)}
+                {fmtDate(c.at)} · {repMovement ? amount(c, owner) : fmtHold(c.seconds)}
               </span>
               <span className="flex items-center gap-1">
-                {owner ? null : (
+                {owner || repMovement ? null : (
                   <button
                     onClick={() => void analyse(c.key)}
                     disabled={busy === c.key}
@@ -201,11 +220,25 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
               <h2 className="font-display text-[19px] font-semibold text-ink">Review this set</h2>
               <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">
                 {EXERCISE_BY_ID[reviewOwner.set.exerciseId]?.name ?? reviewOwner.set.exerciseId} ·{' '}
-                {fmtHold(reviewOwner.set.value)} · {reviewOwner.session.workoutName} on{' '}
-                {fmtDate(reviewOwner.session.startedAt)}. A check run here is saved to this set as a camera reading;
-                only your own answer below confirms it, and records are recalculated from it.
+                {reviewOwner.set.kind === 'reps'
+                  ? `${reviewOwner.set.value} rep${reviewOwner.set.value === 1 ? '' : 's'}`
+                  : fmtHold(reviewOwner.set.value)}{' '}
+                · {reviewOwner.session.workoutName} on {fmtDate(reviewOwner.session.startedAt)}.{' '}
+                {reviewOwner.set.kind === 'reps'
+                  ? 'Your answer below is saved to this set, and the push-up line is recalculated from it.'
+                  : 'A check run here is saved to this set as a camera reading; only your own answer below confirms it, and records are recalculated from it.'}
               </p>
             </div>
+            {reviewOwner.set.kind === 'reps' && rung ? (
+              <RepReviewRow
+                clipKey={reviewing}
+                exerciseId={reviewOwner.set.exerciseId}
+                rung={rung}
+                count={reviewOwner.set.value}
+                value={reviewOwner.set.form}
+                onHuman={(review) => commit(reviewOwner, (current) => mergeHumanReview(current, review))}
+              />
+            ) : (
             <FormCheckRow
               clipKey={reviewing}
               exerciseId={reviewOwner.set.exerciseId}
@@ -246,6 +279,7 @@ export function ClipGallery({ exerciseId }: { exerciseId: string }) {
                 commit(reviewOwner, (current) => mergeModelReading(current, reading))
               }}
             />
+            )}
           </div>
         ) : null}
       </Modal>

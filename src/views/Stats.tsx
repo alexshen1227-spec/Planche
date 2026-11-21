@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../lib/store'
 import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises'
-import { STEP_BY_ID, STEPS } from '../data/progressions'
+import { STEP_BY_ID, stepForKeyExercise, stepsOf } from '../data/progressions'
+import { isQualifyingSet } from '../lib/progression'
+import { verifiedReps } from '../lib/repLadder'
+import { SKILLS } from '../data/skills'
+import { activeSkills, isSkillHold, isSurfaceAware, skillView, stepOfSkill } from '../lib/skills'
 import { ACHIEVEMENTS, type AchievementProgress } from '../data/achievements'
 import {
   bestSeries,
@@ -22,7 +26,7 @@ import { fmtDate, fmtTime, fmtDuration, fmtHold, fmtClock } from '../lib/time'
 import { HoldLineChart, VolumeBarChart, TrainingHeatmap } from '../components/charts'
 import {
   describeTrend,
-  filmedExercises,
+  filmedExercisesFor,
   formatCriterionValue,
   readFormTrends,
   type FormComparison,
@@ -32,10 +36,10 @@ import { CLIP_RETENTION_DAYS } from '../lib/clips'
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle, Stat } from '../components/ui'
 import { pushToast } from '../lib/toast'
-import type { Exercise, TrainingSurface } from '../types'
+import type { Exercise, SkillId, TrainingSurface } from '../types'
 import { surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 import { ASSIST_LABEL } from '../components/SetupRow'
-import { PRESS_LADDER, PUSHUP_VERSION, pressingChoiceFor } from '../data/pressing'
+import { PRESS_LADDER, pressingChoiceFor, twinOf } from '../data/pressing'
 import { capacityOn } from '../lib/bridge'
 import { END_REASON_LABEL } from '../components/AttemptEnd'
 import { programmedPress } from '../data/workouts'
@@ -62,7 +66,7 @@ function PressingLadder() {
   const choice = useMemo(() => pressingChoiceFor(state.stepId, capacityOn(state, state.stepId)), [state])
   // What a full day programs, after kit and any setup-answer swap.
   const current = useMemo(() => programmedPress(state), [state])
-  const own = PUSHUP_VERSION[state.stepId]
+  const own = twinOf(state.stepId)
   return (
     <section id="pressing" className="scroll-mt-5">
       <SectionTitle>Pressing ladder</SectionTitle>
@@ -108,9 +112,10 @@ function PressingLadder() {
   )
 }
 
-function FormTrendCard() {
+function FormTrendCard({ skill }: { skill: SkillId }) {
   const { state } = useStore()
-  const filmed = useMemo(() => filmedExercises(state), [state])
+  // The skill being looked at leads the list; everything else filmed follows.
+  const filmed = useMemo(() => filmedExercisesFor(state, skill), [state, skill])
   const [exerciseId, setExerciseId] = useState<string | null>(null)
   const [comparing, setComparing] = useState<FormComparison | null>(null)
   const active = exerciseId && filmed.includes(exerciseId) ? exerciseId : (filmed[0] ?? null)
@@ -357,8 +362,19 @@ export function Stats({
   focusSessionId?: string | null
   onFocused?: () => void
 } = {}) {
-  const { state, dispatch } = useStore()
+  const { state: whole, dispatch } = useStore()
+  // What the coach has learned, the forecast and the plateau read are all per
+  // skill; history, records and achievements are the whole athlete's.
+  const skills = activeSkills(whole)
+  const [pickedSkill, setPickedSkill] = useState<SkillId | null>(null)
+  const viewSkill: SkillId = pickedSkill && skills.includes(pickedSkill) ? pickedSkill : skills[0]
+  const state = useMemo(() => skillView(whole, viewSkill), [whole, viewSkill])
   const [chartEx, setChartEx] = useState(() => STEP_BY_ID[state.stepId].keyExerciseId)
+  // Changing skill moves the chart to that skill's key hold.
+  useEffect(() => {
+    setChartEx(STEP_BY_ID[stepOfSkill(whole, viewSkill)].keyExerciseId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewSkill])
   const [chartSurface, setChartSurface] = useState<TrainingSurface | 'all'>('all')
   const [expanded, setExpanded] = useState<string | null>(focusSessionId)
   useEffect(() => {
@@ -379,7 +395,7 @@ export function Stats({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [achievementFilter, setAchievementFilter] = useState<'all' | 'earned' | 'next' | 'locked'>('next')
 
-  const chartIsPlanche = EXERCISE_BY_ID[chartEx]?.category === 'planche'
+  const chartIsPlanche = isSurfaceAware(EXERCISE_BY_ID[chartEx])
   /** The line plots unlock credit, not the timer — every label must say so. */
   const chartIsCredit = plotsProgressionCredit(chartEx)
   const series = useMemo(
@@ -430,8 +446,34 @@ export function Stats({
   const volume = useMemo(() => weeklyVolume(state, 12), [state])
   const sessions = useMemo(() => [...state.sessions].sort((a, b) => b.startedAt - a.startedAt), [state.sessions])
 
-  const holdExercises = EXERCISES.filter((e) => e.type === 'hold')
-  const chartStep = STEPS.find((s) => s.keyExerciseId === chartEx)
+  // The selector leads with the viewed skill's own road, then any other hold
+  // that has actually been logged. Every hold in the catalogue used to be
+  // listed — some fifty entries, stretches included, for a chart most of them
+  // could never fill.
+  const roadHolds = useMemo(
+    () =>
+      stepsOf(viewSkill)
+        .map((step) => EXERCISE_BY_ID[step.keyExerciseId])
+        .filter((exercise, index, all) => exercise !== undefined && all.indexOf(exercise) === index),
+    [viewSkill],
+  )
+  const otherHolds = useMemo(() => {
+    const onRoad = new Set(roadHolds.map((exercise) => exercise.id))
+    const logged = new Set(
+      whole.sessions.flatMap((session) =>
+        session.sets
+          // Training holds only: a cool-down stretch is logged at its prescribed
+          // time every session and has no trend worth a chart.
+          .filter((set) => set.kind === 'hold' && set.value > 0 && set.section !== 'warmup' && set.section !== 'cooldown')
+          .map((set) => set.exerciseId),
+      ),
+    )
+    return EXERCISES.filter(
+      (e) =>
+        e.type === 'hold' && !onRoad.has(e.id) && (logged.has(e.id) || e.id === chartEx),
+    )
+  }, [roadHolds, whole.sessions, chartEx])
+  const chartStep = stepForKeyExercise(chartEx)
   // Training movements only. Warm-up drills, wrist prep and stretches are
   // logged at their prescribed counts, so the board filled with "records" of
   // ten arm circles and a thirty-second stretch. The planche line leads.
@@ -442,14 +484,24 @@ export function Stats({
         .filter((x) => x.ex && !UNTRACKED_RECORD_CATEGORIES.has(x.ex.category))
         .sort(
           (a, b) =>
-            Number(b.ex.category === 'planche') - Number(a.ex.category === 'planche') || b.pr.at - a.pr.at,
+            Number(isSkillHold(b.ex)) - Number(isSkillHold(a.ex)) || b.pr.at - a.pr.at,
         ),
     [state.prs],
   )
 
+  // A skill's badges are listed for an athlete who trains it or has earned
+  // one — not thirty locked badges for roads nobody is on.
+  const listedAchievements = useMemo(
+    () =>
+      ACHIEVEMENTS.filter(
+        (achievement) => !achievement.skill || skills.includes(achievement.skill) || whole.achievements[achievement.id],
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [skills.join(','), whole.achievements],
+  )
   const achievementCards = useMemo(
     () =>
-      ACHIEVEMENTS.map((achievement, order) => {
+      listedAchievements.map((achievement, order) => {
         const at = state.achievements[achievement.id]
         const progress = !at && achievement.progress ? achievement.progress(state) : null
         return {
@@ -460,10 +512,10 @@ export function Stats({
           ratio: progress ? Math.min(1, progress.current / Math.max(1, progress.target)) : 0,
         }
       }),
-    [state],
+    [state, listedAchievements],
   )
   const unlockedCount = achievementCards.filter((card) => card.at).length
-  const lockedCount = ACHIEVEMENTS.length - unlockedCount
+  const lockedCount = listedAchievements.length - unlockedCount
   const nextAchievementCards = useMemo(
     () =>
       achievementCards
@@ -492,6 +544,26 @@ export function Stats({
     <div className="animate-rise">
       <h1 className="font-display text-[28px] font-bold text-ink">Progress</h1>
       <p className="mt-0.5 text-[14px] text-ink2">Charts, records, history and trophies.</p>
+      {skills.length > 1 ? (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="Skill shown">
+          {skills.map((skill) => {
+            const on = skill === viewSkill
+            return (
+              <button
+                key={skill}
+                aria-pressed={on}
+                onClick={() => setPickedSkill(skill)}
+                className={`min-h-10 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${
+                  on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-surface text-ink2 hover:text-ink'
+                }`}
+              >
+                {SKILLS[skill].name}
+              </button>
+            )
+          })}
+          <span className="text-[12px] text-ink3">Trends and the coach's findings are per skill; history and records are all of you.</span>
+        </div>
+      ) : null}
 
       <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Sessions" value={<span className="tnum">{state.sessions.length}</span>} />
@@ -502,7 +574,7 @@ export function Stats({
           value={
             <span className="tnum">
               {unlockedCount}
-              <span className="text-[15px] text-ink3">/{ACHIEVEMENTS.length}</span>
+              <span className="text-[15px] text-ink3">/{listedAchievements.length}</span>
             </span>
           }
         />
@@ -548,11 +620,22 @@ export function Stats({
             aria-label="Exercise shown in hold trend"
             className="rounded-xl border border-line bg-raised px-3 py-2 text-[13.5px] text-ink outline-none focus:border-accent"
           >
-            {holdExercises.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
-              </option>
-            ))}
+            <optgroup label={`${SKILLS[viewSkill].name} road`}>
+              {roadHolds.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
+            </optgroup>
+            {otherHolds.length ? (
+              <optgroup label="Other holds you have logged">
+                {otherHolds.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
           </select>
         </div>
         {chartIsPlanche ? (
@@ -594,7 +677,7 @@ export function Stats({
       </div>
 
       {/* What the camera has measured about one position over weeks */}
-      <FormTrendCard />
+      <FormTrendCard key={viewSkill} skill={viewSkill} />
 
       {/* Weekly volume */}
       <div id="insights" className="mt-4 scroll-mt-5 rounded-3xl border border-line bg-surface p-5 shadow-card">
@@ -693,7 +776,9 @@ export function Stats({
       <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-card">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="font-display text-[16px] font-semibold text-ink">What your coach has learned</div>
+            <div className="font-display text-[16px] font-semibold text-ink">
+              What your coach has learned{skills.length > 1 ? ` · ${SKILLS[viewSkill].name}` : ''}
+            </div>
             <div className="max-w-xl text-[13px] leading-relaxed text-ink2">
               It tries different ways of shaping your main sets, then looks at how your key hold moved in the sessions
               after each. The approach with the best measured results gets used most, and untested ones get their turn —
@@ -771,9 +856,9 @@ export function Stats({
             {' '}
             {state.settings.phoneWithinReach
               ? `Timed holds have your ${state.settings.stopLatencySec.toFixed(1)}s calibrated stop delay taken off`
-              : `Main Path holds — all but the planche lean — have ${Math.max(state.settings.walkBackSec ?? PROGRESSION_STOP_LATENCY_SEC, state.settings.stopLatencySec).toFixed(
+              : `Main Path holds — all but the ones held within reach of the phone, such as a lean — have ${Math.max(state.settings.walkBackSec ?? PROGRESSION_STOP_LATENCY_SEC, state.settings.stopLatencySec).toFixed(
                   1,
-                )}s taken off for getting back to the phone, and other timed holds, the lean included, your ${state.settings.stopLatencySec.toFixed(
+                )}s taken off for getting back to the phone, and other timed holds your ${state.settings.stopLatencySec.toFixed(
                   1,
                 )}s calibrated delay`}
             {' '}— each set can be corrected on the rest screen, and a hold timed from its video has nothing taken off.
@@ -791,7 +876,7 @@ export function Stats({
       </div>
 
       {/* The pressing ladder: the push-up versions as a road of their own */}
-      <PressingLadder />
+      {skills.includes('planche') ? <PressingLadder /> : null}
 
       {/* PR board */}
       <section id="records" className="scroll-mt-5">
@@ -846,7 +931,7 @@ export function Stats({
             <div>
               <div className="text-[12px] font-semibold uppercase tracking-wider text-accent-text">Trophy cabinet</div>
               <div className="mt-1 font-display text-[25px] font-semibold text-ink tnum">
-                {unlockedCount} <span className="text-[14px] font-normal text-ink3">of {ACHIEVEMENTS.length} earned</span>
+                {unlockedCount} <span className="text-[14px] font-normal text-ink3">of {listedAchievements.length} earned</span>
               </div>
             </div>
             <div className="text-[28px]" aria-hidden="true">🏆</div>
@@ -854,7 +939,7 @@ export function Stats({
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-line">
             <div
               className="h-full rounded-full bg-accent transition-[width] duration-500"
-              style={{ width: `${(unlockedCount / ACHIEVEMENTS.length) * 100}%` }}
+              style={{ width: `${(unlockedCount / Math.max(1, listedAchievements.length)) * 100}%` }}
             />
           </div>
           {nextAchievementCards.length > 0 ? (
@@ -890,7 +975,7 @@ export function Stats({
             ['next', 'Next up', nextAchievementCards.length],
             ['earned', 'Earned', unlockedCount],
             ['locked', 'Locked', lockedCount],
-            ['all', 'All', ACHIEVEMENTS.length],
+            ['all', 'All', listedAchievements.length],
           ] as const).map(([filter, label, count]) => (
             <button
               key={filter}
@@ -997,6 +1082,14 @@ export function Stats({
                           set.timing?.method === 'edited' ? 'entered by hand' : null,
                           set.timing?.method === 'interrupted' ? 'interrupted' : null,
                           set.endReason ? END_REASON_LABEL[set.endReason].toLowerCase() : null,
+                          // What the set stands on: full evidence, or only the athlete's rating.
+                          isQualifyingSet(set, set.exerciseId)
+                            ? 'verified'
+                            : verifiedReps(set) > 0
+                              ? 'replay checked'
+                              : set.form?.confirmed === true
+                                ? `rated ${set.form.rating === 'broke' ? 'broke down' : set.form.rating}`
+                                : null,
                         ].filter(Boolean)
                         return (
                           <div key={i} className="flex items-baseline justify-between gap-3 text-[13.5px]">

@@ -16,6 +16,7 @@ import { Dashboard } from './views/Dashboard'
 import { Train } from './views/Train'
 import { Path } from './views/Path'
 import { SessionPlayer, type CheckInContext } from './views/SessionPlayer'
+import { APP_NAME } from './data/app'
 
 /**
  * A bench for the camera form judge, reached at #devlab.
@@ -156,7 +157,7 @@ function UpdateBanner({ defer = false }: { defer?: boolean }) {
     <div className="fixed inset-x-0 bottom-20 z-[65] flex justify-center px-4 lg:bottom-6">
       <div className="animate-rise flex items-center gap-3 rounded-2xl border border-accent/35 bg-raised py-2.5 pl-4 pr-2.5 shadow-pop backdrop-blur">
         <Icon name="sparkle" size={17} className="shrink-0 text-accent-text" />
-        <span className="text-[13.5px] font-medium text-ink">A new version of Planche Lab is ready.</span>
+        <span className="text-[13.5px] font-medium text-ink">A new version of {APP_NAME} is ready.</span>
         <button
           onClick={refresh}
           className="rounded-lg px-3.5 py-1.5 text-[13px] font-semibold text-on-accent transition hover:brightness-105"
@@ -265,7 +266,7 @@ function BootRecovery() {
     const url = URL.createObjectURL(new Blob([kept.raw], { type: 'application/json' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = 'planche-lab-unreadable-data.json'
+    a.download = 'calisthenics-lab-unreadable-data.json'
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -482,7 +483,7 @@ export default function App() {
               </svg>
             </div>
             <div>
-              <div className="font-display text-[16px] font-bold leading-tight text-ink">Planche Lab</div>
+              <div className="font-display text-[16px] font-bold leading-tight text-ink">{APP_NAME}</div>
               <div className="text-[11.5px] font-medium text-ink3">own the hold</div>
             </div>
           </div>
@@ -519,7 +520,7 @@ export default function App() {
                 <rect x="8.5" y="13.5" width="3" height="7" rx="1.5" fill="currentColor" />
               </svg>
             </div>
-            <span className="font-display text-[16px] font-bold text-ink">Planche Lab</span>
+            <span className="font-display text-[16px] font-bold text-ink">{APP_NAME}</span>
           </div>
 
           <Suspense fallback={<div className="p-6 text-[13px] text-ink3">Loading…</div>}>
