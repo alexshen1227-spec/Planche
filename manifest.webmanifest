@@ -1,7 +1,7 @@
 {
-  "name": "Planche Lab",
-  "short_name": "Planche Lab",
-  "description": "A patient, structured road from your first planche lean to the full planche.",
+  "name": "Calisthenics Lab",
+  "short_name": "Cali Lab",
+  "description": "Structured roads to the planche, front lever, handstand push-up, 90° hold and human flag — on your device, with a camera form check.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
@@ -13,6 +13,24 @@
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
+    },
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
