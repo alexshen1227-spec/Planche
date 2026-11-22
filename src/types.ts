@@ -218,6 +218,8 @@ export interface AutoForm {
    * over torso length (judge v4+). Movement, not its cause.
    */
   drift?: number
+  /** The lockout reference the elbows were measured from, when not 180 (judge v8). */
+  lockoutDeg?: number
   /**
    * Criteria the camera could not see well enough to grade. The rest of the
    * verdict still stands; these were simply not checked.
@@ -779,6 +781,14 @@ export interface Settings {
    * measured (Settings → Measure my walk back); the slowest of three walks.
    */
   walkBackSec?: number
+  /**
+   * Where this athlete's locked arm reads on their own camera (Settings →
+   * Calibrate lockout), 160–180. Absent = not calibrated: the judge measures
+   * from `UNCALIBRATED_LOCKOUT_DEG`.
+   */
+  lockoutDeg?: number
+  /** When the lockout was calibrated. */
+  lockoutCalibratedAt?: number
   /**
    * Play sounds and voice cues through an iPhone's silent switch (Safari's
    * Audio Session "playback"). Pauses music in another app while they play,

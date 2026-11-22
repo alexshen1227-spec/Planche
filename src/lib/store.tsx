@@ -295,6 +295,7 @@ function sanitizeAuto(a: unknown, repairs: string[]): AutoForm | undefined {
     asymmetry: num(c.asymmetry),
     wobble: num(c.wobble),
     ...(num(c.drift) !== undefined ? { drift: num(c.drift) } : {}),
+    ...(clampOptional(c.lockoutDeg, 150, 180) !== undefined ? { lockoutDeg: clampOptional(c.lockoutDeg, 150, 180) } : {}),
     analysedSec: clampOptional(c.analysedSec, 0, 3600),
     analysedFromSec: clampOptional(c.analysedFromSec, 0, 3600),
     samplingGapSec: clampOptional(c.samplingGapSec, 0, 60),
@@ -842,6 +843,16 @@ export function normalizeStateWithReport(
         : DEFAULT_SETTINGS.phoneWithinReach,
     soundThroughSilent: rawSettings.soundThroughSilent === true,
     // A measurement or nothing: anything else falls back to the assumed walk.
+    // A calibration or nothing: outside the plausible band it falls back to
+    // the uncalibrated reference rather than becoming one.
+    lockoutDeg:
+      typeof rawSettings.lockoutDeg === 'number' && rawSettings.lockoutDeg >= 160 && rawSettings.lockoutDeg <= 180
+        ? rawSettings.lockoutDeg
+        : undefined,
+    lockoutCalibratedAt:
+      typeof rawSettings.lockoutCalibratedAt === 'number' && Number.isFinite(rawSettings.lockoutCalibratedAt)
+        ? rawSettings.lockoutCalibratedAt
+        : undefined,
     walkBackSec:
       typeof rawSettings.walkBackSec === 'number' && Number.isFinite(rawSettings.walkBackSec)
         ? Math.min(WALK_BACK_MAX_SEC, Math.max(WALK_BACK_MIN_SEC, rawSettings.walkBackSec))

@@ -36,6 +36,7 @@ import { sfx } from '../lib/audio'
 import { deviceCheckAdvice, readDeviceCheck } from '../lib/deviceCheck'
 import { DeviceCheck } from '../components/DeviceCheck'
 import { WalkBackCalibrator } from '../components/WalkBackCalibrator'
+import { LockoutCalibrator } from '../components/LockoutCalibrator'
 import { PROGRESSION_STOP_LATENCY_SEC } from '../lib/sessionTiming'
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle } from '../components/ui'
@@ -277,6 +278,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   const installed = installState()
   const [calibrating, setCalibrating] = useState(false)
   const [measuringWalk, setMeasuringWalk] = useState(false)
+  const [calibratingLockout, setCalibratingLockout] = useState(false)
   const [checkingDevice, setCheckingDevice] = useState(false)
   const [lastCheck, setLastCheck] = useState(() => readDeviceCheck())
   const [loggingWeight, setLoggingWeight] = useState(false)
@@ -812,6 +814,29 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           <Toggle label="Live elbow cue (beta)" on={s.liveCues === true} onChange={(v) => set({ liveCues: v })} />
         </Row>
         <Row
+          label="Lockout calibration"
+          hint={
+            s.lockoutDeg !== undefined
+              ? `Your locked arms read ${s.lockoutDeg}° on your camera${s.lockoutCalibratedAt ? ` (measured ${new Date(s.lockoutCalibratedAt).toLocaleDateString()})` : ''}, so bent arms are named from about ${s.lockoutDeg - 8}° down.`
+              : 'Not calibrated: bent arms are named from about 165° down, because a phone reads a locked elbow a little short of 180°. Film your own lockout once to measure from it instead.'
+          }
+        >
+          {s.lockoutDeg !== undefined ? (
+            <button
+              onClick={() => set({ lockoutDeg: undefined, lockoutCalibratedAt: undefined })}
+              className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+            >
+              Clear
+            </button>
+          ) : null}
+          <button
+            onClick={() => setCalibratingLockout(true)}
+            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+          >
+            {s.lockoutDeg !== undefined ? 'Recalibrate' : 'Calibrate'}
+          </button>
+        </Row>
+        <Row
           label="Camera checker download"
           hint={
             modelState === 'ready'
@@ -1288,6 +1313,17 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </Modal>
       <Modal open={addingSkill} onClose={() => setAddingSkill(false)} label="Add a skill" wide>
         {addingSkill ? <AddSkill onClose={() => setAddingSkill(false)} onAdded={() => setAddingSkill(false)} /> : null}
+      </Modal>
+      <Modal open={calibratingLockout} onClose={() => setCalibratingLockout(false)} label="Calibrate your lockout">
+        {calibratingLockout ? (
+          <LockoutCalibrator
+            onDone={(deg) => {
+              set({ lockoutDeg: deg, lockoutCalibratedAt: Date.now() })
+              setCalibratingLockout(false)
+              pushToast(`Lockout set to ${deg}°. Bent arms are now measured from it.`, 'success')
+            }}
+          />
+        ) : null}
       </Modal>
       <Modal open={measuringWalk} onClose={() => setMeasuringWalk(false)} label="Measure your walk back">
         <WalkBackCalibrator

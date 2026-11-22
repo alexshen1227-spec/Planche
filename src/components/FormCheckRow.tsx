@@ -217,6 +217,7 @@ export function autoFromResult(res: PoseFormResult, analysedSec: number, analyse
     judge: JUDGE_VERSION,
     ...(res.unseen.length ? { unseen: res.unseen } : {}),
     ...(res.coarse?.length ? { coarse: res.coarse } : {}),
+    ...(res.lockoutDeg !== undefined ? { lockoutDeg: res.lockoutDeg } : {}),
   }
 }
 

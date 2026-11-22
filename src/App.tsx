@@ -17,6 +17,7 @@ import { Train } from './views/Train'
 import { Path } from './views/Path'
 import { SessionPlayer, type CheckInContext } from './views/SessionPlayer'
 import { APP_NAME } from './data/app'
+import { setAthleteLockout } from './lib/lockout'
 
 /**
  * A bench for the camera form judge, reached at #devlab.
@@ -346,6 +347,8 @@ function checkInContextFor(plan: CoachPlan): CheckInContext {
 
 export default function App() {
   const { state, dispatch, boot } = useStore()
+  // The judge measures straight-arm bends from this athlete's own lockout.
+  useEffect(() => setAthleteLockout(state.settings.lockoutDeg), [state.settings.lockoutDeg])
   const [tab, setTabNow] = useState<Tab>('home')
   // A transition keeps the current screen on show while a lazy one loads,
   // rather than flashing a placeholder over the whole page.

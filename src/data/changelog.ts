@@ -19,6 +19,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-21',
+    title: 'The camera reads your lockout, your hold, and a sideways phone right',
+    area: 'camera',
+    notes: [
+      'Fixed: with the phone on its side (as the camera screen asks), a tuck held with the hips well above the shoulders could be read as sagging. The picture was not being turned upright for high-hip shapes. Where your body is relative to your hands now settles which way is up.',
+      'Only the hold is judged. Getting into the position (feet still on the floor, still moving) and coming out of it are trimmed from the check, and the result says which seconds of the clip it judged. Before, a crouch before the lift could read as hips far too low and end the clean time before the hold began.',
+      'A phone reads a fully locked elbow a little short of 180°. Bent arms are now named from about 165° down until you calibrate: Settings → Lockout calibration films a few seconds of your own locked arms, and bent-arm calls are measured from your reading. A reading that is itself a bend is refused, so it cannot excuse soft elbows.',
+      'Clips checked before this update keep the verdict they were given; new checks use the new rules.',
+    ],
+  },
+  {
+    date: '2026-11-21',
     title: 'A truer preview, spaced attempts, and a step back after pain',
     area: 'coach',
     notes: [

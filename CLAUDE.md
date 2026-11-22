@@ -250,6 +250,27 @@ more certain than its basis.
    mean none of it was verified clean, so trends, the coach's form signal and
    the result panel read 0 there.
 
+9b. **Judge v8 (2026-11-21, Fitness Lab goal).** Three fixes, all pinned by
+   decision: (a) a support hold's floor is also read from the plumb line —
+   between `AMBIGUOUS_TRUNK_DEG` (45°) and `SIDEWAYS_TRUNK_DEG` the trunk alone
+   took a hips-high tuck on a sideways phone for upright and read hips *above*
+   the shoulders as a sag (−0.87 for +0.5); weight off to the side of the hands
+   (`PLUMB_SIDEWAYS_RATIO`, measured 0.6 upright vs 0.88+ turned) turns it
+   (`signConvention.test.ts` pins hip, lean and shrug in all four picture
+   orientations and both facings). (b) `judgeTrackedFrames` judges only the
+   hold (`lib/holdWindow.ts`): feet-down stretches before the lift and after
+   the landing (`FEET_OFF_HOLDS`) and moving edges (`SETTLING_SPEED`) are
+   trimmed by re-basing the input (`timeOffsetSec` carries the offset, so the
+   replay stays aligned); nothing in the middle of a hold is ever cut, and the
+   result's `holdWindow` says what was judged. (c) Straight-arm *support*
+   elbows are measured from the athlete's lockout (`lib/lockout.ts`,
+   `withLockout`): `JudgeInput.lockoutDeg` travels with the detections (absent
+   = 180, which is what every synthetic eval uses), the app sends the
+   calibration (Settings → Lockout calibration, `lockoutFromReadings`, refused
+   under `MIN_LOCKOUT_DEG`) or `UNCALIBRATED_LOCKOUT_DEG` = 173 (named bar
+   165°, the athlete's ask). Real soft elbows still never pass: named, or
+   unseen when the readings scatter (`lockout.test.ts`).
+
 ## The coach
 
 - `src/lib/athleteSynth.ts` — training histories built **from known truth**

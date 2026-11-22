@@ -71,7 +71,7 @@ import {
 } from '../lib/progression'
 import { adjustsSetToSet, adviseNextHold, adviseNextReps, type NextSetAdvice, type SetOutcome } from '../lib/autoregulate'
 import { useLiveElbowCue } from '../components/useLiveElbowCue'
-import { POSE_PROFILES, postureOf, type Posture } from '../lib/poseForm'
+import { POSE_PROFILES, withLockout, currentLockoutDeg, postureOf, type Posture } from '../lib/poseForm'
 import { isReviewOnly } from '../lib/progression'
 import { repSetsToReview, rungInPlay, rungOutcome, rungsOpenedBy, withRepCount } from '../lib/repLadder'
 import { RepReviewRow } from '../components/RepReviewRow'
@@ -892,7 +892,11 @@ export function SessionPlayer({
       exercise !== undefined &&
       POSE_PROFILES[exercise.id]?.minElbowDeg !== undefined,
     getStream: recorder.getStream,
-    minElbowDeg: exercise ? POSE_PROFILES[exercise.id]?.minElbowDeg : undefined,
+    // Measured from this athlete's lockout, like the verdict after the set.
+    minElbowDeg:
+      exercise && POSE_PROFILES[exercise.id]
+        ? withLockout(POSE_PROFILES[exercise.id], currentLockoutDeg()).minElbowDeg
+        : undefined,
     onCue: () => {
       buzz([60, 40, 60])
       if (state.settings.voice) speak('Lock your elbows')

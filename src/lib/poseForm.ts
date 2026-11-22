@@ -1,3 +1,5 @@
+import { currentLockoutDeg, lockoutReference } from './lockout'
+import { FEET_OFF_HOLDS, findHoldWindow, readHoldMoment } from './holdWindow'
 import type { FormIssue } from '../types'
 import {
   apparentBodyWidthRatio,
@@ -46,7 +48,8 @@ export { MIN_VERIFIED_COVERAGE }
  *     unchanged by it; the number moves because readings of the new positions
  *     did not exist before, and a stored reading says which judge made it.
  */
-export const JUDGE_VERSION = 7
+export const JUDGE_VERSION = 8
+export { UNCALIBRATED_LOCKOUT_DEG, MIN_LOCKOUT_DEG, lockoutReference, setAthleteLockout, currentLockoutDeg } from './lockout'
 
 /**
  * Automatic form analysis from a recorded clip.
@@ -138,6 +141,11 @@ export interface PoseFormResult {
   /** Secondary observations — shown folded away to keep the panel readable. */
   details: string[]
   /**
+   * The stretch judged as the hold, in clip seconds, when setup or exit were
+   * trimmed from the analysed window (judge v8, `findHoldWindow`).
+   */
+  holdWindow?: { startSec: number; endSec: number; setupSec: number; exitSec: number }
+  /**
    * Criteria this position cares about that the camera could not see well
    * enough to grade. The rest of the result is still valid — these are simply
    * not part of it.
@@ -151,6 +159,11 @@ export interface PoseFormResult {
    * confirmation is what progression asks for.
    */
   coarse?: string[]
+  /**
+   * The lockout reference the elbows were measured from, when it was not 180
+   * (judge v8): the athlete's calibration, or the uncalibrated default.
+   */
+  lockoutDeg?: number
   /**
    * The picture was on its side (or upside down) and was turned the right way
    * up before hip height and lean were measured — see `floorEdge`. Transient,
@@ -519,6 +532,19 @@ export const MOMENTARY_MATERIAL_TOLERANCE = {
 } as const
 
 /**
+ * A straight-arm support profile measured from the athlete's lockout instead
+ * of from 180. Only the support posture: hanging, inverted and flag elbows are
+ * read coarsely against their own measured bands (`POSTURE_TOLERANCE`), and
+ * the calibration is filmed in a support, so it says nothing about them.
+ */
+export function withLockout(profile: PoseProfile, deg: number | undefined): PoseProfile {
+  if (postureOf(profile) !== 'support' || profile.minElbowDeg !== 180) return profile
+  const reference = lockoutReference(deg)
+  return reference === 180 ? profile : { ...profile, minElbowDeg: reference }
+}
+
+
+/**
  * How much landmark error the elbow and knee readings carry outside a support
  * hold, measured on real photographs through the same model
  * (realPoses.fixture.ts) rather than assumed.
@@ -763,6 +789,14 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
     // running zero checks and reporting "clean".
     label: 'Frog stand',
     noChecks: true,
+    checkShrug: false,
+  },
+  'lockout-check': {
+    // Settings → Calibrate lockout: a straight-arm support filmed only to read
+    // where this athlete's locked elbow sits. Elbows alone; it is never a
+    // verdict on a hold and never earns credit.
+    label: 'Lockout check',
+    minElbowDeg: 180,
     checkShrug: false,
   },
   'tuck-planche': {
@@ -1915,6 +1949,20 @@ export type FloorEdge = 'bottom' | 'right' | 'left' | 'top'
  */
 export const SIDEWAYS_TRUNK_DEG = 68
 /**
+ * Judge v8. Below `SIDEWAYS_TRUNK_DEG` the trunk alone missed a real case: a
+ * tuck with the hips half a torso above the shoulders, filmed with the phone
+ * on its side as the app asks, reads 60° — upright by the trunk — and was
+ * judged in the sideways picture: hips above the shoulders came out as a sag
+ * (hip line −0.87 for a true +0.5). From this angle up, the plumb line from the
+ * hands to the centre of mass decides instead. Measured on the support stress
+ * grid (every support position; level, sagging and three hips-high shapes;
+ * deep and shallow leans; roll ±15°; both facings; noise 2.5%): upright holds
+ * this steep keep the weight within 0.6 (sideways ÷ vertical) of straight
+ * above the hands, turned ones sit at 0.88 or more.
+ */
+export const AMBIGUOUS_TRUNK_DEG = 45
+export const PLUMB_SIDEWAYS_RATIO = 0.75
+/**
  * Past this, the shoulder→wrist line points up the picture: it is upside down.
  * Upright synthetic holds never exceeded 97° (a deep lean on a tilted phone);
  * the real photos turned upside down read 137–171°.
@@ -2069,7 +2117,7 @@ export function readFloor(frames: { kps: Kp[] }[], posture: Posture = 'support')
       const reach = Math.hypot(far.x - best.s.x, far.y - best.s.y)
       if (reach >= 1) bodyUp.push((best.s.y - far.y) / reach)
     }
-    if (posture === 'hang') {
+    if (posture === 'hang' || posture === 'support') {
       // The centre of mass, from whichever segments this moment shows. The
       // legs matter — in a full lever they carry the weight out past the hips
       // — so they are counted whenever the knee (and ankle) can be seen.
@@ -2141,6 +2189,15 @@ export function readFloor(frames: { kps: Kp[] }[], posture: Posture = 'support')
     return decided(gx > 0 ? 'right' : 'left')
   }
   if (median(trunks)! >= SIDEWAYS_TRUNK_DEG) return decided(median(armAcross)! >= 0 ? 'right' : 'left')
+  if (median(trunks)! >= AMBIGUOUS_TRUNK_DEG && plumbX.length >= MIN_FRAMES) {
+    // Between the bars a high-hip tuck turned sideways and an extreme pike
+    // filmed upright read alike by the trunk. The weight does not: a support
+    // hold carries it above its hands, so weight off to the side of them is a
+    // picture on its side — and the side it lies to says where "up" is.
+    const gx = median(plumbX)!
+    const gy = median(plumbY)!
+    if (Math.abs(gx) > PLUMB_SIDEWAYS_RATIO * Math.abs(gy)) return decided(gx > 0 ? 'left' : 'right')
+  }
   if (median(arms)! >= UPSIDE_DOWN_ARM_DEG) return decided('top')
   return decided('bottom')
 }
@@ -2508,6 +2565,14 @@ export interface JudgeInput {
   decodeMisses?: number
   /** Clip time that `t = 0` corresponds to (a hold timed from the video). */
   timeOffsetSec?: number
+  /**
+   * Where this athlete's locked arm reads, in degrees (judge v8). It travels
+   * with the detections, so a stored clip re-judges against the reference it
+   * was judged with. Absent means 180 — a textbook lockout, which is what the
+   * synthetic evals and the bench measure against. The app always sends one:
+   * the athlete's calibrated reading, or `UNCALIBRATED_LOCKOUT_DEG`.
+   */
+  lockoutDeg?: number
 }
 
 /**
@@ -2527,15 +2592,75 @@ export function judgeTrackedFrames(
   exerciseId: string,
   options: { explain?: boolean } = {},
 ): PoseFormResult {
-  const empty = emptyResult()
   const profile = POSE_PROFILES[exerciseId]
-  if (!profile) return { ...empty, reason: 'This movement is not one the camera can assess.' }
-  if (profile.noChecks) {
+  if (!profile || profile.noChecks) return judgeWindow(input, exerciseId, options)
+  // Judge v8: only the hold itself — setup and exit are not part of it.
+  const floor = floorEdge(input.tracked, postureOf(profile)) ?? 'bottom'
+  const moments = input.tracked
+    .map((frame) => readHoldMoment(frame.t, turnUpright(frame.kps, floor)))
+    .sort((a, b) => a.t - b.t)
+  const hold = findHoldWindow(moments, FEET_OFF_HOLDS.has(exerciseId))
+  if (!hold?.trimmed) return judgeWindow(input, exerciseId, options)
+  const slack = 1e-6
+  const lastMoment = moments[moments.length - 1]?.t ?? hold.end
+  const exitTrimmed = hold.end < lastMoment - slack
+  const end = exitTrimmed || input.creditedHoldSec === undefined ? hold.end : input.creditedHoldSec
+  const start = hold.start
+  const offset = input.timeOffsetSec ?? 0
+  const trimmed: JudgeInput = {
+    ...input,
+    tracked: input.tracked
+      .filter((frame) => frame.t >= start - slack && frame.t <= hold.end + slack)
+      .map((frame) => ({ t: Math.round((frame.t - start) * 1000) / 1000, kps: frame.kps })),
+    times: input.times
+      .filter((t) => t >= start - slack && t <= hold.end + slack)
+      .map((t) => Math.round((t - start) * 1000) / 1000),
+    duration: Math.max(0, input.duration - start),
+    ...(input.creditedHoldSec !== undefined ? { creditedHoldSec: Math.max(0, Math.min(input.creditedHoldSec, end) - start) } : {}),
+    from: 0,
+    to: Math.max(0, Math.min(input.to, hold.end) - start),
+    holdWindow: Math.max(0, Math.min(input.to, hold.end) - start),
+    timeOffsetSec: Math.round((offset + start) * 1000) / 1000,
+  }
+  const result = judgeWindow(trimmed, exerciseId, options)
+  const setupSec = Math.round((start - (moments[0]?.t ?? start)) * 10) / 10
+  const exitSec = exitTrimmed ? Math.round((lastMoment - hold.end) * 10) / 10 : 0
+  return {
+    ...result,
+    holdWindow: {
+      startSec: Math.round((offset + start) * 100) / 100,
+      endSec: Math.round((offset + end) * 100) / 100,
+      setupSec,
+      exitSec,
+    },
+    details: [
+      ...result.details,
+      `Judged the hold from ${(offset + start).toFixed(1)}s to ${(offset + end).toFixed(1)}s of the clip: ${
+        setupSec > 0 && exitSec > 0
+          ? `${setupSec.toFixed(1)}s getting into the position and ${exitSec.toFixed(1)}s coming out of it`
+          : setupSec > 0
+            ? `${setupSec.toFixed(1)}s getting into the position`
+            : `${exitSec.toFixed(1)}s coming out of it`
+      } ${setupSec > 0 && exitSec > 0 ? 'are' : 'is'} not part of the hold.`,
+    ],
+  }
+}
+
+function judgeWindow(
+  input: JudgeInput,
+  exerciseId: string,
+  options: { explain?: boolean } = {},
+): PoseFormResult {
+  const empty = emptyResult()
+  const listed = POSE_PROFILES[exerciseId]
+  if (!listed) return { ...empty, reason: 'This movement is not one the camera can assess.' }
+  if (listed.noChecks) {
     return {
       ...empty,
-      reason: noChecksReason(exerciseId, profile),
+      reason: noChecksReason(exerciseId, listed),
     }
   }
+  const profile = withLockout(listed, input.lockoutDeg)
 
   const { times, duration, creditedHoldSec, from, to, holdWindow } = input
   if (creditedHoldSec !== undefined && !hasVerifiableHoldDuration(creditedHoldSec)) {
@@ -3896,6 +4021,7 @@ export function judgeTrackedFrames(
     details,
     unseen,
     ...(readCoarsely.length ? { coarse: readCoarsely } : {}),
+    ...(judged.elbow && profile.minElbowDeg !== listed.minElbowDeg ? { lockoutDeg: profile.minElbowDeg } : {}),
     ...(frameTurned ? { frameTurned } : {}),
   }
 }
@@ -4112,6 +4238,7 @@ async function analyseClipNow(
         rotation: chosen.rotation,
         ...(decodeMisses ? { decodeMisses } : {}),
         ...(offset > 0 ? { timeOffsetSec: Math.round(offset * 1000) / 1000 } : {}),
+        lockoutDeg: currentLockoutDeg(),
       }
       return { result: judgeTrackedFrames(poses, exerciseId), poses }
     }
