@@ -58,20 +58,21 @@ Diagnosis (2026-11-21, read from `src/lib/poseForm.ts`):
 
 ## Phase 2 — Fitness Lab foundation
 
-- [ ] Rebrand: name in `src/data/app.ts`, manifest, title, About. Storage keys
+- [x] Rebrand: name in `src/data/app.ts`, manifest, title, About. Storage keys
       keep `planchelab.`.
-- [ ] State v9 (additive migration): `profile.locations` (Home seeded from the
-      existing kit), active location, units, gym preferences, goal weights,
-      muscle settings, schedule, outside activities.
-- [ ] Gym exercise library (`src/data/gym/`): pattern, primary/secondary muscles
+- [x] State v9 (additive): `state.gym` — locations (Home seeded from the kit),
+      active location, sessions, ratings, favourites, tombstones. Goal weights,
+      muscle settings, schedule and outside activities are Phase 3 (add them
+      to `GymState` the same additive way).
+- [x] Gym exercise library (`src/data/gym/`, ~75 movements; alternatives are computed by `alternativesFor`): pattern, primary/secondary muscles
       (fractional set credit), equipment needed, alternatives, joint stress
       tags (wrists / elbows / front delts / lower back / knees), rep ranges.
-- [ ] Locations and equipment: named gyms, equipment lists (dumbbell max,
+- [x] Locations and equipment: named gyms, equipment lists (dumbbell max,
       increments, kg/lb per location or item), favourite gym per exercise,
       "hard to do here", quick swap to an alternative.
-- [ ] Gym logging: start at a location, sets of weight × reps × RPE (1-tap
+- [x] Gym logging (`components/gym/GymPlayer.tsx`; per-set notes not yet): start at a location, sets of weight × reps × RPE (1-tap
       6–10), rest timer, last weight auto-filled, notes.
-- [ ] Double progression + smallest increment for that equipment; e1RM
+- [x] (gym achievements still open, Phase 4) Double progression + smallest increment for that equipment; e1RM
       (RPE-adjusted, ≤12 reps) per exercise, per location working weights and a
       shared estimate; PRs per exercise; gym achievements.
 
@@ -116,6 +117,11 @@ growth-spurt caution prompt, sleep/readiness check-in, exam-week light plans,
 travel mode (bodyweight-only location), coach/parent share card.
 
 ## Log
+
+- 2026-11-21 ~23:55 PST — Phase 1 pushed (judge v8 + 2105-style regression).
+  Phase 2 pushed: Fitness Lab rebrand, state v9 gym branch, library, places,
+  logger, double progression. Clicked through in the preview at desktop and
+  phone width (set up Home, built a session, logged a set, saved).
 
 - 2026-11-21 22:40 PST — plan written; Phase 1 started. Usage budget for the
   night: weekly must stay ≥ 85% left at 08:30 (it was 96% left at 22:30).

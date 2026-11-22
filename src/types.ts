@@ -2,6 +2,8 @@
  * `updates` has no bottom-nav entry of its own — it is a page reached from
  * Settings, and keeps Settings lit while you are on it.
  */
+import type { GymState } from './lib/gym/types'
+
 export type Tab = 'home' | 'train' | 'path' | 'library' | 'stats' | 'settings' | 'updates'
 
 /**
@@ -92,8 +94,13 @@ export type TrainingSurface = 'floor' | 'parallettes'
  * top-level fields), `profile.skills` (which are trained, in priority order)
  * and per-skill session notes. Again every addition is optional — a v7 save is
  * a planche-only athlete and loads as one.
+ *
+ * v9 (Fitness Lab) adds `gym`: locations with their equipment, gym sessions
+ * (weight × reps × effort) and exercise preferences. It lives beside the
+ * skill history rather than inside it, so the skill coach, records and
+ * achievements replay exactly as before; an older save simply has none.
  */
-export const CURRENT_STATE_VERSION = 8 as const
+export const CURRENT_STATE_VERSION = 9 as const
 
 export interface Measurement {
   at: number
@@ -880,6 +887,8 @@ export interface AppState {
    * so what was earned is still there if they come back.
    */
   tracks?: Partial<Record<SkillId, SkillTrack>>
+  /** Fitness Lab's gym side (state v9). Absent until the athlete sets up a location. */
+  gym?: GymState
 }
 
 /** A remembered setup for one exercise. Changing it never relabels earlier sets. */

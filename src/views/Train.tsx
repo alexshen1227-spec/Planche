@@ -1,3 +1,4 @@
+import { GymHub } from '../components/gym/GymHub'
 import { useMemo, useState } from 'react'
 import type { AssistType, Section, Session, SetLog, SkillId, TrainingSurface, Workout, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
@@ -64,7 +65,7 @@ function requestKey(request: WorkoutRequest): string {
   return `${request.source}:${request.templateId ?? ''}:${request.stepId ?? ''}:${request.minutes ?? ''}:${(request.skills ?? []).join('+')}`
 }
 
-export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest) => void }) {
+function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest) => void }) {
   const { state } = useStore()
   const [previewRequest, setPreviewRequest] = useState<WorkoutRequest | null>(null)
   const [quickLog, setQuickLog] = useState(false)
@@ -604,5 +605,48 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
         </button>
       </div>
     </Modal>
+  )
+}
+
+const TRAIN_MODE_KEY = 'planchelab.trainMode'
+
+/**
+ * Train: skills and gym side by side (Fitness Lab). The skill side is the
+ * coach's session exactly as before; the gym side builds from the place the
+ * athlete is at. Which one shows is remembered per device.
+ */
+export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest) => void }) {
+  const [mode, setMode] = useState<'skills' | 'gym'>(() => {
+    try {
+      return localStorage.getItem(TRAIN_MODE_KEY) === 'gym' ? 'gym' : 'skills'
+    } catch {
+      return 'skills'
+    }
+  })
+  const choose = (m: 'skills' | 'gym') => {
+    setMode(m)
+    try {
+      localStorage.setItem(TRAIN_MODE_KEY, m)
+    } catch {
+      // A per-device convenience only.
+    }
+  }
+  return (
+    <div>
+      <div className="mx-auto mb-5 grid max-w-sm grid-cols-2 rounded-2xl border border-line bg-raised p-1" role="tablist" aria-label="What to train">
+        {(['skills', 'gym'] as const).map((m) => (
+          <button
+            key={m}
+            role="tab"
+            aria-selected={mode === m}
+            onClick={() => choose(m)}
+            className={`min-h-11 rounded-xl text-[14px] font-semibold transition ${mode === m ? 'bg-surface text-ink shadow-sm' : 'text-ink3'}`}
+          >
+            {m === 'skills' ? 'Skills' : 'Gym'}
+          </button>
+        ))}
+      </div>
+      {mode === 'skills' ? <SkillsTrain startWorkout={startWorkout} /> : <GymHub />}
+    </div>
   )
 }

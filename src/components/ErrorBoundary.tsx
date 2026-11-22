@@ -15,7 +15,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('Calisthenics Lab crashed:', error, info.componentStack)
+    console.error('Fitness Lab crashed:', error, info.componentStack)
   }
 
   private save = (raw: string, filename: string) => {

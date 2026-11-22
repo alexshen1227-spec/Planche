@@ -1,7 +1,7 @@
 {
-  "name": "Calisthenics Lab",
-  "short_name": "Cali Lab",
-  "description": "Structured roads to the planche, front lever, handstand push-up, 90° hold and human flag — on your device, with a camera form check.",
+  "name": "Fitness Lab",
+  "short_name": "Fitness Lab",
+  "description": "Gym training and calisthenics skills planned together — the planche, front lever, handstand push-up, 90° hold and human flag beside your lifts, on your device, with a camera form check.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

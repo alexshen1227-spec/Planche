@@ -1,0 +1,314 @@
+import { useMemo, useState } from 'react'
+import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import { useStore } from '../../lib/store'
+import { buildGymSession, FOCUS_LABEL, nextFocus, type GymFocus } from '../../lib/gym/builder'
+import { activeLocation, conservative, loadDraft, type GymDraft } from '../../lib/gym/draft'
+import { gymRecords } from '../../lib/gym/progression'
+import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
+import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
+import { Modal } from '../ui'
+import { GymPlayer } from './GymPlayer'
+import { LocationEditor } from './LocationEditor'
+
+const MINUTES = [20, 30, 45, 60, 75, 90]
+const FOCI: (GymFocus | 'auto')[] = ['auto', 'full', 'upper', 'lower', 'push', 'pull']
+
+function dayLabel(at: number): string {
+  return new Date(at).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+export function GymHub() {
+  const { state, dispatch } = useStore()
+  const gym = state.gym
+  const youth = conservative(state.profile)
+  const [minutes, setMinutes] = useState(45)
+  const [focus, setFocus] = useState<GymFocus | 'auto'>('auto')
+  const [editing, setEditing] = useState<string | 'new' | null>(null)
+  const [running, setRunning] = useState<GymDraft | null>(null)
+  const [resumable, setResumable] = useState<GymDraft | null>(() => loadDraft())
+  const location = activeLocation(gym)
+
+  const plan = useMemo(
+    () =>
+      gym && location
+        ? buildGymSession({
+            location,
+            minutes,
+            ...(focus === 'auto' ? {} : { focus }),
+            sessions: gym.sessions,
+            ratings: gym.ratings,
+            youth,
+          })
+        : null,
+    [gym, location, minutes, focus, youth],
+  )
+  const records = useMemo(() => (gym ? gymRecords(gym.sessions) : {}), [gym])
+
+  if (!gym || !location) {
+    return (
+      <section className="rounded-3xl border border-line bg-surface p-5">
+        <h2 className="text-[19px] font-semibold">Gym training</h2>
+        <p className="mt-2 text-[14px] leading-relaxed text-ink2">
+          Log weights, reps and effort next to your skill work, and get sessions built from what each place actually
+          has. Start with where you train — your calisthenics kit is already listed for Home.
+        </p>
+        <button
+          onClick={() => {
+            dispatch({ type: 'GYM', op: { op: 'init', gym: defaultGym(state.profile.equipment) } })
+            setEditing('home')
+          }}
+          className="mt-4 min-h-12 w-full rounded-xl bg-accent text-[15px] font-semibold text-on-accent"
+        >
+          Set up my places
+        </button>
+      </section>
+    )
+  }
+
+  const start = (empty: boolean) => {
+    const id = newGymSessionId()
+    const items =
+      empty || !plan
+        ? []
+        : plan.items.map((it) => {
+            const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
+            const unit = unitFor(ex, location)
+            const load = it.suggestion.kg !== undefined ? displayLoad(it.suggestion.kg, unit) : undefined
+            return {
+              exerciseId: it.exerciseId,
+              plan: it.plan,
+              suggestion: it.suggestion,
+              restSec: it.restSec,
+              unit,
+              sets: Array.from({ length: it.sets }, () => ({
+                ...(load !== undefined ? { load } : {}),
+                reps: it.plan.range[1],
+                done: false,
+              })),
+            }
+          })
+    setRunning({ id, startedAt: Date.now(), locationId: location.id, name: empty ? 'Gym session' : plan!.name, items })
+  }
+
+  const editingLocation =
+    editing === 'new' ? newLocation('New gym', location.unit) : gym.locations.find((l) => l.id === editing) ?? null
+  const recent = [...gym.sessions].reverse().slice(0, 5)
+  const topRecords = Object.values(records)
+    .filter((r) => r.bestE1rm)
+    .sort((a, b) => b.bestE1rm!.kg - a.bestE1rm!.kg)
+    .slice(0, 6)
+  const autoFocus = nextFocus(gym.sessions)
+
+  return (
+    <div className="space-y-5">
+      {resumable && !running ? (
+        <section className="rounded-3xl border border-accent bg-accent-soft p-4">
+          <p className="text-[15px] font-semibold">A gym session is still open</p>
+          <p className="mt-1 text-[13px] text-ink2">
+            {resumable.name}, started {dayLabel(resumable.startedAt)} — nothing logged in it was lost.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={() => {
+                setRunning(resumable)
+                setResumable(null)
+              }}
+              className="min-h-11 flex-1 rounded-xl bg-accent text-[14px] font-semibold text-on-accent"
+            >
+              Resume
+            </button>
+            <button
+              onClick={() => {
+                setResumable(null)
+                try {
+                  localStorage.removeItem('planchelab.gymDraft')
+                } catch {
+                  // Nothing to clear.
+                }
+              }}
+              className="min-h-11 rounded-xl border border-line px-4 text-[14px] font-medium"
+            >
+              Discard
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      <section>
+        <div className="flex items-center justify-between">
+          <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink3">Where are you training?</h2>
+          <button onClick={() => setEditing(location.id)} className="min-h-10 px-2 text-[13px] font-medium text-accent-text">
+            Edit {location.name}
+          </button>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {gym.locations.map((l) => (
+            <button
+              key={l.id}
+              onClick={() => dispatch({ type: 'GYM', op: { op: 'setActiveLocation', id: l.id } })}
+              aria-pressed={l.id === location.id}
+              className={`min-h-11 rounded-full border px-4 text-[14px] font-medium transition active:scale-95 ${
+                l.id === location.id ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-surface text-ink2'
+              }`}
+            >
+              {l.name}
+            </button>
+          ))}
+          <button onClick={() => setEditing('new')} className="min-h-11 rounded-full border border-dashed border-line-strong px-4 text-[14px] font-medium text-ink2">
+            Add a place
+          </button>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-line bg-surface p-4">
+        <h2 className="text-[17px] font-semibold">Today’s gym session</h2>
+        <p className="mt-0.5 text-[13px] text-ink3">Built from what {location.name} has, your likes and your last sessions.</p>
+        <p className="mt-3 text-[12px] font-medium text-ink3">Time</p>
+        <div className="mt-1 flex flex-wrap gap-2">
+          {MINUTES.map((m) => (
+            <button
+              key={m}
+              onClick={() => setMinutes(m)}
+              aria-pressed={minutes === m}
+              className={`min-h-10 rounded-full border px-3.5 text-[13px] font-medium ${minutes === m ? 'border-transparent bg-accent text-on-accent' : 'border-line text-ink2'}`}
+            >
+              {m} min
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 text-[12px] font-medium text-ink3">Focus</p>
+        <div className="mt-1 flex flex-wrap gap-2">
+          {FOCI.map((f) => (
+            <button
+              key={f}
+              onClick={() => setFocus(f)}
+              aria-pressed={focus === f}
+              className={`min-h-10 rounded-full border px-3.5 text-[13px] font-medium ${focus === f ? 'border-transparent bg-accent text-on-accent' : 'border-line text-ink2'}`}
+            >
+              {f === 'auto' ? `Auto (${FOCUS_LABEL[autoFocus]})` : FOCUS_LABEL[f]}
+            </button>
+          ))}
+        </div>
+        {plan && plan.items.length ? (
+          <ol className="mt-4 divide-y divide-line">
+            {plan.items.map((it) => {
+              const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
+              return (
+                <li key={it.exerciseId} className="flex items-baseline justify-between gap-3 py-2.5">
+                  <span className="min-w-0">
+                    <span className="block text-[15px] font-medium">{ex.name}</span>
+                    <span className="block text-[12px] text-ink3">{it.suggestion.why}</span>
+                  </span>
+                  <span className="shrink-0 text-right text-[13px] tabular-nums text-ink2">
+                    {it.sets} × {it.plan.range[0]}–{it.plan.range[1]}
+                    <br />
+                    {it.suggestion.kg !== undefined ? formatLoad(it.suggestion.kg, unitFor(ex, location)) : ex.load === 'bodyweight' ? 'Bodyweight' : 'Pick a weight'}
+                  </span>
+                </li>
+              )
+            })}
+          </ol>
+        ) : (
+          <p className="mt-4 rounded-xl bg-raised p-3 text-[13px] text-ink2">
+            Nothing to program for this focus with what {location.name} has. Add equipment, pick another focus, or start an
+            empty session.
+          </p>
+        )}
+        {plan?.dropped.length ? (
+          <p className="mt-2 text-[12px] text-ink3">Left out to fit {minutes} minutes: {plan.dropped.join(', ')}.</p>
+        ) : null}
+        {plan && plan.items.length ? <p className="mt-1 text-[12px] text-ink3">About {plan.estimatedMin} minutes with warm-up and rests.</p> : null}
+        <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
+          <button
+            disabled={!plan?.items.length}
+            onClick={() => start(false)}
+            className="min-h-12 rounded-xl bg-accent text-[15px] font-semibold text-on-accent transition active:scale-[0.98] disabled:opacity-40"
+          >
+            Start session
+          </button>
+          <button onClick={() => start(true)} className="min-h-12 rounded-xl border border-line px-4 text-[14px] font-medium">
+            Empty
+          </button>
+        </div>
+        {youth ? (
+          <p className="mt-3 text-[12px] leading-relaxed text-ink3">
+            Careful mode (under 18, or no age set): rep ranges stay at 6 or more, loads go up one step at a time, and lifts
+            that need coaching are not picked unless you mark them a favourite.
+          </p>
+        ) : null}
+      </section>
+
+      <section>
+        <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink3">Recent</h2>
+        {recent.length ? (
+          <ul className="mt-2 space-y-2">
+            {recent.map((s) => {
+              const sets = s.exercises.reduce((n, e) => n + e.sets.filter((x) => !x.warmup).length, 0)
+              const place = gym.locations.find((l) => l.id === s.locationId)?.name ?? 'A deleted place'
+              return (
+                <li key={s.id} className="rounded-2xl border border-line bg-surface px-4 py-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[15px] font-semibold">{s.name}</span>
+                    <span className="text-[12px] text-ink3">{dayLabel(s.startedAt)}</span>
+                  </div>
+                  <p className="mt-0.5 text-[13px] text-ink2">
+                    {place} · {s.exercises.length} {s.exercises.length === 1 ? 'exercise' : 'exercises'} · {sets} {sets === 1 ? 'set' : 'sets'}
+                    {s.completion === 'partial' ? ' · ended early' : ''}
+                  </p>
+                </li>
+              )
+            })}
+          </ul>
+        ) : (
+          <p className="mt-2 rounded-2xl border border-dashed border-line p-4 text-[13px] text-ink3">
+            No gym sessions yet. Your first one sets the starting weights for the next.
+          </p>
+        )}
+      </section>
+
+      {topRecords.length ? (
+        <section>
+          <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink3">Estimated maxes</h2>
+          <p className="mt-1 text-[12px] text-ink3">From your best set of 12 reps or fewer, adjusted for effort — an estimate, never a test.</p>
+          <ul className="mt-2 grid grid-cols-2 gap-2">
+            {topRecords.map((r) => {
+              const ex = GYM_EXERCISE_BY_ID[r.exerciseId]
+              return (
+                <li key={r.exerciseId} className="rounded-2xl border border-line bg-surface p-3">
+                  <p className="truncate text-[12px] text-ink3">{ex?.name}</p>
+                  <p className="text-[19px] font-semibold tabular-nums">{formatLoad(r.bestE1rm!.kg, ex ? unitFor(ex, location) : location.unit)}</p>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      ) : null}
+
+      <Modal open={editingLocation !== null} onClose={() => setEditing(null)} label={editing === 'new' ? 'Add a place' : 'Edit place'} wide>
+        {editingLocation ? (
+          <LocationEditor
+            location={editingLocation}
+            canDelete={editing !== 'new' && gym.locations.length > 1}
+            onSave={(l) => {
+              dispatch({ type: 'GYM', op: { op: 'saveLocation', location: l } })
+              dispatch({ type: 'GYM', op: { op: 'setActiveLocation', id: l.id } })
+              setEditing(null)
+            }}
+            onDelete={() => {
+              dispatch({ type: 'GYM', op: { op: 'deleteLocation', id: editingLocation.id } })
+              setEditing(null)
+            }}
+          />
+        ) : null}
+      </Modal>
+
+      {running ? (
+        <GymPlayer
+          draft={running}
+          location={gym.locations.find((l) => l.id === running.locationId) ?? location}
+          onClose={() => setRunning(null)}
+        />
+      ) : null}
+    </div>
+  )
+}

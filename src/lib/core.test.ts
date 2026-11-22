@@ -2268,7 +2268,7 @@ describe('coach learning', () => {
 
 describe('backup validation and normalization', () => {
   it('rejects unrelated valid JSON before destructive import work', () => {
-    expect(() => validateImport({})).toThrow(/Calisthenics Lab backup/)
+    expect(() => validateImport({})).toThrow(/Fitness Lab backup/)
   })
 
   it('carries the new session settings through a normalize round-trip', () => {

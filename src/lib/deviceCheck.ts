@@ -82,7 +82,7 @@ export function deviceCheckAdvice(r: DeviceCheckResult): string[] {
 export function summarizeDeviceCheck(r: DeviceCheckResult, userAgent: string): string {
   const yes = (v: boolean | undefined) => (v === undefined ? 'not checked' : v ? 'yes' : 'no')
   return [
-    `Calisthenics Lab phone check — ${new Date(r.at).toISOString()}`,
+    `Fitness Lab phone check — ${new Date(r.at).toISOString()}`,
     `Chime heard: ${yes(r.sound)}`,
     `Voice heard: ${yes(r.voice)}`,
     `Camera: ${r.camera ?? 'not checked'}${r.camera === 'live' ? ` (can record: ${yes(r.recorder)})` : ''}`,

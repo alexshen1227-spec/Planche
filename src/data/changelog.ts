@@ -19,6 +19,24 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-21',
+    title: 'Fitness Lab: the gym joins your skills',
+    area: 'training',
+    major: {
+      version: '3.0',
+      blurb: 'Calisthenics Lab is now Fitness Lab — gym training and skill work in one app. Everything you had is still here.',
+    },
+    notes: [
+      'Train now has two sides, Skills and Gym. The skill side is the coach’s session exactly as before.',
+      'Places: set up Home, Gym A, Gym B and so on, each with its own equipment — your calisthenics kit is already listed for Home. Weights can be kg or lb per place, and dumbbells can have their own unit and heaviest pair.',
+      'Today’s gym session is built from what the place you are at actually has, fitted to the minutes you pick (accessories go first when time is short, and it tells you what it left out).',
+      'Fast logging: weight and reps steppers, one tap to finish a set, a one-tap effort rating (RPE 6–10), and a rest timer that buzzes when it is done. A weight you enter carries to the sets after it. A session in progress survives closing the app.',
+      'Loads move by double progression: once at least two sets reach the top of the rep range at the target effort, the next session adds the smallest step that equipment allows. The first time on a machine it asks you to pick a weight rather than guessing one — machines differ from gym to gym — while free-weight lifts carry an estimate over from another place.',
+      'Swap anything (“this machine is taken”) for the same movement or the same muscles, rate exercises Love / Fine / Avoid, mark one hard to do at a place, or name a place as your favourite for it. Avoided exercises are never picked.',
+      'Careful mode for anyone under 18 (or with no age set): rep ranges stay at 6 or more, loads go up one step at a time, and lifts that need coaching are not picked unless you mark them a favourite. Estimated maxes come from your sets — there is no max testing.',
+    ],
+  },
+  {
+    date: '2026-11-21',
     title: 'The camera reads your lockout, your hold, and a sideways phone right',
     area: 'camera',
     notes: [

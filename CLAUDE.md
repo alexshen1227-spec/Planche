@@ -1,9 +1,12 @@
-# Calisthenics Lab — working notes for agents and developers
+# Fitness Lab — working notes for agents and developers
 
-Local-first calisthenics-skills PWA (the planche, front lever, handstand and
-handstand push-up, 90° hold and human flag). It was Planche Lab until 2026-11:
-the name lives in `src/data/app.ts`, while storage keys keep their
-`planchelab.` prefix and `window.__planche` its name, so nothing saved moved.
+Local-first PWA for gym training and calisthenics skills planned together
+(the planche, front lever, handstand and handstand push-up, 90° hold and
+human flag, beside gym lifts). It was Planche Lab, then Calisthenics Lab, and
+became Fitness Lab on 2026-11-21: the name lives in `src/data/app.ts`, while
+storage keys keep their `planchelab.` prefix and `window.__planche` its name,
+so nothing saved moved. **The Fitness Lab build plan and status board is
+`docs/fitness-lab-plan.md` — read it first when continuing that work.**
 Vite + React 19 + TypeScript + Tailwind v4.
 No backend, no router, no state library: one reducer over localStorage, with an
 IndexedDB mirror for crash safety. Nothing a user does ever leaves their device.
@@ -823,6 +826,30 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
 - `lib/shareCard.ts`: card data and copy are pure and tested; drawing reuses
   the figure geometry via `Path2D`. Only numbers the app already shows, each
   able to be absent (no verified hold → "—"). Made and shared on the device.
+
+## The gym side (Fitness Lab, state v9)
+
+- **Gym history lives beside the skill history, never inside it**
+  (`AppState.gym`, `lib/gym/`). The skill coach, records, achievements and
+  every eval replay `state.sessions` exactly as before; nothing on the gym
+  side may write into it. `sanitizeGym` / `mergeGym` / `reduceGym`
+  (`lib/gym/state.ts`) are wired into `normalizeStateWithReport`,
+  `mergeExternalState` and the `GYM` action, with tombstones like sessions.
+- **Loads are stored in kg**, with the unit they were typed in kept for
+  display (`lib/gym/units.ts`). Steps come from the equipment in its own
+  unit (`data/gym/catalog.ts`), overridable per location (`gear`).
+- **Exercises are data** (`data/gym/exercises.ts`): pattern, primary (1 set)
+  and secondary (half a set) muscles, equipment needs as any-of groups, joint
+  stress, `technical`, `carries` (skills it builds toward — CONSENSUS).
+- **Double progression** (`lib/gym/progression.ts`, CONSENSUS): a step up
+  needs at least two working sets at the top of the range at the target
+  effort; a first machine load is never guessed (machines differ between
+  gyms) while free-weight estimates carry across locations; under 18 (or age
+  unknown, `conservative`) ranges never go under 6 reps and jumps are one
+  step. e1RM refuses past 12 total reps and for unloaded sets.
+- `lib/gym/builder.ts` is the pre-planner session builder (slots by focus,
+  fitted to minutes, last slots dropped first). Phase 3 of the plan replaces
+  its focus choice with the shared skills + gym planner.
 
 ## Conventions
 

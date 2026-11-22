@@ -1,3 +1,4 @@
+import { mergeGym, reduceGym, sanitizeGym, type GymOp } from './gym/state'
 import {
   createContext,
   useCallback,
@@ -911,6 +912,7 @@ export function normalizeStateWithReport(
   const sessions = sanitizeSessions(r.sessions, report, new Set(tombstones), now)
   const legacyEpoch = `legacy-${typeof r.startedAt === 'number' ? Math.round(r.startedAt) : 0}`
 
+  const gym = sanitizeGym(r.gym)
   const state: AppState = {
     version: CURRENT_STATE_VERSION,
     onboarded: Boolean(r.onboarded),
@@ -1007,6 +1009,7 @@ export function normalizeStateWithReport(
     symptoms: sanitizeSymptoms(r.symptoms),
     setups: sanitizeSetups(r.setups),
     ...(tracks ? { tracks } : {}),
+    ...(gym ? { gym } : {}),
   }
   return { state, report }
 }
@@ -1087,7 +1090,7 @@ function loadState(): LoadResult {
     // exact original bytes whenever normalizing dropped or repaired anything.
     if (reportHasLosses(report)) {
       quarantine(raw, 'Some saved records needed repair when this version loaded them.')
-      console.warn('Calisthenics Lab: saved data needed repair; the original was kept aside.', report)
+      console.warn('Fitness Lab: saved data needed repair; the original was kept aside.', report)
     }
     return { state: next, empty: false }
   } catch (err) {
@@ -1284,6 +1287,8 @@ export type Action =
   /** A clip that finished saving after its session did. Evidence-neutral: no replay needed. */
   | { type: 'ATTACH_SET_CLIP'; sessionId: string; setAt: number; clipKey: string }
   | { type: 'SET_SETUP'; exerciseId: string; setup: Omit<ExerciseSetup, 'updatedAt'> | null }
+  /** Everything on the gym side (state v9): sessions, locations, preferences. */
+  | { type: 'GYM'; op: GymOp }
   | { type: 'MERGE_EXTERNAL'; incoming: AppState }
   /** Wholesale replacement: a mirror restore, sample data, or an unguarded legacy caller. */
   | { type: 'REPLACE'; state: AppState; reason?: 'restore' | 'sample' }
@@ -1480,9 +1485,12 @@ export function mergeExternalState(local: AppState, incoming: AppState): AppStat
       ? incoming.assessment
       : local.assessment
   const tombstonesChanged = tombstones.length !== (local.deletedSessionIds ?? []).length
+  const gym = mergeGym(local.gym, incoming.gym)
+  const gymChanged = gym !== local.gym
 
   if (
     !sessionsChanged &&
+    !gymChanged &&
     !fieldsChanged &&
     !tombstonesChanged &&
     newSymptoms.length === 0 &&
@@ -1510,6 +1518,7 @@ export function mergeExternalState(local: AppState, incoming: AppState): AppStat
     measureSnoozedAt,
     ...(assessment ? { assessment } : {}),
     ...(tracks ? { tracks } : {}),
+    ...(gym ? { gym } : {}),
   }
   return sessionsChanged || tracksChanged || stepFields.stepId !== local.stepId
     ? rebuildDerivedState(merged, [...byId.values()].sort((a, b) => a.startedAt - b.startedAt))
@@ -1729,6 +1738,10 @@ function reduceAction(state: AppState, action: Action): AppState {
       if (action.setup) setups[action.exerciseId] = { ...action.setup, updatedAt: Date.now() }
       else delete setups[action.exerciseId]
       return { ...state, setups }
+    }
+    case 'GYM': {
+      const gym = reduceGym(state.gym, action.op)
+      return gym === state.gym ? state : { ...state, gym }
     }
     case 'MERGE_EXTERNAL':
       return mergeExternalState(state, action.incoming)

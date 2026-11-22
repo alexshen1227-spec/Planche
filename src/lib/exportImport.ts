@@ -42,7 +42,7 @@ export function readImportFile(file: File): Promise<unknown> {
 
 /** Reject unrelated JSON before any existing history or clips are touched. */
 export function validateImport(raw: unknown): asserts raw is AppState {
-  if (typeof raw !== 'object' || raw === null) throw new Error('That JSON is not a Calisthenics Lab backup.')
+  if (typeof raw !== 'object' || raw === null) throw new Error('That JSON is not a Fitness Lab backup.')
   const candidate = raw as Partial<AppState>
   if (
     !Number.isInteger(Number(candidate.version)) ||
@@ -54,6 +54,6 @@ export function validateImport(raw: unknown): asserts raw is AppState {
     candidate.settings === null ||
     typeof candidate.stepId !== 'string'
   ) {
-    throw new Error('That JSON is not a complete Calisthenics Lab backup.')
+    throw new Error('That JSON is not a complete Fitness Lab backup.')
   }
 }
