@@ -5,7 +5,7 @@ import { pushToast } from '../../lib/toast'
 import { buildGymSession, FOCUS_LABEL, nextFocus, type GymFocus, type PlannedExercise } from '../../lib/gym/builder'
 import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
-import { activeLocation, conservative, loadDraft, prefillReps, type GymDraft } from '../../lib/gym/draft'
+import { activeLocation, conservative, loadDraft, prefillReps, previousSets, type GymDraft } from '../../lib/gym/draft'
 import { gymRecords, lastPerformance } from '../../lib/gym/progression'
 import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
 import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
@@ -92,6 +92,10 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
       suggestion: it.suggestion,
       restSec: it.restSec,
       unit,
+      ...(() => {
+        const previous = previousSets(gym.sessions, it.exerciseId, location.id, unit)
+        return previous ? { previous } : {}
+      })(),
       sets: Array.from({ length: it.sets }, (_, i) => ({
         ...(load !== undefined ? { load } : {}),
         reps: prefillReps(it.plan, it.suggestion, lastPerformance(gym.sessions, it.exerciseId, location.id)?.sets[i]?.reps),

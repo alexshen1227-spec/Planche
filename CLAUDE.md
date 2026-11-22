@@ -863,6 +863,33 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
   adds a reason line; `skillGoalPace` returns `unknown` rather than a guess.
   Prefs and activities live in `state.gym` (`setPrefs`, `logActivity`).
 
+- **Rules the review pinned (2026-11-22, gym.test / plan.test):** pain
+  memory is the union of every non-good report in the last 72 h, never only
+  the latest (knee is a `BodyRegion`); a load step needs logged effort on
+  at least two top-of-range sets; any switched-off *primary* muscle keeps a
+  movement out; under 18 by birth year means `year - birthYear <= 18`, and
+  power/explosive ranges are 6–8 then; a week under 70% of the usual volume
+  ends a hard run; a stall needs an estimate in both weeks; `mergeGym` must
+  return `local` itself when nothing changed (order-insensitive compare), or
+  two tabs ping-pong; a new gym start never overwrites an open draft.
+- Season and events: `prefs.season === 'in'` caps the gym at 0.7 of the
+  sets; a leg-heavy activity logged for the next 36 h keeps legs out and the
+  day at 0.8. Today's own sessions never trigger today's rest rule.
+
+## The design system (Phase 5)
+
+- Tokens in `src/index.css`: `text-caption/footnote/body/title3/title2/
+  title1/display/hero`, `rounded-control/inner/card/sheet`, `--space-*`,
+  `--dur*`, `--ease-out`, `--ease-spring` (a `linear()` spring). Primary
+  buttons are one solid accent; no decorative gradients. Everything that
+  moves is off under `prefers-reduced-motion`.
+- Components in `src/components/ds/` (Button, Card, Sheet, SegmentedControl,
+  ToggleChip, Stepper, Metric, CountUp, RingTimer, SwipeRow, EmptyState,
+  ErrorState, Skeleton, BadgeGlyph). New UI uses them; `Sheet` shares
+  Modal's focus trap through `useDialogFocus` and stays portalled.
+- Icons are SVG only (`Icon.tsx`); achievements and Learn guides carry
+  `IconName`, never emoji. Swipe is never the only way to do something.
+
 ## Conventions
 
 - User-facing changes get an entry in `src/data/changelog.ts`, written in the

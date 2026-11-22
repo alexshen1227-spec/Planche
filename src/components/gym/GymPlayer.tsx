@@ -7,7 +7,7 @@ import { pushToast } from '../../lib/toast'
 import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
 import { alternativesFor, availableAt } from '../../lib/gym/availability'
 import { restFor } from '../../lib/gym/builder'
-import { conservative, prefillReps, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
+import { conservative, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
 import { gymRecords, lastPerformance, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GymLocation, Rating } from '../../lib/gym/types'
 import { displayLoad, formatLoad, stepKgFor, unitFor } from '../../lib/gym/units'
@@ -49,6 +49,10 @@ export function draftItemFor(
     suggestion,
     restSec: restFor(exercise, plan),
     unit,
+    ...(() => {
+      const previous = previousSets(sessions, exercise.id, location.id, unit)
+      return previous ? { previous } : {}
+    })(),
     sets: Array.from({ length: sets }, (_, i) => ({
       ...(load !== undefined ? { load } : {}),
       reps: prefillReps(plan, suggestion, last?.sets[i]?.reps),
@@ -269,6 +273,26 @@ export function GymPlayer({
                         className={`flex flex-wrap items-center gap-x-2 gap-y-1 rounded-inner px-2 py-1.5 ${s.done ? 'bg-ok-soft' : 'bg-raised'}`}
                       >
                         <span className="w-6 text-center text-footnote font-semibold text-ink3">{s.warmup ? 'W' : j + 1}</span>
+                        {item.previous?.[j] && !s.done ? (
+                          <button
+                            onClick={() =>
+                              update((d) => {
+                                const prev = d.items[i].previous?.[j]
+                                if (!prev) return d
+                                const set = d.items[i].sets[j]
+                                if (prev.load !== undefined) set.load = prev.load
+                                set.reps = prev.reps
+                                return d
+                              })
+                            }
+                            className="order-last basis-full text-left text-caption text-ink3 hover:text-ink2"
+                            aria-label={`Previous: ${item.previous[j].load !== undefined ? `${item.previous[j].load} ${item.unit} × ` : ''}${item.previous[j].reps} reps — tap to use`}
+                          >
+                            Previous: {item.previous[j].load !== undefined ? `${item.previous[j].load} ${item.unit} × ` : ''}
+                            {item.previous[j].reps}
+                            {item.previous[j].rpe !== undefined ? ` @${item.previous[j].rpe}` : ''} · tap to use
+                          </button>
+                        ) : null}
                         {ex.load !== 'bodyweight' || s.load !== undefined ? (
                           <Stepper
                             value={s.load ?? 0}

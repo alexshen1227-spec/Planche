@@ -270,3 +270,15 @@ describe('found by the review of the gym code', () => {
     expect(conservative({ equipment: [], birthYear: year - 19 }, T0)).toBe(false)
   })
 })
+
+describe('previous values on each set', () => {
+  it('shows last session’s sets at this place in the display unit, and nothing the first time', async () => {
+    const { previousSets } = await import('./draft')
+    const hist = [session('s1', 'a', T0, 'db-bench-press', [set(toKg(50, 'lb'), 10, 8), set(toKg(50, 'lb'), 9)])]
+    expect(previousSets(hist, 'db-bench-press', 'a', 'lb')).toEqual([
+      { load: 50, reps: 10, rpe: 8 },
+      { load: 50, reps: 9 },
+    ])
+    expect(previousSets(hist, 'db-bench-press', 'home', 'lb')).toBeUndefined()
+  })
+})

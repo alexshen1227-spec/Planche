@@ -1,9 +1,9 @@
 import type { GymPlan } from './builder'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { Joint, Muscle } from '../../data/gym/catalog'
-import type { LoadSuggestion, RepPlan } from './progression'
+import { lastPerformance, type LoadSuggestion, type RepPlan } from './progression'
 import type { GymSession, GymState } from './types'
-import { toKg } from './units'
+import { displayLoad, toKg } from './units'
 import type { Unit } from '../../data/gym/catalog'
 import type { Profile } from '../../types'
 
@@ -26,6 +26,28 @@ export interface DraftItem {
   unit: Unit
   sets: DraftSet[]
   swappedFrom?: string
+  /**
+   * Last session's working sets of this movement at this place, in the display
+   * unit — shown beside each set ("Previous", as Strong and Hevy do) and one
+   * tap away from being copied in. Absent the first time.
+   */
+  previous?: { load?: number; reps: number; rpe?: number }[]
+}
+
+/** Last time's sets, ready to show: loads in the display unit. */
+export function previousSets(
+  sessions: GymSession[],
+  exerciseId: string,
+  locationId: string,
+  unit: Unit,
+): DraftItem['previous'] {
+  const last = lastPerformance(sessions, exerciseId, locationId)
+  if (!last) return undefined
+  return last.sets.map((s) => ({
+    ...(s.kg !== undefined && s.kg > 0 ? { load: displayLoad(s.kg, unit) } : {}),
+    reps: s.reps,
+    ...(s.rpe !== undefined ? { rpe: s.rpe } : {}),
+  }))
 }
 
 export interface GymDraft {
