@@ -1,3 +1,4 @@
+import { SetEffort } from '../components/SetEffort'
 import { Button } from '../components/ds'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { setToSetCeiling } from '../lib/workingTarget'
@@ -2509,6 +2510,21 @@ export function SessionPlayer({
             ? formRowFor(lastLog, true)
             : null}
           {lastLog?.kind === 'reps' ? repRowFor(lastLog, true) : null}
+          {lastLog && (lastLog.section === 'main' || lastLog.section === 'strength') ? (
+            <SetEffort
+              value={lastLog.rpe}
+              onChange={(rpe) =>
+                setLogs((current) =>
+                  current.map((log) => {
+                    if (log.at !== lastLog.at) return log
+                    const { rpe: _old, ...rest } = log
+                    void _old
+                    return rpe === undefined ? rest : { ...rest, rpe }
+                  }),
+                )
+              }
+            />
+          ) : null}
 
           <div className="mt-5 text-body text-ink2">
             Next: <span className="font-medium text-ink">{nx.name}</span>

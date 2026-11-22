@@ -627,6 +627,12 @@ export interface SetLog {
    */
   calledAtTarget?: boolean
   /**
+   * How hard the set felt, 6–10 (Fitness Lab): one optional tap on the rest
+   * screen. It feeds the shared fatigue count beside the gym; the skill
+   * coach's targets do not read it. Absent means not asked or skipped.
+   */
+  rpe?: number
+  /**
    * Logged from an easy day's lighter accessory dose. Real work, so it counts
    * as volume — but a target chosen to be easy says nothing about capacity, so
    * it never moves accessory progression either way.

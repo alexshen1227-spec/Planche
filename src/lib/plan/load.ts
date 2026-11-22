@@ -142,10 +142,11 @@ export function fatigueAt(state: Pick<AppState, 'sessions' | 'gym'>, now: number
   }
   for (const s of state.sessions) {
     if (s.startedAt < horizon || s.startedAt > now) continue
-    const w = decay((now - s.startedAt) / 3_600_000) * effort(s.rpe)
+    const age = decay((now - s.startedAt) / 3_600_000)
     for (const set of s.sets) {
       const l = skillSetLoading(set.exerciseId, set.section)
       if (!l) continue
+      const w = age * effort(set.rpe ?? s.rpe)
       add(out.muscles, l.muscles, w)
       addJoints(l.joints, w)
       out.system += 0.3 * w

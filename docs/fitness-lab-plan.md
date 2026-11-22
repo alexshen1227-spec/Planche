@@ -89,6 +89,7 @@ Diagnosis (2026-11-21, read from `src/lib/poseForm.ts`):
       low-priority accessories first when short; "I have X minutes" quick start.
 - [x] Outside load: log sprinting / practice / games / PE with intensity; it
       counts toward leg and nervous-system fatigue, and can stand in for leg day.
+- [x] RPE after each set: gym sets (drives double progression) and, optionally, skill sets (`SetLog.rpe`, fatigue only — the skill coach's targets deliberately do not read it).
 - [x] RPE-based load adjustment and automatic deloads (RPE drift, performance
       drop, 4–6 hard weeks) — labelled as convention.
 

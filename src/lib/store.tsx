@@ -575,6 +575,9 @@ function sanitizeSet(rawSet: unknown, sessionStart: number, report: NormalizeRep
       : {}),
     ...(x.light === true ? { light: true } : {}),
     ...(x.calledAtTarget === true ? { calledAtTarget: true } : {}),
+    ...(typeof x.rpe === 'number' && Number.isFinite(x.rpe) && x.rpe >= 1 && x.rpe <= 10
+      ? { rpe: Math.round(x.rpe * 2) / 2 }
+      : {}),
     ...(allRepairs.length ? { repaired: allRepairs } : {}),
   }
 }

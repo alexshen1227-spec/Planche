@@ -281,3 +281,19 @@ describe('found by the review of the planner', () => {
     expect(gymDeloadDue({ ...base, gym: { ...base.gym!, sessions: weeks } }, NOW).due).toBe(false)
   })
 })
+
+describe('effort on skill sets', () => {
+  it('keeps a skill set’s effort through a reload, drops a nonsense one, and lets it weigh on fatigue', async () => {
+    const { normalizeState } = await import('../store')
+    const { fatigueAt } = await import('./load')
+    const s = skillSession(NOW - HOUR, 'tuck-planche', 2)
+    const hard = { ...s, sets: s.sets.map((x) => (x.section === 'main' ? { ...x, rpe: 10 } : x)) }
+    const easy = { ...s, sets: s.sets.map((x) => (x.section === 'main' ? { ...x, rpe: 6 } : x)) }
+    const loaded = normalizeState(JSON.parse(JSON.stringify({ ...athlete(['planche']), sessions: [hard, { ...easy, id: 'junk', sets: easy.sets.map((x) => ({ ...x, rpe: 42 })) }] })))
+    expect(loaded.sessions.find((x) => x.id === hard.id)!.sets.find((x) => x.section === 'main')!.rpe).toBe(10)
+    expect(loaded.sessions.find((x) => x.id === 'junk')!.sets.some((x) => x.rpe !== undefined)).toBe(false)
+    const fHard = fatigueAt({ sessions: [hard], gym: undefined }, NOW)
+    const fEasy = fatigueAt({ sessions: [easy], gym: undefined }, NOW)
+    expect(fHard.muscles['front-delts']!).toBeGreaterThan(fEasy.muscles['front-delts']!)
+  })
+})
