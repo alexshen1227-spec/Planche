@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { MUSCLE_GROUPS, MUSCLES, type Muscle } from '../../data/gym/catalog'
 import { ALL_STEPS } from '../../data/progressions'
 import { defaultPrefs } from '../../lib/gym/state'
-import type { GoalWeights, SkillGoal, TrainingPrefs } from '../../lib/gym/types'
+import type { ActivityKind, GoalWeights, SkillGoal, SportSlot, TrainingPrefs } from '../../lib/gym/types'
 import { skillGoalPace } from '../../lib/plan/planner'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
@@ -17,6 +17,108 @@ const GOALS: { id: keyof GoalWeights; label: string; hint: string }[] = [
   { id: 'endurance', label: 'Endurance', hint: 'Higher reps, shorter rests' },
 ]
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const FULL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const SPORT_KINDS: { id: ActivityKind; label: string; legs: boolean }[] = [
+  { id: 'sprint', label: 'Sprinting', legs: true },
+  { id: 'practice', label: 'Practice', legs: true },
+  { id: 'game', label: 'Game', legs: true },
+  { id: 'pe', label: 'PE', legs: true },
+  { id: 'run', label: 'Run', legs: true },
+  { id: 'other', label: 'Other', legs: false },
+]
+/** Easy / medium / hard, stored as the 1–10 effort a logged activity uses. */
+const INTENSITY = [
+  { value: '4', label: 'Easy' },
+  { value: '6', label: 'Medium' },
+  { value: '8', label: 'Hard' },
+]
+const SPORT_MINUTES = [30, 45, 60, 75, 90, 120, 150, 180]
+
+/** The regular sport week, entered once: the planner reads each slot like a logged activity. */
+export function SportWeekEditor({ prefs, setPrefs }: Edit) {
+  const slots = prefs.sportSchedule ?? []
+  const put = (weekday: number, slot: SportSlot | null) =>
+    setPrefs((p) => {
+      const rest = (p.sportSchedule ?? []).filter((x) => x.weekday !== weekday)
+      const next = slot ? [...rest, slot].sort((a, b) => a.weekday - b.weekday) : rest
+      const { sportSchedule: _old, ...others } = p
+      void _old
+      return next.length ? { ...others, sportSchedule: next } : others
+    })
+  const intensity = (rpe: number) => (rpe >= 7 ? '8' : rpe >= 5 ? '6' : '4')
+  return (
+    <section>
+      <h3 className="font-display text-title3 font-semibold">Your sport week</h3>
+      <p className="mt-1 text-caption text-ink3">
+        Your regular sessions, entered once. Each one is counted as done (a log on the same day replaces it), legs stay
+        out of the gym on the day of a hard one and the day after, and stay fresh the day before. Rules of thumb from
+        coaching practice, not measured limits.
+      </p>
+      <ul className="mt-2 space-y-2">
+        {FULL_DAYS.map((name, d) => {
+          const slot = slots.find((x) => x.weekday === d)
+          return (
+            <li key={name} className="rounded-inner border border-line p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-body font-medium">
+                  {name}
+                  {slot ? <span className="text-caption font-normal text-ink3"> · {SPORT_KINDS.find((k) => k.id === slot.kind)?.label} {slot.minutes} min</span> : null}
+                </span>
+                {slot ? (
+                  <button onClick={() => put(d, null)} className="min-h-11 px-2 text-footnote text-danger-text" aria-label={`Remove ${name}’s sport`}>
+                    Remove
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => put(d, { weekday: d, kind: 'practice', minutes: 90, rpe: 6, legs: true })}
+                    className="min-h-11 px-2 text-footnote font-medium text-accent-text"
+                    aria-label={`Add sport on ${name}`}
+                  >
+                    Add sport
+                  </button>
+                )}
+              </div>
+              {slot ? (
+                <div className="mt-2 space-y-2">
+                  <div className="flex flex-wrap gap-2" role="group" aria-label={`${name}: what`}>
+                    {SPORT_KINDS.map((k) => (
+                      <ToggleChip key={k.id} active={slot.kind === k.id} onClick={() => put(d, { ...slot, kind: k.id, legs: k.legs })}>
+                        {k.label}
+                      </ToggleChip>
+                    ))}
+                  </div>
+                  <SegmentedControl
+                    label={`${name}: how hard`}
+                    value={intensity(slot.rpe)}
+                    onChange={(v) => put(d, { ...slot, rpe: Number(v) })}
+                    options={INTENSITY}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={slot.minutes}
+                      onChange={(e) => put(d, { ...slot, minutes: Number(e.target.value) })}
+                      className="min-h-11 rounded-control border border-line bg-raised px-3 text-body"
+                      aria-label={`${name}: minutes`}
+                    >
+                      {[...new Set([...SPORT_MINUTES, slot.minutes])].sort((a, b) => a - b).map((m) => (
+                        <option key={m} value={m}>
+                          {m} min
+                        </option>
+                      ))}
+                    </select>
+                    <ToggleChip active={slot.legs} onClick={() => put(d, { ...slot, legs: !slot.legs })}>
+                      Hard on the legs
+                    </ToggleChip>
+                  </div>
+                </div>
+              ) : null}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
 const SKILL_LABEL: Record<SkillId, string> = {
   planche: 'Planche',
   frontlever: 'Front lever',
@@ -226,6 +328,8 @@ export function ScheduleEditor({ prefs, setPrefs }: Edit) {
         </p>
       </section>
 
+      <SportWeekEditor prefs={prefs} setPrefs={setPrefs} />
+
       <section>
         <h3 className="font-display text-title3 font-semibold">Your sport’s season</h3>
         <SegmentedControl
@@ -239,8 +343,8 @@ export function ScheduleEditor({ prefs, setPrefs }: Edit) {
           ]}
         />
         <p className="mt-1 text-caption text-ink3">
-          In season the sport comes first: the gym keeps the weights but drops some sets, and legs stay fresh before games
-          you log as upcoming.
+          In season the sport comes first: the gym keeps the weights but drops some sets, and legs stay fresh before hard
+          sessions in your sport week or ones you log as upcoming.
         </p>
       </section>
     </>

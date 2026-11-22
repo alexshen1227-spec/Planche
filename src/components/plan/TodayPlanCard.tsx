@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { FOCUS_LABEL, type GymFocus } from '../../lib/gym/builder'
-import { planToday } from '../../lib/plan/planner'
+import { planWeekAhead, type ReadinessLevel } from '../../lib/plan/planner'
 import { rememberNextBlock } from '../../lib/plan/nextBlock'
 import { useStore } from '../../lib/store'
 import type { Joint, Muscle } from '../../data/gym/catalog'
@@ -28,6 +28,7 @@ const SKILL_LABEL: Record<SkillId, string> = {
   flag: 'flag',
 }
 const QUICK = [20, 30, 45, 60, 90]
+const READINESS_LABEL: Record<ReadinessLevel, string> = { light: 'Light day', normal: 'Normal day', push: 'Push day' }
 
 /**
  * Today, planned as one: skill work first while fresh, then the gym, split by
@@ -43,7 +44,9 @@ export function TodayPlanCard({
   const { state } = useStore()
   const [override, setOverride] = useState<number | undefined>(undefined)
   const [sheet, setSheet] = useState<'settings' | 'activity' | 'setup' | null>(null)
-  const plan = useMemo(() => planToday(state, override !== undefined ? { minutes: override } : {}), [state, override])
+  // Today is one slot of the week plan; "I have X minutes" re-plans the rest of the week around it.
+  const week = useMemo(() => planWeekAhead(state, Date.now(), override !== undefined ? { todayMinutes: override } : {}), [state, override])
+  const plan = week.days[0].plan
   const lastSheet = useRef(sheet)
   if (sheet) lastSheet.current = sheet
   const shown = sheet ?? lastSheet.current
@@ -94,6 +97,19 @@ export function TodayPlanCard({
         ))}
       </div>
 
+      {plan.readiness && !plan.rest ? (
+        <p className="mt-3 flex items-start gap-2 text-footnote leading-snug text-ink2">
+          <span
+            className={`shrink-0 rounded-full px-2 py-0.5 text-caption font-semibold ${
+              plan.readiness.level === 'light' ? 'bg-raised text-ink2' : plan.readiness.level === 'push' ? 'bg-accent-soft text-accent-text' : 'border border-line text-ink3'
+            }`}
+          >
+            {READINESS_LABEL[plan.readiness.level]}
+          </span>
+          <span>{plan.readiness.reason}</span>
+        </p>
+      ) : null}
+
       {!plan.rest ? (
         <ol className="mt-4 space-y-2">
           {plan.skill ? (
@@ -133,7 +149,7 @@ export function TodayPlanCard({
                   Gym · {FOCUS_LABEL[plan.gym.focus]} · {plan.gym.minutes} min
                 </span>
                 <span className="block truncate text-caption text-ink3">
-                  {plan.gym.deload ? 'A lighter week' : plan.gym.volumeFactor < 1 ? 'Kept light today' : 'Built from your place’s equipment'}
+                  {plan.gym.deload ? 'A lighter week' : plan.gym.volumeFactor < 1 ? 'Kept light today' : plan.gym.volumeFactor > 1 ? 'One more set on each lift today' : 'Built from your place’s equipment'}
                 </span>
               </span>
               <Button
@@ -168,7 +184,7 @@ export function TodayPlanCard({
 
       {state.gym?.prefs ? (
         <div className="mt-4">
-          <WeekPreview />
+          <WeekPreview week={week} />
         </div>
       ) : null}
 

@@ -181,6 +181,19 @@ Open, in order of value (none blocks using the app):
   body left longest" (8291ab6) were added, tested in the suite; the athlete
   signed the goal off ("I feel like u got it") and will check them in use.
 
+## Round two (2026-11-22, the athlete's follow-up request)
+
+- Gym library 79 → 236 with sprint mechanics, plyometric and throw tiers, a
+  Speed & power focus, and an under-18 tier gate (`plyoGate`).
+- Planner rebuilt around a week engine (`planWeekAhead`): recurring sport
+  schedule (`prefs.sportSchedule`), weekly set balancing across days, missed
+  sessions re-balanced, rotation hints (`recentPatternUse`, not yet wired
+  into the builder), readiness (`dayReadiness`, light/normal/push on
+  evidence only). Tests: `week.test.ts` incl. a 60-athlete fuzz.
+- Learn, onboarding and the session player re-laid out (layout only; the
+  player's tests unchanged).
+- Next: an independent strict review scored 1–100, fixed and repeated.
+
 ## Log
 
 - 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the

@@ -18,7 +18,7 @@ import { LocationEditor } from './LocationEditor'
 import { ExerciseHistory } from './ExerciseHistory'
 
 const MINUTES = [20, 30, 45, 60, 75, 90]
-const FOCI: (GymFocus | 'auto')[] = ['auto', 'full', 'upper', 'lower', 'push', 'pull']
+const FOCI: (GymFocus | 'auto')[] = ['auto', 'full', 'upper', 'lower', 'push', 'pull', 'athletic']
 
 function dayLabel(at: number): string {
   return new Date(at).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })

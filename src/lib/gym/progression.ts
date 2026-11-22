@@ -1,4 +1,10 @@
-import { GYM_EXERCISE_BY_ID, type GymExercise } from '../../data/gym/exercises'
+import {
+  athleticDomain,
+  GYM_EXERCISE_BY_ID,
+  type AthleticDomain,
+  type GymExercise,
+  type IntensityTier,
+} from '../../data/gym/exercises'
 import { maxKgFor, roundToStep, stepKgFor } from './units'
 import type { GymLocation, GymSession, GymSet } from './types'
 
@@ -25,6 +31,8 @@ export function repPlanFor(
   emphasis: 'strength' | 'muscle' | 'endurance' | 'power' = 'muscle',
   youth = false,
 ): RepPlan {
+  // Runs, hops and throws are dosed in contacts or reps at an effort, never by load.
+  if (exercise.dose && exercise.load === 'bodyweight') return { range: exercise.dose.range, targetRpe: exercise.dose.rpe }
   if (exercise.explosive || emphasis === 'power') return youth ? { range: [6, 8], targetRpe: 7 } : { range: [3, 6], targetRpe: 7 }
   if (emphasis === 'endurance') return { range: exercise.compound ? [12, 20] : [15, 25], targetRpe: 8 }
   if (emphasis === 'strength') {
@@ -97,6 +105,17 @@ export function sharedEstimate(sessions: GymSession[], exerciseId: string, befor
   return best
 }
 
+/** What to say for work counted in contacts or runs: quality and rest, never "add reps". */
+function countedWhy(ex: GymExercise, plan: RepPlan): string {
+  const [lo, hi] = plan.range
+  const dist = ex.distanceM ? ` of about ${ex.distanceM} m` : ''
+  if (ex.pattern === 'sprint') {
+    return `${ex.maximal ? 'Maximal runs' : 'Runs'}${dist}, one per set, with full rest. Stop the moment speed drops: more runs do not help.`
+  }
+  if (ex.count === 'contacts') return `${lo}–${hi} foot contacts a set${dist}, quick and light. Quality over quantity: stop when they get slow or loud.`
+  return `${lo}–${hi} reps a set at a crisp pace with full rest. Keep every rep fast; stop when speed drops.`
+}
+
 export interface LoadSuggestion {
   /** kg, rounded to a load this location can make; absent when the app will not guess. */
   kg?: number
@@ -135,6 +154,7 @@ export function suggestLoad(input: {
       return { ...base, kg, kind: 'from-estimate', why: `First time here — started from your estimated max on this lift elsewhere.` }
     }
     if (ex.load === 'bodyweight') {
+      if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan) }
       return { ...base, kind: 'bodyweight', why: `Bodyweight: aim for ${lo}–${hi} clean reps.` }
     }
     return {
@@ -153,6 +173,7 @@ export function suggestLoad(input: {
   const anyShort = atLoad.some((s) => s.reps < lo)
   const grinding = atLoad.some((s) => s.rpe !== undefined && s.rpe >= 9.5)
   if (ex.load === 'bodyweight' && !(kg > 0)) {
+    if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan) }
     if (allTop) return { ...base, kind: 'bodyweight', why: `Every set reached ${hi} last time: add a few reps, slow the lowering, or move to a harder version.` }
     return { ...base, kind: 'bodyweight', why: `Aim to beat last time’s ${working.map((s) => s.reps).join(', ')} reps.` }
   }
@@ -210,3 +231,74 @@ export function gymRecords(sessions: GymSession[]): Record<string, GymRecord> {
   }
   return out
 }
+
+// ---- Progression gate for speed and power work (CONSENSUS) ----
+
+const MIN_SESSIONS_YOUTH = 2
+const MIN_SESSIONS_ADULT = 1
+
+/** The tier an exercise is gated at: maximal runs count as high whatever their listed tier. */
+export function gateTier(ex: GymExercise): IntensityTier | null {
+  if (!athleticDomain(ex)) return null
+  return ex.maximal ? 'high' : (ex.tier ?? null)
+}
+
+/** How many distinct sessions logged something of each tier in a domain (any set with reps, warm-up flag or not). */
+export function tierSessions(sessions: GymSession[], domain: AthleticDomain, now = Infinity): Record<IntensityTier, number> {
+  const counts: Record<IntensityTier, number> = { low: 0, medium: 0, high: 0 }
+  for (const s of sessions) {
+    if (s.startedAt >= now) continue
+    const seen = new Set<IntensityTier>()
+    for (const log of s.exercises) {
+      const ex = GYM_EXERCISE_BY_ID[log.exerciseId]
+      if (!ex || athleticDomain(ex) !== domain || !ex.tier) continue
+      if (!log.sets.some((set) => set.reps > 0)) continue
+      seen.add(gateTier(ex)!)
+    }
+    for (const t of seen) counts[t]++
+  }
+  return counts
+}
+
+/**
+ * The highest tier of one domain this athlete may be given, from what they
+ * have logged. Under 18: low always; medium after two sessions of low work;
+ * high after two sessions of medium work (and some low). An adult starts at
+ * medium, and gets high once any lower-tier session is on record. A coaching
+ * ladder (CONSENSUS), not a measured threshold.
+ */
+export function unlockedTier(sessions: GymSession[], domain: AthleticDomain, youth: boolean, now = Infinity): IntensityTier {
+  const c = tierSessions(sessions, domain, now)
+  if (youth) {
+    if (c.low >= MIN_SESSIONS_YOUTH && c.medium >= MIN_SESSIONS_YOUTH) return 'high'
+    if (c.low >= MIN_SESSIONS_YOUTH) return 'medium'
+    return 'low'
+  }
+  return c.low + c.medium >= MIN_SESSIONS_ADULT ? 'high' : 'medium'
+}
+
+export interface PlyoGate {
+  allowed: boolean
+  /** Why not, in the athlete's terms. */
+  reason?: string
+}
+
+/** Whether this movement may be programmed yet. Exercises outside speed and power work are never gated. */
+export function plyoGate(ex: GymExercise, sessions: GymSession[], youth: boolean, now = Infinity): PlyoGate {
+  const domain = athleticDomain(ex)
+  const tier = gateTier(ex)
+  if (!domain || !tier) return { allowed: true }
+  const top = unlockedTier(sessions, domain, youth, now)
+  if (TIER_RANK[tier] <= TIER_RANK[top]) return { allowed: true }
+  const need = tier === 'high' ? 'medium' : 'low'
+  const n = youth ? MIN_SESSIONS_YOUTH : MIN_SESSIONS_ADULT
+  return {
+    allowed: false,
+    reason: `Not yet: do ${n} session${n === 1 ? '' : 's'} of ${need}-tier ${domain === 'sprint' ? 'running' : domain} work first. ${
+      youth ? 'Growing athletes build up through the lower tiers.' : 'Build up through the lower tiers first.'
+    }`,
+  }
+}
+
+const TIER_RANK: Record<IntensityTier, number> = { low: 0, medium: 1, high: 2 }
+export { TIER_RANK }

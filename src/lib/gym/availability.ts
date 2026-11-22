@@ -1,5 +1,6 @@
 import { GYM_EXERCISE_BY_ID, GYM_EXERCISES, type GymExercise, type LocationEquipment } from '../../data/gym/exercises'
-import type { GymLocation, Rating } from './types'
+import { plyoGate } from './progression'
+import type { GymLocation, GymSession, Rating } from './types'
 
 /** The floor is everywhere. */
 const ALWAYS: LocationEquipment[] = ['floor']
@@ -45,11 +46,13 @@ export function alternativesFor(
   location: GymLocation | undefined,
   ratings: Record<string, Rating> = {},
   exclude: string[] = [],
+  /** When given, speed and power work this athlete has not built up to is never offered. */
+  athlete?: { youth: boolean; sessions: GymSession[]; now?: number },
 ): GymExercise[] {
   const ex = GYM_EXERCISE_BY_ID[exerciseId]
   if (!ex) return []
   const skip = new Set([exerciseId, ...exclude])
-  const candidates = availableAt(location).filter((c) => !skip.has(c.id) && ratings[c.id] !== 'avoid')
+  const candidates = availableAt(location).filter((c) => !skip.has(c.id) && ratings[c.id] !== 'avoid' && (!athlete || plyoGate(c, athlete.sessions, athlete.youth, athlete.now).allowed))
   const samePattern = candidates.filter((c) => c.pattern === ex.pattern)
   const sameMuscle = candidates.filter(
     (c) => c.pattern !== ex.pattern && c.primary.some((m) => ex.primary.includes(m)) && c.compound === ex.compound,

@@ -15,6 +15,7 @@ import type {
   OutsideActivity,
   Rating,
   SkillGoal,
+  SportSlot,
   TrainingPrefs,
 } from './types'
 
@@ -61,6 +62,7 @@ function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
         return [{ id: typeof v.id === 'string' && v.id ? v.id : `goal-${step.id}`, skill: step.skill, stepId: step.id, by: v.by }]
       })
     : []
+  const sportSchedule = sanitizeSportSchedule(r.sportSchedule)
   const minutes = Array.isArray(r.minutesByDay) && r.minutesByDay.length === 7
     ? r.minutesByDay.map((m) => Math.round(clamp(m, 0, 240, 0)))
     : base.minutesByDay
@@ -78,8 +80,34 @@ function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
     minutesByDay: minutes,
     straightArmRestHours: Math.round(clamp(r.straightArmRestHours, 24, 96, 48)),
     ...(r.season === 'in' ? { season: 'in' as const } : {}),
+    ...(sportSchedule.length ? { sportSchedule } : {}),
     updatedAt: isTime(r.updatedAt) ? r.updatedAt : 1,
   }
+}
+
+/**
+ * The regular sport week: one slot per weekday (the first one wins), a weekday
+ * outside 0–6 dropped, an unknown kind read as "other" like a logged activity.
+ */
+function sanitizeSportSchedule(raw: unknown): SportSlot[] {
+  if (!Array.isArray(raw)) return []
+  const byDay = new Map<number, SportSlot>()
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue
+    const v = item as Record<string, unknown>
+    const weekday = v.weekday
+    if (typeof weekday !== 'number' || !Number.isInteger(weekday) || weekday < 0 || weekday > 6 || byDay.has(weekday)) continue
+    const hour = typeof v.hour === 'number' && Number.isInteger(v.hour) && v.hour >= 0 && v.hour <= 23 ? v.hour : undefined
+    byDay.set(weekday, {
+      weekday,
+      kind: ACTIVITY_KINDS.includes(v.kind as ActivityKind) ? (v.kind as ActivityKind) : 'other',
+      minutes: Math.round(clamp(v.minutes, 10, 300, 60)),
+      rpe: Math.round(clamp(v.rpe, 1, 10, 6)),
+      legs: v.legs === true,
+      ...(hour !== undefined ? { hour } : {}),
+    })
+  }
+  return [...byDay.values()].sort((a, b) => a.weekday - b.weekday)
 }
 
 function sanitizeActivity(raw: unknown): OutsideActivity | null {

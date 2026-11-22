@@ -112,7 +112,27 @@ export interface TrainingPrefs {
    * stay, the sets drop) and legs are kept fresh around games. Absent = off-season.
    */
   season?: 'off' | 'in'
+  /**
+   * The athlete's regular sport week ("practice Tuesday and Thursday, a game
+   * on Saturday"), entered once. The planner reads each slot like a logged
+   * activity on that day; a log on the same day replaces it. Absent = none.
+   */
+  sportSchedule?: SportSlot[]
   updatedAt: number
+}
+
+/** One regular sport session in the week. At most one per weekday. */
+export interface SportSlot {
+  /** 0 = Sunday … 6 = Saturday, like `minutesByDay`. */
+  weekday: number
+  kind: ActivityKind
+  minutes: number
+  /** How hard it usually is, 1–10. */
+  rpe: number
+  /** Whether it loads the legs hard (sprints, jumps, a game). */
+  legs: boolean
+  /** Local start hour, 0–23. Absent = 17:00. */
+  hour?: number
 }
 
 export type ActivityKind = 'sprint' | 'practice' | 'game' | 'pe' | 'run' | 'other'

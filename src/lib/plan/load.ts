@@ -3,6 +3,7 @@ import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { EXERCISE_BY_ID } from '../../data/exercises'
 import type { AppState, Category, Session } from '../../types'
 import type { GoalWeights, GymSession, OutsideActivity, TrainingPrefs } from '../gym/types'
+import { sportBetween } from './sport'
 
 /**
  * One count for everything an athlete does: gym sets, skill sets and outside
@@ -43,6 +44,11 @@ const SKILL_LOADING: Partial<Record<Category, Loading>> = {
   pull: { muscles: { lats: 1, biceps: 1, 'upper-back': 1 }, joints: ['elbows', 'shoulders'] },
   scapula: { muscles: { 'upper-back': 0.5 }, joints: ['shoulders'] },
   core: { muscles: { abs: 1, 'hip-flexors': 0.5 }, joints: [] },
+}
+
+/** What one hard set of a skill family adds, by muscle: its category's loading (the handstand stands in for balance work). */
+export function familyLoading(family: 'push' | 'pull' | 'balance'): Credit {
+  return (family === 'push' ? SKILL_LOADING.planche : family === 'pull' ? SKILL_LOADING.lever : SKILL_LOADING.handstand)!.muscles
 }
 
 /** How a skill set loads the body; warm-up and cooldown sets count for nothing. */
@@ -167,8 +173,8 @@ export function fatigueAt(state: Pick<AppState, 'sessions' | 'gym'>, now: number
       }
     }
   }
-  for (const a of state.gym?.activities ?? []) {
-    if (a.at < horizon || a.at > now) continue
+  // Logged activities and the regular sport week alike (a log replaces that day's usual session).
+  for (const a of sportBetween(state.gym, horizon, now + 1)) {
     const w = decay((now - a.at) / 3_600_000) * activityLoad(a)
     if (a.legs) {
       add(out.muscles, { quads: 1, hamstrings: 1, glutes: 1, calves: 1 }, w)

@@ -19,6 +19,19 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-22',
+    title: 'A real week plan, your sport built in, and 236 exercises',
+    area: 'coach',
+    notes: [
+      'Your sport week: enter your usual practices and games once (Goals and schedule). The plan keeps legs fresh the day before a hard one and keeps them out the day of and after.',
+      'The week is planned as a whole now: skills get their sessions across the week within your rest rule, each muscle’s weekly sets are spread so the same muscles are not hit hard two days running, and tapping a day in the week ahead shows why it looks the way it does. Miss a day and the rest of the week re-balances, saying what moved and what dropped.',
+      'Readiness: when your recent sets have been easy the plan can push a little; when the same work has been costing more, after a hard sport day or with any pain report, it goes light — and says why. It only pushes on evidence.',
+      'Speed & power: a new gym focus with sprint drills, plyometrics and throws, explosive work first. Under 18, harder jumps and maximal sprints only unlock after the easier levels are logged.',
+      'The exercise library grew from 79 to 236 movements, with at least three same-movement swaps for every common pattern and the calisthenics strength work (pseudo-planche push-ups, ring dips, archer push-ups and more).',
+      'Learn, the first-run setup and the session player were redesigned for one-handed use on a phone: big primary actions in thumb reach and cleaner screens.',
+    ],
+  },
+  {
+    date: '2026-11-22',
     title: 'The plan goes where you have not been',
     area: 'coach',
     notes: [

@@ -95,6 +95,10 @@ export type Pattern =
   | 'carry'
   | 'jump'
   | 'throw'
+  | 'sprint'
+  | 'drill'
+  | 'adduction'
+  | 'abduction'
 
 export const PATTERN_LABEL: Record<Pattern, string> = {
   'horizontal-press': 'Horizontal press',
@@ -120,6 +124,10 @@ export const PATTERN_LABEL: Record<Pattern, string> = {
   carry: 'Carry',
   jump: 'Jump',
   throw: 'Throw',
+  sprint: 'Sprint',
+  drill: 'Running drill',
+  adduction: 'Adductor',
+  abduction: 'Hip abductor',
 }
 
 /**
@@ -160,6 +168,10 @@ export type GymEquipmentId =
   | 'ab-wheel'
   | 'medicine-ball'
   | 'track'
+  | 'landmine'
+  | 'ghd'
+  | 'sled'
+  | 'cones'
 
 export type Unit = 'kg' | 'lb'
 export const LB_PER_KG = 2.2046226218
@@ -210,6 +222,10 @@ export const GYM_EQUIPMENT: GymEquipmentDef[] = [
   { id: 'ab-wheel', label: 'Ab wheel', kind: 'accessory' },
   { id: 'medicine-ball', label: 'Medicine ball', kind: 'accessory' },
   { id: 'track', label: 'Track or open space to sprint', kind: 'space' },
+  { id: 'landmine', label: 'Landmine attachment', kind: 'accessory' },
+  { id: 'ghd', label: 'Glute-ham developer', kind: 'bench' },
+  { id: 'sled', label: 'Sled', kind: 'accessory', step: { kg: 5, lb: 10 } },
+  { id: 'cones', label: 'Cones or mini hurdles', kind: 'accessory' },
 ]
 
 export const GYM_EQUIPMENT_BY_ID = Object.fromEntries(GYM_EQUIPMENT.map((e) => [e.id, e])) as Record<

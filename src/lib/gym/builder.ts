@@ -1,10 +1,10 @@
 import type { Joint, Muscle, Pattern } from '../../data/gym/catalog'
-import { GYM_EXERCISE_BY_ID, type GymExercise } from '../../data/gym/exercises'
+import { athleticDomain, GYM_EXERCISE_BY_ID, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
 import { availableAt, preferenceRank } from './availability'
-import { repPlanFor, suggestLoad, type LoadSuggestion, type RepPlan } from './progression'
+import { gateTier, plyoGate, repPlanFor, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymSession, Rating } from './types'
 
-export type GymFocus = 'full' | 'upper' | 'lower' | 'push' | 'pull'
+export type GymFocus = 'full' | 'upper' | 'lower' | 'push' | 'pull' | 'athletic'
 
 export const FOCUS_LABEL: Record<GymFocus, string> = {
   full: 'Full body',
@@ -12,6 +12,7 @@ export const FOCUS_LABEL: Record<GymFocus, string> = {
   lower: 'Lower body',
   push: 'Push',
   pull: 'Pull',
+  athletic: 'Speed & power',
 }
 
 /**
@@ -19,7 +20,7 @@ export const FOCUS_LABEL: Record<GymFocus, string> = {
  * what a short session gives up first. Each slot is filled by one movement
  * from its patterns that can be done at the location.
  */
-const SLOTS: Record<GymFocus, Pattern[][]> = {
+const SLOTS: Record<Exclude<GymFocus, 'athletic'>, Pattern[][]> = {
   full: [
     ['squat', 'lunge'],
     ['horizontal-press', 'incline-press', 'dip'],
@@ -64,17 +65,20 @@ export interface GymPlan {
 
 /** Rest between sets (CONSENSUS ranges): longer for heavy compound work. */
 export function restFor(ex: GymExercise, plan: RepPlan): number {
+  if (ex.dose) return ex.dose.restSec
   if (ex.explosive) return 120
   if (!ex.compound) return 75
   return plan.range[1] <= 6 ? 180 : 120
 }
 
 /** Minutes a block takes: each set's work plus the rest after it. */
-function blockMinutes(sets: number, restSec: number): number {
-  return (sets * (40 + restSec)) / 60
+function blockMinutes(sets: number, restSec: number, workSec = 40): number {
+  return (sets * (workSec + restSec)) / 60
 }
 
 const WARM_UP_MIN = 6
+/** The speed and power session's own drills are its warm-up. */
+const ATHLETIC_WARM_UP_MIN = 2
 
 /** Which focus comes next: the part of the body trained longest ago at the gym. */
 export function nextFocus(sessions: GymSession[], now = Date.now()): GymFocus {
@@ -135,49 +139,120 @@ export function buildGymSession(input: {
   const emphasisOf = (e: GymExercise) =>
     input.emphasis ?? (goalEmphasis ? (e.compound ? goalEmphasis.compound : goalEmphasis.isolation) : 'muscle')
   const usable = (e: GymExercise) =>
-    !e.primary.some((m) => musclesOff.has(m)) && !e.stress.some((j) => avoid.has(j)) && ratings[e.id] !== 'avoid'
+    !e.primary.some((m) => musclesOff.has(m)) &&
+    !e.stress.some((j) => avoid.has(j)) &&
+    ratings[e.id] !== 'avoid' &&
+    // Speed and power work is built up to, never started at the top (see plyoGate).
+    plyoGate(e, sessions, youth, now).allowed
   const focus = input.focus ?? nextFocus(sessions, now)
   const here = availableAt(location)
   const used = new Set<string>()
   const items: PlannedExercise[] = []
-  const slots: Pattern[][] = [...SLOTS[focus]]
-  // Explosive work goes first, fresh, when power is a goal (and the legs are on).
-  if (goalEmphasis?.power && focus !== 'pull' && !musclesOff.has('quads')) slots.unshift(['jump', 'throw'])
-  for (const slot of slots) {
-    const wantsExplosive = slot.includes('jump') || slot.includes('throw')
-    // Avoided means avoided: a slot nothing else can fill is left out.
-    const options = here.filter(
-      (e) => slot.includes(e.pattern) && !used.has(e.id) && (wantsExplosive ? e.explosive : !e.explosive) && usable(e),
-    )
-    const ranked = options
-      .map((e) => ({
-        e,
-        score:
-          preferenceRank(e.id, ratings, location) +
-          (youth && e.technical && ratings[e.id] !== 'love' ? 5 : 0) +
-          // Within a slot the earlier-listed pattern is the one the slot is for.
-          slot.indexOf(e.pattern) * 0.5 +
-          (e.compound ? 0 : 0.25) -
-          (e.primary.some((m) => priority.has(m)) ? 1 : 0),
-      }))
-      .sort((a, b) => a.score - b.score)
-    const pick = ranked[0]?.e
-    if (!pick) continue
-    used.add(pick.id)
+  // The day each movement was last logged, so rotation prefers what was done longest ago.
+  const lastLogged = new Map<string, number>()
+  for (const s of sessions) {
+    if (s.startedAt >= now) continue
+    for (const log of s.exercises) if (log.sets.length) lastLogged.set(log.exerciseId, Math.max(lastLogged.get(log.exerciseId) ?? 0, s.startedAt))
+  }
+  const staleness = (e: GymExercise) => ((lastLogged.get(e.id) ?? 0) === 0 ? -0.2 : -Math.min(0.2, (now - (lastLogged.get(e.id) ?? now)) / (60 * 86_400_000)))
+  const isPriority = (e: GymExercise) => e.primary.some((m) => priority.has(m))
+  const makeItem = (pick: GymExercise, wantsExplosive: boolean, sets?: number): PlannedExercise => {
     const base = repPlanFor(pick, wantsExplosive ? 'power' : emphasisOf(pick), youth)
     const plan = factor < 1 ? { ...base, targetRpe: Math.max(6, base.targetRpe - 1) } : base
-    const sets = Math.max(2, Math.round((3 + (pick.primary.some((m) => priority.has(m)) ? 1 : 0)) * factor))
-    items.push({
+    return {
       exerciseId: pick.id,
-      sets,
+      sets: sets ?? Math.max(2, Math.round((3 + (isPriority(pick) ? 1 : 0)) * factor)),
       plan,
       suggestion: suggestLoad({ exerciseId: pick.id, location, sessions, plan, youth, now }),
       restSec: restFor(pick, plan),
-    })
+    }
+  }
+  const scoreOf = (e: GymExercise, extra = 0) =>
+    preferenceRank(e.id, ratings, location) + (youth && e.technical && ratings[e.id] !== 'love' ? 5 : 0) + (e.compound ? 0 : 0.25) - (isPriority(e) ? 1 : 0) + extra
+
+  if (focus === 'athletic') {
+    // Fresh and fast first, strength last: drills, then jumps, then runs and throws, then one lift.
+    const take = (e: GymExercise | undefined, sets?: number) => {
+      if (!e) return
+      used.add(e.id)
+      items.push(makeItem(e, false, sets))
+    }
+    const fromDomain = (domain: AthleticDomain, patterns: Pattern[], cap: IntensityTier) => {
+      const pool = here.filter(
+        (e) => !used.has(e.id) && patterns.includes(e.pattern) && athleticDomain(e) === domain && usable(e) && TIER_RANK[gateTier(e)!] <= TIER_RANK[cap],
+      )
+      if (!pool.length) return undefined
+      // The highest tier allowed today; inside it the one done longest ago wins.
+      const top = Math.max(...pool.map((e) => TIER_RANK[gateTier(e)!]))
+      const ranked = pool
+        .filter((e) => TIER_RANK[gateTier(e)!] === top)
+        .sort((a, b) => scoreOf(a, staleness(a)) - scoreOf(b, staleness(b)) || (b.rung ?? 0) - (a.rung ?? 0))
+      return ranked[0]
+    }
+    // A lighter day has no maximal or high-impact work.
+    let cap: IntensityTier = factor < 1 ? 'medium' : 'high'
+    const dose = (e: GymExercise | undefined) => (e?.dose ? Math.max(1, Math.round(e.dose.sets * factor)) : undefined)
+    // Warm-up drills: one gentle, one at the highest tier allowed (never above medium).
+    const drillPool = here.filter((e) => e.pattern === 'drill' && usable(e))
+    const gentle = drillPool.filter((e) => e.tier === 'low').sort((a, b) => scoreOf(a, staleness(a)) - scoreOf(b, staleness(b)))[0]
+    take(gentle, 2)
+    const upper = drillPool.filter((e) => e.tier === 'medium' && !used.has(e.id)).sort((a, b) => (b.rung ?? 0) - (a.rung ?? 0) || scoreOf(a) - scoreOf(b))[0]
+    take(upper ?? drillPool.filter((e) => !used.has(e.id)).sort((a, b) => scoreOf(a, staleness(a)) - scoreOf(b, staleness(b)))[0], 2)
+    // Only one high-intensity block a session: jumps first, then it is spent.
+    const jump = fromDomain('jump', ['jump'], cap)
+    if (jump && gateTier(jump) === 'high') cap = 'medium'
+    take(jump, dose(jump))
+    const sprint = fromDomain('sprint', ['sprint'], cap)
+    if (sprint && gateTier(sprint) === 'high') cap = 'medium'
+    take(sprint, dose(sprint))
+    const thrown = fromDomain('throw', ['throw'], cap)
+    take(thrown, dose(thrown))
+    // One strength movement: the slot nothing explosive filled, lower body first unless the legs are off.
+    for (const slot of [['squat', 'lunge', 'hinge'], ['horizontal-pull', 'vertical-pull'], ['horizontal-press', 'vertical-press']] as Pattern[][]) {
+      const options = here
+        .filter((e) => slot.includes(e.pattern) && !used.has(e.id) && !e.explosive && !athleticDomain(e) && usable(e))
+        .map((e) => ({ e, score: scoreOf(e, staleness(e)) + slot.indexOf(e.pattern) * 0.5 }))
+        .sort((a, b) => a.score - b.score)
+      if (options.length) {
+        take(options[0].e)
+        break
+      }
+    }
+  } else {
+    const slots: Pattern[][] = [...SLOTS[focus]]
+    // Explosive work goes first, fresh, when power is a goal (and the legs are on).
+    if (goalEmphasis?.power && focus !== 'pull' && !musclesOff.has('quads')) slots.unshift(['jump', 'throw'])
+    for (const slot of slots) {
+      const wantsExplosive = slot.includes('jump') || slot.includes('throw')
+      // Avoided means avoided: a slot nothing else can fill is left out.
+      const options = here.filter(
+        (e) => slot.includes(e.pattern) && !used.has(e.id) && (wantsExplosive ? e.explosive : !e.explosive) && usable(e),
+      )
+      const ranked = options
+        .map((e) => ({
+          e,
+          score:
+            preferenceRank(e.id, ratings, location) +
+            (youth && e.technical && ratings[e.id] !== 'love' ? 5 : 0) +
+            // Within a slot the earlier-listed pattern is the one the slot is for.
+            slot.indexOf(e.pattern) * 0.5 +
+            (e.compound ? 0 : 0.25) -
+            (isPriority(e) ? 1 : 0) +
+            // Without a tier ladder to climb, prefer the gentler jump or throw.
+            (e.tier ? TIER_RANK[gateTier(e)!] * 0.25 : 0),
+        }))
+        .sort((a, b) => a.score - b.score)
+      const pick = ranked[0]?.e
+      if (!pick) continue
+      used.add(pick.id)
+      items.push(makeItem(pick, wantsExplosive))
+    }
   }
   // Fit the time: give up the last slots first, then trim isolation work to two sets.
   const dropped: string[] = []
-  const total = () => WARM_UP_MIN + items.reduce((m, it) => m + blockMinutes(it.sets, it.restSec), 0)
+  const warm = focus === 'athletic' ? ATHLETIC_WARM_UP_MIN : WARM_UP_MIN
+  const total = () =>
+    warm + items.reduce((m, it) => m + blockMinutes(it.sets, it.restSec, GYM_EXERCISE_BY_ID[it.exerciseId].dose?.workSec), 0)
   while (items.length > 2 && total() > minutes) {
     const gone = items.pop()!
     dropped.unshift(GYM_EXERCISE_BY_ID[gone.exerciseId].name)
