@@ -79,6 +79,7 @@ export function GymPlayer({
   const [askRpe, setAskRpe] = useState<{ item: number; set: number } | null>(null)
   const [sheet, setSheet] = useState<{ kind: 'swap' | 'add' | 'menu'; item?: number } | null>(null)
   const [finishing, setFinishing] = useState(false)
+  const [notes, setNotes] = useState('')
   const [query, setQuery] = useState('')
   const restEndedRef = useRef(false)
   const [unlocked, setUnlocked] = useState<GymBadge[] | null>(null)
@@ -175,7 +176,8 @@ export function GymPlayer({
   }, [finishing])
 
   const save = () => {
-    const session = sessionFromDraft(draft, Date.now())
+    const built = sessionFromDraft(draft, Date.now())
+    const session = notes.trim() ? { ...built, notes: notes.trim().slice(0, 2000) } : built
     if (!session.exercises.length) {
       saveDraft(null)
       onClose()
@@ -545,6 +547,17 @@ export function GymPlayer({
             </ul>
           </div>
         ) : null}
+        <label className="mt-4 block">
+          <span className="text-footnote font-medium text-ink2">Notes (optional)</span>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            maxLength={2000}
+            placeholder="How it felt, a machine setting, anything to remember"
+            className="mt-1 w-full rounded-control border border-line bg-raised px-3 py-2 text-body"
+          />
+        </label>
         <div className="mt-4 grid gap-2">
           <Button size="lg" full onClick={save}>
             {doneSets ? 'Save session' : 'Close — nothing to save'}

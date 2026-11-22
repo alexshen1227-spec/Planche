@@ -41,6 +41,7 @@ export const CHANGELOG: ChangeEntry[] = [
       'Lighter weeks: a week well under your usual volume ends a hard run, so one lighter week does not call another; and an estimated max that was never measured is never described as “held still”.',
       'Activities you log can be removed again, and tapping an estimated max opens that lift’s full history.',
       'Skill sets get the same one optional tap for effort (6–10) on the rest screen. It counts toward the shared fatigue the plan reads; your hold targets work exactly as before.',
+      'Gym sessions take an optional note when you finish — how it felt, a machine setting — saved with the session and in the CSV export’s history.',
       'Each set now shows what you did last time on that set (“Previous: 16 kg × 10 @8”) — tap it to copy it in, the way Hevy and Strong do it.',
     ],
   },
