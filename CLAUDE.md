@@ -913,6 +913,18 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     a saved gym session can be deleted or corrected (`correctSet`).
   - Onboarding is one flow: goals → skills → places → schedule → muscles →
     age and safety (`summariseSchedule` derives the weekly goal and minutes).
+  - **One main session a day** (the athlete's ask): `TodayPlan.kind` is
+    `calisthenics | gym | rest`, chosen by the week engine (goal share,
+    family targets, pairing a family's gym day with its skill, sport, sets).
+    A gym day may carry an opener (`skill.opener`, `OPENER_MINUTES` = 18):
+    `gymOpener(state, focus, location, now, minutes)` — push focus → push
+    skill, pull → pull, upper → either; never lower/full/athletic; only with
+    the rest rule, no sore family joint, no pain, the kit at the place and in
+    the profile, and 38+ minutes. `minutes` there is the whole session. The
+    Today card, Home and the Gym side start the opener as an ordinary
+    one-skill session and the lifts follow through `rememberNextBlock`.
+    "Today's calisthenics" on Train and Home is the calisthenics day's block
+    only — never a gym day's opener.
   - Skill days are requests (`{source: 'auto', skills: [skill]}`); a ladder
     day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
     pins every session built without it — regenerate only for an intended

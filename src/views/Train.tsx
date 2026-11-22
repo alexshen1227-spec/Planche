@@ -69,7 +69,7 @@ function requestKey(request: WorkoutRequest): string {
   return `${request.source}:${request.templateId ?? ''}:${request.stepId ?? ''}:${request.minutes ?? ''}:${(request.skills ?? []).join('+')}:${request.focus ?? ''}`
 }
 
-function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest) => void }) {
+function SkillsTrain({ startWorkout, kind }: { startWorkout: (request: WorkoutRequest) => void; kind?: 'calisthenics' | 'gym' }) {
   const { state } = useStore()
   const [previewRequest, setPreviewRequest] = useState<WorkoutRequest | null>(null)
   const [quickLog, setQuickLog] = useState(false)
@@ -92,9 +92,14 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   // and its skills — the same request the Today card starts, so the two cards
   // never show different sessions (35 minutes there once read ~42 here).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const dayPlan = useMemo(() => planToday(state), [state, todayKey])
+  const dayPlan = useMemo(() => planToday(state, kind ? { kind } : {}), [state, todayKey, kind])
   const recommended: WorkoutRequest = useMemo(
-    () => (dayPlan.skill ? { source: 'auto', minutes: dayPlan.skill.minutes, skills: dayPlan.skill.skills } : { source: 'auto' }),
+    () =>
+      // Only a calisthenics day's own block is today's calisthenics session: on a
+      // gym day the skill block is the gym's 18-minute opener, not this card.
+      dayPlan.kind === 'calisthenics' && dayPlan.skill && !dayPlan.skill.opener
+        ? { source: 'auto', minutes: dayPlan.skill.minutes, skills: dayPlan.skill.skills }
+        : { source: 'auto' },
     [dayPlan],
   )
   const finalized = useMemo(() => {
@@ -711,6 +716,8 @@ export function Train({
     setGymPreset(nextGym)
     onNextGymUsed?.()
   }, [nextGym, onNextGymUsed])
+  // "Rather do the gym today?" on the Today card: the other kind, for today.
+  const [pick, setPick] = useState<'calisthenics' | 'gym' | undefined>(undefined)
   const choose = (m: 'skills' | 'gym') => {
     setMode(m)
     try {
@@ -727,6 +734,10 @@ export function Train({
           choose('gym')
           setGymPreset(preset)
         }}
+        onSwitch={(k) => {
+          setPick(k)
+          choose(k === 'gym' ? 'gym' : 'skills')
+        }}
       />
       <SegmentedControl
         className="mx-auto mb-5 max-w-sm"
@@ -738,7 +749,11 @@ export function Train({
           { value: 'gym', label: 'Gym' },
         ]}
       />
-      {mode === 'skills' ? <SkillsTrain startWorkout={startWorkout} /> : <GymHub preset={gymPreset} onPresetUsed={() => setGymPreset(null)} />}
+      {mode === 'skills' ? (
+        <SkillsTrain startWorkout={startWorkout} kind={pick} />
+      ) : (
+        <GymHub preset={gymPreset} onPresetUsed={() => setGymPreset(null)} startWorkout={startWorkout} />
+      )}
     </div>
   )
 }

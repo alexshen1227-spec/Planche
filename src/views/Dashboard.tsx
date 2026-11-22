@@ -38,6 +38,7 @@ import { INSTALL_STEPS, installState } from '../lib/install'
 import { WalkBackCalibrator } from '../components/WalkBackCalibrator'
 import { walkMeasureDue } from '../lib/sessionTiming'
 import { planToday } from '../lib/plan/planner'
+import { FOCUS_LABEL } from '../lib/gym/builder'
 
 /** Per-device memory of the complete-sessions notice; never state that matters. */
 const SESSIONS_NOTICE_KEY = 'planchelab.notice.complete-sessions'
@@ -190,7 +191,12 @@ export function Dashboard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const dayPlan = useMemo(() => planToday(whole), [whole, today])
   const recommended: WorkoutRequest = useMemo(
-    () => (dayPlan.skill ? { source: 'auto', minutes: dayPlan.skill.minutes, skills: dayPlan.skill.skills } : { source: 'auto' }),
+    () =>
+      // Only a calisthenics day's own block is today's calisthenics session: on a
+      // gym day the skill block is the gym's 18-minute opener, not this card.
+      dayPlan.kind === 'calisthenics' && dayPlan.skill && !dayPlan.skill.opener
+        ? { source: 'auto', minutes: dayPlan.skill.minutes, skills: dayPlan.skill.skills }
+        : { source: 'auto' },
     [dayPlan],
   )
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -442,9 +448,22 @@ export function Dashboard({
             </div>
           </div>
         </div>
+        {/* The coach picks one main session a day; on a gym day it is on the Train tab. */}
+        {dayPlan.kind === 'gym' && dayPlan.gym ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-inner border border-line bg-raised p-3">
+            <span className="text-footnote text-ink2">
+              <span className="font-semibold text-ink">Today the coach recommends the gym</span> — {FOCUS_LABEL[dayPlan.gym.focus].toLowerCase()},{' '}
+              {dayPlan.minutes} min
+              {dayPlan.skill?.opener ? `, opening with ${SKILLS[dayPlan.skill.skills[0]].name.toLowerCase()}` : ''}.
+            </span>
+            <Button variant="secondary" onClick={() => go('train')}>
+              Open today’s plan
+            </Button>
+          </div>
+        ) : null}
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button size="lg" onClick={() => startWorkout(recommended)} className="w-full sm:w-auto">
-            <Icon name="play" size={16} /> Start today's session
+            <Icon name="play" size={16} /> {dayPlan.kind === 'gym' ? 'Start a calisthenics session' : 'Start today’s session'}
           </Button>
           {/* The first session comes first: a max test is offered once there is one. */}
           {testBlocked || whole.sessions.length === 0 ? null : (

@@ -242,7 +242,7 @@ describe('a logged activity and the sport week', () => {
     expect(kinds([{ ...pe, kind: 'game' }])).toEqual(['game'])
     // Sunday after the game, PE logged or not: legs stay out of the gym.
     const logged = { ...s, gym: { ...s.gym!, activities: [pe] } }
-    expect(planToday(logged, { now: at(6, 9), minutes: 60 }).gym?.musclesOff).toContain('quads')
+    expect(planToday(logged, { now: at(6, 9), minutes: 60, kind: 'gym' }).gym?.musclesOff).toContain('quads')
   })
 })
 
@@ -292,7 +292,7 @@ describe('deloads for an athlete who does not rate sets', () => {
 describe('copy that says only what is true', () => {
   it('does not promise to leave out a joint it cannot name', () => {
     const s: AppState = { ...athlete(['planche']), symptoms: [{ id: 'x', at: MON - 2 * HOUR, joints: 'pain', regions: ['other'], source: 'check-in' }] }
-    const p = planToday(s, { now: MON, minutes: 60 })
+    const p = planToday(s, { now: MON, minutes: 60, kind: 'gym' })
     expect(p.gym?.avoidJoints).toEqual([])
     expect(p.reasons[0]).not.toMatch(/leaves out anything that loads it/)
     expect(p.reasons[0]).toMatch(/stays light/)

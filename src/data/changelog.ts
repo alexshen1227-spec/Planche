@@ -19,6 +19,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-22',
+    title: 'One session a day: calisthenics or gym',
+    area: 'coach',
+    notes: [
+      'The coach now recommends one main session each day — a calisthenics session or a gym session — with one Start button, and says why it picked that one. “Rather do the gym today?” (or calisthenics) swaps it, and the rest of the week is planned around your choice.',
+      'A gym day can open with the matching skill while you are fresh: the front lever before a pull day, the planche before a push day — only when your rest rule allows it, nothing it loads is sore, and the place has the kit. The lifts follow on by themselves when the skill part is saved.',
+      'The Gym side shows the same opener for the focus you pick, with a Skip button. Home points you to the gym on a gym day.',
+      'A push day’s extra set on each lift now actually reaches the session; it was lost when a gym session started.',
+    ],
+  },
+  {
+    date: '2026-11-22',
     title: 'A first run that asks the right things, plans that share recovery, and skill days',
     area: 'coach',
     notes: [

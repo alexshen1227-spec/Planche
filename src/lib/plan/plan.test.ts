@@ -62,29 +62,41 @@ describe('the day plan', () => {
     expect((p.skill?.minutes ?? 0) + (p.gym?.minutes ?? 0)).toBe(40)
   })
 
-  it('splits the minutes with skills first, never a block smaller than the session it starts', () => {
-    for (const minutes of [40, 45, 60, 90]) {
-      const p = planToday(athlete(['planche', 'frontlever']), { now: NOW, minutes })
-      expect(p.skill!.minutes + p.gym!.minutes).toBe(minutes)
-      expect(p.skill!.minutes).toBeGreaterThanOrEqual(MIN_SKILL_MINUTES[1])
-      expect(p.gym!.minutes).toBeGreaterThanOrEqual(MIN_GYM_MINUTES)
-      // Two skills only where the block holds two full parts.
-      if (p.skill!.skills.length > 1) expect(p.skill!.minutes).toBeGreaterThanOrEqual(MIN_SKILL_MINUTES[2])
-    }
-    // Short on time: one block, not two crumbs — and 35 minutes cannot hold an 18-minute skill block beside a 20-minute gym one.
-    for (const minutes of [25, 35]) {
-      const short = planToday(athlete(['planche']), { now: NOW, minutes })
-      expect(Boolean(short.skill) !== Boolean(short.gym), String(minutes)).toBe(true)
+  it('gives the day one main session — calisthenics with all the minutes, or the gym less an opener — never a block smaller than the session it starts', () => {
+    for (const minutes of [25, 35, 40, 45, 60, 90]) {
+      for (const kind of [undefined, 'calisthenics', 'gym'] as const) {
+        const p = planToday(athlete(['planche', 'frontlever']), { now: NOW, minutes, ...(kind ? { kind } : {}) })
+        const what = `${minutes} ${kind}`
+        if (kind) expect(p.kind, what).toBe(kind)
+        if (p.kind === 'calisthenics') {
+          expect(p.gym, what).toBeUndefined()
+          expect(p.skill!.minutes, what).toBe(minutes)
+          expect(p.skill!.opener, what).toBeUndefined()
+          // Two skills only where the block holds two full parts.
+          if (p.skill!.skills.length > 1) expect(p.skill!.minutes, what).toBeGreaterThanOrEqual(MIN_SKILL_MINUTES[2])
+        } else {
+          expect(p.kind, what).toBe('gym')
+          expect(p.gym!.minutes, what).toBeGreaterThanOrEqual(MIN_GYM_MINUTES)
+          // An opener only with room for both blocks: 35 minutes cannot hold an 18-minute skill session beside a 20-minute gym one.
+          if (p.skill) {
+            expect(p.skill.opener, what).toBe(true)
+            expect(p.skill.skills, what).toHaveLength(1)
+            expect(p.skill.minutes, what).toBe(MIN_SKILL_MINUTES[1])
+            expect(p.skill.minutes + p.gym!.minutes, what).toBe(minutes)
+          } else expect(p.gym!.minutes, what).toBe(minutes)
+          if (minutes < MIN_SKILL_MINUTES[1] + MIN_GYM_MINUTES) expect(p.skill, what).toBeUndefined()
+        }
+      }
     }
   })
 
   it('rests a straight-arm family inside the rest window, and trains the other', () => {
     const s = { ...athlete(['planche', 'frontlever']), sessions: [skillSession(NOW - 20 * HOUR, 'tuck-planche')] }
     expect(lastHardStraightArm(s.sessions, NOW).push).toBe(NOW - 20 * HOUR)
-    const p = planToday(s, { now: NOW, minutes: 60 })
+    const p = planToday(s, { now: NOW, minutes: 60, kind: 'calisthenics' })
     expect(p.skill!.skills).toEqual(['frontlever'])
     // Past the window it is back.
-    expect(planToday(s, { now: NOW + 30 * HOUR, minutes: 60 }).skill!.skills).toContain('planche')
+    expect(planToday(s, { now: NOW + 30 * HOUR, minutes: 60, kind: 'calisthenics' }).skill!.skills).toContain('planche')
     // Only planche trained and it is resting: the time goes to the gym.
     const solo = { ...athlete(['planche']), sessions: [skillSession(NOW - 20 * HOUR, 'tuck-planche')] }
     const g = planToday(solo, { now: NOW, minutes: 60 })
@@ -96,7 +108,7 @@ describe('the day plan', () => {
     const { focusFamilies, planWeekAhead } = await import('./planner')
     for (const [skill, fam] of [['planche', 'push'], ['frontlever', 'pull']] as const) {
       // Trained hard yesterday: no heavy pressing (or pulling) in the gym today.
-      const s = { ...athlete([skill], { minutesByDay: [60, 60, 60, 60, 60, 60, 60] }), sessions: [skillSession(NOW - 20 * HOUR, skill === 'planche' ? 'tuck-planche' : 'fl-tuck')] }
+      const s = { ...athlete([skill], { minutesByDay: [60, 60, 60, 60, 60, 60, 60] }), sessions: [skillSession(NOW - 20 * HOUR, skill === 'planche' ? 'tuck-planche' : 'tuck-front-lever')] }
       const today = planToday(s, { now: NOW, minutes: 60 })
       expect(today.gym && focusFamilies(today.gym.focus), skill).not.toContain(fam)
       // Across the week, a gym day of the family is a day of its holds or clear of them by the rest rule.
@@ -115,11 +127,11 @@ describe('the day plan', () => {
       ...base,
       gym: { ...base.gym!, activities: [{ id: 'x', at: NOW - 18 * HOUR, kind: 'sprint', minutes: 60, rpe: 9, legs: true, updatedAt: 1 }] },
     }
-    const p = planToday(sprinted, { now: NOW, minutes: 60 })
+    const p = planToday(sprinted, { now: NOW, minutes: 60, kind: 'gym' })
     expect(p.gym!.focus).not.toBe('lower')
     expect(p.gym!.musclesOff).toContain('quads')
     const noLegs = athlete(['planche'], { musclesOff: ['quads', 'hamstrings', 'glutes', 'calves', 'adductors'] })
-    for (let d = 0; d < 7; d++) expect(planToday(noLegs, { now: NOW + d * DAY, minutes: 60 }).gym!.focus).not.toBe('lower')
+    for (let d = 0; d < 7; d++) expect(planToday(noLegs, { now: NOW + d * DAY, minutes: 60, kind: 'gym' }).gym!.focus).not.toBe('lower')
   })
 
   it('keeps load off a joint reported painful, and lightens the day', () => {
@@ -251,13 +263,13 @@ describe('a sport alongside', () => {
       ...base,
       gym: { ...base.gym!, activities: [{ id: 'g', at: NOW + 20 * HOUR, kind: 'game', minutes: 60, rpe: 8, legs: true, updatedAt: 1 }] },
     }
-    const p = planToday(s, { now: NOW, minutes: 60 })
+    const p = planToday(s, { now: NOW, minutes: 60, kind: 'gym' })
     expect(p.gym!.focus).not.toBe('lower')
     expect(p.gym!.musclesOff).toContain('quads')
     expect(p.gym!.volumeFactor).toBeLessThanOrEqual(0.8)
     // A game a week away changes nothing.
     const later: AppState = { ...base, gym: { ...base.gym!, activities: [{ ...s.gym!.activities![0], at: NOW + 7 * DAY }] } }
-    expect(planToday(later, { now: NOW, minutes: 60 }).gym!.volumeFactor).toBe(1)
+    expect(planToday(later, { now: NOW, minutes: 60, kind: 'gym' }).gym!.volumeFactor).toBe(1)
   })
   it('drops sets in season, and keeps the setting through a reload', async () => {
     const { sanitizeGym } = await import('../gym/state')
@@ -339,12 +351,12 @@ describe('the part of the body left longest', () => {
     const upper = Array.from({ length: 5 }, (_, i) => [gymSession(NOW - (2 + i * 2) * DAY, 'bench-press', 4), gymSession(NOW - (2 + i * 2) * DAY + HOUR, 'lat-pulldown', 4)]).flat()
     const base = athlete(['planche'])
     const s: AppState = { ...base, gym: { ...base.gym!, sessions: upper } }
-    const p = planToday(s, { now: NOW, minutes: 60 })
+    const p = planToday(s, { now: NOW, minutes: 60, kind: 'gym' })
     expect(['lower', 'full']).toContain(p.gym!.focus)
     expect(p.reasons.some((r) => r.startsWith('Legs'))).toBe(true)
     // Switched-off legs are never "left longest".
     const off: AppState = { ...s, gym: { ...s.gym!, prefs: { ...s.gym!.prefs!, musclesOff: ['quads', 'hamstrings', 'glutes', 'calves', 'adductors'] } } }
-    expect(planToday(off, { now: NOW, minutes: 60 }).gym!.focus).not.toBe('lower')
+    expect(planToday(off, { now: NOW, minutes: 60, kind: 'gym' }).gym!.focus).not.toBe('lower')
     // The athlete's own pick wins: an explicit focus is built as asked.
     expect(buildGymSession({ location: gymA, minutes: 45, focus: 'push', sessions: upper }).focus).toBe('push')
   })

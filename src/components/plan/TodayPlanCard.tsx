@@ -3,6 +3,7 @@ import { FOCUS_LABEL, type GymFocus } from '../../lib/gym/builder'
 import { planWeekAhead, type ReadinessLevel } from '../../lib/plan/planner'
 import { rememberNextBlock } from '../../lib/plan/nextBlock'
 import { useStore } from '../../lib/store'
+import { dayKey } from '../../lib/time'
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import type { SkillId, WorkoutRequest } from '../../types'
 import { Button, Card, Sheet, ToggleChip } from '../ds'
@@ -29,34 +30,78 @@ const SKILL_LABEL: Record<SkillId, string> = {
 }
 const QUICK = [20, 30, 45, 60, 90]
 const READINESS_LABEL: Record<ReadinessLevel, string> = { light: 'Light day', normal: 'Normal day', push: 'Push day' }
+const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1)
 
 /**
- * Today, planned as one: skill work first while fresh, then the gym, split by
- * the athlete's goals and steered by what is still tired — with the reasons.
+ * Today, as one recommended session: calisthenics, or the gym — opening with a
+ * skill on a push or pull day when it fits — chosen by the coach from the
+ * athlete's goals and week, with the reasons, and the other kind one tap away.
  */
 export function TodayPlanCard({
   startWorkout,
   onStartGym,
+  onSwitch,
 }: {
   startWorkout: (request: WorkoutRequest) => void
   onStartGym: (preset: GymPreset) => void
+  /** Told when the athlete picks the other kind for today; the card re-plans today as that kind itself. */
+  onSwitch?: (kind: 'calisthenics' | 'gym') => void
 }) {
   const { state } = useStore()
   const [override, setOverride] = useState<number | undefined>(undefined)
+  // "Rather do … today?" holds for the day it was picked on only.
+  const [picked, setPicked] = useState<{ day: string; kind: 'calisthenics' | 'gym' } | null>(null)
   const [sheet, setSheet] = useState<'settings' | 'activity' | 'setup' | null>(null)
-  // Today is one slot of the week plan; "I have X minutes" re-plans the rest of the week around it.
-  const week = useMemo(() => planWeekAhead(state, Date.now(), override !== undefined ? { todayMinutes: override } : {}), [state, override])
+  const today = dayKey(Date.now())
+  const todayKind = picked?.day === today ? picked.kind : undefined
+  // Today is one slot of the week plan; "I have X minutes" and a picked kind re-plan the rest of the week around it.
+  const week = useMemo(
+    () => planWeekAhead(state, Date.now(), { ...(override !== undefined ? { todayMinutes: override } : {}), ...(todayKind ? { todayKind } : {}) }),
+    [state, override, todayKind],
+  )
   const plan = week.days[0].plan
   const lastSheet = useRef(sheet)
   if (sheet) lastSheet.current = sheet
   const shown = sheet ?? lastSheet.current
-  const skillNames = plan.skill?.skills.map((s) => SKILL_LABEL[s]) ?? []
-  // Today's blocks tick off as they are done, and the next one takes the lead.
+  // Today's parts tick off as they are done, and the next one takes the button.
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
   const skillDone = state.sessions.some((s) => s.startedAt >= todayStart.getTime())
   const gymDone = (state.gym?.sessions ?? []).some((s) => s.startedAt >= todayStart.getTime())
-  const allDone = (!plan.skill || skillDone) && (!plan.gym || gymDone) && (skillDone || gymDone)
+  const allDone = plan.kind === 'calisthenics' ? skillDone : plan.kind === 'gym' ? gymDone : false
+  const opener = plan.kind === 'gym' && plan.skill?.opener ? plan.skill : undefined
+  const preset: GymPreset | null = plan.gym
+    ? { focus: plan.gym.focus, minutes: plan.gym.minutes, avoidJoints: plan.gym.avoidJoints, volumeFactor: plan.gym.volumeFactor, musclesOff: plan.gym.musclesOff }
+    : null
+  const session =
+    plan.kind === 'calisthenics' && plan.skill
+      ? { title: `Calisthenics · ${plan.skill.minutes} min`, line: cap(plan.skill.skills.map((s) => SKILL_LABEL[s]).join(', ')) }
+      : plan.kind === 'gym' && plan.gym
+        ? { title: `Gym · ${FOCUS_LABEL[plan.gym.focus]} · ${(opener?.minutes ?? 0) + plan.gym.minutes} min`, line: '' }
+        : null
+  const liftsLine = plan.gym
+    ? plan.gym.deload
+      ? 'A lighter week'
+      : plan.gym.volumeFactor < 1
+        ? 'Kept light today'
+        : plan.gym.volumeFactor > 1
+          ? 'One more set on each lift today'
+          : 'Built from your place’s equipment'
+    : ''
+  const start = () => {
+    if (plan.kind === 'calisthenics' && plan.skill) {
+      rememberNextBlock(null)
+      startWorkout({ source: 'auto', minutes: plan.skill.minutes, skills: plan.skill.skills })
+    } else if (plan.kind === 'gym' && preset) {
+      if (opener && !skillDone && !gymDone) {
+        // The lifts follow on their own once the opener is saved.
+        rememberNextBlock(preset)
+        startWorkout({ source: 'auto', minutes: opener.minutes, skills: opener.skills })
+      } else onStartGym(preset)
+    }
+  }
+  const startLabel = allDone ? 'Again' : opener && skillDone ? 'Start the lifts' : 'Start'
+  const switchTo = plan.alternative && !skillDone && !gymDone ? plan.alternative : undefined
   const marker = (done: boolean, n: number) => (
     <span
       className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-footnote font-semibold ${done ? 'bg-ok text-white' : 'bg-accent-soft text-accent-text'}`}
@@ -110,65 +155,54 @@ export function TodayPlanCard({
         </p>
       ) : null}
 
-      {!plan.rest ? (
-        <ol className="mt-4 space-y-2">
-          {plan.skill ? (
-            <li className="flex items-center gap-3 rounded-inner bg-raised p-3">
-              {marker(skillDone, 1)}
-              <span className="min-w-0 flex-1">
-                <span className="block text-body font-semibold">Skills · {plan.skill.minutes} min</span>
-                <span className="block truncate text-caption text-ink3">{skillNames.join(', ')} — first, while you are fresh</span>
-              </span>
-              <Button
-                variant={skillDone ? 'secondary' : 'primary'}
-                onClick={() => {
-                  // The gym block follows on its own once this skill session is saved.
-                  rememberNextBlock(
-                    plan.gym && !gymDone
-                      ? {
-                          focus: plan.gym.focus,
-                          minutes: plan.gym.minutes,
-                          avoidJoints: plan.gym.avoidJoints,
-                          volumeFactor: plan.gym.volumeFactor,
-                          musclesOff: plan.gym.musclesOff,
-                        }
-                      : null,
-                  )
-                  startWorkout({ source: 'auto', minutes: plan.skill!.minutes, skills: plan.skill!.skills })
-                }}
-              >
-                {skillDone ? 'Again' : 'Start'}
-              </Button>
-            </li>
-          ) : null}
-          {plan.gym ? (
-            <li className="flex items-center gap-3 rounded-inner bg-raised p-3">
-              {marker(gymDone, plan.skill ? 2 : 1)}
-              <span className="min-w-0 flex-1">
-                <span className="block text-body font-semibold">
-                  Gym · {FOCUS_LABEL[plan.gym.focus]} · {plan.gym.minutes} min
+      {session && !plan.rest ? (
+        <section className="mt-4 rounded-inner bg-raised p-4" aria-label="Today’s session">
+          <div className="flex items-start gap-3">
+            <span className="min-w-0 flex-1">
+              <span className="block text-body font-semibold">{session.title}</span>
+              {session.line ? <span className="block text-caption text-ink3">{session.line}</span> : null}
+            </span>
+            {allDone ? marker(true, 1) : null}
+          </div>
+          {plan.kind === 'gym' && plan.gym ? (
+            <ol className="mt-3 space-y-2">
+              {opener ? (
+                <li className="flex items-center gap-3">
+                  {marker(skillDone, 1)}
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-footnote font-semibold">
+                      Opens with {opener.skills.map((s) => SKILL_LABEL[s]).join(', ')} ({opener.minutes} min)
+                    </span>
+                    <span className="block text-caption text-ink3">First, while you are fresh — logged with your skills</span>
+                  </span>
+                </li>
+              ) : null}
+              <li className="flex items-center gap-3">
+                {marker(gymDone, opener ? 2 : 1)}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-footnote font-semibold">
+                    {opener ? 'Then the lifts' : 'The lifts'} · {plan.gym.minutes} min
+                  </span>
+                  <span className="block text-caption text-ink3">{liftsLine}</span>
                 </span>
-                <span className="block truncate text-caption text-ink3">
-                  {plan.gym.deload ? 'A lighter week' : plan.gym.volumeFactor < 1 ? 'Kept light today' : plan.gym.volumeFactor > 1 ? 'One more set on each lift today' : 'Built from your place’s equipment'}
-                </span>
-              </span>
-              <Button
-                variant={(!plan.skill || skillDone) && !gymDone ? 'primary' : 'secondary'}
-                onClick={() =>
-                  onStartGym({
-                    focus: plan.gym!.focus,
-                    minutes: plan.gym!.minutes,
-                    avoidJoints: plan.gym!.avoidJoints,
-                    volumeFactor: plan.gym!.volumeFactor,
-                    musclesOff: plan.gym!.musclesOff,
-                  })
-                }
-              >
-                {gymDone ? 'Again' : skillDone ? 'Next' : 'Start'}
-              </Button>
-            </li>
+              </li>
+            </ol>
           ) : null}
-        </ol>
+          <Button full className="mt-3" variant={allDone ? 'secondary' : 'primary'} onClick={start}>
+            {startLabel}
+          </Button>
+        </section>
+      ) : null}
+      {switchTo ? (
+        <button
+          onClick={() => {
+            setPicked({ day: today, kind: switchTo })
+            onSwitch?.(switchTo)
+          }}
+          className="mt-1 min-h-11 px-1 text-footnote font-medium text-accent-text"
+        >
+          {switchTo === 'gym' ? 'Rather do the gym today?' : 'Rather do calisthenics today?'}
+        </button>
       ) : null}
 
       {plan.reasons.length ? (

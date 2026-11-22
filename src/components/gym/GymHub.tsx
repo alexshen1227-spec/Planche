@@ -6,7 +6,9 @@ import { buildGymSession, FOCUS_LABEL, nextFocus, type GymFocus, type PlannedExe
 import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
 import { activeLocation, conservative, loadDraft, prefillReps, previousSets, type GymDraft } from '../../lib/gym/draft'
-import { gymSessionInputs as followPlan, planToday, soreJoints } from '../../lib/plan/planner'
+import { gymOpener, gymSessionInputs as followPlan, planToday, skillFamily, soreJoints } from '../../lib/plan/planner'
+import { rememberNextBlock } from '../../lib/plan/nextBlock'
+import type { SkillId, WorkoutRequest } from '../../types'
 import { gymRecords, lastPerformance } from '../../lib/gym/progression'
 import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
 import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
@@ -20,13 +22,18 @@ import { ExerciseHistory } from './ExerciseHistory'
 import { SessionDetail } from './SessionDetail'
 
 const MINUTES = [20, 30, 45, 60, 75, 90]
+const SKILL_NAME: Record<SkillId, string> = { planche: 'planche', frontlever: 'front lever', handstand: 'handstand', ninety: '90° hold', flag: 'human flag' }
 const FOCI: (GymFocus | 'auto')[] = ['auto', 'full', 'upper', 'lower', 'push', 'pull', 'athletic']
 
 function dayLabel(at: number): string {
   return new Date(at).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
-export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; onPresetUsed?: () => void } = {}) {
+export function GymHub({
+  preset,
+  onPresetUsed,
+  startWorkout,
+}: { preset?: GymPreset | null; onPresetUsed?: () => void; startWorkout?: (request: WorkoutRequest) => void } = {}) {
   const { state, dispatch } = useStore()
   const gym = state.gym
   const youth = conservative(state.profile)
@@ -38,7 +45,9 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
   // session started from the Today card, so an elbow report still got
   // barbell presses from an Upper body pick here.
   const sore = useMemo(() => soreJoints(state, Date.now()), [state])
-  const [minutes, setMinutes] = useState(() => planned?.minutes ?? 45)
+  // The whole session's minutes, an opener included (a gym day's total).
+  const [minutes, setMinutes] = useState(() => (today.kind === 'gym' ? today.minutes : planned?.minutes ?? 45))
+  const [skipOpener, setSkipOpener] = useState(false)
   const [focus, setFocus] = useState<GymFocus | 'auto'>('auto')
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   const [historyOf, setHistoryOf] = useState<string | null>(null)
@@ -47,13 +56,28 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
   const [resumable, setResumable] = useState<GymDraft | null>(() => loadDraft())
   const location = activeLocation(gym)
 
+  // The focus this session will have, so the opener can be decided before the lifts are built.
+  const resolvedFocus: GymFocus | undefined =
+    gym && location ? (focus !== 'auto' ? focus : planned?.focus ?? nextFocus(gym.sessions, Date.now(), gym.prefs?.musclesOff)) : undefined
+  // A push or pull day may open with the matching skill (front lever first on a
+  // pull day), by the same rule the week plan uses: rest rule, sore joints, kit.
+  const opener = useMemo(
+    () => (startWorkout && location && resolvedFocus && !skipOpener ? gymOpener(state, resolvedFocus, location, Date.now(), minutes) : undefined),
+    [startWorkout, location, resolvedFocus, skipOpener, state, minutes],
+  )
+  const offeredOpener = useMemo(
+    () => (startWorkout && location && resolvedFocus ? gymOpener(state, resolvedFocus, location, Date.now(), minutes) : undefined),
+    [startWorkout, location, resolvedFocus, state, minutes],
+  )
+  const liftMinutes = minutes - (opener?.minutes ?? 0)
   const plan = useMemo(
     () =>
       gym && location
         ? buildGymSession({
             location,
-            minutes,
+            minutes: liftMinutes,
             ...followPlan(focus, planned, gym.prefs?.musclesOff ?? [], sore),
+            ...(resolvedFocus ? { focus: resolvedFocus } : {}),
             favoriteAt: gym.favoriteAt,
             sessions: gym.sessions,
             ratings: gym.ratings,
@@ -61,7 +85,7 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
             ...(gym.prefs ? { goals: gym.prefs.goals, priority: gym.prefs.musclesPriority } : {}),
           })
         : null,
-    [gym, location, minutes, focus, youth, planned, sore],
+    [gym, location, liftMinutes, focus, resolvedFocus, youth, planned, sore],
   )
   const records = useMemo(() => (gym ? gymRecords(gym.sessions) : {}), [gym])
 
@@ -131,6 +155,24 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
       dispatch({ type: 'RECORD_SYMPTOM', event: { at: Date.now(), joints: kind, regions: regions.length ? regions : ['other'], source: 'check-in' } })
     }
     const p = pending.preset
+    // The opener runs first as its own skill session; the lifts follow on when
+    // it is saved (the same hand-off a mixed day uses). Pain, or a sore joint the
+    // skill loads, named just now leaves it out.
+    const famJoints: Joint[] = opener ? (skillFamily(opener.skills[0]) === 'push' ? ['wrists', 'elbows', 'shoulders'] : ['elbows', 'shoulders']) : []
+    if (!p && !pending.empty && opener && startWorkout && kind !== 'pain' && !joints.some((j) => famJoints.includes(j))) {
+      const f = resolvedFocus ?? 'full'
+      const inputs = followPlan(focus, planned, gym.prefs?.musclesOff ?? [], sore)
+      rememberNextBlock<GymPreset>({
+        focus: f,
+        minutes: liftMinutes,
+        avoidJoints: [...new Set([...inputs.avoidJoints, ...joints])],
+        volumeFactor: inputs.volumeFactor,
+        musclesOff: inputs.musclesOff,
+      })
+      setPending(null)
+      startWorkout({ source: 'auto', minutes: opener.minutes, skills: opener.skills })
+      return
+    }
     const base = p
       ? { focus: p.focus, musclesOff: p.musclesOff ?? gym.prefs?.musclesOff ?? [], avoidJoints: p.avoidJoints ?? [], volumeFactor: p.volumeFactor ?? 1 }
       : followPlan(focus, planned, gym.prefs?.musclesOff ?? [], sore)
@@ -147,7 +189,9 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
           ratings: gym.ratings,
           youth,
           avoidJoints,
-          volumeFactor: Math.min(base.volumeFactor, kind === 'pain' ? 0.6 : 1),
+          // Pain named now caps the day; otherwise the plan's own factor stands — a push
+          // day's extra set was once clamped away here, so it never reached the lifts.
+          volumeFactor: kind === 'pain' ? Math.min(base.volumeFactor, 0.6) : base.volumeFactor,
           musclesOff,
           ...(gym.prefs ? { goals: gym.prefs.goals, priority: gym.prefs.musclesPriority } : {}),
         })
@@ -263,6 +307,19 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
             </ToggleChip>
           ))}
         </div>
+        {offeredOpener ? (
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-inner bg-accent-soft p-3">
+            <span className="min-w-0">
+              <span className="block text-body font-semibold">
+                {opener ? 'Opens with' : 'Could open with'} {SKILL_NAME[offeredOpener.skills[0]]} · {offeredOpener.minutes} min
+              </span>
+              <span className="block text-caption text-ink2">Skill work first, while you are fresh; the lifts follow on when it is saved.</span>
+            </span>
+            <Button variant="ghost" onClick={() => setSkipOpener(!skipOpener)}>
+              {skipOpener ? 'Add it' : 'Skip it'}
+            </Button>
+          </div>
+        ) : null}
         {plan && plan.items.length ? (
           <ol className="mt-4 divide-y divide-line">
             {plan.items.map((it) => {
