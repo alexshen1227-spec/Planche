@@ -19,6 +19,20 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-22',
+    title: 'Safer gym rules, found by a review',
+    area: 'training',
+    notes: [
+      'A pain report now keeps that joint out of the gym for the full three days, even if a later check-in says all good. Knees can be reported too, and knee pain keeps leg work out.',
+      'A load only goes up when you rated the effort of your sets. Rep boxes now start at the bottom of the range (or one more than last time), so tapping through a set never claims the top of the range by itself.',
+      'Switching a muscle off now keeps out every exercise that mainly trains it, not only those that train nothing else.',
+      'Careful mode: jumps and throws stay at 6 reps or more under 18, and with only a birth year a difference of 18 is still treated as possibly 17.',
+      'Starting a gym session never overwrites one that is still open; resume or discard it first. Swapping an exercise keeps the sets you already finished, and swaps and additions respect what today’s plan kept out.',
+      'Lighter weeks: a week well under your usual volume ends a hard run, so one lighter week does not call another; and an estimated max that was never measured is never described as “held still”.',
+      'Activities you log can be removed again, and tapping an estimated max opens that lift’s full history.',
+    ],
+  },
+  {
+    date: '2026-11-22',
     title: 'Your sport in the plan, and a day that flows',
     area: 'coach',
     notes: [

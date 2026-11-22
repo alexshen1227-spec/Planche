@@ -135,7 +135,7 @@ export function buildGymSession(input: {
   const emphasisOf = (e: GymExercise) =>
     input.emphasis ?? (goalEmphasis ? (e.compound ? goalEmphasis.compound : goalEmphasis.isolation) : 'muscle')
   const usable = (e: GymExercise) =>
-    !e.primary.every((m) => musclesOff.has(m)) && !e.stress.some((j) => avoid.has(j)) && ratings[e.id] !== 'avoid'
+    !e.primary.some((m) => musclesOff.has(m)) && !e.stress.some((j) => avoid.has(j)) && ratings[e.id] !== 'avoid'
   const focus = input.focus ?? nextFocus(sessions, now)
   const here = availableAt(location)
   const used = new Set<string>()

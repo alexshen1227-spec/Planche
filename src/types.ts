@@ -307,9 +307,9 @@ export interface FormCheck {
  * cannot take floor extension is usually fine on parallettes, while an elbow
  * is the one signal that should stop straight-arm loading outright.
  */
-export type BodyRegion = 'wrist' | 'elbow' | 'shoulder' | 'lower-back' | 'other'
+export type BodyRegion = 'wrist' | 'elbow' | 'shoulder' | 'lower-back' | 'knee' | 'other'
 
-export const BODY_REGIONS: BodyRegion[] = ['wrist', 'elbow', 'shoulder', 'lower-back', 'other']
+export const BODY_REGIONS: BodyRegion[] = ['wrist', 'elbow', 'shoulder', 'lower-back', 'knee', 'other']
 
 /** Answers to the coach's periodic pre-session check-in. */
 export interface CheckIn {

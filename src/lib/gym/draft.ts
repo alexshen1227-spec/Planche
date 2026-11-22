@@ -1,4 +1,6 @@
 import type { GymPlan } from './builder'
+import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import type { Joint, Muscle } from '../../data/gym/catalog'
 import type { LoadSuggestion, RepPlan } from './progression'
 import type { GymSession, GymState } from './types'
 import { toKg } from './units'
@@ -32,6 +34,16 @@ export interface GymDraft {
   locationId: string
   name: string
   items: DraftItem[]
+  /** What today's plan kept out — swaps and additions honour it too. */
+  avoidJoints?: Joint[]
+  musclesOff?: Muscle[]
+}
+
+/** Reps to pre-fill: the bottom of the range, or one more than last time when repeating a load. */
+export function prefillReps(plan: RepPlan, suggestion: LoadSuggestion | undefined, lastReps?: number): number {
+  const [lo, hi] = plan.range
+  if (suggestion?.kind === 'repeat' && lastReps !== undefined) return Math.min(hi, Math.max(lo, lastReps + 1))
+  return lo
 }
 
 const KEY = 'planchelab.gymDraft'
@@ -50,7 +62,8 @@ export function loadDraft(): GymDraft | null {
     const raw = localStorage.getItem(KEY)
     if (!raw) return null
     const d = JSON.parse(raw) as GymDraft
-    return d && typeof d.id === 'string' && Array.isArray(d.items) ? d : null
+    if (!d || typeof d.id !== 'string' || !Array.isArray(d.items)) return null
+    return { ...d, items: d.items.filter((it) => it && typeof it.exerciseId === 'string' && it.exerciseId in GYM_EXERCISE_BY_ID) }
   } catch {
     return null
   }
@@ -100,8 +113,10 @@ export function ageOf(profile: Profile, now = Date.now()): number | undefined {
  * ranges, one load step at a time, coaching-heavy lifts not picked by default.
  */
 export function conservative(profile: Profile, now = Date.now()): boolean {
+  // Only the birth year is known, so a year difference of 18 may still be a
+  // 17-year-old: careful until it is certainly 18.
   const age = ageOf(profile, now)
-  return age === undefined || age < 18
+  return age === undefined || age <= 18
 }
 
 export function activeLocation(gym: GymState | undefined) {

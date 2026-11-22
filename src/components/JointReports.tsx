@@ -19,6 +19,7 @@ const REGION_LABEL: Record<BodyRegion, string> = {
   elbow: 'elbow',
   shoulder: 'shoulder',
   'lower-back': 'lower back',
+  knee: 'knee',
   other: 'somewhere else',
 }
 

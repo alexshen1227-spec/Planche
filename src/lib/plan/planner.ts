@@ -38,6 +38,7 @@ const REGION_JOINT: Partial<Record<BodyRegion, Joint>> = {
   elbow: 'elbows',
   shoulder: 'shoulders',
   'lower-back': 'lower-back',
+  knee: 'knees',
 }
 
 export interface TodayPlan {
@@ -60,13 +61,20 @@ export function gymDeloadDue(state: AppState, now: number): { due: boolean; why?
   const youth = conservative(state.profile, now)
   const weeksNeeded = youth ? 3 : 5
   const startThis = weekStart(now)
-  let hardRun = 0
-  for (let w = 1; w <= 8; w++) {
-    const from = startThis - w * WEEK
+  const weeks = Array.from({ length: 8 }, (_, i) => {
+    const from = startThis - (i + 1) * WEEK
     const inWeek = sessions.filter((s) => s.startedAt >= from && s.startedAt < from + WEEK)
-    const rpes = inWeek.flatMap((s) => s.exercises.flatMap((e) => e.sets.filter((x) => !x.warmup && x.rpe !== undefined).map((x) => x.rpe!)))
-    const avg = rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : 0
-    if (inWeek.length >= 2 && avg >= 7.5) hardRun++
+    const working = inWeek.flatMap((s) => s.exercises.flatMap((e) => e.sets.filter((x) => !x.warmup && x.reps > 0)))
+    const rpes = working.filter((x) => x.rpe !== undefined).map((x) => x.rpe!)
+    return { sessions: inWeek.length, sets: working.length, avg: rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : 0 }
+  })
+  // A week well under the usual volume is a lighter week, however hard its
+  // sets felt — it ends the run, or a deload logged at RPE 8 would call
+  // another one every week after.
+  const usual = Math.max(0, ...weeks.map((w) => w.sets))
+  let hardRun = 0
+  for (const w of weeks) {
+    if (w.sessions >= 2 && w.avg >= 7.5 && w.sets >= 0.7 * usual) hardRun++
     else break
   }
   if (hardRun >= weeksNeeded) {
@@ -80,9 +88,17 @@ export function gymDeloadDue(state: AppState, now: number): { due: boolean; why?
   if (recent.length >= 3 && recentRpe.length >= 12) {
     const avg = recentRpe.reduce((a, b) => a + b, 0) / recentRpe.length
     // Effort up while the estimated maxes did not move: the same work is costing more.
-    const e1 = (from: number, to: number) =>
-      Math.max(0, ...recent.filter((s) => s.startedAt >= from && s.startedAt < to).flatMap((s) => s.exercises.flatMap((e) => e.sets.map((x) => estimateOneRepMax(x) ?? 0))))
-    const stalled = e1(now - 7 * DAY, now) <= e1(now - 14 * DAY, now - 7 * DAY)
+    // Only where both weeks have an estimate: no estimate is not "held still".
+    const e1 = (from: number, to: number): number | null => {
+      const values = recent
+        .filter((s) => s.startedAt >= from && s.startedAt < to)
+        .flatMap((s) => s.exercises.flatMap((e) => e.sets.filter((x) => !x.warmup).map((x) => estimateOneRepMax(x))))
+        .filter((v): v is number => v !== null)
+      return values.length ? Math.max(...values) : null
+    }
+    const thisWeek = e1(now - 7 * DAY, now)
+    const lastWeek = e1(now - 14 * DAY, now - 7 * DAY)
+    const stalled = thisWeek !== null && lastWeek !== null && thisWeek <= lastWeek
     if (avg >= 9 && stalled) {
       return { due: true, why: 'Your sets have averaged RPE 9 or more for two weeks while your estimated maxes held still: a lighter week now, then build again. A coaching convention, not a proven rule.' }
     }
@@ -109,11 +125,16 @@ export function planToday(state: AppState, opts: { now?: number; minutes?: numbe
   }
 
   // Pain and niggles: steer round the area for three days; pain also lightens the day.
+  // Every report in the window counts, not only the latest: a "good" check-in
+  // an hour later is not the elbow healing (the same reason the coach's
+  // persistent-complaint rail outranks today's answer).
   const timeline = readinessTimeline(state, now)
-  const latest = timeline[timeline.length - 1]
-  const recent = latest && now - latest.at < 72 * HOUR && latest.joints !== 'good' ? latest : undefined
-  const avoidJoints = [...new Set((recent?.regions ?? []).map((r) => REGION_JOINT[r]).filter((j): j is Joint => Boolean(j)))]
-  const pain = recent?.joints === 'pain' && now - recent.at < 48 * HOUR
+  const reports = timeline.filter((a) => a.at <= now && now - a.at < 72 * HOUR && a.joints !== 'good')
+  const recent = reports[reports.length - 1]
+  const avoidJoints = [
+    ...new Set(reports.flatMap((a) => a.regions ?? []).map((r) => REGION_JOINT[r]).filter((j): j is Joint => Boolean(j))),
+  ]
+  const pain = reports.some((a) => a.joints === 'pain' && now - a.at < 48 * HOUR)
   if (recent) {
     const where = avoidJoints.length ? avoidJoints.join(' and ') : 'the sore area'
     reasons.push(

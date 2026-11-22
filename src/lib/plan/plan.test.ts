@@ -251,3 +251,33 @@ describe('a sport alongside', () => {
     expect(sanitizeGym({ ...s.gym, prefs: { ...s.gym!.prefs, season: 'summer' } })!.prefs!.season).toBeUndefined()
   })
 })
+
+describe('found by the review of the planner', () => {
+  it('remembers a pain report through a later good check-in, and keeps knee pain off the legs', () => {
+    let s = reducer(athlete(['planche']), { type: 'RECORD_SYMPTOM', event: { at: NOW - 6 * HOUR, joints: 'pain', regions: ['elbow'], source: 'check-in' } })
+    s = reducer(s, { type: 'RECORD_SYMPTOM', event: { at: NOW - HOUR, joints: 'good', source: 'check-in' } })
+    const p = planToday(s, { now: NOW, minutes: 60 })
+    expect(p.gym!.avoidJoints).toContain('elbows')
+    expect(p.gym!.volumeFactor).toBeLessThan(1)
+    const knee = reducer(athlete(['planche']), { type: 'RECORD_SYMPTOM', event: { at: NOW - HOUR, joints: 'pain', regions: ['knee'], source: 'check-in' } })
+    const k = planToday(knee, { now: NOW, minutes: 60 })
+    expect(k.gym!.avoidJoints).toContain('knees')
+    expect(k.gym!.focus).not.toBe('lower')
+  })
+  it('does not call a stall it could not measure, and a lighter week ends the hard run', () => {
+    // Two weeks of grinding bodyweight work: no estimates, so no "maxes held still".
+    const bw = Array.from({ length: 4 }, (_, i) => ({
+      ...gymSession(NOW - (2 + i * 3) * DAY, 'pull-up', 4, 9.5),
+      exercises: [{ exerciseId: 'pull-up', sets: Array.from({ length: 4 }, () => ({ reps: 8, rpe: 9.5, at: NOW - (2 + i * 3) * DAY })) }],
+    }))
+    const base = athlete(['planche'], {}, 1990)
+    expect(gymDeloadDue({ ...base, gym: { ...base.gym!, sessions: bw } }, NOW).due).toBe(false)
+    // Five hard weeks, the most recent of them a light one logged at RPE 8: no second deload.
+    const weeks = Array.from({ length: 6 }, (_, w) => {
+      const from = weekStart(NOW) - (w + 1) * 7 * DAY
+      const sets = w === 0 ? 2 : 5
+      return [gymSession(from + DAY + 10 * HOUR, 'bench-press', sets, 8.5), gymSession(from + 3 * DAY + 10 * HOUR, 'back-squat', sets, 8.5)]
+    }).flat()
+    expect(gymDeloadDue({ ...base, gym: { ...base.gym!, sessions: weeks } }, NOW).due).toBe(false)
+  })
+})

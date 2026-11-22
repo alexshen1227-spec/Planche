@@ -7,7 +7,7 @@ import { pushToast } from '../../lib/toast'
 import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
 import { alternativesFor, availableAt } from '../../lib/gym/availability'
 import { restFor } from '../../lib/gym/builder'
-import { conservative, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
+import { conservative, prefillReps, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
 import { gymRecords, lastPerformance, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GymLocation, Rating } from '../../lib/gym/types'
 import { displayLoad, formatLoad, stepKgFor, unitFor } from '../../lib/gym/units'
@@ -51,7 +51,7 @@ export function draftItemFor(
     unit,
     sets: Array.from({ length: sets }, (_, i) => ({
       ...(load !== undefined ? { load } : {}),
-      reps: last?.sets[i]?.reps && suggestion.kind === 'repeat' ? Math.min(plan.range[1], last.sets[i].reps + 1) : plan.range[1],
+      reps: prefillReps(plan, suggestion, last?.sets[i]?.reps),
       done: false,
     })),
   }
@@ -123,13 +123,21 @@ export function GymPlayer({
     const ex = GYM_EXERCISE_BY_ID[exerciseId]
     update((d) => {
       const old = d.items[i]
-      const fresh = draftItemFor(ex, location, gym.sessions, youth, old.sets.length)
-      d.items[i] = { ...fresh, swappedFrom: old.swappedFrom ?? old.exerciseId }
+      const done = old.sets.filter((s) => s.done)
+      const left = Math.max(1, old.sets.length - done.length)
+      const fresh = { ...draftItemFor(ex, location, gym.sessions, youth, left), swappedFrom: old.swappedFrom ?? old.exerciseId }
+      // Sets already finished stay logged under the movement they were done on.
+      if (done.length) d.items.splice(i, 1, { ...old, sets: done }, fresh)
+      else d.items[i] = fresh
       return d
     })
     setSheet(null)
     pushToast(`Swapped to ${ex.name}.`, 'info')
   }
+
+  /** What today's plan kept out stays out of swaps and additions too. */
+  const fitsToday = (e: GymExercise) =>
+    !e.stress.some((j) => draft.avoidJoints?.includes(j)) && !e.primary.some((m) => draft.musclesOff?.includes(m))
 
   const addExercise = (exerciseId: string) => {
     update((d) => {
@@ -429,6 +437,7 @@ export function GymPlayer({
                   <p className="mt-1 text-footnote text-ink3">Same movement first, then the same muscles — everything here can be done at {location.name}.</p>
                   <ul className="mt-3 space-y-2">
                     {alternativesFor(draft.items[sh.item].exerciseId, location, gym.ratings, draft.items.map((d) => d.exerciseId))
+                      .filter(fitsToday)
                       .slice(0, 10)
                       .map((alt) => (
                         <li key={alt.id}>
@@ -460,6 +469,7 @@ export function GymPlayer({
                   <ul className="mt-3 space-y-2">
                     {availableAt(location)
                       .filter((e) => gym.ratings[e.id] !== 'avoid')
+                      .filter(fitsToday)
                       .filter((e) => !query || e.name.toLowerCase().includes(query.toLowerCase()) || PATTERN_LABEL[e.pattern].toLowerCase().includes(query.toLowerCase()))
                       .slice(0, 40)
                       .map((e) => (

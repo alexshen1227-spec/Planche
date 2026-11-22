@@ -127,6 +127,11 @@ travel mode (bodyweight-only location), coach/parent share card.
 
 ## Log
 
+- 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the
+  gym/plan screens (Sonnet, read-only) found 11 defects; all fixed and pinned
+  by decision in gym.test / plan.test (two mutation-checked). Knee added to
+  `BodyRegion`. Per-exercise history sheet added.
+
 - 2026-11-22 ~00:15 PST — Phase 5 first pass pushed (design system on the
   Fitness screens, swipe/ring/count-up/unlock, emoji badges → icons) and the
   7-day week preview on the Today card. Reviewed in the preview at desktop and

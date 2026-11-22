@@ -25,7 +25,7 @@ export function repPlanFor(
   emphasis: 'strength' | 'muscle' | 'endurance' | 'power' = 'muscle',
   youth = false,
 ): RepPlan {
-  if (exercise.explosive || emphasis === 'power') return { range: [3, 6], targetRpe: 7 }
+  if (exercise.explosive || emphasis === 'power') return youth ? { range: [6, 8], targetRpe: 7 } : { range: [3, 6], targetRpe: 7 }
   if (emphasis === 'endurance') return { range: exercise.compound ? [12, 20] : [15, 25], targetRpe: 8 }
   if (emphasis === 'strength') {
     if (!exercise.compound) return { range: [8, 12], targetRpe: 8 }
@@ -148,7 +148,8 @@ export function suggestLoad(input: {
   const kg = Math.max(...loads)
   const atLoad = working.filter((s) => (s.kg ?? 0) === kg)
   // One set stopped early is not "every set": a step up needs at least two.
-  const allTop = atLoad.length >= 2 && atLoad.every((s) => s.reps >= hi && (s.rpe === undefined || s.rpe <= plan.targetRpe + 0.5))
+  // ...and each with its effort logged: a set nobody rated says nothing about effort.
+  const allTop = atLoad.length >= 2 && atLoad.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
   const anyShort = atLoad.some((s) => s.reps < lo)
   const grinding = atLoad.some((s) => s.rpe !== undefined && s.rpe >= 9.5)
   if (ex.load === 'bodyweight' && !(kg > 0)) {

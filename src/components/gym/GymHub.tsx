@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { useStore } from '../../lib/store'
+import { pushToast } from '../../lib/toast'
 import { buildGymSession, FOCUS_LABEL, nextFocus, type GymFocus, type PlannedExercise } from '../../lib/gym/builder'
 import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
-import { activeLocation, conservative, loadDraft, type GymDraft } from '../../lib/gym/draft'
-import { gymRecords } from '../../lib/gym/progression'
+import { activeLocation, conservative, loadDraft, prefillReps, type GymDraft } from '../../lib/gym/draft'
+import { gymRecords, lastPerformance } from '../../lib/gym/progression'
 import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
 import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { Icon } from '../Icon'
@@ -14,6 +15,7 @@ import { GymPlayer } from './GymPlayer'
 import { WeekVolume } from '../plan/WeekVolume'
 import type { GymPreset } from '../plan/TodayPlanCard'
 import { LocationEditor } from './LocationEditor'
+import { ExerciseHistory } from './ExerciseHistory'
 
 const MINUTES = [20, 30, 45, 60, 75, 90]
 const FOCI: (GymFocus | 'auto')[] = ['auto', 'full', 'upper', 'lower', 'push', 'pull']
@@ -29,6 +31,7 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
   const [minutes, setMinutes] = useState(45)
   const [focus, setFocus] = useState<GymFocus | 'auto'>('auto')
   const [editing, setEditing] = useState<string | 'new' | null>(null)
+  const [historyOf, setHistoryOf] = useState<string | null>(null)
   const [running, setRunning] = useState<GymDraft | null>(null)
   const [resumable, setResumable] = useState<GymDraft | null>(() => loadDraft())
   const location = activeLocation(gym)
@@ -89,18 +92,31 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
       suggestion: it.suggestion,
       restSec: it.restSec,
       unit,
-      sets: Array.from({ length: it.sets }, () => ({ ...(load !== undefined ? { load } : {}), reps: it.plan.range[1], done: false })),
+      sets: Array.from({ length: it.sets }, (_, i) => ({
+        ...(load !== undefined ? { load } : {}),
+        reps: prefillReps(it.plan, it.suggestion, lastPerformance(gym.sessions, it.exerciseId, location.id)?.sets[i]?.reps),
+        done: false,
+      })),
     }
   }
 
   /** After the pain check: record what hurts, steer round it, and start. */
   const launch = (joints: Joint[], kind: 'none' | 'niggle' | 'pain') => {
     if (!pending) return
+    // An open session is never overwritten by a new one: resume or discard it first.
+    if (loadDraft()) {
+      setPending(null)
+      setResumable(loadDraft())
+      pushToast('A gym session is still open — resume it or discard it first.', 'info')
+      return
+    }
     const regions = joints.map((j) => JOINT_REGION[j]).filter((r): r is BodyRegion => Boolean(r))
     if (kind !== 'none' && joints.length) {
       dispatch({ type: 'RECORD_SYMPTOM', event: { at: Date.now(), joints: kind, regions: regions.length ? regions : ['other'], source: 'check-in' } })
     }
     const p = pending.preset
+    const avoidJoints = [...new Set([...(p?.avoidJoints ?? []), ...joints])]
+    const musclesOff = p?.musclesOff ?? gym.prefs?.musclesOff ?? []
     const planned = pending.empty
       ? null
       : buildGymSession({
@@ -110,9 +126,9 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
           sessions: gym.sessions,
           ratings: gym.ratings,
           youth,
-          avoidJoints: [...new Set([...(p?.avoidJoints ?? []), ...joints])],
+          avoidJoints,
           volumeFactor: Math.min(p?.volumeFactor ?? 1, kind === 'pain' ? 0.6 : 1),
-          musclesOff: p?.musclesOff ?? gym.prefs?.musclesOff ?? [],
+          musclesOff,
           ...(gym.prefs ? { goals: gym.prefs.goals, priority: gym.prefs.musclesPriority } : {}),
         })
     setPending(null)
@@ -122,6 +138,8 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
       locationId: location.id,
       name: planned?.name ?? 'Gym session',
       items: (planned?.items ?? []).map(toDraftItem),
+      ...(avoidJoints.length ? { avoidJoints } : {}),
+      ...(musclesOff.length ? { musclesOff } : {}),
     })
   }
 
@@ -245,10 +263,10 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
         ) : null}
         {plan && plan.items.length ? <p className="mt-1 text-caption text-ink3">About {plan.estimatedMin} minutes with warm-up and rests.</p> : null}
         <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
-          <Button size="lg" disabled={!plan?.items.length} onClick={() => setPending({ empty: false })}>
+          <Button size="lg" disabled={!plan?.items.length || Boolean(resumable)} onClick={() => setPending({ empty: false })}>
             Start session
           </Button>
-          <Button size="lg" variant="secondary" onClick={() => setPending({ empty: true })}>
+          <Button size="lg" variant="secondary" disabled={Boolean(resumable)} onClick={() => setPending({ empty: true })}>
             Empty
           </Button>
         </div>
@@ -298,9 +316,15 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
             {topRecords.map((r) => {
               const ex = GYM_EXERCISE_BY_ID[r.exerciseId]
               return (
-                <li key={r.exerciseId} className="rounded-card border border-line bg-surface p-4">
-                  <p className="truncate text-footnote text-ink3">{ex?.name}</p>
-                  <p className="mt-0.5 font-display text-title1 font-semibold tnum">{formatLoad(r.bestE1rm!.kg, ex ? unitFor(ex, location) : location.unit)}</p>
+                <li key={r.exerciseId}>
+                  <button
+                    onClick={() => setHistoryOf(r.exerciseId)}
+                    className="ds-press w-full rounded-card border border-line bg-surface p-4 text-left"
+                    aria-label={`${ex?.name}: estimated max ${formatLoad(r.bestE1rm!.kg, ex ? unitFor(ex, location) : location.unit)} — open its history`}
+                  >
+                    <p className="truncate text-footnote text-ink3">{ex?.name}</p>
+                    <p className="mt-0.5 font-display text-title1 font-semibold tnum">{formatLoad(r.bestE1rm!.kg, ex ? unitFor(ex, location) : location.unit)}</p>
+                  </button>
                 </li>
               )
             })}
@@ -309,6 +333,10 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
       ) : null}
 
       <WeekVolume />
+
+      <Sheet open={historyOf !== null} onClose={() => setHistoryOf(null)} label="Exercise history">
+        {historyOf ? <ExerciseHistory exerciseId={historyOf} /> : null}
+      </Sheet>
 
       <Sheet open={pending !== null} onClose={() => setPending(null)} label="Before you start">
         {pending ? <PainCheck onAnswer={launch} /> : null}
@@ -348,6 +376,7 @@ const JOINT_REGION: Partial<Record<Joint, BodyRegion>> = {
   elbows: 'elbow',
   shoulders: 'shoulder',
   'lower-back': 'lower-back',
+  knees: 'knee',
 }
 const CHECK_JOINTS: { id: Joint; label: string }[] = [
   { id: 'wrists', label: 'Wrists' },

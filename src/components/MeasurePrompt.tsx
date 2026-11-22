@@ -44,7 +44,8 @@ export function measurementDue(state: AppState, now = Date.now()): { weight: boo
   // A growing athlete is not nudged about bodyweight on a schedule — it stays
   // one tap away in Settings, never a recurring prompt.
   const birthYear = state.profile.birthYear
-  const minor = birthYear !== undefined && new Date(now).getFullYear() - birthYear < 18
+  // Birth year only: a difference of 18 may still be 17.
+  const minor = birthYear !== undefined && new Date(now).getFullYear() - birthYear <= 18
   // Bodyweight tracking is opt-in (Fitness Lab): optional, neutral, off by default.
   const tracking = state.settings.trackBodyweight === true
   return {

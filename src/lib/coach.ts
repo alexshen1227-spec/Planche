@@ -738,6 +738,7 @@ const REGION_NOUN: Record<BodyRegion, string> = {
   elbow: 'elbow',
   shoulder: 'shoulder',
   'lower-back': 'lower back',
+  knee: 'knee',
   other: 'reported area',
 }
 

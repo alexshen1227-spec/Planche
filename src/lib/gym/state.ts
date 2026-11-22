@@ -312,7 +312,16 @@ export function mergeGym(local: GymState | undefined, incoming: GymState | undef
       ? { prefsUpdatedAt: prefsFromIncoming ? incoming.prefsUpdatedAt : local.prefsUpdatedAt }
       : {}),
   }
-  return JSON.stringify(merged) === JSON.stringify(local) ? local : merged
+  return stableJson(merged) === stableJson(local) ? local : merged
+}
+
+/** JSON with keys sorted, so two equal states compare equal whatever order built them. */
+function stableJson(v: unknown): string {
+  return JSON.stringify(v, (_key, value: unknown) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : value,
+  )
 }
 
 export type GymOp =

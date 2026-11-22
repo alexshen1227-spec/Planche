@@ -831,6 +831,8 @@ const REGION_CONFLICTS: Record<BodyRegion, string[]> = {
   // The default recovery block was three straight lumbar/hip-flexor exercises,
   // handed to the one athlete who should not be doing any of them.
   'lower-back': ['arch-hold', 'leg-lifts', 'hollow-hold'],
+  // Jumping jacks land on the knees; nothing else in a recovery block does.
+  knee: ['jumping-jacks'],
   other: [],
 }
 
@@ -839,6 +841,7 @@ const REGION_LABEL: Record<BodyRegion, string> = {
   elbow: 'elbow',
   shoulder: 'shoulder',
   'lower-back': 'lower back',
+  knee: 'knee',
   other: 'reported area',
 }
 

@@ -15,7 +15,10 @@ const KINDS: { id: ActivityKind; label: string; legs: boolean }[] = [
 
 /** Log a sport or activity so it counts toward fatigue and the plan around it. */
 export function ActivitySheet({ onDone }: { onDone: () => void }) {
-  const { dispatch } = useStore()
+  const { state, dispatch } = useStore()
+  const nearby = (state.gym?.activities ?? [])
+    .filter((a) => Math.abs(a.at - Date.now()) < 7 * 86_400_000)
+    .sort((a, b) => b.at - a.at)
   const [kind, setKind] = useState<ActivityKind>('sprint')
   const [minutes, setMinutes] = useState(60)
   const [rpe, setRpe] = useState(7)
@@ -29,7 +32,7 @@ export function ActivitySheet({ onDone }: { onDone: () => void }) {
     const at = day.getTime() + ahead * 86_400_000
     dispatch({
       type: 'GYM',
-      op: { op: 'logActivity', activity: { id: `act-${at.toString(36)}`, at, kind, minutes, rpe, legs } },
+      op: { op: 'logActivity', activity: { id: `act-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, at, kind, minutes, rpe, legs } },
     })
     pushToast(ahead > 0 ? 'Added — the plan keeps your legs fresh for it.' : 'Logged — the plan now counts it.', 'success')
     onDone()
@@ -94,6 +97,28 @@ export function ActivitySheet({ onDone }: { onDone: () => void }) {
       <Button size="lg" full onClick={save}>
         Log it
       </Button>
+      {nearby.length ? (
+        <div>
+          <p className="text-footnote font-medium text-ink2">This week, before and ahead</p>
+          <ul className="mt-1 divide-y divide-line">
+            {nearby.map((a) => (
+              <li key={a.id} className="flex min-h-11 items-center justify-between gap-2 py-1">
+                <span className="text-footnote">
+                  {KINDS.find((k) => k.id === a.kind)?.label ?? a.kind} · {a.minutes} min · {a.rpe}/10
+                  <span className="text-ink3">
+                    {' '}
+                    · {new Date(a.at).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
+                    {a.at > Date.now() ? ' (upcoming)' : ''}
+                  </span>
+                </span>
+                <Button variant="ghost" onClick={() => dispatch({ type: 'GYM', op: { op: 'deleteActivity', id: a.id } })}>
+                  Remove
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   )
 }

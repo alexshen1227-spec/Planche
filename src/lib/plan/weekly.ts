@@ -155,7 +155,7 @@ export function weeklySummary(state: AppState, now = Date.now()): WeeklySummary 
   }
   if (skill.length === 0 && prefs.goals.skills > 0 && now - from > 3 * DAY) focus.push('No skill session yet this week — skills move with frequency, so get one in early next week.')
   const deload = gymDeloadDue(state, now)
-  if (deload.due) focus.push('Next week is a lighter gym week (see the plan’s reason).')
+  if (deload.due) focus.push('This is a lighter gym week — fewer sets, stopping further from failure (see Today’s reasons).')
   if (!priorityUnder.length && under.length >= 4) {
     focus.push(`Several muscles are under target so far (${under.slice(0, 3).map((x) => MUSCLE_BY_ID[x.m].label.toLowerCase()).join(', ')} and more) — the plan steers the rest of the week toward them.`)
   }

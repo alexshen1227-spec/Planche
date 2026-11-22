@@ -127,8 +127,7 @@ describe('double progression', () => {
   })
   it('never gives an athlete under 18 a range below six reps', () => {
     for (const e of GYM_EXERCISES) {
-      if (e.explosive) continue
-      for (const emphasis of ['strength', 'muscle', 'endurance'] as const) {
+      for (const emphasis of ['strength', 'muscle', 'endurance', 'power'] as const) {
         expect(repPlanFor(e, emphasis, true).range[0], `${e.id} ${emphasis}`).toBeGreaterThanOrEqual(6)
       }
     }
@@ -241,5 +240,33 @@ describe('CSV export', () => {
     const lines = csv.trim().split('\n')
     expect(lines[0]).toBe('date,kind,session,place,exercise,section,set,load_kg,unit,reps,hold_sec,rpe')
     expect(lines[1]).toContain('gym,Upper body,"Home, upstairs",push-up,main,1,,,12,,8')
+  })
+})
+
+describe('found by the review of the gym code', () => {
+  it('never steps up on sets whose effort was not logged', () => {
+    const plan = repPlanFor(GYM_EXERCISE_BY_ID['db-bench-press'], 'muscle')
+    const hist = [session('s1', 'a', T0, 'db-bench-press', [set(20, 10), set(20, 10), set(20, 10)])]
+    expect(suggestLoad({ exerciseId: 'db-bench-press', location: gymA, sessions: hist, plan }).kind).toBe('repeat')
+  })
+  it('keeps a movement out when any of its main muscles is switched off', () => {
+    for (const focus of ['lower', 'full', 'pull'] as const) {
+      const p = buildGymSession({ location: gymA, minutes: 90, focus, sessions: [], musclesOff: ['quads', 'biceps'] })
+      for (const item of p.items) {
+        const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
+        expect(ex.primary.includes('quads') || ex.primary.includes('biceps'), `${focus} ${ex.id}`).toBe(false)
+      }
+    }
+  })
+  it('merges identical saved gyms into the same object, whatever order built them', () => {
+    const g = sanitizeGym({ ...defaultGym(['parallettes']), prefsUpdatedAt: T0, ratings: { 'bench-press': 'love' }, prefs: { goals: { strength: 3 }, updatedAt: T0 } })!
+    const copy = sanitizeGym(JSON.parse(JSON.stringify(g)))!
+    expect(mergeGym(g, copy)).toBe(g)
+  })
+  it('treats a birth-year difference of 18 as possibly 17', async () => {
+    const { conservative } = await import('./draft')
+    const year = new Date(T0).getFullYear()
+    expect(conservative({ equipment: [], birthYear: year - 18 }, T0)).toBe(true)
+    expect(conservative({ equipment: [], birthYear: year - 19 }, T0)).toBe(false)
   })
 })
