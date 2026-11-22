@@ -177,6 +177,9 @@ Open, in order of value (none blocks using the app):
 - 2105.mp4: the athlete confirmed the stand-in tests are enough (the clip
   rebuilt as described, plus the real-photo regression). Nothing in the goal
   file is left open.
+- Later the same morning: gym session notes (cd0f9ce) and "the part of the
+  body left longest" (8291ab6) were added, tested in the suite; the athlete
+  signed the goal off ("I feel like u got it") and will check them in use.
 
 ## Log
 
