@@ -169,6 +169,15 @@ Open, in order of value (none blocks using the app):
    a real failure happens (a lockout calibration clip the camera cannot read).
 5. Gym achievements beyond the derived badges; per-set notes in the logger.
 
+## Closed with the athlete (2026-11-22)
+
+- Physical-phone test: the athlete tried the live app on their own Android
+  phone and reported it works fine (gym logger swipes, rest ring, sheets,
+  Today card).
+- 2105.mp4: the athlete confirmed the stand-in tests are enough (the clip
+  rebuilt as described, plus the real-photo regression). Nothing in the goal
+  file is left open.
+
 ## Log
 
 - 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the
