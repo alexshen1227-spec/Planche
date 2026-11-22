@@ -20,14 +20,18 @@ export function ActivitySheet({ onDone }: { onDone: () => void }) {
   const [minutes, setMinutes] = useState(60)
   const [rpe, setRpe] = useState(7)
   const [legs, setLegs] = useState(true)
-  const [when, setWhen] = useState<'today' | 'yesterday'>('today')
+  const [when, setWhen] = useState<'yesterday' | 'today' | 'tomorrow' | 'in2'>('today')
   const save = () => {
-    const at = Date.now() - (when === 'yesterday' ? 86_400_000 : 0)
+    const ahead = { yesterday: -1, today: 0, tomorrow: 1, in2: 2 }[when]
+    // Something coming up is put at 5 pm that day, so the plan can keep legs fresh for it.
+    const day = new Date()
+    if (ahead > 0) day.setHours(17, 0, 0, 0)
+    const at = day.getTime() + ahead * 86_400_000
     dispatch({
       type: 'GYM',
       op: { op: 'logActivity', activity: { id: `act-${at.toString(36)}`, at, kind, minutes, rpe, legs } },
     })
-    pushToast('Logged — the plan now counts it.', 'success')
+    pushToast(ahead > 0 ? 'Added — the plan keeps your legs fresh for it.' : 'Logged — the plan now counts it.', 'success')
     onDone()
   }
   return (
@@ -81,8 +85,10 @@ export function ActivitySheet({ onDone }: { onDone: () => void }) {
         value={when}
         onChange={setWhen}
         options={[
-          { value: 'today' as const, label: 'Today' },
           { value: 'yesterday' as const, label: 'Yesterday' },
+          { value: 'today' as const, label: 'Today' },
+          { value: 'tomorrow' as const, label: 'Tomorrow' },
+          { value: 'in2' as const, label: 'In 2 days' },
         ]}
       />
       <Button size="lg" full onClick={save}>

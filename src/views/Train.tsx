@@ -40,7 +40,7 @@ import { STRATEGY_BY_ID } from '../lib/coach'
 import { useToday } from '../lib/useToday'
 import { ASSIST_LABEL } from '../components/SetupRow'
 import { WeekPlanCard } from '../components/WeekPlanCard'
-import { SegmentedControl } from '../components/ds'
+import { Button, SegmentedControl } from '../components/ds'
 
 const SECTION_LABEL: Record<Section, string> = {
   warmup: 'Warm-up',
@@ -122,11 +122,11 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-[28px] font-bold text-ink">Train</h1>
-          <p className="mt-0.5 text-[14px] text-ink2">Guided sessions with timers, rest and automatic logging.</p>
+          <p className="mt-0.5 text-body text-ink2">Guided sessions with timers, rest and automatic logging.</p>
         </div>
         <button
           onClick={() => setQuickLog(true)}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-4 py-2.5 text-[14px] font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
+          className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-4 py-2.5 text-body font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
         >
           <Icon name="plus" size={15} /> Quick log a set
         </button>
@@ -136,25 +136,25 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
       <div className="mt-5 grid gap-3 lg:grid-cols-3">
         <button
           onClick={() => setPreviewRequest({ source: 'auto' })}
-          className="card-int card-sheen group relative overflow-hidden rounded-3xl border border-accent/25 bg-surface p-6 text-left shadow-card hover:border-accent/50 lg:col-span-2"
+          className="card-int card-sheen group relative overflow-hidden rounded-card border border-accent/25 bg-surface p-6 text-left shadow-card hover:border-accent/50 lg:col-span-2"
         >
           <div className="pointer-events-none absolute -right-8 -top-12 h-44 w-44 rounded-full bg-accent-soft blur-2xl" />
           <div className="relative">
-            <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
+            <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wider text-accent-text">
               <Icon name="bolt" size={14} /> Recommended today
             </div>
             <div className="mt-1.5 font-display text-[22px] font-bold text-ink">{today.name}</div>
-            <p className="mt-1 max-w-lg text-[14px] leading-relaxed text-ink2">{today.focus}</p>
+            <p className="mt-1 max-w-lg text-body leading-relaxed text-ink2">{today.focus}</p>
             {today.lineup && today.lineup.length > 1 ? (
               <ul className="mt-2 max-w-lg space-y-1">
                 {today.lineup.map((entry) => (
-                  <li key={entry.skill} className="text-[12.5px] leading-relaxed text-ink3">
+                  <li key={entry.skill} className="text-footnote leading-relaxed text-ink3">
                     <span className="font-semibold text-ink2">{SKILLS[entry.skill].name}</span> — {entry.reason}
                   </li>
                 ))}
               </ul>
             ) : null}
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-[13px] text-ink2">
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-footnote text-ink2">
               {today.strategy ? (
                 <span className="rounded-full border border-accent/30 bg-accent-soft px-3 py-1 font-semibold text-accent-text">
                   {STRATEGY_BY_ID[today.strategy].name}
@@ -172,8 +172,8 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
             </div>
           </div>
         </button>
-        <div className="card-int group rounded-3xl border border-line bg-surface p-6 text-left shadow-card">
-          <div className="flex items-center gap-2 text-[12.5px] font-semibold uppercase tracking-wider text-ink3">
+        <div className="card-int group rounded-card border border-line bg-surface p-6 text-left shadow-card">
+          <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wider text-ink3">
             <Icon name="target" size={14} /> Test day
           </div>
           {trainable.length > 1 ? (
@@ -183,7 +183,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                   key={skill}
                   aria-pressed={skill === testSkill}
                   onClick={() => setTestPick(skill)}
-                  className={`min-h-9 rounded-full border px-3 py-1 text-[12.5px] font-semibold transition ${
+                  className={`min-h-11 rounded-full border px-3 py-1 text-footnote font-semibold transition ${
                     skill === testSkill ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2 hover:text-ink'
                   }`}
                 >
@@ -193,17 +193,17 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
             </div>
           ) : null}
           <div className="mt-1.5 font-display text-[22px] font-bold text-ink">Max Test</div>
-          <p className="mt-1 text-[14px] leading-relaxed text-ink2">
+          <p className="mt-1 text-body leading-relaxed text-ink2">
             {EXERCISE_BY_ID[step.keyExerciseId].perSide ? 'Two fresh attempts per side' : 'Three fresh attempts'} at
             the {EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. A verified{' '}
             <span className="font-semibold text-ink tnum">{step.unlockSec}s</span> unlocks the next step.
           </p>
           {testBlocked ? (
-            <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">Not today — {testBlocked}.</p>
+            <p className="mt-3 text-footnote leading-relaxed text-ink3">Not today — {testBlocked}.</p>
           ) : (
             <button
               onClick={() => setPreviewRequest({ source: 'test', stepId: step.id })}
-              className="mt-4 inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[14px] font-medium text-accent-text transition hover:border-line-strong"
+              className="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-body font-medium text-accent-text transition hover:border-line-strong"
             >
               Test yourself <Icon name="arrowR" size={15} />
             </button>
@@ -218,8 +218,8 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
       {trainable.length > 1 ? (
         <>
           <SectionTitle>Choose today's skills</SectionTitle>
-          <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
-            <p className="text-[13.5px] leading-relaxed text-ink2">
+          <div className="rounded-inner border border-line bg-surface p-5 shadow-card">
+            <p className="text-footnote leading-relaxed text-ink2">
               The recommended session picks these for you by priority and by what has gone longest untrained. To
               train something else today, pick it here — one skill for a session built around it, or several in the
               order you tap them.
@@ -233,7 +233,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                     key={skill}
                     aria-pressed={on}
                     onClick={() => setMix((current) => (on ? current.filter((id) => id !== skill) : [...current, skill]))}
-                    className={`min-h-10 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${
+                    className={`min-h-11 rounded-full border px-3.5 py-1.5 text-footnote font-semibold transition ${
                       on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2 hover:text-ink'
                     }`}
                   >
@@ -244,15 +244,14 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
               })}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button
+              <Button
                 onClick={() => setPreviewRequest({ source: 'auto', skills: mixed })}
                 disabled={mixed.length === 0}
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 font-display text-[14.5px] font-semibold text-on-accent shadow-card transition hover:brightness-105 disabled:opacity-40"
-                style={{ background: 'var(--t-btn-accent)' }}
+                className="inline-flex min-h-11 items-center gap-2 disabled:opacity-40"
               >
                 <Icon name="play" size={15} /> Preview this session
-              </button>
-              <span className="text-[12.5px] leading-relaxed text-ink3">
+              </Button>
+              <span className="text-footnote leading-relaxed text-ink3">
                 {mixed.length === 0
                   ? 'Nothing picked.'
                   : mixed.length === 1
@@ -261,7 +260,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
               </span>
             </div>
             {skills.length > trainable.length ? (
-              <p className="mt-3 text-[12.5px] leading-relaxed text-ink3">
+              <p className="mt-3 text-footnote leading-relaxed text-ink3">
                 Not listed: {skills.filter((skill) => !trainable.includes(skill)).map((skill) => SKILLS[skill].name).join(', ')} —
                 waiting for kit. Add it under Settings → Equipment.
               </p>
@@ -279,15 +278,15 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
             <button
               key={t.id}
               onClick={() => setPreviewRequest({ source: 'template', templateId: t.id })}
-              className="card-int rounded-2xl border border-line bg-surface p-5 text-left shadow-card"
+              className="card-int rounded-inner border border-line bg-surface p-5 text-left shadow-card"
             >
               <div className="flex items-baseline justify-between gap-2">
-                <div className="font-display text-[17px] font-semibold text-ink">{t.name}</div>
-                <div className="shrink-0 text-[12.5px] text-ink3 tnum">~{built.minutes} min</div>
+                <div className="font-display text-title3 font-semibold text-ink">{t.name}</div>
+                <div className="shrink-0 text-footnote text-ink3 tnum">~{built.minutes} min</div>
               </div>
-              <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">{t.focus}</p>
+              <p className="mt-1 text-footnote leading-relaxed text-ink2">{t.focus}</p>
               {changed ? (
-                <p className="mt-1.5 text-[12px] font-medium text-accent-text">Adjusted for today — see preview</p>
+                <p className="mt-1.5 text-caption font-medium text-accent-text">Adjusted for today — see preview</p>
               ) : null}
             </button>
           )
@@ -305,24 +304,24 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
           <div className="p-6 sm:p-7">
             <div className="pr-10">
               <h2 className="font-display text-[22px] font-bold text-ink">{preview.name}</h2>
-              <p className="mt-1 text-[14px] text-ink2">{preview.focus}</p>
+              <p className="mt-1 text-body text-ink2">{preview.focus}</p>
               {preview.lineup && preview.lineup.length > 1 ? (
                 <ul className="mt-2 space-y-1">
                   {preview.lineup.map((entry) => (
-                    <li key={entry.skill} className="text-[12.5px] leading-relaxed text-ink3">
+                    <li key={entry.skill} className="text-footnote leading-relaxed text-ink3">
                       <span className="font-semibold text-ink2">{SKILLS[entry.skill].name}</span> — {entry.reason}
                     </li>
                   ))}
                 </ul>
               ) : null}
-              <div className="mt-2 text-[13px] text-ink3 tnum">
+              <div className="mt-2 text-footnote text-ink3 tnum">
                 ~{preview.minutes} min · {countRounds(preview.blocks)} sets
               </div>
             </div>
             {preview.adjustments?.length ? (
-              <div className="mt-3 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3">
-                <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent-text">Adjusted for today</div>
-                <ul className="mt-1 space-y-1 text-[13px] leading-relaxed text-ink">
+              <div className="mt-3 rounded-inner border border-accent/30 bg-accent-soft px-4 py-3">
+                <div className="text-caption font-bold uppercase tracking-wider text-accent-text">Adjusted for today</div>
+                <ul className="mt-1 space-y-1 text-footnote leading-relaxed text-ink">
                   {preview.adjustments.map((line) => (
                     <li key={line}>{line}</li>
                   ))}
@@ -332,8 +331,8 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
             <WorkoutTarget workout={preview} />
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               {[...new Set(preview.blocks.map((b) => b.section))].map((sec) => (
-                <div key={sec} className="rounded-2xl border border-line bg-raised p-4">
-                  <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink3">
+                <div key={sec} className="rounded-inner border border-line bg-raised p-4">
+                  <div className="mb-2 text-caption font-semibold uppercase tracking-wide text-ink3">
                     {SECTION_LABEL[sec]}
                   </div>
                   <div className="space-y-1.5">
@@ -343,11 +342,11 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                         const ex = EXERCISE_BY_ID[b.exerciseId]
                         const owner = (preview.skills?.length ?? 1) > 1 && sec !== 'warmup' && sec !== 'cooldown' ? b.skill : undefined
                         return (
-                          <div key={i} className="flex items-baseline justify-between gap-3 text-[14px]">
+                          <div key={i} className="flex items-baseline justify-between gap-3 text-body">
                             <span className="text-ink">
                               {ex.name}
                               {owner ? (
-                                <span className="ml-2 whitespace-nowrap rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink3">
+                                <span className="ml-2 whitespace-nowrap rounded-full border border-line px-2 py-0.5 text-caption font-medium text-ink3">
                                   {SKILLS[owner].short}
                                 </span>
                               ) : null}
@@ -360,7 +359,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                 </div>
               ))}
             </div>
-            <button
+            <Button size="lg"
               onClick={() => {
                 const request = previewRequest
                 setPreviewRequest(null)
@@ -368,11 +367,10 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                 // at the moment it starts, with whatever is true then.
                 if (request) startWorkout(request)
               }}
-              className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[16px] font-semibold text-on-accent shadow-card transition hover:brightness-105"
-              style={{ background: 'var(--t-btn-accent)' }}
+              className="mt-5 flex w-full items-center justify-center gap-2 "
             >
               <Icon name="play" size={17} /> Start
-            </button>
+            </Button>
           </div>
         ) : null}
       </Modal>
@@ -383,7 +381,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
         onClose={() => setQuickLog(false)}
         onSaved={() => setQuickLog(false)}
       />
-      <div className="mt-8 rounded-2xl border border-line bg-surface/60 p-4 text-[13px] leading-relaxed text-ink3">
+      <div className="mt-8 rounded-inner border border-line bg-surface/60 p-4 text-footnote leading-relaxed text-ink3">
         <span className="font-semibold text-ink2">Safety note:</span> prepare before loading, keep most holds a little
         shy of failure, and back off at the first sign of elbow or wrist pain — coaching conventions rather than tested
         rules. This app is a training log, not medical advice.
@@ -478,8 +476,8 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
     <Modal open={open} onClose={onClose} label="Quick log a set">
       <div className="p-6">
         <h2 className="font-display text-[20px] font-bold text-ink">Quick log</h2>
-        <p className="mt-1 text-[13.5px] text-ink2">Trained outside the app? Log a single best set here.</p>
-        <label className="mt-4 block text-[13px] font-medium text-ink2">
+        <p className="mt-1 text-footnote text-ink2">Trained outside the app? Log a single best set here.</p>
+        <label className="mt-4 block text-footnote font-medium text-ink2">
           Exercise
           <select
             value={exerciseId}
@@ -489,7 +487,7 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
               setSide(null)
               setAssist(null)
             }}
-            className="mt-1.5 w-full rounded-xl border border-line bg-raised px-3.5 py-3 text-[14.5px] text-ink outline-none focus:border-accent"
+            className="mt-1.5 w-full rounded-control border border-line bg-raised px-3.5 py-3 text-body text-ink outline-none focus:border-accent"
           >
             {Object.entries(CATEGORY_LABEL).map(([cat, label]) => (
               <optgroup key={cat} label={label}>
@@ -504,8 +502,8 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
         </label>
         {surfaceAware ? (
           <div className="mt-4">
-            <div className="text-[13px] font-medium text-ink2">Surface</div>
-            <div className="mt-1.5 flex overflow-hidden rounded-xl border border-line" role="group" aria-label="Surface">
+            <div className="text-footnote font-medium text-ink2">Surface</div>
+            <div className="mt-1.5 flex overflow-hidden rounded-control border border-line" role="group" aria-label="Surface">
               {TRAINING_SURFACES.map((item) => {
                 const disabled = item.id === 'parallettes' && !state.profile.equipment.includes('parallettes')
                 return (
@@ -514,7 +512,7 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
                     onClick={() => setSurface(item.id)}
                     disabled={disabled}
                     aria-pressed={surface === item.id}
-                    className={`min-h-11 flex-1 px-3 py-2.5 text-[13.5px] font-medium transition disabled:opacity-35 ${
+                    className={`min-h-11 flex-1 px-3 py-2.5 text-footnote font-medium transition disabled:opacity-35 ${
                       surface === item.id ? 'bg-accent text-on-accent' : 'bg-raised text-ink2'
                     }`}
                   >
@@ -527,16 +525,16 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
         ) : null}
         {needsSide ? (
           <div className="mt-4">
-            <div className="text-[13px] font-medium text-ink2" id="ql-side">
+            <div className="text-footnote font-medium text-ink2" id="ql-side">
               Which side?
             </div>
-            <div className="mt-1.5 flex overflow-hidden rounded-xl border border-line" role="group" aria-labelledby="ql-side">
+            <div className="mt-1.5 flex overflow-hidden rounded-control border border-line" role="group" aria-labelledby="ql-side">
               {(['left', 'right'] as const).map((s) => (
                 <button
                   key={s}
                   onClick={() => setSide(s)}
                   aria-pressed={side === s}
-                  className={`min-h-11 flex-1 px-3 py-2.5 text-[13.5px] font-medium capitalize transition ${
+                  className={`min-h-11 flex-1 px-3 py-2.5 text-footnote font-medium capitalize transition ${
                     side === s ? 'bg-accent text-on-accent' : 'bg-raised text-ink2'
                   }`}
                 >
@@ -548,7 +546,7 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
         ) : null}
         {assistAware ? (
           <div className="mt-4">
-            <div className="text-[13px] font-medium text-ink2" id="ql-assist">
+            <div className="text-footnote font-medium text-ink2" id="ql-assist">
               Any assistance? <span className="font-normal text-ink3">(optional)</span>
             </div>
             <div className="mt-1.5 flex flex-wrap gap-1.5" role="group" aria-labelledby="ql-assist">
@@ -557,7 +555,7 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
                   key={id}
                   onClick={() => setAssist(assist === id ? null : id)}
                   aria-pressed={assist === id}
-                  className={`min-h-10 rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition ${
+                  className={`min-h-11 rounded-full border px-3 py-1.5 text-footnote font-medium transition ${
                     assist === id ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2'
                   }`}
                 >
@@ -568,12 +566,12 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
           </div>
         ) : null}
         <div className="mt-4">
-          <div className="text-[13px] font-medium text-ink2">{ex.type === 'hold' ? 'Hold (seconds)' : 'Reps'}</div>
+          <div className="text-footnote font-medium text-ink2">{ex.type === 'hold' ? 'Hold (seconds)' : 'Reps'}</div>
           <div className="mt-2 flex items-center justify-center gap-4">
             <button
               onClick={() => setValue((v) => Math.max(1, v - 1))}
               aria-label="Decrease"
-              className="grid h-12 w-12 place-items-center rounded-xl border border-line bg-surface text-ink hover:border-line-strong"
+              className="grid h-12 w-12 place-items-center rounded-control border border-line bg-surface text-ink hover:border-line-strong"
             >
               <Icon name="minus" size={18} />
             </button>
@@ -581,30 +579,29 @@ function QuickLogModal({ open, onClose, onSaved }: { open: boolean; onClose: () 
             <button
               onClick={() => setValue((v) => v + 1)}
               aria-label="Increase"
-              className="grid h-12 w-12 place-items-center rounded-xl border border-line bg-surface text-ink hover:border-line-strong"
+              className="grid h-12 w-12 place-items-center rounded-control border border-line bg-surface text-ink hover:border-line-strong"
             >
               <Icon name="plus" size={18} />
             </button>
           </div>
           {currentBest !== undefined ? (
-            <div className="mt-1 text-center text-[13px] text-ink3 tnum">
+            <div className="mt-1 text-center text-footnote text-ink3 tnum">
               {surfaceAware ? `${surfaceLabel(surface)} best` : 'current best'}{' '}
               {ex.type === 'hold' ? fmtHold(currentBest) : currentBest}
             </div>
           ) : null}
         </div>
-        <p className="mt-3 text-[12px] leading-relaxed text-ink3">
+        <p className="mt-3 text-caption leading-relaxed text-ink3">
           A hand-logged value counts toward your records and history, but not toward unlocking a step — that needs a
           filmed, confirmed hold.
         </p>
-        <button
+        <Button size="lg"
           onClick={save}
           disabled={needsSide && !side}
-          className="mt-3 w-full rounded-2xl px-6 py-3.5 font-display text-[16px] font-semibold text-on-accent shadow-card transition hover:brightness-105 disabled:opacity-40"
-          style={{ background: 'var(--t-btn-accent)' }}
+          className="mt-3 w-full disabled:opacity-40"
         >
           {needsSide && !side ? 'Pick a side to save' : 'Save'}
-        </button>
+        </Button>
       </div>
     </Modal>
   )

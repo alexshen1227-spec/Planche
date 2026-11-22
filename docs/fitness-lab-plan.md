@@ -111,14 +111,17 @@ Diagnosis (2026-11-21, read from `src/lib/poseForm.ts`):
 - [x] Component library `src/components/ds/` (Button, Card, Sheet, SegmentedControl, ToggleChip, Stepper, Metric, CountUp, RingTimer, SwipeRow, EmptyState, ErrorState, Skeleton, BadgeGlyph). Charts still use `charts.tsx`.
 - [x] Motion: spring transitions, press feedback, count-ups, ring fills,
       unlock moments; `prefers-reduced-motion` respected; haptics on set done.
-      Applied to the Fitness screens; the skill screens (Dashboard, Path,
-      SessionPlayer, Onboarding, Settings, Stats) only got the tokens and badge
-      icons — migrating their ~40 inline-styled buttons to `Button` is next.
-- [ ] Every screen: loading, empty and error states; 44 px targets; contrast. (Fitness screens done; skill screens to go.)
+      Applied to the Fitness screens, then (second pass) the skill screens:
+      24 inline-styled accent buttons → `Button` with identical handlers and
+      text; charts draw a monotone curve with unit-aware axes.
+- [x] (mostly) Every screen: loading, empty and error states; 44 px targets; contrast. Fitness and skill screens both moved to the ds Button, type scale, radii and `min-h-11`; Library/Stats empty states use `EmptyState`. Left: an audit of `h-*`/padding-sized controls, and `ErrorState` is unused (state is synchronous and local).
 
 ## Later ideas (for a teen athlete mixing gym, skills and a sport)
 
-Sport-season mode (in-season volume caps), sprint-day-aware leg scheduling,
+Done 2026-11-22: sport-season mode (`prefs.season`, in-season volume 0.7) and
+game-day awareness (an upcoming leg-heavy activity within 36 h keeps legs out
+and the gym at 0.8), Today's blocks tick off. Still open:
+sprint-day-aware leg scheduling beyond the next day,
 growth-spurt caution prompt, sleep/readiness check-in, exam-week light plans,
 travel mode (bodyweight-only location), coach/parent share card.
 

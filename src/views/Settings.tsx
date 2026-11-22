@@ -1,3 +1,4 @@
+import { Button } from '../components/ds'
 import { useEffect, useRef, useState } from 'react'
 import type { AppState, EquipmentId, Settings as SettingsShape, Tab, TrainingSurface } from '../types'
 import {
@@ -69,8 +70,8 @@ function Row({
             own ragged line: controls then stay in one right-hand column down
             the whole page, which is what makes the list read as a list. */}
         <div className={stack ? 'min-w-0' : 'min-w-0 flex-1 basis-56'}>
-          <div className="text-[14.5px] font-medium text-ink">{label}</div>
-          {hint ? <div className="mt-0.5 max-w-md text-[13px] text-ink2">{hint}</div> : null}
+          <div className="text-body font-medium text-ink">{label}</div>
+          {hint ? <div className="mt-0.5 max-w-md text-footnote text-ink2">{hint}</div> : null}
         </div>
         {stack ? null : <div className="flex shrink-0 items-center gap-2">{children}</div>}
       </div>
@@ -122,7 +123,7 @@ function Stepper({
       >
         <Icon name="minus" size={14} />
       </button>
-      <div className="w-16 text-center text-[14px] font-semibold text-ink tnum">{format ? format(value) : value}</div>
+      <div className="w-16 text-center text-body font-semibold text-ink tnum">{format ? format(value) : value}</div>
       <button
         onClick={() => onChange(Math.min(max, value + step))}
         aria-label={`Increase ${label}`}
@@ -188,7 +189,7 @@ function LatencyCalibrator({ onDone }: { onDone: (sec: number) => void }) {
     <div className="p-6">
       <div className="pr-10">
         <h2 className="font-display text-[20px] font-bold text-ink">Calibrate your reaction</h2>
-        <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">
+        <p className="mt-1 text-footnote leading-relaxed text-ink2">
           Tap the panel the instant it turns orange. Five times — the middle result is used, so one slow tap will not
           skew it.
         </p>
@@ -196,15 +197,14 @@ function LatencyCalibrator({ onDone }: { onDone: (sec: number) => void }) {
 
       <button
         onClick={tap}
-        className={`mt-4 grid h-44 w-full place-items-center rounded-2xl border-2 text-center transition ${
+        className={`mt-4 grid h-44 w-full place-items-center rounded-inner border-2 text-center transition ${
           stage === 'go'
-            ? 'border-transparent text-on-accent'
+            ? 'border-transparent bg-accent text-on-accent'
             : stage === 'waiting'
               ? 'border-line bg-raised text-ink2'
               : 'border-line bg-raised text-ink'
         }`}
-        style={stage === 'go' ? { background: 'var(--t-btn-accent)' } : undefined}
-      >
+              >
         <span className="font-display text-[19px] font-semibold">
           {stage === 'idle'
             ? 'Tap to begin'
@@ -224,28 +224,27 @@ function LatencyCalibrator({ onDone }: { onDone: (sec: number) => void }) {
 
       {stage === 'done' ? (
         <div className="mt-4">
-          <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-line bg-raised p-3">
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-control border border-line bg-raised p-3">
             <input
               type="checkbox"
               checked={reachAdd}
               onChange={(e) => setReachAdd(e.target.checked)}
               className="mt-0.5 h-4 w-4 accent-[var(--t-accent)]"
             />
-            <span className="text-[13px] leading-relaxed text-ink2">
+            <span className="text-footnote leading-relaxed text-ink2">
               My phone is propped up to film, so I have to come out of the position and walk to it
               <span className="text-ink3"> (adds 1.6s)</span>
             </span>
           </label>
-          <button
+          <Button size="lg"
             onClick={() => onDone(suggested)}
-            className="mt-3 w-full rounded-2xl px-6 py-3.5 font-display text-[16px] font-semibold text-on-accent shadow-card transition hover:brightness-105"
-            style={{ background: 'var(--t-btn-accent)' }}
+            className="mt-3 w-full "
           >
             Use {suggested.toFixed(1)}s
-          </button>
+          </Button>
         </div>
       ) : (
-        <p className="mt-3 text-center text-[12.5px] text-ink3">
+        <p className="mt-3 text-center text-footnote text-ink3">
           This measures pure tap speed. If you have to move to reach the phone, the real delay is larger.
         </p>
       )}
@@ -484,17 +483,17 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   return (
     <div className="animate-rise max-w-2xl">
       <h1 className="font-display text-[28px] font-bold text-ink">Settings</h1>
-      <p className="mt-0.5 text-[14px] text-ink2">Make it yours.</p>
+      <p className="mt-0.5 text-body text-ink2">Make it yours.</p>
 
       <SectionTitle>Profile</SectionTitle>
-      <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
+      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
         <Row label="Name" hint="Used for the dashboard greeting.">
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Athlete"
             aria-label="Athlete name"
-            className="w-40 rounded-xl border border-line bg-raised px-3 py-2 text-[14px] text-ink outline-none focus:border-accent"
+            className="w-40 rounded-control border border-line bg-raised px-3 py-2 text-body text-ink outline-none focus:border-accent"
           />
           <button
             onClick={() => {
@@ -502,7 +501,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               pushToast('Saved.', 'success')
             }}
             aria-label="Save athlete name"
-            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Save
           </button>
@@ -527,19 +526,19 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 // in full instead of being cut to fit beside three buttons.
                 <li
                   key={skill}
-                  className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-line bg-raised px-3 py-2"
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-control border border-line bg-raised px-3 py-2"
                 >
                   {/* Number and text stay together; only the controls wrap. */}
                   <div className="flex min-w-0 flex-1 basis-56 items-center gap-2">
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-surface text-[11.5px] font-bold text-ink2 tnum">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-surface text-caption font-bold text-ink2 tnum">
                       {index + 1}
                     </span>
                     <div className="min-w-0">
-                      <div className="text-[13.5px] font-semibold text-ink">
+                      <div className="text-footnote font-semibold text-ink">
                         {def.name}
-                        {index === 0 ? <span className="ml-1.5 text-[11px] font-medium text-accent-text">main</span> : null}
+                        {index === 0 ? <span className="ml-1.5 text-caption font-medium text-accent-text">main</span> : null}
                       </div>
-                      <div className="text-[12px] leading-snug text-ink3">
+                      <div className="text-caption leading-snug text-ink3">
                         {waiting.length ? `Waiting for ${kitNeedsPhrase(waiting)}` : `On ${step.name}`}
                       </div>
                     </div>
@@ -581,7 +580,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           {skillOrder.length < SKILL_LIST.length ? (
             <button
               onClick={() => setAddingSkill(true)}
-              className="mt-2 inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-dashed border-line-strong px-3.5 py-2 text-[13px] font-semibold text-ink2 hover:text-ink"
+              className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-control border border-dashed border-line-strong px-3.5 py-2 text-footnote font-semibold text-ink2 hover:text-ink"
             >
               <Icon name="plus" size={14} /> Add a skill
             </button>
@@ -610,7 +609,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                   onClick={() => toggleEquipment(item.id)}
                   title={item.hint}
                   aria-pressed={selected}
-                  className={`rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition ${
+                  className={`rounded-full border px-3 py-1.5 text-footnote font-medium transition ${
                     selected
                       ? 'border-transparent bg-accent text-on-accent'
                       : 'border-line bg-raised text-ink2 hover:text-ink'
@@ -626,7 +625,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           label="Default surface"
           hint="For holds done on the hands — the planche line and the 90° hold. Sets and records are tagged per surface; you can still switch it during a session."
         >
-          <div className="flex overflow-hidden rounded-xl border border-line">
+          <div className="flex overflow-hidden rounded-control border border-line">
             {TRAINING_SURFACES.map((item) => {
               const disabled = item.id === 'parallettes' && !state.profile.equipment.includes('parallettes')
               const selected = defaultSurface(state.profile.equipment, state.profile.preferredSurface) === item.id
@@ -638,7 +637,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                   }
                   disabled={disabled}
                   aria-pressed={selected}
-                  className={`px-3.5 py-2 text-[13px] font-medium transition disabled:cursor-not-allowed disabled:opacity-35 ${
+                  className={`px-3.5 py-2 text-footnote font-medium transition disabled:cursor-not-allowed disabled:opacity-35 ${
                     selected ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                   }`}
                 >
@@ -655,7 +654,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             inputMode="numeric"
             placeholder="Optional"
             aria-label="Birth year"
-            className="w-24 rounded-xl border border-line bg-raised px-3 py-2 text-center text-[14px] text-ink outline-none focus:border-accent"
+            className="w-24 rounded-control border border-line bg-raised px-3 py-2 text-center text-body text-ink outline-none focus:border-accent"
           />
           <button
             onClick={() => {
@@ -669,7 +668,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               pushToast('Athlete profile saved.', 'success')
             }}
             aria-label="Save birth year"
-            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Save
           </button>
@@ -685,7 +684,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               onChange={(e) => setInjuryNote(e.target.value)}
               placeholder="e.g. left wrist feels irritated"
               aria-label="Joint or injury note"
-              className="min-w-52 flex-1 rounded-xl border border-line bg-raised px-3 py-2 text-[14px] text-ink outline-none focus:border-accent"
+              className="min-w-52 flex-1 rounded-control border border-line bg-raised px-3 py-2 text-body text-ink outline-none focus:border-accent"
             />
             <button
               onClick={() => {
@@ -693,7 +692,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 pushToast('Joint note saved.', 'success')
               }}
               aria-label="Save joint or injury note"
-              className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+              className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
             >
               Save
             </button>
@@ -716,7 +715,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         >
           <button
             onClick={() => setLoggingWeight(true)}
-            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Log now
           </button>
@@ -741,15 +740,15 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <SectionTitle>Appearance</SectionTitle>
-      <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
+      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
         <Row label="Units" hint="Used for bodyweight and height.">
-          <div className="flex overflow-hidden rounded-xl border border-line">
+          <div className="flex overflow-hidden rounded-control border border-line">
             {(['metric', 'imperial'] as const).map((u) => (
               <button
                 key={u}
                 onClick={() => set({ units: u })}
                 aria-pressed={s.units === u}
-                className={`px-3.5 py-2 text-[13.5px] font-medium transition ${
+                className={`px-3.5 py-2 text-footnote font-medium transition ${
                   s.units === u ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                 }`}
               >
@@ -759,13 +758,13 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           </div>
         </Row>
         <Row label="Theme">
-          <div className="flex overflow-hidden rounded-xl border border-line">
+          <div className="flex overflow-hidden rounded-control border border-line">
             {(['dark', 'light', 'system'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => set({ theme: t })}
                 aria-pressed={s.theme === t}
-                className={`flex items-center gap-1.5 px-3.5 py-2 text-[13.5px] font-medium capitalize transition ${
+                className={`flex items-center gap-1.5 px-3.5 py-2 text-footnote font-medium capitalize transition ${
                   s.theme === t ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                 }`}
               >
@@ -778,7 +777,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <SectionTitle>Training</SectionTitle>
-      <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
+      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
         <Row
           label="Check this phone"
           hint={
@@ -793,7 +792,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         >
           <button
             onClick={() => setCheckingDevice(true)}
-            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
           >
             {lastCheck ? 'Check again' : 'Check'}
           </button>
@@ -830,14 +829,14 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           {s.lockoutDeg !== undefined ? (
             <button
               onClick={() => set({ lockoutDeg: undefined, lockoutCalibratedAt: undefined })}
-              className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+              className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
             >
               Clear
             </button>
           ) : null}
           <button
             onClick={() => setCalibratingLockout(true)}
-            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
           >
             {s.lockoutDeg !== undefined ? 'Recalibrate' : 'Calibrate'}
           </button>
@@ -872,7 +871,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             }}
             disabled={modelState === 'loading' || (modelState === 'ready' && offline === 'ready')}
             aria-busy={modelState === 'loading'}
-            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
             {modelState === 'ready'
               ? offline === 'ready'
@@ -902,7 +901,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               })
             }}
             disabled={clipCount === 0}
-            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink disabled:opacity-40"
+            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink disabled:opacity-40"
           >
             Delete all
           </button>
@@ -931,7 +930,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           {!s.phoneWithinReach ? (
             <button
               onClick={() => setMeasuringWalk(true)}
-              className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+              className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
             >
               {s.walkBackSec !== undefined ? 'Re-measure' : 'Measure my walk'}
             </button>
@@ -952,7 +951,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         >
           <button
             onClick={() => setCalibrating(true)}
-            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Calibrate
           </button>
@@ -982,7 +981,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <SectionTitle>Sound</SectionTitle>
-      <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
+      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
         <Row label="Sounds" hint="Start/stop chimes, PR fanfares.">
           <Toggle label="Sounds" on={s.sound} onChange={(v) => set({ sound: v })} />
         </Row>
@@ -1016,7 +1015,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           />
           <button
             onClick={() => sfx.pr()}
-            className="rounded-xl border border-line bg-raised px-3 py-1.5 text-[13px] font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised px-3 py-1.5 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Test
           </button>
@@ -1024,11 +1023,11 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <SectionTitle>Updates</SectionTitle>
-      <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
+      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
         <Row label="What's new" hint="Every update to the app, newest first.">
           <button
             onClick={() => go('updates')}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Update log
             <Icon name="chevronR" size={14} />
@@ -1037,16 +1036,16 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <SectionTitle>Problem reports</SectionTitle>
-      <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
+      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
         <div className="flex items-start gap-3 border-b border-line py-4">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-text">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-control bg-accent-soft text-accent-text">
             <Icon name="info" size={17} />
           </span>
           <div className="min-w-0">
-            <div className="text-[14.5px] font-medium text-ink">
+            <div className="text-body font-medium text-ink">
               {reportCount} saved camera problem {reportCount === 1 ? 'report' : 'reports'}
             </div>
-            <p className="mt-0.5 text-[13px] leading-relaxed text-ink2">
+            <p className="mt-0.5 text-footnote leading-relaxed text-ink2">
               Reports stay on this device until you delete them. Nothing is uploaded automatically.
               {reportCount > 0 ? ` Copied videos use ${(reportBytes / 1048576).toFixed(1)} MB.` : ''}
             </p>
@@ -1071,7 +1070,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             }}
             disabled={reportCount === 0 || exportingReports}
             aria-busy={exportingReports}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[13px] font-medium text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Icon name="download" size={15} /> {exportingReports ? 'Preparing…' : 'Export reports'}
           </button>
@@ -1083,7 +1082,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           <button
             onClick={() => setConfirmDeleteReports(true)}
             disabled={reportCount === 0}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-danger/30 bg-danger-soft px-3.5 py-2 text-[13px] font-semibold text-danger-text disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-control border border-danger/30 bg-danger-soft px-3.5 py-2 text-footnote font-semibold text-danger-text disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Icon name="trash" size={15} /> Delete reports
           </button>
@@ -1091,7 +1090,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <SectionTitle>Data</SectionTitle>
-      <div className="rounded-2xl border border-line bg-surface px-5 shadow-card">
+      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
         <Row
           label="On-device safety"
           hint={
@@ -1110,12 +1109,12 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                   pushToast(granted ? 'Storage is now protected.' : 'Browser declined — install the app or export backups.', granted ? 'success' : 'info', 4500)
                 })
               }
-              className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+              className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
             >
               Protect
             </button>
           ) : (
-            <span className={`text-[13px] font-semibold ${storage?.persisted ? 'text-ok-text' : 'text-ink3'}`}>
+            <span className={`text-footnote font-semibold ${storage?.persisted ? 'text-ok-text' : 'text-ink3'}`}>
               {storage === null ? '…' : storage.persisted ? '✓ Protected' : '—'}
             </span>
           )}
@@ -1132,7 +1131,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 }`
           }
         >
-          <span className={`text-[13px] font-semibold ${installed === 'installed' ? 'text-ok-text' : 'text-ink3'}`}>
+          <span className={`text-footnote font-semibold ${installed === 'installed' ? 'text-ok-text' : 'text-ink3'}`}>
             {installed === 'installed' ? '✓ Installed' : 'In a browser tab'}
           </span>
         </Row>
@@ -1146,7 +1145,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               exportData({ ...state, lastBackupAt: at })
               dispatch({ type: 'STAMP_BACKUP', at })
             }}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
           >
             <Icon name="download" size={15} /> Export
           </button>
@@ -1157,7 +1156,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         >
           <button
             onClick={() => exportCsv(state)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
           >
             <Icon name="download" size={15} /> CSV
           </button>
@@ -1176,7 +1175,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           />
           <button
             onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
           >
             <Icon name="upload" size={15} /> Import
           </button>
@@ -1184,7 +1183,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         <Row label="Load sample data" hint="See the app fully populated with 9 weeks of plausible training. Replaces current data.">
           <button
             onClick={() => setConfirmSample(true)}
-            className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Load sample
           </button>
@@ -1205,7 +1204,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 a.remove()
                 window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
               }}
-              className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+              className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
             >
               Download
             </button>
@@ -1215,7 +1214,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 setQuarantine(quarantinedData())
                 pushToast('The unreadable copy was deleted.', 'info')
               }}
-              className="rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+              className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
             >
               Delete
             </button>
@@ -1224,7 +1223,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         <Row label="Reset everything" hint="Deletes all local data. There is no undo (export first!).">
           <button
             onClick={() => setConfirmReset(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-danger/30 bg-danger-soft px-3.5 py-2 text-[13.5px] font-semibold text-danger-text"
+            className="inline-flex items-center gap-1.5 rounded-control border border-danger/30 bg-danger-soft px-3.5 py-2 text-footnote font-semibold text-danger-text"
           >
             <Icon name="trash" size={15} /> Reset
           </button>
@@ -1232,7 +1231,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <SectionTitle>About</SectionTitle>
-      <div className="rounded-2xl border border-line bg-surface p-5 text-[13.5px] leading-relaxed text-ink2 shadow-card">
+      <div className="rounded-inner border border-line bg-surface p-5 text-footnote leading-relaxed text-ink2 shadow-card">
         <p>
           <span className="font-display font-semibold text-ink">{APP_NAME}</span> · a local-first training companion
           for the planche, front lever, handstand push-up, 90° hold and human flag. Everything you log and film is
@@ -1258,7 +1257,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             one part of the app whose answer you cannot sanity-check by reading
             it — here you can hand it a position with known angles, or your own
             footage, and watch what it makes of them. */}
-        <p className="mt-3 border-t border-line pt-3 text-[12.5px] text-ink3">
+        <p className="mt-3 border-t border-line pt-3 text-footnote text-ink3">
           Curious how the camera form check decides?{' '}
           <a href="#devlab" className="font-medium text-accent-text underline-offset-2 hover:underline">
             Open the form judge bench
@@ -1277,7 +1276,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         <div className="p-6">
           <div className="pr-10">
             <h2 className="font-display text-[19px] font-semibold text-ink">Delete all problem reports?</h2>
-            <p className="mt-1.5 text-[14px] leading-relaxed text-ink2">
+            <p className="mt-1.5 text-body leading-relaxed text-ink2">
               This permanently deletes {reportCount} saved problem {reportCount === 1 ? 'report' : 'reports'},
               including the copied videos and diagnostics. Your regular form clips, sessions and progress stay
               untouched.
@@ -1286,7 +1285,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           <div className="mt-5 flex gap-2.5">
             <button
               onClick={() => setConfirmDeleteReports(false)}
-              className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14.5px] font-medium text-ink"
+              className="flex-1 rounded-control border border-line bg-surface py-3 text-body font-medium text-ink"
             >
               Cancel
             </button>
@@ -1303,7 +1302,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                   pushToast('Problem reports deleted.', 'info')
                 })
               }}
-              className="flex-1 rounded-xl bg-danger-solid py-3 text-[14.5px] font-semibold text-white"
+              className="flex-1 rounded-control bg-danger-solid py-3 text-body font-semibold text-white"
             >
               Delete reports
             </button>
@@ -1364,14 +1363,14 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       <Modal open={confirmSample} onClose={() => setConfirmSample(false)} label="Load sample data">
         <div className="p-6">
           <h2 className="font-display text-[19px] font-semibold text-ink">Load sample data?</h2>
-          <p className="mt-1.5 text-[14px] text-ink2">
+          <p className="mt-1.5 text-body text-ink2">
             This replaces your current log with 9 weeks of demo history. Your settings are kept. Export a backup first
             if anything here matters.
           </p>
           <div className="mt-5 flex gap-2.5">
             <button
               onClick={() => setConfirmSample(false)}
-              className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14.5px] font-medium text-ink"
+              className="flex-1 rounded-control border border-line bg-surface py-3 text-body font-medium text-ink"
             >
               Cancel
             </button>
@@ -1386,7 +1385,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 setConfirmSample(false)
                 pushToast('Sample data loaded.', 'success')
               }}
-              className="flex-1 rounded-xl bg-accent py-3 text-[14.5px] font-semibold text-on-accent"
+              className="flex-1 rounded-control bg-accent py-3 text-body font-semibold text-on-accent"
             >
               Load sample
             </button>
@@ -1404,7 +1403,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         {pendingImport ? (
           <div className="p-6">
             <h2 className="pr-10 font-display text-[19px] font-semibold text-ink">Replace everything with this file?</h2>
-            <p className="mt-1.5 text-[14px] leading-relaxed text-ink2">
+            <p className="mt-1.5 text-body leading-relaxed text-ink2">
               The file holds{' '}
               <span className="font-semibold text-ink">
                 {pendingImport.report.sessionsKept} usable session{pendingImport.report.sessionsKept === 1 ? '' : 's'}
@@ -1416,7 +1415,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               on this device, along with every record, achievement and saved form clip. There is no undo.
             </p>
             {reportHasLosses(pendingImport.report) || pendingImport.report.futureSessions > 0 ? (
-              <div className="mt-3 rounded-xl border border-accent/30 bg-accent-soft px-3.5 py-3 text-[13px] leading-relaxed text-ink">
+              <div className="mt-3 rounded-control border border-accent/30 bg-accent-soft px-3.5 py-3 text-footnote leading-relaxed text-ink">
                 <div className="font-semibold">Not everything in the file can be imported as it is:</div>
                 <ul className="mt-1 list-disc space-y-0.5 pl-5">
                   {pendingImport.report.rejectedSessions.length ? (
@@ -1461,7 +1460,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                   ) : null}
                 </ul>
                 {reportHasLosses(pendingImport.report) ? (
-                  <label className="mt-2 flex items-start gap-2 text-[13px]">
+                  <label className="mt-2 flex items-start gap-2 text-footnote">
                     <input
                       type="checkbox"
                       checked={acceptLosses}
@@ -1474,7 +1473,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               </div>
             ) : null}
             {state.sessions.length > 0 ? (
-              <p className="mt-2 text-[13px] leading-relaxed text-ink3">
+              <p className="mt-2 text-footnote leading-relaxed text-ink3">
                 If you have not exported what is here yet, cancel and do that first.
               </p>
             ) : null}
@@ -1482,7 +1481,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               <button
                 onClick={() => setPendingImport(null)}
                 disabled={importBusy}
-                className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14.5px] font-medium text-ink disabled:opacity-50"
+                className="flex-1 rounded-control border border-line bg-surface py-3 text-body font-medium text-ink disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -1490,7 +1489,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 onClick={() => void applyImport()}
                 disabled={importBusy || (reportHasLosses(pendingImport.report) && !acceptLosses)}
                 aria-busy={importBusy}
-                className="flex-1 rounded-xl bg-danger-solid py-3 text-[14.5px] font-semibold text-white disabled:opacity-50"
+                className="flex-1 rounded-control bg-danger-solid py-3 text-body font-semibold text-white disabled:opacity-50"
               >
                 {importBusy ? 'Importing…' : 'Replace my data'}
               </button>
@@ -1508,7 +1507,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       >
         <div className="p-6">
           <h2 className="pr-10 font-display text-[19px] font-semibold text-ink">Reset all data?</h2>
-          <p className="mt-1.5 text-[14px] text-ink2">
+          <p className="mt-1.5 text-body text-ink2">
             Sessions, records, unlocks, achievements, joint reports, form clips, problem reports, an unfinished
             workout and every recovery copy will be permanently deleted from this browser. Your app settings (theme,
             sound, timers) are kept.
@@ -1517,7 +1516,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             <button
               onClick={() => setConfirmReset(false)}
               disabled={resetBusy}
-              className="flex-1 rounded-xl border border-line bg-surface py-3 text-[14.5px] font-medium text-ink disabled:opacity-50"
+              className="flex-1 rounded-control border border-line bg-surface py-3 text-body font-medium text-ink disabled:opacity-50"
             >
               Cancel
             </button>
@@ -1525,7 +1524,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               onClick={() => void resetEverything()}
               disabled={resetBusy}
               aria-busy={resetBusy}
-              className="flex-1 rounded-xl bg-danger-solid py-3 text-[14.5px] font-semibold text-white disabled:opacity-60"
+              className="flex-1 rounded-control bg-danger-solid py-3 text-body font-semibold text-white disabled:opacity-60"
             >
               {resetBusy ? 'Deleting…' : 'Delete everything'}
             </button>

@@ -124,7 +124,14 @@ export function planToday(state: AppState, opts: { now?: number; minutes?: numbe
   }
 
   // Straight-arm rest rule: hard sessions of one family at least N hours apart.
-  const hard = lastHardStraightArm(state.sessions, now)
+  // Today's own sessions do not rest today: a planche block done this
+  // morning must not turn the rest of today's plan into something else.
+  const startOfToday = new Date(now)
+  startOfToday.setHours(0, 0, 0, 0)
+  const hard = lastHardStraightArm(
+    state.sessions.filter((s) => s.startedAt < startOfToday.getTime()),
+    now,
+  )
   const restH = prefs.straightArmRestHours
   const blocked = {
     push: hard.push !== undefined && now - hard.push < restH * HOUR,
@@ -170,6 +177,12 @@ export function planToday(state: AppState, opts: { now?: number; minutes?: numbe
   const weekSets = setsPerMuscle(state.sessions, state.gym?.sessions ?? [], weekStart(now), now)
   const fatigue = fatigueAt(state, now)
   const legActivity = (state.gym?.activities ?? []).filter((a) => a.legs && now - a.at < 48 * HOUR && a.at <= now)
+  // A game, practice or sprint session on the calendar in the next day and a
+  // half: legs stay fresh for it.
+  const upcoming = (state.gym?.activities ?? [])
+    .filter((a) => a.legs && a.at > now && a.at - now < 36 * HOUR)
+    .sort((a, b) => a.at - b.at)[0]
+  const inSeason = prefs.season === 'in'
   const legsCovered = legActivity.length > 0
   const legsOff = LEG_MUSCLES.every((m) => prefs.musclesOff.includes(m))
   const skillFamilies = new Set((skillBlock?.skills ?? []).map(skillFamily))
@@ -179,7 +192,7 @@ export function planToday(state: AppState, opts: { now?: number; minutes?: numbe
     const need = muscles.reduce((sum, m) => sum + Math.max(0, volumeTarget(m, prefs)[0] - (weekSets[m] ?? 0)), 0) / muscles.length
     const tired = muscles.reduce((sum, m) => sum + (fatigue.muscles[m] ?? 0), 0) / muscles.length
     let score = need - 1.5 * tired
-    if ((focus === 'lower' || focus === 'full') && (legsCovered || legsOff)) score -= focus === 'lower' ? 1000 : 2
+    if ((focus === 'lower' || focus === 'full') && (legsCovered || legsOff || upcoming)) score -= focus === 'lower' ? 1000 : 2
     if (focus === 'push' && (skillFamilies.has('push') || blocked.push)) score -= 4
     if (focus === 'pull' && (skillFamilies.has('pull') || blocked.pull)) score -= 4
     if (focus === 'upper' && (skillFamilies.has('push') || skillFamilies.has('pull'))) score -= 1.5
@@ -212,7 +225,15 @@ export function planToday(state: AppState, opts: { now?: number; minutes?: numbe
   }
   const deload = gymDeloadDue(state, now)
   if (deload.due && deload.why) reasons.push(deload.why)
-  const legMuscles = legsCovered ? LEG_MUSCLES : []
+  if (upcoming) {
+    const what = upcoming.kind === 'pe' ? 'PE' : upcoming.kind === 'other' ? 'Your activity' : `Your ${upcoming.kind}`
+    reasons.push(`${what} ${upcoming.at - now < 18 * HOUR ? 'is coming up soon' : 'is tomorrow'}: legs stay fresh — no leg work today, and the gym is a little lighter.`)
+  }
+  if (inSeason) {
+    reasons.push('In season: the sport comes first, so the gym keeps the weights but drops some sets.')
+  }
+  const legMuscles = legsCovered || upcoming ? LEG_MUSCLES : []
+  const factor = Math.min(pain ? 0.6 : deload.due ? 0.6 : 1, inSeason ? 0.7 : 1, upcoming ? 0.8 : 1)
   return {
     minutes,
     rest: false,
@@ -221,7 +242,7 @@ export function planToday(state: AppState, opts: { now?: number; minutes?: numbe
       minutes: gymMin,
       focus,
       avoidJoints,
-      volumeFactor: pain ? 0.6 : deload.due ? 0.6 : 1,
+      volumeFactor: factor,
       deload: deload.due,
       musclesOff: [...new Set([...prefs.musclesOff, ...legMuscles])],
     },

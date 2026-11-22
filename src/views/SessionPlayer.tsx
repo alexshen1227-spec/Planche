@@ -1,3 +1,4 @@
+import { Button } from '../components/ds'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { setToSetCeiling } from '../lib/workingTarget'
 import type {
@@ -1409,7 +1410,7 @@ export function SessionPlayer({
       <>
         <button
           onClick={() => setWalkedBackForLog(log.at, !didWalk)}
-          className="mt-2 inline-flex min-h-10 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-[12.5px] font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
+          className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-footnote font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
         >
           <Icon name="rotate" size={13} className="text-accent-text" />
           {didWalk
@@ -1417,7 +1418,7 @@ export function SessionPlayer({
             : `Had to walk back to the phone? −${credits.delta.toFixed(1)}s`}
         </button>
         {assumedWalkAteIt ? (
-          <p className="mx-auto mt-1.5 max-w-xs text-[11.5px] leading-relaxed text-ink3">
+          <p className="mx-auto mt-1.5 max-w-xs text-caption leading-relaxed text-ink3">
             Most of this hold went to an assumed {PROGRESSION_STOP_LATENCY_SEC.toFixed(1)}s walk back. Measure your own
             walk once in Settings → Phone within reach, and every main hold uses it.
           </p>
@@ -1673,13 +1674,13 @@ export function SessionPlayer({
   const header = (
     <div className="flex items-center justify-between gap-3 px-5 pt-[max(env(safe-area-inset-top),20px)] sm:px-8">
       <div className="min-w-0">
-        <div className="truncate font-display text-[15px] font-semibold text-ink">{workout.name}</div>
-        <div className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-ink3 tnum">
+        <div className="truncate font-display text-body font-semibold text-ink">{workout.name}</div>
+        <div className="flex flex-wrap items-center gap-x-2 text-footnote text-ink3 tnum">
           <span>
             {doneSets}/{totalSets} sets · {fmtClock(sessionElapsed)}
           </span>
           {phase === 'summary' ? (
-            <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-text">
+            <span className="rounded-full bg-accent-soft px-2 py-0.5 text-caption font-semibold text-accent-text">
               Not saved yet
             </span>
           ) : null}
@@ -1707,9 +1708,9 @@ export function SessionPlayer({
   /** The interrupted-hold card, on Ready for its own set and on the summary when still pending. */
   const interruptedCard = (where: 'ready' | 'summary') =>
     interrupted !== null ? (
-      <div className="mx-auto mt-3 max-w-sm rounded-2xl border border-accent/30 bg-accent-soft p-4 text-left">
-        <div className="text-[13.5px] font-semibold text-ink">Your last hold was interrupted</div>
-        <p className="mt-0.5 text-[13px] leading-relaxed text-ink2">
+      <div className="mx-auto mt-3 max-w-sm rounded-inner border border-accent/30 bg-accent-soft p-4 text-left">
+        <div className="text-footnote font-semibold text-ink">Your last hold was interrupted</div>
+        <p className="mt-0.5 text-footnote leading-relaxed text-ink2">
           The app was hidden mid-set
           {interruptedRaw !== null ? (
             <>
@@ -1724,16 +1725,15 @@ export function SessionPlayer({
           .
         </p>
         <div className="mt-2.5 flex gap-2">
-          <button
+          <Button
             onClick={logInterrupted}
-            className="min-h-11 flex-1 rounded-lg px-3 py-2 text-[13px] font-semibold text-on-accent"
-            style={{ background: 'var(--t-btn-accent)' }}
+            className="min-h-11 flex-1 "
           >
             Log {fmtHold(interrupted)}
-          </button>
+          </Button>
           <button
             onClick={clearInterrupted}
-            className="min-h-11 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+            className="min-h-11 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-footnote font-medium text-ink2 hover:text-ink"
           >
             {where === 'ready' ? 'Redo the set' : 'Leave it out'}
           </button>
@@ -1856,28 +1856,28 @@ export function SessionPlayer({
       const overBudget = requested !== undefined && workout.minutes > requested + 1
       return (
         <div className="mx-auto w-full max-w-lg px-5 pb-10">
-          <div className="mt-6 rounded-3xl border border-line bg-surface p-6 shadow-card">
+          <div className="mt-6 rounded-card border border-line bg-surface p-6 shadow-card">
             <div className="flex items-baseline justify-between gap-3">
-              <div className="text-[13px] font-medium uppercase tracking-wide text-ink3">Up next</div>
-              <div className="text-[12.5px] text-ink3 tnum">About {workout.minutes} min</div>
+              <div className="text-footnote font-medium uppercase tracking-wide text-ink3">Up next</div>
+              <div className="text-footnote text-ink3 tnum">About {workout.minutes} min</div>
             </div>
             <h1 className="mt-1 font-display text-[26px] font-bold text-ink">{workout.name}</h1>
-            <p className="mt-1.5 text-[14px] leading-relaxed text-ink2">{workout.focus}</p>
+            <p className="mt-1.5 text-body leading-relaxed text-ink2">{workout.focus}</p>
             {workout.purpose && workout.purpose !== workout.focus ? (
-              <p className="mt-1 text-[13px] leading-relaxed text-ink3">
+              <p className="mt-1 text-footnote leading-relaxed text-ink3">
                 <span className="font-semibold text-ink2">Why today:</span> {workout.purpose}
               </p>
             ) : null}
             {overBudget ? (
-              <p className="mt-2 rounded-xl bg-raised px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
+              <p className="mt-2 rounded-control bg-raised px-3 py-2 text-footnote leading-relaxed text-ink2">
                 You asked for about {requested} min. Under the current rules this plan's minimum runs about{' '}
                 {workout.minutes} — it keeps the working sets rather than cutting them to fit.
               </p>
             ) : null}
             {workout.adjustments?.length ? (
-              <div className="mt-3 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3">
-                <div className="text-[10.5px] font-bold uppercase tracking-wider text-accent-text">Adjusted for today</div>
-                <ul className="mt-1 space-y-1 text-[13px] leading-relaxed text-ink">
+              <div className="mt-3 rounded-inner border border-accent/30 bg-accent-soft px-4 py-3">
+                <div className="text-caption font-bold uppercase tracking-wider text-accent-text">Adjusted for today</div>
+                <ul className="mt-1 space-y-1 text-footnote leading-relaxed text-ink">
                   {workout.adjustments.slice(0, 3).map((line) => (
                     <li key={line}>{line}</li>
                   ))}
@@ -1887,10 +1887,10 @@ export function SessionPlayer({
                   // seven of these; all of them matter, but not above the
                   // button that starts the session.
                   <details className="mt-1">
-                    <summary className="cursor-pointer py-1 text-[12.5px] font-semibold text-accent-text">
+                    <summary className="cursor-pointer py-1 text-footnote font-semibold text-accent-text">
                       {workout.adjustments.length - 3} more
                     </summary>
-                    <ul className="mt-1 space-y-1 text-[13px] leading-relaxed text-ink">
+                    <ul className="mt-1 space-y-1 text-footnote leading-relaxed text-ink">
                       {workout.adjustments.slice(3).map((line) => (
                         <li key={line}>{line}</li>
                       ))}
@@ -1900,13 +1900,13 @@ export function SessionPlayer({
               </div>
             ) : null}
             {lineup ? (
-              <div className="mt-3 rounded-2xl border border-line bg-raised px-4 py-3">
-                <div className="text-[10.5px] font-bold uppercase tracking-wider text-ink3">Today's skills</div>
+              <div className="mt-3 rounded-inner border border-line bg-raised px-4 py-3">
+                <div className="text-caption font-bold uppercase tracking-wider text-ink3">Today's skills</div>
                 <ul className="mt-1.5 space-y-2">
                   {lineup.map((entry) => (
-                    <li key={entry.skill} className="text-[13px] leading-relaxed text-ink2">
+                    <li key={entry.skill} className="text-footnote leading-relaxed text-ink2">
                       <span className="font-semibold text-ink">{SKILLS[entry.skill].name}</span>
-                      <span className="ml-1.5 rounded-full bg-surface px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-ink3">
+                      <span className="ml-1.5 rounded-full bg-surface px-2 py-0.5 text-caption font-semibold uppercase tracking-wide text-ink3">
                         {LINEUP_ROLE_LABEL[entry.role]}
                       </span>
                       <span className="mt-0.5 block">{entry.reason}</span>
@@ -1923,10 +1923,10 @@ export function SessionPlayer({
               />
             ) : null}
             {willFilm ? (
-              <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-line bg-raised px-4 py-3 text-left">
+              <div className="mt-3 flex items-start gap-2.5 rounded-inner border border-line bg-raised px-4 py-3 text-left">
                 <Icon name="monitor" size={16} className="mt-0.5 shrink-0 text-accent-text" />
                 <div className="min-w-0">
-                  <div className="text-[13.5px] font-medium text-ink">
+                  <div className="text-footnote font-medium text-ink">
                     {filmingViews.length === 1
                       ? `${filmingViews[0] === 'flag' ? 'Front-view' : 'Side-view'} camera check on main sets`
                       : 'Camera check on main sets'}
@@ -1934,7 +1934,7 @@ export function SessionPlayer({
                   {filmingRows.length ? (
                     <ul className="mt-1.5 space-y-1.5">
                       {filmingRows.map((row) => (
-                        <li key={row.label} className="text-[12.5px] leading-relaxed text-ink2">
+                        <li key={row.label} className="text-footnote leading-relaxed text-ink2">
                           <span className="block font-semibold text-ink">{row.label}</span>
                           {row.lines.map((line) => (
                             <span key={line} className="block">
@@ -1945,7 +1945,7 @@ export function SessionPlayer({
                       ))}
                     </ul>
                   ) : null}
-                  <p className={`${filmingRows.length ? 'mt-1.5' : 'mt-0.5'} text-[12.5px] leading-relaxed text-ink2`}>
+                  <p className={`${filmingRows.length ? 'mt-1.5' : 'mt-0.5'} text-footnote leading-relaxed text-ink2`}>
                     {filmingRows.length
                       ? 'Each set says where the phone goes before it starts.'
                       : FILMING[filmingViews[0]].intro}{' '}
@@ -1956,33 +1956,32 @@ export function SessionPlayer({
               </div>
             ) : null}
             {filmsRung ? (
-              <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-line bg-raised px-4 py-3 text-left">
+              <div className="mt-3 flex items-start gap-2.5 rounded-inner border border-line bg-raised px-4 py-3 text-left">
                 <Icon name="monitor" size={16} className="mt-0.5 shrink-0 text-accent-text" />
                 <div>
-                  <div className="text-[13.5px] font-medium text-ink">
+                  <div className="text-footnote font-medium text-ink">
                     Your {EXERCISE_BY_ID[filmedRung.exerciseId]?.name.toLowerCase() ?? 'push-up'} sets are filmed too
                   </div>
-                  <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink2">
+                  <p className="mt-0.5 text-footnote leading-relaxed text-ink2">
                     The camera does not count reps. You check each set on its replay, and a set you pass is what counts
                     toward the next rung.
                   </p>
                 </div>
               </div>
             ) : null}
-            <button
+            <Button size="lg"
               onClick={startSession}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99]"
-              style={{ background: 'var(--t-btn-accent)' }}
+              className="mt-4 flex w-full items-center justify-center gap-2 "
             >
               <Icon name="play" size={18} /> Begin session
-            </button>
-            <div className="mt-2 text-center text-[12.5px] text-ink3">
+            </Button>
+            <div className="mt-2 text-center text-footnote text-ink3">
               Space = start / stop · S = skip rest · Esc = exit
             </div>
             <div className="mt-5 space-y-4 border-t border-line pt-5">
               {sections.map((sec) => (
                 <div key={sec}>
-                  <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-ink3">
+                  <div className="mb-1.5 text-caption font-semibold uppercase tracking-wide text-ink3">
                     {SECTION_LABEL[sec]}
                   </div>
                   <div className="space-y-1">
@@ -1994,16 +1993,16 @@ export function SessionPlayer({
                         // In a mixed session, say whose work each skill block is.
                         const owner = mixed ? (b.skill ?? skillOfExercise(b.exerciseId)) : undefined
                         return (
-                          <div key={i} className="flex items-baseline justify-between gap-3 text-[14px]">
+                          <div key={i} className="flex items-baseline justify-between gap-3 text-body">
                             <span className="min-w-0 text-ink">
                               {ex.name}
                               {owner && b.section !== 'warmup' && b.section !== 'cooldown' ? (
-                                <span className="ml-2 whitespace-nowrap rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink3">
+                                <span className="ml-2 whitespace-nowrap rounded-full border border-line px-2 py-0.5 text-caption font-medium text-ink3">
                                   {SKILLS[owner].short}
                                 </span>
                               ) : null}
                               {label ? (
-                                <span className="ml-2 whitespace-nowrap rounded-full bg-raised px-2 py-0.5 text-[11px] font-medium text-ink3">
+                                <span className="ml-2 whitespace-nowrap rounded-full bg-raised px-2 py-0.5 text-caption font-medium text-ink3">
                                   {label}
                                 </span>
                               ) : null}
@@ -2034,14 +2033,14 @@ export function SessionPlayer({
       const filmPosture = rung ? REP_FILMING[rung.rung.frame].posture : postureFor(exercise.id)
       return (
         <div className="mx-auto w-full max-w-lg px-5 pb-10 text-center">
-          <div className="mt-4 text-[13px] font-semibold uppercase tracking-wide text-accent-text">
+          <div className="mt-4 text-footnote font-semibold uppercase tracking-wide text-accent-text">
             {blockLabel(block) ?? SECTION_LABEL[block.section]} · Set {displaySet} of {displayTotal}
           </div>
           <h1 className="mt-1 font-display text-[30px] font-bold leading-tight text-ink">{exercise.name}</h1>
           {perSide ? (
-            <div className="mt-1.5 inline-flex items-center gap-2 rounded-full bg-accent-soft px-3.5 py-1 text-[14px] font-semibold text-accent-text">
+            <div className="mt-1.5 inline-flex items-center gap-2 rounded-full bg-accent-soft px-3.5 py-1 text-body font-semibold text-accent-text">
               {side === 'left' ? 'Left side' : 'Right side'}
-              <span className="text-[12px] font-normal text-ink2">
+              <span className="text-caption font-normal text-ink2">
                 {si % 2 === 0
                   ? sideGap
                     ? `weaker side first — then the ${side === 'left' ? 'right' : 'left'}`
@@ -2050,23 +2049,23 @@ export function SessionPlayer({
               </span>
             </div>
           ) : null}
-          <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accent-soft px-4 py-2 text-accent-text">
+          <div className="mt-3 inline-flex items-center gap-2 rounded-control border border-accent/30 bg-accent-soft px-4 py-2 text-accent-text">
             <Icon name="target" size={16} />
-            <span className="text-[11px] font-bold uppercase tracking-wider">Target</span>
+            <span className="text-caption font-bold uppercase tracking-wider">Target</span>
             <span className="text-[18px] font-bold text-ink tnum">
               {target}
               {perSide ? ' this side' : ''}
             </span>
           </div>
           {bestBefore ? (
-            <div className="mt-1.5 text-[12.5px] text-ink3 tnum">
+            <div className="mt-1.5 text-footnote text-ink3 tnum">
               {isSurfaceAware(exercise) ? `${surfaceLabel(surface)} ` : ''}best{' '}
               {exercise.type === 'hold' ? fmtHold(bestBefore) : `${bestBefore} reps`}
             </div>
           ) : null}
           {isSurfaceAware(exercise) && state.profile.equipment.includes('parallettes') ? (
             <div
-              className="mt-2 inline-flex overflow-hidden rounded-xl border border-line"
+              className="mt-2 inline-flex overflow-hidden rounded-control border border-line"
               role="group"
               aria-label="Training surface"
             >
@@ -2075,7 +2074,7 @@ export function SessionPlayer({
                   key={item.id}
                   onClick={() => setSurface(item.id)}
                   aria-pressed={surface === item.id}
-                  className={`min-h-10 px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
+                  className={`min-h-11 px-3.5 py-1.5 text-footnote font-semibold transition ${
                     surface === item.id ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                   }`}
                 >
@@ -2100,20 +2099,20 @@ export function SessionPlayer({
           {interruptedAt.current?.bi === bi && interruptedAt.current?.si === si ? interruptedCard('ready') : null}
           <div className="mx-auto mt-2 max-w-sm space-y-1.5">
             {exercise.cues.slice(0, 3).map((c) => (
-              <div key={c} className="rounded-xl border border-line bg-surface px-4 py-2 text-[13.5px] text-ink2">
+              <div key={c} className="rounded-control border border-line bg-surface px-4 py-2 text-footnote text-ink2">
                 {c}
               </div>
             ))}
             {block.note ? (
-              <div className="rounded-xl border border-accent/25 bg-accent-soft px-4 py-2 text-[13.5px] text-ink">
+              <div className="rounded-control border border-accent/25 bg-accent-soft px-4 py-2 text-footnote text-ink">
                 {block.note}
               </div>
             ) : null}
           </div>
           {filmable && recorder.supported ? (
             <div className="mx-auto mt-3 w-full max-w-sm">
-              <div className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-2.5">
-                <span className="flex min-w-0 items-center gap-2 text-left text-[13.5px] text-ink2" role="status">
+              <div className="flex items-center justify-between gap-3 rounded-inner border border-line bg-surface px-4 py-2.5">
+                <span className="flex min-w-0 items-center gap-2 text-left text-footnote text-ink2" role="status">
                   <Icon name="monitor" size={15} className={filmingThis ? 'shrink-0 text-accent-text' : 'shrink-0 text-ink3'} />
                   {!cameraOn
                     ? rung
@@ -2147,11 +2146,11 @@ export function SessionPlayer({
                 // 16:9, and follows it when the phone is turned — the preview
                 // exists to show what will actually be in the clip.
                 <div
-                  className="relative mt-2 w-full overflow-hidden rounded-2xl border border-line bg-black"
+                  className="relative mt-2 w-full overflow-hidden rounded-inner border border-line bg-black"
                   style={{ aspectRatio: recorder.frame ? recorder.frame.width / recorder.frame.height : 16 / 9 }}
                 >
                   <video ref={recorder.previewRef} muted playsInline className="h-full w-full object-cover" />
-                  <div className="pointer-events-none absolute inset-[8%] rounded-xl border border-dashed border-accent/70" />
+                  <div className="pointer-events-none absolute inset-[8%] rounded-control border border-dashed border-accent/70" />
                   <div className="pointer-events-none absolute inset-x-[8%] top-1/2 h-px bg-accent/60" />
                   {/* Live "can the camera actually see you" check. Deliberately
                       not gated on autoAnalyze: bad placement is the top reason
@@ -2165,18 +2164,18 @@ export function SessionPlayer({
                     onFloorChange={(floor) => setPreviewOnItsSide(floor === 'left' || floor === 'right')}
                   />
                   {!cameraLive ? (
-                    <div className="absolute inset-0 grid place-items-center text-[13px] text-white/80">
+                    <div className="absolute inset-0 grid place-items-center text-footnote text-white/80">
                       Opening the camera…
                     </div>
                   ) : null}
-                  <div className="absolute inset-x-0 bottom-0 bg-black/55 px-3 py-1.5 text-[11.5px] text-white/85">
+                  <div className="absolute inset-x-0 bottom-0 bg-black/55 px-3 py-1.5 text-caption text-white/85">
                     {filming.box}
                   </div>
                 </div>
               ) : null}
               {cameraOn && cameraLive ? (
                 <div className="mt-1.5 flex items-center justify-between gap-3">
-                  <span className="text-left text-[12.5px] text-ink3">
+                  <span className="text-left text-footnote text-ink3">
                     {recorder.lens === 'ultra-wide'
                       ? 'Ultra-wide (0.5×) lens in use'
                       : recorder.lens === 'standard'
@@ -2189,7 +2188,7 @@ export function SessionPlayer({
                   <button
                     onClick={() => recorder.setWide(!recorder.wide)}
                     aria-pressed={recorder.wide}
-                    className={`min-h-9 shrink-0 rounded-lg border px-2.5 py-1 text-[12px] font-semibold transition ${
+                    className={`min-h-11 shrink-0 rounded-lg border px-2.5 py-1 text-caption font-semibold transition ${
                       recorder.wide ? 'border-accent/40 bg-accent-soft text-accent-text' : 'border-line bg-raised text-ink2'
                     }`}
                   >
@@ -2204,7 +2203,7 @@ export function SessionPlayer({
                 : // A tall shape wants the phone upright: a landscape frame, or
                   // an upright one whose scene is lying on its side, is turned.
                   recorder.frame !== undefined && (!recorder.portrait || previewOnItsSide)) ? (
-                <p className="mt-1.5 flex items-start gap-1.5 text-left text-[12.5px] leading-relaxed text-accent-text">
+                <p className="mt-1.5 flex items-start gap-1.5 text-left text-footnote leading-relaxed text-accent-text">
                   <Icon name="rotate" size={14} className="mt-0.5 shrink-0" />
                   {filming.turn === 'landscape' ? 'Turn the phone on its side. ' : 'Stand the phone upright. '}
                   {filming.turnWhy}
@@ -2212,14 +2211,14 @@ export function SessionPlayer({
               ) : null}
               {cameraOn && cameraFailure ? (
                 <div
-                  className="mt-1.5 rounded-xl border border-danger/30 bg-danger-soft px-3 py-2 text-left text-[12.5px] leading-relaxed text-ink"
+                  className="mt-1.5 rounded-control border border-danger/30 bg-danger-soft px-3 py-2 text-left text-footnote leading-relaxed text-ink"
                   role="alert"
                 >
                   <p>{cameraFailure}</p>
                   {recorder.status !== 'unsupported' ? (
                     <button
                       onClick={() => void recorder.prepare()}
-                      className="mt-1.5 min-h-9 rounded-lg border border-line bg-surface px-3 py-1 text-[12.5px] font-semibold text-ink hover:border-line-strong"
+                      className="mt-1.5 min-h-11 rounded-lg border border-line bg-surface px-3 py-1 text-footnote font-semibold text-ink hover:border-line-strong"
                     >
                       Try the camera again
                     </button>
@@ -2231,7 +2230,7 @@ export function SessionPlayer({
           {/* Bare text buttons measured 20px tall, under the 24px minimum, on
               the one screen where taps are one-handed and mid-workout. The
               padding buys a real target without changing how the row looks. */}
-          <div className="mt-4 flex flex-wrap justify-center gap-x-4 text-[13px]">
+          <div className="mt-4 flex flex-wrap justify-center gap-x-4 text-footnote">
             <button onClick={() => setShowDemo(true)} className="px-1 py-2 text-accent-text underline-offset-2 hover:underline">
               How do I do this?
             </button>
@@ -2245,11 +2244,10 @@ export function SessionPlayer({
           {/* The one action this screen exists for stays on screen: the cues
               and camera block used to push it below the fold on a phone. */}
           <div className="sticky bottom-0 z-10 mx-auto mt-3 w-full max-w-sm bg-bg/85 pb-[max(env(safe-area-inset-bottom),14px)] pt-3 backdrop-blur-sm">
-            <button
+            <Button size="lg"
               onClick={() => beginSet(filmingThis)}
               disabled={startWaitsForCamera}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
-              style={{ background: 'var(--t-btn-accent)' }}
+              className="inline-flex w-full items-center justify-center gap-2 disabled:cursor-wait disabled:opacity-60"
             >
               <Icon name="play" size={18} />
               {startWaitsForCamera
@@ -2261,11 +2259,11 @@ export function SessionPlayer({
                   : wantsFilm && !cameraLive
                     ? `Start without filming · ${leadSec}s lead-in`
                     : `Start · ${leadSec}s lead-in`}
-            </button>
+            </Button>
             {startWaitsForCamera ? (
               <button
                 onClick={() => beginSet(false)}
-                className="mx-auto mt-1 block px-2 py-2 text-[13px] font-medium text-ink2 underline-offset-2 hover:text-ink hover:underline"
+                className="mx-auto mt-1 block px-2 py-2 text-footnote font-medium text-ink2 underline-offset-2 hover:text-ink hover:underline"
               >
                 Start without filming
               </button>
@@ -2280,33 +2278,33 @@ export function SessionPlayer({
       const target = block.target.kind === 'hold' ? `${block.target.sec}s` : `${block.target.reps} reps`
       return (
         <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
-          <div className="mt-6 text-[14px] font-medium uppercase tracking-wide text-ink2">Get into position</div>
+          <div className="mt-6 text-body font-medium uppercase tracking-wide text-ink2">Get into position</div>
           <div className="relative mt-2 grid h-56 w-56 place-items-center">
             <div className="absolute inset-0 rounded-full bg-accent-soft blur-2xl" />
             <div key={n} className="font-timer relative text-[130px] leading-none text-accent-text animate-pop-num">
               {n}
             </div>
           </div>
-          <div className="text-[15px] font-medium text-ink2">{exercise.name}</div>
-          <div className="mt-2 inline-flex items-center gap-2 rounded-xl border border-accent/30 bg-accent-soft px-3.5 py-2 text-[14px] font-semibold text-ink">
+          <div className="text-body font-medium text-ink2">{exercise.name}</div>
+          <div className="mt-2 inline-flex items-center gap-2 rounded-control border border-accent/30 bg-accent-soft px-3.5 py-2 text-body font-semibold text-ink">
             <Icon name="target" size={15} className="text-accent-text" /> Target {target}
             {perSide ? ` · ${side === 'left' ? 'left' : 'right'} side` : ''}
           </div>
           {wantsFilm ? (
-            <div className="mt-2 text-[12.5px] text-ink3">
+            <div className="mt-2 text-footnote text-ink3">
               {filmAttemptRef.current ? 'Filming starts at Go.' : 'Timer only — this set is not being filmed.'}
             </div>
           ) : null}
           <div className="mt-8 flex gap-2.5">
             <button
               onClick={() => setLeadEnd(Date.now())}
-              className="min-h-11 rounded-xl border border-line bg-surface px-5 py-2.5 text-[14px] font-medium text-ink2 hover:text-ink"
+              className="min-h-11 rounded-control border border-line bg-surface px-5 py-2.5 text-body font-medium text-ink2 hover:text-ink"
             >
               Skip lead-in
             </button>
             <button
               onClick={cancelLead}
-              className="min-h-11 rounded-xl border border-line bg-surface px-5 py-2.5 text-[14px] font-medium text-ink3 hover:text-ink"
+              className="min-h-11 rounded-control border border-line bg-surface px-5 py-2.5 text-body font-medium text-ink3 hover:text-ink"
             >
               Cancel
             </button>
@@ -2321,18 +2319,18 @@ export function SessionPlayer({
       const isPr = cues.pr
       return (
         <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 text-center">
-          <div className="mt-2 text-[14px] font-medium text-ink2">
+          <div className="mt-2 text-body font-medium text-ink2">
             {exercise.name} · Set {displaySet}/{displayTotal}
             {perSide ? ` · ${side === 'left' ? 'Left' : 'Right'}` : ''}
           </div>
           {filmAttemptRef.current ? (
-            <div className="mt-1 inline-flex items-center gap-1.5 text-[12px] font-medium text-danger-text">
+            <div className="mt-1 inline-flex items-center gap-1.5 text-caption font-medium text-danger-text">
               <span className="h-2 w-2 rounded-full bg-danger" aria-hidden="true" /> Filming
               {liveCue === 'watching' ? <span className="text-ink3">· live elbow cue on</span> : null}
             </div>
           ) : null}
           {liveCue === 'cued' ? (
-            <div className="mt-1.5 rounded-full bg-accent-soft px-3 py-1 text-[13px] font-semibold text-accent-text" role="status">
+            <div className="mt-1.5 rounded-full bg-accent-soft px-3 py-1 text-footnote font-semibold text-accent-text" role="status">
               Elbows softening — lock them
             </div>
           ) : null}
@@ -2353,7 +2351,7 @@ export function SessionPlayer({
                 >
                   {holdElapsed.toFixed(1)}
                 </div>
-                <div className="mt-1.5 text-[14px] font-semibold">
+                <div className="mt-1.5 text-body font-semibold">
                   {/* "Exit" only once the target is held: before it, a new best
                       is news, not an instruction to come down. */}
                   {isPr && (overTarget || target === 0) ? (
@@ -2367,7 +2365,7 @@ export function SessionPlayer({
                   )}
                 </div>
                 {latency > 0 ? (
-                  <div className="mt-0.5 text-[11.5px] text-ink3 tnum">counts as {holdCredited.toFixed(1)}s</div>
+                  <div className="mt-0.5 text-caption text-ink3 tnum">counts as {holdCredited.toFixed(1)}s</div>
                 ) : null}
               </div>
             </ProgressRing>
@@ -2376,11 +2374,11 @@ export function SessionPlayer({
           <div className="sticky bottom-0 z-10 mt-6 w-full max-w-sm bg-bg/80 pb-[max(env(safe-area-inset-bottom),16px)] pt-3 backdrop-blur-sm">
             <button
               onClick={() => stopHold()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-danger-solid px-6 py-5 font-display text-[18px] font-semibold text-white shadow-card transition active:scale-[0.99]"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-inner bg-danger-solid px-6 py-5 font-display text-[18px] font-semibold text-white shadow-card transition active:scale-[0.99]"
             >
               <Icon name="stop" size={18} /> Stop hold
             </button>
-            <div className="mt-2 text-[12.5px] text-ink3">or press Space</div>
+            <div className="mt-2 text-footnote text-ink3">or press Space</div>
           </div>
         </div>
       )
@@ -2389,22 +2387,22 @@ export function SessionPlayer({
     if (phase === 'reps') {
       return (
         <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
-          <div className="mt-4 text-[14px] font-medium text-ink2">
+          <div className="mt-4 text-body font-medium text-ink2">
             {exercise.name} · Set {displaySet}/{displayTotal}
             {perSide ? ` · ${side === 'left' ? 'Left' : 'Right'}` : ''}
           </div>
           {repFilming === 'on' ? (
-            <div className="mt-1 inline-flex items-center gap-1.5 text-[12px] font-medium text-danger-text">
+            <div className="mt-1 inline-flex items-center gap-1.5 text-caption font-medium text-danger-text">
               <span className="h-2 w-2 rounded-full bg-danger" aria-hidden="true" /> Filming until you log the set
             </div>
           ) : repFilming === 'lost' ? (
-            <div className="mt-1 max-w-xs text-[12px] leading-relaxed text-ink3" role="status">
+            <div className="mt-1 max-w-xs text-caption leading-relaxed text-ink3" role="status">
               Filming stopped, so this set has no replay to check. Log it as usual.
             </div>
           ) : null}
-          <div className="mt-2 text-[15px] text-ink2">Do your set, then log the reps.</div>
+          <div className="mt-2 text-body text-ink2">Do your set, then log the reps.</div>
           {rung && repFilming === 'on' ? (
-            <div className="mt-1 max-w-xs text-[12.5px] leading-relaxed text-ink3">
+            <div className="mt-1 max-w-xs text-footnote leading-relaxed text-ink3">
               {rung.next
                 ? `${rung.rung.standardReps} full rep${rung.rung.standardReps === 1 ? '' : 's'} in one set, checked on the replay, opens the next rung.`
                 : 'Log only full reps — you check them on the replay next.'}
@@ -2414,7 +2412,7 @@ export function SessionPlayer({
             <button
               onClick={() => setPendingReps((r) => Math.max(0, r - 1))}
               aria-label="Fewer reps"
-              className="grid h-14 w-14 place-items-center rounded-2xl border border-line bg-surface text-ink hover:border-line-strong"
+              className="grid h-14 w-14 place-items-center rounded-inner border border-line bg-surface text-ink hover:border-line-strong"
             >
               <Icon name="minus" size={20} />
             </button>
@@ -2424,19 +2422,18 @@ export function SessionPlayer({
             <button
               onClick={() => setPendingReps((r) => r + 1)}
               aria-label="More reps"
-              className="grid h-14 w-14 place-items-center rounded-2xl border border-line bg-surface text-ink hover:border-line-strong"
+              className="grid h-14 w-14 place-items-center rounded-inner border border-line bg-surface text-ink hover:border-line-strong"
             >
               <Icon name="plus" size={20} />
             </button>
           </div>
-          <div className="mt-1 text-[13px] text-ink3 tnum">target {block.target.kind === 'reps' ? block.target.reps : 0}</div>
-          <button
+          <div className="mt-1 text-footnote text-ink3 tnum">target {block.target.kind === 'reps' ? block.target.reps : 0}</div>
+          <Button size="lg"
             onClick={() => logReps(pendingReps)}
-            className="mt-8 inline-flex w-full max-w-sm items-center justify-center gap-2 rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99]"
-            style={{ background: 'var(--t-btn-accent)' }}
+            className="mt-8 inline-flex w-full max-w-sm items-center justify-center gap-2 "
           >
             <Icon name="check" size={18} /> Log {pendingReps} reps
-          </button>
+          </Button>
         </div>
       )
     }
@@ -2451,7 +2448,7 @@ export function SessionPlayer({
       const note = lastLog ? timingNote(lastLog) : null
       return (
         <div className="relative mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
-          <div className="mt-4 text-[14px] font-medium uppercase tracking-wide text-ink3">
+          <div className="mt-4 text-body font-medium uppercase tracking-wide text-ink3">
             {restRemaining <= 0 && (reviewOpen || problemReportOpen) ? 'Rest over — finish reviewing to continue' : 'Rest'}
           </div>
           <ProgressRing value={restRemaining / Math.max(1, total)} size={Math.min(210, ringSize)} stroke={10} className="mt-4">
@@ -2460,9 +2457,9 @@ export function SessionPlayer({
             </div>
           </ProgressRing>
           {lastLog ? (
-            <div className="mt-5 flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-2xl border border-line bg-surface px-4 py-2 text-[13.5px] text-ink2">
+            <div className="mt-5 flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-inner border border-line bg-surface px-4 py-2 text-footnote text-ink2">
               Logged {lastLog.kind === 'hold' ? fmtHold(lastLog.value) : `${lastLog.value} reps`}
-              {note ? <span className="text-[12px] text-ink3 tnum">{note}</span> : null}
+              {note ? <span className="text-caption text-ink3 tnum">{note}</span> : null}
               <span className="flex gap-1">
                 <button
                   onClick={() => adjustLastLog(-1)}
@@ -2485,7 +2482,7 @@ export function SessionPlayer({
               back is quicker than the allowance. The number stays honest; the
               athlete is told what the coach takes from it. */}
           {lastLog?.kind === 'hold' && lastLog.calledAtTarget && lastLog.value < lastLog.target ? (
-            <p className="mt-2 max-w-sm text-[12.5px] leading-relaxed text-ok-text">
+            <p className="mt-2 max-w-sm text-footnote leading-relaxed text-ok-text">
               You came down at the target call, so this counts as reaching your {fmtHold(lastLog.target)} target. The
               logged number is the stopwatch less the time allowed for getting back to the phone — use + if you were
               quicker.
@@ -2513,7 +2510,7 @@ export function SessionPlayer({
             : null}
           {lastLog?.kind === 'reps' ? repRowFor(lastLog, true) : null}
 
-          <div className="mt-5 text-[14px] text-ink2">
+          <div className="mt-5 text-body text-ink2">
             Next: <span className="font-medium text-ink">{nx.name}</span>
             {nx.perSide ? (
               <>
@@ -2526,7 +2523,7 @@ export function SessionPlayer({
             · <span className="font-medium text-ink tnum">{nb.target.kind === 'hold' ? `${nb.target.sec}s` : `${nb.target.reps} reps`}</span>
             {advice && advice.change !== 'same' ? (
               <span
-                className={`ml-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-semibold tnum ${
+                className={`ml-1.5 rounded-full px-2 py-0.5 text-caption font-semibold tnum ${
                   advice.change === 'up' ? 'bg-ok-soft text-ok-text' : 'bg-accent-soft text-accent-text'
                 }`}
               >
@@ -2535,24 +2532,24 @@ export function SessionPlayer({
             ) : null}
           </div>
           {advice?.reason ? (
-            <p className="mx-auto mt-1.5 max-w-sm text-[12.5px] leading-relaxed text-ink3" role="status">
+            <p className="mx-auto mt-1.5 max-w-sm text-footnote leading-relaxed text-ink3" role="status">
               {advice.reason}
             </p>
           ) : null}
           {showMoveOn ? (
-            <div className="mx-auto mt-3 w-full max-w-sm rounded-2xl border border-accent/30 bg-accent-soft p-3 text-left">
-              <p className="text-[12.5px] leading-relaxed text-ink">{advice!.suggestMoveOn}</p>
-              <p className="mt-1 text-[11.5px] text-ink3">A design choice borrowed from velocity-loss training — your call.</p>
+            <div className="mx-auto mt-3 w-full max-w-sm rounded-inner border border-accent/30 bg-accent-soft p-3 text-left">
+              <p className="text-footnote leading-relaxed text-ink">{advice!.suggestMoveOn}</p>
+              <p className="mt-1 text-caption text-ink3">A design choice borrowed from velocity-loss training — your call.</p>
               <div className="mt-2.5 flex gap-2">
                 <button
                   onClick={() => skipBlock()}
-                  className="min-h-11 flex-1 rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-on-accent"
+                  className="min-h-11 flex-1 rounded-control bg-accent px-3 py-2 text-footnote font-semibold text-on-accent"
                 >
                   Move on
                 </button>
                 <button
                   onClick={() => setKeptGoing((s) => new Set(s).add(moveOnKey))}
-                  className="min-h-11 flex-1 rounded-xl border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+                  className="min-h-11 flex-1 rounded-control border border-line bg-surface px-3 py-2 text-footnote font-medium text-ink2 hover:text-ink"
                 >
                   Keep going
                 </button>
@@ -2562,13 +2559,13 @@ export function SessionPlayer({
           <div className="mt-5 flex gap-3">
             <button
               onClick={() => setRestEnd((e) => Math.max(e, Date.now()) + 30_000)}
-              className="min-h-11 rounded-xl border border-line bg-surface px-5 py-2.5 text-[14px] font-medium text-ink2 hover:text-ink"
+              className="min-h-11 rounded-control border border-line bg-surface px-5 py-2.5 text-body font-medium text-ink2 hover:text-ink"
             >
               +30s
             </button>
             <button
               onClick={() => setRestEnd(Date.now())}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-line bg-surface px-5 py-2.5 text-[14px] font-medium text-ink2 hover:text-ink"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-control border border-line bg-surface px-5 py-2.5 text-body font-medium text-ink2 hover:text-ink"
             >
               <Icon name="skip" size={15} /> Skip rest
             </button>
@@ -2622,11 +2619,11 @@ export function SessionPlayer({
     return (
       <div className="mx-auto w-full max-w-lg px-5 pb-10">
         <h1 className="mt-6 text-center font-display text-[26px] font-bold text-ink">
-          {finishedEarly ? 'Finished early' : 'Session done 🎉'}
+          {finishedEarly ? 'Finished early' : 'Session done'}
         </h1>
-        <p className="mt-1 text-center text-[13px] text-ink2">Review and save — nothing is kept until you do.</p>
+        <p className="mt-1 text-center text-footnote text-ink2">Review and save — nothing is kept until you do.</p>
         {doneSets < totalSets ? (
-          <p className="mx-auto mt-2 max-w-sm text-center text-[12.5px] leading-relaxed text-ink3">
+          <p className="mx-auto mt-2 max-w-sm text-center text-footnote leading-relaxed text-ink3">
             {doneSets} of {totalSets} planned rounds done. Only what you did is saved — skipped work does not count as
             done{finishedEarly ? ', and stopping early is never held against you' : ''}.
           </p>
@@ -2637,8 +2634,8 @@ export function SessionPlayer({
             ['Sets', String(doneSets)],
             ['Hold time', `${holdSecTotal}s`],
           ].map(([l, v]) => (
-            <div key={l} className="rounded-2xl border border-line bg-surface p-3 text-center">
-              <div className="text-[12px] text-ink3">{l}</div>
+            <div key={l} className="rounded-inner border border-line bg-surface p-3 text-center">
+              <div className="text-caption text-ink3">{l}</div>
               <div className="font-display text-[20px] font-semibold text-ink tnum">{v}</div>
             </div>
           ))}
@@ -2646,7 +2643,7 @@ export function SessionPlayer({
         {interruptedAt.current ? interruptedCard('summary') : null}
         {lastLog ? (
           <div className="mt-3 text-center">
-            <div className="text-[12px] text-ink3">
+            <div className="text-caption text-ink3">
               Last set: {lastLog.kind === 'hold' ? fmtHold(lastLog.value) : `${lastLog.value} reps`}{' '}
               {EXERCISE_BY_ID[lastLog.exerciseId]?.name ?? ''}
               {lastNote ? ` ${lastNote}` : ''}
@@ -2664,7 +2661,7 @@ export function SessionPlayer({
         ) : null}
         {finalPathHold && finalPathHold.at !== lastLog?.at ? (
           <div className="mt-3 text-center">
-            <div className="text-[12px] text-ink3">
+            <div className="text-caption text-ink3">
               Last {EXERCISE_BY_ID[finalPathHold.exerciseId]?.name.toLowerCase() ?? 'Path hold'}:{' '}
               {fmtHold(finalPathHold.value)} credited
             </div>
@@ -2675,7 +2672,7 @@ export function SessionPlayer({
         {repLogs.map((log) => repRowFor(log, false))}
 
         <div className="mt-5">
-          <div className="mb-2 flex items-center justify-center gap-2 text-[14px] font-medium text-ink" id="rpe-label">
+          <div className="mb-2 flex items-center justify-center gap-2 text-body font-medium text-ink" id="rpe-label">
             How hard was it? (RPE)
             <button
               onClick={() => setShowRpeHelp(true)}
@@ -2691,7 +2688,7 @@ export function SessionPlayer({
                 key={n}
                 onClick={() => setRpe(rpe === n ? undefined : n)}
                 aria-pressed={rpe === n}
-                className={`min-h-11 flex-1 rounded-xl border py-2.5 font-display text-[16px] font-semibold transition ${
+                className={`min-h-11 flex-1 rounded-control border py-2.5 font-display text-title3 font-semibold transition ${
                   rpe === n ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-surface text-ink2 hover:text-ink'
                 }`}
               >
@@ -2706,10 +2703,10 @@ export function SessionPlayer({
           placeholder="Notes — how did it feel? (optional)"
           aria-label="Session notes"
           rows={2}
-          className="mt-4 w-full resize-none rounded-2xl border border-line bg-surface p-4 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+          className="mt-4 w-full resize-none rounded-inner border border-line bg-surface p-4 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
         />
         {logs.some((log) => setNeedsProgressionFormEvidence(log, state)) ? (
-          <p className="mt-4 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-center text-[13px] text-ink">
+          <p className="mt-4 rounded-control border border-accent/30 bg-accent-soft px-4 py-3 text-center text-footnote text-ink">
             This unlock-level hold will still save as a PR, but mastery needs both your confirmed Clean rating and a
             passing filmed form check. True flight skills also need your no-foot-support confirmation. One isolated
             camera flag may pass; two or more flags do not.
@@ -2717,39 +2714,38 @@ export function SessionPlayer({
         ) : null}
         <div className="sticky bottom-0 z-10 mt-4 bg-bg/85 pb-[max(env(safe-area-inset-bottom),14px)] pt-3 backdrop-blur-sm">
           {waiting ? (
-            <p className="mb-2 text-center text-[12.5px] text-ink3" role="status">
+            <p className="mb-2 text-center text-footnote text-ink3" role="status">
               {clipsFinalizing > 0 ? 'Finishing your clip…' : 'Finishing the form check…'}
             </p>
           ) : null}
-          <button
+          <Button size="lg"
             onClick={save}
             disabled={logs.length === 0 || waiting}
-            className="w-full rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
-            style={{ background: 'var(--t-btn-accent)' }}
+            className="w-full disabled:cursor-not-allowed disabled:opacity-40"
           >
             Save session
-          </button>
+          </Button>
           {waiting && logs.length > 0 ? (
             <button
               onClick={save}
-              className="mt-2 w-full rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink"
+              className="mt-2 w-full rounded-inner border border-line bg-surface py-3 text-body font-medium text-ink"
             >
               Save without waiting
             </button>
           ) : null}
         </div>
         {waiting && logs.length > 0 ? (
-          <p className="mt-1 text-center text-[11.5px] leading-relaxed text-ink3">
+          <p className="mt-1 text-center text-caption leading-relaxed text-ink3">
             A check or clip still finishing attaches to the saved set if the app stays open; otherwise the clip stays in
             your gallery to check later.
           </p>
         ) : null}
         {logs.length === 0 ? (
-          <p className="mt-2 text-center text-[12.5px] text-ink3">Nothing was logged, so there is nothing to save.</p>
+          <p className="mt-2 text-center text-footnote text-ink3">Nothing was logged, so there is nothing to save.</p>
         ) : null}
         <button
           onClick={() => setConfirmExit(true)}
-          className="mt-2 w-full rounded-2xl py-3 text-[14px] font-medium text-ink3 hover:text-ink"
+          className="mt-2 w-full rounded-inner py-3 text-body font-medium text-ink3 hover:text-ink"
         >
           {logs.length ? 'Discard…' : 'Close'}
         </button>
@@ -2775,8 +2771,8 @@ export function SessionPlayer({
           opened.map((entry, index) => {
             const unlocked = STEP_BY_ID[entry.stepId]
             return (
-              <div key={entry.stepId} className={`${index ? 'mt-3' : 'mt-6'} rounded-3xl border border-accent/30 bg-accent-soft p-6`}>
-                <div className="text-[13px] font-semibold uppercase tracking-wide text-accent-text">
+              <div key={entry.stepId} className={`${index ? 'mt-3' : 'mt-6'} rounded-card border border-accent/30 bg-accent-soft p-6`}>
+                <div className="text-footnote font-semibold uppercase tracking-wide text-accent-text">
                   {severalRoads ? `${SKILLS[unlocked.skill].name} · step unlocked` : 'Step unlocked'}
                 </div>
                 <Figure
@@ -2785,10 +2781,10 @@ export function SessionPlayer({
                   className={`mx-auto mt-2 h-32 w-40 text-ink ${index === 0 ? 'animate-floaty' : ''}`}
                 />
                 <div className="font-display text-[26px] font-bold text-ink">{unlocked.name}</div>
-                <p className="mt-1 text-[14px] text-ink2">{unlocked.tagline}</p>
+                <p className="mt-1 text-body text-ink2">{unlocked.tagline}</p>
                 <ShareProgress label="Share this" opened={{ stepId: unlocked.id, via: entry.via }} className="mt-3" />
                 {entry.via === 'next-shape' ? (
-                  <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-ink2">
+                  <p className="mx-auto mt-2 max-w-sm text-footnote leading-relaxed text-ink2">
                     Opened early: you held its opening dose clean on camera while your last step was past half its bar.
                     That is the readiness the bar only predicts — keep the previous step in your sessions for a while.
                   </p>
@@ -2802,24 +2798,24 @@ export function SessionPlayer({
           </h1>
         )}
         {rungsOpened.map(({ skill, rung: openedRung }) => (
-          <div key={openedRung.exerciseId} className="mt-3 rounded-3xl border border-accent/30 bg-accent-soft p-5">
-            <div className="text-[13px] font-semibold uppercase tracking-wide text-accent-text">
+          <div key={openedRung.exerciseId} className="mt-3 rounded-card border border-accent/30 bg-accent-soft p-5">
+            <div className="text-footnote font-semibold uppercase tracking-wide text-accent-text">
               {SKILLS[skill].ladder?.name ?? 'Push-up'} line · rung opened
             </div>
             <div className="mt-1 font-display text-[22px] font-bold text-ink">
               {EXERCISE_BY_ID[openedRung.exerciseId]?.name ?? openedRung.exerciseId}
             </div>
-            <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">{openedRung.why}</p>
+            <p className="mt-1 text-footnote leading-relaxed text-ink2">{openedRung.why}</p>
           </div>
         ))}
-        <p className="mt-1 text-[12.5px] text-ink3" role="status">
+        <p className="mt-1 text-footnote text-ink3" role="status">
           {persist.primary === 'ok'
             ? 'Stored on this device.'
             : 'Not yet written to this device’s storage — use the warning at the top to export a backup now.'}
         </p>
         {insight ? (
           <div
-            className={`mt-4 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13.5px] font-medium ${
+            className={`mt-4 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-footnote font-medium ${
               insight.delta >= 0 ? 'border-ok/30 bg-ok-soft text-ink' : 'border-line bg-surface text-ink2'
             }`}
           >
@@ -2828,13 +2824,13 @@ export function SessionPlayer({
           </div>
         ) : null}
         {debrief.length > 0 ? (
-          <div className="mt-4 rounded-2xl border border-line bg-surface p-4 text-left">
-            <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-accent-text">
+          <div className="mt-4 rounded-inner border border-line bg-surface p-4 text-left">
+            <div className="mb-2 flex items-center gap-1.5 text-footnote font-semibold uppercase tracking-wide text-accent-text">
               <Icon name="target" size={14} /> Coach's read
             </div>
             <ul className="space-y-1.5">
               {debrief.map((d) => (
-                <li key={d.text} className="flex gap-2 text-[13.5px] leading-relaxed">
+                <li key={d.text} className="flex gap-2 text-footnote leading-relaxed">
                   <span
                     className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${
                       d.kind === 'warn' ? 'bg-danger' : d.kind === 'good' ? 'bg-ok' : 'bg-ink3'
@@ -2847,15 +2843,15 @@ export function SessionPlayer({
           </div>
         ) : null}
         {events.prs.length > 0 ? (
-          <div className="mt-4 rounded-2xl border border-line bg-surface p-4 text-left">
-            <div className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-ink3">New records</div>
+          <div className="mt-4 rounded-inner border border-line bg-surface p-4 text-left">
+            <div className="mb-2 text-footnote font-semibold uppercase tracking-wide text-ink3">New records</div>
             {events.prs.map((p) => {
               const ex = EXERCISE_BY_ID[p.exerciseId]
               return (
-                <div key={`${p.exerciseId}-${p.surface ?? 'overall'}`} className="flex items-baseline justify-between py-1 text-[14.5px]">
+                <div key={`${p.exerciseId}-${p.surface ?? 'overall'}`} className="flex items-baseline justify-between py-1 text-body">
                   <span className="text-ink">
                     {ex?.name ?? p.exerciseId}
-                    {p.surface ? <span className="ml-1 text-[12px] text-ink3">· {surfaceLabel(p.surface)}</span> : null}
+                    {p.surface ? <span className="ml-1 text-caption text-ink3">· {surfaceLabel(p.surface)}</span> : null}
                   </span>
                   <span className="font-semibold text-accent-text tnum">
                     {ex?.type === 'hold' ? fmtHold(p.value) : `${p.value} reps`}
@@ -2875,28 +2871,27 @@ export function SessionPlayer({
             {events.achievements.map((id) => {
               const a = ACHIEVEMENT_BY_ID[id]
               return (
-                <div key={id} className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3.5 text-left">
+                <div key={id} className="flex items-center gap-3 rounded-inner border border-line bg-surface p-3.5 text-left">
                   <BadgeGlyph icon={a.icon} size={44} />
                   <div>
-                    <div className="text-[14.5px] font-semibold text-ink">{a.name}</div>
-                    <div className="text-[13px] text-ink2">{a.desc}</div>
+                    <div className="text-body font-semibold text-ink">{a.name}</div>
+                    <div className="text-footnote text-ink2">{a.desc}</div>
                   </div>
                 </div>
               )
             })}
           </div>
         ) : null}
-        <button
+        <Button size="lg"
           onClick={onExit}
-          className="mt-6 w-full rounded-2xl px-6 py-4 font-display text-[17px] font-semibold text-on-accent shadow-card transition hover:brightness-105"
-          style={{ background: 'var(--t-btn-accent)' }}
+          className="mt-6 w-full "
         >
           Done
-        </button>
+        </Button>
         {onViewSession ? (
           <button
             onClick={() => onViewSession(savedSession.id)}
-            className="mt-2 w-full rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink2 hover:text-ink"
+            className="mt-2 w-full rounded-inner border border-line bg-surface py-3 text-body font-medium text-ink2 hover:text-ink"
           >
             See it in your history
           </button>
@@ -2953,11 +2948,11 @@ export function SessionPlayer({
       <Modal open={showRpeHelp} onClose={() => setShowRpeHelp(false)} label="Rate of perceived exertion help">
         <div className="p-6">
           <h2 className="font-display text-[19px] font-semibold text-ink">What is RPE?</h2>
-          <p className="mt-1.5 text-[14px] leading-relaxed text-ink2">
+          <p className="mt-1.5 text-body leading-relaxed text-ink2">
             Rate of Perceived Exertion — how hard the whole session felt. Be honest: the app uses it to decide how hard
             to make your next one.
           </p>
-          <div className="mt-4 space-y-1.5 text-[13.5px]">
+          <div className="mt-4 space-y-1.5 text-footnote">
             {[
               ['6', 'Easy. Could have done a lot more.'],
               ['7', 'Comfortable. A few solid sets left.'],
@@ -2965,7 +2960,7 @@ export function SessionPlayer({
               ['9', 'Very hard. Form started to fray.'],
               ['10', 'Everything you had.'],
             ].map(([n, d]) => (
-              <div key={n} className="flex gap-3 rounded-xl bg-raised px-3 py-2">
+              <div key={n} className="flex gap-3 rounded-control bg-raised px-3 py-2">
                 <span className="font-display font-bold text-accent-text tnum">{n}</span>
                 <span className="text-ink2">{d}</span>
               </div>
@@ -2985,7 +2980,7 @@ export function SessionPlayer({
               <h2 className="pr-10 font-display text-[19px] font-semibold text-ink">
                 {logs.length ? 'Leave without saving?' : 'Close this session?'}
               </h2>
-              <p className="mt-1.5 text-[14px] text-ink2">
+              <p className="mt-1.5 text-body text-ink2">
                 {logs.length
                   ? `${logs.length} logged set${logs.length === 1 ? ' is' : 's are'} not saved yet. Discarding removes ${
                       logs.length === 1 ? 'it' : 'them'
@@ -2994,23 +2989,22 @@ export function SessionPlayer({
               </p>
               <div className="mt-5 flex flex-col gap-2">
                 {logs.length ? (
-                  <button
+                  <Button size="lg"
                     onClick={save}
-                    className="min-h-12 rounded-xl px-4 py-3 text-[14.5px] font-semibold text-on-accent"
-                    style={{ background: 'var(--t-btn-accent)' }}
+                    className="min-h-12 "
                   >
                     Save session
-                  </button>
+                  </Button>
                 ) : null}
                 <button
                   onClick={() => setConfirmExit(false)}
-                  className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-[14.5px] font-medium text-ink"
+                  className="min-h-12 rounded-control border border-line bg-surface px-4 py-3 text-body font-medium text-ink"
                 >
                   Keep reviewing
                 </button>
                 <button
                   onClick={discard}
-                  className={`min-h-12 rounded-xl px-4 py-3 text-[14.5px] font-semibold ${
+                  className={`min-h-12 rounded-control px-4 py-3 text-body font-semibold ${
                     logs.length ? 'bg-danger-solid text-white' : 'border border-line bg-surface text-ink2'
                   }`}
                 >
@@ -3021,7 +3015,7 @@ export function SessionPlayer({
           ) : (
             <>
               <h2 className="pr-10 font-display text-[19px] font-semibold text-ink">Leave this session?</h2>
-              <p className="mt-1.5 text-[14px] text-ink2">
+              <p className="mt-1.5 text-body text-ink2">
                 {canFinishEarly
                   ? `Finish early to review and save what you did${
                       holdRunning ? ' — the hold in progress is stopped and logged' : ''
@@ -3030,23 +3024,22 @@ export function SessionPlayer({
               </p>
               <div className="mt-5 flex flex-col gap-2">
                 {canFinishEarly ? (
-                  <button
+                  <Button size="lg"
                     onClick={finishEarly}
-                    className="min-h-12 rounded-xl px-4 py-3 text-[14.5px] font-semibold text-on-accent"
-                    style={{ background: 'var(--t-btn-accent)' }}
+                    className="min-h-12 "
                   >
                     Finish early &amp; review
-                  </button>
+                  </Button>
                 ) : null}
                 <button
                   onClick={() => setConfirmExit(false)}
-                  className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-[14.5px] font-medium text-ink"
+                  className="min-h-12 rounded-control border border-line bg-surface px-4 py-3 text-body font-medium text-ink"
                 >
                   Keep training
                 </button>
                 <button
                   onClick={discard}
-                  className={`min-h-12 rounded-xl px-4 py-3 text-[14.5px] font-semibold ${
+                  className={`min-h-12 rounded-control px-4 py-3 text-body font-semibold ${
                     canFinishEarly ? 'bg-danger-solid text-white' : 'border border-line bg-surface text-ink2'
                   }`}
                 >
@@ -3069,10 +3062,10 @@ function DemoHelp({ exercise, pinnedUrl }: { exercise: Exercise; pinnedUrl?: str
     <div className="p-6 sm:p-7">
       <div className="pr-10">
         <h2 className="font-display text-[21px] font-bold text-ink">{exercise.name}</h2>
-        <p className="mt-1 text-[14px] leading-relaxed text-ink2">{exercise.blurb}</p>
+        <p className="mt-1 text-body leading-relaxed text-ink2">{exercise.blurb}</p>
       </div>
       {pinnedId ? (
-        <div className="relative mt-4 w-full overflow-hidden rounded-xl border border-line" style={{ paddingTop: '56.25%' }}>
+        <div className="relative mt-4 w-full overflow-hidden rounded-control border border-line" style={{ paddingTop: '56.25%' }}>
           <iframe
             src={embedUrl(pinnedId)}
             title={`${exercise.name} demo`}
@@ -3086,14 +3079,14 @@ function DemoHelp({ exercise, pinnedUrl }: { exercise: Exercise; pinnedUrl?: str
           href={demoSearchUrl(exercise)}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-line bg-raised py-3 text-[14px] font-medium text-ink transition hover:border-line-strong"
+          className="mt-4 flex items-center justify-center gap-2 rounded-control border border-line bg-raised py-3 text-body font-medium text-ink transition hover:border-line-strong"
         >
           <Icon name="play" size={15} className="text-accent-text" /> Watch demos on YouTube
         </a>
       )}
-      <div className="mt-4 rounded-2xl border border-line bg-raised p-4">
-        <div className="mb-2 text-[13px] font-semibold text-ink">Step by step</div>
-        <ol className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
+      <div className="mt-4 rounded-inner border border-line bg-raised p-4">
+        <div className="mb-2 text-footnote font-semibold text-ink">Step by step</div>
+        <ol className="space-y-1.5 text-footnote leading-relaxed text-ink2">
           {exercise.howTo.map((s, i) => (
             <li key={s} className="flex gap-2.5">
               <span className="font-display font-semibold text-accent-text tnum">{i + 1}</span>
@@ -3102,11 +3095,11 @@ function DemoHelp({ exercise, pinnedUrl }: { exercise: Exercise; pinnedUrl?: str
           ))}
         </ol>
       </div>
-      <div className="mt-3 rounded-2xl border border-line bg-raised p-4">
-        <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-danger-text">
+      <div className="mt-3 rounded-inner border border-line bg-raised p-4">
+        <div className="mb-2 flex items-center gap-1.5 text-footnote font-semibold text-danger-text">
           <Icon name="x" size={14} /> Watch out for
         </div>
-        <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
+        <ul className="space-y-1.5 text-footnote leading-relaxed text-ink2">
           {exercise.mistakes.map((m) => (
             <li key={m} className="flex gap-2">
               <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-ink3" />
@@ -3115,7 +3108,7 @@ function DemoHelp({ exercise, pinnedUrl }: { exercise: Exercise; pinnedUrl?: str
           ))}
         </ul>
       </div>
-      <p className="mt-3 text-[12.5px] text-ink3">
+      <p className="mt-3 text-footnote text-ink3">
         Tip: pin your favourite demo in the Learn tab and it will play here instead of a search.
       </p>
     </div>

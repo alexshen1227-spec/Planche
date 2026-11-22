@@ -1,3 +1,4 @@
+import { Button } from './components/ds'
 import { lazy, startTransition, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import type { CheckIn, Tab, Workout, WorkoutRequest } from './types'
@@ -156,16 +157,15 @@ function UpdateBanner({ defer = false }: { defer?: boolean }) {
   }
   return (
     <div className="fixed inset-x-0 bottom-20 z-[65] flex justify-center px-4 lg:bottom-6">
-      <div className="animate-rise flex items-center gap-3 rounded-2xl border border-accent/35 bg-raised py-2.5 pl-4 pr-2.5 shadow-pop backdrop-blur">
+      <div className="animate-rise flex items-center gap-3 rounded-inner border border-accent/35 bg-raised py-2.5 pl-4 pr-2.5 shadow-pop backdrop-blur">
         <Icon name="sparkle" size={17} className="shrink-0 text-accent-text" />
-        <span className="text-[13.5px] font-medium text-ink">A new version of {APP_NAME} is ready.</span>
-        <button
+        <span className="text-footnote font-medium text-ink">A new version of {APP_NAME} is ready.</span>
+        <Button
           onClick={refresh}
-          className="rounded-lg px-3.5 py-1.5 text-[13px] font-semibold text-on-accent transition hover:brightness-105"
-          style={{ background: 'var(--t-btn-accent)' }}
+          className=" "
         >
           Refresh
-        </button>
+        </Button>
         <button
           onClick={() => setDismissed(true)}
           aria-label="Dismiss update notice"
@@ -193,10 +193,10 @@ function PersistenceBanner() {
     <div className="fixed inset-x-0 top-0 z-[70] flex justify-center px-3 pt-[max(env(safe-area-inset-top),8px)]">
       <div
         role="alert"
-        className="flex max-w-xl flex-wrap items-center gap-2 rounded-2xl border border-danger/40 bg-danger-soft px-4 py-2.5 shadow-pop"
+        className="flex max-w-xl flex-wrap items-center gap-2 rounded-inner border border-danger/40 bg-danger-soft px-4 py-2.5 shadow-pop"
       >
         <Icon name="info" size={16} className="shrink-0 text-danger-text" />
-        <span className="min-w-0 flex-1 text-[13px] leading-snug text-ink">
+        <span className="min-w-0 flex-1 text-footnote leading-snug text-ink">
           Your latest changes are not being saved on this device
           {persist.error ? ` (${persist.error})` : ''}. Export a backup now, then free up storage.
         </span>
@@ -206,13 +206,13 @@ function PersistenceBanner() {
             exportData({ ...state, lastBackupAt: at })
             dispatch({ type: 'STAMP_BACKUP', at })
           }}
-          className="rounded-lg bg-danger-solid px-3 py-1.5 text-[12.5px] font-semibold text-white"
+          className="rounded-lg bg-danger-solid px-3 py-1.5 text-footnote font-semibold text-white"
         >
           Export
         </button>
         <button
           onClick={retrySave}
-          className="rounded-lg border border-line bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink"
+          className="rounded-lg border border-line bg-surface px-3 py-1.5 text-footnote font-medium text-ink"
         >
           Try again
         </button>
@@ -247,7 +247,7 @@ function AppShell({ children, deferUpdate = false }: { children: ReactNode; defe
 function BootSplash() {
   return (
     <div className="app-ambient grid min-h-screen place-items-center px-6" role="status">
-      <div className="text-center text-[13px] text-ink3">Checking for saved data…</div>
+      <div className="text-center text-footnote text-ink3">Checking for saved data…</div>
     </div>
   )
 }
@@ -277,35 +277,34 @@ function BootRecovery() {
     <div className="app-ambient min-h-screen">
       <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-10">
         <h1 className="font-display text-[24px] font-bold text-ink">Your saved data could not be read</h1>
-        <p className="mt-2 text-[14px] leading-relaxed text-ink2">
+        <p className="mt-2 text-body leading-relaxed text-ink2">
           Nothing has been overwritten. The original is kept aside on this device, exactly as it was, and there was no
           on-device backup to restore from.
         </p>
         {boot.failure ? (
-          <pre className="mt-3 overflow-x-auto rounded-xl border border-line bg-raised p-3 text-[11.5px] text-ink3">
+          <pre className="mt-3 overflow-x-auto rounded-control border border-line bg-raised p-3 text-caption text-ink3">
             {boot.failure.reason}
           </pre>
         ) : null}
-        <button
+        <Button size="lg"
           onClick={download}
-          className="mt-4 rounded-2xl px-6 py-3.5 font-display text-[15px] font-semibold text-on-accent"
-          style={{ background: 'var(--t-btn-accent)' }}
+          className="mt-4 "
         >
           Download the unreadable data
-        </button>
+        </Button>
         <button
           onClick={() => window.location.reload()}
-          className="mt-2 rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink"
+          className="mt-2 rounded-inner border border-line bg-surface py-3 text-body font-medium text-ink"
         >
           Try again
         </button>
         <button
           onClick={startFresh}
-          className="mt-2 rounded-2xl border border-line bg-surface py-3 text-[14px] font-medium text-ink2"
+          className="mt-2 rounded-inner border border-line bg-surface py-3 text-body font-medium text-ink2"
         >
           Start fresh (the unreadable copy stays aside)
         </button>
-        <p className="mt-4 text-center text-[12.5px] text-ink3">
+        <p className="mt-4 text-center text-footnote text-ink3">
           If you have an exported backup file, start fresh and import it from Settings → Data.
         </p>
       </div>
@@ -437,7 +436,7 @@ export default function App() {
     return (
       <AppShell>
         <div className="app-ambient grain min-h-screen">
-          <Suspense fallback={<div className="p-6 text-[13px] text-ink3">Loading the bench…</div>}>
+          <Suspense fallback={<div className="p-6 text-footnote text-ink3">Loading the bench…</div>}>
             <DevLab onClose={() => { window.location.hash = '' }} />
           </Suspense>
         </div>
@@ -482,8 +481,8 @@ export default function App() {
         <aside className="sticky top-8 hidden h-fit w-52 shrink-0 lg:block">
           <div className="mb-8 flex items-center gap-2.5 px-2">
             <div
-              className="grid h-9 w-9 place-items-center rounded-xl text-on-accent"
-              style={{ background: 'var(--t-btn-accent)' }}
+              className="grid h-9 w-9 place-items-center rounded-control text-on-accent bg-accent"
+
             >
               {/* tiny planche glyph */}
               <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
@@ -493,8 +492,8 @@ export default function App() {
               </svg>
             </div>
             <div>
-              <div className="font-display text-[16px] font-bold leading-tight text-ink">{APP_NAME}</div>
-              <div className="text-[11.5px] font-medium text-ink3">own the hold</div>
+              <div className="font-display text-title3 font-bold leading-tight text-ink">{APP_NAME}</div>
+              <div className="text-caption font-medium text-ink3">own the hold</div>
             </div>
           </div>
           <nav className="space-y-1">
@@ -503,7 +502,7 @@ export default function App() {
                 key={n.tab}
                 onClick={() => setTab(n.tab)}
                 aria-current={navTab === n.tab ? 'page' : undefined}
-                className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-[14.5px] font-medium transition ${
+                className={`flex w-full items-center gap-3 rounded-control px-3.5 py-2.5 text-body font-medium transition ${
                   navTab === n.tab
                     ? 'bg-surface text-ink shadow-card border border-line'
                     : 'border border-transparent text-ink2 hover:bg-surface/60 hover:text-ink'
@@ -521,8 +520,8 @@ export default function App() {
           {/* Mobile header */}
           <div className="mb-5 flex items-center gap-2.5 lg:hidden">
             <div
-              className="grid h-8 w-8 place-items-center rounded-lg text-on-accent"
-              style={{ background: 'var(--t-btn-accent)' }}
+              className="grid h-8 w-8 place-items-center rounded-lg text-on-accent bg-accent"
+
             >
               <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
                 <circle cx="18.5" cy="9" r="2.6" fill="currentColor" />
@@ -530,10 +529,10 @@ export default function App() {
                 <rect x="8.5" y="13.5" width="3" height="7" rx="1.5" fill="currentColor" />
               </svg>
             </div>
-            <span className="font-display text-[16px] font-bold text-ink">{APP_NAME}</span>
+            <span className="font-display text-title3 font-bold text-ink">{APP_NAME}</span>
           </div>
 
-          <Suspense fallback={<div className="p-6 text-[13px] text-ink3">Loading…</div>}>
+          <Suspense fallback={<div className="p-6 text-footnote text-ink3">Loading…</div>}>
           {tab === 'home' ? (
             <Dashboard
               startWorkout={startWorkout}
@@ -566,7 +565,7 @@ export default function App() {
               key={n.tab}
               onClick={() => setTab(n.tab)}
               aria-current={navTab === n.tab ? 'page' : undefined}
-              className={`relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[10.5px] font-medium transition ${
+              className={`relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-control px-1 py-1.5 text-caption font-medium transition ${
                 navTab === n.tab
                   ? 'bg-accent-soft text-accent-text shadow-[inset_0_0_0_1px_var(--t-line)]'
                   : 'text-ink3 hover:bg-raised hover:text-ink2'

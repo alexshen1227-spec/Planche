@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-22',
+    title: 'Your sport in the plan, and a day that flows',
+    area: 'coach',
+    notes: [
+      'Log a game, practice or sprint session ahead of time (Tomorrow, In 2 days): the day before, the gym leaves your legs alone and goes a little lighter.',
+      'Goals and schedule → your sport’s season. In season the gym keeps the weights but drops some sets, so games and practice come first.',
+      'Today ticks off as you go: finish the skill block and the gym block becomes the next step; when both are done the card says so. A skill session done this morning no longer reshuffles the rest of today’s plan.',
+    ],
+  },
+  {
+    date: '2026-11-22',
     title: 'A cleaner look, and a gym logger that feels quick',
     area: 'app',
     notes: [
@@ -26,6 +36,7 @@ export const CHANGELOG: ChangeEntry[] = [
       'Gym logger: swipe a set right to finish it (tapping still works), swipe left to edit or delete; the rest timer is a ring that counts down; finishing shows the sets and any new estimated max before you save, and a new gym badge gets its moment.',
       'Today shows the week ahead: each day’s skills and gym focus as planned if the days before go to plan — a preview, re-planned every day from what you actually did.',
       'Animations follow your phone’s reduce-motion setting.',
+      'The skill screens got the same treatment: solid buttons with a proper tap size, one type scale, drawn icons in Learn, and smoother charts whose axes show the right unit.',
     ],
   },
   {

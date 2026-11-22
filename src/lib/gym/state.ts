@@ -77,6 +77,7 @@ function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
     musclesPriority: muscles(r.musclesPriority),
     minutesByDay: minutes,
     straightArmRestHours: Math.round(clamp(r.straightArmRestHours, 24, 96, 48)),
+    ...(r.season === 'in' ? { season: 'in' as const } : {}),
     updatedAt: isTime(r.updatedAt) ? r.updatedAt : 1,
   }
 }

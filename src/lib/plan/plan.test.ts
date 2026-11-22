@@ -219,3 +219,35 @@ describe('the week preview', () => {
     expect(rest.filter((d) => d.plan.rest)).toHaveLength(4)
   })
 })
+
+describe('a sport alongside', () => {
+  it('does not let a skill block done this morning reshuffle the rest of today', () => {
+    const morning = new Date(NOW)
+    morning.setHours(8, 0, 0, 0)
+    const s = { ...athlete(['planche']), sessions: [skillSession(morning.getTime(), 'tuck-planche')] }
+    expect(planToday(s, { now: NOW, minutes: 60 }).skill?.skills).toContain('planche')
+    // Tomorrow it rests.
+    expect(planToday(s, { now: NOW + DAY, minutes: 60 }).skill).toBeUndefined()
+  })
+  it('keeps the legs fresh and the gym lighter the day before a game', () => {
+    const base = athlete(['planche'])
+    const s: AppState = {
+      ...base,
+      gym: { ...base.gym!, activities: [{ id: 'g', at: NOW + 20 * HOUR, kind: 'game', minutes: 60, rpe: 8, legs: true, updatedAt: 1 }] },
+    }
+    const p = planToday(s, { now: NOW, minutes: 60 })
+    expect(p.gym!.focus).not.toBe('lower')
+    expect(p.gym!.musclesOff).toContain('quads')
+    expect(p.gym!.volumeFactor).toBeLessThanOrEqual(0.8)
+    // A game a week away changes nothing.
+    const later: AppState = { ...base, gym: { ...base.gym!, activities: [{ ...s.gym!.activities![0], at: NOW + 7 * DAY }] } }
+    expect(planToday(later, { now: NOW, minutes: 60 }).gym!.volumeFactor).toBe(1)
+  })
+  it('drops sets in season, and keeps the setting through a reload', async () => {
+    const { sanitizeGym } = await import('../gym/state')
+    const s = athlete(['planche'], { season: 'in' })
+    expect(planToday(s, { now: NOW, minutes: 60 }).gym!.volumeFactor).toBeLessThanOrEqual(0.7)
+    expect(sanitizeGym(JSON.parse(JSON.stringify(s.gym)))!.prefs!.season).toBe('in')
+    expect(sanitizeGym({ ...s.gym, prefs: { ...s.gym!.prefs, season: 'summer' } })!.prefs!.season).toBeUndefined()
+  })
+})

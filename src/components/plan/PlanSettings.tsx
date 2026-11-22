@@ -225,6 +225,24 @@ export function ScheduleEditor({ prefs, setPrefs }: Edit) {
           measured rule.
         </p>
       </section>
+
+      <section>
+        <h3 className="font-display text-title3 font-semibold">Your sport’s season</h3>
+        <SegmentedControl
+          className="mt-2"
+          label="Season"
+          value={prefs.season ?? 'off'}
+          onChange={(v) => setPrefs((p) => ({ ...p, season: v === 'in' ? 'in' : undefined }))}
+          options={[
+            { value: 'off', label: 'Off-season' },
+            { value: 'in', label: 'In season' },
+          ]}
+        />
+        <p className="mt-1 text-caption text-ink3">
+          In season the sport comes first: the gym keeps the weights but drops some sets, and legs stay fresh before games
+          you log as upcoming.
+        </p>
+      </section>
     </>
   )
 }

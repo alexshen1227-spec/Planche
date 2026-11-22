@@ -1,3 +1,4 @@
+import { Button } from '../components/ds'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AssessmentRecord, EquipmentId, SkillId, StepId, Units } from '../types'
 import { normalizeStateWithReport, rebuildDerivedState, reportHasLosses, useStore } from '../lib/store'
@@ -364,9 +365,9 @@ export function Onboarding() {
 
   const stageIndex = STAGE_ORDER.indexOf(stage)
   const primaryBtn =
-    'flex flex-1 items-center justify-center gap-2 rounded-2xl px-6 py-3.5 font-display text-[16px] font-semibold text-on-accent shadow-card transition hover:brightness-105'
+    'flex flex-1 items-center justify-center gap-2 rounded-inner px-6 py-3.5 font-display text-title3 font-semibold text-on-accent shadow-card transition hover:brightness-105'
   const backBtn =
-    'rounded-2xl border border-line bg-surface px-5 py-3.5 text-[14.5px] font-medium text-ink2 hover:text-ink'
+    'rounded-inner border border-line bg-surface px-5 py-3.5 text-body font-medium text-ink2 hover:text-ink'
 
   return (
     <div className="app-ambient grain fixed inset-0 z-50 overflow-y-auto bg-bg">
@@ -393,24 +394,24 @@ export function Onboarding() {
         {stage === 'welcome' ? (
           <div className="animate-rise text-center" ref={headingRef} tabIndex={-1}>
             <div
-              className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-3xl text-on-accent shadow-card"
-              style={{ background: 'var(--t-btn-accent)' }}
+              className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-card text-on-accent shadow-card bg-accent"
+
             >
               <Figure step="full" className="h-10 w-12" />
             </div>
             <h1 className="font-display text-[34px] font-bold leading-tight text-ink">{APP_NAME}</h1>
-            <p className="mx-auto mt-2 max-w-md text-[15px] leading-relaxed text-ink2">{APP_TAGLINE}</p>
+            <p className="mx-auto mt-2 max-w-md text-body leading-relaxed text-ink2">{APP_TAGLINE}</p>
             {/* Both halves, plainly: nothing the athlete records goes anywhere,
                 and the checker is fetched from two outside hosts on first use
                 (poseBackend's WASM_BASE and MODEL_URL). "No server" said the
                 first and hid the second. */}
-            <p className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-ink3">
+            <p className="mx-auto mt-2 max-w-md text-footnote leading-relaxed text-ink3">
               No account, nothing to cancel. What you log and film stays on this device — none of it is uploaded. The
               camera form checker is downloaded the first time you use it, from Google’s file hosting and jsDelivr, and
               then runs here.
             </p>
             <div className="mx-auto mt-7 max-w-sm text-left">
-              <label htmlFor="ob-name" className="text-[13.5px] font-medium text-ink2">
+              <label htmlFor="ob-name" className="text-footnote font-medium text-ink2">
                 What should we call you? (optional)
               </label>
               <input
@@ -418,16 +419,15 @@ export function Onboarding() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Your name"
-                className="mt-1.5 w-full rounded-2xl border border-line bg-surface px-4 py-3.5 text-[15px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                className="mt-1.5 w-full rounded-inner border border-line bg-surface px-4 py-3.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
               />
             </div>
-            <button
+            <Button
               onClick={() => setStage('skills')}
               className={`${primaryBtn} mx-auto mt-6 w-full max-w-sm`}
-              style={{ background: 'var(--t-btn-accent)' }}
             >
               Let's go <Icon name="arrowR" size={17} />
-            </button>
+            </Button>
             <input
               ref={restoreRef}
               type="file"
@@ -442,7 +442,7 @@ export function Onboarding() {
             <button
               onClick={() => restoreRef.current?.click()}
               disabled={restoring}
-              className="mx-auto mt-3 block min-h-11 px-3 py-2 text-[13.5px] font-medium text-ink2 underline-offset-2 hover:text-ink hover:underline disabled:opacity-60"
+              className="mx-auto mt-3 block min-h-11 px-3 py-2 text-footnote font-medium text-ink2 underline-offset-2 hover:text-ink hover:underline disabled:opacity-60"
             >
               {restoring ? 'Reading the backup…' : 'I have a backup file'}
             </button>
@@ -454,7 +454,7 @@ export function Onboarding() {
             <h1 ref={headingRef} tabIndex={-1} className="text-center font-display text-[26px] font-bold text-ink outline-none">
               What do you want to train?
             </h1>
-            <p className="mt-1 text-center text-[14px] leading-relaxed text-ink2">
+            <p className="mt-1 text-center text-body leading-relaxed text-ink2">
               Pick one or several. The first one you pick leads every session; the others rotate in behind it. You can
               add, drop or reorder them later.
             </p>
@@ -475,20 +475,20 @@ export function Onboarding() {
                       setSkippedInterview(false)
                       setManualIndex(0)
                     }}
-                    className={`flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition ${
+                    className={`flex w-full items-center gap-4 rounded-inner border p-4 text-left transition ${
                       active ? 'border-accent bg-accent-soft shadow-card' : 'border-line bg-surface hover:border-line-strong'
                     }`}
                   >
                     <Figure step={summit} className={`h-14 w-[70px] shrink-0 ${active ? 'text-accent-text' : 'text-ink2'}`} />
                     <div className="min-w-0">
-                      <div className="text-[15px] font-semibold text-ink">{def.name}</div>
-                      <div className="mt-0.5 text-[13px] leading-relaxed text-ink2">{def.tagline}</div>
-                      <div className="mt-1 text-[12px] leading-relaxed text-ink3">
+                      <div className="text-body font-semibold text-ink">{def.name}</div>
+                      <div className="mt-0.5 text-footnote leading-relaxed text-ink2">{def.tagline}</div>
+                      <div className="mt-1 text-caption leading-relaxed text-ink3">
                         {def.requires.length ? `Needs ${kitNeedsPhrase(def.requires)}` : 'Floor space is enough'}
                       </div>
                     </div>
                     <span
-                      className={`ml-auto grid h-7 min-w-7 shrink-0 place-items-center rounded-full border-2 px-1.5 text-[11.5px] font-bold ${
+                      className={`ml-auto grid h-7 min-w-7 shrink-0 place-items-center rounded-full border-2 px-1.5 text-caption font-bold ${
                         active ? 'border-accent bg-accent text-on-accent' : 'border-line-strong text-transparent'
                       }`}
                     >
@@ -498,7 +498,7 @@ export function Onboarding() {
                 )
               })}
             </div>
-            <p className="mt-3 text-center text-[12.5px] leading-relaxed text-ink3" aria-live="polite">
+            <p className="mt-3 text-center text-footnote leading-relaxed text-ink3" aria-live="polite">
               {skills.length === 0
                 ? 'Choose at least one.'
                 : skills.length === 1
@@ -509,14 +509,13 @@ export function Onboarding() {
               <button onClick={() => setStage('welcome')} className={backBtn}>
                 Back
               </button>
-              <button
+              <Button
                 onClick={() => setStage('goal')}
                 disabled={skills.length === 0}
                 className={`${primaryBtn} disabled:opacity-50`}
-                style={{ background: 'var(--t-btn-accent)' }}
               >
                 Continue <Icon name="arrowR" size={16} />
-              </button>
+              </Button>
             </div>
           </div>
         ) : null}
@@ -526,7 +525,7 @@ export function Onboarding() {
             <h1 ref={headingRef} tabIndex={-1} className="text-center font-display text-[26px] font-bold text-ink outline-none">
               What are you chasing?
             </h1>
-            <p className="mt-1 text-center text-[14px] text-ink2">
+            <p className="mt-1 text-center text-body text-ink2">
               {skills.length > 1
                 ? `The destination on your main skill, ${SKILLS[focus].name.toLowerCase()} — not your starting point. Your other skills aim at the top of their roads until you say otherwise.`
                 : 'This sets your destination, not your starting point. You can change it any time.'}
@@ -540,14 +539,14 @@ export function Onboarding() {
                     key={id}
                     aria-pressed={active}
                     onClick={() => setGoals((current) => ({ ...current, [focus]: id }))}
-                    className={`flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition ${
+                    className={`flex w-full items-center gap-4 rounded-inner border p-4 text-left transition ${
                       active ? 'border-accent bg-accent-soft shadow-card' : 'border-line bg-surface hover:border-line-strong'
                     }`}
                   >
                     <Figure step={id} className={`h-14 w-[70px] shrink-0 ${active ? 'text-accent-text' : 'text-ink2'}`} />
                     <div className="min-w-0">
-                      <div className="text-[15px] font-semibold text-ink">{step.name}</div>
-                      <div className="mt-0.5 text-[13px] leading-relaxed text-ink2">{GOAL_BLURB[id] ?? step.tagline}</div>
+                      <div className="text-body font-semibold text-ink">{step.name}</div>
+                      <div className="mt-0.5 text-footnote leading-relaxed text-ink2">{GOAL_BLURB[id] ?? step.tagline}</div>
                     </div>
                     <span
                       className={`ml-auto grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 ${
@@ -564,9 +563,9 @@ export function Onboarding() {
               <button onClick={() => setStage('skills')} className={backBtn}>
                 Back
               </button>
-              <button onClick={() => setStage('interview')} className={primaryBtn} style={{ background: 'var(--t-btn-accent)' }}>
+              <Button onClick={() => setStage('interview')} className={primaryBtn}>
                 Continue <Icon name="arrowR" size={16} />
-              </button>
+              </Button>
             </div>
           </div>
         ) : null}
@@ -600,7 +599,7 @@ export function Onboarding() {
           ) : currentItem ? (
             <div className="animate-rise">
               <div className="text-center">
-                <div className="text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
+                <div className="text-footnote font-semibold uppercase tracking-wider text-accent-text">
                   {questionProgress}
                 </div>
                 <h1
@@ -611,7 +610,7 @@ export function Onboarding() {
                   {currentItem.question}
                 </h1>
                 {currentItem.standard ? (
-                  <p className="mx-auto mt-2 max-w-md text-[13.5px] leading-relaxed text-ink2">
+                  <p className="mx-auto mt-2 max-w-md text-footnote leading-relaxed text-ink2">
                     {currentItem.standard}
                   </p>
                 ) : null}
@@ -643,11 +642,11 @@ export function Onboarding() {
                       setAnswers(next)
                       if (nextInterviewItem(skills, next) === null) setStage('result')
                     }}
-                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4 text-left transition hover:border-accent hover:bg-accent-soft"
+                    className="flex w-full items-center justify-between gap-3 rounded-inner border border-line bg-surface p-4 text-left transition hover:border-accent hover:bg-accent-soft"
                   >
                     <span className="min-w-0">
-                      <span className="block text-[15px] font-medium text-ink">{opt.label}</span>
-                      {opt.hint ? <span className="mt-0.5 block text-[12.5px] text-ink2">{opt.hint}</span> : null}
+                      <span className="block text-body font-medium text-ink">{opt.label}</span>
+                      {opt.hint ? <span className="mt-0.5 block text-footnote text-ink2">{opt.hint}</span> : null}
                     </span>
                     <Icon name="chevronR" size={16} className="shrink-0 text-ink3" />
                   </button>
@@ -665,7 +664,7 @@ export function Onboarding() {
                     delete next[asked[asked.length - 1]]
                     setAnswers(next)
                   }}
-                  className="rounded-xl border border-line bg-surface px-4 py-2.5 text-[13.5px] font-medium text-ink2 hover:text-ink"
+                  className="rounded-control border border-line bg-surface px-4 py-2.5 text-footnote font-medium text-ink2 hover:text-ink"
                 >
                   Back
                 </button>
@@ -675,12 +674,12 @@ export function Onboarding() {
                     setManualIndex(0)
                     setAnswers({})
                   }}
-                  className="px-1 py-2 text-[13px] font-medium text-ink3 underline underline-offset-4 hover:text-ink"
+                  className="px-1 py-2 text-footnote font-medium text-ink3 underline underline-offset-4 hover:text-ink"
                 >
                   Skip — I'll pick my own level
                 </button>
               </div>
-              <p className="mt-4 text-center text-[12px] leading-relaxed text-ink3">
+              <p className="mt-4 text-center text-caption leading-relaxed text-ink3">
                 Answer honestly rather than optimistically — the holds you claim here are timed for real in your first
                 sessions. Placed a step low, a filmed clean hold at the bar moves you up; placed a step high, the first
                 weeks go on holds you cannot keep clean.
@@ -705,9 +704,9 @@ export function Onboarding() {
               const several = skills.length > 1
               return (
                 <section key={skill} className={index ? 'mt-5' : 'mt-5'} aria-label={def.name}>
-                  <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+                  <div className="rounded-inner border border-line bg-surface p-5 shadow-card">
                     {several ? (
-                      <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-accent-text">
+                      <div className="mb-2 text-caption font-bold uppercase tracking-wider text-accent-text">
                         {def.name}
                         {index === 0 ? ' · leads your sessions' : ''}
                       </div>
@@ -716,22 +715,22 @@ export function Onboarding() {
                       <Figure step={stepId} className="h-16 w-20 shrink-0 text-accent-text" />
                       <div className="min-w-0">
                         <div className="font-display text-[20px] font-bold text-ink">{STEP_BY_ID[stepId].name}</div>
-                        <div className="text-[13px] text-ink2">{STEP_BY_ID[stepId].tagline}</div>
+                        <div className="text-footnote text-ink2">{STEP_BY_ID[stepId].tagline}</div>
                       </div>
                     </div>
-                    <p className="mt-3 text-[13.5px] leading-relaxed text-ink2">
+                    <p className="mt-3 text-footnote leading-relaxed text-ink2">
                       {skippedInterview || !placement
                         ? 'You picked this yourself, so the app treats it as a starting guess and nothing more. Your first filmed sets are what confirm it.'
                         : placement.reason}
                     </p>
                     {!skippedInterview && placement ? (
-                      <div className="mt-3 flex items-center gap-2 rounded-xl border border-line bg-raised px-3 py-2">
+                      <div className="mt-3 flex items-center gap-2 rounded-control border border-line bg-raised px-3 py-2">
                         <Icon
                           name={placement.confidence === 'good' ? 'check' : 'info'}
                           size={15}
                           className={placement.confidence === 'good' ? 'text-ok-text' : 'text-ink3'}
                         />
-                        <span className="text-[12.5px] leading-relaxed text-ink2">
+                        <span className="text-footnote leading-relaxed text-ink2">
                           {placement.confidence === 'good'
                             ? 'Your answers were consistent, so this is a confident starting point — still provisional until a filmed set backs it up.'
                             : placement.confidence === 'moderate'
@@ -741,28 +740,28 @@ export function Onboarding() {
                       </div>
                     ) : null}
                     {skill !== 'planche' ? (
-                      <details className="mt-3 rounded-xl border border-line bg-raised px-3 py-2">
-                        <summary className="cursor-pointer text-[12.5px] font-semibold text-ink">
+                      <details className="mt-3 rounded-control border border-line bg-raised px-3 py-2">
+                        <summary className="cursor-pointer text-footnote font-semibold text-ink">
                           Worth knowing before you train {def.holdName === 'handstand' ? 'upside down' : `the ${def.holdName}`}
                         </summary>
                         <ul className="mt-2 space-y-1.5">
                           {def.safety.map((line) => (
-                            <li key={line} className="text-[12.5px] leading-relaxed text-ink2">
+                            <li key={line} className="text-footnote leading-relaxed text-ink2">
                               {line}
                             </li>
                           ))}
                         </ul>
-                        <p className="mt-2 text-[12px] leading-relaxed text-ink3">{def.sourcing}</p>
+                        <p className="mt-2 text-caption leading-relaxed text-ink3">{def.sourcing}</p>
                       </details>
                     ) : null}
                   </div>
 
                   {placement && placement.inconsistencies.length > 0 && !skippedInterview ? (
-                    <div className="mt-3 rounded-2xl border border-danger/30 bg-danger-soft p-4">
-                      <div className="text-[13px] font-semibold text-ink">Worth double-checking</div>
+                    <div className="mt-3 rounded-inner border border-danger/30 bg-danger-soft p-4">
+                      <div className="text-footnote font-semibold text-ink">Worth double-checking</div>
                       <ul className="mt-1.5 space-y-1">
                         {placement.inconsistencies.map((t) => (
-                          <li key={t} className="text-[13px] leading-relaxed text-ink2">
+                          <li key={t} className="text-footnote leading-relaxed text-ink2">
                             {t}
                           </li>
                         ))}
@@ -773,7 +772,7 @@ export function Onboarding() {
                   {placement && placement.caveats.length > 0 && !skippedInterview ? (
                     <div className="mt-3 space-y-2">
                       {placement.caveats.map((t) => (
-                        <div key={t} className="rounded-2xl border border-line bg-surface p-4 text-[13px] leading-relaxed text-ink2">
+                        <div key={t} className="rounded-inner border border-line bg-surface p-4 text-footnote leading-relaxed text-ink2">
                           {t}
                         </div>
                       ))}
@@ -781,16 +780,16 @@ export function Onboarding() {
                   ) : null}
 
                   {placement && placement.gaps.length > 0 && !skippedInterview ? (
-                    <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
-                      <div className="text-[13px] font-semibold text-ink">What will actually limit you</div>
-                      <p className="mt-0.5 text-[12.5px] text-ink3">
+                    <div className="mt-3 rounded-inner border border-line bg-surface p-4">
+                      <div className="text-footnote font-semibold text-ink">What will actually limit you</div>
+                      <p className="mt-0.5 text-footnote text-ink3">
                         Not blockers — these get built into your sessions from day one.
                       </p>
                       <ul className="mt-2 space-y-2">
                         {placement.gaps.map((g) => (
                           <li key={g.id}>
-                            <div className="text-[13.5px] font-medium text-ink">{g.label}</div>
-                            <div className="text-[12.5px] leading-relaxed text-ink2">{g.detail}</div>
+                            <div className="text-footnote font-medium text-ink">{g.label}</div>
+                            <div className="text-footnote leading-relaxed text-ink2">{g.detail}</div>
                           </li>
                         ))}
                       </ul>
@@ -822,9 +821,9 @@ export function Onboarding() {
               >
                 Back
               </button>
-              <button onClick={() => setStage('details')} className={primaryBtn} style={{ background: 'var(--t-btn-accent)' }}>
+              <Button onClick={() => setStage('details')} className={primaryBtn}>
                 Looks right <Icon name="arrowR" size={16} />
-              </button>
+              </Button>
             </div>
           </div>
         ) : null}
@@ -838,18 +837,18 @@ export function Onboarding() {
             >
               A few quick details
             </h1>
-            <p className="mt-1 text-center text-[14px] text-ink2">
+            <p className="mt-1 text-center text-body text-ink2">
               All optional, all stays on your device. Equipment shapes exercise choices; measurements add context.
             </p>
 
             <div className="mt-5 flex justify-center">
-              <div className="flex overflow-hidden rounded-xl border border-line">
+              <div className="flex overflow-hidden rounded-control border border-line">
                 {(['metric', 'imperial'] as const).map((u) => (
                   <button
                     key={u}
                     aria-pressed={units === u}
                     onClick={() => setUnits(u)}
-                    className={`px-4 py-2 text-[13.5px] font-medium transition ${
+                    className={`px-4 py-2 text-footnote font-medium transition ${
                       units === u ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                     }`}
                   >
@@ -860,8 +859,8 @@ export function Onboarding() {
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="rounded-2xl border border-line bg-surface p-4">
-                <span className="text-[13px] font-medium text-ink2">
+              <label className="rounded-inner border border-line bg-surface p-4">
+                <span className="text-footnote font-medium text-ink2">
                   Bodyweight ({units === 'metric' ? 'kg' : 'lb'})
                 </span>
                 <input
@@ -870,14 +869,14 @@ export function Onboarding() {
                   inputMode="decimal"
                   placeholder={units === 'metric' ? '70' : '155'}
                   aria-label={`Bodyweight in ${units === 'metric' ? 'kilograms' : 'pounds'}`}
-                  className="mt-1.5 w-full rounded-xl border border-line bg-raised px-3 py-2.5 text-[15px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                  className="mt-1.5 w-full rounded-control border border-line bg-raised px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
                 />
-                <span className="mt-1 block text-[12px] text-ink3">
+                <span className="mt-1 block text-caption text-ink3">
                   These skills are strength-to-weight — bodyweight is one of the biggest levers there is.
                 </span>
               </label>
-              <label className="rounded-2xl border border-line bg-surface p-4">
-                <span className="text-[13px] font-medium text-ink2">Height</span>
+              <label className="rounded-inner border border-line bg-surface p-4">
+                <span className="text-footnote font-medium text-ink2">Height</span>
                 {units === 'metric' ? (
                   <input
                     value={heightCm}
@@ -885,7 +884,7 @@ export function Onboarding() {
                     inputMode="decimal"
                     placeholder="175"
                     aria-label="Height in centimetres"
-                    className="mt-1.5 w-full rounded-xl border border-line bg-raised px-3 py-2.5 text-[15px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                    className="mt-1.5 w-full rounded-control border border-line bg-raised px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
                   />
                 ) : (
                   <div className="mt-1.5 flex gap-2">
@@ -895,7 +894,7 @@ export function Onboarding() {
                       inputMode="numeric"
                       placeholder="5"
                       aria-label="Height, feet"
-                      className="w-full rounded-xl border border-line bg-raised px-3 py-2.5 text-[15px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                      className="w-full rounded-control border border-line bg-raised px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
                     />
                     <input
                       value={heightIn}
@@ -903,18 +902,18 @@ export function Onboarding() {
                       inputMode="numeric"
                       placeholder="9"
                       aria-label="Height, inches"
-                      className="w-full rounded-xl border border-line bg-raised px-3 py-2.5 text-[15px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                      className="w-full rounded-control border border-line bg-raised px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
                     />
                   </div>
                 )}
-                <span className="mt-1 block text-[12px] text-ink3">
+                <span className="mt-1 block text-caption text-ink3">
                   Height gives useful lever-length context; it does not change your unlock bar.
                 </span>
               </label>
             </div>
 
-            <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
-              <div className="text-[13px] font-medium text-ink2" id="ob-equipment">
+            <div className="mt-3 rounded-inner border border-line bg-surface p-4">
+              <div className="text-footnote font-medium text-ink2" id="ob-equipment">
                 What do you have to train with?
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-labelledby="ob-equipment">
@@ -925,7 +924,7 @@ export function Onboarding() {
                       key={eq.id}
                       aria-pressed={on}
                       onClick={() => setEquipment((v) => (on ? v.filter((x) => x !== eq.id) : [...v, eq.id]))}
-                      className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition ${
+                      className={`rounded-full border px-3.5 py-1.5 text-footnote font-medium transition ${
                         on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2'
                       }`}
                     >
@@ -934,7 +933,7 @@ export function Onboarding() {
                   )
                 })}
               </div>
-              <p className="mt-2 text-[12px] leading-relaxed text-ink3">
+              <p className="mt-2 text-caption leading-relaxed text-ink3">
                 {EQUIPMENT_OPTIONS.filter((eq) => equipment.includes(eq.id))
                   .map((eq) => eq.hint)
                   .filter(Boolean)
@@ -943,8 +942,8 @@ export function Onboarding() {
               {kitGaps.length ? (
                 <div className="mt-3 space-y-2" role="status">
                   {kitGaps.map(({ skill, missing }) => (
-                    <div key={skill} className="rounded-xl border border-accent/30 bg-accent-soft px-3 py-2.5">
-                      <p className="text-[12.5px] leading-relaxed text-ink">
+                    <div key={skill} className="rounded-control border border-accent/30 bg-accent-soft px-3 py-2.5">
+                      <p className="text-footnote leading-relaxed text-ink">
                         <span className="font-semibold">{SKILLS[skill].name}</span> needs {kitNeedsPhrase(missing)}.
                         Without it this skill waits in your list
                         {trainable.length ? ` and ${trainable.length === 1 ? 'your other skill trains' : 'your other skills train'} as normal` : ''}{' '}
@@ -955,7 +954,7 @@ export function Onboarding() {
                           <button
                             key={id}
                             onClick={() => setEquipment((v) => (v.includes(id) ? v : [...v, id]))}
-                            className="min-h-9 rounded-lg border border-line bg-surface px-2.5 py-1 text-left text-[12px] font-semibold text-ink hover:border-line-strong"
+                            className="min-h-11 rounded-lg border border-line bg-surface px-2.5 py-1 text-left text-caption font-semibold text-ink hover:border-line-strong"
                           >
                             I have {equipmentPhrase(id)}
                           </button>
@@ -967,15 +966,15 @@ export function Onboarding() {
               ) : null}
             </div>
 
-            <label className="mt-3 block rounded-2xl border border-line bg-surface p-4">
-              <span className="text-[13px] font-medium text-ink2">Anything currently sore or injured?</span>
+            <label className="mt-3 block rounded-inner border border-line bg-surface p-4">
+              <span className="text-footnote font-medium text-ink2">Anything currently sore or injured?</span>
               <input
                 value={injuryNote}
                 onChange={(e) => setInjuryNote(e.target.value)}
                 placeholder="e.g. left wrist a bit cranky — or leave blank"
-                className="mt-1.5 w-full rounded-xl border border-line bg-raised px-3 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                className="mt-1.5 w-full rounded-control border border-line bg-raised px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
               />
-              <span className="mt-1 block text-[12px] text-ink3">
+              <span className="mt-1 block text-caption text-ink3">
                 Kept as a note so it is in front of you. If something hurts on a training day, say so in the check-in —
                 that is what changes the plan. Pain that is still there the next day, or swelling, needs qualified
                 medical advice.
@@ -986,12 +985,12 @@ export function Onboarding() {
               <button onClick={() => setStage('result')} className={backBtn}>
                 Back
               </button>
-              <button onClick={continueFromDetails} className={primaryBtn} style={{ background: 'var(--t-btn-accent)' }}>
+              <Button onClick={continueFromDetails} className={primaryBtn}>
                 Continue <Icon name="arrowR" size={16} />
-              </button>
+              </Button>
             </div>
             {measurementError ? (
-              <p className="mt-2 text-center text-[12.5px] text-danger-text" role="alert">
+              <p className="mt-2 text-center text-footnote text-danger-text" role="alert">
                 {measurementError}
               </p>
             ) : null}
@@ -1007,7 +1006,7 @@ export function Onboarding() {
             >
               How often will you train?
             </h1>
-            <p className="mx-auto mt-1 max-w-md text-[14px] leading-relaxed text-ink2">
+            <p className="mx-auto mt-1 max-w-md text-body leading-relaxed text-ink2">
               Sessions per week. Three is the number most coaching sources land on for straight-arm work — but with
               total work equal, frequency itself makes little measured difference, so pick the number you will keep.
               {sharing ? ` ${sharing}` : ''}
@@ -1019,7 +1018,7 @@ export function Onboarding() {
                   key={n}
                   aria-pressed={goal === n}
                   onClick={() => setGoal(n)}
-                  className={`h-16 w-16 rounded-2xl border font-display text-[22px] font-bold transition ${
+                  className={`h-16 w-16 rounded-inner border font-display text-[22px] font-bold transition ${
                     goal === n
                       ? 'border-transparent bg-accent text-on-accent shadow-card'
                       : 'border-line bg-surface text-ink2 hover:border-line-strong hover:text-ink'
@@ -1029,7 +1028,7 @@ export function Onboarding() {
                 </button>
               ))}
             </div>
-            <div className="mt-2 text-[13px] text-ink3" aria-live="polite">
+            <div className="mt-2 text-footnote text-ink3" aria-live="polite">
               {goal <= 3 ? 'Sustainable. Good call.' : goal === 4 ? 'Solid — watch your elbows.' : 'Spicy. Keep two easy days.'}
             </div>
             <h2 className="mt-7 font-display text-[18px] font-semibold text-ink">How long can a session be?</h2>
@@ -1039,7 +1038,7 @@ export function Onboarding() {
                   key={m}
                   aria-pressed={minutes === m}
                   onClick={() => setMinutes(m)}
-                  className={`h-12 min-w-14 rounded-xl border px-3 font-display text-[16px] font-bold transition ${
+                  className={`h-12 min-w-14 rounded-control border px-3 font-display text-title3 font-bold transition ${
                     minutes === m
                       ? 'border-transparent bg-accent text-on-accent shadow-card'
                       : 'border-line bg-surface text-ink2 hover:border-line-strong hover:text-ink'
@@ -1049,7 +1048,7 @@ export function Onboarding() {
                 </button>
               ))}
             </div>
-            <div className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-ink3" aria-live="polite">
+            <div className="mx-auto mt-2 max-w-md text-footnote leading-relaxed text-ink3" aria-live="polite">
               {trainable.length > 1
                 ? sessionRoom
                 : trainable.length === 0
@@ -1070,8 +1069,8 @@ export function Onboarding() {
                           : 'Everything, with room for extra sets on volume days.'}{' '}
               Change it any time in Settings.
             </div>
-            <div className="mx-auto mt-7 max-w-md rounded-2xl border border-line bg-surface p-4 text-left">
-              <div className="text-[13px] font-semibold uppercase tracking-wide text-ink3">Your plan</div>
+            <div className="mx-auto mt-7 max-w-md rounded-inner border border-line bg-surface p-4 text-left">
+              <div className="text-footnote font-semibold uppercase tracking-wide text-ink3">Your plan</div>
               {skills.map((skill) => {
                 const from = STEP_BY_ID[placedFor(skill)]
                 const to = STEP_BY_ID[goalFor(skill)]
@@ -1086,16 +1085,16 @@ export function Onboarding() {
                     <div className="min-w-0">
                       {/* With several skills each row is headed by its skill
                           and names where that skill starts. */}
-                      <div className="font-display text-[17px] font-semibold text-ink">
+                      <div className="font-display text-title3 font-semibold text-ink">
                         {several ? SKILLS[skill].name : from.name}
                       </div>
                       {several || hold ? (
-                        <div className="text-[13px] text-ink">
+                        <div className="text-footnote text-ink">
                           {several ? `Starts at ${from.name}` : 'Key hold'}
                           {hold ? `${several ? ' — ' : ': '}${hold}` : ''}
                         </div>
                       ) : null}
-                      <div className="text-[13px] text-ink2">
+                      <div className="text-footnote text-ink2">
                         {missing
                           ? `Waiting for ${kitNeedsPhrase(missing)} — it joins your sessions once that is on your equipment list.`
                           : stepsToGo === 0
@@ -1106,7 +1105,7 @@ export function Onboarding() {
                   </div>
                 )
               })}
-              <p className="mt-2.5 text-[12.5px] leading-relaxed text-ink3">
+              <p className="mt-2.5 text-footnote leading-relaxed text-ink3">
                 The coach needs a handful of sessions before it can tell which kind of training you respond to. Until
                 then it runs a sensible default and says so rather than pretending to know.
               </p>
@@ -1115,9 +1114,9 @@ export function Onboarding() {
               <button onClick={() => setStage('details')} className={backBtn}>
                 Back
               </button>
-              <button onClick={finish} className={primaryBtn} style={{ background: 'var(--t-btn-accent)' }}>
+              <Button onClick={finish} className={primaryBtn}>
                 <Icon name="bolt" size={17} /> Start training
-              </button>
+              </Button>
             </div>
           </div>
         ) : null}
@@ -1158,7 +1157,7 @@ function ManualPlacement({
       <h1 ref={headingRef} tabIndex={-1} className="text-center font-display text-[26px] font-bold text-ink outline-none">
         {several ? `${SKILLS[skill].name}: where are you starting?` : 'Where are you starting?'}
       </h1>
-      <p className="mt-1 text-center text-[14px] text-ink2">
+      <p className="mt-1 text-center text-body text-ink2">
         Honest placement beats ambitious placement — you can test up any time.
       </p>
       <div className="mt-6 space-y-2.5" role="group" aria-label="Starting step">
@@ -1169,14 +1168,14 @@ function ManualPlacement({
               key={p.stepId}
               aria-pressed={active}
               onClick={() => onPick(p.stepId)}
-              className={`flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition ${
+              className={`flex w-full items-center gap-4 rounded-inner border p-4 text-left transition ${
                 active ? 'border-accent bg-accent-soft shadow-card' : 'border-line bg-surface hover:border-line-strong'
               }`}
             >
               <Figure step={p.stepId} className={`h-14 w-[70px] shrink-0 ${active ? 'text-accent-text' : 'text-ink2'}`} />
               <div className="min-w-0">
-                <div className="text-[15px] font-semibold text-ink">{p.label}</div>
-                <div className="mt-0.5 text-[13px] leading-relaxed text-ink2">{p.desc}</div>
+                <div className="text-body font-semibold text-ink">{p.label}</div>
+                <div className="mt-0.5 text-footnote leading-relaxed text-ink2">{p.desc}</div>
               </div>
               <span
                 className={`ml-auto grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 ${
@@ -1193,9 +1192,9 @@ function ManualPlacement({
         <button onClick={onBack} className={backBtn}>
           Back
         </button>
-        <button onClick={onContinue} className={primaryBtn} style={{ background: 'var(--t-btn-accent)' }}>
+        <Button onClick={onContinue} className={primaryBtn}>
           Continue <Icon name="arrowR" size={16} />
-        </button>
+        </Button>
       </div>
     </div>
   )

@@ -1,3 +1,6 @@
+import { EmptyState } from '../components/ds'
+import { BadgeGlyph } from '../components/ds'
+import { Button } from '../components/ds'
 import { useMemo, useState } from 'react'
 import type { Category, Exercise } from '../types'
 import { useStore } from '../lib/store'
@@ -37,19 +40,19 @@ export function Library() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-[28px] font-bold text-ink">Learn</h1>
-          <p className="mt-0.5 text-[14px] text-ink2">
+          <p className="mt-0.5 text-body text-ink2">
             {pane === 'exercises'
               ? 'Every movement the programs use — how to do it, what to feel, what to avoid.'
               : 'Plain-English guides and the jargon decoded. Start here if you are new.'}
           </p>
         </div>
-        <div className="flex overflow-hidden rounded-xl border border-line">
+        <div className="flex overflow-hidden rounded-control border border-line">
           {(['exercises', 'basics'] as const).map((p) => (
             <button
               key={p}
               onClick={() => setPane(p)}
               aria-pressed={pane === p}
-              className={`px-4 py-2 text-[13.5px] font-medium capitalize transition ${
+              className={`px-4 py-2 text-footnote font-medium capitalize transition ${
                 pane === p ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
               }`}
             >
@@ -92,7 +95,7 @@ function ExercisePane() {
           </Chip>
         ))}
         <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
-          <span className="shrink-0 text-[12.5px] text-ink3 tnum">
+          <span className="shrink-0 text-footnote text-ink3 tnum">
             {list.length} move{list.length === 1 ? '' : 's'}
           </span>
           <div className="relative min-w-0 flex-1 sm:w-[210px]">
@@ -101,7 +104,7 @@ function ExercisePane() {
               onChange={(e) => setQuery(e.target.value)}
               aria-label="Search exercises"
               placeholder="Search cues, muscles…"
-              className="w-full rounded-full border border-line bg-surface py-1.5 pl-4 pr-9 text-[13.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+              className="w-full rounded-full border border-line bg-surface py-1.5 pl-4 pr-9 text-footnote text-ink outline-none placeholder:text-ink3 focus:border-accent"
             />
             {query ? (
               <button
@@ -124,26 +127,26 @@ function ExercisePane() {
             <button
               key={e.id}
               onClick={() => setDetail(e)}
-              className="card-int rounded-2xl border border-line bg-surface p-5 text-left shadow-card"
+              className="card-int rounded-inner border border-line bg-surface p-5 text-left shadow-card"
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="font-display text-[16px] font-semibold leading-snug text-ink">{e.name}</div>
+                <div className="font-display text-title3 font-semibold leading-snug text-ink">{e.name}</div>
                 <span
-                  className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+                  className={`shrink-0 rounded-full px-2.5 py-0.5 text-caption font-semibold uppercase tracking-wide ${
                     e.type === 'hold' ? 'bg-accent-soft text-accent-text' : 'bg-info-soft text-info-text'
                   }`}
                 >
                   {e.type}
                 </span>
               </div>
-              <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-ink2">{e.blurb}</p>
+              <p className="mt-1 line-clamp-2 text-footnote leading-relaxed text-ink2">{e.blurb}</p>
               <div className="mt-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-1" aria-label={`Difficulty ${e.difficulty} of 5`}>
                   {[1, 2, 3, 4, 5].map((n) => (
                     <span key={n} className={`h-1.5 w-4 rounded-full ${n <= e.difficulty ? 'bg-accent' : 'bg-line'}`} />
                   ))}
                 </div>
-                <span className="flex items-center gap-2 text-[12.5px] text-ink3">
+                <span className="flex items-center gap-2 text-footnote text-ink3">
                   {pinned ? <Icon name="play" size={12} className="text-accent-text" /> : null}
                   {pr ? (
                     <span className="font-medium text-ink2 tnum">
@@ -159,8 +162,10 @@ function ExercisePane() {
         })}
       </div>
       {list.length === 0 ? (
-        <div className="mt-6 rounded-2xl border border-dashed border-line-strong p-8 text-center text-[14px] text-ink3">
-          Nothing matches that search.
+        <div className="mt-6 rounded-card border border-dashed border-line-strong">
+          <EmptyState icon="book" title="No matches">
+            Nothing matches that search.
+          </EmptyState>
         </div>
       ) : null}
 
@@ -195,9 +200,9 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
   }
 
   return (
-    <div className="mt-4 rounded-2xl border border-line bg-raised p-4">
+    <div className="mt-4 rounded-inner border border-line bg-raised p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+        <div className="flex items-center gap-1.5 text-footnote font-semibold text-ink">
           <Icon name="play" size={14} className="text-accent-text" /> Demo video
         </div>
         <div className="flex items-center gap-2">
@@ -205,7 +210,7 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
             href={demoSearchUrl(exercise)}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink2 transition hover:text-ink"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-footnote font-medium text-ink2 transition hover:text-ink"
           >
             Find demos <Icon name="arrowR" size={13} />
           </a>
@@ -214,7 +219,7 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
               setDraft(pinned ?? '')
               setEditing((v) => !v)
             }}
-            className="rounded-lg border border-line bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink2 transition hover:text-ink"
+            className="rounded-lg border border-line bg-surface px-3 py-1.5 text-footnote font-medium text-ink2 transition hover:text-ink"
           >
             {pinned ? 'Change' : 'Pin one'}
           </button>
@@ -223,7 +228,7 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
 
       {pinnedId && !editing ? (
         <div className="mt-3">
-          <div className="relative w-full overflow-hidden rounded-xl border border-line" style={{ paddingTop: '56.25%' }}>
+          <div className="relative w-full overflow-hidden rounded-control border border-line" style={{ paddingTop: '56.25%' }}>
             <iframe
               src={embedUrl(pinnedId)}
               title={`${exercise.name} demo`}
@@ -237,14 +242,14 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
               dispatch({ type: 'SET_VIDEO', exerciseId: exercise.id, url: null })
               pushToast('Pinned video removed.', 'info')
             }}
-            className="mt-2 text-[12.5px] font-medium text-ink3 hover:text-danger-text"
+            className="mt-2 text-footnote font-medium text-ink3 hover:text-danger-text"
           >
             Remove pinned video
           </button>
         </div>
       ) : editing ? (
         <div className="mt-3">
-          <p className="text-[13px] leading-relaxed text-ink2">
+          <p className="text-footnote leading-relaxed text-ink2">
             Found a demo you like? Paste its YouTube link and it will play right here, every time.
           </p>
           <div className="mt-2 flex gap-2">
@@ -253,19 +258,18 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && save()}
               placeholder="https://youtube.com/watch?v=…"
-              className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2 text-[13.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+              className="min-w-0 flex-1 rounded-control border border-line bg-surface px-3 py-2 text-footnote text-ink outline-none placeholder:text-ink3 focus:border-accent"
             />
-            <button
+            <Button
               onClick={save}
-              className="rounded-xl px-4 py-2 text-[13.5px] font-semibold text-on-accent"
-              style={{ background: 'var(--t-btn-accent)' }}
+              className=" "
             >
               Pin
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
-        <p className="mt-2 text-[13px] leading-relaxed text-ink2">
+        <p className="mt-2 text-footnote leading-relaxed text-ink2">
           Opens a live search for current demonstrations of this movement — then pin your favourite so it plays here
           from now on.
         </p>
@@ -281,11 +285,11 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
     <div className="p-6 sm:p-8">
       <div className="pr-10">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">
+          <span className="text-footnote font-semibold uppercase tracking-wider text-accent-text">
             {CATEGORY_LABEL[e.category]}
           </span>
           <span
-            className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+            className={`rounded-full px-2.5 py-0.5 text-caption font-semibold uppercase tracking-wide ${
               e.type === 'hold' ? 'bg-accent-soft text-accent-text' : 'bg-info-soft text-info-text'
             }`}
           >
@@ -293,10 +297,10 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
           </span>
         </div>
         <h2 className="mt-1 font-display text-[24px] font-bold text-ink">{e.name}</h2>
-        <p className="mt-1 text-[14px] leading-relaxed text-ink2">{e.blurb}</p>
+        <p className="mt-1 text-body leading-relaxed text-ink2">{e.blurb}</p>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2 text-[13px]">
+      <div className="mt-4 flex flex-wrap gap-2 text-footnote">
         <span className="rounded-full border border-line bg-raised px-3 py-1.5 text-ink2">
           Difficulty{' '}
           <span className="ml-1 inline-flex items-center gap-0.5 align-middle">
@@ -319,11 +323,11 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
       <VideoPanel exercise={e} />
 
       {isFilmable(e.id) || ladderOfExercise(e.id) ? (
-        <div className="mt-4 rounded-2xl border border-line bg-raised p-4">
-          <div className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+        <div className="mt-4 rounded-inner border border-line bg-raised p-4">
+          <div className="flex items-center gap-1.5 text-footnote font-semibold text-ink">
             <Icon name="monitor" size={14} className="text-accent-text" /> Your recorded sets
           </div>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-ink3">
+          <p className="mt-1 text-footnote leading-relaxed text-ink3">
             {isFilmable(e.id)
               ? 'Compare your current position against an older one — pin a clip to keep it as your reference.'
               : 'Replays of your filmed sets. A set still in your history can be reviewed here, and one you pass counts toward its rung.'}
@@ -332,9 +336,9 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
         </div>
       ) : null}
 
-      <div className="mt-4 rounded-2xl border border-line bg-raised p-4">
-        <div className="mb-2 text-[13px] font-semibold text-ink">How to do it</div>
-        <ol className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
+      <div className="mt-4 rounded-inner border border-line bg-raised p-4">
+        <div className="mb-2 text-footnote font-semibold text-ink">How to do it</div>
+        <ol className="space-y-1.5 text-footnote leading-relaxed text-ink2">
           {e.howTo.map((s, i) => (
             <li key={s} className="flex gap-2.5">
               <span className="font-display font-semibold text-accent-text tnum">{i + 1}</span>
@@ -345,11 +349,11 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
       </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-line bg-raised p-4">
-          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-ok-text">
+        <div className="rounded-inner border border-line bg-raised p-4">
+          <div className="mb-2 flex items-center gap-1.5 text-footnote font-semibold text-ok-text">
             <Icon name="check" size={14} /> Cues
           </div>
-          <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
+          <ul className="space-y-1.5 text-footnote leading-relaxed text-ink2">
             {e.cues.map((c) => (
               <li key={c} className="flex gap-2">
                 <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-ink3" />
@@ -358,11 +362,11 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
             ))}
           </ul>
         </div>
-        <div className="rounded-2xl border border-line bg-raised p-4">
-          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-danger-text">
+        <div className="rounded-inner border border-line bg-raised p-4">
+          <div className="mb-2 flex items-center gap-1.5 text-footnote font-semibold text-danger-text">
             <Icon name="x" size={14} /> Watch out for
           </div>
-          <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
+          <ul className="space-y-1.5 text-footnote leading-relaxed text-ink2">
             {e.mistakes.map((c) => (
               <li key={c} className="flex gap-2">
                 <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-ink3" />
@@ -373,7 +377,7 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
         </div>
       </div>
 
-      <div className="mt-4 text-[13px] text-ink3">
+      <div className="mt-4 text-footnote text-ink3">
         <span className="font-medium text-ink2">Works:</span> {e.muscles.join(', ')}
         {e.perSide ? ' · train both sides evenly' : ''}
       </div>
@@ -404,28 +408,28 @@ function BasicsPane() {
         )
         return (
           <section key={group.id} className="mt-6" aria-labelledby={`guides-${group.id}`}>
-            <h2 id={`guides-${group.id}`} className="font-display text-[17px] font-semibold text-ink">
+            <h2 id={`guides-${group.id}`} className="font-display text-title3 font-semibold text-ink">
               {group.title}
             </h2>
-            <p className="mt-0.5 text-[13px] text-ink3">{group.blurb}</p>
+            <p className="mt-0.5 text-footnote text-ink3">{group.blurb}</p>
             <div className="mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
               {guides.map((g) => (
                 <button
                   key={g.id}
                   onClick={() => setGuide(g)}
-                  className="card-int rounded-2xl border border-line bg-surface p-5 text-left shadow-card"
+                  className="card-int rounded-inner border border-line bg-surface p-5 text-left shadow-card"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="text-[26px]">{g.icon}</div>
+                    <BadgeGlyph icon={g.icon} size={44} />
                     {g.skill && mine.includes(g.skill) ? (
-                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent-text">
+                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-caption font-semibold text-accent-text">
                         you train this
                       </span>
                     ) : null}
                   </div>
-                  <div className="mt-1.5 font-display text-[16px] font-semibold text-ink">{g.title}</div>
-                  <p className="mt-1 text-[13px] leading-relaxed text-ink2">{g.summary}</p>
-                  <div className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-accent-text">
+                  <div className="mt-1.5 font-display text-title3 font-semibold text-ink">{g.title}</div>
+                  <p className="mt-1 text-footnote leading-relaxed text-ink2">{g.summary}</p>
+                  <div className="mt-2.5 inline-flex items-center gap-1 text-footnote font-medium text-accent-text">
                     Read <Icon name="chevronR" size={14} />
                   </div>
                 </button>
@@ -436,27 +440,27 @@ function BasicsPane() {
       })}
 
       <div className="mb-3 mt-8 flex flex-wrap items-end justify-between gap-3">
-        <h2 className="font-display text-[17px] font-semibold text-ink">Glossary</h2>
+        <h2 className="font-display text-title3 font-semibold text-ink">Glossary</h2>
         <input
           value={term}
           onChange={(e) => setTerm(e.target.value)}
           placeholder="Search terms…"
-          className="w-full max-w-[200px] rounded-full border border-line bg-surface px-4 py-1.5 text-[13.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+          className="w-full max-w-[200px] rounded-full border border-line bg-surface px-4 py-1.5 text-footnote text-ink outline-none placeholder:text-ink3 focus:border-accent"
         />
       </div>
       <div className="grid gap-2.5 sm:grid-cols-2">
         {terms.map((t) => (
-          <div key={t.term} className="rounded-2xl border border-line bg-surface p-4 shadow-card">
+          <div key={t.term} className="rounded-inner border border-line bg-surface p-4 shadow-card">
             <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="font-display text-[15px] font-semibold text-ink">{t.term}</span>
-              <span className="text-[13px] text-accent-text">{t.short}</span>
+              <span className="font-display text-body font-semibold text-ink">{t.term}</span>
+              <span className="text-footnote text-accent-text">{t.short}</span>
             </div>
-            <p className="mt-1 text-[13px] leading-relaxed text-ink2">{t.detail}</p>
+            <p className="mt-1 text-footnote leading-relaxed text-ink2">{t.detail}</p>
           </div>
         ))}
       </div>
       {terms.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-line-strong p-8 text-center text-[14px] text-ink3">
+        <div className="rounded-inner border border-dashed border-line-strong p-8 text-center text-body text-ink3">
           No terms match that.
         </div>
       ) : null}
@@ -470,17 +474,17 @@ function BasicsPane() {
         {guide ? (
           <div className="p-6 sm:p-8">
             <div className="pr-10">
-              <div className="text-[30px]">{guide.icon}</div>
+              <BadgeGlyph icon={guide.icon} size={52} />
               <h2 className="mt-1 font-display text-[24px] font-bold text-ink">{guide.title}</h2>
-              <p className="mt-1 text-[14px] leading-relaxed text-ink2">{guide.summary}</p>
+              <p className="mt-1 text-body leading-relaxed text-ink2">{guide.summary}</p>
             </div>
             <div className="mt-5 space-y-5">
               {guide.sections.map((s) => (
                 <div key={s.heading}>
-                  <h3 className="font-display text-[16px] font-semibold text-ink">{s.heading}</h3>
-                  <p className="mt-1 text-[14px] leading-relaxed text-ink2">{s.body}</p>
+                  <h3 className="font-display text-title3 font-semibold text-ink">{s.heading}</h3>
+                  <p className="mt-1 text-body leading-relaxed text-ink2">{s.body}</p>
                   {s.bullets ? (
-                    <ul className="mt-2 space-y-1.5 text-[13.5px] leading-relaxed text-ink2">
+                    <ul className="mt-2 space-y-1.5 text-footnote leading-relaxed text-ink2">
                       {s.bullets.map((b) => (
                         <li key={b} className="flex gap-2">
                           <span className="mt-[8px] h-1 w-1 shrink-0 rounded-full bg-accent" />
@@ -493,7 +497,7 @@ function BasicsPane() {
                     <a
                       href={s.link.href}
                       {...(/^https?:/.test(s.link.href) ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                      className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-accent/30 bg-accent-soft px-4 py-2 text-[13.5px] font-semibold text-accent-text transition hover:brightness-105"
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-control border border-accent/30 bg-accent-soft px-4 py-2 text-footnote font-semibold text-accent-text transition hover:brightness-105"
                     >
                       {s.link.label} <Icon name="chevronR" size={14} />
                     </a>

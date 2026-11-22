@@ -3,6 +3,7 @@ import { addDays, dayKey, fmtDuration, fmtHold, fmtShortDay, weekStart } from '.
 import { useToday } from '../lib/useToday'
 import type { WeekVolume } from '../lib/stats'
 import type { Session } from '../types'
+import { Icon } from './Icon'
 
 function useWidth<T extends HTMLElement>() {
   const ref = useRef<T | null>(null)
@@ -28,6 +29,47 @@ function niceTicks(max: number, count = 3): number[] {
   return ticks
 }
 
+/**
+ * A smooth path through the points that never overshoots them (monotone cubic,
+ * Fritsch-Carlson): a smoothed line must not invent a peak the athlete never
+ * held, which a plain spline would between a jump and a plateau.
+ */
+export function smoothPath(pts: { x: number; y: number }[]): string {
+  const n = pts.length
+  if (n === 0) return ''
+  const f = (v: number) => v.toFixed(1)
+  if (n === 1) return `M${f(pts[0].x)},${f(pts[0].y)}`
+  const dx: number[] = []
+  const m: number[] = []
+  for (let i = 0; i < n - 1; i++) {
+    dx.push(pts[i + 1].x - pts[i].x)
+    m.push(dx[i] > 0 ? (pts[i + 1].y - pts[i].y) / dx[i] : 0)
+  }
+  const t: number[] = [m[0]]
+  for (let i = 1; i < n - 1; i++) t.push(m[i - 1] * m[i] <= 0 ? 0 : (m[i - 1] + m[i]) / 2)
+  t.push(m[n - 2])
+  for (let i = 0; i < n - 1; i++) {
+    if (m[i] === 0) {
+      t[i] = 0
+      t[i + 1] = 0
+      continue
+    }
+    const a = t[i] / m[i]
+    const b = t[i + 1] / m[i]
+    const h = Math.hypot(a, b)
+    if (h > 3) {
+      t[i] = (3 * a * m[i]) / h
+      t[i + 1] = (3 * b * m[i]) / h
+    }
+  }
+  let d = `M${f(pts[0].x)},${f(pts[0].y)}`
+  for (let i = 0; i < n - 1; i++) {
+    const h = dx[i] / 3
+    d += ` C${f(pts[i].x + h)},${f(pts[i].y + t[i] * h)} ${f(pts[i + 1].x - h)},${f(pts[i + 1].y - t[i + 1] * h)} ${f(pts[i + 1].x)},${f(pts[i + 1].y)}`
+  }
+  return d
+}
+
 interface TipState {
   x: number
   y: number
@@ -38,7 +80,7 @@ function Tooltip({ tip }: { tip: TipState | null }) {
   if (!tip) return null
   return (
     <div
-      className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg border border-line bg-raised px-2.5 py-1.5 text-[12px] leading-relaxed text-ink shadow-pop"
+      className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-control border border-line bg-raised px-2.5 py-1.5 text-caption leading-relaxed text-ink shadow-pop"
       style={{ left: tip.x, top: tip.y - 8 }}
     >
       {tip.lines.map((l, i) => (
@@ -82,7 +124,7 @@ export function HoldLineChart({
     return (
       <div ref={ref} className="grid h-[200px] place-items-center px-6 text-center text-[13px] leading-relaxed text-ink3">
         <div>
-          <div className="mb-1 text-2xl">📈</div>
+          <Icon name="chart" size={24} className="mx-auto mb-2 text-ink3" />
           {emptyHint ?? (
             <>
               Log two or more sessions with this hold
@@ -106,7 +148,7 @@ export function HoldLineChart({
   const x = (t: number) => pad.l + ((t - t0) / span) * iw
   const y = (v: number) => pad.t + ih - (v / maxV) * ih
   const ticks = niceTicks(maxV)
-  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.at).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ')
+  const path = smoothPath(points.map((p) => ({ x: x(p.at), y: y(p.value) })))
   const area = `${path} L${x(t1).toFixed(1)},${(pad.t + ih).toFixed(1)} L${x(t0).toFixed(1)},${(pad.t + ih).toFixed(1)} Z`
   const last = points[points.length - 1]
 
@@ -158,15 +200,15 @@ export function HoldLineChart({
         {ticks.map((t) => (
           <g key={t}>
             <line x1={pad.l} x2={w - pad.r} y1={y(t)} y2={y(t)} stroke="var(--t-grid)" strokeWidth={1} />
-            <text x={pad.l - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill="var(--t-ink3)" className="tnum">
-              {t}s
+            <text x={pad.l - 8} y={y(t) + 4} textAnchor="end" fontSize={12} fill="var(--t-ink3)" className="tnum">
+              {format ? fmtV(t) : `${t}s`}
             </text>
           </g>
         ))}
         {goal ? (
           <g>
             <line x1={pad.l} x2={w - pad.r} y1={y(goal)} y2={y(goal)} stroke="var(--t-accent-soft)" strokeWidth={2} />
-            <text x={w - pad.r + 6} y={y(goal) + 4} fontSize={11} fill="var(--t-ink3)">
+            <text x={w - pad.r + 6} y={y(goal) + 4} fontSize={12} fill="var(--t-ink3)">
               goal {goal}s
             </text>
           </g>
@@ -194,10 +236,16 @@ export function HoldLineChart({
         <text x={x(last.at)} y={y(last.value) - 10} textAnchor="middle" fontSize={12} fontWeight={600} fill="var(--t-ink)" className="tnum">
           {fmtV(last.value)}
         </text>
-        <text x={pad.l} y={height - 6} fontSize={11} fill="var(--t-ink3)">
+        <line x1={pad.l} x2={w - pad.r} y1={pad.t + ih} y2={pad.t + ih} stroke="var(--t-line-strong)" strokeWidth={1} />
+        {span > 14 * 86_400_000 ? (
+          <text x={pad.l + iw / 2} y={height - 6} textAnchor="middle" fontSize={12} fill="var(--t-ink3)">
+            {fmtShortDay(t0 + span / 2)}
+          </text>
+        ) : null}
+        <text x={pad.l} y={height - 6} fontSize={12} fill="var(--t-ink3)">
           {fmtShortDay(t0)}
         </text>
-        <text x={w - pad.r} y={height - 6} textAnchor="end" fontSize={11} fill="var(--t-ink3)">
+        <text x={w - pad.r} y={height - 6} textAnchor="end" fontSize={12} fill="var(--t-ink3)">
           {fmtShortDay(t1)}
         </text>
       </svg>
@@ -346,7 +394,7 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
     return (
       <div ref={ref} className="grid h-[200px] place-items-center text-center text-[13px] text-ink3">
         <div>
-          <div className="mb-1 text-2xl">📊</div>
+          <Icon name="chart" size={24} className="mx-auto mb-2 text-ink3" />
           Weekly hold volume shows up here
           <br />
           after your first sessions.
@@ -402,7 +450,7 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
         {ticks.map((t) => (
           <g key={t}>
             <line x1={pad.l} x2={w - pad.r} y1={y(t * 60)} y2={y(t * 60)} stroke="var(--t-grid)" strokeWidth={1} />
-            <text x={pad.l - 8} y={y(t * 60) + 4} textAnchor="end" fontSize={11} fill="var(--t-ink3)" className="tnum">
+            <text x={pad.l - 8} y={y(t * 60) + 4} textAnchor="end" fontSize={12} fill="var(--t-ink3)" className="tnum">
               {t}m
             </text>
           </g>
@@ -443,7 +491,7 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
                 />
               ) : null}
               {i % 3 === 0 ? (
-                <text x={cx} y={height - 6} textAnchor="middle" fontSize={11} fill="var(--t-ink3)">
+                <text x={cx} y={height - 6} textAnchor="middle" fontSize={12} fill="var(--t-ink3)">
                   {fmtShortDay(wk.start)}
                 </text>
               ) : null}

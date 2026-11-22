@@ -5,6 +5,7 @@ import { useStore } from '../../lib/store'
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import type { SkillId, WorkoutRequest } from '../../types'
 import { Button, Card, Sheet, ToggleChip } from '../ds'
+import { Icon } from '../Icon'
 import { ActivitySheet } from './ActivitySheet'
 import { PlanSettings } from './PlanSettings'
 import { FitnessSetup } from './FitnessSetup'
@@ -46,11 +47,27 @@ export function TodayPlanCard({
   if (sheet) lastSheet.current = sheet
   const shown = sheet ?? lastSheet.current
   const skillNames = plan.skill?.skills.map((s) => SKILL_LABEL[s]) ?? []
+  // Today's blocks tick off as they are done, and the next one takes the lead.
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const skillDone = state.sessions.some((s) => s.startedAt >= todayStart.getTime())
+  const gymDone = (state.gym?.sessions ?? []).some((s) => s.startedAt >= todayStart.getTime())
+  const allDone = (!plan.skill || skillDone) && (!plan.gym || gymDone) && (skillDone || gymDone)
+  const marker = (done: boolean, n: number) => (
+    <span
+      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-footnote font-semibold ${done ? 'bg-ok text-white' : 'bg-accent-soft text-accent-text'}`}
+      aria-label={done ? 'Done' : `Step ${n}`}
+    >
+      {done ? <Icon name="check" size={16} /> : n}
+    </span>
+  )
 
   return (
     <Card className="mb-5">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="font-display text-title3 font-semibold">{plan.rest ? 'Today: rest' : `Today: ${plan.minutes} minutes`}</h2>
+        <h2 className="font-display text-title3 font-semibold">
+          {allDone ? 'Today: done' : plan.rest ? 'Today: rest' : `Today: ${plan.minutes} minutes`}
+        </h2>
         <button onClick={() => setSheet('settings')} className="min-h-11 px-1 text-footnote font-medium text-accent-text">
           Goals and schedule
         </button>
@@ -80,19 +97,22 @@ export function TodayPlanCard({
         <ol className="mt-4 space-y-2">
           {plan.skill ? (
             <li className="flex items-center gap-3 rounded-inner bg-raised p-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-footnote font-semibold text-accent-text">1</span>
+              {marker(skillDone, 1)}
               <span className="min-w-0 flex-1">
                 <span className="block text-body font-semibold">Skills · {plan.skill.minutes} min</span>
                 <span className="block truncate text-caption text-ink3">{skillNames.join(', ')} — first, while you are fresh</span>
               </span>
-              <Button onClick={() => startWorkout({ source: 'auto', minutes: plan.skill!.minutes, skills: plan.skill!.skills })}>Start</Button>
+              <Button
+                variant={skillDone ? 'secondary' : 'primary'}
+                onClick={() => startWorkout({ source: 'auto', minutes: plan.skill!.minutes, skills: plan.skill!.skills })}
+              >
+                {skillDone ? 'Again' : 'Start'}
+              </Button>
             </li>
           ) : null}
           {plan.gym ? (
             <li className="flex items-center gap-3 rounded-inner bg-raised p-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-footnote font-semibold text-accent-text">
-                {plan.skill ? 2 : 1}
-              </span>
+              {marker(gymDone, plan.skill ? 2 : 1)}
               <span className="min-w-0 flex-1">
                 <span className="block text-body font-semibold">
                   Gym · {FOCUS_LABEL[plan.gym.focus]} · {plan.gym.minutes} min
@@ -102,7 +122,7 @@ export function TodayPlanCard({
                 </span>
               </span>
               <Button
-                variant={plan.skill ? 'secondary' : 'primary'}
+                variant={(!plan.skill || skillDone) && !gymDone ? 'primary' : 'secondary'}
                 onClick={() =>
                   onStartGym({
                     focus: plan.gym!.focus,
@@ -113,7 +133,7 @@ export function TodayPlanCard({
                   })
                 }
               >
-                Start
+                {gymDone ? 'Again' : skillDone ? 'Next' : 'Start'}
               </Button>
             </li>
           ) : null}

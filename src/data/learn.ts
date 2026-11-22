@@ -1,3 +1,4 @@
+import type { IconName } from '../components/Icon'
 import type { SkillId } from '../types'
 import { POSE_DOWNLOAD_HOSTS } from '../lib/poseBackend'
 import { EXERCISE_BY_ID } from './exercises'
@@ -17,7 +18,7 @@ export interface Guide {
   group: 'start' | 'skill' | 'method'
   /** The skill a road guide is about. */
   skill?: SkillId
-  icon: string
+  icon: IconName
   title: string
   summary: string
   sections: GuideSection[]
@@ -29,12 +30,12 @@ export const GUIDE_GROUPS: { id: Guide['group']; title: string; blurb: string }[
   { id: 'method', title: 'How the app works', blurb: 'What it measures, what it decides, and how sure any of it is.' },
 ]
 
-const SKILL_ICON: Record<SkillId, string> = {
-  planche: '🤸',
-  frontlever: '🪝',
-  handstand: '🙃',
-  ninety: '📐',
-  flag: '🚩',
+const SKILL_ICON: Record<SkillId, IconName> = {
+  planche: 'person',
+  frontlever: 'hook',
+  handstand: 'balance',
+  ninety: 'compass',
+  flag: 'flag',
 }
 
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1)
@@ -121,7 +122,7 @@ const HAND_WRITTEN_GUIDES: Guide[] = [
   {
     id: 'start-here',
     group: 'start',
-    icon: '🚦',
+    icon: 'route',
     title: 'Start here',
     summary: 'New to straight-arm skills? Read this once and you will know exactly what you are doing.',
     sections: [
@@ -160,7 +161,7 @@ const HAND_WRITTEN_GUIDES: Guide[] = [
   {
     id: 'mixing-skills',
     group: 'start',
-    icon: '🧩',
+    icon: 'layers',
     title: 'Training more than one skill',
     summary: 'How a session is shared between your skills, why the order you put them in matters, and what is convention rather than evidence.',
     sections: [
@@ -195,7 +196,7 @@ const HAND_WRITTEN_GUIDES: Guide[] = [
   {
     id: 'safety',
     group: 'method',
-    icon: '🛡️',
+    icon: 'shield',
     title: 'Looking after your joints',
     summary: 'No routine makes injury impossible. What the app does to keep the risk down, and what to do when something hurts.',
     sections: [
@@ -226,7 +227,7 @@ const HAND_WRITTEN_GUIDES: Guide[] = [
   {
     id: 'how-progress-works',
     group: 'method',
-    icon: '📈',
+    icon: 'chart',
     title: 'How progress actually happens',
     summary: 'Why seconds bounce around, what to measure, and when to move up.',
     sections: [
@@ -255,7 +256,7 @@ const HAND_WRITTEN_GUIDES: Guide[] = [
   {
     id: 'fastest-path',
     group: 'method',
-    icon: '🚀',
+    icon: 'rocket',
     title: 'The fastest honest path',
     summary:
       'How every session is built, why the next shape is practised early, and what the app does at each transition. Written around the planche — lean to frog, frog to tuck, tuck to advanced tuck and on to full — and the same ideas shape every road.',
@@ -300,7 +301,7 @@ const HAND_WRITTEN_GUIDES: Guide[] = [
   {
     id: 'rpe',
     group: 'method',
-    icon: '🎚️',
+    icon: 'sliders',
     title: 'Understanding RPE',
     summary: 'The 6–10 score you give after each session, and why it changes your next one.',
     sections: [
@@ -328,7 +329,7 @@ const HAND_WRITTEN_GUIDES: Guide[] = [
   {
     id: 'camera-judge',
     group: 'method',
-    icon: '🎥',
+    icon: 'eye',
     title: 'How the camera judge works',
     summary:
       'What the form check actually measures, what it deliberately refuses to guess at, and how you can test it yourself.',
@@ -405,7 +406,7 @@ const HAND_WRITTEN_GUIDES: Guide[] = [
   {
     id: 'equipment',
     group: 'start',
-    icon: '🧰',
+    icon: 'dumbbell',
     title: 'Equipment guide',
     summary: 'What is worth buying, when, and what you can safely ignore.',
     sections: [
@@ -440,7 +441,7 @@ const HAND_WRITTEN_GUIDES: Guide[] = [
   {
     id: 'free-references',
     group: 'method',
-    icon: '🎬',
+    icon: 'play',
     title: 'Free references worth watching',
     summary: 'Six screened free videos for specific questions — what each is good for, and what not to take from it.',
     sections: [

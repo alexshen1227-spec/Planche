@@ -107,6 +107,11 @@ export interface TrainingPrefs {
   minutesByDay: number[]
   /** Hours between hard straight-arm sessions of the same family. */
   straightArmRestHours: number
+  /**
+   * In season, the sport comes first: gym volume is kept lower (the weights
+   * stay, the sets drop) and legs are kept fresh around games. Absent = off-season.
+   */
+  season?: 'off' | 'in'
   updatedAt: number
 }
 
