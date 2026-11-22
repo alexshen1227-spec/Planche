@@ -71,6 +71,33 @@ interface RealPose {
 }
 
 export const REAL_POSES: Record<string, RealPose> = {
+  // Real BlazePose landmarks from a real photo of a clean full planche:
+  // Wikimedia Commons, File:Planche.jpg, by Jonathanfv, CC BY 3.0
+  // (https://commons.wikimedia.org/wiki/File:Planche.jpg). Landmark numbers
+  // only, from the 1280px rendition; no image is stored.
+  fullPlancheCommons: {
+    truth:
+      'Full planche on the floor, side-on, arms locked, body level and held clean (Wikimedia Commons File:Planche.jpg by Jonathanfv, CC BY 3.0).',
+    width: 1280,
+    height: 790,
+    rotation: 0,
+    points: [
+      ['left_ear', 122.5, 332.7, 1],
+      ['right_ear', 122.2, 326.4, 1],
+      ['left_shoulder', 240.8, 355.9, 1],
+      ['right_shoulder', 268.1, 306.1, 1],
+      ['left_elbow', 380.4, 498.5, 0.995],
+      ['right_elbow', 434, 450.3, 0.377],
+      ['left_wrist', 519, 650.1, 0.992],
+      ['right_wrist', 548, 595.1, 0.437],
+      ['left_hip', 580.3, 324, 0.999],
+      ['right_hip', 590.4, 296.3, 0.999],
+      ['left_knee', 859.7, 330.4, 0.891],
+      ['right_knee', 857.2, 314.7, 0.163],
+      ['left_ankle', 1135.2, 333.9, 0.895],
+      ['right_ankle', 1116.7, 315.8, 0.352],
+    ],
+  },
   plancheLean: {
     truth:
       'Side-on, arms locked, legs straight, body level, shoulders far past the hands. Nothing to correct.',

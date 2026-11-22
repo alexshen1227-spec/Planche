@@ -147,7 +147,16 @@ Open, in order of value (none blocks using the app):
    skills from Today remembers the gym block (`lib/plan/nextBlock.ts`); closing
    the saved skill session hands it to Train, which opens the gym's pain check
    and starts it. Verified end to end in the preview.
-3. The real 2105.mp4: freeze its landmarks into `realClips.fixture.ts`.
+3. The real 2105.mp4: still not on this PC. Searched again 2026-11-22
+   (Wikimedia Commons, Pexels, Pixabay, Mixkit, Coverr, Videvo): no
+   free-licence side-on tuck planche video exists there. Added instead a
+   real-landmark regression: the only free planche photo found (Commons
+   File:Planche.jpg by Jonathanfv, CC BY 3.0, a clean full planche) run
+   through the real BlazePose model in `#devlab` (`captureFixture`) →
+   `realPoses.fixture.ts: fullPlancheCommons` (landmarks only), asserted
+   clean in `regression2105.test.ts` upright and on a phone turned either
+   way, before and after calibrating. When 2105.mp4 is available: `#devlab`
+   → analyse it → `fixtureFromPoses()` → `realClips.fixture.ts`.
 4. Layouts: Home and Path were redesigned for the phone (hero card, More
    options, week row; Path as a timeline) and reviewed at 375 px. Left: the
    coach/goal/tip cards on Home, Progress and Settings layouts, an

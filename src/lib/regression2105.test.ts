@@ -74,3 +74,24 @@ describe('regression: a clean ~10s tuck filmed sideways (2105.mp4, as reported)'
     })
   }
 })
+
+describe('regression on real landmarks: a real clean planche verifies clean', () => {
+  // Real BlazePose output from a real photo (realPoses.fixture: fullPlancheCommons,
+  // CC BY 3.0), held for ten seconds with measured landmark jitter. The real
+  // 2105.mp4 tuck is still the one to add when it is available.
+  it('upright, on a phone turned either way, before and after calibrating', async () => {
+    const { realClip } = await import('./realPoses.fixture')
+    for (let seed = 1; seed <= 6; seed++) {
+      const clip = realClip('fullPlancheCommons', { jitter: 0.015, seed })
+      for (const view of [clip, turnSideways(clip), turnSideways(turnSideways(turnSideways(clip)))]) {
+        for (const lockoutDeg of [UNCALIBRATED_LOCKOUT_DEG, 178]) {
+          const v = judgeTrackedFrames({ ...view, lockoutDeg }, 'full-planche')
+          expect(v.ok, `seed ${seed}`).toBe(true)
+          expect(v.issues, `seed ${seed}`).toEqual([])
+          expect(v.unseen, `seed ${seed}`).toEqual([])
+          expect(v.cleanSeconds!, `seed ${seed}`).toBeGreaterThan(9)
+        }
+      }
+    }
+  })
+})
