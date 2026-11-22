@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { IDEAL, synthesizeClip } from './poseSynth'
 import { judgeTrackedFrames, POSE_PROFILES, withLockout } from './poseForm'
 import { lockoutReference, MIN_LOCKOUT_DEG, UNCALIBRATED_LOCKOUT_DEG } from './lockout'
-import { lockoutFromReadings, MIN_LOCKOUT_READINGS } from './lockoutCalibration'
+import { lockoutFromReadings, lockoutFromVerdict, MIN_LOCKOUT_READINGS } from './lockoutCalibration'
 import { REAL_CLIPS } from './realClips.fixture'
 
 const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8]
@@ -75,6 +75,10 @@ describe('lockout calibration', () => {
   it('refuses a reading that is itself a bend, so calibrating cannot excuse soft elbows', () => {
     const bent = lockoutFromReadings([150, 152, 151, 149, 153, 150, 151])
     expect(bent.kind).toBe('refused')
+  })
+  it('passes the judge’s own refusal through rather than “no readings”', () => {
+    const refused = lockoutFromVerdict({ ok: false, reason: 'Could not see your elbows well enough to judge anything here.' })
+    expect(refused).toEqual({ kind: 'refused', reason: 'Could not see your elbows well enough to judge anything here.' })
   })
   it('never stores more than 180', () => {
     const m = lockoutFromReadings([181, 182, 180, 183, 181, 182])

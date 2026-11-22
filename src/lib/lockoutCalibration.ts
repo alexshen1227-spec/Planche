@@ -37,3 +37,19 @@ export function lockoutFromReadings(readings: (number | undefined)[]): LockoutMe
   const spread = Math.round((quantile(usable, 0.75) - quantile(usable, 0.25)) / 2)
   return { kind: 'measured', deg: Math.min(180, Math.round(median)), readings: usable.length, spread }
 }
+
+/**
+ * The lockout from a calibration clip's verdict. A clip the judge refused
+ * (front-on, elbows unreadable) is refused with the judge's own reason rather
+ * than as "no readings".
+ */
+export function lockoutFromVerdict(verdict: {
+  ok: boolean
+  reason?: string
+  explain?: { frames: { elbowDeg?: number }[] }
+}): LockoutMeasurement {
+  if (!verdict.ok) {
+    return { kind: 'refused', reason: verdict.reason || 'The camera could not read your elbows in that clip.' }
+  }
+  return lockoutFromReadings((verdict.explain?.frames ?? []).map((f) => f.elbowDeg))
+}

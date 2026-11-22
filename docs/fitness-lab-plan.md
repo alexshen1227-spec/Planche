@@ -54,7 +54,7 @@ Diagnosis (2026-11-21, read from `src/lib/poseForm.ts`):
 - [x] Lockout reference + calibration (`lib/lockout.ts`, Settings → Lockout calibration)
 - [x] Hold-window detection (`lib/holdWindow.ts`): edge feet-down + settling trimmed, never the middle
 - [x] JUDGE_VERSION 8, changelog, pushed
-- [ ] Regression clip: 2105.mp4 is not on this PC; the user said to use a decent clip found online instead (next step)
+- [x] Regression for 2105.mp4: the clip is not on this PC and no free-licence side-on tuck was found (Wikimedia Commons, Pexels searched 2026-11-21), so — as the user allowed — `regression2105.test.ts` rebuilds it as reported (sideways phone, hips above the shoulders, arms reading ~171°, setup and landing in the window) and asserts it verifies clean, uncalibrated and calibrated. When the real clip turns up: freeze it with `fixtureFromPoses()` into `realClips.fixture.ts` and assert the same.
 
 ## Phase 2 — Fitness Lab foundation
 

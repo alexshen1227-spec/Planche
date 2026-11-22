@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MIN_LOCKOUT_DEG } from '../lib/lockout'
-import { lockoutFromReadings, type LockoutMeasurement } from '../lib/lockoutCalibration'
+import { lockoutFromVerdict, type LockoutMeasurement } from '../lib/lockoutCalibration'
 
 /**
  * One-time lockout calibration (judge v8). A 2D pose model reads a locked
@@ -29,8 +29,7 @@ export function LockoutCalibrator({ onDone }: { onDone: (deg: number) => void })
       }
       // Measure against a textbook 180 so the reading is the raw one.
       const judged = judgeTrackedFrames({ ...analysis.poses, lockoutDeg: 180 }, 'lockout-check', { explain: true })
-      const readings = (judged.explain?.frames ?? []).map((f) => f.elbowDeg)
-      const result = lockoutFromReadings(readings)
+      const result = lockoutFromVerdict(judged)
       if (result.kind === 'refused') {
         setReason(result.reason)
         setStage('refused')
