@@ -165,8 +165,8 @@ Open, in order of value (none blocks using the app):
    goal, tip and achievement cards and Stats' form-trend, pressing and
    then-and-now cards re-laid out as single-column compact rows; Settings
    has its own Camera group after Training. Checked at 375 px: no overflow on
-   Home, Progress or Settings, no console errors. Only `ErrorState` has no
-   user (state is synchronous and local, so there is no failing load).
+   Home, Progress or Settings, no console errors. `ErrorState` is used where
+   a real failure happens (a lockout calibration clip the camera cannot read).
 5. Gym achievements beyond the derived badges; per-set notes in the logger.
 
 ## Log

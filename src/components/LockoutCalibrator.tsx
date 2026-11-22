@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { MIN_LOCKOUT_DEG } from '../lib/lockout'
+import { ErrorState } from './ds'
 import { lockoutFromVerdict, type LockoutMeasurement } from '../lib/lockoutCalibration'
 
 /**
@@ -77,11 +78,7 @@ export function LockoutCalibrator({ onDone }: { onDone: (deg: number) => void })
           </button>
         </div>
       ) : null}
-      {stage === 'refused' ? (
-        <p className="rounded-xl border border-line bg-raised px-3.5 py-3 text-ink" role="alert">
-          {reason}
-        </p>
-      ) : null}
+      {stage === 'refused' ? <ErrorState title="That clip could not set your lockout">{reason}</ErrorState> : null}
       {stage !== 'working' ? (
         <label className="block cursor-pointer rounded-xl border border-line bg-raised px-4 py-3 text-center text-[15px] font-semibold text-ink hover:border-accent">
           {stage === 'idle' ? 'Film or choose a clip' : 'Try another clip'}
