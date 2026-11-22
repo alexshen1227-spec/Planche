@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { GYM_EXERCISE_BY_ID, type GymExercise } from '../../data/gym/exercises'
 import { PATTERN_LABEL } from '../../data/gym/catalog'
@@ -8,9 +8,10 @@ import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
 import { alternativesFor, availableAt } from '../../lib/gym/availability'
 import { restFor } from '../../lib/gym/builder'
 import { conservative, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
-import { gymRecords, lastPerformance, repPlanFor, suggestLoad } from '../../lib/gym/progression'
+import { gymRecords, lastPerformance, plyoGate, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GymLocation, Rating } from '../../lib/gym/types'
-import { displayLoad, formatLoad, stepKgFor, unitFor } from '../../lib/gym/units'
+import { displayLoad, formatLoad, stepKgFor, toKg, unitFor } from '../../lib/gym/units'
+import { doubtedLoad } from '../../lib/gym/state'
 import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
 import { Icon } from '../Icon'
 import { BadgeGlyph, Button, CountUp, RingTimer, Sheet, SwipeRow } from '../ds'
@@ -37,11 +38,12 @@ export function draftItemFor(
   sessions: Parameters<typeof suggestLoad>[0]['sessions'],
   youth: boolean,
   sets = 3,
+  now = Date.now(),
 ): DraftItem {
   const plan = repPlanFor(exercise, 'muscle', youth)
-  const suggestion = suggestLoad({ exerciseId: exercise.id, location, sessions, plan, youth })
+  const suggestion = suggestLoad({ exerciseId: exercise.id, location, sessions, plan, youth, now })
   const unit = unitFor(exercise, location)
-  const last = lastPerformance(sessions, exercise.id, location.id)
+  const last = lastPerformance(sessions, exercise.id, location.id, now)
   const load = suggestion.kg !== undefined ? displayLoad(suggestion.kg, unit) : undefined
   return {
     exerciseId: exercise.id,
@@ -50,7 +52,7 @@ export function draftItemFor(
     restSec: restFor(exercise, plan),
     unit,
     ...(() => {
-      const previous = previousSets(sessions, exercise.id, location.id, unit)
+      const previous = previousSets(sessions, exercise.id, location.id, unit, now)
       return previous ? { previous } : {}
     })(),
     sets: Array.from({ length: sets }, (_, i) => ({
@@ -107,7 +109,24 @@ export function GymPlayer({
   const update = (fn: (d: GymDraft) => GymDraft) => setDraft((d) => fn(structuredClone(d)))
   const records = useMemo(() => gymRecords(gym.sessions), [gym.sessions])
 
-  const completeSet = (i: number, j: number) => {
+  /** A load far above this lift's best, asked about before the set is logged: a slipped decimal once set records for good. */
+  const [doubt, setDoubt] = useState<{ item: number; set: number; probably?: number; best: number } | null>(null)
+
+  const completeSet = (i: number, j: number, checked = false) => {
+    const item = draft.items[i]
+    const set = item.sets[j]
+    if (!checked && !set.done && set.load !== undefined && set.load > 0 && !GYM_EXERCISE_BY_ID[item.exerciseId]?.assisted) {
+      const odd = doubtedLoad(gym.sessions, item.exerciseId, toKg(set.load, item.unit))
+      if (odd) {
+        setDoubt({
+          item: i,
+          set: j,
+          best: displayLoad(odd.bestKg, item.unit),
+          ...(odd.probablyKg !== undefined ? { probably: displayLoad(odd.probablyKg, item.unit) } : {}),
+        })
+        return
+      }
+    }
     primeSignal()
     const wasDone = draft.items[i].sets[j].done
     update((d) => {
@@ -300,7 +319,7 @@ export function GymPlayer({
                             value={s.load ?? 0}
                             unit={item.unit}
                             step={stepDisplay || 1}
-                            label={`Set ${j + 1} load`}
+                            label={`Set ${j + 1} ${ex.assisted ? 'assistance' : 'load'}`}
                             onChange={(v) =>
                               update((d) => {
                                 const sets = d.items[i].sets
@@ -434,6 +453,50 @@ export function GymPlayer({
         </div>
       ) : null}
 
+      <Sheet open={!!doubt} onClose={() => setDoubt(null)} label="Check this load">
+        {doubt && draft.items[doubt.item] ? (
+          <div className="space-y-3">
+            <h2 className="text-title3 font-semibold">Is {draft.items[doubt.item].sets[doubt.set].load} {draft.items[doubt.item].unit} right?</h2>
+            <p className="text-footnote text-ink2">
+              That is well above your best on {GYM_EXERCISE_BY_ID[draft.items[doubt.item].exerciseId]?.name.toLowerCase()} ({doubt.best}{' '}
+              {draft.items[doubt.item].unit}). A typo here would set your records and your next loads, so it is worth a check.
+            </p>
+            <div className="grid gap-2">
+              {doubt.probably !== undefined ? (
+                <Button
+                  size="lg"
+                  onClick={() => {
+                    const { item, set, probably } = doubt
+                    update((d) => {
+                      d.items[item].sets[set].load = probably
+                      return d
+                    })
+                    setDoubt(null)
+                    completeSet(item, set, true)
+                  }}
+                >
+                  I meant {doubt.probably} {draft.items[doubt.item].unit}
+                </Button>
+              ) : null}
+              <Button
+                size="lg"
+                variant={doubt.probably !== undefined ? 'secondary' : 'primary'}
+                onClick={() => {
+                  const { item, set } = doubt
+                  setDoubt(null)
+                  completeSet(item, set, true)
+                }}
+              >
+                Yes, {draft.items[doubt.item].sets[doubt.set].load} {draft.items[doubt.item].unit} is right
+              </Button>
+              <Button variant="ghost" onClick={() => setDoubt(null)}>
+                Let me change it
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Sheet>
+
       <Sheet open={!!sheet} onClose={() => setSheet(null)} label="Exercise options">
         <div>
               {sh?.kind === 'menu' && sh.item !== undefined && draft.items[sh.item] ? (
@@ -459,14 +522,30 @@ export function GymPlayer({
                 />
               ) : null}
               {sh?.kind === 'swap' && sh.item !== undefined && draft.items[sh.item] ? (
-                <>
-                  <h2 className="text-title3 font-semibold">Swap {GYM_EXERCISE_BY_ID[draft.items[sh.item].exerciseId].name}</h2>
-                  <p className="mt-1 text-footnote text-ink3">Same movement first, then the same muscles — everything here can be done at {location.name}.</p>
-                  <ul className="mt-3 space-y-2">
-                    {alternativesFor(draft.items[sh.item].exerciseId, location, gym.ratings, draft.items.map((d) => d.exerciseId))
-                      .filter(fitsToday)
-                      .slice(0, 10)
-                      .map((alt) => (
+                <SwapList
+                  name={GYM_EXERCISE_BY_ID[draft.items[sh.item].exerciseId].name}
+                  locationName={location.name}
+                  all={alternativesFor(draft.items[sh.item].exerciseId, location, gym.ratings, draft.items.map((d) => d.exerciseId), {
+                    youth,
+                    sessions: gym.sessions,
+                    now: Date.now(),
+                  })}
+                  fitsToday={fitsToday}
+                  keptOut={[
+                    ...(draft.avoidJoints?.length ? [`load your ${joinWords(draft.avoidJoints.map((j) => j.replace('-', ' ')))}`] : []),
+                    ...(draft.musclesOff?.length ? ['work a muscle switched off'] : []),
+                  ]}
+                  onRemove={() => {
+                    update((d) => {
+                      d.items.splice(sh.item!, 1)
+                      return d
+                    })
+                    setSheet(null)
+                  }}
+                  onBack={() => setSheet(null)}
+                >
+                  {(alts) =>
+                    alts.map((alt) => (
                         <li key={alt.id}>
                           <button
                             onClick={() => swapTo(sh.item!, alt.id)}
@@ -479,9 +558,9 @@ export function GymPlayer({
                             </span>
                           </button>
                         </li>
-                      ))}
-                  </ul>
-                </>
+                      ))
+                  }
+                </SwapList>
               ) : null}
               {sh?.kind === 'add' ? (
                 <>
@@ -497,6 +576,7 @@ export function GymPlayer({
                     {availableAt(location)
                       .filter((e) => gym.ratings[e.id] !== 'avoid')
                       .filter(fitsToday)
+                      .filter((e) => plyoGate(e, gym.sessions, youth, Date.now()).allowed)
                       .filter((e) => !query || e.name.toLowerCase().includes(query.toLowerCase()) || PATTERN_LABEL[e.pattern].toLowerCase().includes(query.toLowerCase()))
                       .slice(0, 40)
                       .map((e) => (
@@ -522,7 +602,7 @@ export function GymPlayer({
           <div>
             <div className="text-footnote font-medium text-ink3">Sets done</div>
             <div className="mt-0.5 font-display text-display font-semibold leading-none">
-              <CountUp value={doneSets} />
+              {doneSets}
               <span className="ml-1 text-body font-normal text-ink3">of {plannedSets}</span>
             </div>
           </div>
@@ -698,3 +778,59 @@ function MenuSheet({
   )
 }
 
+
+function joinWords(words: string[]): string {
+  if (words.length <= 1) return words.join('')
+  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`
+}
+
+/** Swaps that fit today, or — when none do — why, and what to do instead. */
+function SwapList({
+  name,
+  locationName,
+  all,
+  fitsToday,
+  keptOut,
+  onRemove,
+  onBack,
+  children,
+}: {
+  name: string
+  locationName: string
+  all: GymExercise[]
+  fitsToday: (e: GymExercise) => boolean
+  keptOut: string[]
+  onRemove: () => void
+  onBack: () => void
+  children: (alts: GymExercise[]) => ReactNode
+}) {
+  const alts = all.filter(fitsToday).slice(0, 10)
+  return (
+    <>
+      <h2 className="text-title3 font-semibold">Swap {name}</h2>
+      {alts.length ? (
+        <>
+          <p className="mt-1 text-footnote text-ink3">Same movement first, then the same muscles — everything here can be done at {locationName}.</p>
+          <ul className="mt-3 space-y-2">{children(alts)}</ul>
+        </>
+      ) : (
+        <div className="mt-2 space-y-3">
+          <p className="text-footnote text-ink2">
+            {all.length && keptOut.length
+              ? `Nothing else here fits today: the other options ${joinWords(keptOut)}, which today’s plan keeps out.`
+              : `Nothing else at ${locationName} does this job. Adding equipment to ${locationName} opens more swaps.`}{' '}
+            You can leave it out of today instead.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="secondary" onClick={onRemove}>
+              Leave it out today
+            </Button>
+            <Button variant="ghost" onClick={onBack}>
+              Keep it
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}

@@ -876,6 +876,48 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
   sets; a leg-heavy activity logged for the next 36 h keeps legs out and the
   day at 0.8. Today's own sessions never trigger today's rest rule.
 
+- **Second strict review (2026-11-22, scored 46 UX / 44 logic; all fixed,
+  each pinned by decision and mutation-checked):**
+  - Shared recovery (`load.ts` `familyEvents`): a skill session with 3+ main
+    sets of a family, or a gym session with `HARD_GYM_FAMILY_SETS` pressing
+    (push) or pulling (pull) working sets — and a planned push/upper or
+    pull/upper gym day — is a hard family event. Events on different days sit
+    `straightArmRestHours` apart in both directions; the same day may hold
+    both (skill first). Only for families the athlete has a skill in.
+  - Minutes are measured: `MIN_SKILL_MINUTES = {1: 18, 2: 25, 3: 30}` (what
+    `finalizeWorkout` honours), `MIN_GYM_MINUTES = 20`; a day under 38 min
+    gets one block. The builder fits strictly (`GymPlan.fits`), and a focus
+    counts only when it builds 2+ items at the active place.
+  - The planner reads `settings.weekPlan` (`readDay`): assigned days train as
+    written, rest days rest. No place or no gym goals: no gym block. Without
+    gym prefs, minutes come from `settings.sessionMinutes`, never
+    `defaultPrefs`. Skill lines come from the built session (`skill.hard`).
+  - The Gym tab builds through `gymSessionInputs` + `soreJoints` (the 72 h
+    pain union holds whichever focus is picked; Auto follows `planToday`).
+    Home, Train and the Today card start the same request.
+  - `focusOpen`: a focus needs more than half its main muscles switched on.
+  - A logged activity replaces a scheduled sport slot only when it is the
+    same kind (or practice ↔ game). Weeks with fewer than `MIN_RATED_SETS`
+    rated sets count as hard for the deload run.
+  - `GymExercise.assisted`: the logged weight is help — progress takes it
+    off; no e1RM, no heaviest record. Bodyweight-load e1RM is refused.
+    `suggestLoad` reads the working load (the load most sets used).
+  - `liftTrend`: no new best in `STALL_SESSIONS` (3) sessions, within 56
+    days and current within 21, is a stall; the builder lends the slot to a
+    same-pattern variation and says so (`GymPlan.notes`), never a favourite.
+  - Speed and power climbs from the lowest unlogged rung. Youth swaps put
+    `technical` lifts last; explosive movements swap only to explosive ones.
+  - `mergeGym` merges ratings, favourites and hard-here marks per key by
+    their own times (`ratingAtTime`, `favoriteAtTime`, `hardHereAt`), with
+    removals kept. `doubtedLoad` (1.5× the best) asks before a set is saved;
+    a saved gym session can be deleted or corrected (`correctSet`).
+  - Onboarding is one flow: goals → skills → places → schedule → muscles →
+    age and safety (`summariseSchedule` derives the weekly goal and minutes).
+  - Skill days are requests (`{source: 'auto', skills: [skill]}`); a ladder
+    day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
+    pins every session built without it — regenerate only for an intended
+    change (`WRITE_GOLDEN=1`).
+
 ## The design system (Phase 5)
 
 - Tokens in `src/index.css`: `text-caption/footnote/body/title3/title2/

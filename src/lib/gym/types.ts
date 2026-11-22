@@ -15,6 +15,12 @@ export interface GymLocation {
   gear?: Partial<Record<GymEquipmentId, { unit?: Unit; maxKg?: number; stepKg?: number }>>
   /** Exercises that are hard to do here (always busy, awkward machine): offered last. */
   hardHere?: string[]
+  /**
+   * When each exercise's hard-here mark was last set or cleared (a cleared one
+   * keeps its time, so the removal survives a merge). Absent on a save from
+   * before per-mark times: the place's own `updatedAt` stands in.
+   */
+  hardHereAt?: Record<string, number>
   updatedAt: number
 }
 
@@ -69,6 +75,13 @@ export interface GymState {
   ratings: Record<string, Rating>
   /** Exercise → the location the athlete prefers to do it at. */
   favoriteAt: Record<string, string>
+  /**
+   * When each rating / favourite was last set or cleared, per exercise, so two
+   * tabs merge them key by key and a removal survives. Absent on older saves:
+   * `prefsUpdatedAt` stands in for any mark without a time.
+   */
+  ratingAtTime?: Record<string, number>
+  favoriteAtTime?: Record<string, number>
   prefsUpdatedAt?: number
   /** Goals, muscles and schedule the planner reads. Absent until set. */
   prefs?: TrainingPrefs

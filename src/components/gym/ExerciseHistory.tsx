@@ -28,7 +28,7 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
   const points = useMemo(
     () =>
       rows
-        .map(({ s, sets }) => ({ at: s.startedAt, value: Math.max(0, ...sets.map((x) => estimateOneRepMax(x) ?? 0)) }))
+        .map(({ s, sets }) => ({ at: s.startedAt, value: Math.max(0, ...sets.map((x) => estimateOneRepMax(x, exerciseId) ?? 0)) }))
         .filter((p) => p.value > 0)
         .reverse(),
     [rows],
@@ -68,7 +68,9 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
           axisFormat={(v) => String(Math.round(displayLoad(v, unit)))} />
       ) : (
         <p className="text-caption text-ink3">
-          {ex.load === 'bodyweight'
+          {ex.assisted
+            ? 'The weight logged here is the help, so there is no estimated max: less help for the same reps is the progress.'
+            : ex.load === 'bodyweight'
             ? 'Bodyweight sets have no estimated max; the most reps in a set is the record.'
             : 'The estimated-max chart appears after two sessions with a loaded set of 12 reps or fewer.'}
         </p>

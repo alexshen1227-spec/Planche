@@ -1,7 +1,7 @@
 import type { Joint, Muscle, Pattern } from '../../data/gym/catalog'
 import { athleticDomain, GYM_EXERCISE_BY_ID, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
 import { availableAt, preferenceRank } from './availability'
-import { gateTier, plyoGate, repPlanFor, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
+import { gateTier, liftTrend, plyoGate, repPlanFor, STALL_SESSIONS, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymSession, Rating } from './types'
 
 export type GymFocus = 'full' | 'upper' | 'lower' | 'push' | 'pull' | 'athletic'
@@ -61,6 +61,43 @@ export interface GymPlan {
   /** Exercises left out to fit the time, by name. */
   dropped: string[]
   estimatedMin: number
+  /**
+   * False when the time asked for cannot hold even one block (warm-up
+   * included): nothing is built then, rather than inventing minutes.
+   */
+  fits: boolean
+  /** Why a pick is not the usual one (a stalled lift's variation), in the athlete's words. */
+  notes: string[]
+}
+
+/**
+ * The muscles each focus is for. A focus is worth a session only while more
+ * than half of them are switched on: with the quads, glutes and hamstrings off
+ * a "Lower" day once came out as a single set of cable crunches.
+ */
+const FOCUS_MAIN: Record<GymFocus, Muscle[]> = {
+  full: [],
+  upper: ['chest', 'lats', 'upper-back', 'front-delts', 'triceps', 'biceps'],
+  lower: ['quads', 'glutes', 'hamstrings'],
+  push: ['chest', 'front-delts', 'triceps'],
+  pull: ['lats', 'upper-back', 'biceps'],
+  athletic: ['quads', 'glutes', 'hamstrings'],
+}
+
+export function focusOpen(focus: GymFocus, musclesOff: readonly Muscle[] = []): boolean {
+  const main = FOCUS_MAIN[focus]
+  if (!main.length) return true
+  return main.filter((m) => !musclesOff.includes(m)).length * 2 > main.length
+}
+
+/** What a closed focus falls back to, nearest first. Full body is always open. */
+const FOCUS_FALLBACK: Record<GymFocus, GymFocus[]> = {
+  full: [],
+  upper: ['push', 'pull', 'lower'],
+  lower: ['upper', 'push', 'pull'],
+  push: ['pull', 'upper', 'lower'],
+  pull: ['push', 'upper', 'lower'],
+  athletic: ['lower', 'upper'],
 }
 
 /** Rest between sets (CONSENSUS ranges): longer for heavy compound work. */
@@ -76,21 +113,28 @@ function blockMinutes(sets: number, restSec: number, workSec = 40): number {
   return (sets * (workSec + restSec)) / 60
 }
 
+/** What liking a movement at this place is worth in its slot: one rating notch, so a loved movement elsewhere still wins. */
+const FAVOURITE_HERE_BONUS = 1
+
 const WARM_UP_MIN = 6
 /** The speed and power session's own drills are its warm-up. */
 const ATHLETIC_WARM_UP_MIN = 2
 
-/** Which focus comes next: the part of the body trained longest ago at the gym. */
-export function nextFocus(sessions: GymSession[], now = Date.now()): GymFocus {
+/** Which focus comes next: the part of the body trained longest ago at the gym, among the ones still switched on. */
+export function nextFocus(sessions: GymSession[], now = Date.now(), musclesOff: readonly Muscle[] = []): GymFocus {
   const recent = sessions.filter((s) => s.startedAt < now).slice(-6)
-  if (!recent.length) return 'full'
   const last = recent[recent.length - 1]
-  const name = last.name.toLowerCase()
-  if (name.startsWith('upper')) return 'lower'
-  if (name.startsWith('lower')) return 'upper'
-  if (name.startsWith('push')) return 'pull'
-  if (name.startsWith('pull')) return 'lower'
-  return 'full'
+  const name = last?.name.toLowerCase() ?? ''
+  const wanted: GymFocus = name.startsWith('upper')
+    ? 'lower'
+    : name.startsWith('lower')
+      ? 'upper'
+      : name.startsWith('push')
+        ? 'pull'
+        : name.startsWith('pull')
+          ? 'lower'
+          : 'full'
+  return [wanted, ...FOCUS_FALLBACK[wanted]].find((f) => focusOpen(f, musclesOff)) ?? 'full'
 }
 
 /**
@@ -118,6 +162,8 @@ export function buildGymSession(input: {
   avoidJoints?: Joint[]
   /** Below 1 on a lighter day: fewer sets, stopping a rep further from failure. */
   volumeFactor?: number
+  /** Where each movement is liked best (`gym.favoriteAt`): it wins its slot at that place. */
+  favoriteAt?: Record<string, string>
   now?: number
 }): GymPlan {
   const { location, minutes, sessions, ratings = {}, youth = false, now = Date.now() } = input
@@ -144,10 +190,11 @@ export function buildGymSession(input: {
     ratings[e.id] !== 'avoid' &&
     // Speed and power work is built up to, never started at the top (see plyoGate).
     plyoGate(e, sessions, youth, now).allowed
-  const focus = input.focus ?? nextFocus(sessions, now)
+  const focus = input.focus ?? nextFocus(sessions, now, input.musclesOff)
   const here = availableAt(location)
   const used = new Set<string>()
   const items: PlannedExercise[] = []
+  const notes: string[] = []
   // The day each movement was last logged, so rotation prefers what was done longest ago.
   const lastLogged = new Map<string, number>()
   for (const s of sessions) {
@@ -167,8 +214,26 @@ export function buildGymSession(input: {
       restSec: restFor(pick, plan),
     }
   }
+  // A movement the athlete likes best at this very place wins its slot there.
+  const favouriteHere = (e: GymExercise) => (location !== undefined && input.favoriteAt?.[e.id] === location.id ? FAVOURITE_HERE_BONUS : 0)
   const scoreOf = (e: GymExercise, extra = 0) =>
-    preferenceRank(e.id, ratings, location) + (youth && e.technical && ratings[e.id] !== 'love' ? 5 : 0) + (e.compound ? 0 : 0.25) - (isPriority(e) ? 1 : 0) + extra
+    preferenceRank(e.id, ratings, location) +
+    (youth && e.technical && ratings[e.id] !== 'love' ? 5 : 0) +
+    (e.compound ? 0 : 0.25) -
+    (isPriority(e) ? 1 : 0) -
+    favouriteHere(e) +
+    extra
+  // The ladder is climbed from the bottom: the lowest rung never logged comes
+  // first; once every rung has been done, the one done longest ago.
+  const climb = (a: GymExercise, b: GymExercise) => {
+    const aNew = !lastLogged.has(a.id)
+    const bNew = !lastLogged.has(b.id)
+    if (aNew !== bNew) return aNew ? -1 : 1
+    if (aNew && bNew) return (a.rung ?? 0) - (b.rung ?? 0) || scoreOf(a) - scoreOf(b)
+    return scoreOf(a, staleness(a)) - scoreOf(b, staleness(b)) || (a.rung ?? 0) - (b.rung ?? 0)
+  }
+  const hardHere = (e: GymExercise) => (location?.hardHere?.includes(e.id) ? 1 : 0)
+  const ladder = (a: GymExercise, b: GymExercise) => hardHere(a) - hardHere(b) || climb(a, b)
 
   if (focus === 'athletic') {
     // Fresh and fast first, strength last: drills, then jumps, then runs and throws, then one lift.
@@ -182,22 +247,19 @@ export function buildGymSession(input: {
         (e) => !used.has(e.id) && patterns.includes(e.pattern) && athleticDomain(e) === domain && usable(e) && TIER_RANK[gateTier(e)!] <= TIER_RANK[cap],
       )
       if (!pool.length) return undefined
-      // The highest tier allowed today; inside it the one done longest ago wins.
+      // The highest tier allowed today; inside it the ladder is climbed in order.
       const top = Math.max(...pool.map((e) => TIER_RANK[gateTier(e)!]))
-      const ranked = pool
-        .filter((e) => TIER_RANK[gateTier(e)!] === top)
-        .sort((a, b) => scoreOf(a, staleness(a)) - scoreOf(b, staleness(b)) || (b.rung ?? 0) - (a.rung ?? 0))
-      return ranked[0]
+      return pool.filter((e) => TIER_RANK[gateTier(e)!] === top).sort(ladder)[0]
     }
     // A lighter day has no maximal or high-impact work.
     let cap: IntensityTier = factor < 1 ? 'medium' : 'high'
     const dose = (e: GymExercise | undefined) => (e?.dose ? Math.max(1, Math.round(e.dose.sets * factor)) : undefined)
     // Warm-up drills: one gentle, one at the highest tier allowed (never above medium).
     const drillPool = here.filter((e) => e.pattern === 'drill' && usable(e))
-    const gentle = drillPool.filter((e) => e.tier === 'low').sort((a, b) => scoreOf(a, staleness(a)) - scoreOf(b, staleness(b)))[0]
+    const gentle = drillPool.filter((e) => e.tier === 'low').sort(ladder)[0]
     take(gentle, 2)
-    const upper = drillPool.filter((e) => e.tier === 'medium' && !used.has(e.id)).sort((a, b) => (b.rung ?? 0) - (a.rung ?? 0) || scoreOf(a) - scoreOf(b))[0]
-    take(upper ?? drillPool.filter((e) => !used.has(e.id)).sort((a, b) => scoreOf(a, staleness(a)) - scoreOf(b, staleness(b)))[0], 2)
+    const upper = drillPool.filter((e) => e.tier === 'medium' && !used.has(e.id)).sort(ladder)[0]
+    take(upper ?? drillPool.filter((e) => !used.has(e.id)).sort(ladder)[0], 2)
     // Only one high-intensity block a session: jumps first, then it is spent.
     const jump = fromDomain('jump', ['jump'], cap)
     if (jump && gateTier(jump) === 'high') cap = 'medium'
@@ -233,7 +295,8 @@ export function buildGymSession(input: {
           e,
           score:
             preferenceRank(e.id, ratings, location) +
-            (youth && e.technical && ratings[e.id] !== 'love' ? 5 : 0) +
+            (youth && e.technical && ratings[e.id] !== 'love' ? 5 : 0) -
+            favouriteHere(e) +
             // Within a slot the earlier-listed pattern is the one the slot is for.
             slot.indexOf(e.pattern) * 0.5 +
             (e.compound ? 0 : 0.25) -
@@ -242,23 +305,49 @@ export function buildGymSession(input: {
             (e.tier ? TIER_RANK[gateTier(e)!] * 0.25 : 0),
         }))
         .sort((a, b) => a.score - b.score)
-      const pick = ranked[0]?.e
-      if (!pick) continue
+      const first = ranked[0]
+      if (!first) continue
+      let pick = first.e
+      // A lift that has stopped progressing lends its slot to a variation of
+      // the same movement for a while: a change of exercise is a common way to
+      // restart progress (CONSENSUS). Only a close fit — never one that is
+      // hard to do here, or coached-only under 18 — and never a favourite.
+      if (!wantsExplosive && ratings[pick.id] !== 'love' && liftTrend(sessions, pick.id, now).status === 'stalled') {
+        const alt = ranked.find(
+          (r) => r.e.id !== first.e.id && r.e.pattern === first.e.pattern && r.score <= first.score + 1.5 && liftTrend(sessions, r.e.id, now).status !== 'stalled',
+        )
+        if (alt) {
+          notes.push(
+            `${first.e.name} has not beaten its best in its last ${STALL_SESSIONS} sessions, so ${alt.e.name} takes its place for now — changing the variation is a common way to restart progress (a coaching convention, not a proven rule). Swap back any time.`,
+          )
+          used.add(first.e.id)
+          pick = alt.e
+        }
+      }
       used.add(pick.id)
       items.push(makeItem(pick, wantsExplosive))
     }
   }
-  // Fit the time: give up the last slots first, then trim isolation work to two sets.
+  // Fit the time strictly: trim sets on isolation work, then on compounds,
+  // down to two; then give up the last slots, down to one block. A block that
+  // cannot fit even alone is reported, never built on invented minutes.
   const dropped: string[] = []
   const warm = focus === 'athletic' ? ATHLETIC_WARM_UP_MIN : WARM_UP_MIN
   const total = () =>
     warm + items.reduce((m, it) => m + blockMinutes(it.sets, it.restSec, GYM_EXERCISE_BY_ID[it.exerciseId].dose?.workSec), 0)
-  while (items.length > 2 && total() > minutes) {
+  for (const compound of [false, true]) {
+    for (let i = items.length - 1; i >= 0 && total() > minutes; i--) {
+      if (Boolean(GYM_EXERCISE_BY_ID[items[i].exerciseId].compound) === compound && items[i].sets > 2) items[i] = { ...items[i], sets: 2 }
+    }
+  }
+  while (items.length > 1 && total() > minutes) {
     const gone = items.pop()!
     dropped.unshift(GYM_EXERCISE_BY_ID[gone.exerciseId].name)
   }
-  for (let i = items.length - 1; i >= 0 && total() > minutes; i--) {
-    if (!GYM_EXERCISE_BY_ID[items[i].exerciseId].compound && items[i].sets > 2) items[i] = { ...items[i], sets: 2 }
+  const fits = items.length === 0 || total() <= minutes
+  if (!fits) {
+    for (const it of items) dropped.unshift(GYM_EXERCISE_BY_ID[it.exerciseId].name)
+    items.length = 0
   }
-  return { name: FOCUS_LABEL[focus], focus, items, dropped, estimatedMin: Math.round(total()) }
+  return { name: FOCUS_LABEL[focus], focus, items, dropped, estimatedMin: items.length ? Math.round(total()) : 0, fits, notes }
 }

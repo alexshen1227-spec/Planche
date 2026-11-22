@@ -6,6 +6,7 @@ import { buildGymSession, FOCUS_LABEL, nextFocus, type GymFocus, type PlannedExe
 import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
 import { activeLocation, conservative, loadDraft, prefillReps, previousSets, type GymDraft } from '../../lib/gym/draft'
+import { gymSessionInputs as followPlan, planToday, soreJoints } from '../../lib/plan/planner'
 import { gymRecords, lastPerformance } from '../../lib/gym/progression'
 import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
 import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
@@ -16,6 +17,7 @@ import { WeekVolume } from '../plan/WeekVolume'
 import type { GymPreset } from '../plan/TodayPlanCard'
 import { LocationEditor } from './LocationEditor'
 import { ExerciseHistory } from './ExerciseHistory'
+import { SessionDetail } from './SessionDetail'
 
 const MINUTES = [20, 30, 45, 60, 75, 90]
 const FOCI: (GymFocus | 'auto')[] = ['auto', 'full', 'upper', 'lower', 'push', 'pull', 'athletic']
@@ -28,10 +30,19 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
   const { state, dispatch } = useStore()
   const gym = state.gym
   const youth = conservative(state.profile)
-  const [minutes, setMinutes] = useState(45)
+  // Today's plan, as the Today card shows it: the gym's minutes and focus by
+  // default, so the two screens never offer different sessions for one day.
+  const today = useMemo(() => planToday(state), [state])
+  const planned = today.gym
+  // The pain memory applies whoever picks the focus: it once applied only to a
+  // session started from the Today card, so an elbow report still got
+  // barbell presses from an Upper body pick here.
+  const sore = useMemo(() => soreJoints(state, Date.now()), [state])
+  const [minutes, setMinutes] = useState(() => planned?.minutes ?? 45)
   const [focus, setFocus] = useState<GymFocus | 'auto'>('auto')
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   const [historyOf, setHistoryOf] = useState<string | null>(null)
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null)
   const [running, setRunning] = useState<GymDraft | null>(null)
   const [resumable, setResumable] = useState<GymDraft | null>(() => loadDraft())
   const location = activeLocation(gym)
@@ -42,14 +53,15 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
         ? buildGymSession({
             location,
             minutes,
-            ...(focus === 'auto' ? {} : { focus }),
+            ...followPlan(focus, planned, gym.prefs?.musclesOff ?? [], sore),
+            favoriteAt: gym.favoriteAt,
             sessions: gym.sessions,
             ratings: gym.ratings,
             youth,
-            ...(gym.prefs ? { goals: gym.prefs.goals, priority: gym.prefs.musclesPriority, musclesOff: gym.prefs.musclesOff } : {}),
+            ...(gym.prefs ? { goals: gym.prefs.goals, priority: gym.prefs.musclesPriority } : {}),
           })
         : null,
-    [gym, location, minutes, focus, youth],
+    [gym, location, minutes, focus, youth, planned, sore],
   )
   const records = useMemo(() => (gym ? gymRecords(gym.sessions) : {}), [gym])
 
@@ -119,19 +131,23 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
       dispatch({ type: 'RECORD_SYMPTOM', event: { at: Date.now(), joints: kind, regions: regions.length ? regions : ['other'], source: 'check-in' } })
     }
     const p = pending.preset
-    const avoidJoints = [...new Set([...(p?.avoidJoints ?? []), ...joints])]
-    const musclesOff = p?.musclesOff ?? gym.prefs?.musclesOff ?? []
-    const planned = pending.empty
+    const base = p
+      ? { focus: p.focus, musclesOff: p.musclesOff ?? gym.prefs?.musclesOff ?? [], avoidJoints: p.avoidJoints ?? [], volumeFactor: p.volumeFactor ?? 1 }
+      : followPlan(focus, planned, gym.prefs?.musclesOff ?? [], sore)
+    const avoidJoints = [...new Set([...base.avoidJoints, ...sore.joints, ...joints])]
+    const musclesOff = base.musclesOff
+    const built = pending.empty
       ? null
       : buildGymSession({
           location,
           minutes: p?.minutes ?? minutes,
-          ...(p ? { focus: p.focus } : focus === 'auto' ? {} : { focus }),
+          favoriteAt: gym.favoriteAt,
+          ...(base.focus ? { focus: base.focus } : {}),
           sessions: gym.sessions,
           ratings: gym.ratings,
           youth,
           avoidJoints,
-          volumeFactor: Math.min(p?.volumeFactor ?? 1, kind === 'pain' ? 0.6 : 1),
+          volumeFactor: Math.min(base.volumeFactor, kind === 'pain' ? 0.6 : 1),
           musclesOff,
           ...(gym.prefs ? { goals: gym.prefs.goals, priority: gym.prefs.musclesPriority } : {}),
         })
@@ -140,8 +156,8 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
       id: newGymSessionId(),
       startedAt: Date.now(),
       locationId: location.id,
-      name: planned?.name ?? 'Gym session',
-      items: (planned?.items ?? []).map(toDraftItem),
+      name: built?.name ?? 'Gym session',
+      items: (built?.items ?? []).map(toDraftItem),
       ...(avoidJoints.length ? { avoidJoints } : {}),
       ...(musclesOff.length ? { musclesOff } : {}),
     })
@@ -150,11 +166,12 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
   const editingLocation =
     editing === 'new' ? newLocation('New gym', location.unit) : gym.locations.find((l) => l.id === editing) ?? null
   const recent = [...gym.sessions].reverse().slice(0, 5)
+  const openSession = openSessionId ? gym.sessions.find((s) => s.id === openSessionId) : undefined
   const topRecords = Object.values(records)
     .filter((r) => r.bestE1rm)
     .sort((a, b) => b.bestE1rm!.kg - a.bestE1rm!.kg)
     .slice(0, 6)
-  const autoFocus = nextFocus(gym.sessions)
+  const autoFocus = planned?.focus ?? nextFocus(gym.sessions, Date.now(), gym.prefs?.musclesOff)
 
   return (
     <div className="space-y-5">
@@ -220,10 +237,19 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
 
       <Card>
         <CardTitle>Today’s gym session</CardTitle>
-        <p className="-mt-2 text-footnote text-ink3">Built from what {location.name} has, your likes and your last sessions.</p>
+        <p className="-mt-2 text-footnote text-ink3">
+          Built from what {location.name} has, your likes and your last sessions{planned ? '; Auto follows today’s plan' : ''}.
+        </p>
+        {sore.joints.length ? (
+          <p className="mt-3 rounded-control bg-raised p-3 text-footnote text-ink2">
+            Keeping load off your {sore.joints.map((j) => j.replace('-', ' ')).join(' and ')} — you reported {sore.joints.length > 1 ? 'them' : 'it'}{' '}
+            {sore.lastAt ? dayLabel(sore.lastAt) : 'lately'}. Anything that loads {sore.joints.length > 1 ? 'them' : 'it'} stays out for three days after a
+            report, whichever focus you pick.{sore.pain ? ' Never train through pain.' : ''}
+          </p>
+        ) : null}
         <p className="mt-3 text-caption font-medium text-ink3">Time</p>
         <div className="mt-1 flex flex-wrap gap-2">
-          {MINUTES.map((m) => (
+          {[...new Set([...MINUTES, minutes])].sort((a, b) => a - b).map((m) => (
             <ToggleChip key={m} active={minutes === m} onClick={() => setMinutes(m)}>
               {m} min
             </ToggleChip>
@@ -258,13 +284,21 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
           </ol>
         ) : (
           <p className="mt-4 rounded-control bg-raised p-3 text-footnote text-ink2">
-            Nothing to program for this focus with what {location.name} has. Add equipment, pick another focus, or start an
-            empty session.
+            {sore.joints.length
+              ? `Nothing for this focus at ${location.name} leaves your ${sore.joints.map((j) => j.replace('-', ' ')).join(' and ')} alone today. Pick another focus, or start an empty session.`
+              : plan && !plan.fits
+                ? `${minutes} minutes is not enough for a block of this focus with its warm-up and rests. Pick more time, or start an empty session.`
+                : `Nothing to program for this focus with what ${location.name} has. Add equipment, pick another focus, or start an empty session.`}
           </p>
         )}
         {plan?.dropped.length ? (
           <p className="mt-2 text-caption text-ink3">Left out to fit {minutes} minutes: {plan.dropped.join(', ')}.</p>
         ) : null}
+        {plan?.notes.map((n) => (
+          <p key={n} className="mt-2 text-caption text-ink2">
+            {n}
+          </p>
+        ))}
         {plan && plan.items.length ? <p className="mt-1 text-caption text-ink3">About {plan.estimatedMin} minutes with warm-up and rests.</p> : null}
         <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
           <Button size="lg" disabled={!plan?.items.length || Boolean(resumable)} onClick={() => setPending({ empty: false })}>
@@ -290,15 +324,21 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
               const sets = s.exercises.reduce((n, e) => n + e.sets.filter((x) => !x.warmup).length, 0)
               const place = gym.locations.find((l) => l.id === s.locationId)?.name ?? 'A deleted place'
               return (
-                <li key={s.id} className="rounded-card border border-line bg-surface p-4">
+                <li key={s.id}>
+                  <button
+                    onClick={() => setOpenSessionId(s.id)}
+                    aria-label={`${s.name}, ${dayLabel(s.startedAt)} — open to correct or delete`}
+                    className="ds-press block min-h-11 w-full rounded-card border border-line bg-surface p-4 text-left"
+                  >
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-body font-semibold">{s.name}</span>
                     <span className="text-caption text-ink3">{dayLabel(s.startedAt)}</span>
                   </div>
                   <p className="mt-0.5 text-footnote text-ink2">
                     {place} · {s.exercises.length} {s.exercises.length === 1 ? 'exercise' : 'exercises'} · {sets} {sets === 1 ? 'set' : 'sets'}
-                    {s.completion === 'partial' ? ' · ended early' : ''}
+                    {s.completion === 'partial' ? ' · some sets skipped' : ''}
                   </p>
+                  </button>
                 </li>
               )
             })}
@@ -342,6 +382,10 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
         {historyOf ? <ExerciseHistory exerciseId={historyOf} /> : null}
       </Sheet>
 
+      <Sheet open={openSession !== undefined} onClose={() => setOpenSessionId(null)} label="Gym session">
+        {openSession ? <SessionDetail session={openSession} onClose={() => setOpenSessionId(null)} /> : null}
+      </Sheet>
+
       <Sheet open={pending !== null} onClose={() => setPending(null)} label="Before you start">
         {pending ? <PainCheck onAnswer={launch} /> : null}
       </Sheet>
@@ -381,6 +425,8 @@ const JOINT_REGION: Partial<Record<Joint, BodyRegion>> = {
   shoulders: 'shoulder',
   'lower-back': 'lower-back',
   knees: 'knee',
+  hips: 'hip',
+  ankles: 'ankle',
 }
 const CHECK_JOINTS: { id: Joint; label: string }[] = [
   { id: 'wrists', label: 'Wrists' },
@@ -388,6 +434,8 @@ const CHECK_JOINTS: { id: Joint; label: string }[] = [
   { id: 'shoulders', label: 'Shoulders' },
   { id: 'lower-back', label: 'Lower back' },
   { id: 'knees', label: 'Knees' },
+  { id: 'hips', label: 'Hips' },
+  { id: 'ankles', label: 'Ankles' },
 ]
 
 /** One tap before the gym: anything hurting? The answer steers today and is kept for the coach. */

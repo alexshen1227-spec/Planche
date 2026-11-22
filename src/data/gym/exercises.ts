@@ -48,6 +48,12 @@ export interface GymExercise {
   maximal?: boolean
   /** How the work is dosed, when sets of reps at a weight is not the unit. */
   dose?: { sets: number; range: [number, number]; restSec: number; rpe: number; workSec?: number }
+  /**
+   * The logged weight is help, not load (an assisted pull-up machine): less
+   * is harder, so progress takes weight off, and it never gives an estimated
+   * max or a heaviest-lift record.
+   */
+  assisted?: boolean
 }
 
 export type IntensityTier = 'low' | 'medium' | 'high'
@@ -66,7 +72,7 @@ export function athleticDomain(ex: Pick<GymExercise, 'pattern' | 'tier'>): Athle
 }
 
 type Opts = Partial<
-  Pick<GymExercise, 'stepFrom' | 'unilateral' | 'explosive' | 'technical' | 'carries' | 'tier' | 'rung' | 'count' | 'distanceM' | 'maximal' | 'dose'>
+  Pick<GymExercise, 'stepFrom' | 'unilateral' | 'explosive' | 'technical' | 'carries' | 'tier' | 'rung' | 'count' | 'distanceM' | 'maximal' | 'dose' | 'assisted'>
 >
 
 function x(
@@ -98,7 +104,9 @@ function x(
 
 export const GYM_EXERCISES: GymExercise[] = [
   // Horizontal press
-  x('bench-press', 'Barbell bench press', 'horizontal-press', ['chest', 'front-delts', 'triceps'], ['chest-upper'], [['barbell'], ['bench']], 'barbell', true, ['shoulders', 'elbows', 'wrists'], 'Shoulder blades pinned, bar to the lower chest, press up and slightly back.', { carries: ['planche', 'ninety'] }),
+  // The barbell bench and incline press are `technical`: alone under a bar a lifter needs a spotter or
+  // safeties, so under 18 dumbbells or a machine come first unless the athlete loves the barbell.
+  x('bench-press', 'Barbell bench press', 'horizontal-press', ['chest', 'front-delts', 'triceps'], ['chest-upper'], [['barbell'], ['bench']], 'barbell', true, ['shoulders', 'elbows', 'wrists'], 'Shoulder blades pinned, bar to the lower chest, press up and slightly back.', { technical: true, carries: ['planche', 'ninety'] }),
   x('db-bench-press', 'Dumbbell bench press', 'horizontal-press', ['chest', 'front-delts', 'triceps'], [], [['dumbbells'], ['bench', 'incline-bench']], 'dumbbell', true, ['shoulders', 'elbows'], 'Elbows about 45° from the body, a deep stretch at the bottom.', { carries: ['planche'] }),
   x('machine-chest-press', 'Machine chest press', 'horizontal-press', ['chest', 'front-delts', 'triceps'], [], [['chest-press-machine']], 'machine', true, ['shoulders', 'elbows'], 'Seat so the handles start at mid-chest; push without the shoulders rolling forward.', { stepFrom: 'chest-press-machine' }),
   x('smith-bench-press', 'Smith machine bench press', 'horizontal-press', ['chest', 'front-delts', 'triceps'], [], [['smith-machine'], ['bench', 'incline-bench']], 'machine', true, ['shoulders', 'elbows'], 'Bench placed so the bar touches the lower chest.', { stepFrom: 'smith-machine' }),
@@ -107,7 +115,7 @@ export const GYM_EXERCISES: GymExercise[] = [
   x('dip', 'Dip', 'dip', ['chest', 'triceps', 'front-delts'], [], [['dip-bars', 'parallettes', 'rings']], 'bodyweight', true, ['shoulders', 'elbows', 'wrists'], 'Lean slightly forward, down until the shoulders are just below the elbows, never forced deeper.', { carries: ['planche', 'ninety'] }),
   x('weighted-dip', 'Weighted dip', 'dip', ['chest', 'triceps', 'front-delts'], [], [['dip-bars'], ['dip-belt']], 'bodyweight', true, ['shoulders', 'elbows'], 'Add weight only once 12 clean bodyweight dips are easy.', { stepFrom: 'dip-belt', carries: ['planche'] }),
   // Incline press
-  x('incline-bench-press', 'Incline barbell press', 'incline-press', ['chest-upper', 'chest', 'front-delts'], ['triceps'], [['barbell'], ['incline-bench']], 'barbell', true, ['shoulders', 'elbows', 'wrists'], 'Bench at 30–45°; bar to the upper chest.'),
+  x('incline-bench-press', 'Incline barbell press', 'incline-press', ['chest-upper', 'chest', 'front-delts'], ['triceps'], [['barbell'], ['incline-bench']], 'barbell', true, ['shoulders', 'elbows', 'wrists'], 'Bench at 30–45°; bar to the upper chest.', { technical: true }),
   x('incline-db-press', 'Incline dumbbell press', 'incline-press', ['chest-upper', 'chest', 'front-delts'], ['triceps'], [['dumbbells'], ['incline-bench']], 'dumbbell', true, ['shoulders', 'elbows'], 'Bench at 30°; press up and slightly in.'),
   x('incline-machine-press', 'Incline machine press', 'incline-press', ['chest-upper', 'chest', 'front-delts'], ['triceps'], [['incline-press-machine']], 'machine', true, ['shoulders', 'elbows'], 'Handles start at the upper chest.', { stepFrom: 'incline-press-machine' }),
   x('smith-incline-press', 'Smith machine incline press', 'incline-press', ['chest-upper', 'chest', 'front-delts'], ['triceps'], [['smith-machine'], ['incline-bench']], 'machine', true, ['shoulders', 'elbows'], 'Bench at 30°, bar path to the upper chest.', { stepFrom: 'smith-machine' }),
@@ -146,7 +154,7 @@ export const GYM_EXERCISES: GymExercise[] = [
   x('chin-up', 'Chin-up', 'vertical-pull', ['lats', 'biceps'], ['upper-back', 'forearms'], [['pullup-bar', 'rings']], 'bodyweight', true, ['elbows', 'shoulders'], 'Palms toward you, chest to the bar.', { carries: ['frontlever'] }),
   x('weighted-pull-up', 'Weighted pull-up', 'vertical-pull', ['lats', 'biceps', 'upper-back'], ['forearms'], [['pullup-bar'], ['dip-belt']], 'bodyweight', true, ['elbows', 'shoulders'], 'Add weight only once 10 strict pull-ups are easy.', { stepFrom: 'dip-belt', carries: ['frontlever'] }),
   x('lat-pulldown', 'Lat pulldown', 'vertical-pull', ['lats', 'biceps'], ['upper-back'], [['lat-pulldown', 'cable']], 'machine', true, ['elbows', 'shoulders'], 'Bar to the upper chest, elbows down and in.', { stepFrom: 'lat-pulldown', carries: ['frontlever'] }),
-  x('assisted-pull-up', 'Assisted pull-up', 'vertical-pull', ['lats', 'biceps'], ['upper-back'], [['assisted-pullup', 'band']], 'machine', true, ['elbows', 'shoulders'], 'Use the least help that still gives clean reps.', { stepFrom: 'assisted-pullup', carries: ['frontlever'] }),
+  x('assisted-pull-up', 'Assisted pull-up', 'vertical-pull', ['lats', 'biceps'], ['upper-back'], [['assisted-pullup', 'band']], 'machine', true, ['elbows', 'shoulders'], 'Use the least help that still gives clean reps.', { stepFrom: 'assisted-pullup', carries: ['frontlever'], assisted: true }),
   // Straight-arm pulls (front lever carry-over)
   x('straight-arm-pulldown', 'Straight-arm pulldown', 'straight-arm-pull', ['lats'], ['triceps-long', 'abs'], [['cable', 'band']], 'cable', false, ['shoulders', 'elbows'], 'Arms locked, sweep the bar to the thighs — the front lever’s pulling pattern.', { carries: ['frontlever'] }),
   x('db-pullover', 'Dumbbell pullover', 'straight-arm-pull', ['lats'], ['chest', 'triceps-long'], [['dumbbells'], ['bench', 'incline-bench']], 'dumbbell', false, ['shoulders'], 'Arms nearly straight, ribs down, only as far back as the shoulders allow.', { carries: ['frontlever'] }),

@@ -52,11 +52,22 @@ export function alternativesFor(
   const ex = GYM_EXERCISE_BY_ID[exerciseId]
   if (!ex) return []
   const skip = new Set([exerciseId, ...exclude])
-  const candidates = availableAt(location).filter((c) => !skip.has(c.id) && ratings[c.id] !== 'avoid' && (!athlete || plyoGate(c, athlete.sessions, athlete.youth, athlete.now).allowed))
+  const candidates = availableAt(location).filter(
+    (c) =>
+      !skip.has(c.id) &&
+      ratings[c.id] !== 'avoid' &&
+      // An explosive movement is swapped for explosive ones only: a box jump is not a back squat.
+      (!ex.explosive || c.explosive) &&
+      (!athlete || plyoGate(c, athlete.sessions, athlete.youth, athlete.now).allowed),
+  )
   const samePattern = candidates.filter((c) => c.pattern === ex.pattern)
   const sameMuscle = candidates.filter(
     (c) => c.pattern !== ex.pattern && c.primary.some((m) => ex.primary.includes(m)) && c.compound === ex.compound,
   )
   const rank = (c: GymExercise) => preferenceRank(c.id, ratings, location)
-  return [...samePattern.sort((a, b) => rank(a) - rank(b)), ...sameMuscle.sort((a, b) => rank(a) - rank(b))]
+  const ordered = [...samePattern.sort((a, b) => rank(a) - rank(b)), ...sameMuscle.sort((a, b) => rank(a) - rank(b))]
+  // Under 18 a lift that needs coaching comes after everything else, unless it is a favourite.
+  if (!athlete?.youth) return ordered
+  const coached = (c: GymExercise) => Boolean(c.technical) && ratings[c.id] !== 'love'
+  return [...ordered.filter((c) => !coached(c)), ...ordered.filter(coached)]
 }

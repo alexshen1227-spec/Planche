@@ -47,14 +47,18 @@ export function LocationEditor({
   return (
     <div className="space-y-5">
       <h2 className="font-display text-title2 font-semibold text-ink">{location.name || 'Place'}</h2>
-      <label className="block">
-        <span className="text-footnote font-medium text-ink2">Name</span>
+      <div>
+        <label htmlFor="location-name" className="text-footnote font-medium text-ink2">
+          Name of this place
+        </label>
         <input
+          id="location-name"
+          autoComplete="off"
           value={draft.name}
           onChange={(e) => setDraft({ ...draft, name: e.target.value.slice(0, 40) })}
           className="mt-1 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body"
         />
-      </label>
+      </div>
       <div>
         <span className="text-footnote font-medium text-ink2">Weights here are in</span>
         <SegmentedControl

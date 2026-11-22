@@ -1,6 +1,6 @@
 import { Button } from '../components/ds'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AssessmentRecord, EquipmentId, SkillId, StepId, Units } from '../types'
+import type { AssessmentRecord, Profile, EquipmentId, SkillId, StepId, Units } from '../types'
 import { normalizeStateWithReport, rebuildDerivedState, reportHasLosses, useStore } from '../lib/store'
 import { readImportFile, validateImport } from '../lib/exportImport'
 import { pushToast } from '../lib/toast'
@@ -21,6 +21,19 @@ import {
 } from '../lib/placement'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
+import { LocationEditor } from '../components/gym/LocationEditor'
+import { AgeAndSafety } from '../components/plan/FitnessSetup'
+import { GoalsEditor, MusclesEditor, ScheduleEditor } from '../components/plan/PlanSettings'
+import {
+  activeLocationFor,
+  parseBirthYear,
+  STARTING_MINUTES_BY_DAY,
+  summariseSchedule,
+} from '../components/plan/onboardingPlan'
+import { conservative } from '../lib/gym/draft'
+import { availableAt } from '../lib/gym/availability'
+import { defaultGym, defaultPrefs, homeLocation, newLocation } from '../lib/gym/state'
+import type { GymLocation, TrainingPrefs } from '../lib/gym/types'
 
 /**
  * Onboarding, in the order the answers actually matter.
@@ -49,9 +62,37 @@ const GOAL_BLURB: Record<string, string> = {
   full: 'Legs together, body level. The summit, and a multi-year project.',
 }
 
-type Stage = 'welcome' | 'skills' | 'goal' | 'interview' | 'result' | 'details' | 'frequency'
+/**
+ * The first run, in the order Fitness Lab asks for: goals → skills (with their
+ * destination and placement) → places and equipment → schedule and time →
+ * muscle preferences → age and safety.
+ */
+type Stage =
+  | 'welcome'
+  | 'goals'
+  | 'skills'
+  | 'goal'
+  | 'interview'
+  | 'result'
+  | 'places'
+  | 'schedule'
+  | 'muscles'
+  | 'safety'
 
-const STAGE_ORDER: Stage[] = ['welcome', 'skills', 'goal', 'interview', 'result', 'details', 'frequency']
+/** The progress the athlete sees: seven sections, the skills one spanning four screens. */
+const SECTIONS = ['Welcome', 'Goals', 'Skills', 'Places', 'Schedule', 'Muscles', 'Age and safety'] as const
+const SECTION_OF: Record<Stage, number> = {
+  welcome: 0,
+  goals: 1,
+  skills: 2,
+  goal: 2,
+  interview: 2,
+  result: 2,
+  places: 3,
+  schedule: 4,
+  muscles: 5,
+  safety: 6,
+}
 
 const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th']
 
@@ -178,8 +219,17 @@ export function Onboarding() {
   const [manual, setManual] = useState<Partial<Record<SkillId, StepId>>>({})
   /** Which skill the manual picker is on, when the interview was skipped. */
   const [manualIndex, setManualIndex] = useState(0)
-  const [goal, setGoal] = useState(3)
-  const [minutes, setMinutes] = useState(45)
+  /** Goal weights, muscles and the week: what Fitness Lab's setup writes to `gym.prefs`. */
+  const [prefs, setPrefs] = useState<TrainingPrefs>(() => ({
+    ...defaultPrefs(),
+    minutesByDay: [...STARTING_MINUTES_BY_DAY],
+  }))
+  /** Gyms added here; Home is always the first place and takes the kit ticked below. */
+  const [gyms, setGyms] = useState<GymLocation[]>([])
+  const [editing, setEditing] = useState<{ location: GymLocation; isNew: boolean } | null>(null)
+  const [birthYear, setBirthYear] = useState('')
+  const [ageDeclined, setAgeDeclined] = useState(false)
+  const [bodyweightReminders, setBodyweightReminders] = useState(false)
   const [units, setUnits] = useState<Units>('metric')
   const [weight, setWeight] = useState('')
   const [heightCm, setHeightCm] = useState('')
@@ -227,6 +277,11 @@ export function Onboarding() {
    */
   const trainable = skills.filter((skill) => !waitingSkills.includes(skill))
   const lead: SkillId = trainable[0] ?? focus
+  /** The gym sessions will be built for, when one added here has gym kit and Home has none. */
+  const startingGym = gyms.find((place) => place.id === activeLocationFor(homeLocation(equipment.length ? equipment : ['floor']), gyms))
+  /** The week asked for, read as the two numbers the app keeps: a weekly goal and a typical session. */
+  const schedule = summariseSchedule(prefs.minutesByDay)
+  const minutes = schedule.sessionMinutes
   /** One skill at a time: sessions too short to hold a second in full. */
   const takesTurns = fullParts(minutes) === 1
   /**
@@ -294,26 +349,35 @@ export function Onboarding() {
     return cm !== undefined && cm >= 100 && cm <= 250 ? cm : undefined
   })()
 
-  const continueFromDetails = () => {
+  /** The birth year as typed, when it is one; "prefer not to say" is the same as none. */
+  const year = ageDeclined ? undefined : parseBirthYear(birthYear)
+  const careful = conservative({ birthYear: year } as Profile)
+  /** Age is asked, not assumed: a year or "prefer not to say" (careful mode) before the end. */
+  const ageAnswered = ageDeclined || year !== undefined
+
+  /** Measurements are optional, but one that was typed has to be a real one. */
+  const measurementProblem = (): string | null => {
     if (weight.trim() && parsedWeight === undefined) {
-      setMeasurementError(`Enter a bodyweight between ${units === 'metric' ? '20–400 kg' : '44–882 lb'}.`)
-      return
+      return `Enter a bodyweight between ${units === 'metric' ? '20–400 kg' : '44–882 lb'}, or clear it.`
     }
     const heightEntered = units === 'metric' ? heightCm.trim() : heightFt.trim() || heightIn.trim()
     if (heightEntered && parsedHeight === undefined) {
-      setMeasurementError(
-        units === 'metric'
-          ? 'Enter a height between 100–250 cm.'
-          : 'Enter a realistic height; inches must be from 0 to under 12.',
-      )
-      return
+      return units === 'metric'
+        ? 'Enter a height between 100–250 cm, or clear it.'
+        : 'Enter a realistic height (inches from 0 to under 12), or clear it.'
     }
-    setMeasurementError(null)
-    setStage('frequency')
+    return null
   }
 
   const finish = () => {
+    const problem = measurementProblem()
+    if (problem) {
+      setMeasurementError(problem)
+      return
+    }
+    setMeasurementError(null)
     const chosen: SkillId[] = skills.length ? skills : ['planche']
+    const homeKit: EquipmentId[] = equipment.length ? equipment : ['floor']
     const plancheChosen = chosen.includes('planche')
     const assessment: AssessmentRecord | undefined =
       skippedInterview || !plancheChosen ? undefined : placementRecord('planche', answers, Date.now())
@@ -346,24 +410,41 @@ export function Onboarding() {
             },
           ]),
       ),
-      weeklyGoal: goal,
-      sessionMinutes: minutes,
+      // Read off the week the athlete laid out, never asked a second time.
+      weeklyGoal: schedule.weeklyGoal,
+      sessionMinutes: schedule.sessionMinutes,
       units,
       weightKg: parsedWeight,
       heightCm: parsedHeight,
       assessment,
       profile: {
-        equipment: equipment.length ? equipment : ['floor'],
-        preferredSurface: equipment.includes('parallettes') ? 'parallettes' : 'floor',
+        equipment: homeKit,
+        preferredSurface: homeKit.includes('parallettes') ? 'parallettes' : 'floor',
         goalStepId: goalFor('planche'),
         injuryNote: injuryNote.trim() || undefined,
         heightCm: parsedHeight,
         trainingAgeMonths: answers.experience,
+        // COMPLETE_ONBOARDING replaces the profile, so the birth year travels in it.
+        ...(year !== undefined ? { birthYear: year } : {}),
       },
     })
+    // What Fitness Lab's setup writes, in its order: the places first (Home
+    // carries the kit above), then which one is in use, then the plan itself.
+    // Everything lands in this one handler, so Today's first render already has
+    // `gym.prefs` and shows no "Set up Fitness Lab" card.
+    const gymUnit = units === 'imperial' ? 'lb' : 'kg'
+    dispatch({ type: 'GYM', op: { op: 'init', gym: defaultGym(homeKit, gymUnit) } })
+    for (const place of gyms) dispatch({ type: 'GYM', op: { op: 'saveLocation', location: place } })
+    const active = activeLocationFor(homeLocation(homeKit, gymUnit), gyms)
+    if (active !== 'home') dispatch({ type: 'GYM', op: { op: 'setActiveLocation', id: active } })
+    const { updatedAt: _stamp, ...planPrefs } = prefs
+    void _stamp
+    dispatch({ type: 'GYM', op: { op: 'setPrefs', prefs: planPrefs } })
+    if (bodyweightReminders) dispatch({ type: 'SET_SETTINGS', patch: { trackBodyweight: true } })
   }
 
-  const stageIndex = STAGE_ORDER.indexOf(stage)
+  const sectionIndex = SECTION_OF[stage]
+  const progressText = `Step ${sectionIndex + 1} of ${SECTIONS.length} · ${SECTIONS[sectionIndex]}`
   // The primary action: big, last in the row, within thumb reach. Back is quiet.
   const primaryBtn = 'min-h-[52px] flex-1'
   const backBtn =
@@ -374,24 +455,33 @@ export function Onboarding() {
   return (
     <div className="app-ambient grain fixed inset-0 z-50 overflow-y-auto bg-bg">
       <div className="mx-auto flex min-h-full w-full max-w-xl flex-col justify-center px-5 py-10">
-        <div className="mb-8" aria-hidden="true">
-          <div className="h-1 overflow-hidden rounded-full bg-line-strong">
-            <div
-              className="h-full rounded-full bg-accent transition-[width] duration-300"
-              style={{ width: `${((stageIndex + 1) / STAGE_ORDER.length) * 100}%` }}
-            />
+        <div className="mb-8">
+          <div
+            className="grid gap-1"
+            style={{ gridTemplateColumns: `repeat(${SECTIONS.length}, minmax(0, 1fr))` }}
+            role="progressbar"
+            aria-label="Setup progress"
+            aria-valuemin={1}
+            aria-valuemax={SECTIONS.length}
+            aria-valuenow={sectionIndex + 1}
+            aria-valuetext={progressText}
+          >
+            {SECTIONS.map((section, i) => (
+              <span
+                key={section}
+                className={`h-1 rounded-full transition-colors duration-300 ${i <= sectionIndex ? 'bg-accent' : 'bg-line-strong'}`}
+              />
+            ))}
           </div>
-          <div className="mt-2 text-center text-caption font-medium text-ink3 tnum">
-            Step {stageIndex + 1} of {STAGE_ORDER.length}
+          <div className="mt-2 text-center text-caption font-medium text-ink3 tnum" aria-hidden="true">
+            {progressText}
           </div>
         </div>
         {/* Carries the question, not only the stage: the whole ladder lives
-            inside one stage, so a region that only said "Step 3 of 6" went
+            inside one stage, so a region that only said "Step 3 of 7" went
             silent for every question after the first. */}
         <div className="sr-only" aria-live="polite">
-          {stage === 'interview' && currentItem && !skippedInterview
-            ? `${questionProgress}. ${currentItem.question}`
-            : `Step ${stageIndex + 1} of ${STAGE_ORDER.length}`}
+          {stage === 'interview' && currentItem && !skippedInterview ? `${questionProgress}. ${currentItem.question}` : progressText}
         </div>
 
         {stage === 'welcome' ? (
@@ -426,7 +516,7 @@ export function Onboarding() {
               />
             </div>
             <Button
-              onClick={() => setStage('skills')}
+              onClick={() => setStage('goals')}
               className={`${primaryBtn} mx-auto mt-6 w-full max-w-sm`}
             >
               Let's go <Icon name="arrowR" size={17} />
@@ -452,6 +542,29 @@ export function Onboarding() {
           </div>
         ) : null}
 
+        {stage === 'goals' ? (
+          <div className="animate-rise">
+            <h1 ref={headingRef} tabIndex={-1} className="text-center font-display text-[26px] font-bold text-ink outline-none">
+              What are you training for?
+            </h1>
+            <p className="mt-1 text-center text-body leading-relaxed text-ink2">
+              Give each goal a weight from Off to 5. Fitness Lab plans the gym and your skills together, and these decide
+              how a day is shared between them. You can change them any time in Goals and schedule.
+            </p>
+            <div className="mt-6">
+              <GoalsEditor prefs={prefs} setPrefs={setPrefs} />
+            </div>
+            <div className={actionRow}>
+              <button onClick={() => setStage('welcome')} className={backBtn}>
+                Back
+              </button>
+              <Button onClick={() => setStage('skills')} className={primaryBtn}>
+                Continue <Icon name="arrowR" size={16} />
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         {stage === 'skills' ? (
           <div className="animate-rise">
             <h1 ref={headingRef} tabIndex={-1} className="text-center font-display text-[26px] font-bold text-ink outline-none">
@@ -460,6 +573,10 @@ export function Onboarding() {
             <p className="mt-1 text-center text-body leading-relaxed text-ink2">
               Pick one or several. The first one you pick leads every session; the others rotate in behind it. You can
               add, drop or reorder them later.
+            </p>
+            <p className="mt-2 rounded-inner border border-line bg-surface p-3 text-center text-footnote leading-relaxed text-ink2">
+              Fitness Lab needs at least one skill to build around, so pick one even if the gym matters more to you. If
+              it does, go back and give “Calisthenics skills” a low weight in Goals — the gym then gets most of each day.
             </p>
             <div className="mt-6 space-y-2.5" role="group" aria-label="Skills to train">
               {SKILL_LIST.map((def) => {
@@ -470,6 +587,7 @@ export function Onboarding() {
                   <button
                     key={def.id}
                     aria-pressed={active}
+                    aria-label={`${def.name}${active ? `, ${ORDINAL[position]} priority` : ''}: ${def.tagline}`}
                     onClick={() => {
                       setSkills((current) => (active ? current.filter((id) => id !== def.id) : [...current, def.id]))
                       // Answers given for a different set of skills place a
@@ -509,7 +627,7 @@ export function Onboarding() {
                   : `${SKILLS[focus].name} leads. No trial has tested how best to combine skills like these; the mix follows what coaches broadly do — one main skill a session, a second that loads different joints.`}
             </p>
             <div className={actionRow}>
-              <button onClick={() => setStage('welcome')} className={backBtn}>
+              <button onClick={() => setStage('goals')} className={backBtn}>
                 Back
               </button>
               <Button
@@ -541,6 +659,7 @@ export function Onboarding() {
                   <button
                     key={id}
                     aria-pressed={active}
+                    aria-label={`${step.name}: ${GOAL_BLURB[id] ?? step.tagline}`}
                     onClick={() => setGoals((current) => ({ ...current, [focus]: id }))}
                     className={`flex w-full items-center gap-4 rounded-inner border p-4 text-left transition ${
                       active ? 'border-accent bg-accent-soft shadow-card' : 'border-line bg-surface hover:border-line-strong'
@@ -667,7 +786,7 @@ export function Onboarding() {
                     delete next[asked[asked.length - 1]]
                     setAnswers(next)
                   }}
-                  className="rounded-control border border-line bg-surface px-4 py-2.5 text-footnote font-medium text-ink2 hover:text-ink"
+                  className="ds-press min-h-11 rounded-control border border-line bg-surface px-4 text-footnote font-medium text-ink2 hover:text-ink"
                 >
                   Back
                 </button>
@@ -677,7 +796,7 @@ export function Onboarding() {
                     setManualIndex(0)
                     setAnswers({})
                   }}
-                  className="px-1 py-2 text-footnote font-medium text-ink3 underline underline-offset-4 hover:text-ink"
+                  className="min-h-11 px-1 text-footnote font-medium text-ink3 underline underline-offset-4 hover:text-ink"
                 >
                   Skip — I'll pick my own level
                 </button>
@@ -824,34 +943,59 @@ export function Onboarding() {
               >
                 Back
               </button>
-              <Button onClick={() => setStage('details')} className={primaryBtn}>
+              <Button onClick={() => setStage('places')} className={primaryBtn}>
                 Looks right <Icon name="arrowR" size={16} />
               </Button>
             </div>
           </div>
         ) : null}
 
-        {stage === 'details' ? (
+        {stage === 'places' && editing ? (
           <div className="animate-rise">
-            <h1
-              ref={headingRef}
-              tabIndex={-1}
-              className="text-center font-display text-[26px] font-bold text-ink outline-none"
-            >
-              A few quick details
+            <h1 ref={headingRef} tabIndex={-1} className="sr-only">
+              {editing.isNew ? 'Add a gym' : 'Edit a gym'}
             </h1>
-            <p className="mt-1 text-center text-body text-ink2">
-              All optional, all stays on your device. Equipment shapes exercise choices; measurements add context.
+            <button onClick={() => setEditing(null)} className={`${backBtn} -ml-3`}>
+              Cancel
+            </button>
+            <LocationEditor
+              location={editing.location}
+              canDelete={!editing.isNew}
+              onSave={(saved) => {
+                setGyms((current) =>
+                  editing.isNew ? [...current, saved] : current.map((place) => (place.id === saved.id ? saved : place)),
+                )
+                setEditing(null)
+              }}
+              onDelete={() => {
+                setGyms((current) => current.filter((place) => place.id !== editing.location.id))
+                setEditing(null)
+              }}
+            />
+          </div>
+        ) : null}
+
+        {stage === 'places' && !editing ? (
+          <div className="animate-rise">
+            <h1 ref={headingRef} tabIndex={-1} className="text-center font-display text-[26px] font-bold text-ink outline-none">
+              Where do you train?
+            </h1>
+            <p className="mt-1 text-center text-body leading-relaxed text-ink2">
+              Each place keeps its own equipment, so a session only uses what is there. Tick what you have at home, and add a
+              gym if you use one. All optional, all stays on your device.
             </p>
 
-            <div className="mt-5 flex justify-center">
-              <div className="flex overflow-hidden rounded-control border border-line">
+            <div className="mt-5 flex items-center justify-between gap-3 rounded-inner border border-line bg-surface p-4">
+              <span id="ob-units" className="text-footnote font-medium text-ink2">
+                Weights and measurements in
+              </span>
+              <div className="flex overflow-hidden rounded-control border border-line" role="group" aria-labelledby="ob-units">
                 {(['metric', 'imperial'] as const).map((u) => (
                   <button
                     key={u}
                     aria-pressed={units === u}
                     onClick={() => setUnits(u)}
-                    className={`px-4 py-2 text-footnote font-medium transition ${
+                    className={`min-h-11 px-4 text-footnote font-medium transition ${
                       units === u ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                     }`}
                   >
@@ -861,63 +1005,9 @@ export function Onboarding() {
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="rounded-inner border border-line bg-surface p-4">
-                <span className="text-footnote font-medium text-ink2">
-                  Bodyweight ({units === 'metric' ? 'kg' : 'lb'})
-                </span>
-                <input
-                  value={weight}
-                  onChange={(e) => setWeight(e.target.value)}
-                  inputMode="decimal"
-                  placeholder={units === 'metric' ? '70' : '155'}
-                  aria-label={`Bodyweight in ${units === 'metric' ? 'kilograms' : 'pounds'}`}
-                  className="mt-1.5 w-full rounded-control border border-line bg-raised px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
-                />
-                <span className="mt-1 block text-caption text-ink3">
-                  These skills are strength-to-weight — bodyweight is one of the biggest levers there is.
-                </span>
-              </label>
-              <label className="rounded-inner border border-line bg-surface p-4">
-                <span className="text-footnote font-medium text-ink2">Height</span>
-                {units === 'metric' ? (
-                  <input
-                    value={heightCm}
-                    onChange={(e) => setHeightCm(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="175"
-                    aria-label="Height in centimetres"
-                    className="mt-1.5 w-full rounded-control border border-line bg-raised px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
-                  />
-                ) : (
-                  <div className="mt-1.5 flex gap-2">
-                    <input
-                      value={heightFt}
-                      onChange={(e) => setHeightFt(e.target.value)}
-                      inputMode="numeric"
-                      placeholder="5"
-                      aria-label="Height, feet"
-                      className="w-full rounded-control border border-line bg-raised px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
-                    />
-                    <input
-                      value={heightIn}
-                      onChange={(e) => setHeightIn(e.target.value)}
-                      inputMode="numeric"
-                      placeholder="9"
-                      aria-label="Height, inches"
-                      className="w-full rounded-control border border-line bg-raised px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
-                    />
-                  </div>
-                )}
-                <span className="mt-1 block text-caption text-ink3">
-                  Height gives useful lever-length context; it does not change your unlock bar.
-                </span>
-              </label>
-            </div>
-
             <div className="mt-3 rounded-inner border border-line bg-surface p-4">
               <div className="text-footnote font-medium text-ink2" id="ob-equipment">
-                What do you have to train with?
+                At home — what do you have to train with?
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-labelledby="ob-equipment">
                 {EQUIPMENT_OPTIONS.map((eq) => {
@@ -927,7 +1017,7 @@ export function Onboarding() {
                       key={eq.id}
                       aria-pressed={on}
                       onClick={() => setEquipment((v) => (on ? v.filter((x) => x !== eq.id) : [...v, eq.id]))}
-                      className={`rounded-full border px-3.5 py-1.5 text-footnote font-medium transition ${
+                      className={`min-h-11 rounded-full border px-3.5 text-footnote font-medium transition ${
                         on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2'
                       }`}
                     >
@@ -969,10 +1059,162 @@ export function Onboarding() {
               ) : null}
             </div>
 
+            <div className="mt-3 rounded-inner border border-line bg-surface p-4">
+              <div className="text-footnote font-medium text-ink2">Gyms</div>
+              {gyms.length ? (
+                <ul className="mt-2 space-y-2">
+                  {gyms.map((place) => (
+                    <li key={place.id}>
+                      <button
+                        onClick={() => setEditing({ location: place, isNew: false })}
+                        className="ds-press flex min-h-14 w-full items-center justify-between rounded-inner border border-line px-4 text-left"
+                      >
+                        <span>
+                          <span className="block text-body font-semibold text-ink">{place.name}</span>
+                          <span className="block text-caption text-ink3">
+                            {place.equipment.length} pieces of kit · {availableAt(place).length} exercises · {place.unit}
+                          </span>
+                        </span>
+                        <span className="text-footnote font-medium text-accent-text">Edit</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-1 text-caption leading-relaxed text-ink3">
+                  None yet. Without one, gym sessions are built from what you have at home.
+                </p>
+              )}
+              <Button
+                variant="secondary"
+                full
+                className="mt-3"
+                onClick={() => setEditing({ location: newLocation('Gym', units === 'imperial' ? 'lb' : 'kg'), isNew: true })}
+              >
+                <Icon name="plus" size={15} /> Add a gym
+              </Button>
+              <p className="mt-2 text-caption leading-relaxed text-ink3">
+                {startingGym
+                  ? `Gym sessions will be built for ${startingGym.name}, since Home has no gym equipment. You can switch places on the Gym tab.`
+                  : 'A gym that has gym equipment becomes the place sessions are built for, because Home has none. You can switch on the Gym tab.'}
+              </p>
+            </div>
+
+            <div className={actionRow}>
+              <button onClick={() => setStage('result')} className={backBtn}>
+                Back
+              </button>
+              <Button onClick={() => setStage('schedule')} className={primaryBtn}>
+                Continue <Icon name="arrowR" size={16} />
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {stage === 'schedule' ? (
+          <div className="animate-rise">
+            <h1 ref={headingRef} tabIndex={-1} className="text-center font-display text-[26px] font-bold text-ink outline-none">
+              When can you train?
+            </h1>
+            <p className="mt-1 text-center text-body leading-relaxed text-ink2">
+              Set the minutes you have on each day, and add the sport you already play. Your weekly goal and session length
+              come from this week, so there is nothing else to set.
+            </p>
+            <div className="mt-6 space-y-6">
+              <ScheduleEditor prefs={prefs} setPrefs={setPrefs} />
+            </div>
+            <div className="mt-5 rounded-inner border border-line bg-surface p-4" role="status">
+              {schedule.days === 0 ? (
+                <p className="text-footnote leading-relaxed text-ink2">
+                  Give at least one day some minutes to continue — a day left on Rest is not trained.
+                </p>
+              ) : (
+                <>
+                  <p className="text-footnote font-semibold text-ink">
+                    {schedule.days} training day{schedule.days === 1 ? '' : 's'} a week, about {schedule.typicalMinutes} minutes on a typical one.
+                  </p>
+                  <p className="mt-1 text-caption leading-relaxed text-ink3">
+                    That sets your weekly goal to {schedule.weeklyGoal} and your session length to {schedule.sessionMinutes} minutes;
+                    change either in Settings. Three sessions a week is the number most coaching sources land on for
+                    straight-arm work, but with total work equal frequency itself makes little measured difference — pick the
+                    week you will keep.
+                    {sharing ? ` ${sharing}` : ''}
+                    {trainable.length > 1 ? ` ${sessionRoom}` : ''}
+                    {waitingNote ? ` ${waitingNote}` : ''}
+                  </p>
+                </>
+              )}
+            </div>
+            <div className={actionRow}>
+              <button onClick={() => setStage('places')} className={backBtn}>
+                Back
+              </button>
+              <Button onClick={() => setStage('muscles')} disabled={schedule.days === 0} className={`${primaryBtn} disabled:opacity-50`}>
+                Continue <Icon name="arrowR" size={16} />
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {stage === 'muscles' ? (
+          <div className="animate-rise">
+            <h1 ref={headingRef} tabIndex={-1} className="text-center font-display text-[26px] font-bold text-ink outline-none">
+              Any muscles to favour or leave out?
+            </h1>
+            <p className="mt-1 text-center text-body leading-relaxed text-ink2">
+              Optional. Leave everything on normal and the gym spreads the work evenly.
+            </p>
+            <div className="mt-6">
+              <MusclesEditor prefs={prefs} setPrefs={setPrefs} />
+            </div>
+            <div className="text-center">
+              <button
+                onClick={() => {
+                  setPrefs((p) => ({ ...p, musclesOff: [], musclesPriority: [] }))
+                  setStage('safety')
+                }}
+                className="min-h-11 px-3 text-footnote font-medium text-ink3 underline underline-offset-4 hover:text-ink"
+              >
+                Skip — keep every muscle normal
+              </button>
+            </div>
+            <div className={actionRow}>
+              <button onClick={() => setStage('schedule')} className={backBtn}>
+                Back
+              </button>
+              <Button onClick={() => setStage('safety')} className={primaryBtn}>
+                Continue <Icon name="arrowR" size={16} />
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {stage === 'safety' ? (
+          <div className="animate-rise">
+            <h1 ref={headingRef} tabIndex={-1} className="text-center font-display text-[26px] font-bold text-ink outline-none">
+              Age and safety
+            </h1>
+            <p className="mt-1 text-center text-body leading-relaxed text-ink2">
+              The last step. Your age sets how careful the plan is; the rest is optional.
+            </p>
+            <div className="mt-6">
+              <AgeAndSafety
+                birthYear={birthYear}
+                setBirthYear={setBirthYear}
+                careful={careful}
+                ageKnown={year !== undefined}
+                bodyweight={bodyweightReminders}
+                setBodyweight={setBodyweightReminders}
+                declined={ageDeclined}
+                onDecline={setAgeDeclined}
+              />
+            </div>
+
             <label className="mt-3 block rounded-inner border border-line bg-surface p-4">
               <span className="text-footnote font-medium text-ink2">Anything currently sore or injured?</span>
               <input
                 value={injuryNote}
+                aria-label="Anything currently sore or injured?"
                 onChange={(e) => setInjuryNote(e.target.value)}
                 placeholder="e.g. left wrist a bit cranky — or leave blank"
                 className="mt-1.5 w-full rounded-control border border-line bg-raised px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
@@ -984,95 +1226,63 @@ export function Onboarding() {
               </span>
             </label>
 
-            <div className={actionRow}>
-              <button onClick={() => setStage('result')} className={backBtn}>
-                Back
-              </button>
-              <Button onClick={continueFromDetails} className={primaryBtn}>
-                Continue <Icon name="arrowR" size={16} />
-              </Button>
-            </div>
-            {measurementError ? (
-              <p className="mt-2 text-center text-footnote text-danger-text" role="alert">
-                {measurementError}
+            <details className="mt-3 rounded-inner border border-line bg-surface p-4">
+              <summary className="min-h-11 cursor-pointer text-footnote font-medium text-ink2">
+                Bodyweight and height (optional)
+              </summary>
+              <p className="mt-1 text-caption leading-relaxed text-ink3">
+                Never required, and nothing in the plan depends on them. They are kept as a first entry in your progress,
+                in {units === 'metric' ? 'kg and cm' : 'lb and ft'} — change the units on the Places step.
               </p>
-            ) : null}
-          </div>
-        ) : null}
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-footnote font-medium text-ink2">Bodyweight ({units === 'metric' ? 'kg' : 'lb'})</span>
+                  <input
+                    value={weight}
+                    onChange={(e) => setWeight(e.target.value)}
+                    inputMode="decimal"
+                    placeholder={units === 'metric' ? '70' : '155'}
+                    className="mt-1.5 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                  />
+                </label>
+                <div>
+                  <span className="text-footnote font-medium text-ink2" id="ob-height">
+                    Height
+                  </span>
+                  {units === 'metric' ? (
+                    <input
+                      value={heightCm}
+                      onChange={(e) => setHeightCm(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="175"
+                      aria-labelledby="ob-height"
+                      className="mt-1.5 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                    />
+                  ) : (
+                    <div className="mt-1.5 flex gap-2">
+                      <input
+                        value={heightFt}
+                        onChange={(e) => setHeightFt(e.target.value)}
+                        inputMode="numeric"
+                        placeholder="5"
+                        aria-label="Height, feet"
+                        className="min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                      />
+                      <input
+                        value={heightIn}
+                        onChange={(e) => setHeightIn(e.target.value)}
+                        inputMode="numeric"
+                        placeholder="9"
+                        aria-label="Height, inches"
+                        className="min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </details>
 
-        {stage === 'frequency' ? (
-          <div className="animate-rise text-center">
-            <h1
-              ref={headingRef}
-              tabIndex={-1}
-              className="font-display text-[26px] font-bold text-ink outline-none"
-            >
-              How often will you train?
-            </h1>
-            <p className="mx-auto mt-1 max-w-md text-body leading-relaxed text-ink2">
-              Sessions per week. Three is the number most coaching sources land on for straight-arm work — but with
-              total work equal, frequency itself makes little measured difference, so pick the number you will keep.
-              {sharing ? ` ${sharing}` : ''}
-              {waitingNote ? ` ${waitingNote}` : ''}
-            </p>
-            <div className="mt-7 flex justify-center gap-2.5" role="group" aria-label="Sessions per week">
-              {[2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  aria-pressed={goal === n}
-                  onClick={() => setGoal(n)}
-                  className={`h-16 w-16 rounded-inner border font-display text-[22px] font-bold transition ${
-                    goal === n
-                      ? 'border-transparent bg-accent text-on-accent shadow-card'
-                      : 'border-line bg-surface text-ink2 hover:border-line-strong hover:text-ink'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-            <div className="mt-2 text-footnote text-ink3" aria-live="polite">
-              {goal <= 3 ? 'Sustainable. Good call.' : goal === 4 ? 'Solid — watch your elbows.' : 'Spicy. Keep two easy days.'}
-            </div>
-            <h2 className="mt-7 font-display text-[18px] font-semibold text-ink">How long can a session be?</h2>
-            <div className="mt-3 flex justify-center gap-2" role="group" aria-label="Minutes per session">
-              {[20, 30, 45, 60].map((m) => (
-                <button
-                  key={m}
-                  aria-pressed={minutes === m}
-                  onClick={() => setMinutes(m)}
-                  className={`h-12 min-w-14 rounded-control border px-3 font-display text-title3 font-bold transition ${
-                    minutes === m
-                      ? 'border-transparent bg-accent text-on-accent shadow-card'
-                      : 'border-line bg-surface text-ink2 hover:border-line-strong hover:text-ink'
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-            <div className="mx-auto mt-2 max-w-md text-footnote leading-relaxed text-ink3" aria-live="polite">
-              {trainable.length > 1
-                ? sessionRoom
-                : trainable.length === 0
-                  ? // Nothing picked can be trained yet: no key holds to describe.
-                    'Until that kit is on your list, sessions are the support work that needs none of it.'
-                  : lead !== 'planche'
-                    ? minutes <= 20
-                      ? 'Key holds plus the most important strength work. Short sessions you actually do beat long ones you skip.'
-                      : minutes <= 30
-                        ? 'Key holds, the strength work for your step and some accessories — the extras come off on full days.'
-                        : 'The full session: key holds, the strength work for your step, support work and core.'
-                    : minutes <= 20
-                      ? 'Key holds plus the most important strength work. Short sessions you actually do beat long ones you skip.'
-                      : minutes <= 30
-                        ? 'Key holds, the push-up version and some accessory work — leans or core may come off on full days.'
-                        : minutes <= 45
-                          ? 'The full session: key holds, the push-up version of your step, pseudo planche push-ups, leans and core.'
-                          : 'Everything, with room for extra sets on volume days.'}{' '}
-              Change it any time in Settings.
-            </div>
-            <div className="mx-auto mt-7 max-w-md rounded-inner border border-line bg-surface p-4 text-left">
+            <div className="mt-3 rounded-inner border border-line bg-surface p-4 text-left">
               <div className="text-footnote font-semibold uppercase tracking-wide text-ink3">Your plan</div>
               {skills.map((skill) => {
                 const from = STEP_BY_ID[placedFor(skill)]
@@ -1113,11 +1323,22 @@ export function Onboarding() {
                 then it runs a sensible default and says so rather than pretending to know.
               </p>
             </div>
+
+            {measurementError ? (
+              <p className="mt-3 text-center text-footnote text-danger-text" role="alert">
+                {measurementError}
+              </p>
+            ) : null}
+            {!ageAnswered ? (
+              <p className="mt-3 text-center text-footnote text-ink3" role="status">
+                Add your birth year, or choose “Prefer not to say” — the plan then stays in careful mode.
+              </p>
+            ) : null}
             <div className={actionRow}>
-              <button onClick={() => setStage('details')} className={backBtn}>
+              <button onClick={() => setStage('muscles')} className={backBtn}>
                 Back
               </button>
-              <Button onClick={finish} className={primaryBtn}>
+              <Button onClick={finish} disabled={!ageAnswered} className={primaryBtn}>
                 <Icon name="bolt" size={17} /> Start training
               </Button>
             </div>
@@ -1170,6 +1391,7 @@ function ManualPlacement({
             <button
               key={p.stepId}
               aria-pressed={active}
+              aria-label={`${p.label}: ${p.desc}`}
               onClick={() => onPick(p.stepId)}
               className={`flex w-full items-center gap-4 rounded-inner border p-4 text-left transition ${
                 active ? 'border-accent bg-accent-soft shadow-card' : 'border-line bg-surface hover:border-line-strong'

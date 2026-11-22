@@ -19,6 +19,22 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-22',
+    title: 'A first run that asks the right things, plans that share recovery, and skill days',
+    area: 'coach',
+    notes: [
+      'The first run now goes goals, skills, places and equipment, schedule and sport, muscles, then age and safety. It asks your birth year (or “prefer not to say”, which keeps the careful defaults); bodyweight is optional and off by default.',
+      'Pressing and straight-arm skills now share recovery: a heavy pressing gym day and a hard planche session are kept your rest rule apart, in either order — the same day is fine, skill work first. Heavy pulling and the front lever work the same way.',
+      'The plan follows your own week plan (the skills you assigned to a day, and your rest days), never adds a gym block when you have no gym set up, and every day fits the minutes you have.',
+      'A sore joint stays out of every gym session for three days after you report it, whichever focus you pick on the Gym side. Hips and ankles are in the pain check now.',
+      'Skill days: the Train tab is now Calisthenics | Gym, and the Calisthenics side lets you pick a planche day, front lever day or handstand day — or a handstand push-up or 90° push-up day, where the push-up rung is the main work.',
+      'Gym fixes: assisted pull-ups take help off as you get stronger; one heavy top set no longer raises every working set; jumps and sprints start at the first rung; a lift with no new best in three sessions swaps to a variation for a while (favourites stay); missed reps step the load down; a swap keeps your strength estimate; loads round to what the place can make.',
+      'Lighter weeks are called lift by lift, and also when you do not rate your sets.',
+      'Your data: ratings, favourites and “hard here” marks survive two tabs or devices; a saved gym session can be deleted or corrected; a load far above your best asks “did you mean…?” first; a PE log no longer erases a scheduled game; the CSV export includes skill-set effort.',
+      'Progress counts gym sessions, sets and badges; Home is calmer on day one; Home, Train and the Gym side show the same session for today.',
+    ],
+  },
+  {
+    date: '2026-11-22',
     title: 'A real week plan, your sport built in, and 236 exercises',
     area: 'coach',
     notes: [

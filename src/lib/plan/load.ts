@@ -1,4 +1,4 @@
-import { MUSCLES, type Joint, type Muscle } from '../../data/gym/catalog'
+import { MUSCLES, type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { EXERCISE_BY_ID } from '../../data/exercises'
 import type { AppState, Category, Session } from '../../types'
@@ -130,32 +130,24 @@ const effort = (rpe?: number) => (rpe === undefined ? 1 : Math.min(1.25, Math.ma
 
 export interface Fatigue {
   muscles: Credit
-  joints: Partial<Record<Joint, number>>
-  /** Whole-body, nervous-system load from hard work and hard sport. */
-  system: number
 }
 
 /**
- * Recent load, decaying with a 36-hour half-life — a planning convention, not
- * a physiological measurement. It ranks what is freshest; it never claims a
- * muscle is "recovered".
+ * Recent load per muscle, decaying with a 36-hour half-life — a planning
+ * convention, not a physiological measurement. It ranks what is freshest; it
+ * never claims a muscle is "recovered". (Joint and whole-body totals were once
+ * computed beside it and never read: what joints share is decided by the
+ * straight-arm family rule — `familyEvents` — not by a number nothing used.)
  */
 export function fatigueAt(state: Pick<AppState, 'sessions' | 'gym'>, now: number): Fatigue {
-  const out: Fatigue = { muscles: {}, joints: {}, system: 0 }
+  const out: Fatigue = { muscles: {} }
   const horizon = now - 5 * 86_400_000
-  const addJoints = (joints: Joint[], v: number) => {
-    for (const j of joints) out.joints[j] = (out.joints[j] ?? 0) + v
-  }
   for (const s of state.sessions) {
     if (s.startedAt < horizon || s.startedAt > now) continue
     const age = decay((now - s.startedAt) / 3_600_000)
     for (const set of s.sets) {
       const l = skillSetLoading(set.exerciseId, set.section)
-      if (!l) continue
-      const w = age * effort(set.rpe ?? s.rpe)
-      add(out.muscles, l.muscles, w)
-      addJoints(l.joints, w)
-      out.system += 0.3 * w
+      if (l) add(out.muscles, l.muscles, age * effort(set.rpe ?? s.rpe))
     }
   }
   for (const s of state.gym?.sessions ?? []) {
@@ -166,21 +158,13 @@ export function fatigueAt(state: Pick<AppState, 'sessions' | 'gym'>, now: number
       if (!l) continue
       for (const set of log.sets) {
         if (set.warmup || !(set.reps > 0)) continue
-        const w = age * effort(set.rpe)
-        add(out.muscles, l.muscles, w)
-        addJoints(l.joints, w)
-        out.system += (GYM_EXERCISE_BY_ID[log.exerciseId]?.compound ? 0.5 : 0.2) * w
+        add(out.muscles, l.muscles, age * effort(set.rpe))
       }
     }
   }
-  // Logged activities and the regular sport week alike (a log replaces that day's usual session).
+  // Logged activities and the regular sport week alike (a log of the same kind replaces that day's usual session).
   for (const a of sportBetween(state.gym, horizon, now + 1)) {
-    const w = decay((now - a.at) / 3_600_000) * activityLoad(a)
-    if (a.legs) {
-      add(out.muscles, { quads: 1, hamstrings: 1, glutes: 1, calves: 1 }, w)
-      addJoints(['knees', 'ankles', 'hips'], w)
-    }
-    out.system += w
+    if (a.legs) add(out.muscles, { quads: 1, hamstrings: 1, glutes: 1, calves: 1 }, decay((now - a.at) / 3_600_000) * activityLoad(a))
   }
   return out
 }
@@ -206,6 +190,63 @@ export function lastHardStraightArm(sessions: Session[], now: number): { push?: 
       if (count[family] >= 3 && (out[family] ?? 0) < s.startedAt) out[family] = s.startedAt
     }
   }
+  return out
+}
+
+/** Gym movements that count toward each straight-arm family's shared recovery. */
+const FAMILY_PATTERNS: Record<'push' | 'pull', ReadonlySet<Pattern>> = {
+  push: new Set<Pattern>(['horizontal-press', 'incline-press', 'vertical-press', 'dip']),
+  pull: new Set<Pattern>(['vertical-pull', 'horizontal-pull', 'straight-arm-pull']),
+}
+
+/**
+ * Working sets of one family's movements that make a gym session a hard
+ * session of that family: the planner's `HARD_SETS` line (a muscle worked hard
+ * that day) — a planning line, not a measured one.
+ */
+export const HARD_GYM_FAMILY_SETS = 4
+
+/** A hard session of a straight-arm family, logged: skill work or the gym. */
+export interface FamilyEvent {
+  at: number
+  /** A gym session (heavy pressing or pulling) rather than skill work. */
+  gym: boolean
+}
+
+/**
+ * Every logged hard session of each straight-arm family up to `now`: skill
+ * sessions with three or more main sets of the family (as
+ * `lastHardStraightArm` counts them), and gym sessions with
+ * `HARD_GYM_FAMILY_SETS` or more working sets of pressing (push) or pulling
+ * (pull). Planche, push-ups and presses load the same front delts, wrists and
+ * elbows, and the front lever and rows or pull-ups the same lats and elbows, so
+ * the rest rule spaces them together (CONSENSUS; the shared joints are
+ * INFERENCE from the positions).
+ */
+export function familyEvents(state: Pick<AppState, 'sessions' | 'gym'>, now: number): Record<'push' | 'pull', FamilyEvent[]> {
+  const out: Record<'push' | 'pull', FamilyEvent[]> = { push: [], pull: [] }
+  for (const s of state.sessions) {
+    if (s.startedAt > now) continue
+    const count = { push: 0, pull: 0 }
+    for (const set of s.sets) {
+      if (set.section !== 'main' && set.section !== 'strength') continue
+      const family = skillSetLoading(set.exerciseId, set.section)?.straightArm
+      if (family) count[family]++
+    }
+    for (const f of ['push', 'pull'] as const) if (count[f] >= 3) out[f].push({ at: s.startedAt, gym: false })
+  }
+  for (const s of state.gym?.sessions ?? []) {
+    if (s.startedAt > now) continue
+    const count = { push: 0, pull: 0 }
+    for (const log of s.exercises) {
+      const pattern = GYM_EXERCISE_BY_ID[log.exerciseId]?.pattern
+      if (!pattern) continue
+      const working = log.sets.filter((x) => !x.warmup && x.reps > 0).length
+      for (const f of ['push', 'pull'] as const) if (FAMILY_PATTERNS[f].has(pattern)) count[f] += working
+    }
+    for (const f of ['push', 'pull'] as const) if (count[f] >= HARD_GYM_FAMILY_SETS) out[f].push({ at: s.startedAt, gym: true })
+  }
+  for (const f of ['push', 'pull'] as const) out[f].sort((a, b) => a.at - b.at)
   return out
 }
 

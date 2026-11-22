@@ -172,9 +172,9 @@ export function forecastUnlock(state: AppState, stepId: StepId = state.stepId, n
         ? `${missing} more measured ${EX_LABEL(step.keyExerciseId)} hold${
             missing === 1 ? '' : 's'
           }. A hold that ends at or just past its target call says "at least this much", not how far you could go — the re-tests and attempts the coach schedules are what measure it. A rate needs at least ${MIN_FORECAST_POINTS} measured points before it means anything.`
-        : `${missing} more session${missing === 1 ? '' : 's'} with a verified ${
+        : `${missing} more session${missing === 1 ? '' : 's'} with a filmed ${
             EX_LABEL(step.keyExerciseId)
-          } hold. A rate needs at least ${MIN_FORECAST_POINTS} measured points before it means anything.`,
+          } hold that passes the form check (you rated it Clean and the camera agreed). A rate needs at least ${MIN_FORECAST_POINTS} of them before it means anything.`,
     }
   }
 
@@ -182,14 +182,14 @@ export function forecastUnlock(state: AppState, stepId: StepId = state.stepId, n
   if (spanDays < MIN_FORECAST_SPAN_DAYS) {
     return {
       kind: 'insufficient',
-      need: `a longer run of evidence — your verified holds so far span ${Math.round(
+      need: `a longer run of evidence — your form-checked holds so far span ${Math.round(
         spanDays,
       )} days, and a weekly rate measured inside ${MIN_FORECAST_SPAN_DAYS} days is mostly day-to-day swing.`,
     }
   }
 
   const rates = pairwiseRates(series).sort((a, b) => a - b)
-  if (rates.length === 0) return { kind: 'insufficient', need: 'verified holds on separate days' }
+  if (rates.length === 0) return { kind: 'insufficient', need: 'form-checked holds on separate days' }
 
   const central = median(rates) ?? 0
   const remaining = step.unlockSec - best

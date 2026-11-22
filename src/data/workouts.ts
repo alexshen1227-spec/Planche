@@ -64,6 +64,11 @@ export function primaryTargetBlock(workout: Workout): Block | undefined {
   // session that mixes skills it is the lead skill's hold, wherever balance
   // practice for another skill sits in the running order.
   const lead = workout.skills?.[0]
+  // A ladder day's target is the rung it opens with, not the practice hold.
+  if (workout.request?.focus === 'ladder') {
+    const rung = workout.blocks.find((block) => block.role === 'press' && block.section !== 'warmup')
+    if (rung) return rung
+  }
   return (
     (lead ? workout.blocks.find((block) => block.role === 'skill' && block.skill === lead) : undefined) ??
     workout.blocks.find((block) => block.role === 'skill') ??
@@ -833,6 +838,8 @@ const REGION_CONFLICTS: Record<BodyRegion, string[]> = {
   'lower-back': ['arch-hold', 'leg-lifts', 'hollow-hold'],
   // Jumping jacks land on the knees; nothing else in a recovery block does.
   knee: ['jumping-jacks'],
+  hip: ['leg-lifts'],
+  ankle: ['jumping-jacks'],
   other: [],
 }
 
@@ -842,6 +849,8 @@ const REGION_LABEL: Record<BodyRegion, string> = {
   shoulder: 'shoulder',
   'lower-back': 'lower back',
   knee: 'knee',
+  hip: 'hip',
+  ankle: 'ankle',
   other: 'reported area',
 }
 
@@ -1129,6 +1138,8 @@ export interface SessionBuildOptions {
    * failing a few weeks later, when their fixtures aged out of that window.
    */
   now?: number
+  /** A ladder day (`WorkoutRequest.focus`): read by skills with a rep ladder, ignored by the planche. */
+  focus?: 'ladder'
 }
 
 /**
@@ -2233,7 +2244,7 @@ export function finalizeFromPlan(
   const plan = planIn.skill === lead ? planIn : buildPlan(state, now, freshCheckIn)
   /** Today's coach-built session: one skill, or the line-up mixed. */
   const coachSession = (): Workout => {
-    if (lineup.length === 1) return todaysSession(state, plan, request.minutes, { now })
+    if (lineup.length === 1) return todaysSession(state, plan, request.minutes, { now, ...(request.focus ? { focus: request.focus } : {}) })
     const plans: Partial<Record<SkillId, CoachPlan>> = { [lead]: plan }
     for (const entry of lineup) {
       plans[entry.skill] ??= buildPlan(skillView(whole, entry.skill), now, freshCheckIn)

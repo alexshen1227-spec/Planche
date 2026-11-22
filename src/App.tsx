@@ -505,6 +505,7 @@ export default function App() {
               <button
                 key={n.tab}
                 onClick={() => setTab(n.tab)}
+                aria-label={n.label}
                 aria-current={navTab === n.tab ? 'page' : undefined}
                 className={`flex w-full items-center gap-3 rounded-control px-3.5 py-2.5 text-body font-medium transition ${
                   navTab === n.tab
@@ -568,6 +569,7 @@ export default function App() {
             <button
               key={n.tab}
               onClick={() => setTab(n.tab)}
+              aria-label={n.label}
               aria-current={navTab === n.tab ? 'page' : undefined}
               className={`relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-control px-1 py-1.5 text-caption font-medium transition ${
                 navTab === n.tab

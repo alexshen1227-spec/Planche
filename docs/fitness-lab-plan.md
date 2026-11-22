@@ -194,6 +194,17 @@ Open, in order of value (none blocks using the app):
   player's tests unchanged).
 - Next: an independent strict review scored 1–100, fixed and repeated.
 
+## Round three (2026-11-22): strict review and the fixes
+
+- Independent strict reviews (fresh agents, frozen snapshot, Goal.txt as the
+  only brief): 46/100 UX, 44/100 logic. Every listed defect fixed (see
+  CLAUDE.md "Second strict review"), plus onboarding in the spec's order and
+  skill days.
+- Next (athlete's request): the coach recommends one main session a day —
+  Calisthenics or Gym — and a gym day may open with matching skill work
+  (front lever first on a pull day) when the rest rule and the place allow.
+  Then a second strict review.
+
 ## Log
 
 - 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the

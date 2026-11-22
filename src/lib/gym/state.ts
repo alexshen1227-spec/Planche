@@ -148,6 +148,17 @@ export function newGymSessionId(): string {
   return newId('gym')
 }
 
+/** Per-exercise times: only known exercises, only real times. */
+function sanitizeTimes(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (typeof raw === 'object' && raw !== null) {
+    for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (id in GYM_EXERCISE_BY_ID && isTime(v)) out[id] = v
+    }
+  }
+  return out
+}
+
 function sanitizeLocation(raw: unknown): GymLocation | null {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
@@ -167,6 +178,7 @@ function sanitizeLocation(raw: unknown): GymLocation | null {
   const hardHere = Array.isArray(r.hardHere)
     ? [...new Set(r.hardHere.filter((id): id is string => typeof id === 'string' && id in GYM_EXERCISE_BY_ID))]
     : []
+  const hardHereAt = sanitizeTimes(r.hardHereAt)
   return {
     id: r.id,
     name: typeof r.name === 'string' && r.name.trim() ? r.name.trim().slice(0, 40) : 'Gym',
@@ -174,6 +186,7 @@ function sanitizeLocation(raw: unknown): GymLocation | null {
     equipment: Array.isArray(r.equipment) ? [...new Set(r.equipment.filter(isEquipment))] : [],
     ...(Object.keys(gear).length ? { gear } : {}),
     ...(hardHere.length ? { hardHere } : {}),
+    ...(Object.keys(hardHereAt).length ? { hardHereAt } : {}),
     updatedAt: isTime(r.updatedAt) ? r.updatedAt : 1,
   }
 }
@@ -258,6 +271,8 @@ export function sanitizeGym(raw: unknown): GymState | undefined {
       if (id in GYM_EXERCISE_BY_ID && typeof v === 'string' && uniqueLocations.some((l) => l.id === v)) favoriteAt[id] = v
     }
   }
+  const ratingAtTime = sanitizeTimes(r.ratingAtTime)
+  const favoriteAtTime = sanitizeTimes(r.favoriteAtTime)
   const ids = (v: unknown) =>
     Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string'))].slice(-MAX_TOMBSTONES) : []
   const deletedSessionIds = ids(r.deletedSessionIds)
@@ -281,11 +296,45 @@ export function sanitizeGym(raw: unknown): GymState | undefined {
     ...(deletedLocationIds.length ? { deletedLocationIds } : {}),
     ratings,
     favoriteAt,
+    ...(Object.keys(ratingAtTime).length ? { ratingAtTime } : {}),
+    ...(Object.keys(favoriteAtTime).length ? { favoriteAtTime } : {}),
     ...(isTime(r.prefsUpdatedAt) ? { prefsUpdatedAt: r.prefsUpdatedAt } : {}),
     ...(prefs ? { prefs } : {}),
     ...(activities.length ? { activities } : {}),
     ...(deletedActivityIds.length ? { deletedActivityIds } : {}),
   }
+}
+
+/** A load this far above the athlete's best for the lift is asked about before it is saved. */
+export const IMPLAUSIBLE_LOAD_RATIO = 1.5
+
+/**
+ * Is `kg` far above anything logged for this exercise? Returns the athlete's
+ * best and, when a slipped decimal point or a unit mix-up would explain it, the
+ * load they probably meant. Null when it is plausible or there is no history to
+ * compare with (a first load is never doubted). Warm-ups and `exceptSessionId`
+ * (the session being corrected) are not counted.
+ */
+export function doubtedLoad(
+  sessions: GymSession[],
+  exerciseId: string,
+  kg: number,
+  exceptSessionId?: string,
+): { bestKg: number; probablyKg?: number } | null {
+  let best = 0
+  for (const s of sessions) {
+    if (s.id === exceptSessionId) continue
+    for (const log of s.exercises) {
+      if (log.exerciseId !== exerciseId) continue
+      for (const set of log.sets) if (!set.warmup && set.kg !== undefined && set.kg > best) best = set.kg
+    }
+  }
+  if (!(best > 0) || !(kg > best * IMPLAUSIBLE_LOAD_RATIO)) return null
+  const tenth = Math.round((kg / 10) * 2) / 2
+  const poundsAsKg = Math.round((kg / 2.2046) * 2) / 2
+  const fits = (v: number) => v > 0 && v <= best * IMPLAUSIBLE_LOAD_RATIO
+  const probablyKg = fits(tenth) ? tenth : fits(poundsAsKg) ? poundsAsKg : undefined
+  return { bestKg: best, ...(probablyKg !== undefined ? { probablyKg } : {}) }
 }
 
 const sessionStamp = (s: GymSession) => s.updatedAt ?? s.endedAt
@@ -312,9 +361,25 @@ export function mergeGym(local: GymState | undefined, incoming: GymState | undef
   for (const l of [...local.locations, ...incoming.locations]) {
     if (deadL.has(l.id)) continue
     const have = locations.get(l.id)
-    if (!have || l.updatedAt > have.updatedAt) locations.set(l.id, l)
+    if (!have) locations.set(l.id, l)
+    else locations.set(l.id, mergeLocation(have, l))
   }
-  const prefsFromIncoming = (incoming.prefsUpdatedAt ?? 0) > (local.prefsUpdatedAt ?? 0)
+  const prefsStamp =
+    local.prefsUpdatedAt === undefined && incoming.prefsUpdatedAt === undefined
+      ? undefined
+      : Math.max(local.prefsUpdatedAt ?? 0, incoming.prefsUpdatedAt ?? 0)
+  const freezeLocal = prefsStamp !== local.prefsUpdatedAt
+  const freezeIncoming = prefsStamp !== incoming.prefsUpdatedAt
+  const ratings = mergeStamped(
+    { vals: local.ratings, at: local.ratingAtTime, fallback: local.prefsUpdatedAt ?? 0, freeze: freezeLocal },
+    { vals: incoming.ratings, at: incoming.ratingAtTime, fallback: incoming.prefsUpdatedAt ?? 0, freeze: freezeIncoming, side: 'incoming' },
+  )
+  const favorites = mergeStamped(
+    { vals: local.favoriteAt, at: local.favoriteAtTime, fallback: local.prefsUpdatedAt ?? 0, freeze: freezeLocal },
+    { vals: incoming.favoriteAt, at: incoming.favoriteAtTime, fallback: incoming.prefsUpdatedAt ?? 0, freeze: freezeIncoming, side: 'incoming' },
+  )
+  // A favourite at a place that no longer exists is no favourite.
+  for (const [id, loc] of Object.entries(favorites.vals)) if (!locations.has(loc)) delete favorites.vals[id]
   const deadActivities = [...new Set([...(local.deletedActivityIds ?? []), ...(incoming.deletedActivityIds ?? [])])].slice(-MAX_TOMBSTONES)
   const deadA = new Set(deadActivities)
   const activities = new Map<string, OutsideActivity>()
@@ -331,16 +396,65 @@ export function mergeGym(local: GymState | undefined, incoming: GymState | undef
     sessions: [...sessions.values()].sort((a, b) => a.startedAt - b.startedAt),
     ...(deadSessions.length ? { deletedSessionIds: deadSessions } : {}),
     ...(deadLocations.length ? { deletedLocationIds: deadLocations } : {}),
-    ratings: prefsFromIncoming ? incoming.ratings : local.ratings,
-    favoriteAt: prefsFromIncoming ? incoming.favoriteAt : local.favoriteAt,
+    ratings: ratings.vals,
+    favoriteAt: favorites.vals,
+    ...(Object.keys(ratings.at).length ? { ratingAtTime: ratings.at } : {}),
+    ...(Object.keys(favorites.at).length ? { favoriteAtTime: favorites.at } : {}),
     ...(prefs ? { prefs } : {}),
     ...(activities.size ? { activities: [...activities.values()].sort((a, b) => a.at - b.at) } : {}),
     ...(deadActivities.length ? { deletedActivityIds: deadActivities } : {}),
-    ...((prefsFromIncoming ? incoming.prefsUpdatedAt : local.prefsUpdatedAt) !== undefined
-      ? { prefsUpdatedAt: prefsFromIncoming ? incoming.prefsUpdatedAt : local.prefsUpdatedAt }
-      : {}),
+    ...(prefsStamp !== undefined ? { prefsUpdatedAt: prefsStamp } : {}),
   }
   return stableJson(merged) === stableJson(local) ? local : merged
+}
+
+interface Side<V> {
+  vals: Record<string, V>
+  at: Record<string, number> | undefined
+  /** The time a mark with no time of its own is read as (older saves). */
+  fallback: number
+  /** Write a time for a surviving mark that had none, because `fallback` is about to move. */
+  freeze: boolean
+  side?: 'incoming'
+}
+
+/**
+ * Two keyed maps merged key by key, each key by its own time: the later set or
+ * removal wins, a tie keeps the local side. A removal is a time with no value,
+ * so it survives the merge. Marks from a save with no times read as `fallback`,
+ * and a key nobody has ever stamped or held loses to anything.
+ */
+function mergeStamped<V>(a: Side<V>, b: Side<V>): { vals: Record<string, V>; at: Record<string, number> } {
+  const vals: Record<string, V> = {}
+  const at: Record<string, number> = {}
+  const keys = new Set([...Object.keys(a.vals), ...Object.keys(a.at ?? {}), ...Object.keys(b.vals), ...Object.keys(b.at ?? {})])
+  const stampOf = (s: Side<V>, k: string) => s.at?.[k] ?? (k in s.vals ? s.fallback : -1)
+  for (const k of keys) {
+    const sa = stampOf(a, k)
+    const sb = stampOf(b, k)
+    const win = sb > sa ? b : a
+    const stamp = Math.max(sa, sb)
+    if (k in win.vals) vals[k] = win.vals[k]
+    if (stamp < 0) continue
+    const explicit = win.at?.[k] !== undefined
+    if (explicit || win.freeze || win.side === 'incoming') at[k] = stamp
+  }
+  return { vals, at }
+}
+
+/** The newer copy of a place, with its hard-here marks merged mark by mark. */
+function mergeLocation(a: GymLocation, b: GymLocation): GymLocation {
+  const list = (l: GymLocation) => Object.fromEntries((l.hardHere ?? []).map((id) => [id, true as const]))
+  const m = mergeStamped(
+    { vals: list(a), at: a.hardHereAt, fallback: a.updatedAt, freeze: false },
+    { vals: list(b), at: b.hardHereAt, fallback: b.updatedAt, freeze: false, side: 'incoming' },
+  )
+  const winner = b.updatedAt > a.updatedAt ? b : a
+  const hardHere = Object.keys(m.vals)
+  const { hardHere: _h, hardHereAt: _t, ...rest } = winner
+  void _h
+  void _t
+  return { ...rest, ...(hardHere.length ? { hardHere } : {}), ...(Object.keys(m.at).length ? { hardHereAt: m.at } : {}) }
 }
 
 /** JSON with keys sorted, so two equal states compare equal whatever order built them. */
@@ -356,6 +470,8 @@ export type GymOp =
   | { op: 'init'; gym: GymState }
   | { op: 'saveSession'; session: GymSession }
   | { op: 'deleteSession'; id: string }
+  /** Fix one logged set. `kg: null` makes it a bodyweight set. Records re-derive by replay. */
+  | { op: 'correctSet'; sessionId: string; exerciseIndex: number; setIndex: number; kg?: number | null; reps?: number }
   | { op: 'saveLocation'; location: GymLocation }
   | { op: 'deleteLocation'; id: string }
   | { op: 'setActiveLocation'; id: string }
@@ -382,6 +498,26 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
         sessions: gym.sessions.filter((s) => s.id !== action.id),
         deletedSessionIds: [...(gym.deletedSessionIds ?? []), action.id].slice(-MAX_TOMBSTONES),
       }
+    case 'correctSet': {
+      const session = gym.sessions.find((s) => s.id === action.sessionId)
+      const log = session?.exercises[action.exerciseIndex]
+      const set = log?.sets[action.setIndex]
+      if (!session || !log || !set) return gym
+      const fixed: GymSet = { ...set }
+      if (action.kg === null) delete fixed.kg
+      else if (action.kg !== undefined) {
+        if (!(action.kg > 0 && action.kg < 1000)) return gym
+        fixed.kg = action.kg
+      }
+      if (action.reps !== undefined) {
+        if (!(Number.isInteger(action.reps) && action.reps >= 0 && action.reps <= 200)) return gym
+        fixed.reps = action.reps
+      }
+      const exercises = session.exercises.map((e, i) =>
+        i === action.exerciseIndex ? { ...e, sets: e.sets.map((x, j) => (j === action.setIndex ? fixed : x)) } : e,
+      )
+      return { ...gym, sessions: gym.sessions.map((s) => (s.id === session.id ? { ...session, exercises, updatedAt: now } : s)) }
+    }
     case 'saveLocation': {
       const location = { ...action.location, updatedAt: now }
       const exists = gym.locations.some((l) => l.id === location.id)
@@ -395,12 +531,15 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
       if (gym.locations.length <= 1) return gym
       const locations = gym.locations.filter((l) => l.id !== action.id)
       const favoriteAt = Object.fromEntries(Object.entries(gym.favoriteAt).filter(([, loc]) => loc !== action.id))
+      const favoriteAtTime = { ...gym.favoriteAtTime }
+      for (const id of Object.keys(gym.favoriteAt)) if (!(id in favoriteAt)) favoriteAtTime[id] = now
       return {
         ...gym,
         locations,
         activeLocationId: gym.activeLocationId === action.id ? locations[0]?.id : gym.activeLocationId,
         deletedLocationIds: [...(gym.deletedLocationIds ?? []), action.id].slice(-MAX_TOMBSTONES),
         favoriteAt,
+        favoriteAtTime,
         prefsUpdatedAt: now,
       }
     }
@@ -410,13 +549,13 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
       const ratings = { ...gym.ratings }
       if (action.rating) ratings[action.exerciseId] = action.rating
       else delete ratings[action.exerciseId]
-      return { ...gym, ratings, prefsUpdatedAt: now }
+      return { ...gym, ratings, ratingAtTime: { ...gym.ratingAtTime, [action.exerciseId]: now }, prefsUpdatedAt: now }
     }
     case 'setFavorite': {
       const favoriteAt = { ...gym.favoriteAt }
       if (action.locationId) favoriteAt[action.exerciseId] = action.locationId
       else delete favoriteAt[action.exerciseId]
-      return { ...gym, favoriteAt, prefsUpdatedAt: now }
+      return { ...gym, favoriteAt, favoriteAtTime: { ...gym.favoriteAtTime, [action.exerciseId]: now }, prefsUpdatedAt: now }
     }
     case 'setPrefs':
       return { ...gym, prefs: { ...action.prefs, updatedAt: now } }
@@ -439,7 +578,9 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
           const hard = new Set(l.hardHere ?? [])
           if (hard.has(action.exerciseId)) hard.delete(action.exerciseId)
           else hard.add(action.exerciseId)
-          return { ...l, hardHere: [...hard], updatedAt: now }
+          const { hardHere: _old, ...rest } = l
+          void _old
+          return { ...rest, ...(hard.size ? { hardHere: [...hard] } : {}), hardHereAt: { ...l.hardHereAt, [action.exerciseId]: now }, updatedAt: now }
         }),
       }
     }

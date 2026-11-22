@@ -1,15 +1,108 @@
 import { useEffect, useState } from 'react'
+import { GYM_EQUIPMENT_BY_ID } from '../../data/gym/catalog'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
-import { ageOf, activeLocation } from '../../lib/gym/draft'
+import { ageOf, activeLocation, conservative } from '../../lib/gym/draft'
 import { defaultGym, defaultPrefs, newLocation } from '../../lib/gym/state'
 import type { TrainingPrefs } from '../../lib/gym/types'
 import { availableAt } from '../../lib/gym/availability'
 import { LocationEditor } from '../gym/LocationEditor'
-import { Button } from '../ds'
+import { Button, ToggleChip } from '../ds'
 import { GoalsEditor, MusclesEditor, ScheduleEditor, SkillGoalsEditor } from './PlanSettings'
+import { parseBirthYear } from './onboardingPlan'
 
 const STEPS = ['Goals', 'Places', 'Schedule', 'Muscles', 'Age and safety'] as const
+
+/**
+ * Birth year and what it changes, the safety note, and the bodyweight
+ * reminders switch. Shared by this setup and the first run. `onDecline` adds
+ * "Prefer not to say", which is the same as no birth year: careful mode.
+ */
+export function AgeAndSafety({
+  birthYear,
+  setBirthYear,
+  careful,
+  ageKnown,
+  bodyweight,
+  setBodyweight,
+  declined,
+  onDecline,
+}: {
+  birthYear: string
+  setBirthYear: (value: string) => void
+  /** `conservative()` of the birth year as typed: under 18 by year, or unknown. */
+  careful: boolean
+  /** Whether a valid birth year is known (careful mode then says it is waiting for one). */
+  ageKnown: boolean
+  bodyweight: boolean
+  setBodyweight: (value: boolean) => void
+  declined?: boolean
+  onDecline?: (declined: boolean) => void
+}) {
+  return (
+    <section className="space-y-4">
+      <div>
+        <label htmlFor="birth-year" className="font-display text-title3 font-semibold">
+          Year you were born
+        </label>
+        <input
+          id="birth-year"
+          aria-label="Year you were born"
+          inputMode="numeric"
+          autoComplete="off"
+          value={birthYear}
+          disabled={declined}
+          aria-describedby="birth-year-hint"
+          onChange={(e) => setBirthYear(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+          placeholder="e.g. 2010"
+          className="mt-1 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body disabled:opacity-50"
+        />
+        <p id="birth-year-hint" className="mt-1 text-caption text-ink3">
+          Stays on this phone. It only changes how careful the plan is.
+        </p>
+        {onDecline ? (
+          <div className="mt-2">
+            <ToggleChip
+              active={declined === true}
+              onClick={() => {
+                if (!declined) setBirthYear('')
+                onDecline(!declined)
+              }}
+            >
+              Prefer not to say
+            </ToggleChip>
+          </div>
+        ) : null}
+      </div>
+      <div className="rounded-inner bg-raised p-4 text-footnote leading-relaxed text-ink2" aria-live="polite">
+        {careful ? (
+          <p>
+            <strong className="text-ink">Careful mode is on{!ageKnown ? ' until you add your age' : ''}.</strong> Rep ranges stay at 6 or more
+            with no max testing (maxes are estimated from your sets), loads go up one step at a time, lifts that need
+            coaching are not picked unless you choose them, lighter weeks come sooner, and straight-arm skills always
+            start with a full warm-up.
+          </p>
+        ) : (
+          <p>
+            <strong className="text-ink">Standard mode.</strong> Rep ranges and load steps follow your goals; maxes are
+            still estimated from your sets rather than tested.
+          </p>
+        )}
+        <p className="mt-2">
+          Every session asks whether anything hurts. Pain keeps the area out of that day’s work — never train through it,
+          and if it keeps coming back, tell a parent, coach or physio.
+        </p>
+      </div>
+      <label className="flex min-h-14 items-center justify-between gap-3 rounded-inner border border-line px-4">
+        <span>
+          <span className="block text-body font-medium">Bodyweight reminders</span>
+          <span className="block text-caption text-ink3">Off by default{ageKnown && careful ? ' — and never for a minor' : ''}. No weight-loss or calorie features, ever.</span>
+        </span>
+        <input type="checkbox" aria-label="Bodyweight reminders" checked={bodyweight} onChange={(e) => setBodyweight(e.target.checked)} className="h-5 w-5 accent-[var(--t-accent)]" />
+      </label>
+    </section>
+  )
+}
 
 /**
  * Fitness Lab's setup, in the order the goal asks for: goals → places and
@@ -32,14 +125,15 @@ export function FitnessSetup({ onDone }: { onDone: () => void }) {
   }, [state.gym, state.profile.equipment, dispatch])
 
   const gym = state.gym
-  const year = Number(birthYear)
-  const validYear = Number.isInteger(year) && year >= 1920 && year <= new Date().getFullYear() - 6
-  const age = validYear ? new Date().getFullYear() - year : ageOf(state.profile)
+  const year = parseBirthYear(birthYear)
+  const typed = { ...state.profile, birthYear: year ?? state.profile.birthYear }
+  const careful = conservative(typed)
+  const ageKnown = ageOf(typed) !== undefined
   const finish = () => {
     const { updatedAt: _ignored, ...rest } = prefs
     void _ignored
     dispatch({ type: 'GYM', op: { op: 'setPrefs', prefs: rest } })
-    if (validYear && year !== state.profile.birthYear) dispatch({ type: 'SET_PROFILE', patch: { birthYear: year } })
+    if (year !== undefined && year !== state.profile.birthYear) dispatch({ type: 'SET_PROFILE', patch: { birthYear: year } })
     dispatch({ type: 'SET_SETTINGS', patch: { trackBodyweight: bodyweight } })
     pushToast('Fitness Lab is set up — Today now plans skills and the gym together.', 'success')
     onDone()
@@ -54,6 +148,14 @@ export function FitnessSetup({ onDone }: { onDone: () => void }) {
           canDelete={editing !== 'new' && gym.locations.length > 1}
           onSave={(l) => {
             dispatch({ type: 'GYM', op: { op: 'saveLocation', location: l } })
+            // A gym added here becomes the place sessions are built for when the
+            // current one has no gym kit at all (Home with only the skill kit):
+            // otherwise a new "Gym A" sat unused behind Home.
+            const current = activeLocation(gym)
+            const gymKit = (x: { equipment: string[] }) => x.equipment.some((e) => e in GYM_EQUIPMENT_BY_ID)
+            if (editing === 'new' && gymKit(l) && (!current || !gymKit(current))) {
+              dispatch({ type: 'GYM', op: { op: 'setActiveLocation', id: l.id } })
+            }
             setEditing(null)
           }}
           onDelete={() => {
@@ -118,45 +220,7 @@ export function FitnessSetup({ onDone }: { onDone: () => void }) {
       {step === 3 ? <MusclesEditor prefs={prefs} setPrefs={setPrefs} /> : null}
 
       {step === 4 ? (
-        <section className="space-y-4">
-          <label className="block">
-            <span className="font-display text-title3 font-semibold">Year you were born</span>
-            <input
-              inputMode="numeric"
-              value={birthYear}
-              onChange={(e) => setBirthYear(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
-              placeholder="e.g. 2010"
-              className="mt-1 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body"
-            />
-            <span className="mt-1 block text-caption text-ink3">Stays on this phone. It only changes how careful the plan is.</span>
-          </label>
-          <div className="rounded-inner bg-raised p-4 text-footnote leading-relaxed text-ink2">
-            {age === undefined || age < 18 ? (
-              <p>
-                <strong className="text-ink">Careful mode is on{age === undefined ? ' until you add your age' : ''}.</strong> Rep ranges stay at 6 or more
-                with no max testing (maxes are estimated from your sets), loads go up one step at a time, lifts that need
-                coaching are not picked unless you choose them, lighter weeks come sooner, and straight-arm skills always
-                start with a full warm-up.
-              </p>
-            ) : (
-              <p>
-                <strong className="text-ink">Standard mode.</strong> Rep ranges and load steps follow your goals; maxes are
-                still estimated from your sets rather than tested.
-              </p>
-            )}
-            <p className="mt-2">
-              Every session asks whether anything hurts. Pain keeps the area out of that day’s work — never train through it,
-              and if it keeps coming back, tell a parent, coach or physio.
-            </p>
-          </div>
-          <label className="flex min-h-14 items-center justify-between gap-3 rounded-inner border border-line px-4">
-            <span>
-              <span className="block text-body font-medium">Bodyweight reminders</span>
-              <span className="block text-caption text-ink3">Off by default{age !== undefined && age < 18 ? ' — and never under 18' : ''}. No weight-loss or calorie features, ever.</span>
-            </span>
-            <input type="checkbox" checked={bodyweight} onChange={(e) => setBodyweight(e.target.checked)} className="h-5 w-5 accent-[var(--t-accent)]" />
-          </label>
-        </section>
+        <AgeAndSafety birthYear={birthYear} setBirthYear={setBirthYear} careful={careful} ageKnown={ageKnown} bodyweight={bodyweight} setBodyweight={setBodyweight} />
       ) : null}
 
       <div className="flex gap-2">

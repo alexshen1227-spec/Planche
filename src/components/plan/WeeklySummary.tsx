@@ -22,7 +22,7 @@ export function WeeklySummary() {
     const out = new Map<string, { at: number; value: number }[]>()
     for (const s of state.gym?.sessions ?? []) {
       for (const log of s.exercises) {
-        const best = Math.max(0, ...log.sets.filter((x) => !x.warmup).map((x) => estimateOneRepMax(x) ?? 0))
+        const best = Math.max(0, ...log.sets.filter((x) => !x.warmup).map((x) => estimateOneRepMax(x, log.exerciseId) ?? 0))
         if (best > 0) out.set(log.exerciseId, [...(out.get(log.exerciseId) ?? []), { at: s.startedAt, value: best }])
       }
     }

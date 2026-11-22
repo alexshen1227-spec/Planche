@@ -5,9 +5,19 @@ import { defaultGym, defaultPrefs, mergeGym, sanitizeGym } from '../gym/state'
 import type { GymFocus } from '../gym/builder'
 import type { GymLocation, GymSession, OutsideActivity, SportSlot, TrainingPrefs } from '../gym/types'
 import { fatigueAt } from './load'
-import { planToday, planWeek, planWeekAhead, recentPatternUse, rotationHints, skillFamily } from './planner'
+import { gymSessionInputs, planToday, planWeek, planWeekAhead, skillFamily, soreJoints } from './planner'
+import { buildGymSession, nextFocus } from '../gym/builder'
+import { liftTrend } from '../gym/progression'
+import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { dayReadiness } from './readiness'
 import { scheduledSport, sportBetween } from './sport'
+import { finalizeWorkout } from '../../data/workouts'
+import { startingState } from '../skillLoop'
+import { readDay } from '../weekPlan'
+import { conservative } from '../gym/draft'
+import { familyEvents, skillSetLoading } from './load'
+import { focusFamilies, MIN_SKILL_MINUTES } from './planner'
+import type { StepId, Weekday, WeekPlan } from '../../types'
 
 // Monday 16 November 2026, 9 am local: the start of a calendar week.
 const MON = new Date(2026, 10, 16, 9, 0).getTime()
@@ -163,7 +173,8 @@ describe('the week plan', () => {
 
   it('gives a short day to skills when a straight-arm family needs it to get its sessions in', () => {
     // Skills matter less than the gym here, so a short day would normally go to the gym.
-    const s = athlete(['planche'], { goals: { strength: 4, power: 0, physique: 3, skills: 2, endurance: 0 }, minutesByDay: [30, 30, 30, 0, 30, 0, 30] })
+    // At the tuck, where a planche session is a hard straight-arm session by the app's own count.
+    const s = athlete(['planche'], { goals: { strength: 4, power: 0, physique: 3, skills: 2, endurance: 0 }, minutesByDay: [30, 30, 30, 0, 30, 0, 30] }, { stepId: 'tuck' })
     const week = planWeekAhead(s, MON)
     // One block a day, and three planche days in the week, spaced by the rest rule.
     for (const d of week.days) if (!d.plan.rest) expect(Boolean(d.plan.skill) !== Boolean(d.plan.gym), d.day).toBe(true)
@@ -327,22 +338,53 @@ describe('speed and power days', () => {
 })
 
 describe('movement variety', () => {
-  it('lists the patterns used in the last three weeks, most used first, and names a movement that filled every session of one', () => {
-    const s = withGym(athlete(['planche']), {
-      sessions: [
-        gymSession(at(-2, 17), 'bench-press'),
-        gymSession(at(-6, 17), 'bench-press'),
-        gymSession(at(-12, 17), 'bench-press'),
-        gymSession(at(-6, 18), 'lat-pulldown'),
-        gymSession(at(-30, 17), 'back-squat'), // older than three weeks
-      ],
-    })
-    const uses = recentPatternUse(s.gym, MON)
-    expect(uses[0]).toMatchObject({ pattern: 'horizontal-press', sessions: 3 })
-    expect(uses.some((u) => u.exercises.some((e) => e.exerciseId === 'back-squat'))).toBe(false)
-    const hints = rotationHints(uses)
-    expect(hints.map((h) => h.exerciseId)).toEqual(['bench-press'])
-    expect(rotationHints(recentPatternUse(s.gym, MON, 7))).toEqual([])
+  // Four bench sessions at the same weight and reps: no new best in the last three.
+  const flat = [-12, -9, -5, -2].map((d) => gymSession(at(d, 17), 'bench-press', 3, 8, undefined, 'Push'))
+  const pushDay = { location: gymA, minutes: 60, focus: 'push' as GymFocus, now: MON }
+
+  it('lends a lift that has stopped progressing to a variation of the same movement, and says why', () => {
+    expect(liftTrend(flat, 'bench-press', MON).status).toBe('stalled')
+    const plan = buildGymSession({ ...pushDay, sessions: flat })
+    expect(plan.items.map((i) => i.exerciseId)).not.toContain('bench-press')
+    expect(GYM_EXERCISE_BY_ID[plan.items[0].exerciseId].pattern).toBe('horizontal-press')
+    expect(plan.notes.join(' ')).toMatch(/Barbell bench press has not beaten its best in its last 3 sessions/)
+  })
+
+  it('keeps a favourite, and a lift that is still climbing', () => {
+    expect(buildGymSession({ ...pushDay, sessions: flat, ratings: { 'bench-press': 'love' } }).items[0].exerciseId).toBe('bench-press')
+    const climbing = flat.map((g, i) => ({ ...g, exercises: [{ exerciseId: 'bench-press', sets: g.exercises[0].sets.map((x) => ({ ...x, kg: 40 + 2.5 * i })) }] }))
+    expect(liftTrend(climbing, 'bench-press', MON).status).toBe('progressing')
+    const plan = buildGymSession({ ...pushDay, sessions: climbing })
+    expect(plan.items[0].exerciseId).toBe('bench-press')
+    expect(plan.notes).toEqual([])
+  })
+
+  it('reads three rising sessions under an old high as progress, and says nothing without enough recent history', () => {
+    const lucky = flat.map((g, i) => ({ ...g, exercises: [{ exerciseId: 'bench-press', sets: g.exercises[0].sets.map((x) => ({ ...x, kg: [50, 40, 41, 42.5][i] })) }] }))
+    expect(liftTrend(lucky, 'bench-press', MON).status).toBe('progressing')
+    expect(liftTrend(flat.slice(1), 'bench-press', MON).status).toBe('unknown')
+    // A month off: the old stall says nothing about today.
+    expect(liftTrend(flat, 'bench-press', MON + 30 * DAY).status).toBe('unknown')
+    expect(buildGymSession({ ...pushDay, sessions: flat, now: MON + 30 * DAY }).items[0].exerciseId).toBe('bench-press')
+  })
+})
+
+describe('muscles switched off', () => {
+  const legsOff = athlete(['planche'], { ...GYM_ONLY, musclesOff: ['quads', 'hamstrings', 'glutes', 'calves'] })
+
+  it('never plans a lower-body day while the main leg muscles are off, even with one leg muscle left on', () => {
+    const week = planWeek(legsOff, MON)
+    expect(week.some((d) => d.plan.gym), week.map((d) => d.plan.gym?.focus).join()).toBe(true)
+    for (const d of week) expect(['lower', 'athletic']).not.toContain(d.plan.gym?.focus)
+  })
+
+  it('makes the gym side’s own Auto choice skip it too', () => {
+    const afterUpper = [gymSession(at(-1, 17), 'bench-press', 3, 8, undefined, 'Upper body')]
+    expect(nextFocus(afterUpper, MON)).toBe('lower')
+    expect(nextFocus(afterUpper, MON, ['quads', 'hamstrings', 'glutes', 'calves'])).not.toBe('lower')
+    const plan = buildGymSession({ location: gymA, minutes: 60, sessions: afterUpper, musclesOff: ['quads', 'hamstrings', 'glutes', 'calves'], now: MON })
+    expect(plan.focus).not.toBe('lower')
+    expect(plan.items.length).toBeGreaterThan(3)
   })
 })
 
@@ -423,5 +465,207 @@ describe('the week plan holds its rules for athletes nobody designed for', () =>
         }
       }
     }
+  })
+})
+
+describe('the week plan keeps shared recovery, the minutes and the athlete’s own days, for athletes nobody designed for', () => {
+  const rng = (seed: number) => {
+    let x = (seed * 2654435761) % 4294967296 || 1
+    return () => {
+      x ^= x << 13
+      x ^= x >>> 17
+      x ^= x << 5
+      return ((x >>> 0) % 100000) / 100000
+    }
+  }
+  const SKILLS: SkillId[] = ['planche', 'frontlever', 'handstand', 'ninety', 'flag']
+  const KIT = ['floor', 'wall', 'parallettes', 'pullup-bar', 'rings', 'box'] as AppState['profile']['equipment']
+  const home: GymLocation = { id: 'h', name: 'Home', unit: 'kg', equipment: ['pullup-bar', 'floor'], updatedAt: 1 }
+  const PRESS = new Set(['horizontal-press', 'incline-press', 'vertical-press', 'dip'])
+  const room = (m: number) => (m >= MIN_SKILL_MINUTES[3] ? 3 : m >= MIN_SKILL_MINUTES[2] ? 2 : m >= MIN_SKILL_MINUTES[1] ? 1 : 0)
+  const heavy = (t: number, kind: 'push' | 'pull' | 'legs'): GymSession => ({
+    id: `h-${t}-${kind}`,
+    locationId: 'a',
+    startedAt: t,
+    endedAt: t + HOUR,
+    name: kind,
+    exercises: (kind === 'push' ? ['bench-press', 'overhead-press'] : kind === 'pull' ? ['pull-up', 'lat-pulldown'] : ['back-squat']).map((exerciseId) => ({
+      exerciseId,
+      sets: Array.from({ length: 3 }, () => ({ kg: 40, reps: 6, rpe: 8, at: t })),
+    })),
+  })
+
+  it('hard sessions of a family the rest rule apart, every day within its minutes, two movements a gym block, assigned days as written', () => {
+    const stats = { pressing: 0, athletes: 0, days: 0 }
+    for (let seed = 1; seed <= 50; seed++) {
+      const r = rng(seed + 7919)
+      const pick = <T,>(xs: T[]) => xs[Math.floor(r() * xs.length)]
+      const g = () => Math.floor(r() * 6)
+      const skills = SKILLS.filter(() => r() < 0.45)
+      if (!skills.length) skills.push(pick(SKILLS))
+      const steps = { planche: pick<StepId>(['foundations', 'lean', 'tuck', 'advtuck']), frontlever: pick<StepId>(['fl-tuck', 'fl-advtuck']) }
+      const base = startingState({ skills, steps: steps as never, equipment: KIT })
+      const mode = r()
+      const loc = r() < 0.3 ? home : gymA
+      const restH = pick([24, 48, 72])
+      const goals = { strength: g(), power: g(), physique: g(), skills: g(), endurance: g() }
+      const prefs: TrainingPrefs = {
+        ...defaultPrefs(1),
+        goals,
+        minutesByDay: Array.from({ length: 7 }, () => pick([0, 0, 15, 20, 30, 40, 45, 60, 90])),
+        straightArmRestHours: restH,
+        ...(r() < 0.2 ? { musclesOff: ['quads', 'hamstrings', 'glutes', 'calves', 'adductors'] as TrainingPrefs['musclesOff'] } : {}),
+        ...(r() < 0.3 ? { sportSchedule: [{ weekday: Math.floor(r() * 7), kind: pick(['game', 'practice', 'sprint'] as const), minutes: 90, rpe: 5 + Math.floor(r() * 5), legs: r() < 0.7 }] } : {}),
+      }
+      const weekPlan: WeekPlan = {}
+      if (r() < 0.5) {
+        for (const wd of [0, 1, 2, 3, 4, 5, 6] as Weekday[]) {
+          const x = r()
+          if (x < 0.15) weekPlan[wd] = 'rest'
+          else if (x < 0.45) weekPlan[wd] = [...skills].sort(() => r() - 0.5).slice(0, 1 + Math.floor(r() * 3))
+        }
+      }
+      const now = at(Math.floor(r() * 7), pick([7, 12, 18]))
+      const history = Array.from({ length: Math.floor(r() * 5) }, () => heavy(now - (6 + Math.floor(r() * 110)) * HOUR, pick(['push', 'pull', 'legs'] as const)))
+      const skillHistory = Array.from({ length: Math.floor(r() * 4) }, () =>
+        skillSession(now - (6 + Math.floor(r() * 110)) * HOUR, pick(['tuck-planche', 'fl-tuck']), 3 + Math.floor(r() * 3)),
+      )
+      const s: AppState = {
+        ...base,
+        profile: { ...base.profile, birthYear: pick([2012, 2009, 1995]) },
+        settings: { ...base.settings, ...(Object.keys(weekPlan).length ? { weekPlan } : {}) },
+        sessions: [...base.sessions, ...skillHistory],
+        gym: mode < 0.12 ? undefined : { ...defaultGym(['floor']), locations: [loc], activeLocationId: loc.id, sessions: history, ...(mode < 0.22 ? {} : { prefs }) },
+      }
+      const own = s.gym?.prefs
+      const rest = (own?.straightArmRestHours ?? 48) * HOUR
+      const week = planWeekAhead(s, now)
+      const who = `seed ${seed}`
+      const youth = conservative(s.profile, now)
+      const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString()
+      let pressing = 0
+      for (const d of week.days) {
+        const p = d.plan
+        const reading = s.settings.weekPlan ? readDay(s, new Date(d.at).getDay() as Weekday) : undefined
+        if (reading?.kind === 'rest') expect(p.rest, `${who} ${d.day} planned rest`).toBe(true)
+        if (p.rest) continue
+        stats.days++
+        let used = 0
+        if (p.skill) {
+          const w = finalizeWorkout(s, { source: 'auto', minutes: p.skill.minutes, skills: p.skill.skills }, undefined, d.at)
+          used += w.minutes
+          // A family called hard gets the sets the app counts as hard.
+          const sets = { push: 0, pull: 0 }
+          for (const b of w.blocks) {
+            if (b.section !== 'main' && b.section !== 'strength') continue
+            const f = skillSetLoading(b.exerciseId, b.section)?.straightArm
+            if (f) sets[f] += b.sets
+          }
+          for (const f of p.skill.hard ?? []) expect(sets[f], `${who} ${d.day} ${f} called hard over ${p.skill.skills}`).toBeGreaterThanOrEqual(3)
+          if (reading?.kind === 'skills') {
+            expect(p.skill.skills, `${who} ${d.day} assigned ${reading.skills}`).toEqual(reading.skills.slice(0, p.skill.skills.length))
+            expect(p.skill.skills.length, `${who} ${d.day} assigned ${reading.skills} in ${p.skill.minutes}`).toBe(Math.min(3, reading.skills.length, room(p.skill.minutes)))
+          }
+        } else if (reading?.kind === 'skills') {
+          expect(p.minutes, `${who} ${d.day} assigned day with no skill block`).toBeLessThan(MIN_SKILL_MINUTES[1])
+        }
+        if (p.gym) {
+          expect(s.gym?.locations.length, `${who} gym block with no place`).toBeGreaterThan(0)
+          const b = buildGymSession({
+            location: loc,
+            minutes: p.gym.minutes,
+            focus: p.gym.focus,
+            sessions: history,
+            ratings: s.gym!.ratings,
+            youth,
+            goals: (own ?? defaultPrefs(1)).goals,
+            musclesOff: p.gym.musclesOff,
+            priority: (own ?? defaultPrefs(1)).musclesPriority,
+            avoidJoints: p.gym.avoidJoints,
+            volumeFactor: p.gym.volumeFactor,
+            favoriteAt: s.gym!.favoriteAt,
+            now: d.at,
+          })
+          expect(b.fits && b.items.length >= 2, `${who} ${d.day} ${p.gym.focus} ${p.gym.minutes}m at ${loc.name} builds ${b.items.length}`).toBe(true)
+          used += b.estimatedMin
+          for (const it of b.items) if (PRESS.has(GYM_EXERCISE_BY_ID[it.exerciseId].pattern)) pressing += it.sets
+        }
+        expect(used, `${who} ${d.day}: ${p.skill?.minutes ?? 0}+${p.gym?.minutes ?? 0} of ${p.minutes}`).toBeLessThanOrEqual(p.minutes + 1)
+      }
+      // Hard sessions of a family on different days sit the rest rule apart: logged and planned, skill and gym alike.
+      const logged = familyEvents(s, now)
+      for (const fam of ['push', 'pull'] as const) {
+        if (!skills.some((k) => skillFamily(k) === fam)) continue
+        const events = [
+          ...logged[fam].map((e) => ({ at: e.at, fixed: true, what: e.gym ? 'logged gym' : 'logged skill' })),
+          ...week.days.flatMap((d) => {
+            const assigned = Boolean(s.settings.weekPlan) && readDay(s, new Date(d.at).getDay() as Weekday).kind === 'skills'
+            return [
+              ...((d.plan.skill?.hard ?? []).includes(fam) ? [{ at: d.at, fixed: assigned, what: `${d.day} skills` }] : []),
+              ...(d.plan.gym && focusFamilies(d.plan.gym.focus).includes(fam) ? [{ at: d.at, fixed: false, what: `${d.day} ${d.plan.gym.focus}` }] : []),
+            ]
+          }),
+        ]
+        for (let i = 0; i < events.length; i++)
+          for (let j = i + 1; j < events.length; j++) {
+            const a = events[i]
+            const b = events[j]
+            if (sameDay(a.at, b.at) || (a.fixed && b.fixed)) continue
+            expect(Math.abs(a.at - b.at), `${who} ${fam}: ${a.what} vs ${b.what} under ${rest / HOUR}h`).toBeGreaterThanOrEqual(rest)
+          }
+      }
+      if (own && goals.physique >= 3 && loc === gymA) {
+        stats.pressing += pressing
+        stats.athletes++
+      }
+    }
+    if (process.env.FUZZ_STATS) process.stderr.write(`FUZZ pressing sets a week, physique 3+: ${(stats.pressing / Math.max(1, stats.athletes)).toFixed(1)} over ${stats.athletes} athletes; ${stats.days} days checked\n`)
+    // Physique athletes still press: the family rule concentrates pressing, it does not remove it.
+    expect(stats.pressing / Math.max(1, stats.athletes)).toBeGreaterThanOrEqual(4)
+  })
+})
+
+describe('a sore joint, wherever the session is built', () => {
+  const report = (t: number, region: 'elbow' | 'wrist', joints: 'pain' | 'niggle' = 'pain') =>
+    ({ at: t, joints, regions: [region], source: 'check-in' as const })
+  const sore = (events: ReturnType<typeof report>[]) => {
+    let s = athlete(['planche'], { goals: { strength: 3, power: 0, physique: 3, skills: 3, endurance: 0 } })
+    for (const event of events) s = reducer(s, { type: 'RECORD_SYMPTOM', event })
+    return s
+  }
+
+  it('remembers every report of the last three days, not only the latest', () => {
+    const s = sore([report(MON - 40 * HOUR, 'elbow'), report(MON - 2 * HOUR, 'wrist', 'niggle'), report(MON - 90 * HOUR, 'wrist')])
+    const r = soreJoints(s, MON)
+    expect(r.joints.sort()).toEqual(['elbows', 'wrists'])
+    expect(r.pain).toBe(true)
+    expect(soreJoints(s, MON + 40 * HOUR).joints).toEqual(['wrists'])
+  })
+
+  it('keeps the sore joint out of an explicitly picked focus, not only the planned one', () => {
+    const s = sore([report(MON - 3 * HOUR, 'elbow')])
+    const inputs = gymSessionInputs('upper', planToday(s, { now: MON }).gym, [], soreJoints(s, MON))
+    expect(inputs.focus).toBe('upper')
+    expect(inputs.avoidJoints).toContain('elbows')
+    expect(inputs.volumeFactor).toBeLessThan(1)
+    const plan = buildGymSession({ location: gymA, minutes: 60, sessions: [], ...inputs, now: MON })
+    for (const it of plan.items) expect(GYM_EXERCISE_BY_ID[it.exerciseId].stress, it.exerciseId).not.toContain('elbows')
+  })
+
+  it('follows today’s plan on Auto: its focus and its lighter day', () => {
+    const s = sore([])
+    const planned = planToday(s, { now: MON }).gym
+    expect(planned).toBeDefined()
+    const inputs = gymSessionInputs('auto', planned, [], soreJoints(s, MON))
+    expect(inputs.focus).toBe(planned!.focus)
+    expect(inputs.volumeFactor).toBe(planned!.volumeFactor)
+  })
+
+  it('calls the skill day eased, never hard, while a joint it loads is sore', () => {
+    const s = sore([report(MON - 3 * HOUR, 'elbow')])
+    const days = planWeekAhead(s, MON).days
+    const lines = days.slice(0, 2).flatMap((d) => d.why)
+    expect(lines.some((l) => /Planche: hard session/.test(l)), lines.join(' | ')).toBe(false)
+    expect(lines.some((l) => /Planche: an eased session/.test(l)), lines.join(' | ')).toBe(true)
   })
 })

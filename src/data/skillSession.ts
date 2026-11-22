@@ -50,6 +50,9 @@ export function stepTitle(step: StepDef): string {
   return step.name === 'Foundations' ? `${SKILLS[step.skill].name} foundations` : step.name
 }
 
+/** Sets of the ladder's rung on a ladder day (about five). */
+export const LADDER_DAY_SETS = 5
+
 function clamp(v: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, v))
 }
@@ -165,7 +168,7 @@ export function skillSession(
   state: AppState,
   planIn?: CoachPlan,
   minutesOverride?: number,
-  options: { part?: boolean; now?: number } = {},
+  options: { part?: boolean; now?: number; focus?: 'ladder' } = {},
 ): Workout {
   const stepId = state.stepId
   const step = STEP_BY_ID[stepId]
@@ -188,6 +191,11 @@ export function skillSession(
   const keyExercise = EXERCISE_BY_ID[step.keyExerciseId]
   const keyName = keyExercise?.name.toLowerCase() ?? step.name.toLowerCase()
   const words = skill.words
+  // A ladder day: the rep ladder's current rung is the main work and the holds
+  // shrink to practice. Only for a skill that has a ladder; the planche never
+  // reaches this file, and a request without `focus` takes none of these paths.
+  const ladderDay = options.focus === 'ladder' && Boolean(skill.ladder)
+  let ladderPlaced = false
 
   // ——— The key hold's numbers (shared with the coach, so its copy matches) ———
   const baseTarget = adaptiveTarget(state, stepId, now)
@@ -201,8 +209,10 @@ export function skillSession(
   }
 
   // ——— 1. An unlock attempt or a due re-test, first while fresh ———
-  const unlockQueued = plan.queueUnlockAttempt && plan.challengeAllowed
-  const retestQueued = !unlockQueued && plan.queueRetest && plan.challengeAllowed
+  // On a ladder day the rep sets are the day's maximal effort, so the hold's
+  // attempt and re-test wait for a regular day.
+  const unlockQueued = plan.queueUnlockAttempt && plan.challengeAllowed && !ladderDay
+  const retestQueued = !unlockQueued && plan.queueRetest && plan.challengeAllowed && !ladderDay
   const attemptQueued = unlockQueued || retestQueued
   const next = stepAfter(stepId)
   const reviewOnly = isReviewOnly(step.keyExerciseId)
@@ -233,7 +243,7 @@ export function skillSession(
   // ——— 2. The bridge to the next step ———
   const easyDay = plan.strategy === 'technique' || plan.dayType === 'technique' || plan.dayType === 'deload'
   const bridge = bridgeStatus(state, stepId)
-  const bridging = Boolean(bridge?.open) && !easyDay && plan.challengeAllowed && !attemptQueued
+  const bridging = Boolean(bridge?.open) && !easyDay && plan.challengeAllowed && !attemptQueued && !ladderDay
   // The next shape must be trainable with the athlete's kit to be bridged to.
   const bridgeNext = bridging && bridge && hasEquipmentFor(bridge.next.keyExerciseId, equipment) ? bridge.next : undefined
   if (bridgeNext && bridge) {
@@ -285,8 +295,9 @@ export function skillSession(
   const maximalBridge = Boolean(bridgeNext) && !isReviewOnly(bridgeNext!.keyExerciseId)
   const doseArgs = [baseTarget, plan.setsDelta, vol * (fatigueDay ? LIGHT_DOSE_SHARE : 1), attemptQueued || maximalBridge] as const
   const sideLess = keyExercise?.perSide ? 1 : 0
-  const mainSets = Math.max(2, mainHoldSets(...doseArgs, skill.holdAggregateSec) - sideLess)
-  const reach = Math.max(0, mainSets - Math.max(2, mainHoldFloorSets(...doseArgs) - sideLess))
+  // A ladder day keeps the hold as short practice: two sets, no reach.
+  const mainSets = ladderDay ? 2 : Math.max(2, mainHoldSets(...doseArgs, skill.holdAggregateSec) - sideLess)
+  const reach = ladderDay ? 0 : Math.max(0, mainSets - Math.max(2, mainHoldFloorSets(...doseArgs) - sideLess))
   blocks.push({
     exerciseId: step.keyExerciseId,
     sets: mainSets,
@@ -361,18 +372,28 @@ export function skillSession(
           ? ` One set of ${twin.standard} full rep${twin.standard === 1 ? '' : 's'} — filmed, rated Clean and checked on the replay — opens the next rung.`
           : ''
       const label = twin.spec.note ?? (skill.ladder ? `${skill.ladder.name} line.` : 'The moving version of this step.')
-      blocks.push({
+      const rungBlock: Block = {
         exerciseId: twin.spec.exerciseId,
-        sets: light ? 2 : scale((plan.strategy === 'volume' ? 4 : 3) + (emphasis === 'pressing' ? 1 : 0)),
+        sets: light ? 2 : ladderDay ? scale(LADDER_DAY_SETS) : scale((plan.strategy === 'volume' ? 4 : 3) + (emphasis === 'pressing' ? 1 : 0)),
         target: exercise?.type === 'hold' ? hold(targetReps) : reps(targetReps),
         restSec: maximal || plan.strategy === 'intensity' ? Math.max(rAcc, Math.round(rMain * 0.8)) : plan.strategy === 'density' ? Math.min(60, rAcc) : rAcc,
         section: 'strength',
         role: 'press',
-        ...(light ? { light: true } : emphasis === 'pressing' ? { emphasis: true } : {}),
+        // Emphasis keeps the rung through the budget fit: a ladder day without
+        // its ladder is not one.
+        ...(light ? { light: true } : ladderDay || emphasis === 'pressing' ? { emphasis: true } : {}),
         note: `${label} ${twin.reason}${easedNote}${standardNote}${
           maximal && !twin.eased ? ' Can’t finish a rep yet? Lower slowly over about three seconds, reset, and log the reps you completed.' : ''
         }`,
-      })
+      }
+      if (ladderDay) {
+        // Right after the warm-up, while fresh.
+        const first = blocks.findIndex((b) => b.section !== 'warmup')
+        blocks.splice(first < 0 ? blocks.length : first, 0, rungBlock)
+        ladderPlaced = true
+      } else {
+        blocks.push(rungBlock)
+      }
     }
 
     // ——— 8. A second strength movement ———
@@ -523,8 +544,8 @@ export function skillSession(
     }
   }
   return {
-    id: `auto-${stepId}-${plan.dayType}-${plan.strategy}${shortened ? `-${budget}m` : ''}`,
-    name: `${title} · ${strategy.name}${shortened ? ' · Short' : ''}`,
+    id: `auto-${stepId}-${plan.dayType}-${plan.strategy}${ladderPlaced ? '-ladder' : ''}${shortened ? `-${budget}m` : ''}`,
+    name: `${ladderPlaced && skill.ladder ? `${skill.ladder.name} day` : title} · ${strategy.name}${shortened ? ' · Short' : ''}`,
     focus: shortened
       ? `Trimmed to about ${fittedMinutes} minutes${
           fittedMinutes > budget ? ' — as short as this day gets without cutting the work that matters' : ''
@@ -538,7 +559,9 @@ export function skillSession(
     strategy: plan.strategy,
     baseTargetSec: baseTarget,
     ...(plan.dayType === 'deload' ? { plannedDeload: true } : {}),
-    purpose: skillOnly
+    purpose: ladderPlaced
+      ? `Work the ${skill.ladder?.name.toLowerCase()} line first, with ${keyName} kept as short practice.`
+      : skillOnly
       ? `Practise ${keyName} at an easy dose, with light skill work only — no loaded ${words.strength} in a second session today.`
       : light
         ? `Practise ${keyName} at an easy dose, with the ${words.strength} and support work kept light.`

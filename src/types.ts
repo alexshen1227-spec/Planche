@@ -307,9 +307,9 @@ export interface FormCheck {
  * cannot take floor extension is usually fine on parallettes, while an elbow
  * is the one signal that should stop straight-arm loading outright.
  */
-export type BodyRegion = 'wrist' | 'elbow' | 'shoulder' | 'lower-back' | 'knee' | 'other'
+export type BodyRegion = 'wrist' | 'elbow' | 'shoulder' | 'lower-back' | 'knee' | 'hip' | 'ankle' | 'other'
 
-export const BODY_REGIONS: BodyRegion[] = ['wrist', 'elbow', 'shoulder', 'lower-back', 'knee', 'other']
+export const BODY_REGIONS: BodyRegion[] = ['wrist', 'elbow', 'shoulder', 'lower-back', 'knee', 'hip', 'ankle', 'other']
 
 /** Answers to the coach's periodic pre-session check-in. */
 export interface CheckIn {
@@ -509,6 +509,13 @@ export interface WorkoutRequest {
    * from the athlete's priorities; one skill = a session for that skill alone.
    */
   skills?: SkillId[]
+  /**
+   * `ladder`: a day for the skill's rep ladder (the handstand push-up line, the
+   * 90° push-up line). The ladder's current rung is the main work and the
+   * skill's holds shrink to practice. Only meaningful with one skill that has a
+   * ladder; absent builds the session exactly as before.
+   */
+  focus?: 'ladder'
 }
 
 export interface Workout {

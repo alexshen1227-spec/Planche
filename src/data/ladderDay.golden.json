@@ -1,0 +1,7341 @@
+{
+ "planche/foundations/{\"source\":\"auto\"}": {
+  "id": "auto-foundations-build-balanced",
+  "name": "Foundations · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 40,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 40,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "ppp-hold",
+    "sets": 4,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 150,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds."
+   },
+   {
+    "exerciseId": "pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Push-up version of this step. The pressing twin of this step."
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "pressing",
+    "note": "Bent-arm pressing in the lean — the same lean every rep, shoulders past the hands at the top and the bottom."
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "straight-arm",
+    "note": "Protraction strength — the push-away every straight-arm hold depends on. Finish each rep with the upper back gently rounded."
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   }
+  ],
+  "strategy": "balanced",
+  "baseTargetSec": 15,
+  "purpose": "Practise pseudo planche plank at a working dose, then build the pressing and straight-arm strength behind it.",
+  "skills": [
+   "planche"
+  ],
+  "request": {
+   "source": "auto"
+  }
+ },
+ "planche/foundations/{\"source\":\"auto\",\"skills\":[\"planche\"]}": {
+  "id": "auto-foundations-build-balanced",
+  "name": "Foundations · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 40,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 40,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "ppp-hold",
+    "sets": 4,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 150,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds."
+   },
+   {
+    "exerciseId": "pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Push-up version of this step. The pressing twin of this step."
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "pressing",
+    "note": "Bent-arm pressing in the lean — the same lean every rep, shoulders past the hands at the top and the bottom."
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "straight-arm",
+    "note": "Protraction strength — the push-away every straight-arm hold depends on. Finish each rep with the upper back gently rounded."
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   }
+  ],
+  "strategy": "balanced",
+  "baseTargetSec": 15,
+  "purpose": "Practise pseudo planche plank at a working dose, then build the pressing and straight-arm strength behind it.",
+  "skills": [
+   "planche"
+  ],
+  "request": {
+   "source": "auto",
+   "skills": [
+    "planche"
+   ]
+  }
+ },
+ "planche/foundations/{\"source\":\"auto\",\"skills\":[\"planche\"],\"minutes\":20}": {
+  "id": "auto-foundations-build-balanced-20m",
+  "name": "Foundations · Balanced · Short",
+  "focus": "Trimmed to about 19 minutes. The warm-up and your main pseudo planche plank are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 19,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 40,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "ppp-hold",
+    "sets": 4,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 150,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds."
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   }
+  ],
+  "strategy": "balanced",
+  "baseTargetSec": 15,
+  "purpose": "Practise pseudo planche plank at a working dose, then build the pressing and straight-arm strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: hollow body hold, scapula push-up, pseudo planche push-up and push-up. They come back on a full-length day."
+  ],
+  "skills": [
+   "planche"
+  ],
+  "request": {
+   "source": "auto",
+   "skills": [
+    "planche"
+   ],
+   "minutes": 20
+  }
+ },
+ "planche/advtuck/{\"source\":\"auto\"}": {
+  "id": "auto-advtuck-build-balanced",
+  "name": "Advanced Tuck · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 44,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "planche-lean",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 8
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer lean — grease the pattern, save the juice."
+   },
+   {
+    "exerciseId": "adv-tuck-planche",
+    "sets": 6,
+    "reach": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds."
+   },
+   {
+    "exerciseId": "tuck-planche",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 12
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own."
+   },
+   {
+    "exerciseId": "tuck-planche-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 3
+    },
+    "restSec": 120,
+    "section": "strength",
+    "role": "press",
+    "note": "Push-up version of this step. Pressing one step behind until your advanced tuck has a measured hold — the press usually trails the hold by a progression. Can’t press back up yet? Lower slowly over about three seconds, step out, reset at the top — log the reps you completed."
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "pressing",
+    "note": "Bent-arm pressing in the lean — the same lean every rep, shoulders past the hands at the top and the bottom."
+   },
+   {
+    "exerciseId": "planche-lean",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 10
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "straight-arm",
+    "note": "Straight-arm conditioning at a deep lean — shoulders well past the fingertips, elbows locked, the lean you can return from under control. It keeps feeding the position after the main work, at a load you can repeat."
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   }
+  ],
+  "strategy": "balanced",
+  "baseTargetSec": 5,
+  "purpose": "Practise advanced tuck planche at a working dose, then build the pressing and straight-arm strength behind it.",
+  "adjustments": [
+   "Left out to fit 45 minutes: pancake stretch and l-sit. A longer session length in Settings keeps them."
+  ],
+  "skills": [
+   "planche"
+  ],
+  "request": {
+   "source": "auto"
+  }
+ },
+ "planche/advtuck/{\"source\":\"auto\",\"skills\":[\"planche\"]}": {
+  "id": "auto-advtuck-build-balanced",
+  "name": "Advanced Tuck · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 44,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "planche-lean",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 8
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer lean — grease the pattern, save the juice."
+   },
+   {
+    "exerciseId": "adv-tuck-planche",
+    "sets": 6,
+    "reach": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds."
+   },
+   {
+    "exerciseId": "tuck-planche",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 12
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own."
+   },
+   {
+    "exerciseId": "tuck-planche-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 3
+    },
+    "restSec": 120,
+    "section": "strength",
+    "role": "press",
+    "note": "Push-up version of this step. Pressing one step behind until your advanced tuck has a measured hold — the press usually trails the hold by a progression. Can’t press back up yet? Lower slowly over about three seconds, step out, reset at the top — log the reps you completed."
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "pressing",
+    "note": "Bent-arm pressing in the lean — the same lean every rep, shoulders past the hands at the top and the bottom."
+   },
+   {
+    "exerciseId": "planche-lean",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 10
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "straight-arm",
+    "note": "Straight-arm conditioning at a deep lean — shoulders well past the fingertips, elbows locked, the lean you can return from under control. It keeps feeding the position after the main work, at a load you can repeat."
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   }
+  ],
+  "strategy": "balanced",
+  "baseTargetSec": 5,
+  "purpose": "Practise advanced tuck planche at a working dose, then build the pressing and straight-arm strength behind it.",
+  "adjustments": [
+   "Left out to fit 45 minutes: pancake stretch and l-sit. A longer session length in Settings keeps them."
+  ],
+  "skills": [
+   "planche"
+  ],
+  "request": {
+   "source": "auto",
+   "skills": [
+    "planche"
+   ]
+  }
+ },
+ "planche/advtuck/{\"source\":\"auto\",\"skills\":[\"planche\"],\"minutes\":20}": {
+  "id": "auto-advtuck-build-balanced-20m",
+  "name": "Advanced Tuck · Balanced · Short",
+  "focus": "Trimmed to about 20 minutes. The warm-up and your main advanced tuck planche are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 20,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "planche-lean",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 8
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer lean — grease the pattern, save the juice."
+   },
+   {
+    "exerciseId": "adv-tuck-planche",
+    "sets": 4,
+    "reach": 0,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds."
+   },
+   {
+    "exerciseId": "tuck-planche-pushup",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 3
+    },
+    "restSec": 120,
+    "section": "strength",
+    "role": "press",
+    "note": "Push-up version of this step. Pressing one step behind until your advanced tuck has a measured hold — the press usually trails the hold by a progression. Can’t press back up yet? Lower slowly over about three seconds, step out, reset at the top — log the reps you completed."
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   }
+  ],
+  "strategy": "balanced",
+  "baseTargetSec": 5,
+  "purpose": "Practise advanced tuck planche at a working dose, then build the pressing and straight-arm strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: pancake stretch, l-sit, tuck planche, hollow body hold, planche lean and pseudo planche push-up. They come back on a full-length day."
+  ],
+  "skills": [
+   "planche"
+  ],
+  "request": {
+   "source": "auto",
+   "skills": [
+    "planche"
+   ],
+   "minutes": 20
+  }
+ },
+ "planche/full/{\"source\":\"auto\"}": {
+  "id": "auto-full-build-balanced",
+  "name": "Full Planche · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 45,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "planche-lean",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 8
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Primer only — keep the straight-arm lean pattern without stealing energy from longer-lever work."
+   },
+   {
+    "exerciseId": "full-planche",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position or balancing is the struggle rather than strength, practising straddle planche or using a smaller lean is worth reviewing with your replay."
+   },
+   {
+    "exerciseId": "straddle-planche",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 9
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own."
+   },
+   {
+    "exerciseId": "straddle-planche-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 2
+    },
+    "restSec": 120,
+    "section": "strength",
+    "role": "press",
+    "note": "Push-up version of this step. Pressing one step behind until your full planche has a measured hold — the press usually trails the hold by a progression. Can’t press back up yet? Lower slowly over about three seconds, step out, reset at the top — log the reps you completed."
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "pressing",
+    "note": "Bent-arm pressing in the lean — the same lean every rep, shoulders past the hands at the top and the bottom."
+   },
+   {
+    "exerciseId": "planche-lean",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 10
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "straight-arm",
+    "note": "Straight-arm conditioning at a deep lean — shoulders well past the fingertips, elbows locked, the lean you can return from under control. It keeps feeding the position after the main work, at a load you can repeat."
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "pancake-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 40
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "role": "mobility"
+   }
+  ],
+  "strategy": "balanced",
+  "baseTargetSec": 2,
+  "purpose": "Practise full planche at a working dose, then build the pressing and straight-arm strength behind it.",
+  "adjustments": [
+   "Left out to fit 45 minutes: l-sit. A longer session length in Settings keeps them."
+  ],
+  "skills": [
+   "planche"
+  ],
+  "request": {
+   "source": "auto"
+  }
+ },
+ "planche/full/{\"source\":\"auto\",\"skills\":[\"planche\"]}": {
+  "id": "auto-full-build-balanced",
+  "name": "Full Planche · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 45,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "planche-lean",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 8
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Primer only — keep the straight-arm lean pattern without stealing energy from longer-lever work."
+   },
+   {
+    "exerciseId": "full-planche",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position or balancing is the struggle rather than strength, practising straddle planche or using a smaller lean is worth reviewing with your replay."
+   },
+   {
+    "exerciseId": "straddle-planche",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 9
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own."
+   },
+   {
+    "exerciseId": "straddle-planche-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 2
+    },
+    "restSec": 120,
+    "section": "strength",
+    "role": "press",
+    "note": "Push-up version of this step. Pressing one step behind until your full planche has a measured hold — the press usually trails the hold by a progression. Can’t press back up yet? Lower slowly over about three seconds, step out, reset at the top — log the reps you completed."
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "pressing",
+    "note": "Bent-arm pressing in the lean — the same lean every rep, shoulders past the hands at the top and the bottom."
+   },
+   {
+    "exerciseId": "planche-lean",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 10
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "straight-arm",
+    "note": "Straight-arm conditioning at a deep lean — shoulders well past the fingertips, elbows locked, the lean you can return from under control. It keeps feeding the position after the main work, at a load you can repeat."
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "pancake-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 40
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "role": "mobility"
+   }
+  ],
+  "strategy": "balanced",
+  "baseTargetSec": 2,
+  "purpose": "Practise full planche at a working dose, then build the pressing and straight-arm strength behind it.",
+  "adjustments": [
+   "Left out to fit 45 minutes: l-sit. A longer session length in Settings keeps them."
+  ],
+  "skills": [
+   "planche"
+  ],
+  "request": {
+   "source": "auto",
+   "skills": [
+    "planche"
+   ]
+  }
+ },
+ "planche/full/{\"source\":\"auto\",\"skills\":[\"planche\"],\"minutes\":20}": {
+  "id": "auto-full-build-balanced-20m",
+  "name": "Full Planche · Balanced · Short",
+  "focus": "Trimmed to about 19 minutes. The warm-up and your main full planche are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 19,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "planche-lean",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 8
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Primer only — keep the straight-arm lean pattern without stealing energy from longer-lever work."
+   },
+   {
+    "exerciseId": "full-planche",
+    "sets": 5,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position or balancing is the struggle rather than strength, practising straddle planche or using a smaller lean is worth reviewing with your replay."
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "pancake-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 40
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "role": "mobility"
+   }
+  ],
+  "strategy": "balanced",
+  "baseTargetSec": 2,
+  "purpose": "Practise full planche at a working dose, then build the pressing and straight-arm strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: l-sit, straddle planche, hollow body hold, planche lean, pseudo planche push-up and straddle planche push-up. They come back on a full-length day."
+  ],
+  "skills": [
+   "planche"
+  ],
+  "request": {
+   "source": "auto",
+   "skills": [
+    "planche"
+   ],
+   "minutes": 20
+  }
+ },
+ "frontlever/fl-hang/{\"source\":\"auto\"}": {
+  "id": "auto-fl-hang-build-balanced",
+  "name": "Front lever foundations · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 34,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "scap-pull",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "active-hang",
+    "sets": 4,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 150,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Full range, no swing. The pulling strength the lever is built on. The pulling twin of this step.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "scap-pull",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Straight-arm shoulder control — the first inch of every lever. Elbows locked, slow on the way back.",
+    "role": "straight-arm",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "hanging-knee-raise",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 45,
+    "section": "core",
+    "note": "No swing — stop each rep still.",
+    "role": "core",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "Relaxed — let the shoulders and grip unwind.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "frontlever"
+   }
+  ],
+  "purpose": "Practise active hang at a working dose, then build the pulling strength behind it.",
+  "skills": [
+   "frontlever"
+  ],
+  "skillMeta": {
+   "frontlever": {
+    "strategy": "balanced",
+    "baseTargetSec": 15
+   }
+  },
+  "request": {
+   "source": "auto"
+  }
+ },
+ "frontlever/fl-hang/{\"source\":\"auto\",\"skills\":[\"frontlever\"]}": {
+  "id": "auto-fl-hang-build-balanced",
+  "name": "Front lever foundations · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 34,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "scap-pull",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "active-hang",
+    "sets": 4,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 150,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Full range, no swing. The pulling strength the lever is built on. The pulling twin of this step.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "scap-pull",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Straight-arm shoulder control — the first inch of every lever. Elbows locked, slow on the way back.",
+    "role": "straight-arm",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "hanging-knee-raise",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 45,
+    "section": "core",
+    "note": "No swing — stop each rep still.",
+    "role": "core",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "Relaxed — let the shoulders and grip unwind.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "frontlever"
+   }
+  ],
+  "purpose": "Practise active hang at a working dose, then build the pulling strength behind it.",
+  "skills": [
+   "frontlever"
+  ],
+  "skillMeta": {
+   "frontlever": {
+    "strategy": "balanced",
+    "baseTargetSec": 15
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "frontlever"
+   ]
+  }
+ },
+ "frontlever/fl-hang/{\"source\":\"auto\",\"skills\":[\"frontlever\"],\"minutes\":20}": {
+  "id": "auto-fl-hang-build-balanced-20m",
+  "name": "Front lever foundations · Balanced · Short",
+  "focus": "Trimmed to about 20 minutes. The warm-up and your main active hang are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 20,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "scap-pull",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "active-hang",
+    "sets": 4,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 150,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Full range, no swing. The pulling strength the lever is built on. The pulling twin of this step.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "Relaxed — let the shoulders and grip unwind.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "frontlever"
+   }
+  ],
+  "purpose": "Practise active hang at a working dose, then build the pulling strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: hanging knee raise, hollow body hold and scapular pull. They come back on a full-length day."
+  ],
+  "skills": [
+   "frontlever"
+  ],
+  "skillMeta": {
+   "frontlever": {
+    "strategy": "balanced",
+    "baseTargetSec": 15
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "frontlever"
+   ],
+   "minutes": 20
+  }
+ },
+ "frontlever/fl-oneleg/{\"source\":\"auto\"}": {
+  "id": "auto-fl-oneleg-build-balanced",
+  "name": "One-Leg Front Lever · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 44,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "scap-pull",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "tuck-front-lever",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — a short, comfortable tuck to find the straight-arm pull before the work.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "one-leg-front-lever",
+    "sets": 10,
+    "reach": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 3
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "band-front-lever",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 10
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Straddle shape with the band under the hips — the next position rehearsed with help. Never counts toward the unassisted unlock.",
+    "role": "assisted",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "tuck-fl-row",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 4
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "The lever, moved: rows in the tuck you already hold. Pulling one step behind until your one-leg front lever has a measured hold — the pull usually trails the hold by a progression.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Bent-arm pulling strength behind the lever. Full range.",
+    "role": "pressing",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "fl-negative",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 3
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Lower from inverted with one leg long, alternating legs each rep. Slow through level.",
+    "role": "straight-arm",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "Relaxed — let the shoulders and grip unwind.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "pancake-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 40
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "A wider straddle is a shorter lever. Practice time, not a measure of lever strength.",
+    "role": "mobility",
+    "skill": "frontlever"
+   }
+  ],
+  "purpose": "Practise one-leg front lever at a working dose, then build the pulling strength behind it.",
+  "adjustments": [
+   "Left out to fit 45 minutes: advanced tuck front lever, hanging leg raise and hollow body hold. A longer session length in Settings keeps them."
+  ],
+  "skills": [
+   "frontlever"
+  ],
+  "skillMeta": {
+   "frontlever": {
+    "strategy": "balanced",
+    "baseTargetSec": 3
+   }
+  },
+  "request": {
+   "source": "auto"
+  }
+ },
+ "frontlever/fl-oneleg/{\"source\":\"auto\",\"skills\":[\"frontlever\"]}": {
+  "id": "auto-fl-oneleg-build-balanced",
+  "name": "One-Leg Front Lever · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 44,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "scap-pull",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "tuck-front-lever",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — a short, comfortable tuck to find the straight-arm pull before the work.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "one-leg-front-lever",
+    "sets": 10,
+    "reach": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 3
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "band-front-lever",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 10
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Straddle shape with the band under the hips — the next position rehearsed with help. Never counts toward the unassisted unlock.",
+    "role": "assisted",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "tuck-fl-row",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 4
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "The lever, moved: rows in the tuck you already hold. Pulling one step behind until your one-leg front lever has a measured hold — the pull usually trails the hold by a progression.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Bent-arm pulling strength behind the lever. Full range.",
+    "role": "pressing",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "fl-negative",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 3
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Lower from inverted with one leg long, alternating legs each rep. Slow through level.",
+    "role": "straight-arm",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "Relaxed — let the shoulders and grip unwind.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "pancake-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 40
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "A wider straddle is a shorter lever. Practice time, not a measure of lever strength.",
+    "role": "mobility",
+    "skill": "frontlever"
+   }
+  ],
+  "purpose": "Practise one-leg front lever at a working dose, then build the pulling strength behind it.",
+  "adjustments": [
+   "Left out to fit 45 minutes: advanced tuck front lever, hanging leg raise and hollow body hold. A longer session length in Settings keeps them."
+  ],
+  "skills": [
+   "frontlever"
+  ],
+  "skillMeta": {
+   "frontlever": {
+    "strategy": "balanced",
+    "baseTargetSec": 3
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "frontlever"
+   ]
+  }
+ },
+ "frontlever/fl-oneleg/{\"source\":\"auto\",\"skills\":[\"frontlever\"],\"minutes\":20}": {
+  "id": "auto-fl-oneleg-build-balanced-20m",
+  "name": "One-Leg Front Lever · Balanced · Short",
+  "focus": "Trimmed to about 20 minutes. The warm-up and your main one-leg front lever are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 20,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "scap-pull",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "tuck-front-lever",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — a short, comfortable tuck to find the straight-arm pull before the work.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "one-leg-front-lever",
+    "sets": 6,
+    "reach": 0,
+    "target": {
+     "kind": "hold",
+     "sec": 3
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "Relaxed — let the shoulders and grip unwind.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "pancake-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 40
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "A wider straddle is a shorter lever. Practice time, not a measure of lever strength.",
+    "role": "mobility",
+    "skill": "frontlever"
+   }
+  ],
+  "purpose": "Practise one-leg front lever at a working dose, then build the pulling strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: advanced tuck front lever, hanging leg raise, hollow body hold, front lever negative, pull-up, band-assisted front lever and tuck front lever row. They come back on a full-length day."
+  ],
+  "skills": [
+   "frontlever"
+  ],
+  "skillMeta": {
+   "frontlever": {
+    "strategy": "balanced",
+    "baseTargetSec": 3
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "frontlever"
+   ],
+   "minutes": 20
+  }
+ },
+ "frontlever/fl-full/{\"source\":\"auto\"}": {
+  "id": "auto-fl-full-build-balanced",
+  "name": "Full Front Lever · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 45,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "scap-pull",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "tuck-front-lever",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — a short, comfortable tuck to find the straight-arm pull before the work.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "front-lever",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising straddle front lever is worth reviewing with your replay.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "straddle-front-lever",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "adv-tuck-fl-row",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 4
+    },
+    "restSec": 120,
+    "section": "strength",
+    "role": "press",
+    "note": "The lever, moved: rows from the flat-backed tuck. Pulling one step behind until your full front lever has a measured hold — the pull usually trails the hold by a progression. Can’t finish a rep yet? Lower slowly over about three seconds, reset, and log the reps you completed.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Bent-arm pulling strength behind the lever. Full range.",
+    "role": "pressing",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "fl-negative",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 3
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Full-lever negatives: lower from inverted in one rigid line, as slowly as you can.",
+    "role": "straight-arm",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "hanging-leg-raise",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 60,
+    "section": "core",
+    "role": "core",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "Relaxed — let the shoulders and grip unwind.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "frontlever"
+   }
+  ],
+  "purpose": "Practise front lever at a working dose, then build the pulling strength behind it.",
+  "skills": [
+   "frontlever"
+  ],
+  "skillMeta": {
+   "frontlever": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto"
+  }
+ },
+ "frontlever/fl-full/{\"source\":\"auto\",\"skills\":[\"frontlever\"]}": {
+  "id": "auto-fl-full-build-balanced",
+  "name": "Full Front Lever · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 45,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "scap-pull",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "tuck-front-lever",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — a short, comfortable tuck to find the straight-arm pull before the work.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "front-lever",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising straddle front lever is worth reviewing with your replay.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "straddle-front-lever",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "adv-tuck-fl-row",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 4
+    },
+    "restSec": 120,
+    "section": "strength",
+    "role": "press",
+    "note": "The lever, moved: rows from the flat-backed tuck. Pulling one step behind until your full front lever has a measured hold — the pull usually trails the hold by a progression. Can’t finish a rep yet? Lower slowly over about three seconds, reset, and log the reps you completed.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Bent-arm pulling strength behind the lever. Full range.",
+    "role": "pressing",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "fl-negative",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 3
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Full-lever negatives: lower from inverted in one rigid line, as slowly as you can.",
+    "role": "straight-arm",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "hanging-leg-raise",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 60,
+    "section": "core",
+    "role": "core",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "Relaxed — let the shoulders and grip unwind.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "frontlever"
+   }
+  ],
+  "purpose": "Practise front lever at a working dose, then build the pulling strength behind it.",
+  "skills": [
+   "frontlever"
+  ],
+  "skillMeta": {
+   "frontlever": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "frontlever"
+   ]
+  }
+ },
+ "frontlever/fl-full/{\"source\":\"auto\",\"skills\":[\"frontlever\"],\"minutes\":20}": {
+  "id": "auto-fl-full-build-balanced-20m",
+  "name": "Full Front Lever · Balanced · Short",
+  "focus": "Trimmed to about 19 minutes. The warm-up and your main front lever are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 19,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "scap-pull",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "tuck-front-lever",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — a short, comfortable tuck to find the straight-arm pull before the work.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "front-lever",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising straddle front lever is worth reviewing with your replay.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "Relaxed — let the shoulders and grip unwind.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "frontlever"
+   }
+  ],
+  "purpose": "Practise front lever at a working dose, then build the pulling strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: straddle front lever, hanging leg raise, hollow body hold, front lever negative, pull-up and advanced tuck front lever row. They come back on a full-length day."
+  ],
+  "skills": [
+   "frontlever"
+  ],
+  "skillMeta": {
+   "frontlever": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "frontlever"
+   ],
+   "minutes": 20
+  }
+ },
+ "handstand/hs-foundations/{\"source\":\"auto\"}": {
+  "id": "auto-hs-foundations-build-balanced",
+  "name": "Handstand push-up foundations · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 30,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-plank",
+    "sets": 6,
+    "reach": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 75,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Handstand push-up line. Overhead pressing with the feet on the floor — the pattern, at the lightest load. One set of 8 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "The push that keeps a handstand tall. Elbows locked; pause at the top of every rep.",
+    "role": "straight-arm",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "note": "The straight line of a handstand, lying down.",
+    "role": "core",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "overhead-shoulder-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "role": "mobility",
+    "skill": "handstand"
+   }
+  ],
+  "purpose": "Practise wall plank at a working dose, then build the pressing strength behind it.",
+  "skills": [
+   "handstand"
+  ],
+  "skillMeta": {
+   "handstand": {
+    "strategy": "balanced",
+    "baseTargetSec": 15
+   }
+  },
+  "request": {
+   "source": "auto"
+  }
+ },
+ "handstand/hs-foundations/{\"source\":\"auto\",\"skills\":[\"handstand\"]}": {
+  "id": "auto-hs-foundations-build-balanced",
+  "name": "Handstand push-up foundations · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 30,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-plank",
+    "sets": 6,
+    "reach": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 75,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Handstand push-up line. Overhead pressing with the feet on the floor — the pattern, at the lightest load. One set of 8 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "The push that keeps a handstand tall. Elbows locked; pause at the top of every rep.",
+    "role": "straight-arm",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "note": "The straight line of a handstand, lying down.",
+    "role": "core",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "overhead-shoulder-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "role": "mobility",
+    "skill": "handstand"
+   }
+  ],
+  "purpose": "Practise wall plank at a working dose, then build the pressing strength behind it.",
+  "skills": [
+   "handstand"
+  ],
+  "skillMeta": {
+   "handstand": {
+    "strategy": "balanced",
+    "baseTargetSec": 15
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "handstand"
+   ]
+  }
+ },
+ "handstand/hs-foundations/{\"source\":\"auto\",\"skills\":[\"handstand\"],\"minutes\":20}": {
+  "id": "auto-hs-foundations-build-balanced-20m",
+  "name": "Handstand push-up foundations · Balanced · Short",
+  "focus": "Trimmed to about 20 minutes. The warm-up and your main wall plank are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 20,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-plank",
+    "sets": 4,
+    "reach": 0,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 75,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-pushup",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Handstand push-up line. Overhead pressing with the feet on the floor — the pattern, at the lightest load. One set of 8 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "The push that keeps a handstand tall. Elbows locked; pause at the top of every rep.",
+    "role": "straight-arm",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "overhead-shoulder-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "role": "mobility",
+    "skill": "handstand"
+   }
+  ],
+  "purpose": "Practise wall plank at a working dose, then build the pressing strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: hollow body hold. They come back on a full-length day."
+  ],
+  "skills": [
+   "handstand"
+  ],
+  "skillMeta": {
+   "handstand": {
+    "strategy": "balanced",
+    "baseTargetSec": 15
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "handstand"
+   ],
+   "minutes": 20
+  }
+ },
+ "handstand/hs-float/{\"source\":\"auto\"}": {
+  "id": "auto-hs-float-build-balanced",
+  "name": "First Balance · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 34,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — weight on the hands and shoulders tall before going all the way up.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-float",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 75,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising wall handstand is worth reviewing with your replay.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "heel-pull",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 45,
+    "section": "strength",
+    "note": "Back to the wall: press through the fingers until the heels float, then return. Finger pressure is the correction for tipping over the top.",
+    "role": "balance",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-handstand",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 36
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Handstand push-up line. Overhead pressing with the feet on the floor — the pattern, at the lightest load. One set of 8 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "kick-up",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 45,
+    "section": "strength",
+    "note": "Entry practice — arrive at vertical softly. Away from the wall only once your exit is automatic.",
+    "role": "straight-arm",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "overhead-shoulder-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "role": "mobility",
+    "skill": "handstand"
+   }
+  ],
+  "purpose": "Practise wall float at a working dose, then build the pressing strength behind it.",
+  "skills": [
+   "handstand"
+  ],
+  "skillMeta": {
+   "handstand": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto"
+  }
+ },
+ "handstand/hs-float/{\"source\":\"auto\",\"skills\":[\"handstand\"]}": {
+  "id": "auto-hs-float-build-balanced",
+  "name": "First Balance · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 34,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — weight on the hands and shoulders tall before going all the way up.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-float",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 75,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising wall handstand is worth reviewing with your replay.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "heel-pull",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 45,
+    "section": "strength",
+    "note": "Back to the wall: press through the fingers until the heels float, then return. Finger pressure is the correction for tipping over the top.",
+    "role": "balance",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-handstand",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 36
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Handstand push-up line. Overhead pressing with the feet on the floor — the pattern, at the lightest load. One set of 8 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "kick-up",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 45,
+    "section": "strength",
+    "note": "Entry practice — arrive at vertical softly. Away from the wall only once your exit is automatic.",
+    "role": "straight-arm",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "overhead-shoulder-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "role": "mobility",
+    "skill": "handstand"
+   }
+  ],
+  "purpose": "Practise wall float at a working dose, then build the pressing strength behind it.",
+  "skills": [
+   "handstand"
+  ],
+  "skillMeta": {
+   "handstand": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "handstand"
+   ]
+  }
+ },
+ "handstand/hs-float/{\"source\":\"auto\",\"skills\":[\"handstand\"],\"minutes\":20}": {
+  "id": "auto-hs-float-build-balanced-20m",
+  "name": "First Balance · Balanced · Short",
+  "focus": "Trimmed to about 19 minutes. The warm-up and your main wall float are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 19,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — weight on the hands and shoulders tall before going all the way up.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-float",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 75,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising wall handstand is worth reviewing with your replay.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-pushup",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Handstand push-up line. Overhead pressing with the feet on the floor — the pattern, at the lightest load. One set of 8 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "overhead-shoulder-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "role": "mobility",
+    "skill": "handstand"
+   }
+  ],
+  "purpose": "Practise wall float at a working dose, then build the pressing strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: wall handstand, heel pull, hollow body hold and kick-up practice. They come back on a full-length day."
+  ],
+  "skills": [
+   "handstand"
+  ],
+  "skillMeta": {
+   "handstand": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "handstand"
+   ],
+   "minutes": 20
+  }
+ },
+ "handstand/hs-free/{\"source\":\"auto\"}": {
+  "id": "auto-hs-free-build-balanced",
+  "name": "Freestanding Handstand · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 33,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — weight on the hands and shoulders tall before going all the way up.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "freestanding-handstand",
+    "sets": 6,
+    "reach": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 75,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "kick-up",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 45,
+    "section": "strength",
+    "note": "Entries, on their own: the same lunge every time, arriving at balance rather than past it. A few controlled entries every session is how coaches build the kick-up.",
+    "role": "balance",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-float",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Handstand push-up line. Overhead pressing with the feet on the floor — the pattern, at the lightest load. One set of 8 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "heel-pull",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 45,
+    "section": "strength",
+    "note": "Finger-pressure practice at the wall — the correction for tipping over the top.",
+    "role": "straight-arm",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "overhead-shoulder-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "role": "mobility",
+    "skill": "handstand"
+   }
+  ],
+  "purpose": "Practise freestanding handstand at a working dose, then build the pressing strength behind it.",
+  "skills": [
+   "handstand"
+  ],
+  "skillMeta": {
+   "handstand": {
+    "strategy": "balanced",
+    "baseTargetSec": 5
+   }
+  },
+  "request": {
+   "source": "auto"
+  }
+ },
+ "handstand/hs-free/{\"source\":\"auto\",\"skills\":[\"handstand\"]}": {
+  "id": "auto-hs-free-build-balanced",
+  "name": "Freestanding Handstand · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 33,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — weight on the hands and shoulders tall before going all the way up.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "freestanding-handstand",
+    "sets": 6,
+    "reach": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 75,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "kick-up",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 45,
+    "section": "strength",
+    "note": "Entries, on their own: the same lunge every time, arriving at balance rather than past it. A few controlled entries every session is how coaches build the kick-up.",
+    "role": "balance",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-float",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Handstand push-up line. Overhead pressing with the feet on the floor — the pattern, at the lightest load. One set of 8 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "heel-pull",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 45,
+    "section": "strength",
+    "note": "Finger-pressure practice at the wall — the correction for tipping over the top.",
+    "role": "straight-arm",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "overhead-shoulder-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "role": "mobility",
+    "skill": "handstand"
+   }
+  ],
+  "purpose": "Practise freestanding handstand at a working dose, then build the pressing strength behind it.",
+  "skills": [
+   "handstand"
+  ],
+  "skillMeta": {
+   "handstand": {
+    "strategy": "balanced",
+    "baseTargetSec": 5
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "handstand"
+   ]
+  }
+ },
+ "handstand/hs-free/{\"source\":\"auto\",\"skills\":[\"handstand\"],\"minutes\":20}": {
+  "id": "auto-hs-free-build-balanced-20m",
+  "name": "Freestanding Handstand · Balanced · Short",
+  "focus": "Trimmed to about 20 minutes. The warm-up and your main freestanding handstand are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 20,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — weight on the hands and shoulders tall before going all the way up.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "freestanding-handstand",
+    "sets": 5,
+    "reach": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 75,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pike-pushup",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Handstand push-up line. Overhead pressing with the feet on the floor — the pattern, at the lightest load. One set of 8 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "heel-pull",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 45,
+    "section": "strength",
+    "note": "Finger-pressure practice at the wall — the correction for tipping over the top.",
+    "role": "straight-arm",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "overhead-shoulder-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "role": "mobility",
+    "skill": "handstand"
+   }
+  ],
+  "purpose": "Practise freestanding handstand at a working dose, then build the pressing strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: wall float, kick-up practice and hollow body hold. They come back on a full-length day."
+  ],
+  "skills": [
+   "handstand"
+  ],
+  "skillMeta": {
+   "handstand": {
+    "strategy": "balanced",
+    "baseTargetSec": 5
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "handstand"
+   ],
+   "minutes": 20
+  }
+ },
+ "ninety/n90-lean/{\"source\":\"auto\"}": {
+  "id": "auto-n90-lean-build-balanced",
+  "name": "90° hold foundations · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 41,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 6,
+    "reach": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 8
+    },
+    "restSec": 135,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "elbow-lever",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 10
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Optional balance practice at the level position, with the elbows as a shelf. It teaches the balance point; whether it carries over to the unsupported hold is not established, so it never counts toward a step.",
+    "role": "balance",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "90° push-up line. Pressing in a forward lean — the base every later rung leans further into. One set of 10 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Pressing strength behind the hold. Elbows back, full range.",
+    "role": "pressing",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   }
+  ],
+  "purpose": "Practise bent-arm lean hold at a working dose, then build the pressing strength behind it.",
+  "skills": [
+   "ninety"
+  ],
+  "skillMeta": {
+   "ninety": {
+    "strategy": "balanced",
+    "baseTargetSec": 8
+   }
+  },
+  "request": {
+   "source": "auto"
+  }
+ },
+ "ninety/n90-lean/{\"source\":\"auto\",\"skills\":[\"ninety\"]}": {
+  "id": "auto-n90-lean-build-balanced",
+  "name": "90° hold foundations · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 41,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 6,
+    "reach": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 8
+    },
+    "restSec": 135,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "elbow-lever",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 10
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Optional balance practice at the level position, with the elbows as a shelf. It teaches the balance point; whether it carries over to the unsupported hold is not established, so it never counts toward a step.",
+    "role": "balance",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "90° push-up line. Pressing in a forward lean — the base every later rung leans further into. One set of 10 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Pressing strength behind the hold. Elbows back, full range.",
+    "role": "pressing",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   }
+  ],
+  "purpose": "Practise bent-arm lean hold at a working dose, then build the pressing strength behind it.",
+  "skills": [
+   "ninety"
+  ],
+  "skillMeta": {
+   "ninety": {
+    "strategy": "balanced",
+    "baseTargetSec": 8
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "ninety"
+   ]
+  }
+ },
+ "ninety/n90-lean/{\"source\":\"auto\",\"skills\":[\"ninety\"],\"minutes\":20}": {
+  "id": "auto-n90-lean-build-balanced-20m",
+  "name": "90° hold foundations · Balanced · Short",
+  "focus": "Trimmed to about 17 minutes. The warm-up and your main bent-arm lean hold are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 17,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 4,
+    "reach": 0,
+    "target": {
+     "kind": "hold",
+     "sec": 8
+    },
+    "restSec": 135,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   }
+  ],
+  "purpose": "Practise bent-arm lean hold at a working dose, then build the pressing strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: elbow lever, hollow body hold, push-up and pseudo planche push-up. They come back on a full-length day."
+  ],
+  "skills": [
+   "ninety"
+  ],
+  "skillMeta": {
+   "ninety": {
+    "strategy": "balanced",
+    "baseTargetSec": 8
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "ninety"
+   ],
+   "minutes": 20
+  }
+ },
+ "ninety/n90-advtuck/{\"source\":\"auto\"}": {
+  "id": "auto-n90-advtuck-build-balanced",
+  "name": "Advanced Tuck 90° Hold · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 45,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 6
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — a short, comfortable lean hold to find the elbow position before the work.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "adv-tuck-ninety-hold",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising tuck 90° hold is worth reviewing with your replay.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "tuck-ninety-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "90° push-up line. Pressing in a forward lean — the base every later rung leans further into. One set of 10 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "dip",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Bent-arm pressing strength at depth.",
+    "role": "pressing",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 12
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Bent-arm conditioning at a load that repeats: deep lean, elbows at 90° and tight to the sides.",
+    "role": "straight-arm",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "arch-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 45,
+    "section": "core",
+    "note": "The back of the body holds the legs level once they leave the tuck.",
+    "role": "core",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   }
+  ],
+  "purpose": "Practise advanced tuck 90° hold at a working dose, then build the pressing strength behind it.",
+  "skills": [
+   "ninety"
+  ],
+  "skillMeta": {
+   "ninety": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto"
+  }
+ },
+ "ninety/n90-advtuck/{\"source\":\"auto\",\"skills\":[\"ninety\"]}": {
+  "id": "auto-n90-advtuck-build-balanced",
+  "name": "Advanced Tuck 90° Hold · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 45,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 6
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — a short, comfortable lean hold to find the elbow position before the work.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "adv-tuck-ninety-hold",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising tuck 90° hold is worth reviewing with your replay.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "tuck-ninety-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "90° push-up line. Pressing in a forward lean — the base every later rung leans further into. One set of 10 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "dip",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Bent-arm pressing strength at depth.",
+    "role": "pressing",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 12
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Bent-arm conditioning at a load that repeats: deep lean, elbows at 90° and tight to the sides.",
+    "role": "straight-arm",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "arch-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 45,
+    "section": "core",
+    "note": "The back of the body holds the legs level once they leave the tuck.",
+    "role": "core",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   }
+  ],
+  "purpose": "Practise advanced tuck 90° hold at a working dose, then build the pressing strength behind it.",
+  "skills": [
+   "ninety"
+  ],
+  "skillMeta": {
+   "ninety": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "ninety"
+   ]
+  }
+ },
+ "ninety/n90-advtuck/{\"source\":\"auto\",\"skills\":[\"ninety\"],\"minutes\":20}": {
+  "id": "auto-n90-advtuck-build-balanced-20m",
+  "name": "Advanced Tuck 90° Hold · Balanced · Short",
+  "focus": "Trimmed to about 20 minutes. The warm-up and your main advanced tuck 90° hold are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 20,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 6
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — a short, comfortable lean hold to find the elbow position before the work.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "adv-tuck-ninety-hold",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising tuck 90° hold is worth reviewing with your replay.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   }
+  ],
+  "purpose": "Practise advanced tuck 90° hold at a working dose, then build the pressing strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: tuck 90° hold, arch hold, hollow body hold, bent-arm lean hold, dip and pseudo planche push-up. They come back on a full-length day."
+  ],
+  "skills": [
+   "ninety"
+  ],
+  "skillMeta": {
+   "ninety": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "ninety"
+   ],
+   "minutes": 20
+  }
+ },
+ "ninety/n90-full/{\"source\":\"auto\"}": {
+  "id": "auto-n90-full-build-balanced",
+  "name": "90° Hold · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 45,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 6
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — a short, comfortable lean hold to find the elbow position before the work.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "ninety-hold",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising straddle 90° hold is worth reviewing with your replay.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "straddle-ninety-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "90° push-up line. Pressing in a forward lean — the base every later rung leans further into. One set of 10 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "dip",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Bent-arm pressing strength at depth.",
+    "role": "pressing",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 12
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Bent-arm conditioning at a load that repeats: deep lean, elbows at 90° and tight to the sides.",
+    "role": "straight-arm",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "arch-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   }
+  ],
+  "purpose": "Practise 90° hold at a working dose, then build the pressing strength behind it.",
+  "skills": [
+   "ninety"
+  ],
+  "skillMeta": {
+   "ninety": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto"
+  }
+ },
+ "ninety/n90-full/{\"source\":\"auto\",\"skills\":[\"ninety\"]}": {
+  "id": "auto-n90-full-build-balanced",
+  "name": "90° Hold · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 45,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 6
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — a short, comfortable lean hold to find the elbow position before the work.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "ninety-hold",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising straddle 90° hold is worth reviewing with your replay.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "straddle-ninety-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "90° push-up line. Pressing in a forward lean — the base every later rung leans further into. One set of 10 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "dip",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Bent-arm pressing strength at depth.",
+    "role": "pressing",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 12
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Bent-arm conditioning at a load that repeats: deep lean, elbows at 90° and tight to the sides.",
+    "role": "straight-arm",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "arch-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   }
+  ],
+  "purpose": "Practise 90° hold at a working dose, then build the pressing strength behind it.",
+  "skills": [
+   "ninety"
+  ],
+  "skillMeta": {
+   "ninety": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "ninety"
+   ]
+  }
+ },
+ "ninety/n90-full/{\"source\":\"auto\",\"skills\":[\"ninety\"],\"minutes\":20}": {
+  "id": "auto-n90-full-build-balanced-20m",
+  "name": "90° Hold · Balanced · Short",
+  "focus": "Trimmed to about 20 minutes. The warm-up and your main 90° hold are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 20,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 6
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — a short, comfortable lean hold to find the elbow position before the work.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "ninety-hold",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising straddle 90° hold is worth reviewing with your replay.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "ninety"
+   }
+  ],
+  "purpose": "Practise 90° hold at a working dose, then build the pressing strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: straddle 90° hold, arch hold, hollow body hold, bent-arm lean hold, dip and pseudo planche push-up. They come back on a full-length day."
+  ],
+  "skills": [
+   "ninety"
+  ],
+  "skillMeta": {
+   "ninety": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "ninety"
+   ],
+   "minutes": 20
+  }
+ },
+ "flag/flag-foundations/{\"source\":\"auto\"}": {
+  "id": "auto-flag-foundations-build-balanced",
+  "name": "Human flag foundations · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 45,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "supported-flag",
+    "sets": 10,
+    "reach": 4,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "The top arm’s job in a flag is a pull: full range, no swing. Strength work for this step.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "pike-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "The bottom arm’s job is an overhead press. Lock out every rep.",
+    "role": "pressing",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "side-plank",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 45,
+    "section": "core",
+    "note": "Side-of-trunk strength, both sides, the weaker one first.",
+    "role": "core",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   }
+  ],
+  "purpose": "Practise supported flag hold at a working dose, then build the pressing and pulling strength behind it.",
+  "skills": [
+   "flag"
+  ],
+  "skillMeta": {
+   "flag": {
+    "strategy": "balanced",
+    "baseTargetSec": 5
+   }
+  },
+  "request": {
+   "source": "auto"
+  }
+ },
+ "flag/flag-foundations/{\"source\":\"auto\",\"skills\":[\"flag\"]}": {
+  "id": "auto-flag-foundations-build-balanced",
+  "name": "Human flag foundations · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 45,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "supported-flag",
+    "sets": 10,
+    "reach": 4,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "The top arm’s job in a flag is a pull: full range, no swing. Strength work for this step.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "pike-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "The bottom arm’s job is an overhead press. Lock out every rep.",
+    "role": "pressing",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "side-plank",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 45,
+    "section": "core",
+    "note": "Side-of-trunk strength, both sides, the weaker one first.",
+    "role": "core",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   }
+  ],
+  "purpose": "Practise supported flag hold at a working dose, then build the pressing and pulling strength behind it.",
+  "skills": [
+   "flag"
+  ],
+  "skillMeta": {
+   "flag": {
+    "strategy": "balanced",
+    "baseTargetSec": 5
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "flag"
+   ]
+  }
+ },
+ "flag/flag-foundations/{\"source\":\"auto\",\"skills\":[\"flag\"],\"minutes\":20}": {
+  "id": "auto-flag-foundations-build-balanced-20m",
+  "name": "Human flag foundations · Balanced · Short",
+  "focus": "Trimmed to about 18 minutes. The warm-up and your main supported flag hold are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 18,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "supported-flag",
+    "sets": 6,
+    "reach": 0,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   }
+  ],
+  "purpose": "Practise supported flag hold at a working dose, then build the pressing and pulling strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: hollow body hold, side plank, pike push-up and pull-up. They come back on a full-length day."
+  ],
+  "skills": [
+   "flag"
+  ],
+  "skillMeta": {
+   "flag": {
+    "strategy": "balanced",
+    "baseTargetSec": 5
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "flag"
+   ],
+   "minutes": 20
+  }
+ },
+ "flag/flag-oneleg/{\"source\":\"auto\"}": {
+  "id": "auto-flag-oneleg-build-balanced",
+  "name": "One-Leg Flag · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 43,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "supported-flag",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 30,
+    "section": "warmup",
+    "note": "Easy primer — feet down, find the grip and the locked bottom arm on each side before any weight comes off.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "one-leg-flag",
+    "sets": 10,
+    "reach": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 3
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Pulling strength for the top arm. Full range.",
+    "role": "pressing",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "flag-negative",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 3
+    },
+    "restSec": 120,
+    "section": "strength",
+    "note": "Lower from vertical with one leg long — slow through level, bottom arm locked.",
+    "role": "straight-arm",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "side-plank",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 40
+    },
+    "restSec": 45,
+    "section": "core",
+    "note": "Both sides, the weaker one first.",
+    "role": "core",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "hanging-side-raise",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   }
+  ],
+  "purpose": "Practise one-leg flag at a working dose, then build the pressing and pulling strength behind it.",
+  "adjustments": [
+   "Left out to fit 45 minutes: tuck flag. A longer session length in Settings keeps them."
+  ],
+  "skills": [
+   "flag"
+  ],
+  "skillMeta": {
+   "flag": {
+    "strategy": "balanced",
+    "baseTargetSec": 3
+   }
+  },
+  "request": {
+   "source": "auto"
+  }
+ },
+ "flag/flag-oneleg/{\"source\":\"auto\",\"skills\":[\"flag\"]}": {
+  "id": "auto-flag-oneleg-build-balanced",
+  "name": "One-Leg Flag · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 43,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "supported-flag",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 30,
+    "section": "warmup",
+    "note": "Easy primer — feet down, find the grip and the locked bottom arm on each side before any weight comes off.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "one-leg-flag",
+    "sets": 10,
+    "reach": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 3
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Pulling strength for the top arm. Full range.",
+    "role": "pressing",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "flag-negative",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 3
+    },
+    "restSec": 120,
+    "section": "strength",
+    "note": "Lower from vertical with one leg long — slow through level, bottom arm locked.",
+    "role": "straight-arm",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "side-plank",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 40
+    },
+    "restSec": 45,
+    "section": "core",
+    "note": "Both sides, the weaker one first.",
+    "role": "core",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "hanging-side-raise",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   }
+  ],
+  "purpose": "Practise one-leg flag at a working dose, then build the pressing and pulling strength behind it.",
+  "adjustments": [
+   "Left out to fit 45 minutes: tuck flag. A longer session length in Settings keeps them."
+  ],
+  "skills": [
+   "flag"
+  ],
+  "skillMeta": {
+   "flag": {
+    "strategy": "balanced",
+    "baseTargetSec": 3
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "flag"
+   ]
+  }
+ },
+ "flag/flag-oneleg/{\"source\":\"auto\",\"skills\":[\"flag\"],\"minutes\":20}": {
+  "id": "auto-flag-oneleg-build-balanced-20m",
+  "name": "One-Leg Flag · Balanced · Short",
+  "focus": "Trimmed to about 20 minutes. The warm-up and your main one-leg flag are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 20,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "supported-flag",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 30,
+    "section": "warmup",
+    "note": "Easy primer — feet down, find the grip and the locked bottom arm on each side before any weight comes off.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "one-leg-flag",
+    "sets": 6,
+    "reach": 0,
+    "target": {
+     "kind": "hold",
+     "sec": 3
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   }
+  ],
+  "purpose": "Practise one-leg flag at a working dose, then build the pressing and pulling strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: tuck flag, hanging side knee raise, side plank, flag negative and pull-up. They come back on a full-length day."
+  ],
+  "skills": [
+   "flag"
+  ],
+  "skillMeta": {
+   "flag": {
+    "strategy": "balanced",
+    "baseTargetSec": 3
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "flag"
+   ],
+   "minutes": 20
+  }
+ },
+ "flag/flag-full/{\"source\":\"auto\"}": {
+  "id": "auto-flag-full-build-balanced",
+  "name": "Human Flag · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 43,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "supported-flag",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 30,
+    "section": "warmup",
+    "note": "Easy primer — feet down, find the grip and the locked bottom arm on each side before any weight comes off.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "human-flag",
+    "sets": 10,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising straddle flag is worth reviewing with your replay.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Pulling strength for the top arm. Full range.",
+    "role": "pressing",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "flag-negative",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 3
+    },
+    "restSec": 120,
+    "section": "strength",
+    "note": "Full-flag negatives: lower from vertical in one rigid line, as slowly as you can.",
+    "role": "straight-arm",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "side-plank",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 45
+    },
+    "restSec": 45,
+    "section": "core",
+    "note": "Both sides, the weaker one first.",
+    "role": "core",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "hanging-side-raise",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   }
+  ],
+  "purpose": "Practise human flag at a working dose, then build the pressing and pulling strength behind it.",
+  "adjustments": [
+   "Left out to fit 45 minutes: straddle flag. A longer session length in Settings keeps them."
+  ],
+  "skills": [
+   "flag"
+  ],
+  "skillMeta": {
+   "flag": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto"
+  }
+ },
+ "flag/flag-full/{\"source\":\"auto\",\"skills\":[\"flag\"]}": {
+  "id": "auto-flag-full-build-balanced",
+  "name": "Human Flag · Balanced",
+  "focus": "Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 43,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "supported-flag",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 30,
+    "section": "warmup",
+    "note": "Easy primer — feet down, find the grip and the locked bottom arm on each side before any weight comes off.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "human-flag",
+    "sets": 10,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising straddle flag is worth reviewing with your replay.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "note": "Pulling strength for the top arm. Full range.",
+    "role": "pressing",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "flag-negative",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 3
+    },
+    "restSec": 120,
+    "section": "strength",
+    "note": "Full-flag negatives: lower from vertical in one rigid line, as slowly as you can.",
+    "role": "straight-arm",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "side-plank",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 45
+    },
+    "restSec": 45,
+    "section": "core",
+    "note": "Both sides, the weaker one first.",
+    "role": "core",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "hanging-side-raise",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   }
+  ],
+  "purpose": "Practise human flag at a working dose, then build the pressing and pulling strength behind it.",
+  "adjustments": [
+   "Left out to fit 45 minutes: straddle flag. A longer session length in Settings keeps them."
+  ],
+  "skills": [
+   "flag"
+  ],
+  "skillMeta": {
+   "flag": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "flag"
+   ]
+  }
+ },
+ "flag/flag-full/{\"source\":\"auto\",\"skills\":[\"flag\"],\"minutes\":20}": {
+  "id": "auto-flag-full-build-balanced-20m",
+  "name": "Human Flag · Balanced · Short",
+  "focus": "Trimmed to about 20 minutes. The warm-up and your main human flag are intact; accessories came off first, because a short session you actually do beats a full one you skip. Moderate sets at your working target — the reliable default. Baseline session — start controlled so the coach can learn your current capacity.",
+  "minutes": 20,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 20,
+    "section": "warmup",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "supported-flag",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 30,
+    "section": "warmup",
+    "note": "Easy primer — feet down, find the grip and the locked bottom arm on each side before any weight comes off.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "human-flag",
+    "sets": 6,
+    "target": {
+     "kind": "hold",
+     "sec": 2
+    },
+    "restSec": 120,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds. You said this hold is short for you right now, so these are too — that is a real dose, not a failure. If getting into the position is the struggle rather than strength, practising straddle flag is worth reviewing with your replay.",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "lat-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "skill": "flag"
+   }
+  ],
+  "purpose": "Practise human flag at a working dose, then build the pressing and pulling strength behind it.",
+  "adjustments": [
+   "Left out to fit 20 minutes: straddle flag, hanging side knee raise, side plank, flag negative and pull-up. They come back on a full-length day."
+  ],
+  "skills": [
+   "flag"
+  ],
+  "skillMeta": {
+   "flag": {
+    "strategy": "balanced",
+    "baseTargetSec": 2
+   }
+  },
+  "request": {
+   "source": "auto",
+   "skills": [
+    "flag"
+   ],
+   "minutes": 20
+  }
+ },
+ "mixed/{\"source\":\"auto\"}": {
+  "id": "auto-mix-planche+handstand+frontlever+ninety-build-balanced",
+  "name": "Planche + Handstand push-up + Front lever + 90° hold",
+  "focus": "Baseline session — start controlled so the coach can learn your current capacity. Which skills share a session, and in what order, follows common coaching practice — no trial has tested it for these skills.",
+  "minutes": 59,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 40,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wall-plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — weight on the hands and shoulders tall before going all the way up.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 20,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "freestanding-handstand",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 75,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "kick-up",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 45,
+    "section": "strength",
+    "note": "Entries, on their own: the same lunge every time, arriving at balance rather than past it. A few controlled entries every session is how coaches build the kick-up.",
+    "role": "balance",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "ppp-hold",
+    "sets": 4,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 150,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "planche"
+   },
+   {
+    "exerciseId": "active-hang",
+    "sets": 4,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 150,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "bent-arm-lean-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 8
+    },
+    "restSec": 135,
+    "section": "main",
+    "role": "skill",
+    "note": "Short dose: a couple of clean holds at your current step keep the position while other skills take the session. Come down at the target call.",
+    "skill": "ninety"
+   },
+   {
+    "exerciseId": "pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Push-up version of this step. The pressing twin of this step.",
+    "skill": "planche"
+   },
+   {
+    "exerciseId": "pullup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Full range, no swing. The pulling strength the lever is built on. The pulling twin of this step.",
+    "skill": "frontlever"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "shoulder-extension-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   },
+   {
+    "exerciseId": "dead-hang",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 10,
+    "section": "cooldown",
+    "note": "Relaxed — let the shoulders and grip unwind."
+   }
+  ],
+  "skills": [
+   "planche",
+   "handstand",
+   "frontlever",
+   "ninety"
+  ],
+  "lineup": [
+   {
+    "skill": "planche",
+    "role": "lead",
+    "reason": "Planche is your first priority, so it leads every session and gets the fullest dose. Human flag sits this one out — a 60-minute session has room for two skills in full and two short doses, and the skill that has waited longest, weighted by your order, comes in next."
+   },
+   {
+    "skill": "handstand",
+    "role": "practice",
+    "reason": "A few minutes of handstand balance practice first, while you are fresh: it has not been trained yet, and balance practice is light enough to sit beside strength work."
+   },
+   {
+    "skill": "frontlever",
+    "role": "partner",
+    "reason": "Front lever is today's second skill: it has not been trained yet, and its pulling pairs with the planche's pressing."
+   },
+   {
+    "skill": "ninety",
+    "role": "maintenance",
+    "reason": "90° hold gets a short dose — a couple of sets at your current step, to keep the position — because it has not been trained yet."
+   }
+  ],
+  "skillMeta": {
+   "handstand": {
+    "baseTargetSec": 5
+   },
+   "frontlever": {
+    "strategy": "balanced",
+    "baseTargetSec": 15
+   },
+   "ninety": {
+    "baseTargetSec": 8
+   }
+  },
+  "strategy": "balanced",
+  "baseTargetSec": 15,
+  "purpose": "Lead with pseudo planche plank at a working dose, with handstand balance practice, front lever as its partner and a short dose of 90° hold.",
+  "adjustments": [
+   "Left out of the planche work to fit 60 minutes across today's skills: pseudo planche push-up. It fits in a longer session (Settings → session length), or when you pick planche on its own under Train → Choose today’s skills.",
+   "Left out of the front lever work to fit 60 minutes across today's skills: scapular pull and hanging knee raise. They fit in a longer session (Settings → session length), or when you pick front lever on its own under Train → Choose today’s skills."
+  ],
+  "request": {
+   "source": "auto"
+  }
+ },
+ "mixed/{\"source\":\"auto\",\"skills\":[\"handstand\",\"planche\"]}": {
+  "id": "auto-mix-handstand+planche-build-balanced",
+  "name": "Handstand push-up + Planche",
+  "focus": "Baseline session — start controlled so the coach can learn your current capacity. Which skills share a session, and in what order, follows common coaching practice — no trial has tested it for these skills.",
+  "minutes": 60,
+  "kind": "auto",
+  "blocks": [
+   {
+    "exerciseId": "arm-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 10,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 15,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "pike-shrug",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 25,
+    "section": "warmup",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "wall-plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 40,
+    "section": "warmup",
+    "note": "Easy primer — weight on the hands and shoulders tall before going all the way up.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "plank",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 20
+    },
+    "restSec": 40,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "freestanding-handstand",
+    "sets": 4,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 75,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "kick-up",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 45,
+    "section": "strength",
+    "note": "Entries, on their own: the same lunge every time, arriving at balance rather than past it. A few controlled entries every session is how coaches build the kick-up.",
+    "role": "balance",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "ppp-hold",
+    "sets": 4,
+    "target": {
+     "kind": "hold",
+     "sec": 15
+    },
+    "restSec": 150,
+    "section": "main",
+    "role": "skill",
+    "note": "Come down at the target call, or sooner at the first loss of shape. Quality over seconds.",
+    "skill": "planche"
+   },
+   {
+    "exerciseId": "wall-float",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "backoff",
+    "note": "A small back-off dose on the position you already own.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Push-up version of this step. The pressing twin of this step.",
+    "skill": "planche"
+   },
+   {
+    "exerciseId": "pike-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "press",
+    "note": "Handstand push-up line. Overhead pressing with the feet on the floor — the pattern, at the lightest load. One set of 8 full reps — filmed, rated Clean and checked on the replay — opens the next rung.",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "pppu",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 6
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "pressing",
+    "note": "Bent-arm pressing in the lean — the same lean every rep, shoulders past the hands at the top and the bottom.",
+    "skill": "planche"
+   },
+   {
+    "exerciseId": "heel-pull",
+    "sets": 2,
+    "target": {
+     "kind": "reps",
+     "reps": 5
+    },
+    "restSec": 45,
+    "section": "strength",
+    "note": "Finger-pressure practice at the wall — the correction for tipping over the top.",
+    "role": "straight-arm",
+    "skill": "handstand"
+   },
+   {
+    "exerciseId": "scap-pushup",
+    "sets": 3,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 90,
+    "section": "strength",
+    "role": "straight-arm",
+    "note": "Protraction strength — the push-away every straight-arm hold depends on. Finish each rep with the upper back gently rounded.",
+    "skill": "planche"
+   },
+   {
+    "exerciseId": "hollow-hold",
+    "sets": 2,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 45,
+    "section": "core",
+    "role": "core"
+   },
+   {
+    "exerciseId": "wrist-stretch",
+    "sets": 1,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 10,
+    "section": "cooldown"
+   }
+  ],
+  "skills": [
+   "handstand",
+   "planche"
+  ],
+  "lineup": [
+   {
+    "skill": "handstand",
+    "role": "lead",
+    "reason": "You chose handstand push-up and planche for this session."
+   },
+   {
+    "skill": "planche",
+    "role": "partner",
+    "reason": "You chose handstand push-up and planche for this session."
+   }
+  ],
+  "skillMeta": {
+   "handstand": {
+    "strategy": "balanced",
+    "baseTargetSec": 5
+   }
+  },
+  "strategy": "balanced",
+  "baseTargetSec": 15,
+  "purpose": "Lead with freestanding handstand at a working dose, with planche as its partner.",
+  "adjustments": [
+   "Left out of the handstand push-up work to fit 60 minutes across today's skills: overhead shoulder stretch. It fits in a longer session (Settings → session length), or when you pick handstand push-up on its own under Train → Choose today’s skills."
+  ],
+  "request": {
+   "source": "auto",
+   "skills": [
+    "handstand",
+    "planche"
+   ]
+  }
+ },
+ "mixed/{\"source\":\"test\"}": {
+  "id": "test-foundations",
+  "name": "Max Test · Planche foundations",
+  "focus": "Three fresh max attempts at the pseudo planche plank. Hit 30s with athlete + filmed form confirmation to unlock the next step.",
+  "minutes": 10,
+  "kind": "test",
+  "blocks": [
+   {
+    "exerciseId": "wrist-circles",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 10
+    },
+    "restSec": 15,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "wrist-rocks",
+    "sets": 1,
+    "target": {
+     "kind": "reps",
+     "reps": 8
+    },
+    "restSec": 20,
+    "section": "warmup"
+   },
+   {
+    "exerciseId": "ppp-hold",
+    "sets": 3,
+    "target": {
+     "kind": "hold",
+     "sec": 30
+    },
+    "restSec": 180,
+    "section": "main",
+    "skill": "planche",
+    "note": "Film the attempt. Hold only while the shape stays clean, then confirm your rating and form check. Stopping early for pain or a lost position is the right call, not a failed test."
+   }
+  ],
+  "purpose": "Answer one question — what you can hold today, cleanly — at a fresh, planned opportunity.",
+  "skills": [
+   "planche"
+  ],
+  "request": {
+   "source": "test"
+  }
+ }
+}

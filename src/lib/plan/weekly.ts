@@ -35,7 +35,7 @@ export function gymBadges(state: Pick<AppState, 'sessions' | 'gym'>): GymBadge[]
     for (const log of s.exercises) {
       for (const set of log.sets) {
         if (set.warmup) continue
-        const e = estimateOneRepMax(set)
+        const e = estimateOneRepMax(set, log.exerciseId)
         if (e === null) continue
         const had = best.get(log.exerciseId)
         if (had !== undefined && e > had + 0.01 && firstPr === undefined) firstPr = s.endedAt
@@ -120,13 +120,14 @@ export function weeklySummary(state: AppState, now = Date.now()): WeeklySummary 
   for (const s of gym) {
     if (s.startedAt >= from) continue
     for (const e of s.exercises) for (const x of e.sets) {
-      const v = estimateOneRepMax(x)
+      const v = estimateOneRepMax(x, e.exerciseId)
       if (v !== null && v > (bestBefore.get(e.exerciseId) ?? 0)) bestBefore.set(e.exerciseId, v)
     }
   }
   const newMaxes = new Set<string>()
   for (const s of gymWeek) for (const e of s.exercises) for (const x of e.sets) {
-    const v = estimateOneRepMax(x)
+    if (x.warmup) continue
+    const v = estimateOneRepMax(x, e.exerciseId)
     const before = bestBefore.get(e.exerciseId)
     if (v !== null && before !== undefined && v > before + 0.01) newMaxes.add(e.exerciseId)
   }

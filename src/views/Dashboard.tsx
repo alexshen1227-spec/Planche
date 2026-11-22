@@ -37,6 +37,7 @@ import { WeekPlanCard } from '../components/WeekPlanCard'
 import { INSTALL_STEPS, installState } from '../lib/install'
 import { WalkBackCalibrator } from '../components/WalkBackCalibrator'
 import { walkMeasureDue } from '../lib/sessionTiming'
+import { planToday } from '../lib/plan/planner'
 
 /** Per-device memory of the complete-sessions notice; never state that matters. */
 const SESSIONS_NOTICE_KEY = 'planchelab.notice.complete-sessions'
@@ -184,8 +185,16 @@ export function Dashboard({
   // Who trains today, and why — only worth a card when there is a choice. Read
   // off the session Start would build, after the rails: the planned line-up
   // once listed three skills above a button that built the pain-safe session.
+  // Today's skill session is the skill block of today's plan (its minutes and
+  // skills), the same request the Train tab's Today card starts.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const todays = useMemo(() => finalizeWorkoutWithPlan(whole, { source: 'auto' }, undefined, Date.now()), [whole, today])
+  const dayPlan = useMemo(() => planToday(whole), [whole, today])
+  const recommended: WorkoutRequest = useMemo(
+    () => (dayPlan.skill ? { source: 'auto', minutes: dayPlan.skill.minutes, skills: dayPlan.skill.skills } : { source: 'auto' }),
+    [dayPlan],
+  )
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const todays = useMemo(() => finalizeWorkoutWithPlan(whole, recommended, undefined, Date.now()), [whole, today, recommended])
   const lineup = todays.lineup
   /** Chosen skills that cannot train until some kit is added. */
   const waiting = skills
@@ -329,12 +338,15 @@ export function Dashboard({
             {trainedToday ? ' · trained today ✓' : ''}
           </p>
         </div>
-        <div className="flex min-h-11 items-center gap-2 rounded-full border border-line bg-surface px-4 text-footnote font-medium text-ink2">
-          <Icon name="flame" size={16} className={streak.weeks > 0 ? 'text-accent-text' : 'text-ink3'} />
-          <span className="tnum">
-            {streak.weeks}-week streak
-          </span>
-        </div>
+        {/* Day one has no streak to show: a "0-week streak" was one more thing on a full first screen. */}
+        {streak.weeks > 0 || whole.sessions.length > 0 ? (
+          <div className="flex min-h-11 items-center gap-2 rounded-full border border-line bg-surface px-4 text-footnote font-medium text-ink2">
+            <Icon name="flame" size={16} className={streak.weeks > 0 ? 'text-accent-text' : 'text-ink3'} />
+            <span className="tnum">
+              {streak.weeks}-week streak
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {several ? (
@@ -431,10 +443,11 @@ export function Dashboard({
           </div>
         </div>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <Button size="lg" onClick={() => startWorkout({ source: 'auto' })} className="w-full sm:w-auto">
+          <Button size="lg" onClick={() => startWorkout(recommended)} className="w-full sm:w-auto">
             <Icon name="play" size={16} /> Start today's session
           </Button>
-          {testBlocked ? null : (
+          {/* The first session comes first: a max test is offered once there is one. */}
+          {testBlocked || whole.sessions.length === 0 ? null : (
             <Button variant="secondary" onClick={() => startWorkout({ source: 'test', stepId: state.stepId })}>
               <Icon name="target" size={16} /> Max test{several ? ` · ${skillDef.short}` : ''}
             </Button>
@@ -580,7 +593,7 @@ export function Dashboard({
             ))}
           </div>
         ) : null}
-        {microMinutes !== null ? (
+        {microMinutes !== null && whole.sessions.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2 text-footnote">
             <span className="text-ink3">No full session today?</span>
             <button

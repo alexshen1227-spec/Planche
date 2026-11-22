@@ -4,8 +4,10 @@ import { dayKey } from '../time'
 /**
  * The athlete's sport, as the planner sees it: what they logged, plus their
  * regular sport week (`prefs.sportSchedule`) read as if each session happened
- * as usual. A log on the same local day replaces that day's scheduled
- * session, so a changed practice is counted once, as logged.
+ * as usual. A log replaces that day's scheduled session only when it is the
+ * same session — the same kind, or one sport session for another (a practice
+ * logged on game day) — so a changed practice is counted once, as logged, and
+ * a light PE class logged on game day never erases the game.
  */
 
 export interface SportEvent extends OutsideActivity {
@@ -65,11 +67,20 @@ export function scheduledSport(schedule: SportSlot[] | undefined, from: number, 
   return out
 }
 
+/** Practice and games are one sport's sessions: either logged stands in for the other on its day. */
+const SPORT_SESSIONS: ReadonlySet<ActivityKind> = new Set<ActivityKind>(['practice', 'game'])
+
+/** Whether a log of `logged` is the scheduled `usual` session, as it went that day. */
+export function sameSession(logged: ActivityKind, usual: ActivityKind): boolean {
+  return logged === usual || (SPORT_SESSIONS.has(logged) && SPORT_SESSIONS.has(usual))
+}
+
 /** Logged activities and the regular sport week in [from, to), oldest first. */
 export function sportBetween(gym: Pick<GymState, 'activities' | 'prefs'> | undefined, from: number, to: number): SportEvent[] {
   const logs = gym?.activities ?? []
-  const loggedDays = new Set(logs.map((a) => dayKey(a.at)))
   const logged = logs.filter((a) => a.at >= from && a.at < to).map((a): SportEvent => ({ ...a, scheduled: false }))
-  const usual = scheduledSport(gym?.prefs?.sportSchedule, from, to).filter((s) => !loggedDays.has(dayKey(s.at)))
+  const usual = scheduledSport(gym?.prefs?.sportSchedule, from, to).filter(
+    (s) => !logs.some((a) => dayKey(a.at) === dayKey(s.at) && sameSession(a.kind, s.kind)),
+  )
   return [...logged, ...usual].sort((a, b) => a.at - b.at)
 }

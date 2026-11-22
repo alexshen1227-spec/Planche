@@ -13,6 +13,18 @@ const KINDS: { id: ActivityKind; label: string; legs: boolean }[] = [
   { id: 'other', label: 'Other', legs: false },
 ]
 
+/**
+ * When a logged activity happened: `ahead` calendar days from now (negative =
+ * past). Something coming up is put at 5 pm that day. Calendar arithmetic, not
+ * 24-hour steps — across a daylight-saving change those land an hour off.
+ */
+export function activityTime(now: number, ahead: number): number {
+  const day = new Date(now)
+  day.setDate(day.getDate() + ahead)
+  if (ahead > 0) day.setHours(17, 0, 0, 0)
+  return day.getTime()
+}
+
 /** Log a sport or activity so it counts toward fatigue and the plan around it. */
 export function ActivitySheet({ onDone }: { onDone: () => void }) {
   const { state, dispatch } = useStore()
@@ -27,9 +39,7 @@ export function ActivitySheet({ onDone }: { onDone: () => void }) {
   const save = () => {
     const ahead = { yesterday: -1, today: 0, tomorrow: 1, in2: 2 }[when]
     // Something coming up is put at 5 pm that day, so the plan can keep legs fresh for it.
-    const day = new Date()
-    if (ahead > 0) day.setHours(17, 0, 0, 0)
-    const at = day.getTime() + ahead * 86_400_000
+    const at = activityTime(Date.now(), ahead)
     dispatch({
       type: 'GYM',
       op: { op: 'logActivity', activity: { id: `act-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, at, kind, minutes, rpe, legs } },

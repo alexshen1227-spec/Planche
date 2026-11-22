@@ -40,8 +40,9 @@ export function previousSets(
   exerciseId: string,
   locationId: string,
   unit: Unit,
+  now = Infinity,
 ): DraftItem['previous'] {
-  const last = lastPerformance(sessions, exerciseId, locationId)
+  const last = lastPerformance(sessions, exerciseId, locationId, now)
   if (!last) return undefined
   return last.sets.map((s) => ({
     ...(s.kg !== undefined && s.kg > 0 ? { load: displayLoad(s.kg, unit) } : {}),

@@ -1,4 +1,5 @@
 import { GymHub } from '../components/gym/GymHub'
+import { planToday } from '../lib/plan/planner'
 import { TodayPlanCard, type GymPreset } from '../components/plan/TodayPlanCard'
 import { useEffect, useMemo, useState } from 'react'
 import type { AssistType, Section, Session, SetLog, SkillId, TrainingSurface, Workout, WorkoutRequest } from '../types'
@@ -34,7 +35,8 @@ import { sfx } from '../lib/audio'
 import { fmtHold } from '../lib/time'
 import { Icon } from '../components/Icon'
 import { MainTarget, Modal, SectionTitle } from '../components/ui'
-import { defaultSurface, surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
+import { defaultSurface, kitNeedsPhrase, surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
+import { ladderStatus } from '../lib/repLadder'
 import { recordForSurface } from '../lib/records'
 import { STRATEGY_BY_ID } from '../lib/coach'
 import { useToday } from '../lib/useToday'
@@ -64,7 +66,7 @@ function WorkoutTarget({ workout }: { workout: Workout }) {
 
 /** Request identity for the preview, so a fresh decision is made per card. */
 function requestKey(request: WorkoutRequest): string {
-  return `${request.source}:${request.templateId ?? ''}:${request.stepId ?? ''}:${request.minutes ?? ''}:${(request.skills ?? []).join('+')}`
+  return `${request.source}:${request.templateId ?? ''}:${request.stepId ?? ''}:${request.minutes ?? ''}:${(request.skills ?? []).join('+')}:${request.focus ?? ''}`
 }
 
 function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest) => void }) {
@@ -86,15 +88,24 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   const testSkill: SkillId = testPick && trainable.includes(testPick) ? testPick : (trainable[0] ?? skills[0])
   const [mix, setMix] = useState<SkillId[]>([])
   const mixed = mix.filter((skill) => trainable.includes(skill))
+  // The recommended session is the skill block of today's plan — its minutes
+  // and its skills — the same request the Today card starts, so the two cards
+  // never show different sessions (35 minutes there once read ~42 here).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const dayPlan = useMemo(() => planToday(state), [state, todayKey])
+  const recommended: WorkoutRequest = useMemo(
+    () => (dayPlan.skill ? { source: 'auto', minutes: dayPlan.skill.minutes, skills: dayPlan.skill.skills } : { source: 'auto' }),
+    [dayPlan],
+  )
   const finalized = useMemo(() => {
     const now = Date.now()
     const build = (request: WorkoutRequest) => finalizeFromPlan(state, request, plan, now).workout
     return {
-      today: build({ source: 'auto' }),
+      today: build(recommended),
       templates: new Map(TEMPLATES.map((t) => [t.id, build({ source: 'template', templateId: t.id })])),
       build,
     }
-  }, [state, plan])
+  }, [state, plan, recommended])
   const today = finalized.today
   // What the recommended session trains once the rails have run — none of the
   // skills on a pain-safe day — for the week card's sentence about today.
@@ -106,16 +117,45 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
         ? // Only the plain recommended request may reuse the session built for
           // the card above. Anything chosen — skills, a time budget — is built
           // from the request itself, the same way Start builds it.
-          isRecommendedRequest(previewRequest)
+          isRecommendedRequest(previewRequest) || requestKey(previewRequest) === requestKey(recommended)
           ? finalized.today
           : previewRequest.source === 'template' && previewRequest.templateId
             ? (finalized.templates.get(previewRequest.templateId) ?? finalized.build(previewRequest))
             : finalized.build(previewRequest)
         : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [previewRequest && requestKey(previewRequest), finalized],
+    [previewRequest && requestKey(previewRequest), finalized, recommended],
   )
   const step = STEP_BY_ID[stepOfSkill(state, testSkill)]
+  // One card per trained skill, and one more for each rep ladder it has. Each
+  // is only a request: the preview and Start build it the way every workout is.
+  const skillDays = skills.flatMap((skill) => {
+    const def = SKILLS[skill]
+    const needsList = missingKit(skill, state.profile.equipment)
+    const needs = needsList.length ? kitNeedsPhrase(needsList) : null
+    const days: { key: string; title: string; line: string; needs: string | null; request: WorkoutRequest }[] = [
+      {
+        key: skill,
+        title: `${def.holdName[0].toUpperCase()}${def.holdName.slice(1)} day`,
+        line: `${def.tagline} Now: ${STEP_BY_ID[stepOfSkill(state, skill)].name}.`,
+        needs,
+        request: { source: 'auto', skills: [skill] },
+      },
+    ]
+    if (def.ladder) {
+      const status = ladderStatus(state, skill)
+      days.push({
+        key: `${skill}-ladder`,
+        title: `${def.ladder.name} day`,
+        line: status
+          ? `The ${def.ladder.name.toLowerCase()} line comes first: ${EXERCISE_BY_ID[status.rung.exerciseId]?.name ?? status.rung.exerciseId} for about five sets, the hold as short practice.`
+          : def.ladder.summit,
+        needs,
+        request: { source: 'auto', skills: [skill], focus: 'ladder' },
+      })
+    }
+    return days
+  })
 
   return (
     <div className="animate-rise">
@@ -135,13 +175,13 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
       {/* Recommended */}
       <div className="mt-5 grid gap-3 lg:grid-cols-3">
         <button
-          onClick={() => setPreviewRequest({ source: 'auto' })}
+          onClick={() => setPreviewRequest(recommended)}
           className="card-int card-sheen group relative overflow-hidden rounded-card border border-accent/25 bg-surface p-6 text-left shadow-card hover:border-accent/50 lg:col-span-2"
         >
           <div className="pointer-events-none absolute -right-8 -top-12 h-44 w-44 rounded-full bg-accent-soft blur-2xl" />
           <div className="relative">
             <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wider text-accent-text">
-              <Icon name="bolt" size={14} /> Recommended today
+              <Icon name="bolt" size={14} /> Today's calisthenics
             </div>
             <div className="mt-1.5 font-display text-[22px] font-bold text-ink">{today.name}</div>
             <p className="mt-1 max-w-lg text-body leading-relaxed text-ink2">{today.focus}</p>
@@ -215,9 +255,39 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
           one-off choice of skills for today. */}
       <WeekPlanCard className="mt-4" sessionSkills={todaySkills} />
 
+      {/* Skill days: one full session for one skill, whatever its priority. */}
+      <SectionTitle>Skill days</SectionTitle>
+      <p className="-mt-1 mb-3 text-footnote leading-relaxed text-ink3">
+        A full session for one skill: its hold first, then the strength work behind it. It is the same session the
+        coach would build with that skill leading.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {skillDays.map((day) => (
+          <button
+            key={day.key}
+            disabled={day.needs !== null}
+            onClick={() => setPreviewRequest(day.request)}
+            className="card-int rounded-inner border border-line bg-surface p-5 text-left shadow-card disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <div className="font-display text-title3 font-semibold text-ink">{day.title}</div>
+            <p className="mt-1 text-footnote leading-relaxed text-ink2">{day.line}</p>
+            {day.needs !== null ? (
+              <p className="mt-1.5 text-caption font-medium text-ink3">Waiting for kit — needs {day.needs}. Add it under Settings → Equipment.</p>
+            ) : null}
+          </button>
+        ))}
+      </div>
+
+      {/* Everything that is not one session or one skill. */}
+      <details className="group mt-6 rounded-inner border border-line bg-surface shadow-card">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 text-body font-semibold text-ink">
+          More sessions
+          <span className="text-footnote font-normal text-ink3">Focused sessions · your own mix</span>
+        </summary>
+        <div className="px-5 pb-5">
       {trainable.length > 1 ? (
         <>
-          <SectionTitle>Choose today's skills</SectionTitle>
+          <SectionTitle>Choose skills for one session</SectionTitle>
           <div className="rounded-inner border border-line bg-surface p-5 shadow-card">
             <p className="text-footnote leading-relaxed text-ink2">
               The recommended session picks these for you by priority and by what has gone longest untrained. To
@@ -292,6 +362,8 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
           )
         })}
       </div>
+        </div>
+      </details>
 
       {/* Workout preview */}
       <Modal
@@ -662,7 +734,7 @@ export function Train({
         value={mode}
         onChange={choose}
         options={[
-          { value: 'skills', label: 'Skills' },
+          { value: 'skills', label: 'Calisthenics' },
           { value: 'gym', label: 'Gym' },
         ]}
       />

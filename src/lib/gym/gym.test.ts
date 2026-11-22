@@ -471,3 +471,29 @@ describe('speed and power: the progression gate', () => {
     expect(GYM_EXERCISE_BY_ID['pogo-hop'].count).toBe('contacts')
   })
 })
+
+describe('assisted movements', () => {
+  const withMachine: GymLocation = { ...gymA, id: 'm', equipment: [...gymA.equipment, 'assisted-pullup'] }
+  const plan = repPlanFor(GYM_EXERCISE_BY_ID['assisted-pull-up'], 'muscle')
+  const [lo, hi] = plan.range
+  const day = (sets: GymSet[]) => [session('ap', 'm', T0, 'assisted-pull-up', sets)]
+
+  it('takes help off when every set reaches the top, and puts help back after a grinding miss', () => {
+    const up = suggestLoad({ exerciseId: 'assisted-pull-up', location: withMachine, sessions: day([set(30, hi, 8), set(30, hi, 8)]), plan, now: T0 + DAY })
+    expect(up).toMatchObject({ kind: 'increase', kg: 25 })
+    const down = suggestLoad({ exerciseId: 'assisted-pull-up', location: withMachine, sessions: day([set(30, lo - 2, 10), set(30, lo - 3, 10)]), plan, now: T0 + DAY })
+    expect(down).toMatchObject({ kind: 'decrease', kg: 35 })
+    const last = suggestLoad({ exerciseId: 'assisted-pull-up', location: withMachine, sessions: day([set(5, hi, 8), set(5, hi, 8)]), plan, now: T0 + DAY })
+    expect(last).toMatchObject({ kind: 'increase', kg: 0 })
+    expect(last.why).toMatch(/none/)
+  })
+
+  it('never reads help as strength: no estimated max and no heaviest-lift record', () => {
+    expect(estimateOneRepMax({ kg: 40, reps: 5 }, 'assisted-pull-up')).toBeNull()
+    expect(estimateOneRepMax({ kg: 40, reps: 5 }, 'lat-pulldown')).not.toBeNull()
+    const rec = gymRecords(day([set(40, 8, 8)]))['assisted-pull-up']
+    expect(rec.heaviest).toBeUndefined()
+    expect(rec.bestE1rm).toBeUndefined()
+    expect(rec.mostReps?.reps).toBe(8)
+  })
+})

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { MUSCLE_GROUPS, MUSCLES, type Muscle } from '../../data/gym/catalog'
 import { ALL_STEPS } from '../../data/progressions'
 import { defaultPrefs } from '../../lib/gym/state'
@@ -45,6 +45,15 @@ export function SportWeekEditor({ prefs, setPrefs }: Edit) {
       void _old
       return next.length ? { ...others, sportSchedule: next } : others
     })
+  // Each change merges into the slot as it is now, not as it was when this
+  // screen last drew: two quick taps (kind, then effort) once lost the first.
+  const patch = (weekday: number, fields: Partial<SportSlot> | ((cur: SportSlot) => Partial<SportSlot>)) =>
+    setPrefs((p) => {
+      const current = (p.sportSchedule ?? []).find((x) => x.weekday === weekday)
+      if (!current) return p
+      const next = [...(p.sportSchedule ?? []).filter((x) => x.weekday !== weekday), { ...current, ...(typeof fields === 'function' ? fields(current) : fields) }].sort((a, b) => a.weekday - b.weekday)
+      return { ...p, sportSchedule: next }
+    })
   const intensity = (rpe: number) => (rpe >= 7 ? '8' : rpe >= 5 ? '6' : '4')
   return (
     <section>
@@ -82,7 +91,7 @@ export function SportWeekEditor({ prefs, setPrefs }: Edit) {
                 <div className="mt-2 space-y-2">
                   <div className="flex flex-wrap gap-2" role="group" aria-label={`${name}: what`}>
                     {SPORT_KINDS.map((k) => (
-                      <ToggleChip key={k.id} active={slot.kind === k.id} onClick={() => put(d, { ...slot, kind: k.id, legs: k.legs })}>
+                      <ToggleChip key={k.id} active={slot.kind === k.id} onClick={() => patch(d, { kind: k.id, legs: k.legs })}>
                         {k.label}
                       </ToggleChip>
                     ))}
@@ -90,13 +99,13 @@ export function SportWeekEditor({ prefs, setPrefs }: Edit) {
                   <SegmentedControl
                     label={`${name}: how hard`}
                     value={intensity(slot.rpe)}
-                    onChange={(v) => put(d, { ...slot, rpe: Number(v) })}
+                    onChange={(v) => patch(d, { rpe: Number(v) })}
                     options={INTENSITY}
                   />
                   <div className="flex flex-wrap items-center gap-2">
                     <select
                       value={slot.minutes}
-                      onChange={(e) => put(d, { ...slot, minutes: Number(e.target.value) })}
+                      onChange={(e) => patch(d, { minutes: Number(e.target.value) })}
                       className="min-h-11 rounded-control border border-line bg-raised px-3 text-body"
                       aria-label={`${name}: minutes`}
                     >
@@ -106,7 +115,7 @@ export function SportWeekEditor({ prefs, setPrefs }: Edit) {
                         </option>
                       ))}
                     </select>
-                    <ToggleChip active={slot.legs} onClick={() => put(d, { ...slot, legs: !slot.legs })}>
+                    <ToggleChip active={slot.legs} onClick={() => patch(d, (cur) => ({ legs: !cur.legs }))}>
                       Hard on the legs
                     </ToggleChip>
                   </div>
@@ -129,6 +138,45 @@ const SKILL_LABEL: Record<SkillId, string> = {
 
 type Edit = { prefs: TrainingPrefs; setPrefs: (fn: (p: TrainingPrefs) => TrainingPrefs) => void }
 
+/**
+ * Off, 1 to 5 — a radio group like the design system's SegmentedControl, but
+ * every option carries its own name ("Strength: 3 of 5"), which that control
+ * cannot give a chip showing only a number. Arrow keys move the choice.
+ */
+function WeightScale({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  const values = [0, 1, 2, 3, 4, 5]
+  const move = (e: KeyboardEvent<HTMLButtonElement>, v: number) => {
+    const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
+    if (!dir) return
+    e.preventDefault()
+    const next = (v + dir + values.length) % values.length
+    onChange(next)
+    const group = e.currentTarget.parentElement
+    window.setTimeout(() => group?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus(), 0)
+  }
+  return (
+    <div role="radiogroup" aria-label={`${label}: how much it matters`} className="mt-1 flex gap-1 rounded-inner bg-raised p-1">
+      {values.map((v) => (
+        <button
+          key={v}
+          type="button"
+          role="radio"
+          aria-checked={value === v}
+          aria-label={v === 0 ? `${label}: off` : `${label}: ${v} of 5`}
+          tabIndex={value === v ? 0 : -1}
+          onClick={() => onChange(v)}
+          onKeyDown={(e) => move(e, v)}
+          className={`ds-press min-h-11 flex-1 rounded-control px-2 text-body font-semibold ${
+            value === v ? 'bg-surface text-ink shadow-card' : 'text-ink2 hover:text-ink'
+          }`}
+        >
+          {v === 0 ? 'Off' : v}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function GoalsEditor({ prefs, setPrefs }: Edit) {
   return (
       <section>
@@ -141,12 +189,10 @@ export function GoalsEditor({ prefs, setPrefs }: Edit) {
                 <span className="text-body font-medium">{g.label}</span>
                 <span className="text-caption text-ink3">{g.hint}</span>
               </div>
-              <SegmentedControl
-                className="mt-1"
+              <WeightScale
                 label={g.label}
-                value={String(prefs.goals[g.id])}
-                onChange={(v) => setPrefs((p) => ({ ...p, goals: { ...p.goals, [g.id]: Number(v) } }))}
-                options={[0, 1, 2, 3, 4, 5].map((v) => ({ value: String(v), label: v === 0 ? 'Off' : String(v) }))}
+                value={prefs.goals[g.id]}
+                onChange={(v) => setPrefs((p) => ({ ...p, goals: { ...p.goals, [g.id]: v } }))}
               />
             </li>
           ))}

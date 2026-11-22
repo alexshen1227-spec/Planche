@@ -86,7 +86,7 @@ export function setsCsv(state: AppState): string {
         undefined,
         set.kind === 'reps' ? set.value : undefined,
         set.kind === 'hold' ? set.value : undefined,
-        undefined,
+        set.rpe,
       ]),
     )
   }

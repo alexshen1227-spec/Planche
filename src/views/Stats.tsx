@@ -46,6 +46,7 @@ import { Icon } from '../components/Icon'
 import { BadgeGlyph } from '../components/ds/BadgeGlyph'
 import { Modal, SectionTitle } from '../components/ui'
 import { WeeklySummary } from '../components/plan/WeeklySummary'
+import { gymBadges } from '../lib/plan/weekly'
 import { pushToast } from '../lib/toast'
 import type { Exercise, SkillId, TrainingSurface } from '../types'
 import { surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
@@ -508,9 +509,11 @@ export function Stats({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [skills.join(','), whole.achievements],
   )
+  // The gym's badges sit in the same cabinet: "First lift" once unlocked
+  // while the count beside it still read 0 of 41.
   const achievementCards = useMemo(
-    () =>
-      listedAchievements.map((achievement, order) => {
+    (): { achievement: Pick<(typeof ACHIEVEMENTS)[number], 'id' | 'name' | 'desc' | 'icon'>; order: number; at?: number; progress: AchievementProgress | null; ratio: number }[] => [
+      ...listedAchievements.map((achievement, order) => {
         const at = state.achievements[achievement.id]
         const progress = !at && achievement.progress ? achievement.progress(state) : null
         return {
@@ -521,10 +524,18 @@ export function Stats({
           ratio: progress ? Math.min(1, progress.current / Math.max(1, progress.target)) : 0,
         }
       }),
-    [state, listedAchievements],
+      ...gymBadges(whole).map((b, i) => ({
+        achievement: { id: b.id, name: b.name, desc: b.desc, icon: b.icon },
+        order: listedAchievements.length + i,
+        ...(b.at !== undefined ? { at: b.at } : {}),
+        progress: null,
+        ratio: 0,
+      })),
+    ],
+    [state, whole, listedAchievements],
   )
   const unlockedCount = achievementCards.filter((card) => card.at).length
-  const lockedCount = listedAchievements.length - unlockedCount
+  const lockedCount = achievementCards.length - unlockedCount
   const nextAchievementCards = useMemo(
     () =>
       achievementCards
@@ -571,15 +582,18 @@ export function Stats({
 
       <Card className="mt-6">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Metric label="Sessions" value={state.sessions.length} />
-          <Metric label="Total sets" value={totalSets(state)} />
+          <Metric label="Sessions" value={whole.sessions.length + (whole.gym?.sessions.length ?? 0)} />
+          <Metric
+            label="Total sets"
+            value={totalSets(whole) + (whole.gym?.sessions ?? []).reduce((n, g) => n + g.exercises.reduce((m, e) => m + e.sets.filter((x) => !x.warmup).length, 0), 0)}
+          />
           <Metric label="Time under tension" value={fmtDuration(totalHoldSec(state))} />
           <Metric
             label="Achievements"
             value={
               <>
                 {unlockedCount}
-                <span className="text-body text-ink3">/{listedAchievements.length}</span>
+                <span className="text-body text-ink3">/{achievementCards.length}</span>
               </>
             }
           />
@@ -861,13 +875,18 @@ export function Stats({
         </div>
         <div className="mt-3 space-y-1 text-footnote leading-relaxed text-ink3">
           <p>
-            Rates are measured on your current step's key hold and recomputed from your history — deleting a session
-            updates them honestly.
+            Rates come from your current step's key hold and are worked out again from your history, so deleting a
+            session updates them too.
           </p>
+          <details className="group">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 font-medium text-ink2">
+              How the numbers are kept honest
+              <Icon name="chevronD" size={14} className="transition-transform group-open:rotate-180" />
+            </summary>
           <p>
-            Noise is handled deliberately: averages are pulled toward the overall mean until a strategy has real
-            evidence behind it, targets anchor on your typical hold rather than your single best, and session-to-session
-            swings of more than ~22% around your own trend pause changes instead of driving them.
+            One good or bad day does not move things: a strategy needs real evidence before it counts as your best,
+            targets follow your typical hold rather than your single best, and a session far from your usual (more than
+            about 22% off your own trend) pauses changes instead of driving them.
             {' '}
             {state.settings.phoneWithinReach
               ? `Timed holds have your ${state.settings.stopLatencySec.toFixed(1)}s calibrated stop delay taken off`
@@ -878,6 +897,7 @@ export function Stats({
                 )}s calibrated delay`}
             {' '}— each set can be corrected on the rest screen, and a hold timed from its video has nothing taken off.
           </p>
+          </details>
         </div>
       </div>
 
@@ -952,7 +972,7 @@ export function Stats({
             <div>
               <div className="text-caption font-semibold uppercase tracking-wider text-accent-text">Trophy cabinet</div>
               <div className="mt-1 font-display text-title1 font-semibold text-ink tnum">
-                {unlockedCount} <span className="text-body font-normal text-ink3">of {listedAchievements.length} earned</span>
+                {unlockedCount} <span className="text-body font-normal text-ink3">of {achievementCards.length} earned</span>
               </div>
             </div>
             <Icon name="trophy" size={28} className="text-accent-text" />
@@ -960,7 +980,7 @@ export function Stats({
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-line">
             <div
               className="h-full rounded-full bg-accent transition-[width] duration-500"
-              style={{ width: `${(unlockedCount / Math.max(1, listedAchievements.length)) * 100}%` }}
+              style={{ width: `${(unlockedCount / Math.max(1, achievementCards.length)) * 100}%` }}
             />
           </div>
           {nextAchievementCards.length > 0 ? (
@@ -996,7 +1016,7 @@ export function Stats({
             ['next', 'Next up', nextAchievementCards.length],
             ['earned', 'Earned', unlockedCount],
             ['locked', 'Locked', lockedCount],
-            ['all', 'All', listedAchievements.length],
+            ['all', 'All', achievementCards.length],
           ] as const).map(([filter, label, count]) => (
             <button
               key={filter}

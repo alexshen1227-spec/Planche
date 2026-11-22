@@ -45,9 +45,15 @@ export function repPlanFor(
 /**
  * Estimated one-rep max from a set, adjusted for reps in reserve (Epley on
  * reps + RIR). Refuses past 12 total reps — the estimate is too loose there to
- * be a number worth showing — and for bodyweight or unloaded sets.
+ * be a number worth showing — for unloaded sets, and (pass the id) for an
+ * assisted movement, where the logged weight is the help, and for bodyweight
+ * movements, where only the added load is known.
  */
-export function estimateOneRepMax(set: Pick<GymSet, 'kg' | 'reps' | 'rpe'>): number | null {
+export function estimateOneRepMax(set: Pick<GymSet, 'kg' | 'reps' | 'rpe'>, exerciseId?: string): number | null {
+  const known = exerciseId !== undefined ? GYM_EXERCISE_BY_ID[exerciseId] : undefined
+  if (known?.assisted) return null
+  // Bodyweight is optional and usually unknown, so the added load alone says nothing about a max.
+  if (known?.load === 'bodyweight') return null
   if (set.kg === undefined || !(set.kg > 0) || !(set.reps >= 1)) return null
   const rir = set.rpe !== undefined ? Math.max(0, 10 - set.rpe) : 0
   const total = set.reps + rir
@@ -90,14 +96,15 @@ export function sharedEstimate(sessions: GymSession[], exerciseId: string, befor
   // Machines differ from gym to gym; only free weights carry a load across.
   if (!ex || !['barbell', 'dumbbell', 'kettlebell'].includes(ex.load)) return null
   let best: number | null = null
-  const cutoff = before - 120 * 86_400_000
+  // Without a clock (before = Infinity) there is no window: every session counts.
+  const cutoff = Number.isFinite(before) ? before - 120 * 86_400_000 : -Infinity
   for (const s of sessions) {
     if (s.startedAt >= before || s.startedAt < cutoff) continue
     for (const log of s.exercises) {
       if (log.exerciseId !== exerciseId) continue
       for (const set of log.sets) {
         if (set.warmup) continue
-        const e = estimateOneRepMax(set)
+        const e = estimateOneRepMax(set, exerciseId)
         if (e !== null && (best === null || e > best)) best = e
       }
     }
@@ -114,6 +121,31 @@ function countedWhy(ex: GymExercise, plan: RepPlan): string {
   }
   if (ex.count === 'contacts') return `${lo}–${hi} foot contacts a set${dist}, quick and light. Quality over quantity: stop when they get slow or loud.`
   return `${lo}–${hi} reps a set at a crisp pace with full rest. Keep every rep fast; stop when speed drops.`
+}
+
+/**
+ * Where the working sets were done: the load most sets used. On a tie, the
+ * heaviest (or, for help, the least help) so a ramp of single sets reads as
+ * its top.
+ */
+function workingLoad(loads: number[], tie: 'heaviest' | 'lightest'): number {
+  const counts = new Map<number, number>()
+  for (const l of loads) counts.set(l, (counts.get(l) ?? 0) + 1)
+  let best = loads[0] ?? 0
+  let n = 0
+  for (const [l, c] of counts) {
+    if (c > n || (c === n && (tie === 'heaviest' ? l > best : l < best))) {
+      best = l
+      n = c
+    }
+  }
+  return best
+}
+
+/** At least half the sets at the working load fell short of the range, and no effort was logged on any of them. */
+function failedWithoutEffort(atLoad: GymSet[], lo: number): boolean {
+  if (!atLoad.length || atLoad.some((s) => s.rpe !== undefined)) return false
+  return atLoad.filter((s) => s.reps < lo).length * 2 >= atLoad.length
 }
 
 export interface LoadSuggestion {
@@ -157,6 +189,13 @@ export function suggestLoad(input: {
       if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan) }
       return { ...base, kind: 'bodyweight', why: `Bodyweight: aim for ${lo}–${hi} clean reps.` }
     }
+    if (ex.assisted) {
+      return {
+        ...base,
+        kind: 'first-time',
+        why: `First time here: set the least help that still gives about ${hi} clean reps with two to spare. The weight you log is the help, so progress takes it off.`,
+      }
+    }
     return {
       ...base,
       kind: 'first-time',
@@ -164,28 +203,38 @@ export function suggestLoad(input: {
     }
   }
   const working = last.sets
-  const loads = working.map((s) => s.kg ?? 0)
-  const kg = Math.max(...loads)
+  // The working load is where the working sets were done: the load most sets
+  // used, the heavier one on a tie. A heavier top set before back-off sets is
+  // not what the next session repeats.
+  const kg = workingLoad(working.map((s) => s.kg ?? 0), 'heaviest')
   const atLoad = working.filter((s) => (s.kg ?? 0) === kg)
   // One set stopped early is not "every set": a step up needs at least two.
   // ...and each with its effort logged: a set nobody rated says nothing about effort.
   const allTop = atLoad.length >= 2 && atLoad.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
   const anyShort = atLoad.some((s) => s.reps < lo)
   const grinding = atLoad.some((s) => s.rpe !== undefined && s.rpe >= 9.5)
+  const failing = failedWithoutEffort(atLoad, lo)
+  // Every suggested load is one this place can make.
+  const reach = (v: number) => {
+    const r = roundToStep(v, step, top)
+    return r > 0 || !(v > 0) ? r : v
+  }
+  if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, top)
   if (ex.load === 'bodyweight' && !(kg > 0)) {
     if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan) }
     if (allTop) return { ...base, kind: 'bodyweight', why: `Every set reached ${hi} last time: add a few reps, slow the lowering, or move to a harder version.` }
     return { ...base, kind: 'bodyweight', why: `Aim to beat last time’s ${working.map((s) => s.reps).join(', ')} reps.` }
   }
   if (allTop && step > 0) {
-    const next = roundToStep(kg + step, step, top)
-    if (next <= kg) {
-      return { ...base, kg, kind: 'at-top-weight', why: `Every set reached ${hi} — and that is the heaviest weight here. Add reps, a pause, or a harder variation.` }
+    const here = reach(kg)
+    const next = roundToStep(here + step, step, top)
+    if (next <= here) {
+      return { ...base, kg: here, kind: 'at-top-weight', why: `Every set reached ${hi} — and that is the heaviest weight here. Add reps, a pause, or a harder variation.` }
     }
     // Sets that blew well past the range at an easy effort earn two steps —
     // for an adult. Under 18 a jump is always the smallest step there is.
     const easy = atLoad.every((s) => s.reps >= hi + 3 && s.rpe !== undefined && s.rpe <= 7)
-    const twoSteps = !youth && easy ? roundToStep(kg + 2 * step, step, top) : next
+    const twoSteps = !youth && easy ? roundToStep(here + 2 * step, step, top) : next
     return {
       ...base,
       kg: twoSteps,
@@ -197,16 +246,63 @@ export function suggestLoad(input: {
     }
   }
   if (anyShort && grinding && step > 0) {
-    return { ...base, kg: roundToStep(Math.max(0, kg - step), step, top), kind: 'decrease', why: `Last time fell short of ${lo} reps at a near-max effort: one step lighter, then build back.` }
+    return { ...base, kg: roundToStep(Math.max(0, reach(kg) - step), step, top), kind: 'decrease', why: `Last time fell short of ${lo} reps at a near-max effort: one step lighter, then build back.` }
   }
-  return { ...base, kg, kind: 'repeat', why: `Same weight: aim to add a rep to last time’s ${atLoad.map((s) => s.reps).join(', ')}.` }
+  if (failing && step > 0 && kg > 0) {
+    return { ...base, kg: roundToStep(Math.max(0, reach(kg) - step), step, top), kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step lighter, then build back.` }
+  }
+  return { ...base, kg: reach(kg), kind: 'repeat', why: `Same weight: aim to add a rep to last time’s ${atLoad.map((s) => s.reps).join(', ')}.` }
+}
+
+/**
+ * Double progression with the direction turned round: the logged weight is
+ * help, so every set at the top of the range takes one step of help off
+ * (never two — the last steps are the hard ones), and falling short at a
+ * near-max effort puts one back.
+ */
+function assistedSuggestion(
+  base: { reps: [number, number]; targetRpe: number },
+  working: GymSet[],
+  lo: number,
+  hi: number,
+  plan: RepPlan,
+  step: number,
+  top: number | undefined,
+): LoadSuggestion {
+  const help = workingLoad(working.map((s) => s.kg ?? 0), 'lightest')
+  const atHelp = working.filter((s) => (s.kg ?? 0) === help)
+  const allTop = atHelp.length >= 2 && atHelp.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
+  const anyShort = atHelp.some((s) => s.reps < lo)
+  const grinding = atHelp.some((s) => s.rpe !== undefined && s.rpe >= 9.5)
+  if (allTop) {
+    if (!(help > 0) || step <= 0) {
+      return { ...base, kg: 0, kind: 'at-top-weight', why: `Every set reached ${hi} with no help: time for the unassisted version.` }
+    }
+    const next = Math.max(0, roundToStep(help - step, step, top))
+    return {
+      ...base,
+      kg: next,
+      kind: 'increase',
+      why:
+        next > 0
+          ? `Every set reached ${hi} at the target effort last time: one step less help.`
+          : `Every set reached ${hi} with one step of help left: try it with none, or with the lightest band.`,
+    }
+  }
+  if (anyShort && grinding && step > 0) {
+    return { ...base, kg: roundToStep(help + step, step, top), kind: 'decrease', why: `Last time fell short of ${lo} reps at a near-max effort: one step more help, then build back.` }
+  }
+  if (failedWithoutEffort(atHelp, lo) && step > 0) {
+    return { ...base, kg: roundToStep(help + step, step, top), kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step more help, then build back.` }
+  }
+  return { ...base, kg: help > 0 ? (roundToStep(help, step, top) || help) : help, kind: 'repeat', why: `Same help: aim to add a rep to last time’s ${atHelp.map((s) => s.reps).join(', ')}.` }
 }
 
 export interface GymRecord {
   exerciseId: string
   /** Best estimated one-rep max, with the set it came from. */
   bestE1rm?: { kg: number; at: number; locationId: string; set: GymSet }
-  /** Heaviest working load moved for at least one rep. */
+  /** Heaviest working load moved for at least one rep (never for an assisted movement, where the weight is help). */
   heaviest?: { kg: number; reps: number; at: number }
   /** Most reps in one working set (bodyweight work). */
   mostReps?: { reps: number; kg?: number; at: number }
@@ -218,11 +314,12 @@ export function gymRecords(sessions: GymSession[]): Record<string, GymRecord> {
   for (const s of [...sessions].sort((a, b) => a.startedAt - b.startedAt)) {
     for (const log of s.exercises) {
       const rec = (out[log.exerciseId] ??= { exerciseId: log.exerciseId })
+      const assisted = Boolean(GYM_EXERCISE_BY_ID[log.exerciseId]?.assisted)
       for (const set of log.sets) {
         if (set.warmup || !(set.reps > 0)) continue
-        const e = estimateOneRepMax(set)
+        const e = estimateOneRepMax(set, log.exerciseId)
         if (e !== null && (!rec.bestE1rm || e > rec.bestE1rm.kg)) rec.bestE1rm = { kg: e, at: set.at, locationId: s.locationId, set }
-        if (set.kg !== undefined && set.kg > 0 && (!rec.heaviest || set.kg > rec.heaviest.kg)) {
+        if (!assisted && set.kg !== undefined && set.kg > 0 && (!rec.heaviest || set.kg > rec.heaviest.kg)) {
           rec.heaviest = { kg: set.kg, reps: set.reps, at: set.at }
         }
         if (!rec.mostReps || set.reps > rec.mostReps.reps) rec.mostReps = { reps: set.reps, ...(set.kg ? { kg: set.kg } : {}), at: set.at }
@@ -230,6 +327,54 @@ export function gymRecords(sessions: GymSession[]): Record<string, GymRecord> {
     }
   }
   return out
+}
+
+// ---- Is a lift still moving? (CONSENSUS: "no new best in three sessions") ----
+
+export interface LiftTrend {
+  /** Unknown is the honest answer for too few sessions, a lift not done lately, or work with no comparable number. */
+  status: 'progressing' | 'stalled' | 'unknown'
+  /** Sessions read, each by its best working set. */
+  sessions: number
+}
+
+const TREND_WINDOW_DAYS = 56
+/** Three sessions without a new best, after at least one that set the bar. */
+export const STALL_SESSIONS = 3
+/** A stall is about now: a lift last done longer ago than this says nothing about today. */
+const STALL_CURRENT_DAYS = 21
+
+/**
+ * Whether a lift is still progressing, from each session's best working set
+ * over the last eight weeks: the estimated max for loaded sets, the most reps
+ * for bodyweight ones. Stalled means the latest three sessions all failed to
+ * beat the best before them, unless those three rose one after another (an
+ * old lucky high is not a stall). A coaching reading, not a measurement — and
+ * never about fatigue or anything else it cannot see.
+ */
+export function liftTrend(sessions: GymSession[], exerciseId: string, now: number): LiftTrend {
+  const ex = GYM_EXERCISE_BY_ID[exerciseId]
+  if (!ex || ex.assisted || ex.count || ex.explosive || ex.dose) return { status: 'unknown', sessions: 0 }
+  const from = now - TREND_WINDOW_DAYS * 86_400_000
+  const points: { at: number; value: number; kind: 'e1rm' | 'reps' }[] = []
+  for (const s of [...sessions].sort((a, b) => a.startedAt - b.startedAt)) {
+    if (s.startedAt >= now || s.startedAt < from) continue
+    const sets = s.exercises.filter((e) => e.exerciseId === exerciseId).flatMap((e) => e.sets.filter((x) => !x.warmup && x.reps > 0))
+    if (!sets.length) continue
+    const e1rm = Math.max(-1, ...sets.map((x) => estimateOneRepMax(x, exerciseId) ?? -1))
+    if (e1rm > 0) points.push({ at: s.startedAt, value: e1rm, kind: 'e1rm' })
+    else if (ex.load === 'bodyweight' && sets.every((x) => !(x.kg && x.kg > 0))) points.push({ at: s.startedAt, value: Math.max(...sets.map((x) => x.reps)), kind: 'reps' })
+  }
+  // One kind of number only: the latest session's.
+  const kind = points[points.length - 1]?.kind
+  const series = points.filter((p) => p.kind === kind)
+  if (series.length < STALL_SESSIONS + 1) return { status: 'unknown', sessions: series.length }
+  if (now - series[series.length - 1].at > STALL_CURRENT_DAYS * 86_400_000) return { status: 'unknown', sessions: series.length }
+  const recent = series.slice(-STALL_SESSIONS).map((p) => p.value)
+  const before = Math.max(...series.slice(0, -STALL_SESSIONS).map((p) => p.value))
+  const rising = recent.every((v, i) => i === 0 || v > recent[i - 1] + 1e-6)
+  const stalled = !rising && Math.max(...recent) <= before + 1e-6
+  return { status: stalled ? 'stalled' : 'progressing', sessions: series.length }
 }
 
 // ---- Progression gate for speed and power work (CONSENSUS) ----

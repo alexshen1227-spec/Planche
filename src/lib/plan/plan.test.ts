@@ -6,7 +6,7 @@ import { buildGymSession } from '../gym/builder'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { GymLocation, GymSession, TrainingPrefs } from '../gym/types'
 import { lastHardStraightArm, setsPerMuscle, volumeStatus, volumeTarget } from './load'
-import { gymDeloadDue, planToday, skillGoalPace } from './planner'
+import { gymDeloadDue, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, planToday, skillGoalPace } from './planner'
 import { weekStart } from '../time'
 
 // A Saturday afternoon, local time: the default schedule gives Saturday 60 minutes.
@@ -62,16 +62,20 @@ describe('the day plan', () => {
     expect((p.skill?.minutes ?? 0) + (p.gym?.minutes ?? 0)).toBe(40)
   })
 
-  it('splits the minutes with skills first, never a block too short to be one', () => {
-    for (const minutes of [35, 45, 60, 90]) {
+  it('splits the minutes with skills first, never a block smaller than the session it starts', () => {
+    for (const minutes of [40, 45, 60, 90]) {
       const p = planToday(athlete(['planche', 'frontlever']), { now: NOW, minutes })
       expect(p.skill!.minutes + p.gym!.minutes).toBe(minutes)
-      expect(p.skill!.minutes).toBeGreaterThanOrEqual(15)
-      expect(p.gym!.minutes).toBeGreaterThanOrEqual(20)
+      expect(p.skill!.minutes).toBeGreaterThanOrEqual(MIN_SKILL_MINUTES[1])
+      expect(p.gym!.minutes).toBeGreaterThanOrEqual(MIN_GYM_MINUTES)
+      // Two skills only where the block holds two full parts.
+      if (p.skill!.skills.length > 1) expect(p.skill!.minutes).toBeGreaterThanOrEqual(MIN_SKILL_MINUTES[2])
     }
-    // Short on time: one block, not two crumbs.
-    const short = planToday(athlete(['planche']), { now: NOW, minutes: 25 })
-    expect(Boolean(short.skill) !== Boolean(short.gym)).toBe(true)
+    // Short on time: one block, not two crumbs — and 35 minutes cannot hold an 18-minute skill block beside a 20-minute gym one.
+    for (const minutes of [25, 35]) {
+      const short = planToday(athlete(['planche']), { now: NOW, minutes })
+      expect(Boolean(short.skill) !== Boolean(short.gym), String(minutes)).toBe(true)
+    }
   })
 
   it('rests a straight-arm family inside the rest window, and trains the other', () => {
@@ -88,9 +92,21 @@ describe('the day plan', () => {
     expect(g.gym!.minutes).toBe(60)
   })
 
-  it('does not stack heavy pressing on a planche day, nor heavy pulling on a lever day', () => {
-    expect(planToday(athlete(['planche']), { now: NOW, minutes: 60 }).gym!.focus).not.toBe('push')
-    expect(planToday(athlete(['frontlever']), { now: NOW, minutes: 60 }).gym!.focus).not.toBe('pull')
+  it('presses beside a hard planche day or two days clear of it, never the day after — and pulls the same way around the lever', async () => {
+    const { focusFamilies, planWeekAhead } = await import('./planner')
+    for (const [skill, fam] of [['planche', 'push'], ['frontlever', 'pull']] as const) {
+      // Trained hard yesterday: no heavy pressing (or pulling) in the gym today.
+      const s = { ...athlete([skill], { minutesByDay: [60, 60, 60, 60, 60, 60, 60] }), sessions: [skillSession(NOW - 20 * HOUR, skill === 'planche' ? 'tuck-planche' : 'fl-tuck')] }
+      const today = planToday(s, { now: NOW, minutes: 60 })
+      expect(today.gym && focusFamilies(today.gym.focus), skill).not.toContain(fam)
+      // Across the week, a gym day of the family is a day of its holds or clear of them by the rest rule.
+      const week = planWeekAhead(s, NOW).days
+      const holds = [NOW - 20 * HOUR, ...week.filter((d) => (d.plan.skill?.hard ?? []).includes(fam)).map((d) => d.at)]
+      for (const d of week) {
+        if (!d.plan.gym || !focusFamilies(d.plan.gym.focus).includes(fam)) continue
+        for (const h of holds) if (new Date(h).toDateString() !== new Date(d.at).toDateString()) expect(Math.abs(d.at - h), d.day).toBeGreaterThanOrEqual(48 * HOUR)
+      }
+    }
   })
 
   it('lets a sprint session stand in for leg day, and leaves the legs alone when switched off', () => {
