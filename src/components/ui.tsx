@@ -250,8 +250,8 @@ export function MainTarget({ name, target, detail }: { name: string; target: str
 
 export function SectionTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
-    <div className="mb-3 mt-8 flex items-end justify-between gap-3 first:mt-0">
-      <h2 className="font-display text-[17px] font-semibold text-ink">{children}</h2>
+    <div className="mb-3 mt-6 flex items-end justify-between gap-3 first:mt-0">
+      <h2 className="font-display text-title3 font-semibold text-ink">{children}</h2>
       {right}
     </div>
   )

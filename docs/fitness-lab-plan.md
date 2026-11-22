@@ -158,9 +158,12 @@ Open, in order of value (none blocks using the app):
    way, before and after calibrating. When 2105.mp4 is available: `#devlab`
    → analyse it → `fixtureFromPoses()` → `realClips.fixture.ts`.
 4. Layouts: Home and Path were redesigned for the phone (hero card, More
-   options, week row; Path as a timeline) and reviewed at 375 px. Left: the
-   coach/goal/tip cards on Home, Progress and Settings layouts, an
-   `h-*`/padding audit for 44 px targets; `ErrorState` has no user yet.
+   options, week row; Path as a timeline), then Progress (one section style,
+   records/achievements/history as compact rows, a 2x2 metrics card) and
+   Settings (grouped list rows, controls wrap under labels, 44 px toggles),
+   all checked at 375 px for overflow. Left: Home's coach/goal/tip cards and
+   Stats' form-trend/pressing/then-and-now cards only got spacing; Settings
+   has no separate Camera group; `ErrorState` has no user yet.
 5. Gym achievements beyond the derived badges; per-set notes in the logger.
 
 ## Log

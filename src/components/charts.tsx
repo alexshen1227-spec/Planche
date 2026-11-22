@@ -100,6 +100,7 @@ export function HoldLineChart({
   emptyHint,
   label = 'Best hold per session',
   format,
+  axisFormat,
 }: {
   points: { at: number; value: number }[]
   goal?: number
@@ -114,6 +115,8 @@ export function HoldLineChart({
   label?: string
   /** How a value reads (default: a hold time). The gym's estimated maxes pass a load. */
   format?: (value: number) => string
+  /** A compact axis label (no unit), when `format` is too long for the axis. */
+  axisFormat?: (value: number) => string
 }) {
   const fmtV = format ?? fmtHold
   const { ref, width } = useWidth<HTMLDivElement>()
@@ -201,7 +204,7 @@ export function HoldLineChart({
           <g key={t}>
             <line x1={pad.l} x2={w - pad.r} y1={y(t)} y2={y(t)} stroke="var(--t-grid)" strokeWidth={1} />
             <text x={pad.l - 8} y={y(t) + 4} textAnchor="end" fontSize={12} fill="var(--t-ink3)" className="tnum">
-              {format ? fmtV(t) : `${t}s`}
+              {axisFormat ? axisFormat(t) : format ? fmtV(t) : `${t}s`}
             </text>
           </g>
         ))}

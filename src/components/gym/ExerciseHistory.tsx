@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { activeLocation } from '../../lib/gym/draft'
 import { estimateOneRepMax, gymRecords } from '../../lib/gym/progression'
-import { formatLoad, unitFor } from '../../lib/gym/units'
+import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { useStore } from '../../lib/store'
 import { HoldLineChart } from '../charts'
 import { EmptyState } from '../ds'
@@ -64,7 +64,8 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
         </div>
       </dl>
       {points.length >= 2 ? (
-        <HoldLineChart points={points} height={160} label={`Estimated max for ${ex.name}`} format={(v) => formatLoad(v, unit)} />
+        <HoldLineChart points={points} height={160} label={`Estimated max for ${ex.name}`} format={(v) => formatLoad(v, unit)}
+          axisFormat={(v) => String(Math.round(displayLoad(v, unit)))} />
       ) : (
         <p className="text-caption text-ink3">
           {ex.load === 'bodyweight'

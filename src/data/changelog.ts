@@ -23,6 +23,7 @@ export const CHANGELOG: ChangeEntry[] = [
     area: 'app',
     notes: [
       'Home has one clear hero card for today — your step, its progress, and a full-width Start — with the extras grouped under More options and the week as one compact row.',
+      'Progress and Settings follow suit: one section style, records, badges and history as compact rows, settings as grouped lists with tap-sized controls. Load charts label their axis in plain numbers.',
       'Path reads as a timeline: a rail that turns green up to where you are, your current step highlighted, locked steps quieter.',
       'Fixed: a quick swipe on a set could do nothing, because the row judged the swipe from where it was last drawn rather than where your finger lifted. The rest bar and the effort buttons also fit a phone screen now.',
     ],

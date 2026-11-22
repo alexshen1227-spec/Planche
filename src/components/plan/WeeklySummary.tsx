@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { activeLocation } from '../../lib/gym/draft'
 import { estimateOneRepMax } from '../../lib/gym/progression'
-import { formatLoad, unitFor } from '../../lib/gym/units'
+import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { gymBadges, weeklySummary } from '../../lib/plan/weekly'
 import { useStore } from '../../lib/store'
 import { fmtHold } from '../../lib/time'
@@ -95,7 +95,8 @@ export function WeeklySummary() {
               </select>
             ) : null}
           </div>
-          <HoldLineChart points={shown[1]} height={160} label={`Estimated max for ${shownEx.name}`} format={(v) => formatLoad(v, unit)} />
+          <HoldLineChart points={shown[1]} height={160} label={`Estimated max for ${shownEx.name}`} format={(v) => formatLoad(v, unit)}
+          axisFormat={(v) => String(Math.round(displayLoad(v, unit)))} />
           <p className="text-caption text-ink3">Estimated from your best set of 12 reps or fewer each session, adjusted for effort. Tap a point to read it.</p>
         </div>
       ) : (

@@ -1,3 +1,4 @@
+import { Card, Metric, ToggleChip } from '../components/ds'
 import { EmptyState } from '../components/ds'
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../lib/store'
@@ -43,7 +44,7 @@ import { ClipPlayer } from '../components/ClipPlayer'
 import { CLIP_RETENTION_DAYS } from '../lib/clips'
 import { Icon } from '../components/Icon'
 import { BadgeGlyph } from '../components/ds/BadgeGlyph'
-import { Modal, SectionTitle, Stat } from '../components/ui'
+import { Modal, SectionTitle } from '../components/ui'
 import { WeeklySummary } from '../components/plan/WeeklySummary'
 import { pushToast } from '../lib/toast'
 import type { Exercise, SkillId, TrainingSurface } from '../types'
@@ -91,7 +92,7 @@ function PressingLadder() {
   return (
     <section id="pressing" className="scroll-mt-5">
       <SectionTitle>Pressing ladder</SectionTitle>
-      <div className="rounded-inner border border-line bg-surface p-4 shadow-card">
+      <div className="rounded-card border border-line bg-surface p-4">
         <ol className="space-y-1.5">
           {PRESS_LADDER.map((id) => {
             const ex = EXERCISE_BY_ID[id]
@@ -144,7 +145,7 @@ function FormTrendCard({ skill }: { skill: SkillId }) {
 
   if (!active || !result) {
     return (
-      <div id="form-trend" className="mt-4 scroll-mt-5 rounded-card border border-line bg-surface p-5 shadow-card">
+      <div id="form-trend" className="mt-6 scroll-mt-5 rounded-card border border-line bg-surface p-4">
         <div className="font-display text-title3 font-semibold text-ink">Form over time</div>
         <p className="mt-1 max-w-xl text-footnote leading-relaxed text-ink2">
           Once you have filmed a position a few times, this compares those clips against each other — whether your
@@ -162,7 +163,7 @@ function FormTrendCard({ skill }: { skill: SkillId }) {
   }
 
   return (
-    <div id="form-trend" className="mt-4 scroll-mt-5 rounded-card border border-line bg-surface p-5 shadow-card">
+    <div id="form-trend" className="mt-6 scroll-mt-5 rounded-card border border-line bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-display text-title3 font-semibold text-ink">Form over time</div>
@@ -566,50 +567,44 @@ export function Stats({
 
   return (
     <div className="animate-rise">
-      <h1 className="font-display text-[28px] font-bold text-ink">Progress</h1>
+      <h1 className="font-display text-title1 font-bold text-ink">Progress</h1>
       <p className="mt-0.5 text-body text-ink2">Charts, records, history and trophies.</p>
-      <div className="mt-4">
+      <div className="mt-6">
         <WeeklySummary />
       </div>
       {skills.length > 1 ? (
-        <div className="mt-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="Skill shown">
-          {skills.map((skill) => {
-            const on = skill === viewSkill
-            return (
-              <button
-                key={skill}
-                aria-pressed={on}
-                onClick={() => setPickedSkill(skill)}
-                className={`min-h-11 rounded-full border px-3.5 py-1.5 text-footnote font-semibold transition ${
-                  on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-surface text-ink2 hover:text-ink'
-                }`}
-              >
+        <div className="mt-6">
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Skill shown">
+            {skills.map((skill) => (
+              <ToggleChip key={skill} active={skill === viewSkill} onClick={() => setPickedSkill(skill)}>
                 {SKILLS[skill].name}
-              </button>
-            )
-          })}
-          <span className="text-caption text-ink3">Trends and the coach's findings are per skill; history and records are all of you.</span>
+              </ToggleChip>
+            ))}
+          </div>
+          <p className="mt-2 text-caption text-ink3">Trends and the coach's findings are per skill; history and records are all of you.</p>
         </div>
       ) : null}
 
-      <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Sessions" value={<span className="tnum">{state.sessions.length}</span>} />
-        <Stat label="Total sets" value={<span className="tnum">{totalSets(state)}</span>} />
-        <Stat label="Time under tension" value={fmtDuration(totalHoldSec(state))} />
-        <Stat
-          label="Achievements"
-          value={
-            <span className="tnum">
-              {unlockedCount}
-              <span className="text-body text-ink3">/{listedAchievements.length}</span>
-            </span>
-          }
-        />
-      </div>
+      <Card className="mt-6">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <Metric label="Sessions" value={state.sessions.length} />
+          <Metric label="Total sets" value={totalSets(state)} />
+          <Metric label="Time under tension" value={fmtDuration(totalHoldSec(state))} />
+          <Metric
+            label="Achievements"
+            value={
+              <>
+                {unlockedCount}
+                <span className="text-body text-ink3">/{listedAchievements.length}</span>
+              </>
+            }
+          />
+        </div>
+      </Card>
 
       <nav
         aria-label="Progress sections"
-        className="mt-3 flex gap-1.5 overflow-x-auto rounded-inner border border-line bg-surface/70 p-1.5 shadow-card"
+        className="mt-6 flex gap-1 overflow-x-auto rounded-card border border-line bg-surface p-1"
       >
         {[
           ['trends', 'Trends'],
@@ -622,7 +617,7 @@ export function Stats({
           <a
             key={id}
             href={`#${id}`}
-            className="shrink-0 rounded-control px-3 py-2 text-footnote font-medium text-ink2 transition hover:bg-raised hover:text-ink"
+            className="inline-flex min-h-11 shrink-0 items-center rounded-control px-3 text-footnote font-medium text-ink2 transition hover:bg-raised hover:text-ink"
           >
             {label}
           </a>
@@ -630,7 +625,8 @@ export function Stats({
       </nav>
 
       {/* Hold trend */}
-      <div id="trends" className="mt-4 scroll-mt-5 rounded-card border border-line bg-surface p-5 shadow-card">
+      <SectionTitle>Trends</SectionTitle>
+      <div id="trends" className="mt-6 scroll-mt-5 rounded-card border border-line bg-surface p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="font-display text-title3 font-semibold text-ink">
@@ -670,7 +666,7 @@ export function Stats({
             <button
               onClick={() => setChartSurface('all')}
               aria-pressed={chartSurface === 'all'}
-              className={`rounded-full border px-3 py-1 text-caption font-medium ${
+              className={`min-h-11 rounded-full border px-3 text-caption font-medium ${
                 chartSurface === 'all' ? 'border-transparent bg-accent text-on-accent' : 'border-line text-ink2'
               }`}
             >
@@ -682,7 +678,7 @@ export function Stats({
                 onClick={() => setChartSurface(item.id)}
                 disabled={item.id === 'parallettes' && !state.profile.equipment.includes('parallettes')}
                 aria-pressed={chartSurface === item.id}
-                className={`rounded-full border px-3 py-1 text-caption font-medium disabled:opacity-35 ${
+                className={`min-h-11 rounded-full border px-3 text-caption font-medium disabled:opacity-35 ${
                   chartSurface === item.id
                     ? 'border-transparent bg-accent text-on-accent'
                     : 'border-line text-ink2'
@@ -707,7 +703,7 @@ export function Stats({
       <FormTrendCard key={viewSkill} skill={viewSkill} />
 
       {/* Weekly volume */}
-      <div id="insights" className="mt-4 scroll-mt-5 rounded-card border border-line bg-surface p-5 shadow-card">
+      <div id="insights" className="mt-6 scroll-mt-5 rounded-card border border-line bg-surface p-4">
         <div className="font-display text-title3 font-semibold text-ink">Weekly hold volume</div>
         <div className="text-footnote text-ink2">Seconds accumulated in holds, last 12 weeks</div>
         <div className="mt-3">
@@ -717,7 +713,7 @@ export function Stats({
 
       {/* Where the key hold stands — the coach's own plateau verdict, so this
           screen and Home can never disagree about whether you are stuck. */}
-      <div className="mt-4 rounded-card border border-line bg-surface p-5 shadow-card">
+      <div className="mt-6 rounded-card border border-line bg-surface p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="font-display text-title3 font-semibold text-ink">Why am I stuck?</div>
           <span
@@ -785,7 +781,7 @@ export function Stats({
 
       {/* Bodyweight */}
       {weightNow ? (
-        <div className="mt-4 rounded-card border border-line bg-surface p-5 shadow-card">
+        <div className="mt-6 rounded-card border border-line bg-surface p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <div className="font-display text-title3 font-semibold text-ink">Bodyweight</div>
             <div className="text-footnote text-ink2 tnum">
@@ -800,7 +796,7 @@ export function Stats({
       ) : null}
 
       {/* What the coach learned */}
-      <div className="mt-4 rounded-card border border-line bg-surface p-5 shadow-card">
+      <div className="mt-6 rounded-card border border-line bg-surface p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="font-display text-title3 font-semibold text-ink">
@@ -902,7 +898,7 @@ export function Stats({
       </div>
 
       {/* Consistency heatmap */}
-      <div className="mt-4 rounded-card border border-line bg-surface p-5 shadow-card">
+      <div className="mt-6 rounded-card border border-line bg-surface p-4">
         <div className="font-display text-title3 font-semibold text-ink">Consistency</div>
         <div className="text-footnote text-ink2">Every training day of the last 16 weeks — darker means more hold time</div>
         <div className="mt-4">
@@ -923,15 +919,19 @@ export function Stats({
           </EmptyState>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+        <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
           {trackedPrs.map(({ ex, pr }) => (
-            <div key={ex.id} className="rounded-inner border border-line bg-surface p-4 shadow-card">
-              <div className="truncate text-footnote font-medium text-ink2">{ex.name}</div>
-              <div className="mt-0.5 font-display text-[22px] font-semibold text-ink tnum">
-                {ex.type === 'hold' ? fmtHold(pr.value) : `${pr.value}`}
-                {ex.type === 'reps' ? <span className="text-footnote font-normal text-ink3"> reps</span> : null}
+            <li key={ex.id} className="px-4 py-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-body font-medium text-ink">{ex.name}</div>
+                  <div className="text-caption text-ink3">{fmtDate(pr.at)}</div>
+                </div>
+                <div className="shrink-0 font-display text-title2 font-semibold text-ink tnum">
+                  {ex.type === 'hold' ? fmtHold(pr.value) : `${pr.value}`}
+                  {ex.type === 'reps' ? <span className="text-footnote font-normal text-ink3"> reps</span> : null}
+                </div>
               </div>
-              <div className="text-caption text-ink3">{fmtDate(pr.at)}</div>
               {pr.bySurface ? (
                 <div className="mt-2 space-y-1 border-t border-line pt-2">
                   {TRAINING_SURFACES.flatMap((item) => {
@@ -949,9 +949,9 @@ export function Stats({
                   })}
                 </div>
               ) : null}
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
       </section>
 
@@ -962,12 +962,12 @@ export function Stats({
       >
         Achievements
       </SectionTitle>
-      <div className="overflow-hidden rounded-card border border-line bg-surface shadow-card">
-        <div className="card-sheen bg-gradient-to-br from-accent-soft to-transparent p-5">
+      <div className="overflow-hidden rounded-card border border-line bg-surface">
+        <div className="bg-accent-soft p-4">
           <div className="flex items-end justify-between gap-4">
             <div>
               <div className="text-caption font-semibold uppercase tracking-wider text-accent-text">Trophy cabinet</div>
-              <div className="mt-1 font-display text-[25px] font-semibold text-ink tnum">
+              <div className="mt-1 font-display text-title1 font-semibold text-ink tnum">
                 {unlockedCount} <span className="text-body font-normal text-ink3">of {listedAchievements.length} earned</span>
               </div>
             </div>
@@ -1018,7 +1018,7 @@ export function Stats({
               key={filter}
               onClick={() => setAchievementFilter(filter)}
               aria-pressed={achievementFilter === filter}
-              className={`shrink-0 rounded-control px-3 py-2 text-footnote font-medium transition ${
+              className={`min-h-11 shrink-0 rounded-control px-3 text-footnote font-medium transition ${
                 achievementFilter === filter ? 'bg-accent text-on-accent' : 'text-ink2 hover:bg-raised hover:text-ink'
               }`}
             >
@@ -1029,37 +1029,29 @@ export function Stats({
       </div>
 
       {visibleAchievementCards.length > 0 ? (
-      <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
-        {visibleAchievementCards.map(({ achievement: a, at, progress: prog }) => {
-          return (
-            <div
-              key={a.id}
-              className={`flex min-h-[150px] flex-col rounded-inner border p-4 ${
-                at ? 'card-sheen border-accent/30 bg-surface shadow-card' : 'border-line bg-surface/40'
-              }`}
-            >
-              <BadgeGlyph icon={a.icon} size={44} earned={!!at} />
-              <div className={`mt-1.5 text-footnote font-semibold ${at ? 'text-ink' : 'text-ink3'}`}>{a.name}</div>
-              <div className="mt-0.5 text-caption leading-snug text-ink3">{a.desc}</div>
-              {at ? (
-                <div className="mt-auto pt-2 text-caption font-medium text-accent-text">Earned {fmtDate(at)}</div>
-              ) : prog ? (
-                <div className="mt-auto pt-3">
+      <ul className="mt-3 divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+        {visibleAchievementCards.map(({ achievement: a, at, progress: prog }) => (
+          <li key={a.id} className="flex items-center gap-3 px-4 py-3">
+            <BadgeGlyph icon={a.icon} size={40} earned={!!at} />
+            <div className="min-w-0 flex-1">
+              <div className={`text-body font-medium ${at ? 'text-ink' : 'text-ink3'}`}>{a.name}</div>
+              <div className="text-caption leading-snug text-ink3">{a.desc}</div>
+              {!at && prog ? (
+                <div className="mt-1.5">
                   <div className="h-1 overflow-hidden rounded-full bg-line">
                     <div
                       className="h-full rounded-full bg-accent/60"
                       style={{ width: `${Math.min(100, (prog.current / prog.target) * 100)}%` }}
                     />
                   </div>
-                  <div className="mt-1 text-caption text-ink3 tnum">
-                    {achievementProgressText(prog)}
-                  </div>
+                  <div className="mt-1 text-caption text-ink3 tnum">{achievementProgressText(prog)}</div>
                 </div>
               ) : null}
             </div>
-          )
-        })}
-      </div>
+            {at ? <div className="shrink-0 text-caption font-medium text-accent-text">Earned {fmtDate(at)}</div> : null}
+          </li>
+        ))}
+      </ul>
       ) : (
         <div className="mt-3 rounded-inner border border-dashed border-line-strong p-6 text-center text-footnote text-ink3">
           Nothing in this view yet — keep training and it will fill up.
@@ -1077,12 +1069,12 @@ export function Stats({
           </EmptyState>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
           {sessions.map((s) => {
             const open = expanded === s.id
             const panelId = `session-${s.id}`
             return (
-              <div key={s.id} data-session={s.id} className="overflow-hidden rounded-inner border border-line bg-surface shadow-card">
+              <div key={s.id} data-session={s.id} className="">
                 <button
                   onClick={() => setExpanded(open ? null : s.id)}
                   aria-expanded={open}
@@ -1145,7 +1137,7 @@ export function Stats({
                     </div>
                     <button
                       onClick={() => setConfirmDelete(s.id)}
-                      className="mt-3 inline-flex items-center gap-1.5 text-footnote font-medium text-danger-text/80 hover:text-danger-text"
+                      className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-footnote font-medium text-danger-text hover:text-danger-text"
                     >
                       <Icon name="trash" size={14} /> Delete session
                     </button>
@@ -1160,7 +1152,7 @@ export function Stats({
 
       <Modal open={confirmDelete !== null} onClose={() => setConfirmDelete(null)} label="Delete session">
         <div className="p-6">
-          <h2 className="font-display text-[19px] font-semibold text-ink">Delete this session?</h2>
+          <h2 className="font-display text-title2 font-semibold text-ink">Delete this session?</h2>
           <p className="mt-1.5 text-body text-ink2">
             Records, unlocks and achievements will be recalculated from the remaining history.
           </p>

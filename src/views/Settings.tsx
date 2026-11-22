@@ -64,16 +64,16 @@ function Row({
   stack?: boolean
 }) {
   return (
-    <div className="border-b border-line py-4 last:border-b-0">
+    <div className="border-b border-line py-3 last:border-b-0">
       <div className={stack ? undefined : 'flex flex-wrap items-center justify-between gap-3'}>
         {/* flex-1 lets the hint reflow instead of shoving the control onto its
             own ragged line: controls then stay in one right-hand column down
             the whole page, which is what makes the list read as a list. */}
-        <div className={stack ? 'min-w-0' : 'min-w-0 flex-1 basis-56'}>
+        <div className={stack ? 'min-w-0' : 'min-w-0 flex-1 basis-[14rem]'}>
           <div className="text-body font-medium text-ink">{label}</div>
           {hint ? <div className="mt-0.5 max-w-md text-footnote text-ink2">{hint}</div> : null}
         </div>
-        {stack ? null : <div className="flex shrink-0 items-center gap-2">{children}</div>}
+        {stack ? null : <div className="flex max-w-full flex-wrap items-center gap-2">{children}</div>}
       </div>
       {stack ? <div className="mt-2.5 flex flex-wrap items-center gap-2">{children}</div> : null}
     </div>
@@ -87,11 +87,13 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
       aria-checked={on}
       aria-label={label}
       onClick={() => onChange(!on)}
-      className={`relative h-7 w-12 rounded-full transition ${on ? 'bg-accent' : 'bg-line-strong'}`}
+      className="flex h-11 w-14 items-center justify-center"
     >
-      <span
-        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? 'left-6' : 'left-1'}`}
-      />
+      <span className={`relative block h-7 w-12 rounded-full transition ${on ? 'bg-accent' : 'bg-line-strong'}`}>
+        <span
+          className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? 'left-6' : 'left-1'}`}
+        />
+      </span>
     </button>
   )
 }
@@ -119,7 +121,7 @@ function Stepper({
         onClick={() => onChange(Math.max(min, value - step))}
         aria-label={`Decrease ${label}`}
         disabled={value <= min}
-        className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-raised text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
+        className="grid h-11 w-11 place-items-center rounded-control border border-line bg-raised text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
       >
         <Icon name="minus" size={14} />
       </button>
@@ -128,7 +130,7 @@ function Stepper({
         onClick={() => onChange(Math.min(max, value + step))}
         aria-label={`Increase ${label}`}
         disabled={value >= max}
-        className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-raised text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
+        className="grid h-11 w-11 place-items-center rounded-control border border-line bg-raised text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
       >
         <Icon name="plus" size={14} />
       </button>
@@ -205,7 +207,7 @@ function LatencyCalibrator({ onDone }: { onDone: (sec: number) => void }) {
               : 'border-line bg-raised text-ink'
         }`}
               >
-        <span className="font-display text-[19px] font-semibold">
+        <span className="font-display text-title2 font-semibold">
           {stage === 'idle'
             ? 'Tap to begin'
             : stage === 'waiting'
@@ -482,18 +484,18 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
 
   return (
     <div className="animate-rise max-w-2xl">
-      <h1 className="font-display text-[28px] font-bold text-ink">Settings</h1>
+      <h1 className="font-display text-title1 font-bold text-ink">Settings</h1>
       <p className="mt-0.5 text-body text-ink2">Make it yours.</p>
 
       <SectionTitle>Profile</SectionTitle>
-      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
+      <div className="rounded-card border border-line bg-surface px-4">
         <Row label="Name" hint="Used for the dashboard greeting.">
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Athlete"
             aria-label="Athlete name"
-            className="w-40 rounded-control border border-line bg-raised px-3 py-2 text-body text-ink outline-none focus:border-accent"
+            className="w-40 min-h-11 rounded-control border border-line bg-raised px-3 text-body text-ink outline-none focus:border-accent"
           />
           <button
             onClick={() => {
@@ -501,7 +503,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               pushToast('Saved.', 'success')
             }}
             aria-label="Save athlete name"
-            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Save
           </button>
@@ -580,7 +582,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           {skillOrder.length < SKILL_LIST.length ? (
             <button
               onClick={() => setAddingSkill(true)}
-              className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-control border border-dashed border-line-strong px-3.5 py-2 text-footnote font-semibold text-ink2 hover:text-ink"
+              className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-control border border-dashed border-line-strong min-h-11 px-4 text-footnote font-semibold text-ink2 hover:text-ink"
             >
               <Icon name="plus" size={14} /> Add a skill
             </button>
@@ -609,7 +611,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                   onClick={() => toggleEquipment(item.id)}
                   title={item.hint}
                   aria-pressed={selected}
-                  className={`rounded-full border px-3 py-1.5 text-footnote font-medium transition ${
+                  className={`rounded-full border min-h-11 px-4 text-footnote font-medium transition ${
                     selected
                       ? 'border-transparent bg-accent text-on-accent'
                       : 'border-line bg-raised text-ink2 hover:text-ink'
@@ -637,7 +639,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                   }
                   disabled={disabled}
                   aria-pressed={selected}
-                  className={`px-3.5 py-2 text-footnote font-medium transition disabled:cursor-not-allowed disabled:opacity-35 ${
+                  className={`min-h-11 px-4 text-footnote font-medium transition disabled:cursor-not-allowed disabled:opacity-35 ${
                     selected ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                   }`}
                 >
@@ -654,7 +656,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             inputMode="numeric"
             placeholder="Optional"
             aria-label="Birth year"
-            className="w-24 rounded-control border border-line bg-raised px-3 py-2 text-center text-body text-ink outline-none focus:border-accent"
+            className="w-24 rounded-control border border-line bg-raised min-h-11 px-3 text-center text-body text-ink outline-none focus:border-accent"
           />
           <button
             onClick={() => {
@@ -668,7 +670,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               pushToast('Athlete profile saved.', 'success')
             }}
             aria-label="Save birth year"
-            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Save
           </button>
@@ -684,7 +686,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               onChange={(e) => setInjuryNote(e.target.value)}
               placeholder="e.g. left wrist feels irritated"
               aria-label="Joint or injury note"
-              className="min-w-52 flex-1 rounded-control border border-line bg-raised px-3 py-2 text-body text-ink outline-none focus:border-accent"
+              className="min-w-52 flex-1 min-h-11 rounded-control border border-line bg-raised px-3 text-body text-ink outline-none focus:border-accent"
             />
             <button
               onClick={() => {
@@ -692,7 +694,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 pushToast('Joint note saved.', 'success')
               }}
               aria-label="Save joint or injury note"
-              className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+              className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
             >
               Save
             </button>
@@ -715,7 +717,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         >
           <button
             onClick={() => setLoggingWeight(true)}
-            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Log now
           </button>
@@ -740,7 +742,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <SectionTitle>Appearance</SectionTitle>
-      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
+      <div className="rounded-card border border-line bg-surface px-4">
         <Row label="Units" hint="Used for bodyweight and height.">
           <div className="flex overflow-hidden rounded-control border border-line">
             {(['metric', 'imperial'] as const).map((u) => (
@@ -748,7 +750,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 key={u}
                 onClick={() => set({ units: u })}
                 aria-pressed={s.units === u}
-                className={`px-3.5 py-2 text-footnote font-medium transition ${
+                className={`min-h-11 px-4 text-footnote font-medium transition ${
                   s.units === u ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                 }`}
               >
@@ -764,7 +766,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 key={t}
                 onClick={() => set({ theme: t })}
                 aria-pressed={s.theme === t}
-                className={`flex items-center gap-1.5 px-3.5 py-2 text-footnote font-medium capitalize transition ${
+                className={`flex items-center gap-1.5 min-h-11 px-4 text-footnote font-medium capitalize transition ${
                   s.theme === t ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                 }`}
               >
@@ -777,7 +779,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <SectionTitle>Training</SectionTitle>
-      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
+      <div className="rounded-card border border-line bg-surface px-4">
         <Row
           label="Check this phone"
           hint={
@@ -792,7 +794,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         >
           <button
             onClick={() => setCheckingDevice(true)}
-            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
             {lastCheck ? 'Check again' : 'Check'}
           </button>
@@ -829,14 +831,14 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           {s.lockoutDeg !== undefined ? (
             <button
               onClick={() => set({ lockoutDeg: undefined, lockoutCalibratedAt: undefined })}
-              className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+              className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
             >
               Clear
             </button>
           ) : null}
           <button
             onClick={() => setCalibratingLockout(true)}
-            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
             {s.lockoutDeg !== undefined ? 'Recalibrate' : 'Calibrate'}
           </button>
@@ -871,7 +873,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             }}
             disabled={modelState === 'loading' || (modelState === 'ready' && offline === 'ready')}
             aria-busy={modelState === 'loading'}
-            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
             {modelState === 'ready'
               ? offline === 'ready'
@@ -901,7 +903,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               })
             }}
             disabled={clipCount === 0}
-            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink disabled:opacity-40"
+            className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink disabled:opacity-40"
           >
             Delete all
           </button>
@@ -930,7 +932,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           {!s.phoneWithinReach ? (
             <button
               onClick={() => setMeasuringWalk(true)}
-              className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+              className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
             >
               {s.walkBackSec !== undefined ? 'Re-measure' : 'Measure my walk'}
             </button>
@@ -951,7 +953,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         >
           <button
             onClick={() => setCalibrating(true)}
-            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Calibrate
           </button>
@@ -980,8 +982,8 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </Row>
       </div>
 
-      <SectionTitle>Sound</SectionTitle>
-      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
+      <SectionTitle>Sounds & screen</SectionTitle>
+      <div className="rounded-card border border-line bg-surface px-4">
         <Row label="Sounds" hint="Start/stop chimes, PR fanfares.">
           <Toggle label="Sounds" on={s.sound} onChange={(v) => set({ sound: v })} />
         </Row>
@@ -1015,7 +1017,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           />
           <button
             onClick={() => sfx.pr()}
-            className="rounded-control border border-line bg-raised px-3 py-1.5 text-footnote font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Test
           </button>
@@ -1023,11 +1025,11 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <SectionTitle>Updates</SectionTitle>
-      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
+      <div className="rounded-card border border-line bg-surface px-4">
         <Row label="What's new" hint="Every update to the app, newest first.">
           <button
             onClick={() => go('updates')}
-            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Update log
             <Icon name="chevronR" size={14} />
@@ -1036,7 +1038,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <SectionTitle>Problem reports</SectionTitle>
-      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
+      <div className="rounded-card border border-line bg-surface px-4">
         <div className="flex items-start gap-3 border-b border-line py-4">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-control bg-accent-soft text-accent-text">
             <Icon name="info" size={17} />
@@ -1070,7 +1072,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             }}
             disabled={reportCount === 0 || exportingReports}
             aria-busy={exportingReports}
-            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Icon name="download" size={15} /> {exportingReports ? 'Preparing…' : 'Export reports'}
           </button>
@@ -1082,15 +1084,15 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           <button
             onClick={() => setConfirmDeleteReports(true)}
             disabled={reportCount === 0}
-            className="inline-flex items-center gap-1.5 rounded-control border border-danger/30 bg-danger-soft px-3.5 py-2 text-footnote font-semibold text-danger-text disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-control border border-danger/30 bg-danger-soft min-h-11 px-4 text-footnote font-semibold text-danger-text disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Icon name="trash" size={15} /> Delete reports
           </button>
         </Row>
       </div>
 
-      <SectionTitle>Data</SectionTitle>
-      <div className="rounded-inner border border-line bg-surface px-5 shadow-card">
+      <SectionTitle>Your data</SectionTitle>
+      <div className="rounded-card border border-line bg-surface px-4">
         <Row
           label="On-device safety"
           hint={
@@ -1109,7 +1111,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                   pushToast(granted ? 'Storage is now protected.' : 'Browser declined — install the app or export backups.', granted ? 'success' : 'info', 4500)
                 })
               }
-              className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+              className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
             >
               Protect
             </button>
@@ -1145,7 +1147,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               exportData({ ...state, lastBackupAt: at })
               dispatch({ type: 'STAMP_BACKUP', at })
             }}
-            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
             <Icon name="download" size={15} /> Export
           </button>
@@ -1156,7 +1158,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         >
           <button
             onClick={() => exportCsv(state)}
-            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
             <Icon name="download" size={15} /> CSV
           </button>
@@ -1175,7 +1177,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           />
           <button
             onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
             <Icon name="upload" size={15} /> Import
           </button>
@@ -1183,7 +1185,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         <Row label="Load sample data" hint="See the app fully populated with 9 weeks of plausible training. Replaces current data.">
           <button
             onClick={() => setConfirmSample(true)}
-            className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+            className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
             Load sample
           </button>
@@ -1204,7 +1206,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 a.remove()
                 window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
               }}
-              className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+              className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
             >
               Download
             </button>
@@ -1214,7 +1216,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                 setQuarantine(quarantinedData())
                 pushToast('The unreadable copy was deleted.', 'info')
               }}
-              className="rounded-control border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 hover:text-ink"
+              className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
             >
               Delete
             </button>
@@ -1223,7 +1225,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         <Row label="Reset everything" hint="Deletes all local data. There is no undo (export first!).">
           <button
             onClick={() => setConfirmReset(true)}
-            className="inline-flex items-center gap-1.5 rounded-control border border-danger/30 bg-danger-soft px-3.5 py-2 text-footnote font-semibold text-danger-text"
+            className="inline-flex items-center gap-1.5 rounded-control border border-danger/30 bg-danger-soft min-h-11 px-4 text-footnote font-semibold text-danger-text"
           >
             <Icon name="trash" size={15} /> Reset
           </button>
@@ -1231,7 +1233,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       </div>
 
       <SectionTitle>About</SectionTitle>
-      <div className="rounded-inner border border-line bg-surface p-5 text-footnote leading-relaxed text-ink2 shadow-card">
+      <div className="rounded-card border border-line bg-surface p-4 text-footnote leading-relaxed text-ink2">
         <p>
           <span className="font-display font-semibold text-ink">{APP_NAME}</span> · a local-first training companion
           for the planche, front lever, handstand push-up, 90° hold and human flag. Everything you log and film is
@@ -1275,7 +1277,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       >
         <div className="p-6">
           <div className="pr-10">
-            <h2 className="font-display text-[19px] font-semibold text-ink">Delete all problem reports?</h2>
+            <h2 className="font-display text-title2 font-semibold text-ink">Delete all problem reports?</h2>
             <p className="mt-1.5 text-body leading-relaxed text-ink2">
               This permanently deletes {reportCount} saved problem {reportCount === 1 ? 'report' : 'reports'},
               including the copied videos and diagnostics. Your regular form clips, sessions and progress stay
@@ -1362,7 +1364,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
 
       <Modal open={confirmSample} onClose={() => setConfirmSample(false)} label="Load sample data">
         <div className="p-6">
-          <h2 className="font-display text-[19px] font-semibold text-ink">Load sample data?</h2>
+          <h2 className="font-display text-title2 font-semibold text-ink">Load sample data?</h2>
           <p className="mt-1.5 text-body text-ink2">
             This replaces your current log with 9 weeks of demo history. Your settings are kept. Export a backup first
             if anything here matters.
@@ -1402,7 +1404,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       >
         {pendingImport ? (
           <div className="p-6">
-            <h2 className="pr-10 font-display text-[19px] font-semibold text-ink">Replace everything with this file?</h2>
+            <h2 className="pr-10 font-display text-title2 font-semibold text-ink">Replace everything with this file?</h2>
             <p className="mt-1.5 text-body leading-relaxed text-ink2">
               The file holds{' '}
               <span className="font-semibold text-ink">
@@ -1506,7 +1508,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         label="Reset all data"
       >
         <div className="p-6">
-          <h2 className="pr-10 font-display text-[19px] font-semibold text-ink">Reset all data?</h2>
+          <h2 className="pr-10 font-display text-title2 font-semibold text-ink">Reset all data?</h2>
           <p className="mt-1.5 text-body text-ink2">
             Sessions, records, unlocks, achievements, joint reports, form clips, problem reports, an unfinished
             workout and every recovery copy will be permanently deleted from this browser. Your app settings (theme,
