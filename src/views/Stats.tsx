@@ -93,7 +93,7 @@ function PressingLadder() {
     <section id="pressing" className="scroll-mt-5">
       <SectionTitle>Pressing ladder</SectionTitle>
       <div className="rounded-card border border-line bg-surface p-4">
-        <ol className="space-y-1.5">
+        <ol className="space-y-2">
           {PRESS_LADDER.map((id) => {
             const ex = EXERCISE_BY_ID[id]
             const best = state.prs[id]?.value
@@ -102,7 +102,7 @@ function PressingLadder() {
             return (
               <li
                 key={id}
-                className={`flex items-center justify-between gap-3 rounded-control px-3 py-2 text-footnote ${
+                className={`flex min-h-11 items-center justify-between gap-3 rounded-control px-3 py-2 text-footnote ${
                   isCurrent ? 'border border-accent/40 bg-accent-soft' : 'bg-raised'
                 }`}
               >
@@ -147,7 +147,7 @@ function FormTrendCard({ skill }: { skill: SkillId }) {
     return (
       <div id="form-trend" className="mt-6 scroll-mt-5 rounded-card border border-line bg-surface p-4">
         <div className="font-display text-title3 font-semibold text-ink">Form over time</div>
-        <p className="mt-1 max-w-xl text-footnote leading-relaxed text-ink2">
+        <p className="mt-1 text-footnote leading-relaxed text-ink2">
           Once you have filmed a position a few times, this compares those clips against each other — whether your
           elbows are locking out more, whether your lean is deepening, whether your hips are drifting. Turn on the
           camera check for your main sets and it fills in on its own.
@@ -172,12 +172,12 @@ function FormTrendCard({ skill }: { skill: SkillId }) {
           </div>
         </div>
         {filmed.length > 1 ? (
-          <label className="shrink-0 text-footnote text-ink2">
+          <label className="w-full text-footnote text-ink2 sm:w-auto">
             <span className="sr-only">Exercise to show form trends for</span>
             <select
               value={active}
               onChange={(e) => setExerciseId(e.target.value)}
-              className="rounded-control border border-line bg-raised px-3 py-2 text-footnote font-medium text-ink outline-none focus:border-accent"
+              className="min-h-11 w-full rounded-control border border-line bg-raised px-3 text-footnote font-medium text-ink outline-none focus:border-accent"
             >
               {filmed.map((id) => (
                 <option key={id} value={id}>
@@ -190,27 +190,27 @@ function FormTrendCard({ skill }: { skill: SkillId }) {
       </div>
 
       {result.kind === 'insufficient' ? (
-        <div className="mt-3 rounded-inner border border-dashed border-line-strong bg-surface/50 p-5 text-footnote leading-relaxed text-ink2">
+        <div className="mt-3 rounded-inner border border-dashed border-line-strong p-4 text-footnote leading-relaxed text-ink2">
           <span className="font-medium text-ink">Not enough yet.</span> {result.need}
         </div>
       ) : (
         <>
-          <ul className="mt-3 space-y-2.5">
+          <ul className="mt-3 divide-y divide-line border-t border-line">
             {result.trends.map((t) => (
-              <li key={t.criterion} className="rounded-inner border border-line bg-raised p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-body font-semibold text-ink">{t.label}</span>
+              <li key={t.criterion} className="py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="min-w-0 text-body font-semibold text-ink">{t.label}</span>
                   <span
-                    className={`rounded-full border px-2.5 py-0.5 text-caption font-semibold uppercase tracking-wide ${
+                    className={`shrink-0 rounded-full border px-2.5 py-0.5 text-caption font-semibold uppercase tracking-wide ${
                       DIRECTION_STYLE[t.direction]
                     }`}
                   >
                     {t.direction}
                   </span>
-                  <span className="text-caption text-ink3">
-                    seen in {t.seen} of {t.seen + t.unseen} filmed sets
-                    {t.confidence === 'low' ? ' · low confidence' : ''}
-                  </span>
+                </div>
+                <div className="mt-0.5 text-caption text-ink3">
+                  seen in {t.seen} of {t.seen + t.unseen} filmed sets
+                  {t.confidence === 'low' ? ' · low confidence' : ''}
                 </div>
                 <p className="mt-1 text-footnote leading-relaxed text-ink2">{describeTrend(t)}</p>
               </li>
@@ -222,7 +222,7 @@ function FormTrendCard({ skill }: { skill: SkillId }) {
           {result.comparison ? (
             <button
               onClick={() => setComparing(result.comparison)}
-              className="mt-3 inline-flex items-center gap-2 rounded-control border border-line bg-raised px-4 py-2.5 text-footnote font-medium text-ink transition hover:border-line-strong"
+              className="mt-3 flex min-h-11 w-full flex-wrap items-center justify-center gap-x-2 rounded-control border border-line-strong bg-raised px-4 py-2 text-footnote font-medium text-ink"
             >
               <Icon name="monitor" size={15} /> Watch then and now
               <span className="text-ink3">
@@ -285,9 +285,9 @@ function ThenAndNow({ comparison, exerciseId }: { comparison: FormComparison; ex
   const days = Math.max(1, Math.round((comparison.to.at - comparison.from.at) / 86_400_000))
 
   return (
-    <div className="p-6">
+    <div className="p-4">
       <div className="pr-10">
-        <h2 className="font-display text-[20px] font-bold text-ink">Then and now</h2>
+        <h2 className="font-display text-title2 font-bold text-ink">Then and now</h2>
         <p className="mt-1 text-footnote leading-relaxed text-ink2">
           Your oldest and newest kept clips of the {EXERCISE_BY_ID[exerciseId]?.name.toLowerCase() ?? 'exercise'},{' '}
           {days} day{days === 1 ? '' : 's'} apart. Clips are only kept for a while, so this is the widest window still
@@ -303,7 +303,7 @@ function ThenAndNow({ comparison, exerciseId }: { comparison: FormComparison; ex
               <span className="text-footnote text-ink3">{fmtDate(comparison[side].at)}</span>
             </div>
             {missing[side] ? (
-              <div className="grid h-40 place-items-center rounded-lg border border-dashed border-line-strong px-4 text-center text-footnote leading-relaxed text-ink3">
+              <div className="grid h-40 place-items-center rounded-control border border-dashed border-line-strong px-4 text-center text-footnote leading-relaxed text-ink3">
                 This recording has been cleared. Pin a clip from the exercise guide to keep it as a reference.
               </div>
             ) : (
@@ -319,47 +319,31 @@ function ThenAndNow({ comparison, exerciseId }: { comparison: FormComparison; ex
         ))}
       </div>
 
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full text-left text-footnote">
-          <caption className="sr-only">What the camera measured in each clip</caption>
-          <thead>
-            <tr className="text-caption uppercase tracking-wide text-ink3">
-              <th scope="col" className="pb-1.5 pr-3 font-semibold">
-                Measured
-              </th>
-              <th scope="col" className="pb-1.5 pr-3 font-semibold">
-                Then
-              </th>
-              <th scope="col" className="pb-1.5 pr-3 font-semibold">
-                Now
-              </th>
-              <th scope="col" className="pb-1.5 font-semibold">
-                Change
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {comparison.criteria.map((c) => (
-              <tr key={c.label} className="border-t border-line">
-                <td className="py-2 pr-3 text-ink">{c.label}</td>
-                <td className="py-2 pr-3 text-ink2 tnum">{formatCriterionValue(c.from, c.unit)}</td>
-                <td className="py-2 pr-3 font-medium text-ink tnum">{formatCriterionValue(c.to, c.unit)}</td>
-                <td
-                  className={`py-2 font-medium ${
-                    c.direction === 'improving'
-                      ? 'text-ok-text'
-                      : c.direction === 'declining'
-                        ? 'text-danger-text'
-                        : 'text-ink3'
-                  }`}
-                >
-                  {c.direction === 'steady' ? 'no real change' : c.direction}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <p className="sr-only">What the camera measured in each clip</p>
+      <ul className="mt-4 divide-y divide-line border-t border-line">
+        {comparison.criteria.map((c) => (
+          <li key={c.label} className="py-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="min-w-0 text-body text-ink">{c.label}</span>
+              <span
+                className={`shrink-0 text-footnote font-medium ${
+                  c.direction === 'improving'
+                    ? 'text-ok-text'
+                    : c.direction === 'declining'
+                      ? 'text-danger-text'
+                      : 'text-ink3'
+                }`}
+              >
+                {c.direction === 'steady' ? 'no real change' : c.direction}
+              </span>
+            </div>
+            <div className="mt-0.5 text-footnote text-ink2 tnum">
+              Then {formatCriterionValue(c.from, c.unit)} · Now{' '}
+              <span className="font-medium text-ink">{formatCriterionValue(c.to, c.unit)}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
 
       <p className="mt-3 text-footnote leading-relaxed text-ink3">
         Only criteria the camera measured in <em>both</em> clips are listed — comparing a reading against a blank would

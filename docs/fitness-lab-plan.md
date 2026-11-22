@@ -161,9 +161,12 @@ Open, in order of value (none blocks using the app):
    options, week row; Path as a timeline), then Progress (one section style,
    records/achievements/history as compact rows, a 2x2 metrics card) and
    Settings (grouped list rows, controls wrap under labels, 44 px toggles),
-   all checked at 375 px for overflow. Left: Home's coach/goal/tip cards and
-   Stats' form-trend/pressing/then-and-now cards only got spacing; Settings
-   has no separate Camera group; `ErrorState` has no user yet.
+   all checked at 375 px for overflow. Then the leftovers: Home's coach,
+   goal, tip and achievement cards and Stats' form-trend, pressing and
+   then-and-now cards re-laid out as single-column compact rows; Settings
+   has its own Camera group after Training. Checked at 375 px: no overflow on
+   Home, Progress or Settings, no console errors. Only `ErrorState` has no
+   user (state is synchronous and local, so there is no failing load).
 5. Gym achievements beyond the derived badges; per-set notes in the logger.
 
 ## Log

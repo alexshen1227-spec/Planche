@@ -851,13 +851,13 @@ export function Dashboard({
       </div>
 
       {/* Coach */}
-      <div className="animate-rise mt-4 rounded-card border border-line bg-surface p-4" style={{ animationDelay: '110ms' }}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="animate-rise mt-6 rounded-card border border-line bg-surface p-4" style={{ animationDelay: '110ms' }}>
+        <div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wide text-accent-text">
-              <Icon name="target" size={15} /> Coach
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <h2 className="flex items-center gap-2 font-display text-title3 font-semibold text-ink">
+              <Icon name="target" size={18} className="text-accent-text" /> Coach
+            </h2>
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
               <span className="rounded-full bg-accent-soft px-3 py-1 text-footnote font-semibold text-accent-text">
                 {STRATEGY_BY_ID[plan.strategy].name}
               </span>
@@ -873,13 +873,13 @@ export function Dashboard({
                 {Math.floor(plan.restMainSec / 60)}:{String(plan.restMainSec % 60).padStart(2, '0')} rest
               </span>
             </div>
-            <p className="mt-2 max-w-xl text-footnote leading-relaxed text-ink2">{plan.strategyReason}</p>
+            <p className="mt-3 text-footnote leading-relaxed text-ink2">{plan.strategyReason}</p>
             {plan.limiter ? (
-              <p className="mt-1 max-w-xl text-footnote leading-relaxed text-ink3">
+              <p className="mt-1 text-footnote leading-relaxed text-ink3">
                 {plan.limiter.evidence} {plan.limiter.prescription}
               </p>
             ) : null}
-            <ul className="mt-2 space-y-1.5">
+            <ul className="mt-3 space-y-2">
               {topDecisions.map((d) => (
                 <li key={d.text} className="flex gap-2 text-footnote leading-relaxed">
                   <span
@@ -892,15 +892,12 @@ export function Dashboard({
               ))}
             </ul>
           </div>
-          <button
-            onClick={() => go('stats')}
-            className="shrink-0 min-h-11 rounded-control border border-line-strong bg-raised px-4 text-footnote font-medium text-ink"
-          >
-            What it learned →
-          </button>
         </div>
-        <div className="mt-3 flex items-center gap-2 text-footnote text-ink3">
-          <div className="h-1 w-24 overflow-hidden rounded-full bg-line">
+        <Button variant="secondary" full className="mt-4" onClick={() => go('stats')}>
+          What it learned →
+        </Button>
+        <div className="mt-4 flex items-center gap-3 text-footnote text-ink3">
+          <div className="h-1 w-20 shrink-0 overflow-hidden rounded-full bg-line">
             <div
               className="h-full rounded-full bg-accent/70"
               style={{ width: `${Math.min(100, (confidence.evaluated / 12) * 100)}%` }}
@@ -921,15 +918,15 @@ export function Dashboard({
         className="animate-rise mt-6 rounded-card border border-line bg-surface p-4"
         style={{ animationDelay: '125ms' }}
       >
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wide text-ink3">
-              <Icon name="route" size={15} /> Your goal
-            </div>
+            <h2 className="flex items-center gap-2 font-display text-title3 font-semibold text-ink">
+              <Icon name="route" size={18} className="text-ink3" /> Your goal
+            </h2>
             {/* The separator is a real space, not only the `ml-2` margin: a
                 screen reader reads the concatenated text, and without it this
                 announced as "Straddle Planche3 steps to go". */}
-            <h2 className="mt-1.5 font-display text-title3 font-semibold text-ink">
+            <div className="mt-3 text-body font-semibold text-ink">
               {STEP_BY_ID[outlook.goalStepId].name}
               {outlook.stepsRemaining > 0 ? (
                 <>
@@ -939,39 +936,36 @@ export function Dashboard({
                   </span>
                 </>
               ) : null}
-            </h2>
+            </div>
             {outlook.estimate ? (
               <div className="mt-1 text-footnote font-medium text-accent-text">
                 Roughly {outlook.estimate.lowWeeks}–{outlook.estimate.highWeeks} weeks at your own measured pace
               </div>
             ) : null}
-            <p className="mt-1 max-w-xl text-footnote leading-relaxed text-ink3">{outlook.note}</p>
+            <p className="mt-1 text-footnote leading-relaxed text-ink3">{outlook.note}</p>
           </div>
-          <button
-            onClick={() => go('path')}
-            className="shrink-0 min-h-11 rounded-control border border-line-strong bg-raised px-4 text-footnote font-medium text-ink"
-          >
-            Change goal →
-          </button>
         </div>
+        <Button variant="secondary" full className="mt-4" onClick={() => go('path')}>
+          Change goal →
+        </Button>
       </div>
 
       {/* Tip + achievements */}
-      <div className="animate-rise mt-6 grid gap-3 lg:grid-cols-2" style={{ animationDelay: '140ms' }}>
+      <div className="animate-rise mt-6 grid gap-6 lg:grid-cols-2" style={{ animationDelay: '140ms' }}>
         <div className="rounded-card border border-line bg-surface p-4">
-          <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wide text-accent-text">
-            <Icon name="sparkle" size={15} /> Coach's tip
-          </div>
-          <div className="mt-2 text-body font-semibold text-ink">{tip.title}</div>
+          <h2 className="flex items-center gap-2 font-display text-title3 font-semibold text-ink">
+            <Icon name="sparkle" size={18} className="text-accent-text" /> Coach's tip
+          </h2>
+          <div className="mt-3 text-body font-semibold text-ink">{tip.title}</div>
           <p className="mt-1 text-footnote leading-relaxed text-ink2">{tip.body}</p>
           <p className="mt-2 text-caption text-ink3">{BASIS_LABEL[tip.basis]}</p>
         </div>
         <div className="rounded-card border border-line bg-surface p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wide text-ink3">
-              <Icon name="trophy" size={15} /> Latest achievements
-            </div>
-            <button onClick={() => go('stats')} className="-my-2 px-1 py-2 text-footnote font-medium text-ink3 hover:text-ink">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-display text-title3 font-semibold text-ink">
+              <Icon name="trophy" size={18} className="text-ink3" /> Latest achievements
+            </h2>
+            <button onClick={() => go('stats')} className="-my-2 inline-flex min-h-11 items-center px-2 text-footnote font-medium text-ink2 hover:text-ink">
               All →
             </button>
           </div>
@@ -981,17 +975,17 @@ export function Dashboard({
               something to chase.
             </p>
           ) : (
-            <div className="mt-3 space-y-2.5">
+            <ul className="mt-3 divide-y divide-line">
               {recentAchievements.map(({ def, at }) => (
-                <div key={def.id} className="flex items-center gap-3">
+                <li key={def.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
                   <BadgeGlyph icon={def.icon} size={36} />
                   <div className="min-w-0">
                     <div className="truncate text-body font-semibold text-ink">{def.name}</div>
                     <div className="text-footnote text-ink3">{fmtDate(at)}</div>
                   </div>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
       </div>

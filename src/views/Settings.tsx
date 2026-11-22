@@ -802,6 +802,82 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         <Row label="Include warm-up blocks" hint="Wrist prep and scapula activation at the start of generated sessions.">
           <Toggle label="Include warm-up blocks" on={s.warmup} onChange={(v) => set({ warmup: v })} />
         </Row>
+        <Row label="Rest after main work" hint="Two to three minutes is common coaching practice for hard holds.">
+          <Stepper
+            label="rest after main work"
+            value={s.restMainSec}
+            onChange={(v) => set({ restMainSec: v })}
+            min={30}
+            max={300}
+            step={15}
+            format={(v) => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`}
+          />
+        </Row>
+        <Row
+          label="Phone within reach on Path holds"
+          hint={
+            s.phoneWithinReach
+              ? 'Starting answer: within reach, so main Path holds use your calibrated delay below. Each set can still be corrected with one tap on the rest screen.'
+              : s.walkBackSec !== undefined
+                ? `Across the room: main Path holds allow your measured ${s.walkBackSec.toFixed(1)}s walk back. Each set can be corrected with one tap on the rest screen.`
+                : 'Starting answer: across the room, so main Path holds allow 5.0s for climbing out and walking back — measure your own walk to replace it. Each set can be corrected with one tap on the rest screen.'
+          }
+        >
+          {!s.phoneWithinReach ? (
+            <button
+              onClick={() => setMeasuringWalk(true)}
+              className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
+            >
+              {s.walkBackSec !== undefined ? 'Re-measure' : 'Measure my walk'}
+            </button>
+          ) : null}
+          <Toggle
+            on={s.phoneWithinReach}
+            onChange={(v) => set({ phoneWithinReach: v })}
+            label="Phone within reach on Path holds"
+          />
+        </Row>
+        <Row
+          label="Stop reaction delay"
+          hint={
+            s.phoneWithinReach
+              ? 'Your calibrated delay, now used for every timed hold including main Path holds.'
+              : `Your calibrated delay for regular holds — ones you stop with the phone in reach, such as a lean. Main Path holds use ${(s.walkBackSec ?? PROGRESSION_STOP_LATENCY_SEC).toFixed(1)}s instead — see the setting above.`
+          }
+        >
+          <button
+            onClick={() => setCalibrating(true)}
+            className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
+          >
+            Calibrate
+          </button>
+          <Stepper
+            label="stop reaction delay"
+            value={Math.round(s.stopLatencySec * 10)}
+            onChange={(v) => set({ stopLatencySec: v / 10 })}
+            min={0}
+            // Main Path holds use their own 5s timing. This still needs room
+            // for a deliberately calibrated regular-hold delay up to 5s.
+            max={50}
+            step={1}
+            format={(v) => `${(v / 10).toFixed(1)}s`}
+          />
+        </Row>
+        <Row label="Rest after accessories">
+          <Stepper
+            label="rest after accessories"
+            value={s.restAccessorySec}
+            onChange={(v) => set({ restAccessorySec: v })}
+            min={15}
+            max={240}
+            step={15}
+            format={(v) => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`}
+          />
+        </Row>
+      </div>
+
+      <SectionTitle>Camera</SectionTitle>
+      <div className="rounded-card border border-line bg-surface px-4">
         <Row
           label="Film main holds"
           hint="Records a short clip of your main holds, and of push-up sets on a rung, for form review. A filmed check is required for progression unlocks; sets still save as PRs when filming is off. Clips stay on this device."
@@ -907,78 +983,6 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           >
             Delete all
           </button>
-        </Row>
-        <Row label="Rest after main work" hint="Two to three minutes is common coaching practice for hard holds.">
-          <Stepper
-            label="rest after main work"
-            value={s.restMainSec}
-            onChange={(v) => set({ restMainSec: v })}
-            min={30}
-            max={300}
-            step={15}
-            format={(v) => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`}
-          />
-        </Row>
-        <Row
-          label="Phone within reach on Path holds"
-          hint={
-            s.phoneWithinReach
-              ? 'Starting answer: within reach, so main Path holds use your calibrated delay below. Each set can still be corrected with one tap on the rest screen.'
-              : s.walkBackSec !== undefined
-                ? `Across the room: main Path holds allow your measured ${s.walkBackSec.toFixed(1)}s walk back. Each set can be corrected with one tap on the rest screen.`
-                : 'Starting answer: across the room, so main Path holds allow 5.0s for climbing out and walking back — measure your own walk to replace it. Each set can be corrected with one tap on the rest screen.'
-          }
-        >
-          {!s.phoneWithinReach ? (
-            <button
-              onClick={() => setMeasuringWalk(true)}
-              className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
-            >
-              {s.walkBackSec !== undefined ? 'Re-measure' : 'Measure my walk'}
-            </button>
-          ) : null}
-          <Toggle
-            on={s.phoneWithinReach}
-            onChange={(v) => set({ phoneWithinReach: v })}
-            label="Phone within reach on Path holds"
-          />
-        </Row>
-        <Row
-          label="Stop reaction delay"
-          hint={
-            s.phoneWithinReach
-              ? 'Your calibrated delay, now used for every timed hold including main Path holds.'
-              : `Your calibrated delay for regular holds — ones you stop with the phone in reach, such as a lean. Main Path holds use ${(s.walkBackSec ?? PROGRESSION_STOP_LATENCY_SEC).toFixed(1)}s instead — see the setting above.`
-          }
-        >
-          <button
-            onClick={() => setCalibrating(true)}
-            className="rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
-          >
-            Calibrate
-          </button>
-          <Stepper
-            label="stop reaction delay"
-            value={Math.round(s.stopLatencySec * 10)}
-            onChange={(v) => set({ stopLatencySec: v / 10 })}
-            min={0}
-            // Main Path holds use their own 5s timing. This still needs room
-            // for a deliberately calibrated regular-hold delay up to 5s.
-            max={50}
-            step={1}
-            format={(v) => `${(v / 10).toFixed(1)}s`}
-          />
-        </Row>
-        <Row label="Rest after accessories">
-          <Stepper
-            label="rest after accessories"
-            value={s.restAccessorySec}
-            onChange={(v) => set({ restAccessorySec: v })}
-            min={15}
-            max={240}
-            step={15}
-            format={(v) => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`}
-          />
         </Row>
       </div>
 
