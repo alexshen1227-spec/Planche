@@ -212,3 +212,27 @@ export function emphasisFor(goals: GoalWeights): {
   const compound = goals.endurance > Math.max(goals.strength, goals.physique) ? 'endurance' : goals.strength > goals.physique ? 'strength' : 'muscle'
   return { compound, isolation: goals.endurance > goals.physique ? 'endurance' : 'muscle', power: goals.power >= 3 }
 }
+
+/**
+ * When each muscle was last trained — a working gym set (primary or
+ * secondary) or a skill set that loads it. Absent means never in the history.
+ */
+export function lastTrainedAt(state: Pick<AppState, 'sessions' | 'gym'>, now: number): Partial<Record<Muscle, number>> {
+  const out: Partial<Record<Muscle, number>> = {}
+  const mark = (credit: Credit, at: number) => {
+    for (const m of Object.keys(credit) as Muscle[]) if (at <= now && (out[m] ?? 0) < at) out[m] = at
+  }
+  for (const s of state.sessions) {
+    for (const set of s.sets) {
+      const l = skillSetLoading(set.exerciseId, set.section)
+      if (l) mark(l.muscles, s.startedAt)
+    }
+  }
+  for (const s of state.gym?.sessions ?? []) {
+    for (const log of s.exercises) {
+      const l = gymSetLoading(log.exerciseId)
+      if (l && log.sets.some((x) => !x.warmup && x.reps > 0)) mark(l.muscles, s.startedAt)
+    }
+  }
+  return out
+}

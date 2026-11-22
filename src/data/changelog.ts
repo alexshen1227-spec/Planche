@@ -19,6 +19,14 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-22',
+    title: 'The plan goes where you have not been',
+    area: 'coach',
+    notes: [
+      'Each time you open the app, Today looks at which part of your body has gone longest without training — gym and skill sets both count — and points the next gym session there, with the reason (“Legs were last trained 9 days ago”). Your rest rules, sprint and game days and pain reports still come first, and picking a focus on the Gym side overrides it.',
+    ],
+  },
+  {
+    date: '2026-11-22',
     title: 'Home and Path redesigned for the phone; swipes that always land',
     area: 'app',
     notes: [

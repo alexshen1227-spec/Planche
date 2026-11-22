@@ -10,7 +10,7 @@ import { conservative } from '../gym/draft'
 import { estimateOneRepMax } from '../gym/progression'
 import { defaultPrefs } from '../gym/state'
 import type { SkillGoal, TrainingPrefs } from '../gym/types'
-import { fatigueAt, lastHardStraightArm, setsPerMuscle, volumeTarget } from './load'
+import { fatigueAt, lastHardStraightArm, lastTrainedAt, setsPerMuscle, volumeTarget } from './load'
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -25,6 +25,9 @@ export const FOCUS_MUSCLES: Record<GymFocus, Muscle[]> = {
 }
 
 const LEG_MUSCLES: Muscle[] = ['quads', 'hamstrings', 'glutes', 'calves', 'adductors']
+/** Days of absence that count toward "left longest", and how much they weigh. */
+const STALE_CAP_DAYS = 14
+const STALE_WEIGHT = 0.25
 
 /** Which straight-arm family a skill's hard work belongs to. The handstand is balance work. */
 export function skillFamily(skill: SkillId): 'push' | 'pull' | 'balance' {
@@ -207,12 +210,17 @@ export function planToday(state: AppState, opts: { now?: number; minutes?: numbe
   const legsCovered = legActivity.length > 0
   const legsOff = LEG_MUSCLES.every((m) => prefs.musclesOff.includes(m))
   const skillFamilies = new Set((skillBlock?.skills ?? []).map(skillFamily))
+  // The part of the body left longest: days since each muscle was last hit,
+  // capped so a long layoff does not swamp every other rule.
+  const lastHit = lastTrainedAt(state, now)
+  const daysSince = (m: Muscle) => Math.min(STALE_CAP_DAYS, lastHit[m] === undefined ? STALE_CAP_DAYS : (now - lastHit[m]!) / DAY)
+  const staleness = (muscles: Muscle[]) => (muscles.length ? muscles.reduce((sum, m) => sum + daysSince(m), 0) / muscles.length : 0)
   const scores = (['push', 'pull', 'lower', 'upper', 'full'] as GymFocus[]).map((focus) => {
     const muscles = FOCUS_MUSCLES[focus].filter((m) => !prefs.musclesOff.includes(m))
     if (!muscles.length) return { focus, score: -Infinity, muscles }
     const need = muscles.reduce((sum, m) => sum + Math.max(0, volumeTarget(m, prefs)[0] - (weekSets[m] ?? 0)), 0) / muscles.length
     const tired = muscles.reduce((sum, m) => sum + (fatigue.muscles[m] ?? 0), 0) / muscles.length
-    let score = need - 1.5 * tired
+    let score = need - 1.5 * tired + STALE_WEIGHT * staleness(muscles)
     if ((focus === 'lower' || focus === 'full') && (legsCovered || legsOff || upcoming)) score -= focus === 'lower' ? 1000 : 2
     if (focus === 'push' && (skillFamilies.has('push') || blocked.push)) score -= 4
     if (focus === 'pull' && (skillFamilies.has('pull') || blocked.pull)) score -= 4
@@ -223,6 +231,16 @@ export function planToday(state: AppState, opts: { now?: number; minutes?: numbe
   })
   const best = scores.sort((a, b) => b.score - a.score)[0]
   const focus = best.focus
+  // Say so when the part of the body left longest is what the day is for.
+  const groupStale = (['lower', 'push', 'pull'] as GymFocus[])
+    .map((f) => ({ f, days: staleness(FOCUS_MUSCLES[f].filter((m) => !prefs.musclesOff.includes(m))) }))
+    .filter((g) => g.days >= 5)
+    .sort((a, b) => b.days - a.days)[0]
+  if (groupStale && (focus === groupStale.f || (focus === 'full' && groupStale.f === 'lower') || (focus === 'upper' && groupStale.f !== 'lower'))) {
+    const name = groupStale.f === 'lower' ? 'Legs' : groupStale.f === 'push' ? 'Chest, shoulders and triceps' : 'Back and biceps'
+    const days = Math.round(groupStale.days)
+    reasons.push(`${name} ${days >= STALE_CAP_DAYS ? 'have not been trained in two weeks or more' : `were last trained ${days} days ago`} — today’s gym session goes there. Pick a different focus on the Gym side to override it.`)
+  }
   if (legsCovered) {
     const a = legActivity[legActivity.length - 1]
     reasons.push(`${a.kind === 'pe' ? 'PE' : a.kind[0].toUpperCase() + a.kind.slice(1)} ${now - a.at < DAY ? 'today or yesterday' : 'in the last two days'} already loaded your legs — no leg work in the gym today.`)

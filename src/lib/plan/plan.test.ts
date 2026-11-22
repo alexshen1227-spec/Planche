@@ -316,3 +316,20 @@ describe('one flow for a mixed day', () => {
     }
   })
 })
+
+describe('the part of the body left longest', () => {
+  it('points the next gym session at it and says so — unless the athlete picks a focus', async () => {
+    // Ten days of upper-body gym work and nothing for the legs.
+    const upper = Array.from({ length: 5 }, (_, i) => [gymSession(NOW - (2 + i * 2) * DAY, 'bench-press', 4), gymSession(NOW - (2 + i * 2) * DAY + HOUR, 'lat-pulldown', 4)]).flat()
+    const base = athlete(['planche'])
+    const s: AppState = { ...base, gym: { ...base.gym!, sessions: upper } }
+    const p = planToday(s, { now: NOW, minutes: 60 })
+    expect(['lower', 'full']).toContain(p.gym!.focus)
+    expect(p.reasons.some((r) => r.startsWith('Legs'))).toBe(true)
+    // Switched-off legs are never "left longest".
+    const off: AppState = { ...s, gym: { ...s.gym!, prefs: { ...s.gym!.prefs!, musclesOff: ['quads', 'hamstrings', 'glutes', 'calves', 'adductors'] } } }
+    expect(planToday(off, { now: NOW, minutes: 60 }).gym!.focus).not.toBe('lower')
+    // The athlete's own pick wins: an explicit focus is built as asked.
+    expect(buildGymSession({ location: gymA, minutes: 45, focus: 'push', sessions: upper }).focus).toBe('push')
+  })
+})
