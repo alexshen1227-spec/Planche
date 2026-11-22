@@ -57,6 +57,7 @@ export function HoldLineChart({
   height = 200,
   emptyHint,
   label = 'Best hold per session',
+  format,
 }: {
   points: { at: number; value: number }[]
   goal?: number
@@ -69,7 +70,10 @@ export function HoldLineChart({
   emptyHint?: string
   /** What one point is, for the accessible summary — it must name the same quantity as the heading. */
   label?: string
+  /** How a value reads (default: a hold time). The gym's estimated maxes pass a load. */
+  format?: (value: number) => string
 }) {
+  const fmtV = format ?? fmtHold
   const { ref, width } = useWidth<HTMLDivElement>()
   const [tip, setTip] = useState<TipState | null>(null)
   const areaGradId = useId()
@@ -118,7 +122,7 @@ export function HoldLineChart({
         best = p
       }
     }
-    setTip({ x: x(best.at), y: y(best.value), lines: [fmtHold(best.value), fmtShortDay(best.at)] })
+    setTip({ x: x(best.at), y: y(best.value), lines: [fmtV(best.value), fmtShortDay(best.at)] })
   }
 
   // Read out for anyone who cannot see the line. Tooltips here are mouse-only,
@@ -126,8 +130,8 @@ export function HoldLineChart({
   // get the numbers out of the chart at all.
   const summary = `${label}. ${points.length} points from ${fmtShortDay(t0)} to ${fmtShortDay(
     t1,
-  )}, ${fmtHold(points[0].value)} to ${fmtHold(last.value)}${
-    goal ? `, against a ${fmtHold(goal)} goal` : ''
+  )}, ${fmtV(points[0].value)} to ${fmtV(last.value)}${
+    goal ? `, against a ${fmtV(goal)} goal` : ''
   }.`
 
   return (
@@ -188,7 +192,7 @@ export function HoldLineChart({
         ))}
         {tip ? <line x1={tip.x} x2={tip.x} y1={pad.t} y2={pad.t + ih} stroke="var(--t-line-strong)" strokeWidth={1} /> : null}
         <text x={x(last.at)} y={y(last.value) - 10} textAnchor="middle" fontSize={12} fontWeight={600} fill="var(--t-ink)" className="tnum">
-          {fmtHold(last.value)}
+          {fmtV(last.value)}
         </text>
         <text x={pad.l} y={height - 6} fontSize={11} fill="var(--t-ink3)">
           {fmtShortDay(t0)}

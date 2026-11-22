@@ -843,6 +843,7 @@ export function normalizeStateWithReport(
         ? rawSettings.phoneWithinReach
         : DEFAULT_SETTINGS.phoneWithinReach,
     soundThroughSilent: rawSettings.soundThroughSilent === true,
+    trackBodyweight: rawSettings.trackBodyweight === true,
     // A measurement or nothing: anything else falls back to the assumed walk.
     // A calibration or nothing: outside the plausible band it falls back to
     // the uncalibrated reference rather than becoming one.

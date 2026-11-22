@@ -16,7 +16,7 @@ export function exportData(state: AppState) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `calisthenics-lab-backup-${dayKey(Date.now())}.json`
+  a.download = `fitness-lab-backup-${dayKey(Date.now())}.json`
   a.rel = 'noopener'
   a.style.display = 'none'
   document.body.appendChild(a)
@@ -56,4 +56,75 @@ export function validateImport(raw: unknown): asserts raw is AppState {
   ) {
     throw new Error('That JSON is not a complete Fitness Lab backup.')
   }
+}
+
+function csvCell(v: string | number | undefined): string {
+  if (v === undefined) return ''
+  const s = String(v)
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+/**
+ * Every logged set as one CSV row — skill holds and gym lifts together, for a
+ * spreadsheet. The JSON backup stays the one that can be imported back.
+ */
+export function setsCsv(state: AppState): string {
+  const rows: (string | number | undefined)[][] = [
+    ['date', 'kind', 'session', 'place', 'exercise', 'section', 'set', 'load_kg', 'unit', 'reps', 'hold_sec', 'rpe'],
+  ]
+  for (const s of state.sessions) {
+    s.sets.forEach((set, i) =>
+      rows.push([
+        new Date(set.at).toISOString(),
+        'skill',
+        s.workoutName,
+        '',
+        set.exerciseId,
+        set.section,
+        i + 1,
+        undefined,
+        undefined,
+        set.kind === 'reps' ? set.value : undefined,
+        set.kind === 'hold' ? set.value : undefined,
+        undefined,
+      ]),
+    )
+  }
+  const places = new Map((state.gym?.locations ?? []).map((l) => [l.id, l.name]))
+  for (const s of state.gym?.sessions ?? []) {
+    for (const log of s.exercises) {
+      log.sets.forEach((set, i) =>
+        rows.push([
+          new Date(set.at).toISOString(),
+          'gym',
+          s.name,
+          places.get(s.locationId) ?? '',
+          log.exerciseId,
+          set.warmup ? 'warmup' : 'main',
+          i + 1,
+          set.kg !== undefined ? Math.round(set.kg * 100) / 100 : undefined,
+          set.unit,
+          set.reps,
+          undefined,
+          set.rpe,
+        ]),
+      )
+    }
+  }
+  rows.sort((a, b) => (a[0] === 'date' ? -1 : b[0] === 'date' ? 1 : String(a[0]).localeCompare(String(b[0]))))
+  return rows.map((r) => r.map(csvCell).join(',')).join('\n') + '\n'
+}
+
+export function exportCsv(state: AppState) {
+  const blob = new Blob([setsCsv(state)], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `fitness-lab-sets-${dayKey(Date.now())}.csv`
+  a.rel = 'noopener'
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 30_000)
 }

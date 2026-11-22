@@ -42,6 +42,7 @@ import { ClipPlayer } from '../components/ClipPlayer'
 import { CLIP_RETENTION_DAYS } from '../lib/clips'
 import { Icon } from '../components/Icon'
 import { Modal, SectionTitle, Stat } from '../components/ui'
+import { WeeklySummary } from '../components/plan/WeeklySummary'
 import { pushToast } from '../lib/toast'
 import type { Exercise, SkillId, TrainingSurface } from '../types'
 import { surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
@@ -565,6 +566,9 @@ export function Stats({
     <div className="animate-rise">
       <h1 className="font-display text-[28px] font-bold text-ink">Progress</h1>
       <p className="mt-0.5 text-[14px] text-ink2">Charts, records, history and trophies.</p>
+      <div className="mt-4">
+        <WeeklySummary />
+      </div>
       {skills.length > 1 ? (
         <div className="mt-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="Skill shown">
           {skills.map((skill) => {

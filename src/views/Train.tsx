@@ -1,4 +1,5 @@
 import { GymHub } from '../components/gym/GymHub'
+import { TodayPlanCard, type GymPreset } from '../components/plan/TodayPlanCard'
 import { useMemo, useState } from 'react'
 import type { AssistType, Section, Session, SetLog, SkillId, TrainingSurface, Workout, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
@@ -623,6 +624,7 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
       return 'skills'
     }
   })
+  const [gymPreset, setGymPreset] = useState<GymPreset | null>(null)
   const choose = (m: 'skills' | 'gym') => {
     setMode(m)
     try {
@@ -633,6 +635,13 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
   }
   return (
     <div>
+      <TodayPlanCard
+        startWorkout={startWorkout}
+        onStartGym={(preset) => {
+          choose('gym')
+          setGymPreset(preset)
+        }}
+      />
       <div className="mx-auto mb-5 grid max-w-sm grid-cols-2 rounded-2xl border border-line bg-raised p-1" role="tablist" aria-label="What to train">
         {(['skills', 'gym'] as const).map((m) => (
           <button
@@ -646,7 +655,7 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
           </button>
         ))}
       </div>
-      {mode === 'skills' ? <SkillsTrain startWorkout={startWorkout} /> : <GymHub />}
+      {mode === 'skills' ? <SkillsTrain startWorkout={startWorkout} /> : <GymHub preset={gymPreset} onPresetUsed={() => setGymPreset(null)} />}
     </div>
   )
 }

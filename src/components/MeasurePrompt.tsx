@@ -45,8 +45,10 @@ export function measurementDue(state: AppState, now = Date.now()): { weight: boo
   // one tap away in Settings, never a recurring prompt.
   const birthYear = state.profile.birthYear
   const minor = birthYear !== undefined && new Date(now).getFullYear() - birthYear < 18
+  // Bodyweight tracking is opt-in (Fitness Lab): optional, neutral, off by default.
+  const tracking = state.settings.trackBodyweight === true
   return {
-    weight: settledIn && !minor && !snoozed && (!w || now - w.at >= WEIGHT_EVERY_DAYS * DAY),
+    weight: tracking && settledIn && !minor && !snoozed && (!w || now - w.at >= WEIGHT_EVERY_DAYS * DAY),
     height: !h || now - h.at >= HEIGHT_EVERY_DAYS * DAY,
   }
 }

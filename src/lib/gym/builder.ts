@@ -1,8 +1,8 @@
-import type { Pattern } from '../../data/gym/catalog'
+import type { Joint, Muscle, Pattern } from '../../data/gym/catalog'
 import { GYM_EXERCISE_BY_ID, type GymExercise } from '../../data/gym/exercises'
 import { availableAt, preferenceRank } from './availability'
 import { repPlanFor, suggestLoad, type LoadSuggestion, type RepPlan } from './progression'
-import type { GymLocation, GymSession, Rating } from './types'
+import type { GoalWeights, GymLocation, GymSession, Rating } from './types'
 
 export type GymFocus = 'full' | 'upper' | 'lower' | 'push' | 'pull'
 
@@ -104,16 +104,51 @@ export function buildGymSession(input: {
   ratings?: Record<string, Rating>
   youth?: boolean
   emphasis?: 'strength' | 'muscle' | 'endurance' | 'power'
+  /** Goal weights: set the compound and isolation rep ranges, and put explosive work first when power matters. */
+  goals?: GoalWeights
+  /** Muscles the athlete has switched off: a movement whose primary muscles are all off is never picked. */
+  musclesOff?: Muscle[]
+  /** Lagging muscles: movements that train them win their slot and get an extra set. */
+  priority?: Muscle[]
+  /** Joints to keep load off today (a pain report or a niggle). */
+  avoidJoints?: Joint[]
+  /** Below 1 on a lighter day: fewer sets, stopping a rep further from failure. */
+  volumeFactor?: number
   now?: number
 }): GymPlan {
-  const { location, minutes, sessions, ratings = {}, youth = false, emphasis = 'muscle', now = Date.now() } = input
+  const { location, minutes, sessions, ratings = {}, youth = false, now = Date.now() } = input
+  const musclesOff = new Set(input.musclesOff ?? [])
+  const priority = new Set(input.priority ?? [])
+  const avoid = new Set(input.avoidJoints ?? [])
+  const factor = input.volumeFactor ?? 1
+  const goalEmphasis = input.goals
+    ? {
+        compound: (input.goals.endurance > Math.max(input.goals.strength, input.goals.physique)
+          ? 'endurance'
+          : input.goals.strength > input.goals.physique
+            ? 'strength'
+            : 'muscle') as 'strength' | 'muscle' | 'endurance',
+        isolation: (input.goals.endurance > input.goals.physique ? 'endurance' : 'muscle') as 'muscle' | 'endurance',
+        power: input.goals.power >= 3,
+      }
+    : null
+  const emphasisOf = (e: GymExercise) =>
+    input.emphasis ?? (goalEmphasis ? (e.compound ? goalEmphasis.compound : goalEmphasis.isolation) : 'muscle')
+  const usable = (e: GymExercise) =>
+    !e.primary.every((m) => musclesOff.has(m)) && !e.stress.some((j) => avoid.has(j)) && ratings[e.id] !== 'avoid'
   const focus = input.focus ?? nextFocus(sessions, now)
   const here = availableAt(location)
   const used = new Set<string>()
   const items: PlannedExercise[] = []
-  for (const slot of SLOTS[focus]) {
+  const slots: Pattern[][] = [...SLOTS[focus]]
+  // Explosive work goes first, fresh, when power is a goal (and the legs are on).
+  if (goalEmphasis?.power && focus !== 'pull' && !musclesOff.has('quads')) slots.unshift(['jump', 'throw'])
+  for (const slot of slots) {
+    const wantsExplosive = slot.includes('jump') || slot.includes('throw')
     // Avoided means avoided: a slot nothing else can fill is left out.
-    const options = here.filter((e) => slot.includes(e.pattern) && !used.has(e.id) && !e.explosive && ratings[e.id] !== 'avoid')
+    const options = here.filter(
+      (e) => slot.includes(e.pattern) && !used.has(e.id) && (wantsExplosive ? e.explosive : !e.explosive) && usable(e),
+    )
     const ranked = options
       .map((e) => ({
         e,
@@ -122,16 +157,19 @@ export function buildGymSession(input: {
           (youth && e.technical && ratings[e.id] !== 'love' ? 5 : 0) +
           // Within a slot the earlier-listed pattern is the one the slot is for.
           slot.indexOf(e.pattern) * 0.5 +
-          (e.compound ? 0 : 0.25),
+          (e.compound ? 0 : 0.25) -
+          (e.primary.some((m) => priority.has(m)) ? 1 : 0),
       }))
       .sort((a, b) => a.score - b.score)
     const pick = ranked[0]?.e
     if (!pick) continue
     used.add(pick.id)
-    const plan = repPlanFor(pick, emphasis, youth)
+    const base = repPlanFor(pick, wantsExplosive ? 'power' : emphasisOf(pick), youth)
+    const plan = factor < 1 ? { ...base, targetRpe: Math.max(6, base.targetRpe - 1) } : base
+    const sets = Math.max(2, Math.round((3 + (pick.primary.some((m) => priority.has(m)) ? 1 : 0)) * factor))
     items.push({
       exerciseId: pick.id,
-      sets: 3,
+      sets,
       plan,
       suggestion: suggestLoad({ exerciseId: pick.id, location, sessions, plan, youth, now }),
       restSec: restFor(pick, plan),

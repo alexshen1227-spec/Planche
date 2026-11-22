@@ -789,6 +789,12 @@ export interface Settings {
    */
   walkBackSec?: number
   /**
+   * Bodyweight reminders (Fitness Lab): off unless the athlete turns them on.
+   * Logging a weight in Settings works either way; nothing ever nudges toward
+   * losing weight, and under 18 there is no reminder at all.
+   */
+  trackBodyweight?: boolean
+  /**
    * Where this athlete's locked arm reads on their own camera (Settings →
    * Calibrate lockout), 160–180. Absent = not calibrated: the judge measures
    * from `UNCALIBRATED_LOCKOUT_DEG`.

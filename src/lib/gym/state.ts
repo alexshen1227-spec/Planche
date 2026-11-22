@@ -2,7 +2,21 @@ import { GYM_EQUIPMENT_BY_ID, type GymEquipmentId, type Unit } from '../../data/
 import { GYM_EXERCISE_BY_ID, type LocationEquipment } from '../../data/gym/exercises'
 import { EQUIPMENT_OPTIONS } from '../../data/equipment'
 import type { EquipmentId } from '../../types'
-import type { GymExerciseLog, GymLocation, GymSession, GymSet, GymState, Rating } from './types'
+import { MUSCLES, type Muscle } from '../../data/gym/catalog'
+import { SKILL_IDS, type SkillId, type StepId } from '../../types'
+import { STEP_BY_ID } from '../../data/progressions'
+import type {
+  ActivityKind,
+  GymExerciseLog,
+  GymLocation,
+  GymSession,
+  GymSet,
+  GymState,
+  OutsideActivity,
+  Rating,
+  SkillGoal,
+  TrainingPrefs,
+} from './types'
 
 const MAX_TOMBSTONES = 500
 const KIT = new Set<string>(EQUIPMENT_OPTIONS.map((o) => o.id))
@@ -11,6 +25,78 @@ const isEquipment = (v: unknown): v is LocationEquipment =>
 const isTime = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0
 const isUnit = (v: unknown): v is Unit => v === 'kg' || v === 'lb'
 const RATINGS: Rating[] = ['love', 'fine', 'avoid']
+
+const MUSCLE_IDS = new Set<string>(MUSCLES.map((m) => m.id))
+const ACTIVITY_KINDS: ActivityKind[] = ['sprint', 'practice', 'game', 'pe', 'run', 'other']
+const clamp = (v: unknown, lo: number, hi: number, fallback: number) =>
+  typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
+
+/** What an athlete who has set nothing gets: balanced goals, 45 minutes most days. */
+export function defaultPrefs(now = Date.now()): TrainingPrefs {
+  return {
+    goals: { strength: 3, power: 2, physique: 3, skills: 4, endurance: 1 },
+    skillGoals: [],
+    musclesOff: [],
+    musclesPriority: [],
+    minutesByDay: [60, 45, 0, 45, 0, 45, 60],
+    straightArmRestHours: 48,
+    updatedAt: now,
+  }
+}
+
+function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const r = raw as Record<string, unknown>
+  const g = (typeof r.goals === 'object' && r.goals !== null ? r.goals : {}) as Record<string, unknown>
+  const base = defaultPrefs(1)
+  const muscles = (v: unknown) =>
+    Array.isArray(v) ? [...new Set(v.filter((m): m is Muscle => typeof m === 'string' && MUSCLE_IDS.has(m)))] : []
+  const skillGoals: SkillGoal[] = Array.isArray(r.skillGoals)
+    ? r.skillGoals.flatMap((sg): SkillGoal[] => {
+        if (typeof sg !== 'object' || sg === null) return []
+        const v = sg as Record<string, unknown>
+        const step = typeof v.stepId === 'string' ? STEP_BY_ID[v.stepId as StepId] : undefined
+        if (!step || typeof v.by !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.by)) return []
+        if (!SKILL_IDS.includes(step.skill as SkillId)) return []
+        return [{ id: typeof v.id === 'string' && v.id ? v.id : `goal-${step.id}`, skill: step.skill, stepId: step.id, by: v.by }]
+      })
+    : []
+  const minutes = Array.isArray(r.minutesByDay) && r.minutesByDay.length === 7
+    ? r.minutesByDay.map((m) => Math.round(clamp(m, 0, 240, 0)))
+    : base.minutesByDay
+  return {
+    goals: {
+      strength: clamp(g.strength, 0, 5, base.goals.strength),
+      power: clamp(g.power, 0, 5, base.goals.power),
+      physique: clamp(g.physique, 0, 5, base.goals.physique),
+      skills: clamp(g.skills, 0, 5, base.goals.skills),
+      endurance: clamp(g.endurance, 0, 5, base.goals.endurance),
+    },
+    skillGoals,
+    musclesOff: muscles(r.musclesOff),
+    musclesPriority: muscles(r.musclesPriority),
+    minutesByDay: minutes,
+    straightArmRestHours: Math.round(clamp(r.straightArmRestHours, 24, 96, 48)),
+    updatedAt: isTime(r.updatedAt) ? r.updatedAt : 1,
+  }
+}
+
+function sanitizeActivity(raw: unknown): OutsideActivity | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const r = raw as Record<string, unknown>
+  if (typeof r.id !== 'string' || !r.id || !isTime(r.at)) return null
+  const kind = ACTIVITY_KINDS.includes(r.kind as ActivityKind) ? (r.kind as ActivityKind) : 'other'
+  return {
+    id: r.id,
+    at: r.at,
+    kind,
+    minutes: Math.round(clamp(r.minutes, 1, 600, 30)),
+    rpe: Math.round(clamp(r.rpe, 1, 10, 6)),
+    legs: r.legs === true,
+    ...(typeof r.note === 'string' && r.note ? { note: r.note.slice(0, 200) } : {}),
+    updatedAt: isTime(r.updatedAt) ? r.updatedAt : r.at,
+  }
+}
 
 function newId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -147,6 +233,13 @@ export function sanitizeGym(raw: unknown): GymState | undefined {
     Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string'))].slice(-MAX_TOMBSTONES) : []
   const deletedSessionIds = ids(r.deletedSessionIds)
   const deletedLocationIds = ids(r.deletedLocationIds)
+  const prefs = sanitizePrefs(r.prefs)
+  const activities = Array.isArray(r.activities)
+    ? [...new Map(r.activities.map(sanitizeActivity).filter((a): a is OutsideActivity => a !== null).map((a) => [a.id, a])).values()].sort(
+        (a, b) => a.at - b.at,
+      )
+    : []
+  const deletedActivityIds = ids(r.deletedActivityIds)
   const active =
     typeof r.activeLocationId === 'string' && uniqueLocations.some((l) => l.id === r.activeLocationId)
       ? r.activeLocationId
@@ -160,6 +253,9 @@ export function sanitizeGym(raw: unknown): GymState | undefined {
     ratings,
     favoriteAt,
     ...(isTime(r.prefsUpdatedAt) ? { prefsUpdatedAt: r.prefsUpdatedAt } : {}),
+    ...(prefs ? { prefs } : {}),
+    ...(activities.length ? { activities } : {}),
+    ...(deletedActivityIds.length ? { deletedActivityIds } : {}),
   }
 }
 
@@ -190,6 +286,16 @@ export function mergeGym(local: GymState | undefined, incoming: GymState | undef
     if (!have || l.updatedAt > have.updatedAt) locations.set(l.id, l)
   }
   const prefsFromIncoming = (incoming.prefsUpdatedAt ?? 0) > (local.prefsUpdatedAt ?? 0)
+  const deadActivities = [...new Set([...(local.deletedActivityIds ?? []), ...(incoming.deletedActivityIds ?? [])])].slice(-MAX_TOMBSTONES)
+  const deadA = new Set(deadActivities)
+  const activities = new Map<string, OutsideActivity>()
+  for (const a of [...(local.activities ?? []), ...(incoming.activities ?? [])]) {
+    if (deadA.has(a.id)) continue
+    const have = activities.get(a.id)
+    if (!have || a.updatedAt > have.updatedAt) activities.set(a.id, a)
+  }
+  const prefs =
+    (incoming.prefs?.updatedAt ?? 0) > (local.prefs?.updatedAt ?? 0) ? incoming.prefs : local.prefs
   const merged: GymState = {
     locations: [...locations.values()],
     activeLocationId: local.activeLocationId && locations.has(local.activeLocationId) ? local.activeLocationId : [...locations.keys()][0],
@@ -198,6 +304,9 @@ export function mergeGym(local: GymState | undefined, incoming: GymState | undef
     ...(deadLocations.length ? { deletedLocationIds: deadLocations } : {}),
     ratings: prefsFromIncoming ? incoming.ratings : local.ratings,
     favoriteAt: prefsFromIncoming ? incoming.favoriteAt : local.favoriteAt,
+    ...(prefs ? { prefs } : {}),
+    ...(activities.size ? { activities: [...activities.values()].sort((a, b) => a.at - b.at) } : {}),
+    ...(deadActivities.length ? { deletedActivityIds: deadActivities } : {}),
     ...((prefsFromIncoming ? incoming.prefsUpdatedAt : local.prefsUpdatedAt) !== undefined
       ? { prefsUpdatedAt: prefsFromIncoming ? incoming.prefsUpdatedAt : local.prefsUpdatedAt }
       : {}),
@@ -215,6 +324,9 @@ export type GymOp =
   | { op: 'rate'; exerciseId: string; rating: Rating | null }
   | { op: 'setFavorite'; exerciseId: string; locationId: string | null }
   | { op: 'toggleHardHere'; locationId: string; exerciseId: string }
+  | { op: 'setPrefs'; prefs: Omit<TrainingPrefs, 'updatedAt'> }
+  | { op: 'logActivity'; activity: Omit<OutsideActivity, 'updatedAt'> }
+  | { op: 'deleteActivity'; id: string }
 
 /** The gym reducer. Pure; `now` stamps what it changes. */
 export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.now()): GymState | undefined {
@@ -268,6 +380,19 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
       else delete favoriteAt[action.exerciseId]
       return { ...gym, favoriteAt, prefsUpdatedAt: now }
     }
+    case 'setPrefs':
+      return { ...gym, prefs: { ...action.prefs, updatedAt: now } }
+    case 'logActivity': {
+      const activity = { ...action.activity, updatedAt: now }
+      const rest = (gym.activities ?? []).filter((a) => a.id !== activity.id)
+      return { ...gym, activities: [...rest, activity].sort((a, b) => a.at - b.at) }
+    }
+    case 'deleteActivity':
+      return {
+        ...gym,
+        activities: (gym.activities ?? []).filter((a) => a.id !== action.id),
+        deletedActivityIds: [...(gym.deletedActivityIds ?? []), action.id].slice(-MAX_TOMBSTONES),
+      }
     case 'toggleHardHere': {
       return {
         ...gym,

@@ -16,7 +16,7 @@ import { activeSkills, stepOfSkill } from '../lib/skills'
 import { AddSkill } from '../components/AddSkill'
 import { APP_NAME } from '../data/app'
 import { defaultSurface, EQUIPMENT_OPTIONS, kitNeedsPhrase, TRAINING_SURFACES } from '../data/equipment'
-import { exportData, readImportFile, validateImport } from '../lib/exportImport'
+import { exportCsv, exportData, readImportFile, validateImport } from '../lib/exportImport'
 import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
 import { INSTALL_STEPS, installState } from '../lib/install'
 import { listClips, clearAllClips, CLIP_RETENTION_DAYS } from '../lib/clips'
@@ -721,6 +721,12 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             Log now
           </button>
         </Row>
+        <Row
+          label="Bodyweight reminders"
+          hint="Off by default. When on, the app asks for your weight now and then (never under 18). It is context for strength-to-weight progress only — this app has no weight-loss or calorie features."
+        >
+          <Toggle label="Bodyweight reminders" on={s.trackBodyweight === true} onChange={(v) => set({ trackBodyweight: v })} />
+        </Row>
         <Row label="Session length" hint="Generated sessions trim themselves to fit this budget.">
           <Stepper
             label="session length"
@@ -1132,7 +1138,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </Row>
         <Row
           label="Export backup"
-          hint={`Everything — sessions, records, achievements — as a JSON file. Last export: ${state.lastBackupAt ? fmtDate(state.lastBackupAt) : 'never'}.`}
+          hint={`Everything — skill and gym sessions, records, achievements, places — as a JSON file. Last export: ${state.lastBackupAt ? fmtDate(state.lastBackupAt) : 'never'}.`}
         >
           <button
             onClick={() => {
@@ -1143,6 +1149,17 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
           >
             <Icon name="download" size={15} /> Export
+          </button>
+        </Row>
+        <Row
+          label="Export sets as CSV"
+          hint="Every skill hold and gym set, one row each, for a spreadsheet. Import needs the JSON backup above."
+        >
+          <button
+            onClick={() => exportCsv(state)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-raised px-3.5 py-2 text-[13.5px] font-medium text-ink2 hover:text-ink"
+          >
+            <Icon name="download" size={15} /> CSV
           </button>
         </Row>
         <Row label="Import backup" hint="Replaces current data with the file's contents.">

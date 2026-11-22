@@ -78,29 +78,32 @@ Diagnosis (2026-11-21, read from `src/lib/poseForm.ts`):
 
 ## Phase 3 — planning together
 
-- [ ] Goal weights (Strength, Explosiveness, Physique, Skills, Endurance) and
+- [x] Goal weights (Strength, Explosiveness, Physique, Skills, Endurance) and
       skill goals with dates (on pace / behind, from `forecast.ts`).
-- [ ] Muscle toggles and priorities; weekly sets per muscle with
+- [x] Muscle toggles and priorities; weekly sets per muscle with
       under / on target / over.
-- [ ] Shared fatigue model: muscles + joints (front delts, wrists, elbows shared
+- [x] Shared fatigue model: muscles + joints (front delts, wrists, elbows shared
       by planche, push-ups and pressing; front lever with rows and pull-ups);
       minimum rest between hard straight-arm sessions (default 48 h).
-- [ ] Week planner over available days and minutes; skill work first; drops
+- [x] (today, not yet a 7-day preview) Week planner over available days and minutes; skill work first; drops
       low-priority accessories first when short; "I have X minutes" quick start.
-- [ ] Outside load: log sprinting / practice / games / PE with intensity; it
+- [x] Outside load: log sprinting / practice / games / PE with intensity; it
       counts toward leg and nervous-system fatigue, and can stand in for leg day.
-- [ ] RPE-based load adjustment and automatic deloads (RPE drift, performance
+- [x] RPE-based load adjustment and automatic deloads (RPE drift, performance
       drop, 4–6 hard weeks) — labelled as convention.
 
 ## Phase 4 — insight, safety, export
 
 - [ ] Age-aware defaults surfaced in onboarding (goals → locations → schedule →
-      muscles → age and safety).
-- [ ] Pain check covers gym sessions; load for the area is reduced.
-- [ ] Weekly summary: sets per muscle, skill hold time, PRs, streak, focus for
-      next week; coach lines that say why.
-- [ ] Charts: e1RM and estimated max hold over time, tap to inspect.
-- [ ] CSV export beside JSON.
+      muscles → age and safety). Done so far: careful mode reads `profile.birthYear`
+      (unknown = careful); bodyweight reminders are opt-in (`settings.trackBodyweight`)
+      and never for under-18s. Still to do: the onboarding steps themselves, and
+      gym achievements (they need a hook on the gym save path — achievements only
+      run on skill-session saves today).
+- [x] Pain check covers gym sessions (one tap before starting; niggle steers round, pain keeps it out and lightens the day; recorded for the skill coach).
+- [x] Weekly summary (Progress tab, `lib/plan/weekly.ts`): sessions, skill hold time, gym sets, new estimated maxes, streak, focus next week; the Today card's reasons say why.
+- [x] Charts: estimated max per lift over time (tap to inspect) in the weekly summary; skill hold charts already existed. Gym badges are derived (`gymBadges`), never stored.
+- [x] CSV export beside JSON (`setsCsv`).
 
 ## Phase 5 — design system and UI overhaul
 
@@ -117,6 +120,11 @@ growth-spurt caution prompt, sleep/readiness check-in, exam-week light plans,
 travel mode (bodyweight-only location), coach/parent share card.
 
 ## Log
+
+- 2026-11-22 ~00:40 PST — Phase 3 pushed: `lib/plan/` (load, planner),
+  Today card on Train, goals/schedule editor, weekly volume, activity log.
+  Open in Phase 3: a 7-day preview of the week; one combined player instead
+  of skills-then-gym as two sessions.
 
 - 2026-11-21 ~23:55 PST — Phase 1 pushed (judge v8 + 2105-style regression).
   Phase 2 pushed: Fitness Lab rebrand, state v9 gym branch, library, places,

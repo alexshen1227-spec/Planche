@@ -225,3 +225,21 @@ describe('the store keeps gym data', () => {
     expect(merged.sessions).toEqual(local.sessions)
   })
 })
+
+describe('CSV export', () => {
+  it('writes skill holds and gym sets as rows, quoting what needs it', async () => {
+    const { setsCsv } = await import('../exportImport')
+    const s = {
+      ...initialState(),
+      gym: {
+        ...defaultGym([]),
+        locations: [{ ...home, name: 'Home, upstairs' }],
+        sessions: [session('g1', 'home', T0, 'push-up', [set(undefined, 12, 8)])],
+      },
+    }
+    const csv = setsCsv(s)
+    const lines = csv.trim().split('\n')
+    expect(lines[0]).toBe('date,kind,session,place,exercise,section,set,load_kg,unit,reps,hold_sec,rpe')
+    expect(lines[1]).toContain('gym,Upper body,"Home, upstairs",push-up,main,1,,,12,,8')
+  })
+})

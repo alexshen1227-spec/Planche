@@ -1,0 +1,203 @@
+import { describe, expect, it } from 'vitest'
+import type { AppState, Session, SetLog, SkillId } from '../../types'
+import { initialState, reducer } from '../store'
+import { defaultGym, defaultPrefs } from '../gym/state'
+import { buildGymSession } from '../gym/builder'
+import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import type { GymLocation, GymSession, TrainingPrefs } from '../gym/types'
+import { lastHardStraightArm, setsPerMuscle, volumeStatus, volumeTarget } from './load'
+import { gymDeloadDue, planToday, skillGoalPace } from './planner'
+import { weekStart } from '../time'
+
+// A Saturday afternoon, local time: the default schedule gives Saturday 60 minutes.
+const NOW = new Date(2026, 10, 21, 16, 0).getTime()
+const HOUR = 3_600_000
+const DAY = 24 * HOUR
+
+const gymA: GymLocation = {
+  id: 'a',
+  name: 'Gym A',
+  unit: 'kg',
+  equipment: ['barbell', 'squat-rack', 'bench', 'incline-bench', 'dumbbells', 'cable', 'lat-pulldown', 'leg-press', 'leg-curl', 'pullup-bar', 'dip-bars', 'box'],
+  updatedAt: 1,
+}
+
+function athlete(skills: SkillId[], prefs: Partial<TrainingPrefs> = {}, birthYear = 2012): AppState {
+  const s = initialState()
+  return {
+    ...s,
+    onboarded: true,
+    profile: { ...s.profile, skills, birthYear },
+    gym: { ...defaultGym(['floor']), locations: [gymA], activeLocationId: 'a', prefs: { ...defaultPrefs(1), ...prefs } },
+  }
+}
+
+const set = (exerciseId: string, section: SetLog['section'], at: number): SetLog => ({ exerciseId, kind: 'hold', value: 8, target: 8, section, at })
+function skillSession(at: number, exerciseId: string, n = 4): Session {
+  return {
+    id: `s-${at}-${exerciseId}`,
+    startedAt: at,
+    endedAt: at + HOUR,
+    workoutName: 'Skill',
+    workoutKind: 'skill' as Session['workoutKind'],
+    stepId: 'tuck',
+    sets: [set('wrist-prep', 'warmup', at), ...Array.from({ length: n }, () => set(exerciseId, 'main', at))],
+  }
+}
+const gymSession = (at: number, exerciseId: string, sets: number, rpe = 8): GymSession => ({
+  id: `g-${at}-${exerciseId}`,
+  locationId: 'a',
+  startedAt: at,
+  endedAt: at + HOUR,
+  name: 'Upper body',
+  exercises: [{ exerciseId, sets: Array.from({ length: sets }, () => ({ kg: 40, reps: 8, rpe, at })) }],
+})
+
+describe('the day plan', () => {
+  it('keeps a scheduled rest day, and builds one when the athlete says they have time', () => {
+    const s = athlete(['planche'], { minutesByDay: [0, 0, 0, 0, 0, 0, 0] })
+    expect(planToday(s, { now: NOW }).rest).toBe(true)
+    const p = planToday(s, { now: NOW, minutes: 40 })
+    expect(p.rest).toBe(false)
+    expect((p.skill?.minutes ?? 0) + (p.gym?.minutes ?? 0)).toBe(40)
+  })
+
+  it('splits the minutes with skills first, never a block too short to be one', () => {
+    for (const minutes of [35, 45, 60, 90]) {
+      const p = planToday(athlete(['planche', 'frontlever']), { now: NOW, minutes })
+      expect(p.skill!.minutes + p.gym!.minutes).toBe(minutes)
+      expect(p.skill!.minutes).toBeGreaterThanOrEqual(15)
+      expect(p.gym!.minutes).toBeGreaterThanOrEqual(20)
+    }
+    // Short on time: one block, not two crumbs.
+    const short = planToday(athlete(['planche']), { now: NOW, minutes: 25 })
+    expect(Boolean(short.skill) !== Boolean(short.gym)).toBe(true)
+  })
+
+  it('rests a straight-arm family inside the rest window, and trains the other', () => {
+    const s = { ...athlete(['planche', 'frontlever']), sessions: [skillSession(NOW - 20 * HOUR, 'tuck-planche')] }
+    expect(lastHardStraightArm(s.sessions, NOW).push).toBe(NOW - 20 * HOUR)
+    const p = planToday(s, { now: NOW, minutes: 60 })
+    expect(p.skill!.skills).toEqual(['frontlever'])
+    // Past the window it is back.
+    expect(planToday(s, { now: NOW + 30 * HOUR, minutes: 60 }).skill!.skills).toContain('planche')
+    // Only planche trained and it is resting: the time goes to the gym.
+    const solo = { ...athlete(['planche']), sessions: [skillSession(NOW - 20 * HOUR, 'tuck-planche')] }
+    const g = planToday(solo, { now: NOW, minutes: 60 })
+    expect(g.skill).toBeUndefined()
+    expect(g.gym!.minutes).toBe(60)
+  })
+
+  it('does not stack heavy pressing on a planche day, nor heavy pulling on a lever day', () => {
+    expect(planToday(athlete(['planche']), { now: NOW, minutes: 60 }).gym!.focus).not.toBe('push')
+    expect(planToday(athlete(['frontlever']), { now: NOW, minutes: 60 }).gym!.focus).not.toBe('pull')
+  })
+
+  it('lets a sprint session stand in for leg day, and leaves the legs alone when switched off', () => {
+    const base = athlete(['planche'])
+    const sprinted: AppState = {
+      ...base,
+      gym: { ...base.gym!, activities: [{ id: 'x', at: NOW - 18 * HOUR, kind: 'sprint', minutes: 60, rpe: 9, legs: true, updatedAt: 1 }] },
+    }
+    const p = planToday(sprinted, { now: NOW, minutes: 60 })
+    expect(p.gym!.focus).not.toBe('lower')
+    expect(p.gym!.musclesOff).toContain('quads')
+    const noLegs = athlete(['planche'], { musclesOff: ['quads', 'hamstrings', 'glutes', 'calves', 'adductors'] })
+    for (let d = 0; d < 7; d++) expect(planToday(noLegs, { now: NOW + d * DAY, minutes: 60 }).gym!.focus).not.toBe('lower')
+  })
+
+  it('keeps load off a joint reported painful, and lightens the day', () => {
+    const s = reducer(athlete(['planche']), {
+      type: 'RECORD_SYMPTOM',
+      event: { at: NOW - 2 * HOUR, joints: 'pain', regions: ['wrist'], source: 'check-in' },
+    })
+    const p = planToday(s, { now: NOW, minutes: 60 })
+    expect(p.gym!.avoidJoints).toContain('wrists')
+    expect(p.gym!.volumeFactor).toBeLessThan(1)
+    const built = buildGymSession({ location: gymA, minutes: 60, focus: p.gym!.focus, sessions: [], avoidJoints: p.gym!.avoidJoints, volumeFactor: p.gym!.volumeFactor })
+    for (const item of built.items) expect(GYM_EXERCISE_BY_ID[item.exerciseId].stress, item.exerciseId).not.toContain('wrists')
+  })
+})
+
+describe('weekly volume', () => {
+  it('counts gym and skill sets on the same muscles, warm-ups not at all', () => {
+    const sets = setsPerMuscle([skillSession(NOW - DAY, 'tuck-planche', 4)], [gymSession(NOW - DAY, 'incline-db-press', 3)], NOW - 7 * DAY, NOW)
+    // 4 planche sets (front delts 1 each) + 3 incline presses (front delts primary).
+    expect(sets['front-delts']).toBe(7)
+    expect(sets['chest-upper']).toBe(3)
+    expect(sets.triceps).toBe(4 * 0.5 + 3 * 0.5)
+  })
+  it('sets targets from the physique goal, more for a priority muscle, none for one switched off', () => {
+    const prefs = { ...defaultPrefs(1), musclesOff: ['calves' as const], musclesPriority: ['chest-upper' as const] }
+    expect(volumeTarget('calves', prefs)).toEqual([0, 0])
+    expect(volumeTarget('chest', prefs)).toEqual([10, 16])
+    expect(volumeTarget('chest-upper', prefs)[0]).toBeGreaterThan(volumeTarget('triceps-long', prefs)[0])
+    expect(volumeStatus(3, [10, 16])).toBe('under')
+    expect(volumeStatus(12, [10, 16])).toBe('on')
+    expect(volumeStatus(20, [10, 16])).toBe('over')
+    expect(volumeStatus(0, [0, 0])).toBe('off')
+  })
+})
+
+describe('deloads and goals', () => {
+  // Two hard sessions inside each of the last `weeks` calendar weeks.
+  const weeksOfHardGym = (weeks: number) =>
+    Array.from({ length: weeks }, (_, w) => {
+      const from = weekStart(NOW) - (w + 1) * 7 * DAY
+      return [gymSession(from + DAY + 10 * HOUR, 'bench-press', 4, 8.5), gymSession(from + 3 * DAY + 10 * HOUR, 'back-squat', 4, 8.5)]
+    }).flat()
+  it('calls a lighter week after a run of hard ones — sooner under 18', () => {
+    const adult = (w: number) => ({ ...athlete(['planche'], {}, 1990), gym: { ...athlete(['planche']).gym!, sessions: weeksOfHardGym(w) } })
+    const teen = (w: number) => ({ ...athlete(['planche'], {}, 2012), gym: { ...athlete(['planche']).gym!, sessions: weeksOfHardGym(w) } })
+    expect(gymDeloadDue(adult(3), NOW).due).toBe(false)
+    expect(gymDeloadDue(adult(6), NOW).due).toBe(true)
+    expect(gymDeloadDue(teen(3), NOW).due).toBe(true)
+  })
+  it('says when a dated skill goal cannot be judged yet, and when its date has passed', () => {
+    const s = athlete(['planche'])
+    expect(skillGoalPace(s, { id: 'g', skill: 'planche', stepId: 'advtuck', by: '2026-12-31' }, NOW).status).toBe('unknown')
+    expect(skillGoalPace(s, { id: 'g', skill: 'planche', stepId: 'advtuck', by: '2026-01-01' }, NOW).status).toBe('behind')
+  })
+})
+
+describe('the builder under the planner', () => {
+  it('puts explosive work first when power matters, and favours a lagging muscle', () => {
+    const goals = { strength: 2, power: 4, physique: 3, skills: 3, endurance: 0 }
+    const p = buildGymSession({ location: gymA, minutes: 75, focus: 'push', sessions: [], goals, priority: ['chest-upper'] })
+    expect(GYM_EXERCISE_BY_ID[p.items[0].exerciseId].explosive).toBe(true)
+    const incline = p.items.find((i) => GYM_EXERCISE_BY_ID[i.exerciseId].primary.includes('chest-upper'))
+    expect(incline?.sets).toBe(4)
+  })
+})
+
+describe('the week in review', () => {
+  it('derives gym badges from history, and takes them back when history changes', async () => {
+    const { gymBadges } = await import('./weekly')
+    const s = athlete(['planche'])
+    const none = gymBadges(s)
+    expect(none.every((b) => b.at === undefined)).toBe(true)
+    const withGym: AppState = {
+      ...s,
+      sessions: [skillSession(NOW - DAY, 'tuck-planche')],
+      gym: { ...s.gym!, sessions: [gymSession(NOW - 9 * DAY, 'bench-press', 3), gymSession(NOW - 2 * DAY, 'bench-press', 3)] },
+    }
+    const earned = new Set(gymBadges(withGym).filter((b) => b.at !== undefined).map((b) => b.id))
+    expect(earned.has('gym-first')).toBe(true)
+    expect(earned.has('gym-together')).toBe(true)
+    expect(earned.has('gym-10')).toBe(false)
+    expect(gymBadges({ ...withGym, gym: { ...withGym.gym!, sessions: [] } }).some((b) => b.at !== undefined)).toBe(false)
+  })
+  it('summarises the week across skills and gym, and names a lagging priority muscle', async () => {
+    const { weeklySummary } = await import('./weekly')
+    const s: AppState = {
+      ...athlete(['planche'], { musclesPriority: ['chest-upper'] }),
+      sessions: [skillSession(NOW - HOUR, 'tuck-planche', 4)],
+    }
+    const w = weeklySummary({ ...s, gym: { ...s.gym!, sessions: [gymSession(NOW - 2 * HOUR, 'lat-pulldown', 3)] } }, NOW)
+    expect(w.skillSessions).toBe(1)
+    expect(w.gymSessions).toBe(1)
+    expect(w.holdSec).toBe(32)
+    expect(w.gymSets).toBe(3)
+    expect(w.focus.some((f) => f.includes('upper chest'))).toBe(true)
+  })
+})

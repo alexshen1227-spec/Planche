@@ -1,13 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { useStore } from '../../lib/store'
-import { buildGymSession, FOCUS_LABEL, nextFocus, type GymFocus } from '../../lib/gym/builder'
+import { buildGymSession, FOCUS_LABEL, nextFocus, type GymFocus, type PlannedExercise } from '../../lib/gym/builder'
+import type { Joint } from '../../data/gym/catalog'
+import type { BodyRegion } from '../../types'
 import { activeLocation, conservative, loadDraft, type GymDraft } from '../../lib/gym/draft'
 import { gymRecords } from '../../lib/gym/progression'
 import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
 import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { Modal } from '../ui'
 import { GymPlayer } from './GymPlayer'
+import { WeekVolume } from '../plan/WeekVolume'
+import type { GymPreset } from '../plan/TodayPlanCard'
 import { LocationEditor } from './LocationEditor'
 
 const MINUTES = [20, 30, 45, 60, 75, 90]
@@ -17,7 +21,7 @@ function dayLabel(at: number): string {
   return new Date(at).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
-export function GymHub() {
+export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; onPresetUsed?: () => void } = {}) {
   const { state, dispatch } = useStore()
   const gym = state.gym
   const youth = conservative(state.profile)
@@ -38,11 +42,22 @@ export function GymHub() {
             sessions: gym.sessions,
             ratings: gym.ratings,
             youth,
+            ...(gym.prefs ? { goals: gym.prefs.goals, priority: gym.prefs.musclesPriority, musclesOff: gym.prefs.musclesOff } : {}),
           })
         : null,
     [gym, location, minutes, focus, youth],
   )
   const records = useMemo(() => (gym ? gymRecords(gym.sessions) : {}), [gym])
+
+  const [pending, setPending] = useState<{ empty: boolean; preset?: GymPreset } | null>(null)
+
+  // A session planned on the Today card asks the pain check, then starts.
+  useEffect(() => {
+    if (!preset || !gym || !location) return
+    onPresetUsed?.()
+    setPending({ empty: false, preset })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preset])
 
   if (!gym || !location) {
     return (
@@ -65,29 +80,50 @@ export function GymHub() {
     )
   }
 
-  const start = (empty: boolean) => {
-    const id = newGymSessionId()
-    const items =
-      empty || !plan
-        ? []
-        : plan.items.map((it) => {
-            const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
-            const unit = unitFor(ex, location)
-            const load = it.suggestion.kg !== undefined ? displayLoad(it.suggestion.kg, unit) : undefined
-            return {
-              exerciseId: it.exerciseId,
-              plan: it.plan,
-              suggestion: it.suggestion,
-              restSec: it.restSec,
-              unit,
-              sets: Array.from({ length: it.sets }, () => ({
-                ...(load !== undefined ? { load } : {}),
-                reps: it.plan.range[1],
-                done: false,
-              })),
-            }
-          })
-    setRunning({ id, startedAt: Date.now(), locationId: location.id, name: empty ? 'Gym session' : plan!.name, items })
+  const toDraftItem = (it: PlannedExercise) => {
+    const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
+    const unit = unitFor(ex, location)
+    const load = it.suggestion.kg !== undefined ? displayLoad(it.suggestion.kg, unit) : undefined
+    return {
+      exerciseId: it.exerciseId,
+      plan: it.plan,
+      suggestion: it.suggestion,
+      restSec: it.restSec,
+      unit,
+      sets: Array.from({ length: it.sets }, () => ({ ...(load !== undefined ? { load } : {}), reps: it.plan.range[1], done: false })),
+    }
+  }
+
+  /** After the pain check: record what hurts, steer round it, and start. */
+  const launch = (joints: Joint[], kind: 'none' | 'niggle' | 'pain') => {
+    if (!pending) return
+    const regions = joints.map((j) => JOINT_REGION[j]).filter((r): r is BodyRegion => Boolean(r))
+    if (kind !== 'none' && joints.length) {
+      dispatch({ type: 'RECORD_SYMPTOM', event: { at: Date.now(), joints: kind, regions: regions.length ? regions : ['other'], source: 'check-in' } })
+    }
+    const p = pending.preset
+    const planned = pending.empty
+      ? null
+      : buildGymSession({
+          location,
+          minutes: p?.minutes ?? minutes,
+          ...(p ? { focus: p.focus } : focus === 'auto' ? {} : { focus }),
+          sessions: gym.sessions,
+          ratings: gym.ratings,
+          youth,
+          avoidJoints: [...new Set([...(p?.avoidJoints ?? []), ...joints])],
+          volumeFactor: Math.min(p?.volumeFactor ?? 1, kind === 'pain' ? 0.6 : 1),
+          musclesOff: p?.musclesOff ?? gym.prefs?.musclesOff ?? [],
+          ...(gym.prefs ? { goals: gym.prefs.goals, priority: gym.prefs.musclesPriority } : {}),
+        })
+    setPending(null)
+    setRunning({
+      id: newGymSessionId(),
+      startedAt: Date.now(),
+      locationId: location.id,
+      name: planned?.name ?? 'Gym session',
+      items: (planned?.items ?? []).map(toDraftItem),
+    })
   }
 
   const editingLocation =
@@ -221,12 +257,12 @@ export function GymHub() {
         <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
           <button
             disabled={!plan?.items.length}
-            onClick={() => start(false)}
+            onClick={() => setPending({ empty: false })}
             className="min-h-12 rounded-xl bg-accent text-[15px] font-semibold text-on-accent transition active:scale-[0.98] disabled:opacity-40"
           >
             Start session
           </button>
-          <button onClick={() => start(true)} className="min-h-12 rounded-xl border border-line px-4 text-[14px] font-medium">
+          <button onClick={() => setPending({ empty: true })} className="min-h-12 rounded-xl border border-line px-4 text-[14px] font-medium">
             Empty
           </button>
         </div>
@@ -284,6 +320,12 @@ export function GymHub() {
         </section>
       ) : null}
 
+      <WeekVolume />
+
+      <Modal open={pending !== null} onClose={() => setPending(null)} label="Before you start">
+        {pending ? <PainCheck onAnswer={launch} /> : null}
+      </Modal>
+
       <Modal open={editingLocation !== null} onClose={() => setEditing(null)} label={editing === 'new' ? 'Add a place' : 'Edit place'} wide>
         {editingLocation ? (
           <LocationEditor
@@ -309,6 +351,63 @@ export function GymHub() {
           onClose={() => setRunning(null)}
         />
       ) : null}
+    </div>
+  )
+}
+
+const JOINT_REGION: Partial<Record<Joint, BodyRegion>> = {
+  wrists: 'wrist',
+  elbows: 'elbow',
+  shoulders: 'shoulder',
+  'lower-back': 'lower-back',
+}
+const CHECK_JOINTS: { id: Joint; label: string }[] = [
+  { id: 'wrists', label: 'Wrists' },
+  { id: 'elbows', label: 'Elbows' },
+  { id: 'shoulders', label: 'Shoulders' },
+  { id: 'lower-back', label: 'Lower back' },
+  { id: 'knees', label: 'Knees' },
+]
+
+/** One tap before the gym: anything hurting? The answer steers today and is kept for the coach. */
+function PainCheck({ onAnswer }: { onAnswer: (joints: Joint[], kind: 'none' | 'niggle' | 'pain') => void }) {
+  const [picked, setPicked] = useState<Joint[]>([])
+  return (
+    <div className="space-y-4">
+      <p className="text-[15px] font-semibold">Anything hurting today?</p>
+      <div className="flex flex-wrap gap-2">
+        {CHECK_JOINTS.map((j) => {
+          const on = picked.includes(j.id)
+          return (
+            <button
+              key={j.id}
+              aria-pressed={on}
+              onClick={() => setPicked(on ? picked.filter((x) => x !== j.id) : [...picked, j.id])}
+              className={`min-h-11 rounded-full border px-4 text-[14px] font-medium ${on ? 'border-transparent bg-accent text-on-accent' : 'border-line text-ink2'}`}
+            >
+              {j.label}
+            </button>
+          )
+        })}
+      </div>
+      {picked.length ? (
+        <div className="grid gap-2">
+          <button onClick={() => onAnswer(picked, 'niggle')} className="min-h-12 rounded-xl border border-line text-[15px] font-medium">
+            Just a niggle — work around it
+          </button>
+          <button onClick={() => onAnswer(picked, 'pain')} className="min-h-12 rounded-xl bg-accent text-[15px] font-semibold text-on-accent">
+            It hurts — keep off it and go light
+          </button>
+          <p className="text-[12px] leading-relaxed text-ink3">
+            Nothing that loads {picked.length > 1 ? 'those areas' : 'that area'} goes in today. Never train through pain; if it keeps
+            coming back, tell a parent, coach or physio.
+          </p>
+        </div>
+      ) : (
+        <button onClick={() => onAnswer([], 'none')} className="min-h-12 w-full rounded-xl bg-accent text-[15px] font-semibold text-on-accent">
+          Nothing hurts — start
+        </button>
+      )}
     </div>
   )
 }

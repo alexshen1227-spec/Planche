@@ -847,9 +847,21 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
   gyms) while free-weight estimates carry across locations; under 18 (or age
   unknown, `conservative`) ranges never go under 6 reps and jumps are one
   step. e1RM refuses past 12 total reps and for unloaded sets.
-- `lib/gym/builder.ts` is the pre-planner session builder (slots by focus,
-  fitted to minutes, last slots dropped first). Phase 3 of the plan replaces
-  its focus choice with the shared skills + gym planner.
+- `lib/gym/builder.ts` builds a gym session from slots by focus, fitted to
+  minutes (last slots dropped first), steered by the planner: muscles off,
+  joints to avoid, priority muscles (win their slot, +1 set), a volume factor
+  for light days, goal-driven rep ranges, explosive work first for power.
+- **The shared planner** (`lib/plan/`): `load.ts` counts gym sets, skill sets
+  (by exercise category — an inference) and outside activities in the same
+  muscles and joints; `planner.ts` `planToday` splits the minutes (skills
+  first; skills' weight against the strongest gym goal, blocks never under
+  15/20 min), applies the straight-arm rest rule per family
+  (`lastHardStraightArm`, push = planche/90°, pull = lever/flag), steers the
+  gym focus away from the family trained today and from tired or covered
+  muscles (a leg activity in 48 h removes leg work), keeps reported joints out
+  for 72 h, and calls deloads (`gymDeloadDue`, sooner under 18). Every choice
+  adds a reason line; `skillGoalPace` returns `unknown` rather than a guess.
+  Prefs and activities live in `state.gym` (`setPrefs`, `logActivity`).
 
 ## Conventions
 

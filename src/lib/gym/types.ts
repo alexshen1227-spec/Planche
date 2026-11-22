@@ -70,4 +70,58 @@ export interface GymState {
   /** Exercise → the location the athlete prefers to do it at. */
   favoriteAt: Record<string, string>
   prefsUpdatedAt?: number
+  /** Goals, muscles and schedule the planner reads. Absent until set. */
+  prefs?: TrainingPrefs
+  /** Sports and activities outside the app, counted toward fatigue. */
+  activities?: OutsideActivity[]
+  deletedActivityIds?: string[]
+}
+
+/** How much each goal matters to the athlete, 0 (not at all) to 5 (most). */
+export interface GoalWeights {
+  strength: number
+  power: number
+  physique: number
+  skills: number
+  endurance: number
+}
+
+/** "Advanced tuck planche by Dec 31." */
+export interface SkillGoal {
+  id: string
+  skill: import('../../types').SkillId
+  stepId: import('../../types').StepId
+  /** Local calendar date, YYYY-MM-DD. */
+  by: string
+}
+
+/** The planner's inputs the athlete sets (Phase 3 of Fitness Lab). */
+export interface TrainingPrefs {
+  goals: GoalWeights
+  skillGoals: SkillGoal[]
+  /** Muscles the gym should not train ("no legs — I sprint"). */
+  musclesOff: import('../../data/gym/catalog').Muscle[]
+  /** Lagging muscles that get extra weekly sets. */
+  musclesPriority: import('../../data/gym/catalog').Muscle[]
+  /** Minutes available on each weekday, Sunday first; 0 = a rest day. */
+  minutesByDay: number[]
+  /** Hours between hard straight-arm sessions of the same family. */
+  straightArmRestHours: number
+  updatedAt: number
+}
+
+export type ActivityKind = 'sprint' | 'practice' | 'game' | 'pe' | 'run' | 'other'
+
+/** Training that happens outside the app — a sport, a run, PE — counted toward fatigue. */
+export interface OutsideActivity {
+  id: string
+  at: number
+  kind: ActivityKind
+  minutes: number
+  /** How hard it was, 1–10. */
+  rpe: number
+  /** Whether it loaded the legs hard (sprints, jumps, a game). */
+  legs: boolean
+  note?: string
+  updatedAt: number
 }
