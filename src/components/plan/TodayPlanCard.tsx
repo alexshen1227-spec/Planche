@@ -7,6 +7,7 @@ import type { SkillId, WorkoutRequest } from '../../types'
 import { Modal } from '../ui'
 import { ActivitySheet } from './ActivitySheet'
 import { PlanSettings } from './PlanSettings'
+import { FitnessSetup } from './FitnessSetup'
 
 export interface GymPreset {
   focus: GymFocus
@@ -38,7 +39,7 @@ export function TodayPlanCard({
 }) {
   const { state } = useStore()
   const [override, setOverride] = useState<number | undefined>(undefined)
-  const [sheet, setSheet] = useState<'settings' | 'activity' | null>(null)
+  const [sheet, setSheet] = useState<'settings' | 'activity' | 'setup' | null>(null)
   const plan = useMemo(() => planToday(state, override !== undefined ? { minutes: override } : {}), [state, override])
   const skillNames = plan.skill?.skills.map((s) => SKILL_LABEL[s]) ?? []
 
@@ -50,6 +51,18 @@ export function TodayPlanCard({
           Goals and schedule
         </button>
       </div>
+      {!state.gym?.prefs ? (
+        <button
+          onClick={() => setSheet('setup')}
+          className="mt-3 flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl bg-accent-soft px-4 text-left"
+        >
+          <span>
+            <span className="block text-[15px] font-semibold text-ink">Set up Fitness Lab</span>
+            <span className="block text-[12px] text-ink2">Goals, places, schedule, muscles, age — about two minutes. Until then the plan uses balanced defaults.</span>
+          </span>
+          <span className="text-[13px] font-semibold text-accent-text">Start</span>
+        </button>
+      ) : null}
       <div className="mt-2 flex flex-wrap items-center gap-2" role="group" aria-label="Minutes you have today">
         <span className="text-[12px] text-ink3">I have</span>
         {QUICK.map((m) => (
@@ -136,6 +149,9 @@ export function TodayPlanCard({
             <p className="text-[14px] text-ink2">Set up your places on the Gym side first — goals and schedule are saved with them.</p>
           )
         ) : null}
+      </Modal>
+      <Modal open={sheet === 'setup'} onClose={() => setSheet(null)} label="Set up Fitness Lab" wide>
+        {sheet === 'setup' ? <FitnessSetup onDone={() => setSheet(null)} /> : null}
       </Modal>
       <Modal open={sheet === 'activity'} onClose={() => setSheet(null)} label="Log a sport or activity">
         {sheet === 'activity' ? (

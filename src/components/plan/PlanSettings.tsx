@@ -24,39 +24,13 @@ const SKILL_LABEL: Record<SkillId, string> = {
   flag: 'Human flag',
 }
 
-/** Goals, dated skill goals, muscles and the weekly schedule the planner reads. */
-export function PlanSettings({ onDone }: { onDone: () => void }) {
-  const { state, dispatch } = useStore()
-  const [prefs, setPrefs] = useState<TrainingPrefs>(() => state.gym?.prefs ?? defaultPrefs())
-  const skills = (state.profile.skills?.length ? state.profile.skills : ['planche']) as SkillId[]
-  const [goalSkill, setGoalSkill] = useState<SkillId>(skills[0])
-  const [goalStep, setGoalStep] = useState<string>('')
-  const [goalBy, setGoalBy] = useState('')
+type Edit = { prefs: TrainingPrefs; setPrefs: (fn: (p: TrainingPrefs) => TrainingPrefs) => void }
 
-  const muscleState = (m: Muscle): 'off' | 'normal' | 'priority' =>
-    prefs.musclesOff.includes(m) ? 'off' : prefs.musclesPriority.includes(m) ? 'priority' : 'normal'
-  const cycleMuscle = (m: Muscle) => {
-    const next = { normal: 'priority', priority: 'off', off: 'normal' } as const
-    const to = next[muscleState(m)]
-    setPrefs((p) => ({
-      ...p,
-      musclesOff: to === 'off' ? [...p.musclesOff, m] : p.musclesOff.filter((x) => x !== m),
-      musclesPriority: to === 'priority' ? [...p.musclesPriority, m] : p.musclesPriority.filter((x) => x !== m),
-    }))
-  }
-  const save = () => {
-    if (!state.gym) return
-    const { updatedAt: _ignored, ...rest } = prefs
-    void _ignored
-    dispatch({ type: 'GYM', op: { op: 'setPrefs', prefs: rest } })
-    pushToast('Plan settings saved.', 'success')
-    onDone()
-  }
-  const seg = (active: boolean) =>
-    `min-h-10 flex-1 rounded-lg text-[13px] font-semibold transition ${active ? 'bg-accent text-on-accent' : 'text-ink3'}`
+const seg = (active: boolean) =>
+  `min-h-10 flex-1 rounded-lg text-[13px] font-semibold transition ${active ? 'bg-accent text-on-accent' : 'text-ink3'}`
 
+export function GoalsEditor({ prefs, setPrefs }: Edit) {
   return (
-    <div className="space-y-6">
       <section>
         <h3 className="text-[15px] font-semibold">What matters to you</h3>
         <p className="mt-1 text-[12px] text-ink3">These decide how a day splits between skills and the gym, the rep ranges, and how many sets each muscle gets.</p>
@@ -84,7 +58,16 @@ export function PlanSettings({ onDone }: { onDone: () => void }) {
           ))}
         </ul>
       </section>
+  )
+}
 
+export function SkillGoalsEditor({ prefs, setPrefs }: Edit) {
+  const { state } = useStore()
+  const skills = (state.profile.skills?.length ? state.profile.skills : ['planche']) as SkillId[]
+  const [goalSkill, setGoalSkill] = useState<SkillId>(skills[0])
+  const [goalStep, setGoalStep] = useState<string>('')
+  const [goalBy, setGoalBy] = useState('')
+  return (
       <section>
         <h3 className="text-[15px] font-semibold">Skill goals with a date</h3>
         <ul className="mt-2 space-y-2">
@@ -165,7 +148,22 @@ export function PlanSettings({ onDone }: { onDone: () => void }) {
           </button>
         </div>
       </section>
+  )
+}
 
+export function MusclesEditor({ prefs, setPrefs }: Edit) {
+  const muscleState = (m: Muscle): 'off' | 'normal' | 'priority' =>
+    prefs.musclesOff.includes(m) ? 'off' : prefs.musclesPriority.includes(m) ? 'priority' : 'normal'
+  const cycleMuscle = (m: Muscle) => {
+    const next = { normal: 'priority', priority: 'off', off: 'normal' } as const
+    const to = next[muscleState(m)]
+    setPrefs((p) => ({
+      ...p,
+      musclesOff: to === 'off' ? [...p.musclesOff, m] : p.musclesOff.filter((x) => x !== m),
+      musclesPriority: to === 'priority' ? [...p.musclesPriority, m] : p.musclesPriority.filter((x) => x !== m),
+    }))
+  }
+  return (
       <section>
         <h3 className="text-[15px] font-semibold">Muscles</h3>
         <p className="mt-1 text-[12px] text-ink3">Tap to cycle: normal → priority (about a third more weekly sets) → off (the gym leaves it out, e.g. legs when you sprint).</p>
@@ -195,7 +193,12 @@ export function PlanSettings({ onDone }: { onDone: () => void }) {
           ))}
         </div>
       </section>
+  )
+}
 
+export function ScheduleEditor({ prefs, setPrefs }: Edit) {
+  return (
+    <>
       <section>
         <h3 className="text-[15px] font-semibold">When you can train</h3>
         <p className="mt-1 text-[12px] text-ink3">Minutes per day; 0 is a rest day. “I have X minutes” on the day still overrides it.</p>
@@ -237,7 +240,29 @@ export function PlanSettings({ onDone }: { onDone: () => void }) {
           measured rule.
         </p>
       </section>
+    </>
+  )
+}
 
+/** Goals, dated skill goals, muscles and the weekly schedule the planner reads. */
+export function PlanSettings({ onDone }: { onDone: () => void }) {
+  const { state, dispatch } = useStore()
+  const [prefs, setPrefsState] = useState<TrainingPrefs>(() => state.gym?.prefs ?? defaultPrefs())
+  const setPrefs = (fn: (p: TrainingPrefs) => TrainingPrefs) => setPrefsState(fn)
+  const save = () => {
+    if (!state.gym) return
+    const { updatedAt: _ignored, ...rest } = prefs
+    void _ignored
+    dispatch({ type: 'GYM', op: { op: 'setPrefs', prefs: rest } })
+    pushToast('Plan settings saved.', 'success')
+    onDone()
+  }
+  return (
+    <div className="space-y-6">
+      <GoalsEditor prefs={prefs} setPrefs={setPrefs} />
+      <SkillGoalsEditor prefs={prefs} setPrefs={setPrefs} />
+      <MusclesEditor prefs={prefs} setPrefs={setPrefs} />
+      <ScheduleEditor prefs={prefs} setPrefs={setPrefs} />
       <button onClick={save} className="min-h-12 w-full rounded-xl bg-accent text-[15px] font-semibold text-on-accent">
         Save
       </button>

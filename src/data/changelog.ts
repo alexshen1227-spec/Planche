@@ -25,6 +25,7 @@ export const CHANGELOG: ChangeEntry[] = [
       'Before a gym session: one tap for anything that hurts — wrists, elbows, shoulders, lower back or knees. A niggle steers the session round it; pain keeps everything that loads it out and makes the day light. Either is kept for the skill coach too.',
       'Bodyweight is now optional and off by default: no reminders to weigh in unless you turn them on in Settings (and never under 18). There are no weight-loss or calorie features.',
       'Settings → Export sets as CSV: every skill hold and gym set as a spreadsheet row.',
+      'Set up Fitness Lab (on the Today card until you have): goals, places and their equipment, your week, muscles, then age and safety — about two minutes.',
       'Progress opens with This week: skill and gym sessions, hold time, sets, new estimated maxes, your streak, and what to focus on next week — plus a chart of any lift’s estimated max over time and gym badges.',
       'Train opens with Today: your minutes split between skill work (always first, while you are fresh) and the gym, with the reasons written out. “I have 20 / 30 / 45 / 60 / 90 min” rebuilds it for the time you actually have.',
       'Goals and schedule: weigh skills, strength, physique, explosiveness and endurance; give skill goals a date (“advanced tuck by Dec 31”) and see whether you are on pace — or that it cannot tell yet; set which muscles are a priority and which the gym should leave alone; and set minutes for each day of the week.',

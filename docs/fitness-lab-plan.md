@@ -94,7 +94,7 @@ Diagnosis (2026-11-21, read from `src/lib/poseForm.ts`):
 
 ## Phase 4 — insight, safety, export
 
-- [ ] Age-aware defaults surfaced in onboarding (goals → locations → schedule →
+- [x] (setup wizard `FitnessSetup`, opened from the Today card until a plan exists; gym achievements done as derived badges) Age-aware defaults surfaced in onboarding (goals → locations → schedule →
       muscles → age and safety). Done so far: careful mode reads `profile.birthYear`
       (unknown = careful); bodyweight reminders are opt-in (`settings.trackBodyweight`)
       and never for under-18s. Still to do: the onboarding steps themselves, and
