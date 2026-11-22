@@ -297,3 +297,22 @@ describe('effort on skill sets', () => {
     expect(fHard.muscles['front-delts']!).toBeGreaterThan(fEasy.muscles['front-delts']!)
   })
 })
+
+describe('one flow for a mixed day', () => {
+  it('remembers the gym block behind a skill session for the same day only, and forgets it on request', async () => {
+    const store = new Map<string, string>()
+    const fake = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) }
+    const had = (globalThis as { sessionStorage?: unknown }).sessionStorage
+    ;(globalThis as { sessionStorage?: unknown }).sessionStorage = fake
+    try {
+      const { peekNextBlock, rememberNextBlock } = await import('./nextBlock')
+      rememberNextBlock({ focus: 'pull', minutes: 25 }, NOW)
+      expect(peekNextBlock(NOW + HOUR)).toEqual({ focus: 'pull', minutes: 25 })
+      expect(peekNextBlock(NOW + DAY)).toBeNull()
+      rememberNextBlock(null)
+      expect(peekNextBlock(NOW)).toBeNull()
+    } finally {
+      ;(globalThis as { sessionStorage?: unknown }).sessionStorage = had
+    }
+  })
+})

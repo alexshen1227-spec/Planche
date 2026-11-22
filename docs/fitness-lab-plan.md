@@ -138,8 +138,10 @@ Open, in order of value (none blocks using the app):
 1. Try it on the phone: the swipe gestures, rest ring, sheets and the
    badge-unlock moment were checked in a desktop browser only; the skill
    rest screen's effort row was not seen by eye (tests only).
-2. One combined player for a mixed day (today: skills, then the gym as the
-   Today card's next step).
+2. ~~One combined player for a mixed day~~ — done as one flow: starting the
+   skills from Today remembers the gym block (`lib/plan/nextBlock.ts`); closing
+   the saved skill session hands it to Train, which opens the gym's pain check
+   and starts it. Verified end to end in the preview.
 3. The real 2105.mp4: freeze its landmarks into `realClips.fixture.ts`.
 4. Deeper layout redesign of the skill screens (they have the tokens,
    buttons, icons and type scale, not new layouts); an `h-*`/padding audit

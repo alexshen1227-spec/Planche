@@ -1,6 +1,6 @@
 import { GymHub } from '../components/gym/GymHub'
 import { TodayPlanCard, type GymPreset } from '../components/plan/TodayPlanCard'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { AssistType, Section, Session, SetLog, SkillId, TrainingSurface, Workout, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
 import {
@@ -614,7 +614,16 @@ const TRAIN_MODE_KEY = 'planchelab.trainMode'
  * coach's session exactly as before; the gym side builds from the place the
  * athlete is at. Which one shows is remembered per device.
  */
-export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest) => void }) {
+export function Train({
+  startWorkout,
+  nextGym = null,
+  onNextGymUsed,
+}: {
+  startWorkout: (request: WorkoutRequest) => void
+  /** The gym block of a mixed day, handed over when its skill session closes. */
+  nextGym?: GymPreset | null
+  onNextGymUsed?: () => void
+}) {
   const [mode, setMode] = useState<'skills' | 'gym'>(() => {
     try {
       return localStorage.getItem(TRAIN_MODE_KEY) === 'gym' ? 'gym' : 'skills'
@@ -623,6 +632,13 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
     }
   })
   const [gymPreset, setGymPreset] = useState<GymPreset | null>(null)
+  // A gym block handed over when a mixed day's skill session closes starts here.
+  useEffect(() => {
+    if (!nextGym) return
+    setMode('gym')
+    setGymPreset(nextGym)
+    onNextGymUsed?.()
+  }, [nextGym, onNextGymUsed])
   const choose = (m: 'skills' | 'gym') => {
     setMode(m)
     try {

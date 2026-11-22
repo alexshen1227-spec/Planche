@@ -40,6 +40,7 @@ export const CHANGELOG: ChangeEntry[] = [
     notes: [
       'Log a game, practice or sprint session ahead of time (Tomorrow, In 2 days): the day before, the gym leaves your legs alone and goes a little lighter.',
       'Goals and schedule → your sport’s season. In season the gym keeps the weights but drops some sets, so games and practice come first.',
+      'A mixed day runs as one flow: start the skills from Today, and when you save and close that session the gym block that follows opens straight away (after the one-tap pain check).',
       'Today ticks off as you go: finish the skill block and the gym block becomes the next step; when both are done the card says so. A skill session done this morning no longer reshuffles the rest of today’s plan.',
     ],
   },

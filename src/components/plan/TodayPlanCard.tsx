@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { FOCUS_LABEL, type GymFocus } from '../../lib/gym/builder'
 import { planToday } from '../../lib/plan/planner'
+import { rememberNextBlock } from '../../lib/plan/nextBlock'
 import { useStore } from '../../lib/store'
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import type { SkillId, WorkoutRequest } from '../../types'
@@ -104,7 +105,21 @@ export function TodayPlanCard({
               </span>
               <Button
                 variant={skillDone ? 'secondary' : 'primary'}
-                onClick={() => startWorkout({ source: 'auto', minutes: plan.skill!.minutes, skills: plan.skill!.skills })}
+                onClick={() => {
+                  // The gym block follows on its own once this skill session is saved.
+                  rememberNextBlock(
+                    plan.gym && !gymDone
+                      ? {
+                          focus: plan.gym.focus,
+                          minutes: plan.gym.minutes,
+                          avoidJoints: plan.gym.avoidJoints,
+                          volumeFactor: plan.gym.volumeFactor,
+                          musclesOff: plan.gym.musclesOff,
+                        }
+                      : null,
+                  )
+                  startWorkout({ source: 'auto', minutes: plan.skill!.minutes, skills: plan.skill!.skills })
+                }}
               >
                 {skillDone ? 'Again' : 'Start'}
               </Button>
