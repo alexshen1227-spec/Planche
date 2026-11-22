@@ -126,6 +126,26 @@ sprint-day-aware leg scheduling beyond the next day,
 growth-spurt caution prompt, sleep/readiness check-in, exam-week light plans,
 travel mode (bodyweight-only location), coach/parent share card.
 
+## Status at the end of the first night (2026-11-22, ~00:30 PST)
+
+All five phases are built, tested and live on `main` (GitHub Pages). Checks at
+handoff: `npm run check` green (1,216 tests, build), `npm run test:clock`
+green on all 20 dates and timezones, an independent bug review's 11 findings
+fixed and pinned. Usage for the night: weekly 4% → 6%, well inside the goal's
+limit.
+
+Open, in order of value (none blocks using the app):
+1. Try it on the phone: the swipe gestures, rest ring, sheets and the
+   badge-unlock moment were checked in a desktop browser only; the skill
+   rest screen's effort row was not seen by eye (tests only).
+2. One combined player for a mixed day (today: skills, then the gym as the
+   Today card's next step).
+3. The real 2105.mp4: freeze its landmarks into `realClips.fixture.ts`.
+4. Deeper layout redesign of the skill screens (they have the tokens,
+   buttons, icons and type scale, not new layouts); an `h-*`/padding audit
+   for 44 px targets; `ErrorState` has no user yet.
+5. Gym achievements beyond the derived badges; per-set notes in the logger.
+
 ## Log
 
 - 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the
