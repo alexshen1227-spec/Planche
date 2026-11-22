@@ -34,6 +34,7 @@ export function SwipeRow({
   const [open, setOpen] = useState(false)
   const start = useRef<{ x: number; y: number; base: number; id: number } | null>(null)
   const moved = useRef(false)
+  const lastDx = useRef(0)
   const hasActions = Boolean(onEdit || onDelete)
   const openW = ((onEdit ? 1 : 0) + (onDelete && canDelete ? 1 : 0)) * ACTION_W
 
@@ -58,13 +59,21 @@ export function SwipeRow({
     }
     const min = hasActions ? -openW - 24 : 0
     const max = onComplete ? THRESHOLD + 48 : 0
-    setDx(Math.max(min, Math.min(max, s.base + ddx)))
+    const next = Math.max(min, Math.min(max, s.base + ddx))
+    lastDx.current = next
+    setDx(next)
   }
-  const end = () => {
+  const end = (e?: PointerEvent<HTMLDivElement>) => {
     const s = start.current
     start.current = null
     if (!s || !moved.current) return
     setDragging(false)
+    // Decide from where the finger actually lifted, not from the last
+    // rendered offset: a quick swipe can lift before its final move has
+    // rendered, and the rendered offset would still read zero.
+    const min = hasActions ? -openW - 24 : 0
+    const max = onComplete ? THRESHOLD + 48 : 0
+    const dx = e && e.pointerId === s.id ? Math.max(min, Math.min(max, s.base + (e.clientX - s.x))) : lastDx.current
     if (dx >= THRESHOLD && onComplete) {
       setOpen(false)
       setDx(0)
@@ -140,7 +149,16 @@ export function SwipeRow({
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={end}
-        onPointerCancel={end}
+        onPointerCancel={() => {
+          // The browser took the gesture (a scroll): never a completed swipe.
+          start.current = null
+          setDragging(false)
+          setDx(open ? -openW : 0)
+          lastDx.current = 0
+          window.setTimeout(() => {
+            moved.current = false
+          }, 0)
+        }}
         onClickCapture={(e) => {
           if (moved.current) {
             e.stopPropagation()

@@ -1,4 +1,4 @@
-import { Button } from '../components/ds'
+import { Button, Card, Metric } from '../components/ds'
 import { useMemo, useState } from 'react'
 import type { SkillId, Tab, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
@@ -31,7 +31,7 @@ import { pushToast } from '../lib/toast'
 import { Icon } from '../components/Icon'
 import { BadgeGlyph } from '../components/ds/BadgeGlyph'
 import { Figure } from '../components/Figure'
-import { Modal, ProgressRing, Stat, SectionTitle } from '../components/ui'
+import { Modal, ProgressRing, SectionTitle } from '../components/ui'
 import { AddSkill } from '../components/AddSkill'
 import { WeekPlanCard } from '../components/WeekPlanCard'
 import { INSTALL_STEPS, installState } from '../lib/install'
@@ -320,7 +320,7 @@ export function Dashboard({
     <div className="animate-rise">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-[28px] font-bold leading-tight text-ink">
+          <h1 className="font-display text-title1 font-bold text-ink">
             {greeting}
             {state.name ? `, ${state.name}` : ''}
           </h1>
@@ -329,7 +329,7 @@ export function Dashboard({
             {trainedToday ? ' · trained today ✓' : ''}
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-footnote font-medium text-ink2">
+        <div className="flex min-h-11 items-center gap-2 rounded-full border border-line bg-surface px-4 text-footnote font-medium text-ink2">
           <Icon name="flame" size={16} className={streak.weeks > 0 ? 'text-accent-text' : 'text-ink3'} />
           <span className="tnum">
             {streak.weeks}-week streak
@@ -358,24 +358,26 @@ export function Dashboard({
         </div>
       ) : null}
 
-      {/* Current step hero */}
-      <div className={`card-sheen relative ${several ? 'mt-3' : 'mt-5'} overflow-clip rounded-card border border-line bg-surface p-6 shadow-card sm:p-7`}>
-        <div className="pointer-events-none absolute -right-10 -top-16 h-56 w-56 rounded-full bg-accent-soft blur-2xl" />
-        <div className="pointer-events-none absolute -left-16 -bottom-20 h-48 w-48 rounded-full blur-3xl" style={{ background: 'var(--t-glow2)' }} />
-        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-5">
-            <Figure step={step.id} tone="accent" className="h-28 w-32 shrink-0 text-ink animate-floaty" />
-            <div>
-              <div className="text-footnote font-semibold uppercase tracking-wider text-accent-text">
+      {/* Today: one hero card. Title and figure on top, progress and what it
+          means beneath (never a narrow third column), the action last. */}
+      <div className={`${several ? 'mt-3' : 'mt-5'} rounded-card border border-line bg-surface p-4`}>
+        <div className="flex items-start gap-4">
+          <Figure step={step.id} tone="accent" className="h-20 w-24 shrink-0 text-ink" />
+          <div className="min-w-0">
+            <div className="text-caption font-semibold uppercase tracking-wider text-accent-text">
                 {several ? `${skillDef.name} · ` : ''}Step {step.order + 1} of {road.length} · current
                 {goalStep.order > step.order ? ` · goal ${goalStep.name}` : ' · goal reached'}
               </div>
-              <div className="font-display text-[24px] font-bold leading-tight text-ink">{step.name}</div>
-              <div className="mt-0.5 text-body text-ink2">{step.tagline}</div>
-            </div>
+            <div className="mt-1 font-display text-title2 font-bold leading-tight text-ink">{step.name}</div>
+            <div className="mt-0.5 text-footnote text-ink2">{step.tagline}</div>
           </div>
-          <div className="flex flex-1 items-center justify-between gap-5 sm:justify-end">
-            <div className="sm:text-right">
+        </div>
+        <div className="mt-4 flex items-center gap-4">
+          <ProgressRing value={unlockPct} size={64} stroke={6}>
+            <span className="font-display text-body font-bold text-ink tnum">{Math.round(unlockPct * 100)}%</span>
+          </ProgressRing>
+          <div className="min-w-0 flex-1">
+            <div className="space-y-1">
               <div className="text-footnote text-ink2">
                 {keyEx.name} verified best{' '}
                 <span className="font-semibold text-ink tnum">{best ? fmtHold(best) : '—'}</span>
@@ -395,8 +397,8 @@ export function Dashboard({
                 )}
               </div>
               {next ? (
-                <div className="mt-1 sm:flex sm:justify-end">
-                  <div className="max-w-xs sm:text-right">
+                <div>
+                  <div>
                     {forecast.kind === 'ready' ? (
                       <span className="text-footnote font-medium text-accent-text">
                         Attempt ready — you have already held this bar. Test it.
@@ -426,43 +428,31 @@ export function Dashboard({
                 </div>
               ) : null}
             </div>
-            <ProgressRing value={unlockPct} size={76} stroke={7}>
-              <span className="font-display text-title3 font-bold text-ink tnum">{Math.round(unlockPct * 100)}%</span>
-            </ProgressRing>
           </div>
         </div>
-        <div className="relative mt-6 flex flex-wrap gap-2.5">
-          <Button size="lg"
-            onClick={() => startWorkout({ source: 'auto' })}
-            className="glow-accent inline-flex items-center gap-2 "
-          >
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <Button size="lg" onClick={() => startWorkout({ source: 'auto' })} className="w-full sm:w-auto">
             <Icon name="play" size={16} /> Start today's session
           </Button>
           {testBlocked ? null : (
-            <button
-              onClick={() => startWorkout({ source: 'test', stepId: state.stepId })}
-              className="inline-flex items-center gap-2 rounded-control border border-line bg-raised px-5 py-3 text-body font-medium text-ink transition hover:border-line-strong"
-            >
+            <Button variant="secondary" onClick={() => startWorkout({ source: 'test', stepId: state.stepId })}>
               <Icon name="target" size={16} /> Max test{several ? ` · ${skillDef.short}` : ''}
-            </button>
+            </Button>
           )}
-          <button
-            onClick={() => go('path')}
-            className="inline-flex items-center gap-1.5 rounded-control px-4 py-3 text-body font-medium text-ink2 transition hover:text-ink"
-          >
+          <Button variant="ghost" onClick={() => go('path')}>
             View the road <Icon name="chevronR" size={15} />
-          </button>
+          </Button>
         </div>
         {/* Re-scope today rather than re-plan the week. The realistic
             alternative to "I've got twenty minutes" is training nothing, and a
             skipped session teaches the coach nothing either. */}
         {testBlocked && state.sessions.length > 0 ? (
-          <p className="relative mt-2 text-footnote leading-relaxed text-ink3">
+          <p className="mt-3 text-footnote leading-relaxed text-ink3">
             No max test today — {testBlocked}.
           </p>
         ) : null}
         {lineup.length > 1 ? (
-          <div className="relative mt-3 rounded-control border border-line bg-raised p-3">
+          <div className="mt-3 rounded-control border border-line bg-raised p-3">
             <div className="text-caption font-bold uppercase tracking-wider text-ink3">Today's session trains</div>
             <ul className="mt-1.5 space-y-1.5">
               {lineup.map((entry) => (
@@ -473,24 +463,29 @@ export function Dashboard({
             </ul>
           </div>
         ) : several && lineup[0] ? (
-          <p className="relative mt-2 text-footnote leading-relaxed text-ink3">
+          <p className="mt-3 text-footnote leading-relaxed text-ink3">
             Today's session: {SKILLS[lineup[0].skill].name}. {lineup[0].reason}
           </p>
         ) : several && isPainSafe(todays.workout) ? (
-          <p className="relative mt-2 text-footnote leading-relaxed text-ink3">
+          <p className="mt-3 text-footnote leading-relaxed text-ink3">
             Today's session trains none of your skills: with what you reported, it is the pain-safe session — easy
             movement only — until a check-in says the joint has settled.
           </p>
         ) : null}
+      </div>
+
+      {/* Quieter things, kept off the hero. */}
+      {(waiting.length > 0 || showSessionsNotice || showSkillsNotice || showWalkNotice) ? (
+        <div className="mt-6 space-y-2">
         {waiting.map(({ skill, missing }) => (
-          <p key={skill} className="relative mt-2 rounded-control border border-accent/30 bg-accent-soft px-3 py-2 text-footnote leading-relaxed text-ink">
+          <p key={skill} className="rounded-card border border-line bg-surface p-4 text-footnote leading-relaxed text-ink">
             <span className="font-semibold">{SKILLS[skill].name} is waiting for kit.</span>{' '}
             {SKILLS[skill].requiresNote ?? `It needs ${kitNeedsPhrase(missing)}.`}{' '}
             Add it under Settings → Equipment and it joins your sessions.
           </p>
         ))}
         {showSessionsNotice ? (
-          <div className="relative mt-3 rounded-control border border-accent/30 bg-accent-soft p-3 text-footnote leading-relaxed text-ink">
+          <div className="rounded-card border border-line bg-surface p-4 text-footnote leading-relaxed text-ink">
             <div className="font-semibold">Sessions are complete at every level now</div>
             <p className="mt-0.5 text-ink2">
               After the main holds: the push-up version of your step, pseudo planche push-ups, then leans. At your{' '}
@@ -503,13 +498,13 @@ export function Dashboard({
                   closeSessionsNotice()
                   pushToast('Sessions are now planned for about 45 minutes.', 'success')
                 }}
-                className="min-h-11 rounded-lg bg-accent px-3 py-1.5 font-semibold text-on-accent"
+                className="min-h-11 rounded-control bg-accent px-4 text-body font-semibold text-on-accent"
               >
                 Use 45 minutes
               </button>
               <button
                 onClick={closeSessionsNotice}
-                className="min-h-11 rounded-lg border border-line bg-surface px-3 py-1.5 font-medium text-ink2 hover:text-ink"
+                className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-body font-medium text-ink"
               >
                 Keep {state.settings.sessionMinutes}
               </button>
@@ -517,7 +512,7 @@ export function Dashboard({
           </div>
         ) : null}
         {showSkillsNotice ? (
-          <div className="relative mt-3 rounded-control border border-accent/30 bg-accent-soft p-3 text-footnote leading-relaxed text-ink">
+          <div className="rounded-card border border-line bg-surface p-4 text-footnote leading-relaxed text-ink">
             <div className="font-semibold">New: four more skills</div>
             <p className="mt-0.5 text-ink2">
               The front lever, the handstand and handstand push-up, the 90° hold and the human flag each have their own
@@ -527,13 +522,13 @@ export function Dashboard({
             <div className="mt-2 flex flex-wrap gap-2">
               <button
                 onClick={() => setAddingSkill(true)}
-                className="min-h-11 rounded-lg bg-accent px-3 py-1.5 font-semibold text-on-accent"
+                className="min-h-11 rounded-control bg-accent px-4 text-body font-semibold text-on-accent"
               >
                 Add a skill
               </button>
               <button
                 onClick={closeSkillsNotice}
-                className="min-h-11 rounded-lg border border-line bg-surface px-3 py-1.5 font-medium text-ink2 hover:text-ink"
+                className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-body font-medium text-ink"
               >
                 Not now
               </button>
@@ -542,7 +537,7 @@ export function Dashboard({
           </div>
         ) : null}
         {showWalkNotice ? (
-          <div className="relative mt-3 rounded-control border border-accent/30 bg-accent-soft p-3 text-footnote leading-relaxed text-ink">
+          <div className="rounded-card border border-line bg-surface p-4 text-footnote leading-relaxed text-ink">
             <div className="font-semibold">Measure your walk back to the phone</div>
             <p className="mt-0.5 text-ink2">
               Your main Path holds have 5 seconds taken off for coming out and reaching the phone. If your walk is
@@ -552,27 +547,33 @@ export function Dashboard({
             <div className="mt-2 flex flex-wrap gap-2">
               <button
                 onClick={() => setMeasuringWalk(true)}
-                className="min-h-11 rounded-lg bg-accent px-3 py-1.5 font-semibold text-on-accent"
+                className="min-h-11 rounded-control bg-accent px-4 text-body font-semibold text-on-accent"
               >
                 Measure my walk
               </button>
               <button
                 onClick={closeWalkNotice}
-                className="min-h-11 rounded-lg border border-line bg-surface px-3 py-1.5 font-medium text-ink2 hover:text-ink"
+                className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-body font-medium text-ink"
               >
                 No thanks
               </button>
             </div>
           </div>
         ) : null}
+        </div>
+      ) : null}
+      {state.settings.sessionMinutes > 18 || microMinutes !== null ? (
+        <div className="mt-6 rounded-card border border-line bg-surface p-4">
+          <h2 className="font-display text-title3 font-semibold text-ink">More options</h2>
+          <div className="mt-3 space-y-3">
         {state.settings.sessionMinutes > 18 ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-footnote">
+          <div className="flex flex-wrap items-center gap-2 text-footnote">
             <span className="text-ink3">Short on time?</span>
             {[15, 20].map((m) => (
               <button
                 key={m}
                 onClick={() => startWorkout({ source: 'auto', minutes: m })}
-                className="min-h-11 rounded-lg border border-line bg-raised px-3 py-1.5 font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
+                className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-body font-medium text-ink"
               >
                 {m} min version
               </button>
@@ -580,11 +581,11 @@ export function Dashboard({
           </div>
         ) : null}
         {microMinutes !== null ? (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-footnote">
+          <div className="flex flex-wrap items-center gap-2 text-footnote">
             <span className="text-ink3">No full session today?</span>
             <button
               onClick={() => startWorkout({ source: 'micro', ...(several ? { skills: [viewSkill] } : {}) })}
-              className="min-h-11 rounded-lg border border-line bg-raised px-3 py-1.5 font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
+              className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-body font-medium text-ink"
             >
               Minimum dose · {microMinutes} min
             </button>
@@ -594,13 +595,15 @@ export function Dashboard({
             </span>
           </div>
         ) : null}
-      </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* The athlete's own week, directly under today. It is told what the
           session above trains once the rails have run, so it never names a
           skill day beside a pain-safe session. */}
       <WeekPlanCard
-        className="animate-rise mt-4"
+        className="animate-rise mt-6"
         style={{ animationDelay: '10ms' }}
         sessionSkills={lineup.map((entry) => entry.skill)}
       />
@@ -610,7 +613,7 @@ export function Dashboard({
           progressing normally never sees it. */}
       {plan.plateau ? (
         <div
-          className="animate-rise mt-4 rounded-inner border border-line bg-surface p-5 shadow-card"
+          className="animate-rise mt-6 rounded-card border border-line bg-surface p-4"
           style={{ animationDelay: '20ms' }}
         >
           <div className="flex flex-wrap items-center gap-2">
@@ -648,7 +651,7 @@ export function Dashboard({
           {plan.plateau.suggestMaxTest && !testBlocked ? (
             <button
               onClick={() => startWorkout({ source: 'test', stepId: state.stepId })}
-              className="mt-3 inline-flex items-center gap-2 rounded-control border border-line bg-raised px-4 py-2.5 text-footnote font-medium text-ink transition hover:border-line-strong"
+              className="mt-3 inline-flex items-center gap-2 min-h-11 rounded-control border border-line-strong bg-raised px-4 text-footnote font-medium text-ink"
             >
               <Icon name="target" size={15} /> Run a max test
             </button>
@@ -656,7 +659,7 @@ export function Dashboard({
         </div>
       ) : breakthrough ? (
         <div
-          className="animate-rise mt-4 flex flex-wrap items-center gap-3 rounded-inner border border-ok/25 bg-ok-soft px-5 py-3.5"
+          className="animate-rise mt-6 flex flex-wrap items-center gap-3 rounded-card border border-ok/25 bg-ok-soft p-4"
           style={{ animationDelay: '20ms' }}
         >
           <Icon name="sparkle" size={17} className="shrink-0 text-ok-text" />
@@ -672,7 +675,7 @@ export function Dashboard({
       {/* An iPhone tab's history is one quiet week from being cleared by Safari;
           said once there is something to lose, and only where it applies. */}
       {showInstallNotice ? (
-        <div className="animate-rise mt-4 rounded-inner border border-accent/30 bg-accent-soft px-5 py-3.5 text-footnote leading-relaxed text-ink" style={{ animationDelay: '20ms' }}>
+        <div className="animate-rise mt-6 rounded-card border border-line bg-surface p-4 text-footnote leading-relaxed text-ink" style={{ animationDelay: '20ms' }}>
           <div className="font-semibold">Add this app to your Home Screen</div>
           <p className="mt-0.5 text-ink2">
             Your training is stored on this phone and nowhere else. Safari can clear a website’s saved data after about a
@@ -703,14 +706,14 @@ export function Dashboard({
                   dispatch({ type: 'STAMP_BACKUP', at })
                   pushToast('Backup exported.', 'success')
                 }}
-                className="min-h-11 rounded-lg bg-accent px-3 py-1.5 font-semibold text-on-accent"
+                className="min-h-11 rounded-control bg-accent px-4 text-body font-semibold text-on-accent"
               >
                 Export backup
               </button>
             ) : null}
             <button
               onClick={closeInstallNotice}
-              className="min-h-11 rounded-lg border border-line bg-surface px-3 py-1.5 font-medium text-ink2 hover:text-ink"
+              className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-body font-medium text-ink"
             >
               Got it
             </button>
@@ -721,7 +724,7 @@ export function Dashboard({
       {/* Backup nudge once real history has accumulated */}
       {state.sessions.length >= 8 &&
       (!state.lastBackupAt || Date.now() - state.lastBackupAt > 30 * 86_400_000) ? (
-        <div className="animate-rise mt-4 flex flex-wrap items-center justify-between gap-3 rounded-inner border border-line bg-surface px-5 py-3.5" style={{ animationDelay: '20ms' }}>
+        <div className="animate-rise mt-6 flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-surface p-4" style={{ animationDelay: '20ms' }}>
           <div className="flex items-center gap-2.5 text-body text-ink2">
             <Icon name="download" size={16} className="text-ink3" />
             <span>
@@ -737,7 +740,7 @@ export function Dashboard({
               dispatch({ type: 'STAMP_BACKUP', at })
               pushToast('Backup exported.', 'success')
             }}
-            className="rounded-lg border border-line bg-raised px-3.5 py-2 text-footnote font-medium text-ink2 transition hover:text-ink"
+            className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-footnote font-medium text-ink"
           >
             Export backup
           </button>
@@ -748,7 +751,7 @@ export function Dashboard({
           wrist routine as "recovery", under a name ("Armor") that promised
           protection no routine provides. */}
       {todaysLatest ? (
-        <div className="animate-rise mt-4 flex flex-wrap items-center justify-between gap-3 rounded-inner border border-ok/25 bg-ok-soft px-5 py-3.5" style={{ animationDelay: '40ms' }}>
+        <div className="animate-rise mt-6 flex flex-wrap items-center justify-between gap-3 rounded-card border border-ok/25 bg-ok-soft p-4" style={{ animationDelay: '40ms' }}>
           <div className="flex items-center gap-2.5 text-body text-ink">
             <Icon name="check" size={16} className="text-ok-text" />
             {todaysLatest.workoutKind === 'micro' ? (
@@ -765,63 +768,52 @@ export function Dashboard({
           </div>
           <button
             onClick={() => viewSession(todaysLatest.id)}
-            className="rounded-lg border border-line bg-surface px-3.5 py-2 text-footnote font-medium text-ink2 transition hover:text-ink"
+            className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-footnote font-medium text-ink"
           >
             See today’s session →
           </button>
         </div>
       ) : null}
 
-      {/* Stats */}
-      <div className="animate-rise mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4" style={{ animationDelay: '80ms' }}>
-        {/* Ring beside the count, strip across the full width beneath it —
-            sharing one row left the strip a sliver of the card to live in. */}
-        <div className="rounded-inner border border-line bg-surface p-4 shadow-card">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-footnote font-medium text-ink3">This week</div>
-              <div className="mt-1 font-display text-[26px] font-semibold leading-tight text-ink tnum">
+      {/* This week, in one compact row */}
+      <Card className="animate-rise mt-6" style={{ animationDelay: '80ms' }}>
+        <div className="flex items-start justify-between gap-3">
+          <Metric
+            label="This week"
+            value={
+              <>
                 {thisWeek}
                 <span className="text-body text-ink3">/{goal}</span>
-              </div>
-            </div>
-            <ProgressRing value={thisWeek / Math.max(1, goal)} size={52} stroke={6} />
-          </div>
-          <div className="mt-3">
-            <WeekStrip trainedDays={trainedDays} />
-          </div>
+              </>
+            }
+          />
+          <Metric label="Week streak" value={streak.weeks} />
+          <Metric label="Sessions" value={state.sessions.length} />
         </div>
-        <Stat
-          label="Week streak"
-          value={<span className="tnum">{streak.weeks}</span>}
-          // "N more to keep it" frames training as defending something you are
-          // about to lose — and the displayed streak already counts the
-          // in-progress week, so part of what it threatened had not been
-          // earned. The North Star puts streak preservation below actually
-          // training, so this states the fact and drops the loss frame.
-          sub={
-            streak.currentMet
-              ? 'this week is banked'
-              : `${Math.max(0, goal - thisWeek)} more this week to meet your goal`
-          }
-        />
-        <Stat label="Time under tension" value={fmtDuration(tut)} sub="all holds, all time" />
-        <Stat
-          label="Sessions"
-          value={<span className="tnum">{state.sessions.length}</span>}
-          sub={fmtDate(state.startedAt) === 'Today' ? 'started today' : `since ${fmtDate(state.startedAt)}`}
-        />
-      </div>
+        <div className="mt-4">
+          <WeekStrip trainedDays={trainedDays} />
+        </div>
+        {/* "N more to keep it" frames training as defending something you are
+            about to lose — and the displayed streak already counts the
+            in-progress week. This states the fact and drops the loss frame. */}
+        <p className="mt-3 text-footnote text-ink2">
+          {streak.currentMet ? 'this week is banked' : `${Math.max(0, goal - thisWeek)} more this week to meet your goal`}
+        </p>
+        <p className="mt-1 text-footnote text-ink3">
+          Time under tension <span className="tnum font-medium text-ink2">{fmtDuration(tut)}</span> — all holds, all time ·{' '}
+          {fmtDate(state.startedAt) === 'Today' ? 'started today' : `since ${fmtDate(state.startedAt)}`}
+        </p>
+      </Card>
 
       {/* The bridge to the next step — the part of the road that sets the pace */}
       {state.sessions.length > 0 ? (
-        <div className="animate-rise mt-4" style={{ animationDelay: '90ms' }}>
+        <div className="animate-rise mt-6" style={{ animationDelay: '90ms' }}>
           <BridgeCard state={state} stepId={state.stepId} compact />
         </div>
       ) : null}
 
       {/* The week's work — volume made visible */}
-      <div className="animate-rise mt-4 rounded-inner border border-line bg-surface p-5 shadow-card" style={{ animationDelay: '95ms' }}>
+      <div className="animate-rise mt-6 rounded-card border border-line bg-surface p-4" style={{ animationDelay: '95ms' }}>
         <div className="flex items-center justify-between gap-2">
           <div className="text-footnote font-semibold uppercase tracking-wide text-ink3">This week’s work</div>
           <div className="text-caption text-ink3 tnum">
@@ -859,7 +851,7 @@ export function Dashboard({
       </div>
 
       {/* Coach */}
-      <div className="animate-rise card-sheen mt-4 rounded-inner border border-line bg-surface p-5 shadow-card" style={{ animationDelay: '110ms' }}>
+      <div className="animate-rise mt-4 rounded-card border border-line bg-surface p-4" style={{ animationDelay: '110ms' }}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wide text-accent-text">
@@ -902,7 +894,7 @@ export function Dashboard({
           </div>
           <button
             onClick={() => go('stats')}
-            className="shrink-0 rounded-lg border border-line bg-raised px-3 py-2 text-footnote font-medium text-ink2 transition hover:text-ink"
+            className="shrink-0 min-h-11 rounded-control border border-line-strong bg-raised px-4 text-footnote font-medium text-ink"
           >
             What it learned →
           </button>
@@ -926,7 +918,7 @@ export function Dashboard({
 
       {/* Where the road ends, and how honestly far that is */}
       <div
-        className="animate-rise mt-4 rounded-inner border border-line bg-surface p-5 shadow-card"
+        className="animate-rise mt-6 rounded-card border border-line bg-surface p-4"
         style={{ animationDelay: '125ms' }}
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -957,7 +949,7 @@ export function Dashboard({
           </div>
           <button
             onClick={() => go('path')}
-            className="shrink-0 rounded-lg border border-line bg-raised px-3 py-2 text-footnote font-medium text-ink2 transition hover:text-ink"
+            className="shrink-0 min-h-11 rounded-control border border-line-strong bg-raised px-4 text-footnote font-medium text-ink"
           >
             Change goal →
           </button>
@@ -965,8 +957,8 @@ export function Dashboard({
       </div>
 
       {/* Tip + achievements */}
-      <div className="animate-rise mt-4 grid gap-3 lg:grid-cols-2" style={{ animationDelay: '140ms' }}>
-        <div className="card-sheen rounded-inner border border-line bg-surface p-5 shadow-card">
+      <div className="animate-rise mt-6 grid gap-3 lg:grid-cols-2" style={{ animationDelay: '140ms' }}>
+        <div className="rounded-card border border-line bg-surface p-4">
           <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wide text-accent-text">
             <Icon name="sparkle" size={15} /> Coach's tip
           </div>
@@ -974,7 +966,7 @@ export function Dashboard({
           <p className="mt-1 text-footnote leading-relaxed text-ink2">{tip.body}</p>
           <p className="mt-2 text-caption text-ink3">{BASIS_LABEL[tip.basis]}</p>
         </div>
-        <div className="rounded-inner border border-line bg-surface p-5 shadow-card">
+        <div className="rounded-card border border-line bg-surface p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wide text-ink3">
               <Icon name="trophy" size={15} /> Latest achievements

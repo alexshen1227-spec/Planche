@@ -135,17 +135,23 @@ fixed and pinned. Usage for the night: weekly 4% → 6%, well inside the goal's
 limit.
 
 Open, in order of value (none blocks using the app):
-1. Try it on the phone: the swipe gestures, rest ring, sheets and the
-   badge-unlock moment were checked in a desktop browser only; the skill
-   rest screen's effort row was not seen by eye (tests only).
+1. ~~Phone test~~ — done 2026-11-22 in the browser's Android phone emulation
+   (Pixel 8 user agent, touch, 375 px): hub, sheets, pain check, logger,
+   swipe right and left, effort, rest ring, finish summary and a real badge
+   unlock. It found three defects, all fixed: a quick swipe judged from a
+   stale offset did nothing (now decided from the lift; `Swipe.test.tsx`
+   reproduces the phone timing and was mutation-checked), the effort row ran
+   off the screen, and the rest bar squeezed its text. A physical phone is
+   still the final word.
 2. ~~One combined player for a mixed day~~ — done as one flow: starting the
    skills from Today remembers the gym block (`lib/plan/nextBlock.ts`); closing
    the saved skill session hands it to Train, which opens the gym's pain check
    and starts it. Verified end to end in the preview.
 3. The real 2105.mp4: freeze its landmarks into `realClips.fixture.ts`.
-4. Deeper layout redesign of the skill screens (they have the tokens,
-   buttons, icons and type scale, not new layouts); an `h-*`/padding audit
-   for 44 px targets; `ErrorState` has no user yet.
+4. Layouts: Home and Path were redesigned for the phone (hero card, More
+   options, week row; Path as a timeline) and reviewed at 375 px. Left: the
+   coach/goal/tip cards on Home, Progress and Settings layouts, an
+   `h-*`/padding audit for 44 px targets; `ErrorState` has no user yet.
 5. Gym achievements beyond the derived badges; per-set notes in the logger.
 
 ## Log

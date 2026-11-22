@@ -344,7 +344,7 @@ export function GymPlayer({
                         <p className="mt-0.5 pl-9 text-caption text-ink3">RPE {s.rpe}</p>
                       ) : null}
                       {askRpe && askRpe.item === i && askRpe.set === j ? (
-                        <div className="mt-1.5 flex items-center gap-1.5 pl-8" role="group" aria-label="How hard was that set?">
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-1 sm:pl-8" role="group" aria-label="How hard was that set?">
                           <span className="mr-1 text-caption text-ink3">Effort</span>
                           {RPE_CHOICES.map((r) => (
                             <button
@@ -416,7 +416,8 @@ export function GymPlayer({
             </RingTimer>
             <div className="min-w-0 flex-1">
               <p className="text-body font-semibold">Rest</p>
-              <p className="text-caption text-ink3">Start the next set when you are ready.</p>
+              {/* On a phone the buttons need the room; the hint shows where there is space. */}
+              <p className="hidden text-caption text-ink3 sm:block">Start the next set when you are ready.</p>
             </div>
             <Button variant="secondary" aria-label="15 seconds less" onClick={() => setRest((r) => (r ? { ...r, until: r.until - 15_000 } : r))}>
               −15

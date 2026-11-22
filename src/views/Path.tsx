@@ -52,7 +52,7 @@ function RoadSoFar({ stops, firstSessionAt, totalSessions, road }: ReturnType<ty
   }, [currentId])
   const earned = stops.filter((stop) => stop.via === 'bar' || stop.via === 'next-shape').length
   return (
-    <section className="mt-4 rounded-inner border border-line bg-surface p-4 shadow-card" aria-labelledby="road-so-far">
+    <section className="mt-6 rounded-card border border-line bg-surface p-4" aria-labelledby="road-so-far">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 id="road-so-far" className="text-footnote font-semibold text-ink">
@@ -141,7 +141,7 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
 
   return (
     <div className="animate-rise">
-      <h1 className="font-display text-[28px] font-bold text-ink">
+      <h1 className="font-display text-title1 font-bold text-ink">
         {viewSkill === 'planche' ? 'The Road to Planche' : `The road to ${skillDef.words.summit}`}
       </h1>
       <p className="mt-0.5 max-w-2xl text-body leading-relaxed text-ink2">
@@ -190,7 +190,7 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
       <RoadSoFar {...journey} road={STEPS} />
 
       {viewSkill !== 'planche' ? (
-        <details className="mt-4 rounded-inner border border-line bg-surface p-4 shadow-card">
+        <details className="mt-6 rounded-card border border-line bg-surface p-4">
           <summary className="cursor-pointer text-footnote font-semibold text-ink">
             About this road: what it rests on, and what to know first
           </summary>
@@ -215,7 +215,7 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
       {/* Goal picker. Deliberately here rather than buried in Settings: the
           goal decides which cooldown mobility appears and how far the app
           says you have to go, so it belongs beside the road it describes. */}
-      <div className="mt-4 rounded-inner border border-line bg-surface p-4 shadow-card">
+      <div className="mt-6 rounded-card border border-line bg-surface p-4">
         <div className="text-footnote font-semibold text-ink" id="path-goal">
           What are you aiming at?
         </div>
@@ -235,7 +235,7 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                     ? dispatch({ type: 'SET_PROFILE', patch: { goalStepId: id } })
                     : dispatch({ type: 'SET_GOAL', stepId: id })
                 }
-                className={`rounded-full border px-3.5 py-2 text-footnote font-medium transition ${
+                className={`ds-press min-h-11 rounded-full border px-4 text-footnote font-medium ${
                   on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2 hover:text-ink'
                 }`}
               >
@@ -246,7 +246,7 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-footnote">
+      <div className="mt-6 flex flex-wrap items-center gap-2 text-footnote">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-ok/25 bg-ok-soft px-3 py-1.5 font-medium text-ok-text">
           <Icon name="check" size={13} /> Clean hold
         </span>
@@ -254,7 +254,7 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
           <Icon name="monitor" size={13} /> Camera pass
         </span>
         <details className="group">
-          <summary className="cursor-pointer list-none rounded-full border border-line bg-surface px-3 py-1.5 font-medium text-ink2 transition hover:text-ink">
+          <summary className="inline-flex min-h-11 cursor-pointer list-none items-center rounded-full border border-line bg-surface px-4 font-medium text-ink2 transition hover:text-ink">
             How unlocks work <span className="ml-1 inline-block transition group-open:rotate-180">⌄</span>
           </summary>
           <p className="mt-2 max-w-2xl rounded-inner border border-line bg-surface p-3.5 leading-relaxed text-ink2 shadow-card">
@@ -264,64 +264,69 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
         </details>
       </div>
 
-      <div className="relative mt-7 pb-2">
-        {/* Spine, with a gradient fill up to the current step */}
-        <div className="absolute bottom-6 left-[27px] top-2 w-0.5 rounded bg-line sm:left-[31px]" />
-        <div
-          className="absolute left-[27px] top-2 w-0.5 rounded sm:left-[31px]"
-          style={{
-            height: `${(currentOrder / (STEPS.length - 1)) * 92}%`,
-            background: 'linear-gradient(to bottom, var(--t-ok), var(--t-accent))',
-          }}
-        />
-        <div className="space-y-3">
-          {STEPS.map((step) => {
-            const unlocked = state.unlocked.includes(step.id)
-            const isCurrent = state.stepId === step.id
-            const best = qualifyingProgress(state, step.id).value
-            const done = unlocked && step.order < currentOrder && best >= step.unlockSec
-            const available = unlocked && step.order < currentOrder && !done
-            const pct = Math.min(1, best / step.unlockSec)
-            const keyEx = EXERCISE_BY_ID[step.keyExerciseId]
-            return (
-              <button
-                key={step.id}
-                onClick={() => setDetail(step)}
-                className={`card-int relative flex w-full items-center gap-2.5 rounded-inner border p-3 text-left min-[480px]:gap-4 sm:gap-5 sm:p-5 sm:pl-4 ${
-                  isCurrent
-                    ? 'card-sheen border-accent/40 bg-surface shadow-card'
-                    : unlocked
-                      ? 'border-line bg-surface shadow-card'
-                      : 'border-line bg-surface/40 opacity-80 hover:opacity-100'
+      {/* The road as a vertical timeline: a rail on the left, one row per
+          step. The current step is the only one with a card around it; locked
+          steps are quieter. */}
+      <ol className="mt-6 pb-2" aria-label="Steps on the road">
+        {STEPS.map((step, index) => {
+          const unlocked = state.unlocked.includes(step.id)
+          const isCurrent = state.stepId === step.id
+          const best = qualifyingProgress(state, step.id).value
+          const done = unlocked && step.order < currentOrder && best >= step.unlockSec
+          const available = unlocked && step.order < currentOrder && !done
+          const pct = Math.min(1, best / step.unlockSec)
+          const keyEx = EXERCISE_BY_ID[step.keyExerciseId]
+          const first = index === 0
+          const last = index === STEPS.length - 1
+          return (
+            <li key={step.id} className="relative pb-2 pl-11">
+              {first ? null : (
+                <span
+                  aria-hidden="true"
+                  className={`absolute left-[15px] top-0 h-6 w-0.5 ${step.order <= currentOrder ? 'bg-ok/60' : 'bg-line'}`}
+                />
+              )}
+              {last ? null : (
+                <span
+                  aria-hidden="true"
+                  className={`absolute bottom-0 left-[15px] top-6 w-0.5 ${step.order < currentOrder ? 'bg-ok/60' : 'bg-line'}`}
+                />
+              )}
+              {/* Node */}
+              <div
+                aria-hidden="true"
+                className={`absolute left-0 top-4 z-10 grid h-8 w-8 place-items-center rounded-full border-2 ${
+                  done
+                    ? 'border-ok bg-ok-soft text-ok-text'
+                    : isCurrent
+                      ? 'border-accent bg-accent text-on-accent'
+                      : unlocked
+                        ? 'border-line-strong bg-raised text-ink2'
+                        : 'border-line bg-bg text-ink3'
                 }`}
               >
-                {/* Node */}
-                <div
-                  className={`relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 sm:h-9 sm:w-9 ${
-                    done
-                      ? 'border-ok bg-ok-soft text-ok-text'
-                      : isCurrent
-                        ? 'border-accent bg-accent-soft text-accent-text'
-                        : unlocked
-                          ? 'border-line-strong bg-raised text-ink2'
-                          : 'border-line bg-raised text-ink3'
-                  }`}
-                >
-                  {isCurrent ? (
-                    <span className="absolute inset-[-5px] rounded-full border-2 border-accent/50 animate-ping-soft" />
-                  ) : null}
-                  {done ? (
-                    <Icon name="check" size={15} strokeWidth={2.5} />
-                  ) : unlocked ? (
-                    <span className="font-display text-footnote font-bold tnum">{step.order + 1}</span>
-                  ) : (
-                    <Icon name="lock" size={14} />
-                  )}
-                </div>
+                {done ? (
+                  <Icon name="check" size={15} strokeWidth={2.5} />
+                ) : unlocked ? (
+                  <span className="font-display text-footnote font-bold tnum">{step.order + 1}</span>
+                ) : (
+                  <Icon name="lock" size={14} />
+                )}
+              </div>
+              <button
+                onClick={() => setDetail(step)}
+                className={`ds-press flex min-h-[72px] w-full items-center gap-3 rounded-card border p-4 text-left ${
+                  isCurrent
+                    ? 'border-accent/40 bg-surface'
+                    : unlocked
+                      ? 'border-transparent hover:bg-raised'
+                      : 'border-transparent opacity-70 hover:bg-raised hover:opacity-100'
+                }`}
+              >
                 <Figure
                   step={step.id}
                   tone={isCurrent ? 'accent' : 'plain'}
-                  className={`hidden h-14 w-16 shrink-0 min-[480px]:block sm:h-16 sm:w-20 ${unlocked ? 'text-ink' : 'text-ink3'}`}
+                  className={`hidden h-14 w-16 shrink-0 min-[480px]:block ${unlocked ? 'text-ink' : 'text-ink3'}`}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline gap-x-2.5">
@@ -367,10 +372,10 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                 </div>
                 <Icon name="chevronR" size={17} className="shrink-0 text-ink3" />
               </button>
-            )
-          })}
-        </div>
-      </div>
+            </li>
+          )
+        })}
+      </ol>
 
       {ladder ? <LadderCard status={ladder} skill={viewSkill} /> : null}
 
@@ -725,7 +730,7 @@ function SkipStepFlow({
 function LadderCard({ status, skill }: { status: LadderStatus; skill: SkillId }) {
   const { ladder, rungs, index, verifiedBest, loggedBest, waitingOn, placedPastGate } = status
   return (
-    <section className="mt-6 rounded-inner border border-line bg-surface p-5 shadow-card" aria-labelledby="rep-ladder">
+    <section className="mt-6 rounded-card border border-line bg-surface p-4" aria-labelledby="rep-ladder">
       <h2 id="rep-ladder" className="font-display text-[18px] font-semibold text-ink">
         {ladder.name}
       </h2>
