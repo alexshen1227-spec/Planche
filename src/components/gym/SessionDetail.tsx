@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import { allowsUnloaded, countUnit, countWord } from '../../lib/gym/progression'
 import { doubtedLoad } from '../../lib/gym/state'
 import type { GymSession, GymSet } from '../../lib/gym/types'
 import { displayLoad, formatLoad, toKg } from '../../lib/gym/units'
@@ -57,7 +58,7 @@ export function SessionDetail({ session, onClose }: { session: GymSession; onClo
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-footnote tnum text-ink2">
                         {set.warmup ? 'Warm-up · ' : ''}
-                        {set.reps} × {formatLoad(set.kg, set.unit ?? unit)}
+                        {countUnit(ex) === 'seconds' ? `${countWord(ex, set.reps)}${set.kg ? ` × ${formatLoad(set.kg, set.unit ?? unit)}` : ''}` : `${set.reps} × ${formatLoad(set.kg, set.unit ?? unit)}`}
                       </span>
                       <button
                         onClick={() => setEditing({ ei, si })}
@@ -132,7 +133,10 @@ function SetEditor({
   const submit = (kg: number | null) => onSave(kg, Math.round(Number(reps)))
   const valid = reps !== '' && Number(reps) >= 0 && Number(reps) <= 200
   const typed = load.trim() === '' ? null : toKg(Number(load), unit)
-  const loadOk = typed === null || (Number.isFinite(typed) && typed > 0 && typed < 1000)
+  const exercise = GYM_EXERCISE_BY_ID[exerciseId]
+  // A loaded lift cannot be corrected to no weight: that would read as a 0 kg set.
+  const needsWeight = typed === null && !allowsUnloaded(exercise)
+  const loadOk = !needsWeight && (typed === null || (Number.isFinite(typed) && typed > 0 && typed < 1000))
 
   if (doubt) {
     const shown = (kg: number) => formatLoad(kg, unit)
@@ -159,10 +163,10 @@ function SetEditor({
     <div className="flex flex-wrap items-end gap-2 py-1">
       <label className="text-caption text-ink3">
         Load ({unit})
-        <input className={`${field} mt-0.5 block`} inputMode="decimal" value={load} onChange={(e) => setLoad(e.target.value)} placeholder="Bodyweight" />
+        <input className={`${field} mt-0.5 block`} inputMode="decimal" value={load} onChange={(e) => setLoad(e.target.value)} placeholder={allowsUnloaded(exercise) ? 'Bodyweight' : 'Weight'} />
       </label>
       <label className="text-caption text-ink3">
-        Reps
+        {countUnit(exercise) === 'seconds' ? 'Seconds' : 'Reps'}
         <input className={`${field} mt-0.5 block`} inputMode="numeric" value={reps} onChange={(e) => setReps(e.target.value)} />
       </label>
       <Button

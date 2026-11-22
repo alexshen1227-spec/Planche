@@ -516,6 +516,12 @@ export interface WorkoutRequest {
    * ladder; absent builds the session exactly as before.
    */
   focus?: 'ladder'
+  /**
+   * Kit at the place this session happens, beside the athlete's own (a gym's
+   * pull-up bar for a front-lever opener). Added to the profile's equipment for
+   * this build only; absent builds exactly as before.
+   */
+  kit?: EquipmentId[]
 }
 
 export interface Workout {

@@ -866,9 +866,11 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
 - **Rules the review pinned (2026-11-22, gym.test / plan.test):** pain
   memory is the union of every non-good report in the last 72 h, never only
   the latest (knee is a `BodyRegion`); a load step needs logged effort on
-  at least two top-of-range sets; any switched-off *primary* muscle keeps a
+  at least two top-of-range sets (or two unrated sessions in a row at the
+  top, `unratedTwice`); any switched-off *primary* muscle keeps a
   movement out; under 18 by birth year means `year - birthYear <= 18`, and
-  power/explosive ranges are 6–8 then; a week under 70% of the usual volume
+  power/explosive ranges are 6–8 then (hard bodyweight movements,
+  `isHardBodyweight`, are 4–6 slow reps under 18 and 3–6 over); a week under 70% of the usual volume
   ends a hard run; a stall needs an estimate in both weeks; `mergeGym` must
   return `local` itself when nothing changed (order-insensitive compare), or
   two tabs ping-pong; a new gym start never overwrites an open draft.
@@ -892,9 +894,14 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     written, rest days rest. No place or no gym goals: no gym block. Without
     gym prefs, minutes come from `settings.sessionMinutes`, never
     `defaultPrefs`. Skill lines come from the built session (`skill.hard`).
-  - The Gym tab builds through `gymSessionInputs` + `soreJoints` (the 72 h
-    pain union holds whichever focus is picked; Auto follows `planToday`).
-    Home, Train and the Today card start the same request.
+  - The Gym tab plans today *as a gym day* through `gymToday(state, {now,
+    minutes, focus, location})`: the same engine, so the season cap, sport
+    legs (also on a rest day), deload, knee rule and the 72 h pain union hold
+    for Auto and for a picked focus alike. Today's choice (kind and minutes,
+    this calendar day only) lives in `lib/plan/todayChoice.ts` and every
+    screen reads it; `lib/plan/screens.ts` (`trainingWeek`, `homeToday`) is
+    what Home shows. Every `planToday`/`soreJoints` memo is keyed on
+    `useToday`, so a screen left open past midnight re-plans.
   - `focusOpen`: a focus needs more than half its main muscles switched on.
   - A logged activity replaces a scheduled sport slot only when it is the
     same kind (or practice ↔ game). Weeks with fewer than `MIN_RATED_SETS`
@@ -925,6 +932,23 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     one-skill session and the lifts follow through `rememberNextBlock`.
     "Today's calisthenics" on Train and Home is the calisthenics day's block
     only — never a gym day's opener.
+  - Third review round (58 UX / 53 logic), fixed and pinned in
+    `plan/round2.test.ts`, `gym/round2.test.ts`, `data/youthWarmup.test.ts`:
+    kit at a place is its own list plus the athlete's *portable* kit
+    (`PORTABLE_KIT`), and `WorkoutRequest.kit` adds it to that one build
+    (`withRequestKit`); no opener after a hard session of the family earlier
+    the same day, and planned family days hold; calisthenics days only for
+    skills with kit; the weekly goal spreads open days; the RPE-9 deload is
+    decided at the week's start; same-calendar-day sport keeps legs out;
+    rest between *planned* days counts calendar days (`apart`), logged ones
+    real hours. Youth warm-up (`data/youthWarmup.ts`): under 18 or age
+    unknown, straight-arm skills get a longer warm-up, forced on — the evals'
+    athletes are adults (`birthYear: 1990`) so they measure the standard
+    session. Holds count seconds (`count: 'seconds'`, `countUnit`,
+    `longestHold`); wrists are tagged on free-weight and bodyweight presses,
+    dips, push-ups and curls; a loaded lift is never logged at 0 kg
+    (`isUnloadedSet`); prefs merge per field (`TrainingPrefs.fieldTimes`);
+    the gym player makes the app behind it inert (`useInertBackground`).
   - Skill days are requests (`{source: 'auto', skills: [skill]}`); a ladder
     day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
     pins every session built without it — regenerate only for an intended

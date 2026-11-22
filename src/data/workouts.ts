@@ -11,6 +11,7 @@ import type {
   Workout,
   WorkoutRequest,
 } from '../types'
+import { needsYouthWarmup, youthWarmup, YOUTH_WARMUP_NOTE } from './youthWarmup'
 import { hold, reps } from './blocks'
 import { EXERCISE_BY_ID } from './exercises'
 import { skillOfStep, STEP_BY_ID, stepAfter, stepBefore } from './progressions'
@@ -1193,7 +1194,12 @@ export function todaysSession(
 
   // An extended warm-up is a coach safety rail and cannot be disabled by the
   // convenience preference.
-  if (state.settings.warmup || plan.warmup === 'extended') blocks.push(...warmupFor(stepId, plan.warmup))
+  const youthWarm = needsYouthWarmup(state.profile, 'planche', now)
+  if (state.settings.warmup || plan.warmup === 'extended' || youthWarm) {
+    const base = warmupFor(stepId, plan.warmup)
+    blocks.push(...(youthWarm ? youthWarmup(state.profile, 'planche', stepId, base, undefined, now) : base))
+    if (youthWarm) adjustments.push(YOUTH_WARMUP_NOTE)
+  }
 
   // Fresh and within reach → attempt the unlock while at your best. A due
   // re-test is the same single max hold at the bar, for a different reason:
@@ -2161,7 +2167,21 @@ export function finalizeWorkoutWithPlan(
   freshCheckIn?: CheckIn,
   now = Date.now(),
 ): { workout: Workout; plan: CoachPlan; lineup: LineupEntry[] } {
-  return finalizeFromPlan(state, request, planForToday(state, now, freshCheckIn, request), now, freshCheckIn)
+  const built = withRequestKit(state, request)
+  return finalizeFromPlan(built, request, planForToday(built, now, freshCheckIn, request), now, freshCheckIn)
+}
+
+/**
+ * The kit at the place a session happens (`WorkoutRequest.kit`), added to the
+ * athlete's own for this build only: nothing is stored. A request without it
+ * returns the very same state, so it builds exactly what it always built.
+ */
+export function withRequestKit(state: AppState, request: WorkoutRequest): AppState {
+  if (!request.kit?.length) return state
+  const have = state.profile.equipment
+  const extra = request.kit.filter((k) => !have.includes(k))
+  if (!extra.length) return state
+  return { ...state, profile: { ...state.profile, equipment: [...have, ...extra] } }
 }
 
 /**
@@ -2237,7 +2257,7 @@ export function finalizeFromPlan(
   now = Date.now(),
   freshCheckIn?: CheckIn,
 ): { workout: Workout; plan: CoachPlan; lineup: LineupEntry[] } {
-  const whole = wholeState(stateIn)
+  const whole = wholeState(withRequestKit(stateIn, request))
   const lineup = lineupFor(whole, request, now)
   const lead = lineup[0].skill
   const state = skillView(whole, lead)

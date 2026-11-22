@@ -131,6 +131,12 @@ export interface TrainingPrefs {
    * activity on that day; a log on the same day replaces it. Absent = none.
    */
   sportSchedule?: SportSlot[]
+  /**
+   * When each field above was last changed, by field name, so two tabs merge
+   * them one by one: tab A's goals survive tab B's new schedule. Absent on
+   * older saves: `updatedAt` stands in for any field without a time.
+   */
+  fieldTimes?: Record<string, number>
   updatedAt: number
 }
 

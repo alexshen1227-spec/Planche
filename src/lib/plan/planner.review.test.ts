@@ -117,17 +117,21 @@ describe('pressing and straight-arm skill work share recovery', () => {
 })
 
 describe('the Today card for an athlete without a gym, and the athlete’s own week', () => {
-  it('gives a skills-only athlete every day at their session length, with no gym block and no invented rest days', () => {
+  it('gives a skills-only athlete their weekly goal’s days at their session length, spread over the week, with no gym block', () => {
     const s = athlete(['planche'], {}, { gym: false })
     const week = planWeekAhead(s, MON)
+    // The weekly goal says how many days train (found by review: a goal of three once planned seven), today first.
+    const thisWeek = week.days.filter((d) => d.at < MON + 7 * 24 * HOUR)
+    expect(thisWeek.filter((d) => !d.plan.rest).length).toBe(s.settings.weeklyGoal)
+    expect(week.days[0].plan.rest).toBe(false)
     for (const d of week.days) {
-      expect(d.plan.rest, d.day).toBe(false)
       expect(d.plan.gym, d.day).toBeUndefined()
+      if (d.plan.rest) continue
       // A day the rest rule rests the planche has nothing else to train; every other day is a full session.
       if (d.plan.skill) expect(d.plan.skill.minutes, d.day).toBe(s.settings.sessionMinutes)
       else expect(d.plan.reasons.some((r) => r.includes('rest rule')), d.day).toBe(true)
     }
-    expect(week.days.filter((d) => d.plan.skill).length).toBeGreaterThanOrEqual(3)
+    expect(week.days.filter((d) => d.plan.skill).length).toBeGreaterThanOrEqual(Math.min(3, s.settings.weeklyGoal))
   })
 
   it('gives the time to skills when the gym side has goals but no place', () => {

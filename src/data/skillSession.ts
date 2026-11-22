@@ -3,6 +3,7 @@ import { hold, reps } from './blocks'
 import { withKitArticles } from './equipment'
 import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID, stepAfter, stepBefore } from './progressions'
+import { needsYouthWarmup, youthWarmup, YOUTH_WARMUP_NOTE } from './youthWarmup'
 import { pressingChoiceFor } from './pressing'
 import { SKILLS, type BlockSpec, type SkillDef } from './skills'
 import { bridgeStatus } from '../lib/bridge'
@@ -204,8 +205,12 @@ export function skillSession(
 
   // An extended warm-up is a coach safety rail and cannot be disabled by the
   // convenience preference.
-  if (state.settings.warmup || plan.warmup === 'extended') {
-    blocks.push(...skillWarmup(skill.id, stepId, plan.warmup, target))
+  // The longer straight-arm warm-up under 18 is the same kind of rail.
+  const youthWarm = needsYouthWarmup(state.profile, skill.id, now)
+  if (state.settings.warmup || plan.warmup === 'extended' || youthWarm) {
+    const base = skillWarmup(skill.id, stepId, plan.warmup, target)
+    blocks.push(...(youthWarm ? youthWarmup(state.profile, skill.id, stepId, base, target, now) : base))
+    if (youthWarm) adjustments.push(YOUTH_WARMUP_NOTE)
   }
 
   // ——— 1. An unlock attempt or a due re-test, first while fresh ———

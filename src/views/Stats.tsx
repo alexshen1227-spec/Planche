@@ -639,7 +639,7 @@ export function Stats({
             value={chartEx}
             onChange={(e) => setChartEx(e.target.value)}
             aria-label="Exercise shown in hold trend"
-            className="rounded-control border border-line bg-raised px-3 py-2 text-footnote text-ink outline-none focus:border-accent"
+            className="min-h-11 rounded-control border border-line bg-raised px-3 py-2 text-footnote text-ink outline-none focus:border-accent"
           >
             <optgroup label={`${SKILLS[viewSkill].name} road`}>
               {roadHolds.map((e) => (

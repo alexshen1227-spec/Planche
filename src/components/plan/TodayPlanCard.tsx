@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState } from 'react'
 import { FOCUS_LABEL, type GymFocus } from '../../lib/gym/builder'
-import { planWeekAhead, type ReadinessLevel } from '../../lib/plan/planner'
+import { planWeekAhead, skillRequest, type ReadinessLevel } from '../../lib/plan/planner'
 import { rememberNextBlock } from '../../lib/plan/nextBlock'
+import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useStore } from '../../lib/store'
-import { dayKey } from '../../lib/time'
+import { useToday } from '../../lib/useToday'
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import type { SkillId, WorkoutRequest } from '../../types'
 import { Button, Card, Sheet, ToggleChip } from '../ds'
@@ -48,16 +49,18 @@ export function TodayPlanCard({
   onSwitch?: (kind: 'calisthenics' | 'gym') => void
 }) {
   const { state } = useStore()
-  const [override, setOverride] = useState<number | undefined>(undefined)
-  // "Rather do … today?" holds for the day it was picked on only.
-  const [picked, setPicked] = useState<{ day: string; kind: 'calisthenics' | 'gym' } | null>(null)
+  // "I have X minutes" and "Rather do … today?" are today's choice on every
+  // screen (Home, Train, the Gym tab), for the calendar day it was made on.
+  const todayKey = useToday()
+  const [choice, setChoice] = useTodayChoice(todayKey)
+  const override = choice.minutes
+  const todayKind = choice.kind
   const [sheet, setSheet] = useState<'settings' | 'activity' | 'setup' | null>(null)
-  const today = dayKey(Date.now())
-  const todayKind = picked?.day === today ? picked.kind : undefined
   // Today is one slot of the week plan; "I have X minutes" and a picked kind re-plan the rest of the week around it.
   const week = useMemo(
     () => planWeekAhead(state, Date.now(), { ...(override !== undefined ? { todayMinutes: override } : {}), ...(todayKind ? { todayKind } : {}) }),
-    [state, override, todayKind],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state, override, todayKind, todayKey],
   )
   const plan = week.days[0].plan
   const lastSheet = useRef(sheet)
@@ -96,7 +99,8 @@ export function TodayPlanCard({
       if (opener && !skillDone && !gymDone) {
         // The lifts follow on their own once the opener is saved.
         rememberNextBlock(preset)
-        startWorkout({ source: 'auto', minutes: opener.minutes, skills: opener.skills })
+        // The place's kit goes with it: a lever with no bar at home trains on the gym's.
+        startWorkout(skillRequest(opener))
       } else onStartGym(preset)
     }
   }
@@ -136,7 +140,7 @@ export function TodayPlanCard({
       <div className="mt-2 flex flex-wrap items-center gap-2" role="group" aria-label="Minutes you have today">
         <span className="text-caption text-ink3">I have</span>
         {QUICK.map((m) => (
-          <ToggleChip key={m} active={override === m} onClick={() => setOverride(override === m ? undefined : m)}>
+          <ToggleChip key={m} active={override === m} onClick={() => setChoice({ ...choice, minutes: override === m ? undefined : m })}>
             {m} min
           </ToggleChip>
         ))}
@@ -196,7 +200,7 @@ export function TodayPlanCard({
       {switchTo ? (
         <button
           onClick={() => {
-            setPicked({ day: today, kind: switchTo })
+            setChoice({ ...choice, kind: switchTo })
             onSwitch?.(switchTo)
           }}
           className="mt-1 min-h-11 px-1 text-footnote font-medium text-accent-text"

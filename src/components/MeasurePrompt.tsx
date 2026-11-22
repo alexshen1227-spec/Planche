@@ -1,4 +1,5 @@
 import { useId, useState } from 'react'
+import { conservative } from '../lib/gym/draft'
 import type { AppState } from '../types'
 import { useStore } from '../lib/store'
 import { displayToKg, weightUnitLabel, CM_PER_IN, fmtHeight } from '../lib/units'
@@ -43,9 +44,9 @@ export function measurementDue(state: AppState, now = Date.now()): { weight: boo
   const settledIn = state.sessions.length > 0 && now - state.startedAt >= SETTLE_IN_DAYS * DAY
   // A growing athlete is not nudged about bodyweight on a schedule — it stays
   // one tap away in Settings, never a recurring prompt.
-  const birthYear = state.profile.birthYear
-  // Birth year only: a difference of 18 may still be 17.
-  const minor = birthYear !== undefined && new Date(now).getFullYear() - birthYear <= 18
+  // The gym's rule, so the two cannot disagree: under 18, or no age set, is
+  // careful (a birth year difference of 18 may still be 17).
+  const minor = conservative(state.profile, now)
   // Bodyweight tracking is opt-in (Fitness Lab): optional, neutral, off by default.
   const tracking = state.settings.trackBodyweight === true
   return {

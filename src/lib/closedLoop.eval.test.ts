@@ -97,6 +97,7 @@ function runLoop(
   let state: AppState = {
     ...base,
     onboarded: true,
+    profile: { ...base.profile, birthYear: 1990 },
     stepId,
     baseStepId: stepId,
     unlocked: STEPS.filter((s) => s.order <= STEP_BY_ID[stepId].order).map((s) => s.id),

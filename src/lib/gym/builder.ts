@@ -216,9 +216,13 @@ export function buildGymSession(input: {
   }
   // A movement the athlete likes best at this very place wins its slot there.
   const favouriteHere = (e: GymExercise) => (location !== undefined && input.favoriteAt?.[e.id] === location.id ? FAVOURITE_HERE_BONUS : 0)
+  // A movement that needs coaching is never a first pick: last for under-18s, and for anyone who has
+  // not logged it yet, unless they rated it love.
+  const technicalPenalty = (e: GymExercise) =>
+    e.technical && ratings[e.id] !== 'love' && (youth || !lastLogged.has(e.id)) ? 5 : 0
   const scoreOf = (e: GymExercise, extra = 0) =>
     preferenceRank(e.id, ratings, location) +
-    (youth && e.technical && ratings[e.id] !== 'love' ? 5 : 0) +
+    technicalPenalty(e) +
     (e.compound ? 0 : 0.25) -
     (isPriority(e) ? 1 : 0) -
     favouriteHere(e) +
@@ -295,7 +299,7 @@ export function buildGymSession(input: {
           e,
           score:
             preferenceRank(e.id, ratings, location) +
-            (youth && e.technical && ratings[e.id] !== 'love' ? 5 : 0) -
+            technicalPenalty(e) -
             favouriteHere(e) +
             // Within a slot the earlier-listed pattern is the one the slot is for.
             slot.indexOf(e.pattern) * 0.5 +

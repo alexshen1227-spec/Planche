@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react'
 import { FOCUS_LABEL } from '../../lib/gym/builder'
 import type { ActivityKind } from '../../lib/gym/types'
 import { planWeekAhead, type WeekAhead, type WeekDayPlan } from '../../lib/plan/planner'
+import { choiceOptions, useTodayChoice } from '../../lib/plan/todayChoice'
 import { useStore } from '../../lib/store'
+import { useToday } from '../../lib/useToday'
 import type { SkillId } from '../../types'
 
 const SHORT: Record<SkillId, string> = {
@@ -21,11 +23,11 @@ const SPORT: Record<ActivityKind, string> = {
   other: 'Sport',
 }
 
-/** A day in words, for its button and its detail: "Gym · Pull, opens with Lever", "Calisthenics · Planche + Lever", "Rest". */
+/** A day in words, for its button and its detail: "Gym · Pull · lever first", "Calisthenics · Planche + Lever", "Rest". */
 function dayWords({ plan }: WeekDayPlan): string {
   if (plan.rest) return 'Rest'
   const skills = (plan.skill?.skills ?? []).map((s) => SHORT[s]).join(' + ')
-  if (plan.kind === 'gym' && plan.gym) return `Gym · ${FOCUS_LABEL[plan.gym.focus]}${plan.skill?.opener ? `, opens with ${skills}` : ''}`
+  if (plan.kind === 'gym' && plan.gym) return `Gym · ${FOCUS_LABEL[plan.gym.focus]}${plan.skill?.opener ? ` · ${skills.toLowerCase()} first` : ''}`
   if (plan.kind === 'calisthenics') return `Calisthenics · ${skills}`
   return 'Nothing planned'
 }
@@ -38,7 +40,18 @@ function dayWords({ plan }: WeekDayPlan): string {
  */
 export function WeekPreview({ week: given }: { week?: WeekAhead } = {}) {
   const { state } = useStore()
-  const computed = useMemo(() => (given ? null : planWeekAhead(state)), [state, given])
+  // Today's choice and the calendar day: the same today as every other screen, re-planned after midnight.
+  const todayKey = useToday()
+  const [choice] = useTodayChoice(todayKey)
+  const computed = useMemo(
+    () => {
+      if (given) return null
+      const c = choiceOptions(choice)
+      return planWeekAhead(state, Date.now(), { ...(c.minutes !== undefined ? { todayMinutes: c.minutes } : {}), ...(c.kind ? { todayKind: c.kind } : {}) })
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state, given, todayKey, choice.kind, choice.minutes],
+  )
   const week = given ?? computed!
   const [picked, setPicked] = useState(0)
   const selected = week.days[Math.min(picked, week.days.length - 1)]
@@ -50,7 +63,8 @@ export function WeekPreview({ week: given }: { week?: WeekAhead } = {}) {
           {week.missed.map((m) => m.text).join(' ')}
         </p>
       ) : null}
-      <ol className="mt-2 grid grid-cols-7 gap-1.5">
+      {/* At least 44 px a day: seven columns on a phone were 39 px, so the row scrolls rather than shrinks. */}
+      <ol className="mt-2 grid auto-cols-[minmax(2.75rem,1fr)] grid-flow-col gap-1.5 overflow-x-auto pb-1">
         {week.days.map((d, i) => {
           const { day, at, plan, sport, movedFrom } = d
           const label = i === 0 ? 'Today' : new Date(at).toLocaleDateString(undefined, { weekday: 'short' })
@@ -70,15 +84,17 @@ export function WeekPreview({ week: given }: { week?: WeekAhead } = {}) {
                 {plan.rest ? <span className="my-auto text-caption text-ink3">Rest</span> : null}
                 {plan.kind === 'calisthenics' && skills.length ? (
                   <span className="rounded-md bg-accent-soft px-1 py-0.5 text-caption font-medium leading-tight text-accent-text">
+                    <span className="block text-[10px] font-semibold uppercase tracking-wide">Skills</span>
                     {skills.length > 2 ? `${skills.length} skills` : skills.map((s) => SHORT[s]).join(' + ')}
                   </span>
                 ) : null}
                 {plan.kind === 'gym' && plan.gym ? (
                   <span className="rounded-md border border-line-strong px-1 py-0.5 text-caption font-medium leading-tight text-ink">
+                    <span className="block text-[10px] font-semibold uppercase tracking-wide text-ink3">Gym</span>
                     {FOCUS_LABEL[plan.gym.focus].replace(' body', '')}
                   </span>
                 ) : null}
-                {opener ? <span className="text-caption leading-tight text-accent-text">{SHORT[opener]} first</span> : null}
+                {opener ? <span className="text-caption leading-tight text-accent-text">{SHORT[opener].toLowerCase()} first</span> : null}
                 {sport ? (
                   <span className="rounded-md border border-line px-1 py-0.5 text-caption leading-tight text-ink2">{SPORT[sport.kind]}</span>
                 ) : null}
@@ -105,8 +121,8 @@ export function WeekPreview({ week: given }: { week?: WeekAhead } = {}) {
         </div>
       ) : null}
       <p className="mt-1.5 text-caption text-ink3">
-        A plan, not a promise — each day is planned again from what you actually did. Coloured chips are calisthenics days,
-        outlined ones gym days; which is which follows your goals (the app’s own split). Spreading weekly sets, two-day gaps
+        A plan, not a promise — each day is planned again from what you actually did. Each day says its kind — Skills (calisthenics)
+        or Gym, with any skill that goes first; which is which follows your goals (the app’s own split). Spreading weekly sets, two-day gaps
         for hard straight-arm work and fresh legs around your sport are coaching conventions.
       </p>
     </section>

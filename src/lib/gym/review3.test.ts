@@ -205,7 +205,7 @@ describe('a place a movement is liked at', () => {
     const first = (location: GymLocation, favoriteAt?: Record<string, string>) =>
       buildGymSession({ ...base, location, favoriteAt }).items[0].exerciseId
     const usual = first(gymA)
-    const other = availableAt(gymA).find((e) => e.pattern === 'squat' && e.compound && !e.explosive && e.id !== usual)!
+    const other = availableAt(gymA).find((e) => e.pattern === 'squat' && e.compound && !e.explosive && !e.technical && e.id !== usual)!
     expect(other).toBeDefined()
     expect(first(gymA, { [other.id]: 'a' })).toBe(other.id)
     expect(first(gymA, { [other.id]: 'somewhere-else' })).toBe(usual)

@@ -91,7 +91,9 @@ describe('the day plan', () => {
   })
 
   it('rests a straight-arm family inside the rest window, and trains the other', () => {
-    const s = { ...athlete(['planche', 'frontlever']), sessions: [skillSession(NOW - 20 * HOUR, 'tuck-planche')] }
+    // The lever needs its bar in the athlete's own kit: a calisthenics day is built from that list.
+    const a = athlete(['planche', 'frontlever'])
+    const s = { ...a, profile: { ...a.profile, equipment: [...a.profile.equipment, 'pullup-bar' as const] }, sessions: [skillSession(NOW - 20 * HOUR, 'tuck-planche')] }
     expect(lastHardStraightArm(s.sessions, NOW).push).toBe(NOW - 20 * HOUR)
     const p = planToday(s, { now: NOW, minutes: 60, kind: 'calisthenics' })
     expect(p.skill!.skills).toEqual(['frontlever'])

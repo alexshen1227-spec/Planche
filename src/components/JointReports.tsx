@@ -80,7 +80,7 @@ export function JointReports() {
               })
               pushToast('Marked as a mistake. It stays in your history but no longer counts.', 'info', 5000)
             }}
-            className="min-h-9 shrink-0 rounded-lg border border-line bg-surface px-2.5 py-1 text-[12px] font-medium text-ink2 hover:text-ink"
+            className="min-h-11 shrink-0 rounded-lg border border-line bg-surface px-3 py-1 text-[12px] font-medium text-ink2 hover:text-ink"
           >
             That was a mistake
           </button>

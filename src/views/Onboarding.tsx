@@ -94,6 +94,9 @@ const SECTION_OF: Record<Stage, number> = {
   safety: 6,
 }
 
+/** The screens inside the Skills section, in order, so the bar can say where in it you are. */
+const SKILLS_SCREENS: Stage[] = ['skills', 'goal', 'interview', 'result']
+
 const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th']
 
 /**
@@ -444,7 +447,10 @@ export function Onboarding() {
   }
 
   const sectionIndex = SECTION_OF[stage]
-  const progressText = `Step ${sectionIndex + 1} of ${SECTIONS.length} · ${SECTIONS[sectionIndex]}`
+  const inSkills = SKILLS_SCREENS.indexOf(stage)
+  const progressText = `Step ${sectionIndex + 1} of ${SECTIONS.length} · ${SECTIONS[sectionIndex]}${
+    inSkills >= 0 ? ` · ${inSkills + 1} of ${SKILLS_SCREENS.length}` : ''
+  }`
   // The primary action: big, last in the row, within thumb reach. Back is quiet.
   const primaryBtn = 'min-h-[52px] flex-1'
   const backBtn =
@@ -575,8 +581,9 @@ export function Onboarding() {
               add, drop or reorder them later.
             </p>
             <p className="mt-2 rounded-inner border border-line bg-surface p-3 text-center text-footnote leading-relaxed text-ink2">
-              Fitness Lab needs at least one skill to build around, so pick one even if the gym matters more to you. If
-              it does, go back and give “Calisthenics skills” a low weight in Goals — the gym then gets most of each day.
+              Pick at least one skill; it is what the plan builds a skill day around. Goals can still set Calisthenics
+              skills to Off: then the plan schedules no calisthenics until you turn it back on, and the skill you
+              choose here waits for that.
             </p>
             <div className="mt-6 space-y-2.5" role="group" aria-label="Skills to train">
               {SKILL_LIST.map((def) => {

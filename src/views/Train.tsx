@@ -42,6 +42,8 @@ import { STRATEGY_BY_ID } from '../lib/coach'
 import { useToday } from '../lib/useToday'
 import { ASSIST_LABEL } from '../components/SetupRow'
 import { WeekPlanCard } from '../components/WeekPlanCard'
+import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
+import { becamePainSafe, maxTestOffered } from '../lib/plan/screens'
 import { Button, SegmentedControl } from '../components/ds'
 
 const SECTION_LABEL: Record<Section, string> = {
@@ -69,7 +71,7 @@ function requestKey(request: WorkoutRequest): string {
   return `${request.source}:${request.templateId ?? ''}:${request.stepId ?? ''}:${request.minutes ?? ''}:${(request.skills ?? []).join('+')}:${request.focus ?? ''}`
 }
 
-function SkillsTrain({ startWorkout, kind }: { startWorkout: (request: WorkoutRequest) => void; kind?: 'calisthenics' | 'gym' }) {
+function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest) => void }) {
   const { state } = useStore()
   const [previewRequest, setPreviewRequest] = useState<WorkoutRequest | null>(null)
   const [quickLog, setQuickLog] = useState(false)
@@ -92,7 +94,10 @@ function SkillsTrain({ startWorkout, kind }: { startWorkout: (request: WorkoutRe
   // and its skills — the same request the Today card starts, so the two cards
   // never show different sessions (35 minutes there once read ~42 here).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const dayPlan = useMemo(() => planToday(state, kind ? { kind } : {}), [state, todayKey, kind])
+  // Today's choice ("Rather do … today?", "I have X min") is one for every screen.
+  const [choice] = useTodayChoice(todayKey)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const dayPlan = useMemo(() => planToday(state, choiceOptions(choice)), [state, todayKey, choice.kind, choice.minutes])
   const recommended: WorkoutRequest = useMemo(
     () =>
       // Only a calisthenics day's own block is today's calisthenics session: on a
@@ -116,6 +121,8 @@ function SkillsTrain({ startWorkout, kind }: { startWorkout: (request: WorkoutRe
   // skills on a pain-safe day — for the week card's sentence about today.
   const todaySkills = isPainSafe(today) ? [] : (today.lineup?.map((entry) => entry.skill) ?? today.skills)
   const testBlocked = challengeBlockedReason(plan)
+  // No max test card for a first session, nor on a day it is blocked: it once sat there saying "Not today".
+  const showTest = maxTestOffered(state, testBlocked)
   const preview: Workout | null = useMemo(
     () =>
       previewRequest
@@ -181,7 +188,7 @@ function SkillsTrain({ startWorkout, kind }: { startWorkout: (request: WorkoutRe
       <div className="mt-5 grid gap-3 lg:grid-cols-3">
         <button
           onClick={() => setPreviewRequest(recommended)}
-          className="card-int card-sheen group relative overflow-hidden rounded-card border border-accent/25 bg-surface p-6 text-left shadow-card hover:border-accent/50 lg:col-span-2"
+          className={`card-int card-sheen group relative overflow-hidden rounded-card border border-accent/25 bg-surface p-6 text-left shadow-card hover:border-accent/50 ${showTest ? 'lg:col-span-2' : 'lg:col-span-3'}`}
         >
           <div className="pointer-events-none absolute -right-8 -top-12 h-44 w-44 rounded-full bg-accent-soft blur-2xl" />
           <div className="relative">
@@ -217,6 +224,7 @@ function SkillsTrain({ startWorkout, kind }: { startWorkout: (request: WorkoutRe
             </div>
           </div>
         </button>
+        {showTest ? (
         <div className="card-int group rounded-card border border-line bg-surface p-6 text-left shadow-card">
           <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wider text-ink3">
             <Icon name="target" size={14} /> Test day
@@ -254,6 +262,7 @@ function SkillsTrain({ startWorkout, kind }: { startWorkout: (request: WorkoutRe
             </button>
           )}
         </div>
+        ) : null}
       </div>
 
       {/* The athlete's own week — which day is for which skill — above the
@@ -382,6 +391,12 @@ function SkillsTrain({ startWorkout, kind }: { startWorkout: (request: WorkoutRe
             <div className="pr-10">
               <h2 className="font-display text-[22px] font-bold text-ink">{preview.name}</h2>
               <p className="mt-1 text-body text-ink2">{preview.focus}</p>
+              {becamePainSafe(previewRequest, preview, isPainSafe) ? (
+                <p className="mt-2 rounded-inner border border-line bg-raised px-3 py-2 text-footnote text-ink2">
+                  Today’s joint report turned this {(previewRequest?.skills ?? []).map((s) => SKILLS[s].name.toLowerCase()).join(' and ')} day into the
+                  pain-safe session; the skill work comes back once the report clears.
+                </p>
+              ) : null}
               {preview.lineup && preview.lineup.length > 1 ? (
                 <ul className="mt-2 space-y-1">
                   {preview.lineup.map((entry) => (
@@ -716,8 +731,6 @@ export function Train({
     setGymPreset(nextGym)
     onNextGymUsed?.()
   }, [nextGym, onNextGymUsed])
-  // "Rather do the gym today?" on the Today card: the other kind, for today.
-  const [pick, setPick] = useState<'calisthenics' | 'gym' | undefined>(undefined)
   const choose = (m: 'skills' | 'gym') => {
     setMode(m)
     try {
@@ -734,10 +747,7 @@ export function Train({
           choose('gym')
           setGymPreset(preset)
         }}
-        onSwitch={(k) => {
-          setPick(k)
-          choose(k === 'gym' ? 'gym' : 'skills')
-        }}
+        onSwitch={(k) => choose(k === 'gym' ? 'gym' : 'skills')}
       />
       <SegmentedControl
         className="mx-auto mb-5 max-w-sm"
@@ -750,7 +760,7 @@ export function Train({
         ]}
       />
       {mode === 'skills' ? (
-        <SkillsTrain startWorkout={startWorkout} kind={pick} />
+        <SkillsTrain startWorkout={startWorkout} />
       ) : (
         <GymHub preset={gymPreset} onPresetUsed={() => setGymPreset(null)} startWorkout={startWorkout} />
       )}

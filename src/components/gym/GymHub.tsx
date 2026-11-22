@@ -2,14 +2,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
-import { buildGymSession, FOCUS_LABEL, nextFocus, type GymFocus, type PlannedExercise } from '../../lib/gym/builder'
+import { buildGymSession, FOCUS_LABEL, type GymFocus, type PlannedExercise } from '../../lib/gym/builder'
 import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
 import { activeLocation, conservative, loadDraft, prefillReps, previousSets, type GymDraft } from '../../lib/gym/draft'
-import { gymOpener, gymSessionInputs as followPlan, planToday, skillFamily, soreJoints } from '../../lib/plan/planner'
+import { gymToday, MIN_GYM_MINUTES, planToday, skillFamily, skillRequest, soreJoints } from '../../lib/plan/planner'
 import { rememberNextBlock } from '../../lib/plan/nextBlock'
+import { choiceOptions, useTodayChoice } from '../../lib/plan/todayChoice'
+import { useToday } from '../../lib/useToday'
 import type { SkillId, WorkoutRequest } from '../../types'
-import { gymRecords, lastPerformance } from '../../lib/gym/progression'
+import { countUnit, gymRecords, lastPerformance } from '../../lib/gym/progression'
 import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
 import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { Icon } from '../Icon'
@@ -37,16 +39,19 @@ export function GymHub({
   const { state, dispatch } = useStore()
   const gym = state.gym
   const youth = conservative(state.profile)
-  // Today's plan, as the Today card shows it: the gym's minutes and focus by
-  // default, so the two screens never offer different sessions for one day.
-  const today = useMemo(() => planToday(state), [state])
-  const planned = today.gym
+  // Today as every screen plans it (today's choice included), keyed on the
+  // calendar day so a screen left open past midnight plans the new day.
+  const todayKey = useToday()
+  const [choice] = useTodayChoice(todayKey)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const today = useMemo(() => planToday(state, choiceOptions(choice)), [state, todayKey, choice.kind, choice.minutes])
   // The pain memory applies whoever picks the focus: it once applied only to a
   // session started from the Today card, so an elbow report still got
   // barbell presses from an Upper body pick here.
-  const sore = useMemo(() => soreJoints(state, Date.now()), [state])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const sore = useMemo(() => soreJoints(state, Date.now()), [state, todayKey])
   // The whole session's minutes, an opener included (a gym day's total).
-  const [minutes, setMinutes] = useState(() => (today.kind === 'gym' ? today.minutes : planned?.minutes ?? 45))
+  const [minutes, setMinutes] = useState(() => Math.max(MIN_GYM_MINUTES, choice.minutes ?? (today.minutes > 0 ? today.minutes : 45)))
   const [skipOpener, setSkipOpener] = useState(false)
   const [focus, setFocus] = useState<GymFocus | 'auto'>('auto')
   const [editing, setEditing] = useState<string | 'new' | null>(null)
@@ -56,28 +61,34 @@ export function GymHub({
   const [resumable, setResumable] = useState<GymDraft | null>(() => loadDraft())
   const location = activeLocation(gym)
 
-  // The focus this session will have, so the opener can be decided before the lifts are built.
-  const resolvedFocus: GymFocus | undefined =
-    gym && location ? (focus !== 'auto' ? focus : planned?.focus ?? nextFocus(gym.sessions, Date.now(), gym.prefs?.musclesOff)) : undefined
-  // A push or pull day may open with the matching skill (front lever first on a
-  // pull day), by the same rule the week plan uses: rest rule, sore joints, kit.
-  const opener = useMemo(
-    () => (startWorkout && location && resolvedFocus && !skipOpener ? gymOpener(state, resolvedFocus, location, Date.now(), minutes) : undefined),
-    [startWorkout, location, resolvedFocus, skipOpener, state, minutes],
+  // The coach's gym session for now, as if today were a gym day: the focus, the
+  // day's limits (season, sport, deload, joints) and the opener all come from
+  // the plan, and a picked focus keeps every limit. Auto once followed a
+  // rotation by session name on any day the plan had not made a gym day.
+  const auto = useMemo(
+    () => (gym && location ? gymToday(state, { now: Date.now(), minutes, focus: 'auto', location }) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state, gym, location, minutes, todayKey],
   )
-  const offeredOpener = useMemo(
-    () => (startWorkout && location && resolvedFocus ? gymOpener(state, resolvedFocus, location, Date.now(), minutes) : undefined),
-    [startWorkout, location, resolvedFocus, state, minutes],
+  const coach = useMemo(
+    () => (focus === 'auto' ? auto : gym && location ? gymToday(state, { now: Date.now(), minutes, focus, location }) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [auto, state, gym, location, minutes, focus, todayKey],
   )
+  const resolvedFocus: GymFocus | undefined = coach?.focus
+  const offeredOpener = startWorkout ? coach?.opener : undefined
+  const opener = skipOpener ? undefined : offeredOpener
   const liftMinutes = minutes - (opener?.minutes ?? 0)
   const plan = useMemo(
     () =>
-      gym && location
+      gym && location && coach && resolvedFocus
         ? buildGymSession({
             location,
             minutes: liftMinutes,
-            ...followPlan(focus, planned, gym.prefs?.musclesOff ?? [], sore),
-            ...(resolvedFocus ? { focus: resolvedFocus } : {}),
+            focus: resolvedFocus,
+            musclesOff: coach.musclesOff,
+            avoidJoints: coach.avoidJoints,
+            volumeFactor: coach.volumeFactor,
             favoriteAt: gym.favoriteAt,
             sessions: gym.sessions,
             ratings: gym.ratings,
@@ -85,7 +96,7 @@ export function GymHub({
             ...(gym.prefs ? { goals: gym.prefs.goals, priority: gym.prefs.musclesPriority } : {}),
           })
         : null,
-    [gym, location, liftMinutes, focus, resolvedFocus, youth, planned, sore],
+    [gym, location, liftMinutes, resolvedFocus, youth, coach],
   )
   const records = useMemo(() => (gym ? gymRecords(gym.sessions) : {}), [gym])
 
@@ -160,22 +171,26 @@ export function GymHub({
     // skill loads, named just now leaves it out.
     const famJoints: Joint[] = opener ? (skillFamily(opener.skills[0]) === 'push' ? ['wrists', 'elbows', 'shoulders'] : ['elbows', 'shoulders']) : []
     if (!p && !pending.empty && opener && startWorkout && kind !== 'pain' && !joints.some((j) => famJoints.includes(j))) {
-      const f = resolvedFocus ?? 'full'
-      const inputs = followPlan(focus, planned, gym.prefs?.musclesOff ?? [], sore)
       rememberNextBlock<GymPreset>({
-        focus: f,
+        focus: resolvedFocus ?? 'full',
         minutes: liftMinutes,
-        avoidJoints: [...new Set([...inputs.avoidJoints, ...joints])],
-        volumeFactor: inputs.volumeFactor,
-        musclesOff: inputs.musclesOff,
+        avoidJoints: [...new Set([...(coach?.avoidJoints ?? []), ...joints])],
+        volumeFactor: coach?.volumeFactor ?? 1,
+        musclesOff: coach?.musclesOff ?? gym.prefs?.musclesOff ?? [],
       })
       setPending(null)
-      startWorkout({ source: 'auto', minutes: opener.minutes, skills: opener.skills })
+      // The place's kit goes with it: a lever with no bar at home trains on the gym's.
+      startWorkout(skillRequest(opener))
       return
     }
     const base = p
       ? { focus: p.focus, musclesOff: p.musclesOff ?? gym.prefs?.musclesOff ?? [], avoidJoints: p.avoidJoints ?? [], volumeFactor: p.volumeFactor ?? 1 }
-      : followPlan(focus, planned, gym.prefs?.musclesOff ?? [], sore)
+      : {
+          ...(resolvedFocus ? { focus: resolvedFocus } : {}),
+          musclesOff: coach?.musclesOff ?? gym.prefs?.musclesOff ?? [],
+          avoidJoints: coach?.avoidJoints ?? [],
+          volumeFactor: coach?.volumeFactor ?? 1,
+        }
     const avoidJoints = [...new Set([...base.avoidJoints, ...sore.joints, ...joints])]
     const musclesOff = base.musclesOff
     const built = pending.empty
@@ -215,7 +230,7 @@ export function GymHub({
     .filter((r) => r.bestE1rm)
     .sort((a, b) => b.bestE1rm!.kg - a.bestE1rm!.kg)
     .slice(0, 6)
-  const autoFocus = planned?.focus ?? nextFocus(gym.sessions, Date.now(), gym.prefs?.musclesOff)
+  const autoFocus = auto?.focus
 
   return (
     <div className="space-y-5">
@@ -282,7 +297,7 @@ export function GymHub({
       <Card>
         <CardTitle>Today’s gym session</CardTitle>
         <p className="-mt-2 text-footnote text-ink3">
-          Built from what {location.name} has, your likes and your last sessions{planned ? '; Auto follows today’s plan' : ''}.
+          Built from what {location.name} has, your likes and your last sessions. Auto is today planned as a gym day; any focus keeps today’s limits.
         </p>
         {sore.joints.length ? (
           <p className="mt-3 rounded-control bg-raised p-3 text-footnote text-ink2">
@@ -303,7 +318,7 @@ export function GymHub({
         <div className="mt-1 flex flex-wrap gap-2">
           {FOCI.map((f) => (
             <ToggleChip key={f} active={focus === f} onClick={() => setFocus(f)}>
-              {f === 'auto' ? `Auto (${FOCUS_LABEL[autoFocus]})` : FOCUS_LABEL[f]}
+              {f === 'auto' ? (autoFocus ? `Auto (${FOCUS_LABEL[autoFocus]})` : 'Auto') : FOCUS_LABEL[f]}
             </ToggleChip>
           ))}
         </div>
@@ -319,7 +334,11 @@ export function GymHub({
               {skipOpener ? 'Add it' : 'Skip it'}
             </Button>
           </div>
+        ) : coach?.noOpener ? (
+          <p className="mt-3 text-caption text-ink3">No skill work first: {coach.noOpener}</p>
         ) : null}
+        {coach?.limits.length ? <p className="mt-3 text-caption text-ink2">Today: {coach.limits.join(' ')}</p> : null}
+        {!resolvedFocus && coach?.noFocus ? <p className="mt-3 rounded-control bg-raised p-3 text-footnote text-ink2">{coach.noFocus}</p> : null}
         {plan && plan.items.length ? (
           <ol className="mt-4 divide-y divide-line">
             {plan.items.map((it) => {
@@ -331,7 +350,7 @@ export function GymHub({
                     <span className="block text-caption text-ink3">{it.suggestion.why}</span>
                   </span>
                   <span className="shrink-0 text-right text-footnote tnum text-ink2">
-                    {it.sets} × {it.plan.range[0]}–{it.plan.range[1]}
+                    {it.sets} × {it.plan.range[0]}–{it.plan.range[1]}{countUnit(ex) === 'seconds' ? ' s' : ''}
                     <br />
                     {it.suggestion.kg !== undefined ? formatLoad(it.suggestion.kg, unitFor(ex, location)) : ex.load === 'bodyweight' ? 'Bodyweight' : 'Pick a weight'}
                   </span>

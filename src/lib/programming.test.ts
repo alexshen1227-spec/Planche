@@ -43,7 +43,7 @@ function athlete(stepId: AppState['stepId'], overrides: Partial<AppState> = {}):
     baseStepId: stepId,
     unlocked: STEPS.filter((s) => s.order <= STEP_BY_ID[stepId].order).map((s) => s.id),
     ...overrides,
-    profile: { ...base.profile, equipment: ['floor', 'parallettes'], ...overrides.profile },
+    profile: { ...base.profile, equipment: ['floor', 'parallettes'], birthYear: 1990, ...overrides.profile },
     settings: { ...base.settings, ...overrides.settings },
   }
 }

@@ -1,9 +1,10 @@
 import { MUSCLE_BY_ID, MUSCLES, type Joint, type Muscle } from '../../data/gym/catalog'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { STEP_BY_ID } from '../../data/progressions'
+import { kitNeedsPhrase } from '../../data/equipment'
 import { missingKit } from '../../data/skills'
 import { finalizeWorkout } from '../../data/workouts'
-import type { AppState, BodyRegion, EquipmentId, LineupRole, Session, SkillId } from '../../types'
+import type { AppState, BodyRegion, EquipmentId, LineupRole, Session, SkillId, WorkoutRequest } from '../../types'
 import { forecastUnlock, goalOutlook } from '../forecast'
 import { todaysLineup } from '../lineup'
 import { fullParts, shortDoses } from '../sessionRoom'
@@ -139,31 +140,6 @@ export interface SoreJoints {
 }
 
 /**
- * What a gym session built on the Gym side follows. "Auto" is today's plan —
- * its focus, its lighter-day factor and the legs it keeps out for sport — and
- * the pain memory holds whichever focus is picked (an Upper body pick once got
- * barbell presses the day after an elbow report); an explicit pick keeps only
- * the athlete's own switched-off muscles beside it.
- */
-export function gymSessionInputs(
-  focus: GymFocus | 'auto',
-  planned: TodayPlan['gym'],
-  musclesOff: Muscle[],
-  sore: SoreJoints,
-): { focus?: GymFocus; musclesOff: Muscle[]; avoidJoints: Joint[]; volumeFactor: number } {
-  const avoidJoints = [...new Set([...(planned?.avoidJoints ?? []), ...sore.joints])]
-  if (focus === 'auto' && planned) {
-    return { focus: planned.focus, musclesOff: planned.musclesOff, avoidJoints, volumeFactor: planned.volumeFactor }
-  }
-  return {
-    ...(focus === 'auto' ? {} : { focus }),
-    musclesOff,
-    avoidJoints,
-    volumeFactor: Math.min(planned?.volumeFactor ?? 1, sore.pain ? 0.6 : 1),
-  }
-}
-
-/**
  * The pain memory every gym session obeys, whoever builds it: the union of
  * every report that was not "all good" in the last 72 hours (never only the
  * latest), the same reading the week plan uses day by day.
@@ -184,11 +160,37 @@ interface OpenerDay {
   minutes: number
   sore: Joint[]
   pain: boolean
-  /** Whether the family's rest rule allows a hard session of it today (the gym day itself is today's). */
-  clear: (family: Straight) => boolean
+  /** Why the family's rest rule keeps a hard session of it off today, or nothing when it is clear (the gym day itself is today's). */
+  blocked: (family: Straight) => string | undefined
 }
 
 const trainedSkills = (state: AppState) => (state.profile.skills?.length ? state.profile.skills : ['planche']) as SkillId[]
+
+/** Whether a skill can train with the athlete's own kit: a calisthenics day is built from that list, so only these can hold one. */
+function canTrainAtHome(state: AppState, skill: SkillId): boolean {
+  return missingKit(skill, state.profile.equipment).length === 0
+}
+
+/** The athlete's kit and the place's together: what a session built there can use. */
+/** Kit an athlete can bring: a doorway bar or a wall at home is not at the gym. */
+const PORTABLE_KIT: EquipmentId[] = ['floor', 'parallettes', 'band', 'rings']
+
+/**
+ * What can be used at a place: its own list, plus the athlete's kit that
+ * travels. A home pull-up bar once counted at a gym with none, so a lever
+ * opener was offered where nothing could hold it.
+ */
+function kitAt(state: AppState, location: GymLocation): EquipmentId[] {
+  const carried = state.profile.equipment.filter((e) => PORTABLE_KIT.includes(e))
+  return [...new Set([...carried, ...(location.equipment as EquipmentId[])])]
+}
+
+/**
+ * Rest between two planned days, counted in calendar days: two 5 pm anchors
+ * are 47 hours apart across a spring-forward change, and a 48 h rule then
+ * pushed a session out a day. Logged sessions keep their real hours.
+ */
+const apart = (a: number, b: number) => Math.round(Math.abs(startOfDay(a) - startOfDay(b)) / DAY) * DAY
 
 /**
  * The skill a gym day of this focus opens with, or none: the athlete's
@@ -201,26 +203,48 @@ const trainedSkills = (state: AppState) => (state.profile.skills?.length ? state
  * is CONSENSUS; the shared joints are INFERENCE from the positions.
  */
 function openerSkill(state: AppState, focus: GymFocus, location: GymLocation, day: OpenerDay): SkillId | undefined {
-  const goals = state.gym?.prefs?.goals ?? defaultPrefs(0).goals
-  if (goals.skills <= 0 || day.pain || day.minutes < OPENER_MINUTES + MIN_GYM_MINUTES) return undefined
+  return openerVerdict(state, focus, location, day).skill
+}
+
+/**
+ * `openerSkill`'s decision with its reason: the skill a gym day of this focus
+ * opens with, or why none does (said on the Gym side). The kit is the place's
+ * and the athlete's together — a front lever with no bar at home still opens a
+ * pull day at a gym that has one.
+ */
+function openerVerdict(state: AppState, focus: GymFocus, location: GymLocation, day: OpenerDay): { skill?: SkillId; why?: string } {
   const families = focusFamilies(focus)
-  const placeKit = location.equipment as EquipmentId[]
-  return trainedSkills(state).find((s) => {
+  const candidates = trainedSkills(state).filter((s) => {
     const f = skillFamily(s)
-    return (
-      f !== 'balance' &&
-      families.includes(f) &&
-      day.clear(f) &&
-      !FAMILY_JOINTS[f].some((j) => day.sore.includes(j)) &&
-      missingKit(s, placeKit).length === 0 &&
-      missingKit(s, state.profile.equipment).length === 0
-    )
+    return f !== 'balance' && families.includes(f)
   })
+  if (!candidates.length) return {}
+  const goals = state.gym?.prefs?.goals ?? defaultPrefs(0).goals
+  if (goals.skills <= 0) return { why: 'Skills are not among your goals, so the lifts start the session.' }
+  if (day.pain) return { why: 'You reported pain, so no skill work goes first today.' }
+  if (day.minutes < OPENER_MINUTES + MIN_GYM_MINUTES) {
+    return { why: `${day.minutes} minutes has no room for skill work first: an opener and the lifts take ${OPENER_MINUTES + MIN_GYM_MINUTES} minutes or more.` }
+  }
+  const kit = kitAt(state, location)
+  let why: string | undefined
+  for (const s of candidates) {
+    const f = skillFamily(s) as Straight
+    const sore = FAMILY_JOINTS[f].filter((j) => day.sore.includes(j))
+    const missing = missingKit(s, kit)
+    const rest = day.blocked(f)
+    if (!rest && !sore.length && !missing.length) return { skill: s }
+    why ??= sore.length
+      ? `Your ${joinNames(sore.map((j) => j.replace('-', ' ')))} report keeps the ${skillName(s)} out of today.`
+      : missing.length
+        ? `The ${skillName(s)} needs ${kitNeedsPhrase(missing)}, which neither your kit nor ${location.name} has.`
+        : rest
+  }
+  return why ? { why } : {}
 }
 
 /** Main sets of each straight-arm family in the session a request builds, counted as a logged one is (`lastHardStraightArm`). */
-function familySets(state: AppState, skills: SkillId[], minutes: number, at: number): Record<Straight, number> {
-  const built = finalizeWorkout(state, { source: 'auto', minutes, skills }, undefined, at)
+function familySets(state: AppState, skills: SkillId[], minutes: number, at: number, kit?: EquipmentId[]): Record<Straight, number> {
+  const built = finalizeWorkout(state, { source: 'auto', minutes, skills, ...(kit ? { kit } : {}) }, undefined, at)
   const sets = { push: 0, pull: 0 }
   for (const b of built.blocks) {
     if (b.section !== 'main' && b.section !== 'strength') continue
@@ -230,35 +254,140 @@ function familySets(state: AppState, skills: SkillId[], minutes: number, at: num
   return sets
 }
 
-/** An opener block: the skill's ordinary one-skill session, hard when it gives three or more main sets of its family. */
-function openerBlock(state: AppState, skill: SkillId, at: number): SkillBlock {
+/**
+ * An opener block: the skill's ordinary one-skill session, built with the
+ * place's kit beside the athlete's (`kit`), hard when it gives three or more
+ * main sets of its family.
+ */
+function openerBlock(state: AppState, skill: SkillId, at: number, place: GymLocation): SkillBlock {
   const f = skillFamily(skill)
-  const hard = f !== 'balance' && familySets(state, [skill], OPENER_MINUTES, at)[f] >= 3
-  return { minutes: OPENER_MINUTES, skills: [skill], hard: hard ? [f as Straight] : [], opener: true }
+  const kit = place.equipment as EquipmentId[]
+  const hard = f !== 'balance' && familySets(state, [skill], OPENER_MINUTES, at, kit)[f] >= 3
+  return { minutes: OPENER_MINUTES, skills: [skill], hard: hard ? [f as Straight] : [], opener: true, kit }
+}
+
+/** The request that starts a skill block — an opener with the place's kit beside the athlete's. */
+export function skillRequest(block: SkillBlock): WorkoutRequest {
+  return { source: 'auto', minutes: block.minutes, skills: block.skills, ...(block.kit?.length ? { kit: block.kit } : {}) }
+}
+
+/** The state as seen from one place: the planner builds at the active one. */
+function atPlace(state: AppState, location: GymLocation): AppState {
+  const gym = state.gym
+  if (!gym || gym.activeLocationId === location.id) return state
+  return { ...state, gym: { ...gym, locations: [location, ...gym.locations.filter((l) => l.id !== location.id)], activeLocationId: location.id } }
+}
+
+/** A gym session for right now, as the coach plans it. */
+export interface GymToday {
+  /** Today planned as a gym day at these minutes, by the same engine as every other day. */
+  plan: TodayPlan
+  /** The lifts' focus: the athlete's pick, or the plan's. None when nothing fits today and nothing was picked. */
+  focus?: GymFocus
+  /** The day's limits, whichever focus: muscles kept out (the athlete's, and legs around sport), joints, volume, deload. */
+  musclesOff: Muscle[]
+  avoidJoints: Joint[]
+  volumeFactor: number
+  deload: boolean
+  /** The skill that goes first, when one does now. */
+  opener?: SkillBlock
+  /** Why a push, pull or upper session has no skill first. */
+  noOpener?: string
+  /** Why Auto has no focus. */
+  noFocus?: string
+  /** What limits the day, in a few words each. */
+  limits: string[]
 }
 
 /**
- * What a gym session of this focus at this place opens with today, or nothing
- * (`openerSkill`'s rules). The rest rule reads logged hard sessions on earlier
- * days — today's own never rest today; sore joints and pain are `soreJoints`.
- * `minutes` is the day's time for both blocks, the scheduled minutes when not
- * given. The opener is an ordinary one-skill session, `{ source: 'auto',
- * minutes, skills }`, logged to the skill history like any other.
+ * Today's gym session as if today were a gym day, wherever it is started: the
+ * Gym tab asks this rather than keeping a second rule set beside the plan (it
+ * once took its focus from a rotation by session name and dropped the season,
+ * sport, deload and knee rules on any day the plan had not made a gym day).
+ * Auto is the plan's focus; a picked focus keeps every limit of the day. The
+ * opener is the plan's — the rest rule on both sides, the week's own skill
+ * days included — and never a second hard session of its family today (a 6 pm
+ * push pick once opened with the planche after a hard planche session at 8).
+ */
+export function gymToday(state: AppState, opts: { now: number; minutes: number; focus?: GymFocus | 'auto'; location?: GymLocation }): GymToday {
+  const now = opts.now
+  const base = opts.location ? atPlace(state, opts.location) : state
+  const picked = opts.focus && opts.focus !== 'auto' ? opts.focus : undefined
+  const week = planWeekAhead(base, now, { todayMinutes: opts.minutes, todayKind: 'gym', ...(picked ? { todayFocus: picked } : {}) })
+  const plan = week.days[0].plan
+  const own = base.gym?.prefs
+  const prefs = own ?? defaultPrefs(now)
+  const d = dayContexts(base, prefs, Boolean(own), now, addDays(startOfDay(now), 1), opts.minutes)[0]
+  const focus = picked ?? plan.gym?.focus
+  const g = plan.gym
+  const limits = g
+    ? { musclesOff: g.musclesOff, avoidJoints: g.avoidJoints, volumeFactor: g.volumeFactor, deload: g.deload }
+    : { musclesOff: [...d.off], avoidJoints: d.avoidJoints, volumeFactor: focus === 'athletic' ? Math.min(1, d.factor) : d.factor, deload: d.deload.due }
+  const place = activePlace(base)
+  const restMs = prefs.straightArmRestHours * HOUR
+  const t0 = startOfDay(now)
+  const logged = familyEvents(base, now)
+  const skills = trainedSkills(base)
+  const work = (f: Straight) => (f === 'push' ? 'pressing' : 'pulling')
+  /** Why the rest rule keeps a family's skill from going first now: logged hard sessions (today's included), then the week's own days. */
+  const restWhy = (f: Straight): string | undefined => {
+    const names = familyNames(skills, f)
+    const hit = logged[f].filter((e) => e.at <= now && now - e.at < restMs).pop()
+    if (hit) {
+      const what = hit.gym ? `heavy ${work(f)}` : `hard ${names}`
+      return hit.at >= t0
+        ? `You did ${what} work earlier today, so the ${names} does not open a second session of it.`
+        : `Your ${what} session ${Math.round((now - hit.at) / HOUR)}h ago is inside your ${prefs.straightArmRestHours}h rest rule, so the ${names} does not open today.`
+    }
+    const near = week.days
+      .slice(1)
+      .find((x) => apart(x.at, now) < restMs && (x.plan.skill?.hard ?? []).includes(f))
+    return near ? `The ${names} is planned for ${dayName(near.at)}, inside your ${prefs.straightArmRestHours}h rest rule, so it does not open today.` : undefined
+  }
+  let opener = plan.skill?.opener ? plan.skill : undefined
+  let noOpener: string | undefined
+  if (opener) {
+    const f = skillFamily(opener.skills[0]) as Straight
+    if (logged[f].some((e) => e.at >= t0 && e.at <= now)) {
+      noOpener = restWhy(f)
+      opener = undefined
+    }
+  } else if (focus && place && focusFamilies(focus).length) {
+    noOpener = openerVerdict(base, focus, place, { minutes: opts.minutes, sore: d.avoidJoints, pain: d.pain, blocked: restWhy }).why
+    if (!noOpener && skills.some((s) => (focusFamilies(focus) as string[]).includes(skillFamily(s)))) {
+      noOpener = `The lifts would not fit beside a ${OPENER_MINUTES}-minute skill opener in ${opts.minutes} minutes.`
+    }
+  }
+  const notes: string[] = []
+  const sport = d.sameDay ?? d.legsCovered ?? d.upcoming
+  if (sport) {
+    const when = d.sameDay ? 'today' : d.legsCovered ? `on ${dayName(sport.at)}` : startOfDay(sport.at) === t0 ? 'later today' : 'tomorrow'
+    notes.push(`Legs out: ${sport.scheduled ? 'your usual ' : ''}${sportName(sport.kind)} ${when}.`)
+  }
+  if (d.pain) notes.push('Kept light: you reported pain.')
+  if (limits.deload) notes.push('A lighter week.')
+  if (prefs.season === 'in') notes.push('In season: fewer sets.')
+  return {
+    plan,
+    ...(focus ? { focus } : {}),
+    ...limits,
+    ...(opener ? { opener } : {}),
+    ...(noOpener ? { noOpener } : {}),
+    ...(!focus ? { noFocus: `Nothing fits today’s rules${place ? ` at ${place.name}` : ''} in ${opts.minutes} minutes. Pick a focus, or start an empty session.` } : {}),
+    limits: notes,
+  }
+}
+
+/**
+ * What a gym session of this focus at this place opens with now, or nothing:
+ * `gymToday`'s opener. `minutes` is the day's time for both blocks, the
+ * scheduled minutes when not given. The opener is an ordinary one-skill
+ * session (`skillRequest`), logged to the skill history like any other.
  */
 export function gymOpener(state: AppState, focus: GymFocus, location: GymLocation, now = Date.now(), minutes?: number): SkillBlock | undefined {
   const own = state.gym?.prefs
-  const restMs = (own?.straightArmRestHours ?? 48) * HOUR
   const scheduled = own ? (own.minutesByDay[weekdayOf(now)] ?? 0) : 0
-  const sore = soreJoints(state, now)
-  const logged = familyEvents(state, now)
-  const today = startOfDay(now)
-  const skill = openerSkill(state, focus, location, {
-    minutes: minutes ?? (scheduled > 0 ? scheduled : state.settings.sessionMinutes),
-    sore: sore.joints,
-    pain: sore.pain,
-    clear: (f) => !logged[f].some((e) => e.at < today && now - e.at < restMs),
-  })
-  return skill ? openerBlock(state, skill, now) : undefined
+  return gymToday(state, { now, minutes: minutes ?? (scheduled > 0 ? scheduled : state.settings.sessionMinutes), focus, location }).opener
 }
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -278,6 +407,8 @@ export interface SkillBlock {
   skills: SkillId[]
   hard?: Straight[]
   opener?: true
+  /** An opener's place kit, added to the athlete's for that one build (`WorkoutRequest.kit`). */
+  kit?: EquipmentId[]
 }
 
 /** The one main session a day holds: calisthenics (skills), the gym (with an optional skill opener), or none. */
@@ -349,7 +480,11 @@ export function gymDeloadDue(state: AppState, now: number): { due: boolean; why?
       why: `${hardRun} ${unrated ? 'full' : 'hard'} gym weeks in a row${unrated ? ` (${unrated === hardRun ? 'too few sets rated to tell how hard they were, so they count as hard' : 'some with too few sets rated to tell, counted as hard'})` : ''}${youth ? ' — under 18 the lighter week comes sooner' : ''}: this week is lighter — fewer sets, stopping further from failure. Deloads are a coaching convention; controlled trials have not shown they add strength, but they keep a long run of hard weeks sustainable.`,
     }
   }
-  const recent = sessions.filter((s) => s.startedAt >= addDays(now, -14) && s.startedAt < now)
+  // Decided at the week's start, from the two calendar weeks before it, like
+  // the hard run above: a lighter week called on Monday holds to Sunday. Read
+  // from `now`, two lighter sessions switched it off by Wednesday.
+  const ref = startThis
+  const recent = sessions.filter((s) => s.startedAt >= addDays(ref, -14) && s.startedAt < ref)
   const recentRpe = recent.flatMap((s) => s.exercises.flatMap((e) => e.sets.filter((x) => !x.warmup && x.rpe !== undefined).map((x) => x.rpe!)))
   if (recent.length >= 3 && recentRpe.length >= 12) {
     const avg = recentRpe.reduce((a, b) => a + b, 0) / recentRpe.length
@@ -369,8 +504,8 @@ export function gymDeloadDue(state: AppState, now: number): { due: boolean; why?
       }
       return out
     }
-    const thisWeek = bestByLift(addDays(now, -7), now)
-    const lastWeek = bestByLift(addDays(now, -14), addDays(now, -7))
+    const thisWeek = bestByLift(addDays(ref, -7), ref)
+    const lastWeek = bestByLift(addDays(ref, -14), addDays(ref, -7))
     const both = [...thisWeek.keys()].filter((id) => lastWeek.has(id))
     const stalled = both.length > 0 && both.every((id) => thisWeek.get(id)! <= lastWeek.get(id)! + 0.01)
     if (avg >= 9 && stalled) {
@@ -415,14 +550,20 @@ interface DayCtx {
   minutes: number
   /** A rest day in the schedule (and no minutes given for today). */
   restDay: boolean
-  /** Why it rests: the gym schedule, the athlete's week plan, or a weekly goal already met. */
-  restWhy?: 'schedule' | 'plan' | 'goal'
+  /**
+   * Why it rests: the gym schedule, the athlete's week plan, a weekly goal
+   * already met, or — without a gym schedule — a day between the sessions the
+   * weekly goal spreads over the week.
+   */
+  restWhy?: 'schedule' | 'plan' | 'goal' | 'spread'
   /** The skills the athlete's own week plan gives this day, in their order (those that can train). */
   assigned?: SkillId[]
   sport: SportEvent[]
-  /** Sport in the last 48 h that loaded the legs (logged, or a hard one from the sport week). */
+  /** Sport on an earlier day, in the last 48 h, that loaded the legs (logged, or a hard one from the sport week). */
   legsCovered?: SportEvent
-  /** Sport in the next 36 h the legs stay fresh for. */
+  /** Sport on this calendar day that loads the legs, before or after the planned moment alike. */
+  sameDay?: SportEvent
+  /** Sport on a later day, in the next 36 h, the legs stay fresh for. */
   upcoming?: SportEvent
   hardBefore?: SportEvent
   hardNext?: SportEvent
@@ -494,6 +635,8 @@ interface SkillSlot {
   /** The gym's weekly sets need this day: gym days still needed, and open days left after it. */
   setsNeed?: { need: number; left: number }
   noSkillFits: boolean
+  /** None of the athlete's skills has its kit in their own list, so no calisthenics day can be planned. */
+  noKit?: boolean
   /** Nothing fits the minutes. */
   tooShort?: boolean
   /** Hard sessions of each family this calendar week, up to and including this day. */
@@ -570,6 +713,31 @@ function dayContexts(state: AppState, prefs: TrainingPrefs, own: boolean, now: n
   const timeline = readinessTimeline(state, now)
   const inSeason = prefs.season === 'in'
   const deloads = new Map<number, { due: boolean; why?: string }>()
+  const goal = state.settings.weeklyGoal
+  // Without a gym schedule the weekly goal says how many days train: each
+  // calendar week's open days are spread over what the goal still needs, today
+  // first (the athlete is here), the athlete's own skill days counted toward
+  // it. Every day at the session length once planned seven training days for a
+  // goal of three.
+  const between = new Map<string, 'goal' | 'spread'>()
+  if (!own && goal > 0) {
+    const trainedOn = (t: number) =>
+      state.sessions.some((s) => s.workoutKind !== 'micro' && s.startedAt >= t && s.startedAt < addDays(t, 1) && s.startedAt <= now) ||
+      (state.gym?.sessions ?? []).some((s) => s.startedAt >= t && s.startedAt < addDays(t, 1) && s.startedAt <= now)
+    for (let wk = thisWeek; wk < horizonEnd; wk = addDays(wk, 7)) {
+      let need = goal - (wk === thisWeek ? trainedDays(today) : 0)
+      const open: number[] = []
+      for (let t = Math.max(wk, today); t < addDays(wk, 7) && t < horizonEnd; t = addDays(t, 1)) {
+        const reading = state.settings.weekPlan ? readDay(state, weekdayOf(t)) : undefined
+        if (reading?.kind === 'rest') continue
+        if (reading?.kind === 'skills' || (t === today && trainedOn(t))) need--
+        else open.push(t)
+      }
+      const keep = new Set(need >= open.length ? open : need <= 0 ? [] : Array.from({ length: need }, (_, k) => open[Math.floor((k * open.length) / need)]))
+      const met = (wk === thisWeek ? trainedDays(today) + (trainedOn(today) ? 1 : 0) : 0) >= goal
+      for (const t of open) if (!keep.has(t)) between.set(dayKey(t), met ? 'goal' : 'spread')
+    }
+  }
   const out: DayCtx[] = []
   for (let i = 0; i < 21; i++) {
     const start = addDays(today, i)
@@ -581,14 +749,18 @@ function dayContexts(state: AppState, prefs: TrainingPrefs, own: boolean, now: n
     if (reading?.kind === 'skills' && scheduled <= 0) scheduled = state.settings.sessionMinutes
     const given = i === 0 && todayMinutes !== undefined
     const minutes = given ? todayMinutes! : scheduled
-    const goal = state.settings.weeklyGoal
-    const goalMet = !own && reading?.kind !== 'skills' && weekStart(start) === thisWeek && goal > 0 && trainedDays(Math.min(start, now)) >= goal
+    const spread = between.get(dayKey(start))
     const near = sportBetween(state.gym, at - 48 * HOUR, at + 36 * HOUR)
     // A logged activity marked as loading the legs counts as it always has; a
     // session from the sport week only when it is a hard one.
     const loadsLegs = (a: SportEvent) => (a.scheduled ? isHardForLegs(a) : a.legs)
-    const legsCovered = near.filter((a) => a.at <= at && at - a.at < 48 * HOUR && loadsLegs(a)).pop()
-    const upcoming = near.find((a) => a.at > at && loadsLegs(a))
+    const end = addDays(start, 1)
+    // Sport on the day itself is one rule whatever the clock says: a 17:00 game
+    // once counted as "upcoming" only when the day was planned before 17:00,
+    // and as already played (no lighter gym) when it was planned at 17:00.
+    const sameDay = sportBetween(state.gym, start, end).filter(loadsLegs).pop()
+    const legsCovered = near.filter((a) => a.at < start && at - a.at < 48 * HOUR && loadsLegs(a)).pop()
+    const upcoming = near.find((a) => a.at >= end && loadsLegs(a))
     const yesterday = addDays(start, -1)
     const hardBefore = near.filter((a) => a.at <= at && a.at >= yesterday && isHardSport(a)).pop()
     const hardNext = near.find((a) => a.at > at && isHardSport(a))
@@ -601,8 +773,9 @@ function dayContexts(state: AppState, prefs: TrainingPrefs, own: boolean, now: n
     const week = weekStart(start)
     if (!deloads.has(week)) deloads.set(week, gymDeloadDue(state, week === weekStart(now) ? now : at))
     const deload = deloads.get(week)!
-    let factor = Math.min(pain ? 0.6 : deload.due ? 0.6 : 1, inSeason ? 0.7 : 1, upcoming ? 0.8 : 1)
-    const restWhy: DayCtx['restWhy'] = reading?.kind === 'rest' ? 'plan' : scheduled <= 0 ? 'schedule' : goalMet ? 'goal' : undefined
+    // The day of the sport takes the day-before rule: legs out and the gym a little lighter.
+    let factor = Math.min(pain ? 0.6 : deload.due ? 0.6 : 1, inSeason ? 0.7 : 1, upcoming || sameDay ? 0.8 : 1)
+    const restWhy: DayCtx['restWhy'] = reading?.kind === 'rest' ? 'plan' : scheduled <= 0 ? 'schedule' : spread
     const restDay = !given && restWhy !== undefined
     let readiness =
       i === 0 && !restDay && minutes > 0
@@ -626,6 +799,7 @@ function dayContexts(state: AppState, prefs: TrainingPrefs, own: boolean, now: n
       ...(reading?.kind === 'skills' ? { assigned: reading.skills } : {}),
       sport: sportBetween(state.gym, start, addDays(start, 1)),
       ...(legsCovered ? { legsCovered } : {}),
+      ...(sameDay ? { sameDay } : {}),
       ...(upcoming ? { upcoming } : {}),
       ...(hardBefore ? { hardBefore } : {}),
       ...(hardNext ? { hardNext } : {}),
@@ -636,7 +810,7 @@ function dayContexts(state: AppState, prefs: TrainingPrefs, own: boolean, now: n
       deload,
       ...(readiness ? { readiness } : {}),
       factor,
-      off: new Set<Muscle>([...prefs.musclesOff, ...(legsCovered || upcoming ? LEG_MUSCLES : [])]),
+      off: new Set<Muscle>([...prefs.musclesOff, ...(legsCovered || sameDay || upcoming ? LEG_MUSCLES : [])]),
       fatigue: fatigueAt(state, at).muscles,
     })
   }
@@ -668,6 +842,8 @@ interface SkillCtx {
   /** Today's kind, picked by the athlete or read off what they logged today. */
   todayKind?: 'calisthenics' | 'gym'
   todayWhy?: 'picked' | 'followed'
+  /** Today's gym focus, when the athlete picked one: a picked gym day opens with a skill of its families only. */
+  todayFocus?: GymFocus
 }
 
 /**
@@ -714,9 +890,9 @@ function partsCredit(parts: Part[], minutes: number): Credit {
  * session by the app's own count: its key hold loads the family (a planche at
  * Foundations holds a scapula position, not a planche) and its kit is there.
  */
-function hardAtStep(state: AppState, skill: SkillId): boolean {
+function hardAtStep(state: AppState, skill: SkillId, kit: EquipmentId[] = state.profile.equipment): boolean {
   const f = skillFamily(skill)
-  if (f === 'balance' || missingKit(skill, state.profile.equipment).length > 0) return false
+  if (f === 'balance' || missingKit(skill, kit).length > 0) return false
   const step = STEP_BY_ID[skillView(state, skill).stepId]
   return Boolean(step) && skillSetLoading(step.keyExerciseId, 'main')?.straightArm === f
 }
@@ -756,11 +932,18 @@ function planSkills(state: AppState, prefs: TrainingPrefs, days: DayCtx[], skill
     const near: FamilyBlock[] = [
       ...ctx.logged[f].filter((e) => e.at < d.start && d.at - e.at < ctx.restMs).map((e) => ({ ...e, planned: false })),
       ...planned[f]
-        .filter((x) => x.i !== i && Math.abs(days[x.i].at - d.at) < ctx.restMs)
+        .filter((x) => x.i !== i && apart(days[x.i].at, d.at) < ctx.restMs)
         .map((x) => ({ at: days[x.i].at, gym: false, planned: true })),
     ]
     return near.sort((a, b) => Math.abs(d.at - a.at) - Math.abs(d.at - b.at))[0]
   }
+  /** Skills with their kit in the athlete's own list: the only ones a calisthenics day can hold. */
+  const homeKit = new Map<SkillId, boolean>()
+  const atHome = (skill: SkillId) => {
+    if (!homeKit.has(skill)) homeKit.set(skill, canTrainAtHome(state, skill))
+    return homeKit.get(skill)!
+  }
+  const noKit = !skills.some(atHome)
   /**
    * Open days after `i` this week a family could still train hard, spaced by
    * the rest rule. Today is read from what came before it, so its choice holds
@@ -768,18 +951,21 @@ function planSkills(state: AppState, prefs: TrainingPrefs, days: DayCtx[], skill
    */
   const feasibleAfter = (f: Straight, i: number) => {
     const before = [
-      ...ctx.logged[f].map((e) => e.at).filter((x) => (i === 0 ? x < days[0].start : x <= days[i].at)),
-      ...planned[f].filter((x) => x.i <= i).map((x) => days[x.i].at),
-    ]
-    let l = before.length ? Math.max(...before) : undefined
+      ...ctx.logged[f]
+        .map((e) => e.at)
+        .filter((x) => (i === 0 ? x < days[0].start : x <= days[i].at))
+        .map((at) => ({ at, logged: true })),
+      ...planned[f].filter((x) => x.i <= i).map((x) => ({ at: days[x.i].at, logged: false })),
+    ].sort((a, b) => a.at - b.at)
+    let l = before[before.length - 1]
     let k = 0
     for (let j = i + 1; j < days.length && days[j].week === days[i].week; j++) {
       const dj = days[j]
       if (dj.restDay || dj.assigned || dj.minutes < MIN_SKILL_MINUTES[1]) continue
-      const clear = !planned[f].some((x) => x.i !== j && Math.abs(days[x.i].at - dj.at) < ctx.restMs)
-      if ((l === undefined || dj.at - l >= ctx.restMs) && clear) {
+      const clear = !planned[f].some((x) => x.i !== j && apart(days[x.i].at, dj.at) < ctx.restMs)
+      if ((l === undefined || (l.logged ? dj.at - l.at : apart(dj.at, l.at)) >= ctx.restMs) && clear) {
         k++
-        l = dj.at
+        l = { at: dj.at, logged: false }
       }
     }
     return k
@@ -872,10 +1058,15 @@ function planSkills(state: AppState, prefs: TrainingPrefs, days: DayCtx[], skill
       credit: {},
     }
     if (d.restDay || d.minutes <= 0) return base
-    // The athlete's own day trains as written; any other day leaves out a family inside its rest rule.
-    const allowed = d.assigned ?? skills.filter((s) => skillFamily(s) === 'balance' || !blocked[skillFamily(s) as Straight])
+    // The athlete's own day trains as written; any other day leaves out a family inside its rest rule. Only a skill
+    // with its kit can hold a calisthenics day: a front lever with no bar once filled the week as "Front lever 60
+    // min" while the session it started was "waiting for kit".
+    const allowed = (d.assigned ?? skills.filter((s) => skillFamily(s) === 'balance' || !blocked[skillFamily(s) as Straight])).filter(atHome)
     const calOK = allowed.length > 0 && d.minutes >= MIN_SKILL_MINUTES[1]
-    const gymOK = ctx.wantsGym && d.minutes >= MIN_GYM_MINUTES && ctx.gymFits(d, d.minutes)
+    // A place where a gym block builds; the gym goals decide whether the coach uses it, and an athlete's own pick
+    // ("Rather do the gym", the Gym tab) needs only the place.
+    const gymHere = Boolean(ctx.place) && d.minutes >= MIN_GYM_MINUTES && ctx.gymFits(d, d.minutes)
+    const gymOK = ctx.wantsGym && gymHere
     const skillsWanted = g.skills > 0 || Boolean(d.assigned) || !ctx.wantsGym
     const forced = i === 0 ? ctx.todayKind : undefined
     let kind: 'calisthenics' | 'gym' | undefined
@@ -883,7 +1074,13 @@ function planSkills(state: AppState, prefs: TrainingPrefs, days: DayCtx[], skill
     let urgent: Straight | undefined
     let hint: Straight | undefined
     let setsNeed: SkillSlot['setsNeed']
-    if (forced && (forced === 'gym' ? gymOK : calOK)) {
+    /** The skill a gym day here could open with for a family, and whether that session reaches the hard count. */
+    const canOpen = (f: Straight) => {
+      const place = ctx.place
+      const skill = place ? openerSkill(state, f, place, { minutes: d.minutes, sore: d.avoidJoints, pain: d.pain, blocked: (x) => (blocked[x] ? 'rest' : undefined) }) : undefined
+      return place && skill && ctx.familyGymFits(d, d.minutes - OPENER_MINUTES, f) ? { skill, hard: hardAtStep(state, skill, kitAt(state, place)) } : undefined
+    }
+    if (forced && (forced === 'gym' ? gymHere : calOK)) {
       kind = forced
       why = ctx.todayWhy ?? 'picked'
     } else if (d.assigned) {
@@ -914,10 +1111,7 @@ function planSkills(state: AppState, prefs: TrainingPrefs, days: DayCtx[], skill
           target(f) - ((d.week === thisWeek ? done[f] : 0) + planned[f].filter((x) => days[x.i].week === d.week).length) > feasibleAfter(f, i),
       )
       /** Whether a gym day here can open with a skill of the family that counts toward its sessions. */
-      const opensWith = (f: Straight) => {
-        const skill = ctx.place ? openerSkill(state, f, ctx.place, { minutes: d.minutes, sore: d.avoidJoints, pain: d.pain, clear: (x) => !blocked[x] }) : undefined
-        return Boolean(skill && stepIsHard(skill) && ctx.familyGymFits(d, d.minutes - OPENER_MINUTES, f))
-      }
+      const opensWith = (f: Straight) => Boolean(canOpen(f)?.hard)
       // A calisthenics day of a family keeps the gym's pressing (or pulling) off the days around it, so a family
       // whose muscles still need the gym this week pairs the two on one day: the gym, its skill first.
       const pairs = (['push', 'pull'] as const).find(
@@ -937,7 +1131,7 @@ function planSkills(state: AppState, prefs: TrainingPrefs, days: DayCtx[], skill
         kind = 'gym'
         hint = pairs
         why = 'pair'
-      } else if (close && (d.legsCovered || d.upcoming)) {
+      } else if (close && (d.legsCovered || d.sameDay || d.upcoming)) {
         kind = 'calisthenics'
         why = 'sport'
       } else if (close && gymNeedsDay(i)) {
@@ -977,6 +1171,7 @@ function planSkills(state: AppState, prefs: TrainingPrefs, days: DayCtx[], skill
       // Nothing planned, and the minutes are why: shorter than the session that would otherwise be built.
       ...(!kind && d.minutes < (allowed.length ? MIN_SKILL_MINUTES[1] : MIN_GYM_MINUTES) ? { tooShort: true } : {}),
       noSkillFits: g.skills > 0 && !d.assigned && allowed.length === 0,
+      ...(noKit ? { noKit: true } : {}),
       credit: partsCredit(parts, d.minutes),
     }
   }
@@ -991,6 +1186,11 @@ function planSkills(state: AppState, prefs: TrainingPrefs, days: DayCtx[], skill
       }
       const h = slots[i].hint
       if (h && !planned[h].some((x) => x.i === i)) planned[h].push({ i, at: days[i].at })
+      // A focus picked for today presses or pulls today, opener or not: the rest of the week keeps the rest rule
+      // from it. Planned the other way round, a skill day tomorrow took the opener away from the day being trained.
+      if (i === 0 && slots[0].kind === 'gym' && ctx.todayFocus) {
+        for (const f of focusFamilies(ctx.todayFocus)) if (!planned[f].some((x) => x.i === 0)) planned[f].push({ i: 0, at: days[0].at })
+      }
     }
   }
   return slots
@@ -1037,6 +1237,8 @@ interface GymCtx {
   viable: (d: DayCtx, minutes: number, focus: GymFocus) => boolean
   /** The skill a gym day of this focus opens with, when one can (`openerSkill`, and the gym still builds beside it). */
   opener: (i: number, focus: GymFocus) => SkillId | undefined
+  /** Today's focus, picked by the athlete on the Gym side: today's gym block takes it, the rest of the week is planned around it. */
+  todayFocus?: GymFocus
   /** The gym's own minutes on a day at this focus: the day's, less the opener's when it has one. */
   gymMinutes: (i: number, focus: GymFocus) => number
 }
@@ -1071,7 +1273,7 @@ function openOnDay(d: DayCtx, f: GymFocus, musclesOff: Muscle[], legsOff: boolea
   if (!FOCUS_MUSCLES[f].some((m) => !d.off.has(m))) return false
   // Most of what the focus is for must be switched on (legs off once still gave "Lower" days of one ab exercise).
   if (!focusOpen(f, musclesOff)) return false
-  const legsBlocked = Boolean(d.legsCovered || d.upcoming) || legsOff
+  const legsBlocked = Boolean(d.legsCovered || d.sameDay || d.upcoming) || legsOff
   if (f === 'lower' && (legsBlocked || d.avoidJoints.includes('knees'))) return false
   if (f === 'athletic') {
     return power >= 3 && !legsBlocked && !d.hardBefore && !d.hardNext && !d.pain && !d.avoidJoints.includes('knees') && d.factor >= 1
@@ -1151,7 +1353,7 @@ function allocate(
       paths = paths.map((p) => step(p, i, null, slot.credit, prev, {}, [], 0))
       continue
     }
-    const legsBlocked = Boolean(d.legsCovered || d.upcoming) || ctx.legsOff
+    const legsBlocked = Boolean(d.legsCovered || d.sameDay || d.upcoming) || ctx.legsOff
     const S = sessionSets(slot.gymMin, d.factor)
     const ord = gymDays.indexOf(i)
     const open = FOCI.filter((f) => openOnDay(d, f, ctx.musclesOff, ctx.legsOff, ctx.power)).filter(
@@ -1183,10 +1385,14 @@ function allocate(
     for (const p of paths) {
       // Hard pressing or pulling this path already put on another day inside the rest rule rules the family out today.
       const familyFree = (f: GymFocus) =>
-        focusFamilies(f).every((fam) => !ctx.shared[fam] || p.gymEvents[fam].every((t) => startOfDay(t) === d.start || Math.abs(t - d.at) >= ctx.restMs))
-      let choices = open.filter((f) => familyFree(f) && (f !== 'athletic' || (p.athletic < ctx.athleticWanted && p.foci[p.foci.length - 1] !== 'athletic')))
+        focusFamilies(f).every((fam) => !ctx.shared[fam] || p.gymEvents[fam].every((t) => startOfDay(t) === d.start || apart(t, d.at) >= ctx.restMs))
+      // The athlete's own pick for today stands, with every limit of the day; the rest of the week adapts to it.
+      const forced = i === 0 ? ctx.todayFocus : undefined
+      let choices = forced
+        ? [forced]
+        : open.filter((f) => familyFree(f) && (f !== 'athletic' || (p.athletic < ctx.athleticWanted && p.foci[p.foci.length - 1] !== 'athletic')))
       // A day chosen to open with a family's skill trains that family, when anything open lets it.
-      const hint = slot.hint
+      const hint = forced ? undefined : slot.hint
       // Its own family's focus first: an upper day would press and pull, and rest the other family around it too.
       if (hint && choices.some((f) => focusFamilies(f).includes(hint) && ctx.opener(i, f))) {
         const opening = choices.filter((f) => focusFamilies(f).includes(hint) && ctx.opener(i, f))
@@ -1197,7 +1403,7 @@ function allocate(
       const lastFocus = p.foci.length ? p.foci[p.foci.length - 1] : (init.prevFocus ?? null)
       const clash = (f: GymFocus) =>
         f === lastFocus || (Object.entries(gymCredit(d, ctx.gymMinutes(i, f), f)) as [Muscle, number][]).some(([m, c]) => c >= HARD_SETS && (p.prevGym[m] ?? 0) >= HARD_SETS)
-      const calm = choices.filter((f) => !clash(f))
+      const calm = forced ? choices : choices.filter((f) => !clash(f))
       if (!choices.length) {
         // Nothing builds or fits the rules today: no gym block, said in the day's reasons.
         const prev = { ...slot.credit }
@@ -1327,7 +1533,11 @@ export type TodayKindPick = { todayKind?: 'calisthenics' | 'gym'; todayWhy?: 'pi
  * happened. `todayMinutes` is "I have X minutes" for today, `todayKind` "Rather
  * do … today". Pure: state and time in, plan out.
  */
-export function planWeekAhead(state: AppState, now = Date.now(), opts: { todayMinutes?: number; inner?: boolean } & TodayKindPick = {}): WeekAhead {
+export function planWeekAhead(
+  state: AppState,
+  now = Date.now(),
+  opts: { todayMinutes?: number; inner?: boolean; todayFocus?: GymFocus } & TodayKindPick = {},
+): WeekAhead {
   // An athlete who never set the gym side up keeps the skill side's own days and minutes (`dayContexts`).
   const own = state.gym?.prefs
   const prefs: TrainingPrefs = own ?? defaultPrefs(now)
@@ -1402,6 +1612,7 @@ export function planWeekAhead(state: AppState, now = Date.now(), opts: { todayMi
     weekSets: setsPerMuscle(state.sessions, gymSessions, thisWeek, today),
     before,
     ...(opts.todayKind ? { todayKind: opts.todayKind, todayWhy: opts.todayWhy ?? 'picked' } : {}),
+    ...(opts.todayFocus ? { todayFocus: opts.todayFocus } : {}),
   })
   const shared = {
     push: skills.some((s) => skillFamily(s) === 'push'),
@@ -1414,7 +1625,7 @@ export function planWeekAhead(state: AppState, now = Date.now(), opts: { todayMi
     const d = days[i]
     return [
       ...logged[fam].filter((e) => e.at < d.start && d.at - e.at < restMs).map((e) => ({ at: e.at, gym: e.gym, logged: true })),
-      ...familySlots.flatMap((sl, j) => (j !== i && sl.families.has(fam) && Math.abs(days[j].at - d.at) < restMs ? [{ at: days[j].at, gym: false, logged: false }] : [])),
+      ...familySlots.flatMap((sl, j) => (j !== i && sl.families.has(fam) && apart(days[j].at, d.at) < restMs ? [{ at: days[j].at, gym: false, logged: false }] : [])),
     ]
   }
   /** Whether a gym day may open with the family: no logged hard session on an earlier day, nor a skill day of it, inside the rest rule. */
@@ -1422,7 +1633,7 @@ export function planWeekAhead(state: AppState, now = Date.now(), opts: { todayMi
     const d = days[i]
     if (logged[fam].some((e) => e.at < d.start && d.at - e.at < restMs)) return false
     return !slots.some(
-      (sl, j) => j !== i && Math.abs(days[j].at - d.at) < restMs && sl.parts.some((p) => (p.role === 'lead' || p.role === 'partner') && skillFamily(p.skill) === fam),
+      (sl, j) => j !== i && apart(days[j].at, d.at) < restMs && sl.parts.some((p) => (p.role === 'lead' || p.role === 'partner') && skillFamily(p.skill) === fam),
     )
   }
   const openers = new Map<string, SkillId | undefined>()
@@ -1432,7 +1643,7 @@ export function planWeekAhead(state: AppState, now = Date.now(), opts: { todayMi
       const d = days[i]
       const skill =
         place && slots[i].kind === 'gym'
-          ? openerSkill(state, focus, place, { minutes: d.minutes, sore: d.avoidJoints, pain: d.pain, clear: (fam) => openerClear(fam, i) })
+          ? openerSkill(state, focus, place, { minutes: d.minutes, sore: d.avoidJoints, pain: d.pain, blocked: (fam) => (openerClear(fam, i) ? undefined : 'rest') })
           : undefined
       // The gym must still build beside it.
       openers.set(key, skill && viable(d, d.minutes - OPENER_MINUTES, focus) ? skill : undefined)
@@ -1454,6 +1665,7 @@ export function planWeekAhead(state: AppState, now = Date.now(), opts: { todayMi
     viable,
     opener,
     gymMinutes: (i, focus) => slots[i].gymMin - (opener(i, focus) ? OPENER_MINUTES : 0),
+    ...(opts.todayFocus && slots[0]?.kind === 'gym' ? { todayFocus: opts.todayFocus } : {}),
   }
   if (ctx.nextGymDay >= 0) {
     const stale = staleGroupAt(prefs, ctx.lastHit, days[ctx.nextGymDay].at)
@@ -1523,8 +1735,8 @@ export function planWeekAhead(state: AppState, now = Date.now(), opts: { todayMi
   const final: SkillSlot[] = slots.map((slot, i) => {
     const focus = slot.kind === 'gym' ? focusOf(i) : null
     const skill = focus ? opener(i, focus) : undefined
-    if (!skill) return slot
-    const block = openerBlock(state, skill, days[i].at)
+    if (!skill || !place) return slot
+    const block = openerBlock(state, skill, days[i].at, place)
     const part: Part = { skill, role: 'lead', hard: Boolean(block.hard?.length) }
     return {
       ...slot,
@@ -1552,10 +1764,12 @@ export function planWeekAhead(state: AppState, now = Date.now(), opts: { todayMi
       final.some(
         (sl, j) =>
           j !== i &&
-          Math.abs(days[j].at - d.at) < restMs &&
+          apart(days[j].at, d.at) < restMs &&
           (gymFamilies(j).includes(fam) || sl.parts.some((p) => (p.role === 'lead' || p.role === 'partner') && skillFamily(p.skill) === fam)),
       )
-    const allowed = d.assigned ?? (g.skills > 0 ? skills.filter((s) => skillFamily(s) === 'balance' || !near(skillFamily(s) as Straight)) : [])
+    const allowed = (d.assigned ?? (g.skills > 0 ? skills.filter((s) => skillFamily(s) === 'balance' || !near(skillFamily(s) as Straight)) : [])).filter((s) =>
+      canTrainAtHome(state, s),
+    )
     const parts = d.minutes >= MIN_SKILL_MINUTES[1] ? lineupParts(state, d, allowed, d.minutes) : []
     final[i] = parts.length
       ? {
@@ -1632,7 +1846,7 @@ export function planWeekAhead(state: AppState, now = Date.now(), opts: { todayMi
       }
       const near = [
         ...fixedNear(fam, d.index),
-        ...plannedGym[fam].filter((x) => startOfDay(x) !== d.start && Math.abs(x - d.at) < restMs).map((x) => ({ at: x, gym: true, logged: false })),
+        ...plannedGym[fam].filter((x) => startOfDay(x) !== d.start && apart(x, d.at) < restMs).map((x) => ({ at: x, gym: true, logged: false })),
       ].sort((a, b) => Math.abs(d.at - a.at) - Math.abs(d.at - b.at))[0]
       if (!near) continue
       const hours = Math.round(Math.abs(d.at - near.at) / HOUR)
@@ -1655,7 +1869,8 @@ export function planWeekAhead(state: AppState, now = Date.now(), opts: { todayMi
     const plan = assembleDay(state, prefs, d, slot, focus, d.index === 0 ? weekSets : null, ctx.lastHit, skills, {
       ...(place ? { place } : {}),
       notes: notes.long,
-      wantsGym: gymWanted && Boolean(place),
+      // Today picked as a gym day needs only the place: the athlete asked for it.
+      wantsGym: (gymWanted || (d.index === 0 && (slot.why === 'picked' || slot.why === 'followed') && slot.kind === 'gym')) && Boolean(place),
       week: kinds,
       goals,
     })
@@ -1664,7 +1879,7 @@ export function planWeekAhead(state: AppState, now = Date.now(), opts: { todayMi
       at: d.at,
       kind: plan.kind,
       plan,
-      why: whyFor(d, slot, plan, servesOf(d.index), prefs, skills, notes.short, kinds),
+      why: whyFor(d, slot, plan, servesOf(d.index), prefs, skills, notes.short, kinds, state.settings.weeklyGoal),
       ...(d.sport.length ? { sport: d.sport[d.sport.length - 1] } : {}),
     }
   })
@@ -1796,10 +2011,11 @@ function kindReason(slot: SkillSlot, d: DayCtx, skills: SkillId[], extra: DayExt
         ? `A ${slot.hint} gym day that opens with the ${skillName(slot.opener)}: your ${slot.hint === 'push' ? 'chest, shoulders and triceps' : 'back and biceps'} still need a gym session this week, and the holds and the ${slot.hint === 'push' ? 'pressing' : 'pulling'} share recovery — on one day, the days around it stay clear of both (a coaching convention).`
         : share()
     case 'sport': {
-      const s = d.legsCovered ?? d.upcoming
+      const s = d.sameDay ?? d.legsCovered ?? d.upcoming
       if (!s) return undefined
       const what = s.scheduled ? `Your usual ${sportName(s.kind)}` : s.kind === 'pe' ? 'PE' : s.kind === 'other' ? 'Your activity' : cap(s.kind)
-      return `${what} ${d.legsCovered ? 'already loaded your legs' : 'is coming up'}, so the gym would leave the legs out today: today is calisthenics, and the gym waits for fresher legs.`
+      const when = d.sameDay ? 'is today' : d.legsCovered ? `on ${dayName(s.at)} already loaded your legs` : 'is coming up'
+      return `${what} ${when}, so the gym would leave the legs out today: today is calisthenics, and the gym waits for fresher legs.`
     }
     case 'sets':
       return slot.setsNeed
@@ -1826,12 +2042,16 @@ function assembleDay(
 ): TodayPlan {
   if (d.restDay) {
     const pick = 'If you do have time after all, pick how many minutes and a session is built for them.'
+    const goal = state.settings.weeklyGoal
+    const sessions = `${goal} ${goal === 1 ? 'session' : 'sessions'}`
     const text =
       d.restWhy === 'plan'
         ? `A rest day in your week plan. ${pick}`
         : d.restWhy === 'goal'
-          ? `Your weekly goal of ${state.settings.weeklyGoal} ${state.settings.weeklyGoal === 1 ? 'session' : 'sessions'} is done, so today is a rest day unless you want more. ${pick}`
-          : `A rest day in your schedule. ${pick}`
+          ? `Your weekly goal of ${sessions} is done, so today is a rest day unless you want more. ${pick}`
+          : d.restWhy === 'spread'
+            ? `A rest day between sessions: your weekly goal is ${sessions}, spread across the week (the app’s own spacing). ${pick}`
+            : `A rest day in your schedule. ${pick}`
     return { minutes: 0, rest: true, kind: 'rest', reasons: [text] }
   }
   const reasons: string[] = []
@@ -1874,7 +2094,14 @@ function assembleDay(
   const why = kindReason(slot, d, skills, extra)
   if (why) reasons.push(why)
   const skillBlock: SkillBlock | undefined =
-    slot.skillMin > 0 ? { minutes: slot.skillMin, skills: slot.skills, hard: [...slot.families], ...(slot.opener ? { opener: true as const } : {}) } : undefined
+    slot.skillMin > 0
+      ? {
+          minutes: slot.skillMin,
+          skills: slot.skills,
+          hard: [...slot.families],
+          ...(slot.opener ? { opener: true as const, ...(extra.place ? { kit: extra.place.equipment as EquipmentId[] } : {}) } : {}),
+        }
+      : undefined
   const wantsGym = extra.wantsGym
   if (d.assigned && slot.kind === 'calisthenics') {
     const left = d.assigned.filter((s) => !slot.skills.includes(s))
@@ -1893,7 +2120,9 @@ function assembleDay(
   if (skillBlock && conservative(state.profile, d.at) && slot.skills.some((s) => skillFamily(s) !== 'balance')) {
     reasons.push('Warm wrists, elbows and shoulders up fully before the holds — the session starts with it, so do not skip it.')
   }
-  if (slot.noSkillFits && slot.kind === 'rest' && !slot.tooShort) reasons.push('No skill work fits today’s rest rules, so the skills rest today.')
+  if (slot.noKit && slot.kind !== 'calisthenics' && !d.assigned) {
+    reasons.push('None of your skills can train with the kit you listed, so no calisthenics day is planned. Add the kit under Settings → Equipment.')
+  } else if (slot.noSkillFits && slot.kind === 'rest' && !slot.tooShort) reasons.push('No skill work fits today’s rest rules, so the skills rest today.')
   const base = { minutes: d.minutes, rest: false, kind: slot.kind, ...(slot.alternative ? { alternative: slot.alternative } : {}), ...(skillBlock ? { skill: skillBlock } : {}) }
   // Readiness scales the gym block; a calisthenics day is the skill coach's call, from its own check-in.
   if (slot.kind !== 'gym' || slot.gymMin <= 0 || !wantsGym || !focus) return { ...base, reasons }
@@ -1929,8 +2158,14 @@ function assembleDay(
   const covered = d.legsCovered
   if (covered) {
     const what = covered.scheduled ? `Your usual ${sportName(covered.kind)}` : covered.kind === 'pe' ? 'PE' : cap(covered.kind)
-    const when = d.at - covered.at < DAY ? 'today or yesterday' : 'in the last two days'
-    reasons.push(`${what} ${when} already loaded your legs — no leg work in the gym today.${covered.scheduled ? ' (Counted from your sport week; log it if it went differently.)' : ''}`)
+    reasons.push(
+      `${what} on ${dayName(covered.at)} already loaded your legs — no leg work in the gym today.${covered.scheduled ? ' (Counted from your sport week; log it if it went differently.)' : ''}`,
+    )
+  }
+  const onDay = d.sameDay
+  if (onDay) {
+    const what = onDay.scheduled ? `Your usual ${sportName(onDay.kind)}` : onDay.kind === 'pe' ? 'PE' : onDay.kind === 'other' ? 'Your activity' : `Your ${onDay.kind}`
+    reasons.push(`${what} is today: no leg work in the gym, and the gym is a little lighter — the same as the day before it.`)
   }
   reasons.push(...extra.notes)
   if (weekSets) {
@@ -1951,10 +2186,10 @@ function assembleDay(
   const upcoming = d.upcoming
   if (upcoming) {
     const what = upcoming.scheduled ? `Your usual ${sportName(upcoming.kind)}` : upcoming.kind === 'pe' ? 'PE' : upcoming.kind === 'other' ? 'Your activity' : `Your ${upcoming.kind}`
-    reasons.push(`${what} ${upcoming.at - d.at < 18 * HOUR ? 'is coming up soon' : 'is tomorrow'}: legs stay fresh — no leg work today, and the gym is a little lighter.`)
+    reasons.push(`${what} is tomorrow: legs stay fresh — no leg work today, and the gym is a little lighter.`)
   }
   if (prefs.season === 'in') reasons.push('In season: the sport comes first, so the gym keeps the weights but drops some sets.')
-  const legMuscles = d.legsCovered || d.upcoming ? LEG_MUSCLES : []
+  const legMuscles = d.legsCovered || d.sameDay || d.upcoming ? LEG_MUSCLES : []
   return {
     ...base,
     ...(readiness ? { readiness } : {}),
@@ -2007,15 +2242,32 @@ function kindShort(slot: SkillSlot, skills: SkillId[], week: { cal: number; gym:
 }
 
 /** The short lines the week view shows under a day. */
-function whyFor(d: DayCtx, slot: SkillSlot, plan: TodayPlan, serves: Muscle[], prefs: TrainingPrefs, skills: SkillId[], notes: string[], week: { cal: number; gym: number }): string[] {
+function whyFor(d: DayCtx, slot: SkillSlot, plan: TodayPlan, serves: Muscle[], prefs: TrainingPrefs, skills: SkillId[], notes: string[], week: { cal: number; gym: number }, goal: number): string[] {
   const why: string[] = []
   const sport = d.sport[d.sport.length - 1]
   if (plan.rest) {
-    why.push(sport ? `No gym or skills: your ${sportName(sport.kind)} day.` : d.restWhy === 'plan' ? 'Rest day in your week plan.' : d.restWhy === 'goal' ? 'Rest day: your weekly goal is done.' : 'Rest day in your schedule.')
+    why.push(
+      sport
+        ? `No gym or skills: your ${sportName(sport.kind)} day.`
+        : d.restWhy === 'plan'
+          ? 'Rest day in your week plan.'
+          : d.restWhy === 'goal'
+            ? 'Rest day: your weekly goal is done.'
+            : d.restWhy === 'spread'
+              ? `Rest day: your ${goal} sessions are spread across the week.`
+              : 'Rest day in your schedule.',
+    )
     return why
   }
   const line = kindShort(slot, skills, week)
   if (line) why.push(line)
+  // A joint report reshapes the days it covers: say so on each of them, not only today.
+  const report = d.reports[d.reports.length - 1]
+  if (report) {
+    const where = joinNames(d.avoidJoints.map((j) => j.replace('-', ' ')))
+    const on = startOfDay(report.at) === d.start ? 'today' : `on ${dayName(report.at)}`
+    why.push(d.pain ? `Kept light: pain reported ${on}${where ? `, ${where} kept out` : ''}.` : `Steers round the ${where || 'niggle'} you reported ${on}.`)
+  }
   // What each skill actually gets, by the line-up's rules: only a full part that reaches the hard count is called hard.
   for (const part of slot.parts) {
     const f = skillFamily(part.skill)
@@ -2063,8 +2315,10 @@ function whyFor(d: DayCtx, slot: SkillSlot, plan: TodayPlan, serves: Muscle[], p
     else why.push(serves.length ? `${label}: ${joinNames(serves.map((m) => MUSCLE_BY_ID[m].label.toLowerCase()))} furthest from this week’s sets.` : `${label}: keeps the week balanced.`)
   }
   why.push(...notes)
-  if (d.legsCovered) why.push(`Legs out of the gym: ${d.legsCovered.scheduled ? 'your usual ' : ''}${sportName(d.legsCovered.kind)} ${startOfDay(d.legsCovered.at) === d.start ? 'today' : 'the day before'}.`)
-  else if (d.upcoming) why.push(`Legs stay fresh for the ${sportName(d.upcoming.kind)} ${startOfDay(d.upcoming.at) === d.start ? 'later today' : 'tomorrow'}.`)
+  // The sport's own day is named: "the day before" once showed two days after a Saturday game.
+  if (d.sameDay) why.push(`Legs out of the gym: ${d.sameDay.scheduled ? 'your usual ' : ''}${sportName(d.sameDay.kind)} today.`)
+  else if (d.legsCovered) why.push(`Legs out of the gym: ${d.legsCovered.scheduled ? 'your usual ' : ''}${sportName(d.legsCovered.kind)} on ${dayName(d.legsCovered.at)}.`)
+  else if (d.upcoming) why.push(`Legs stay fresh for the ${sportName(d.upcoming.kind)} tomorrow.`)
   if (plan.readiness?.level === 'light') why.push('A light day.')
   else if (plan.readiness?.level === 'push') why.push(plan.gym && plan.gym.volumeFactor > 1 ? 'A push day: one more set on each lift.' : 'A push day — speed work keeps its usual dose.')
   return why

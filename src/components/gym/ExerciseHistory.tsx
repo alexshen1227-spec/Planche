@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { activeLocation } from '../../lib/gym/draft'
-import { estimateOneRepMax, gymRecords } from '../../lib/gym/progression'
+import { countUnit, estimateOneRepMax, gymRecords } from '../../lib/gym/progression'
 import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { useStore } from '../../lib/store'
 import { HoldLineChart } from '../charts'
@@ -55,8 +55,16 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
           <dd className="text-title2 font-semibold tnum">{rows.length}</dd>
         </div>
         <div className="rounded-inner bg-raised p-3">
-          <dt className="text-caption text-ink3">Heaviest</dt>
-          <dd className="text-title3 font-semibold tnum">{record?.heaviest ? formatLoad(record.heaviest.kg, unit) : '—'}</dd>
+          <dt className="text-caption text-ink3">{countUnit(ex) === 'seconds' ? 'Longest' : 'Heaviest'}</dt>
+          <dd className="text-title3 font-semibold tnum">
+            {countUnit(ex) === 'seconds'
+              ? record?.longestHold
+                ? `${record.longestHold.sec} s`
+                : '—'
+              : record?.heaviest
+                ? formatLoad(record.heaviest.kg, unit)
+                : '—'}
+          </dd>
         </div>
         <div className="rounded-inner bg-raised p-3">
           <dt className="text-caption text-ink3">Est. max</dt>
@@ -68,7 +76,9 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
           axisFormat={(v) => String(Math.round(displayLoad(v, unit)))} />
       ) : (
         <p className="text-caption text-ink3">
-          {ex.assisted
+          {countUnit(ex) === 'seconds'
+            ? 'Holds have no estimated max: the longest hold is the record.'
+            : ex.assisted
             ? 'The weight logged here is the help, so there is no estimated max: less help for the same reps is the progress.'
             : ex.load === 'bodyweight'
             ? 'Bodyweight sets have no estimated max; the most reps in a set is the record.'

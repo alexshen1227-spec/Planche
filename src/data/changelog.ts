@@ -19,6 +19,21 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-22',
+    title: 'One coach on every screen, safer youth work, holds in seconds',
+    area: 'coach',
+    notes: [
+      'The Gym side now asks the same coach as the Today card. On any day it keeps the in-season cap, the legs-fresh rule around games (on a rest day too), the lighter week and your sore joints, whichever focus you pick — and it never opens with a second hard skill session on the same day.',
+      'Today’s choice — calisthenics or gym, and “I have X minutes” — is the same on Home, Train and the Gym side. Home counts gym days, says “Today: rest” on a rest day, and shows the coach’s week.',
+      'Openers use the kit at the gym plus the kit you carry (parallettes, rings, a band); a pull-up bar at home no longer counts at a gym without one.',
+      'Calisthenics days are only planned for skills you have the kit for, your weekly goal sets how many training days a week gets, a lighter week stays lighter all week, and a game day keeps legs out whatever time the game starts.',
+      'Under 18, or with no age given: a longer warm-up before planche, front lever, handstand and flag work — a second set of wrist prep, two sets of scapula work and an easy primer hold.',
+      'Hard bodyweight moves (Nordic curls, dragon flags and the like) are 3–6 slow reps and never a beginner’s first pick. Planks, hollow holds and L-sits are counted in seconds, with a longest-hold record.',
+      'A lift moves up without effort ratings after two sessions in a row at the top of its range; wrist pain keeps presses, dips, push-ups and curls out; a loaded lift logged at 0 kg asks what weight it was.',
+      'Preferences changed in two tabs keep both edits; tap targets are bigger across Settings, Path and Progress; the gym player keeps screen readers on the player.',
+    ],
+  },
+  {
+    date: '2026-11-22',
     title: 'One session a day: calisthenics or gym',
     area: 'coach',
     notes: [

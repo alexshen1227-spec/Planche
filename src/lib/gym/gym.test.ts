@@ -4,7 +4,7 @@ import { GYM_EQUIPMENT_BY_ID, MUSCLE_BY_ID, PATTERN_LABEL, type Pattern } from '
 import { athleticDomain } from '../../data/gym/exercises'
 import { alternativesFor, availableAt, canDoHere } from './availability'
 import { buildGymSession, FOCUS_LABEL } from './builder'
-import { estimateOneRepMax, gateTier, gymRecords, plyoGate, repPlanFor, suggestLoad, unlockedTier } from './progression'
+import { estimateOneRepMax, gateTier, gymRecords, isHardBodyweight, plyoGate, repPlanFor, suggestLoad, unlockedTier } from './progression'
 import { defaultGym, mergeGym, newLocation, reduceGym, sanitizeGym } from './state'
 import type { GymLocation, GymSession, GymSet } from './types'
 import { displayLoad, fromKg, roundToStep, stepKgFor, toKg } from './units'
@@ -131,7 +131,10 @@ describe('double progression', () => {
       // Unloaded runs, hops and throws are dosed in contacts or reps with no weight: the 6-rep floor is for loaded work.
       if (e.dose && e.load === 'bodyweight') continue
       for (const emphasis of ['strength', 'muscle', 'endurance', 'power'] as const) {
-        expect(repPlanFor(e, emphasis, true).range[0], `${e.id} ${emphasis}`).toBeGreaterThanOrEqual(6)
+        // A hard bodyweight movement (Nordic curl, dragon flag) is a few slow lowering reps, not a loaded max:
+        // its floor is 4 (round 2 review). Everything else keeps the six-rep floor.
+        const floor = isHardBodyweight(e) && emphasis !== 'power' ? 4 : 6
+        expect(repPlanFor(e, emphasis, true).range[0], `${e.id} ${emphasis}`).toBeGreaterThanOrEqual(floor)
       }
     }
   })

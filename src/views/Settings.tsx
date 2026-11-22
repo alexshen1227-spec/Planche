@@ -550,7 +550,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                       onClick={() => moveSkill(index, -1)}
                       disabled={index === 0}
                       aria-label={`Move ${def.name} up`}
-                      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
+                      className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
                     >
                       <Icon name="chevronR" size={14} className="-rotate-90" />
                     </button>
@@ -558,7 +558,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                       onClick={() => moveSkill(index, 1)}
                       disabled={index === skillOrder.length - 1}
                       aria-label={`Move ${def.name} down`}
-                      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
+                      className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
                     >
                       <Icon name="chevronR" size={14} className="rotate-90" />
                     </button>
@@ -570,7 +570,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                       disabled={skillOrder.length === 1}
                       aria-label={`Stop training ${def.name}`}
                       title={skillOrder.length === 1 ? 'At least one skill stays on the list' : undefined}
-                      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
+                      className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink2 hover:text-ink disabled:opacity-30"
                     >
                       <Icon name="x" size={14} />
                     </button>
@@ -1017,7 +1017,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             onChange={(e) => set({ volume: Number(e.target.value) })}
             aria-label="Sound volume"
             // Tall enough to grab on a phone: a bare range input is 16px high.
-            className="h-8 w-36 cursor-pointer"
+            className="h-11 w-36 cursor-pointer"
           />
           <button
             onClick={() => sfx.pr()}

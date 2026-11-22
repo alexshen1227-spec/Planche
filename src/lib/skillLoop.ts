@@ -81,7 +81,9 @@ export function startingState(options: Pick<SkillLoopOptions, 'skills' | 'steps'
     stepId: skills.includes('planche') ? (steps.planche ?? 'foundations') : 'foundations',
     weeklyGoal: 3,
     sessionMinutes: options.sessionMinutes ?? 45,
-    profile: { equipment: options.equipment ?? ALL_KIT },
+    // An adult: the closed loops measure the standard session. The longer
+    // warm-up under 18 (or with no age) is pinned in youthWarmup.test.
+    profile: { equipment: options.equipment ?? ALL_KIT, birthYear: 1990 },
     units: 'metric',
     skills,
     placements: Object.fromEntries(

@@ -63,6 +63,7 @@ function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
       })
     : []
   const sportSchedule = sanitizeSportSchedule(r.sportSchedule)
+  const fieldTimes = sanitizeFieldTimes(r.fieldTimes)
   const minutes = Array.isArray(r.minutesByDay) && r.minutesByDay.length === 7
     ? r.minutesByDay.map((m) => Math.round(clamp(m, 0, 240, 0)))
     : base.minutesByDay
@@ -81,8 +82,44 @@ function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
     straightArmRestHours: Math.round(clamp(r.straightArmRestHours, 24, 96, 48)),
     ...(r.season === 'in' ? { season: 'in' as const } : {}),
     ...(sportSchedule.length ? { sportSchedule } : {}),
+    ...(fieldTimes ? { fieldTimes } : {}),
     updatedAt: isTime(r.updatedAt) ? r.updatedAt : 1,
   }
+}
+
+/** Every setting a training-prefs edit can change on its own (all but the stamps). */
+const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'minutesByDay', 'straightArmRestHours', 'season', 'sportSchedule'] as const
+
+function sanitizeFieldTimes(raw: unknown): Record<string, number> | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const out: Record<string, number> = {}
+  for (const k of PREF_FIELDS) {
+    const t = (raw as Record<string, unknown>)[k]
+    if (isTime(t)) out[k] = t
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+const prefFieldTime = (p: TrainingPrefs, k: string) => p.fieldTimes?.[k] ?? p.updatedAt
+
+/**
+ * Two copies of the training prefs, converged field by field: each setting
+ * comes from the side that changed it last (a tie keeps `local`).
+ */
+export function mergePrefs(local: TrainingPrefs | undefined, incoming: TrainingPrefs | undefined): TrainingPrefs | undefined {
+  if (!incoming) return local
+  if (!local) return incoming
+  const out: Record<string, unknown> = {}
+  const times: Record<string, number> = {}
+  for (const k of PREF_FIELDS) {
+    const useIncoming = prefFieldTime(incoming, k) > prefFieldTime(local, k)
+    const from = useIncoming ? incoming : local
+    const v = (from as unknown as Record<string, unknown>)[k]
+    if (v !== undefined) out[k] = v
+    times[k] = prefFieldTime(from, k)
+  }
+  const stamped = Boolean(local.fieldTimes || incoming.fieldTimes)
+  return { ...(out as unknown as TrainingPrefs), ...(stamped ? { fieldTimes: times } : {}), updatedAt: Math.max(local.updatedAt, incoming.updatedAt) }
 }
 
 /**
@@ -388,8 +425,7 @@ export function mergeGym(local: GymState | undefined, incoming: GymState | undef
     const have = activities.get(a.id)
     if (!have || a.updatedAt > have.updatedAt) activities.set(a.id, a)
   }
-  const prefs =
-    (incoming.prefs?.updatedAt ?? 0) > (local.prefs?.updatedAt ?? 0) ? incoming.prefs : local.prefs
+  const prefs = mergePrefs(local.prefs, incoming.prefs)
   const merged: GymState = {
     locations: [...locations.values()],
     activeLocationId: local.activeLocationId && locations.has(local.activeLocationId) ? local.activeLocationId : [...locations.keys()][0],
@@ -557,8 +593,17 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
       else delete favoriteAt[action.exerciseId]
       return { ...gym, favoriteAt, favoriteAtTime: { ...gym.favoriteAtTime, [action.exerciseId]: now }, prefsUpdatedAt: now }
     }
-    case 'setPrefs':
-      return { ...gym, prefs: { ...action.prefs, updatedAt: now } }
+    case 'setPrefs': {
+      // Stamp only the fields this edit changed; the rest keep their own times.
+      const prev = gym.prefs
+      const next = action.prefs as unknown as Record<string, unknown>
+      const before = (prev ?? {}) as unknown as Record<string, unknown>
+      const fieldTimes: Record<string, number> = {}
+      for (const k of PREF_FIELDS) {
+        fieldTimes[k] = !prev || stableJson(before[k]) !== stableJson(next[k]) ? now : prefFieldTime(prev, k)
+      }
+      return { ...gym, prefs: { ...action.prefs, fieldTimes, updatedAt: now } }
+    }
     case 'logActivity': {
       const activity = { ...action.activity, updatedAt: now }
       const rest = (gym.activities ?? []).filter((a) => a.id !== activity.id)

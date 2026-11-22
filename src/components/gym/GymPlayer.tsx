@@ -8,7 +8,7 @@ import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
 import { alternativesFor, availableAt } from '../../lib/gym/availability'
 import { restFor } from '../../lib/gym/builder'
 import { conservative, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
-import { gymRecords, lastPerformance, plyoGate, repPlanFor, suggestLoad } from '../../lib/gym/progression'
+import { allowsUnloaded, countUnit, countWord, gymRecords, isUnloadedSet, lastPerformance, plyoGate, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GymLocation, Rating } from '../../lib/gym/types'
 import { displayLoad, formatLoad, stepKgFor, toKg, unitFor } from '../../lib/gym/units'
 import { doubtedLoad } from '../../lib/gym/state'
@@ -24,6 +24,25 @@ function buzz(pattern: number | number[]) {
   } catch {
     // Not every browser lets a page vibrate; the set is logged either way.
   }
+}
+
+/**
+ * While the player is open the page beneath it is out of reach: inert (no focus, no taps) and hidden from
+ * screen readers. The player and its sheets are portalled to <body>, outside #root, so they stay live.
+ */
+export function useInertBackground(root: HTMLElement | null = typeof document === 'undefined' ? null : document.getElementById('root')) {
+  useEffect(() => {
+    if (!root) return
+    const wasInert = root.hasAttribute('inert')
+    const wasHidden = root.getAttribute('aria-hidden')
+    root.setAttribute('inert', '')
+    root.setAttribute('aria-hidden', 'true')
+    return () => {
+      if (!wasInert) root.removeAttribute('inert')
+      if (wasHidden === null) root.removeAttribute('aria-hidden')
+      else root.setAttribute('aria-hidden', wasHidden)
+    }
+  }, [root])
 }
 
 function mmss(sec: number): string {
@@ -75,6 +94,7 @@ export function GymPlayer({
   const { state, dispatch } = useStore()
   const gym = state.gym!
   const youth = conservative(state.profile)
+  useInertBackground()
   const [draft, setDraft] = useState<GymDraft>(initial)
   const [now, setNow] = useState(() => Date.now())
   const [rest, setRest] = useState<{ until: number; total: number } | null>(null)
@@ -112,9 +132,16 @@ export function GymPlayer({
   /** A load far above this lift's best, asked about before the set is logged: a slipped decimal once set records for good. */
   const [doubt, setDoubt] = useState<{ item: number; set: number; probably?: number; best: number } | null>(null)
 
-  const completeSet = (i: number, j: number, checked = false) => {
+  /** A loaded lift completed with no weight on it: ask for the weight (or bodyweight, where the movement allows it). */
+  const [needLoad, setNeedLoad] = useState<{ item: number; set: number } | null>(null)
+
+  const completeSet = (i: number, j: number, checked = false, unloadedOk = false) => {
     const item = draft.items[i]
     const set = item.sets[j]
+    if (!set.done && !unloadedOk && isUnloadedSet(GYM_EXERCISE_BY_ID[item.exerciseId], { kg: set.load !== undefined ? toKg(set.load, item.unit) : undefined })) {
+      setNeedLoad({ item: i, set: j })
+      return
+    }
     if (!checked && !set.done && set.load !== undefined && set.load > 0 && !GYM_EXERCISE_BY_ID[item.exerciseId]?.assisted) {
       const odd = doubtedLoad(gym.sessions, item.exerciseId, toKg(set.load, item.unit))
       if (odd) {
@@ -259,7 +286,7 @@ export function GymPlayer({
                       {rating(ex.id) === 'love' ? <span className="ml-2 text-caption font-medium text-accent-text">Favourite</span> : null}
                     </h3>
                     <p className="mt-0.5 text-footnote text-ink2">
-                      {item.sets.length} × {item.plan.range[0]}–{item.plan.range[1]} reps · stop about RPE {item.plan.targetRpe}
+                      {item.sets.length} × {item.plan.range[0]}–{item.plan.range[1]} {countUnit(ex) === 'seconds' ? 'seconds' : 'reps'} · stop about RPE {item.plan.targetRpe}
                       {best ? ` · est. max ${formatLoad(best.kg, item.unit)}` : ''}
                     </p>
                     {item.suggestion ? <p className="mt-1 text-caption text-ink3">{item.suggestion.why}</p> : null}
@@ -307,10 +334,10 @@ export function GymPlayer({
                               })
                             }
                             className="order-last basis-full text-left text-caption text-ink3 hover:text-ink2"
-                            aria-label={`Previous: ${item.previous[j].load !== undefined ? `${item.previous[j].load} ${item.unit} × ` : ''}${item.previous[j].reps} reps — tap to use`}
+                            aria-label={`Previous: ${item.previous[j].load !== undefined ? `${item.previous[j].load} ${item.unit} × ` : ''}${countWord(ex, item.previous[j].reps)} — tap to use`}
                           >
                             Previous: {item.previous[j].load !== undefined ? `${item.previous[j].load} ${item.unit} × ` : ''}
-                            {item.previous[j].reps}
+                            {countUnit(ex) === 'seconds' ? countWord(ex, item.previous[j].reps) : item.previous[j].reps}
                             {item.previous[j].rpe !== undefined ? ` @${item.previous[j].rpe}` : ''} · tap to use
                           </button>
                         ) : null}
@@ -339,9 +366,9 @@ export function GymPlayer({
                         )}
                         <Stepper
                           value={s.reps}
-                          unit="reps"
-                          step={1}
-                          label={`Set ${j + 1} reps`}
+                          unit={countUnit(ex) === 'seconds' ? 'sec' : 'reps'}
+                          step={countUnit(ex) === 'seconds' ? 5 : 1}
+                          label={`Set ${j + 1} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`}
                           onChange={(v) =>
                             update((d) => {
                               d.items[i].sets[j].reps = Math.max(0, Math.round(v))
@@ -446,12 +473,48 @@ export function GymPlayer({
             <Button variant="secondary" aria-label="15 seconds more" onClick={() => setRest((r) => (r ? { ...r, until: r.until + 15_000, total: r.total + 15 } : r))}>
               +15
             </Button>
-            <Button variant="ghost" onClick={() => setRest(null)}>
+            <Button variant="ghost" className="min-w-12 shrink-0" onClick={() => setRest(null)}>
               Skip
             </Button>
           </div>
         </div>
       ) : null}
+
+      <Sheet open={!!needLoad} onClose={() => setNeedLoad(null)} label="Set the weight">
+        {needLoad && draft.items[needLoad.item] ? (
+          <div className="space-y-3">
+            <h2 className="text-title3 font-semibold">What weight was that?</h2>
+            <p className="text-footnote text-ink2">
+              {GYM_EXERCISE_BY_ID[draft.items[needLoad.item].exerciseId]?.name} is a loaded lift, and a set with no weight would count as nothing
+              toward your next load.
+            </p>
+            <div className="grid gap-2">
+              <Button
+                size="lg"
+                onClick={() => {
+                  const { item, set } = needLoad
+                  setNeedLoad(null)
+                  window.setTimeout(() => document.querySelector<HTMLInputElement>(`[data-set="${item}-${set}"] input`)?.focus(), 50)
+                }}
+              >
+                Set the weight
+              </Button>
+              {allowsUnloaded(GYM_EXERCISE_BY_ID[draft.items[needLoad.item].exerciseId]) ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const { item, set } = needLoad
+                    setNeedLoad(null)
+                    completeSet(item, set, true, true)
+                  }}
+                >
+                  Log as bodyweight
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </Sheet>
 
       <Sheet open={!!doubt} onClose={() => setDoubt(null)} label="Check this load">
         {doubt && draft.items[doubt.item] ? (

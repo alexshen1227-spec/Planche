@@ -21,6 +21,34 @@ export interface RepPlan {
   targetRpe: number
 }
 
+/** A bodyweight movement that needs coaching to do well: dosed in a few slow reps. */
+export function isHardBodyweight(ex: GymExercise): boolean {
+  return Boolean(ex.technical && ex.load === 'bodyweight' && !ex.dose && !ex.explosive && !ex.assisted)
+}
+
+/** What a set of this movement is counted in. Reps logged on a hold are read as seconds. */
+export function countUnit(ex: Pick<GymExercise, 'count'> | undefined): 'reps' | 'seconds' {
+  return ex?.count === 'seconds' ? 'seconds' : 'reps'
+}
+
+/** "12 reps" or "30 s": a count as the movement is counted (reps logged on a hold read as seconds). */
+export function countWord(ex: Pick<GymExercise, 'count'> | undefined, n: number): string {
+  return countUnit(ex) === 'seconds' ? `${n} s` : `${n} reps`
+}
+
+/**
+ * Whether a set with no load may be logged as bodyweight: only for a movement
+ * that is bodyweight or where the logged weight is help. A loaded lift needs a weight.
+ */
+export function allowsUnloaded(ex: Pick<GymExercise, 'load' | 'assisted'> | undefined): boolean {
+  return !ex || ex.load === 'bodyweight' || Boolean(ex.assisted)
+}
+
+/** A loaded movement's set that no weight was logged on: it says nothing about the load. */
+export function isUnloadedSet(ex: GymExercise | undefined, set: Pick<GymSet, 'kg'>): boolean {
+  return Boolean(ex) && !allowsUnloaded(ex) && !(set.kg !== undefined && set.kg > 0)
+}
+
 /**
  * Default ranges. An athlete under 18 never gets a range under 6 reps: no
  * near-maximal singles or doubles, and their maxes are estimated from sets of
@@ -34,6 +62,9 @@ export function repPlanFor(
   // Runs, hops and throws are dosed in contacts or reps at an effort, never by load.
   if (exercise.dose && exercise.load === 'bodyweight') return { range: exercise.dose.range, targetRpe: exercise.dose.rpe }
   if (exercise.explosive || emphasis === 'power') return youth ? { range: [6, 8], targetRpe: 7 } : { range: [3, 6], targetRpe: 7 }
+  // A hard bodyweight movement (a Nordic curl, a dragon flag) is a few slow, controlled reps, never an
+  // isolation set of 10–15. Under 18 the floor stays one rep above the lowest: these are not loaded maxes.
+  if (isHardBodyweight(exercise)) return { range: youth ? [4, 6] : [3, 6], targetRpe: 8 }
   if (emphasis === 'endurance') return { range: exercise.compound ? [12, 20] : [15, 25], targetRpe: 8 }
   if (emphasis === 'strength') {
     if (!exercise.compound) return { range: [8, 12], targetRpe: 8 }
@@ -78,13 +109,14 @@ export function lastPerformance(
   exerciseId: string,
   locationId?: string,
   before = Infinity,
+  keep?: (set: GymSet) => boolean,
 ): LastPerformance | null {
   for (let i = sessions.length - 1; i >= 0; i--) {
     const s = sessions[i]
     if (s.startedAt >= before) continue
     if (locationId !== undefined && s.locationId !== locationId) continue
     const log = s.exercises.find((e) => e.exerciseId === exerciseId)
-    const sets = log?.sets.filter((set) => !set.warmup && set.reps > 0) ?? []
+    const sets = log?.sets.filter((set) => !set.warmup && set.reps > 0 && (!keep || keep(set))) ?? []
     if (sets.length) return { session: s, sets }
   }
   return null
@@ -113,8 +145,13 @@ export function sharedEstimate(sessions: GymSession[], exerciseId: string, befor
 }
 
 /** What to say for work counted in contacts or runs: quality and rest, never "add reps". */
-function countedWhy(ex: GymExercise, plan: RepPlan): string {
+function countedWhy(ex: GymExercise, plan: RepPlan, lastSeconds?: number[]): string {
   const [lo, hi] = plan.range
+  if (ex.count === 'seconds') {
+    return lastSeconds?.length
+      ? `Aim to beat last time’s ${lastSeconds.join(', ')} seconds: add a few seconds, and stop the moment the line breaks.`
+      : `Hold ${lo}–${hi} seconds a set, in a straight clean line. Stop when form goes, not at a number.`
+  }
   const dist = ex.distanceM ? ` of about ${ex.distanceM} m` : ''
   if (ex.pattern === 'sprint') {
     return `${ex.maximal ? 'Maximal runs' : 'Runs'}${dist}, one per set, with full rest. Stop the moment speed drops: more runs do not help.`
@@ -176,7 +213,9 @@ export function suggestLoad(input: {
   const [lo, hi] = plan.range
   const base = { reps: plan.range, targetRpe: plan.targetRpe }
   if (!ex) return { ...base, kind: 'first-time', why: 'Not a movement this app knows.' }
-  const last = lastPerformance(sessions, exerciseId, location?.id, now)
+  // A set of a loaded movement with no weight logged says nothing about the load.
+  const keep = (set: GymSet) => !isUnloadedSet(ex, set)
+  const last = lastPerformance(sessions, exerciseId, location?.id, now, keep)
   const step = stepKgFor(ex, location)
   const top = maxKgFor(ex, location)
   if (!last) {
@@ -187,6 +226,7 @@ export function suggestLoad(input: {
     }
     if (ex.load === 'bodyweight') {
       if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan) }
+      if (isHardBodyweight(ex)) return { ...base, kind: 'bodyweight', why: `Hard bodyweight movement: ${lo}–${hi} slow, controlled reps, lowering for about three seconds. Stop a rep before form breaks.` }
       return { ...base, kind: 'bodyweight', why: `Bodyweight: aim for ${lo}–${hi} clean reps.` }
     }
     if (ex.assisted) {
@@ -213,6 +253,16 @@ export function suggestLoad(input: {
   const allTop = atLoad.length >= 2 && atLoad.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
   const anyShort = atLoad.some((s) => s.reps < lo)
   const grinding = atLoad.some((s) => s.rpe !== undefined && s.rpe >= 9.5)
+  // No effort was ever logged, so one session at the top of the range proves
+  // nothing (it may have been a grind). The same load at the top of the range
+  // in two sessions running is repeatable: that earns one step.
+  const unratedTwice = (() => {
+    if (allTop || atLoad.length < 2 || atLoad.some((s) => s.rpe !== undefined) || !atLoad.every((s) => s.reps >= hi)) return false
+    const before = lastPerformance(sessions, exerciseId, location?.id, last.session.startedAt, keep)
+    if (!before) return false
+    const prior = before.sets.filter((s) => (s.kg ?? 0) === kg)
+    return prior.length >= 2 && prior.every((s) => s.reps >= hi && (s.rpe === undefined || s.rpe <= plan.targetRpe + 0.5))
+  })()
   const failing = failedWithoutEffort(atLoad, lo)
   // Every suggested load is one this place can make.
   const reach = (v: number) => {
@@ -221,11 +271,11 @@ export function suggestLoad(input: {
   }
   if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, top)
   if (ex.load === 'bodyweight' && !(kg > 0)) {
-    if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan) }
+    if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan, working.map((s) => s.reps)) }
     if (allTop) return { ...base, kind: 'bodyweight', why: `Every set reached ${hi} last time: add a few reps, slow the lowering, or move to a harder version.` }
     return { ...base, kind: 'bodyweight', why: `Aim to beat last time’s ${working.map((s) => s.reps).join(', ')} reps.` }
   }
-  if (allTop && step > 0) {
+  if ((allTop || unratedTwice) && step > 0) {
     const here = reach(kg)
     const next = roundToStep(here + step, step, top)
     if (next <= here) {
@@ -233,7 +283,7 @@ export function suggestLoad(input: {
     }
     // Sets that blew well past the range at an easy effort earn two steps —
     // for an adult. Under 18 a jump is always the smallest step there is.
-    const easy = atLoad.every((s) => s.reps >= hi + 3 && s.rpe !== undefined && s.rpe <= 7)
+    const easy = !unratedTwice && atLoad.every((s) => s.reps >= hi + 3 && s.rpe !== undefined && s.rpe <= 7)
     const twoSteps = !youth && easy ? roundToStep(here + 2 * step, step, top) : next
     return {
       ...base,
@@ -242,7 +292,9 @@ export function suggestLoad(input: {
       why:
         twoSteps > next
           ? `Every set went well past ${hi} at an easy effort last time: up two steps.`
-          : `Every set reached ${hi} at the target effort last time: up one step.`,
+          : unratedTwice
+            ? `Every set reached ${hi} in your last two sessions at this weight (no effort logged, so two in a row stands in for it): up one step.`
+            : `Every set reached ${hi} at the target effort last time: up one step.`,
     }
   }
   if (anyShort && grinding && step > 0) {
@@ -306,6 +358,8 @@ export interface GymRecord {
   heaviest?: { kg: number; reps: number; at: number }
   /** Most reps in one working set (bodyweight work). */
   mostReps?: { reps: number; kg?: number; at: number }
+  /** Longest hold in one working set, for movements counted in seconds (older logs kept seconds in `reps`). */
+  longestHold?: { sec: number; at: number }
 }
 
 /** Records per exercise, derived by replaying history — never stored, never edited. */
@@ -321,6 +375,9 @@ export function gymRecords(sessions: GymSession[]): Record<string, GymRecord> {
         if (e !== null && (!rec.bestE1rm || e > rec.bestE1rm.kg)) rec.bestE1rm = { kg: e, at: set.at, locationId: s.locationId, set }
         if (!assisted && set.kg !== undefined && set.kg > 0 && (!rec.heaviest || set.kg > rec.heaviest.kg)) {
           rec.heaviest = { kg: set.kg, reps: set.reps, at: set.at }
+        }
+        if (GYM_EXERCISE_BY_ID[log.exerciseId]?.count === 'seconds' && (!rec.longestHold || set.reps > rec.longestHold.sec)) {
+          rec.longestHold = { sec: set.reps, at: set.at }
         }
         if (!rec.mostReps || set.reps > rec.mostReps.reps) rec.mostReps = { reps: set.reps, ...(set.kg ? { kg: set.kg } : {}), at: set.at }
       }

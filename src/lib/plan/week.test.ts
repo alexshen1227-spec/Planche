@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { AppState, Session, SetLog, SkillId } from '../../types'
+import type { AppState, EquipmentId, Session, SetLog, SkillId } from '../../types'
 import { initialState, reducer } from '../store'
 import { defaultGym, defaultPrefs, mergeGym, sanitizeGym } from '../gym/state'
 import type { GymFocus } from '../gym/builder'
 import type { GymLocation, GymSession, OutsideActivity, SportSlot, TrainingPrefs } from '../gym/types'
 import { fatigueAt } from './load'
-import { gymSessionInputs, planToday, planWeek, planWeekAhead, skillFamily, soreJoints } from './planner'
+import { planToday, planWeek, planWeekAhead, skillFamily, soreJoints } from './planner'
 import { buildGymSession, nextFocus } from '../gym/builder'
 import { liftTrend } from '../gym/progression'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
@@ -498,7 +498,11 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
   })
 
   it('hard sessions of a family the rest rule apart, every day within its minutes, two movements a gym block, assigned days as written', () => {
-    const stats = { pressing: 0, athletes: 0, days: 0, cal: 0, gym: 0, openers: 0 }
+    const stats = { pressing: 0, athletes: 0, days: 0, cal: 0, gym: 0, openers: 0, kitless: 0 }
+    const calendarApart = (a: number, b: number) => {
+      const d0 = (t: number) => new Date(new Date(t).toDateString()).getTime()
+      return Math.round(Math.abs(d0(a) - d0(b)) / (24 * HOUR)) * 24 * HOUR
+    }
     const FAMILY_JOINTS = { push: ['wrists', 'elbows', 'shoulders'], pull: ['elbows', 'shoulders'] } as const
     for (let seed = 1; seed <= 50; seed++) {
       const r = rng(seed + 7919)
@@ -507,7 +511,10 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
       const skills = SKILLS.filter(() => r() < 0.45)
       if (!skills.length) skills.push(pick(SKILLS))
       const steps = { planche: pick<StepId>(['foundations', 'lean', 'tuck', 'advtuck']), frontlever: pick<StepId>(['fl-tuck', 'fl-advtuck']) }
-      const base = startingState({ skills, steps: steps as never, equipment: KIT })
+      // Kit varies on its own stream, so the rest of each athlete stays as it was.
+      const rk = rng(seed + 104729)
+      const kit = rk() < 0.35 ? KIT.filter((k) => k === 'floor' || rk() < 0.5) : KIT
+      const base = startingState({ skills, steps: steps as never, equipment: kit })
       const mode = r()
       const loc = r() < 0.3 ? home : gymA
       const restH = pick([24, 48, 72])
@@ -586,7 +593,7 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
           expect(p.gym!.minutes, who).toBeGreaterThanOrEqual(MIN_GYM_MINUTES)
           // Its family is the focus's, its kit is at the place, and no joint the family loads is sore.
           expect(fam !== 'balance' && focusFamilies(p.gym!.focus).includes(fam), `${who} ${d.day} ${skill} opens ${p.gym!.focus}`).toBe(true)
-          expect(missingKit(skill, loc.equipment as never), `${who} ${d.day} ${skill} kit at ${loc.name}`).toEqual([])
+          expect(missingKit(skill, [...loc.equipment, ...s.profile.equipment] as never), `${who} ${d.day} ${skill} kit at ${loc.name} or the athlete's`).toEqual([])
           const f = fam === 'balance' ? 'push' : fam
           expect(p.gym!.avoidJoints.filter((j) => (FAMILY_JOINTS[f] as readonly string[]).includes(j)), `${who} ${d.day} ${skill} opens on a sore joint`).toEqual([])
           // The family's rest rule: nothing logged on an earlier day, nor another day's hard session of it, inside it.
@@ -594,7 +601,7 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
             if (!sameDay(e.at, d.at) && e.at < d.at) expect(d.at - e.at, `${who} ${d.day} ${skill} opens after a logged session`).toBeGreaterThanOrEqual(rest)
           }
           for (const o of week.days) {
-            if (o === d || o.plan.rest || Math.abs(o.at - d.at) >= rest) continue
+            if (o === d || o.plan.rest || calendarApart(o.at, d.at) >= rest) continue
             const hardThere = (o.plan.skill?.hard ?? []).includes(f) || Boolean(o.plan.gym && focusFamilies(o.plan.gym.focus).includes(f))
             expect(hardThere, `${who} ${d.day} ${skill} opens beside ${o.day}`).toBe(false)
           }
@@ -603,6 +610,12 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
         if (p.skill) {
           const w = finalizeWorkout(s, { source: 'auto', minutes: p.skill.minutes, skills: p.skill.skills }, undefined, d.at)
           used += w.minutes
+          // A calisthenics day only for a session that can train: never one that is waiting for kit.
+          if (p.kind === 'calisthenics') {
+            expect(w.name, `${who} ${d.day} ${p.skill.skills} with kit [${s.profile.equipment}]`).not.toMatch(/waiting for kit/)
+            for (const k of p.skill.skills) expect(missingKit(k, s.profile.equipment), `${who} ${d.day} ${k}`).toEqual([])
+            stats.kitless += kit.length < KIT.length ? 1 : 0
+          }
           // A family called hard gets the sets the app counts as hard.
           const sets = { push: 0, pull: 0 }
           for (const b of w.blocks) {
@@ -660,7 +673,9 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
             const a = events[i]
             const b = events[j]
             if (sameDay(a.at, b.at) || (a.fixed && b.fixed)) continue
-            expect(Math.abs(a.at - b.at), `${who} ${fam}: ${a.what} vs ${b.what} under ${rest / HOUR}h`).toBeGreaterThanOrEqual(rest)
+            // Logged sessions keep their hours; two planned days are counted in calendar days (daylight saving).
+            const real2 = a.what.startsWith('logged') || b.what.startsWith('logged')
+            expect(real2 ? Math.abs(a.at - b.at) : calendarApart(a.at, b.at), `${who} ${fam}: ${a.what} vs ${b.what} under ${rest / HOUR}h`).toBeGreaterThanOrEqual(rest)
           }
       }
       if (own && goals.physique >= 3 && loc === gymA) {
@@ -673,6 +688,7 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
     expect(stats.cal, 'calisthenics days').toBeGreaterThan(0)
     expect(stats.gym, 'gym days').toBeGreaterThan(0)
     expect(stats.openers, 'openers').toBeGreaterThan(0)
+    expect(stats.kitless, 'calisthenics days for athletes missing some kit').toBeGreaterThan(0)
     // Physique athletes still press: the family rule concentrates pressing, it does not remove it.
     expect(stats.pressing / Math.max(1, stats.athletes)).toBeGreaterThanOrEqual(4)
   })
@@ -693,25 +709,6 @@ describe('a sore joint, wherever the session is built', () => {
     expect(r.joints.sort()).toEqual(['elbows', 'wrists'])
     expect(r.pain).toBe(true)
     expect(soreJoints(s, MON + 40 * HOUR).joints).toEqual(['wrists'])
-  })
-
-  it('keeps the sore joint out of an explicitly picked focus, not only the planned one', () => {
-    const s = sore([report(MON - 3 * HOUR, 'elbow')])
-    const inputs = gymSessionInputs('upper', planToday(s, { now: MON }).gym, [], soreJoints(s, MON))
-    expect(inputs.focus).toBe('upper')
-    expect(inputs.avoidJoints).toContain('elbows')
-    expect(inputs.volumeFactor).toBeLessThan(1)
-    const plan = buildGymSession({ location: gymA, minutes: 60, sessions: [], ...inputs, now: MON })
-    for (const it of plan.items) expect(GYM_EXERCISE_BY_ID[it.exerciseId].stress, it.exerciseId).not.toContain('elbows')
-  })
-
-  it('follows today’s plan on Auto: its focus and its lighter day', () => {
-    const s = sore([])
-    const planned = planToday(s, { now: MON, kind: 'gym' }).gym
-    expect(planned).toBeDefined()
-    const inputs = gymSessionInputs('auto', planned, [], soreJoints(s, MON))
-    expect(inputs.focus).toBe(planned!.focus)
-    expect(inputs.volumeFactor).toBe(planned!.volumeFactor)
   })
 
   it('calls the skill day eased, never hard, while a joint it loads is sore', () => {
@@ -794,8 +791,14 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
     const at = (place: GymLocation) => planWeekAhead(real(['frontlever', 'planche'], { goals: GYM_HEAVY }, { place }), MON).days
     const withBar = at(gymA)
     expect(withBar.some((d) => d.plan.skill?.opener && d.plan.skill.skills[0] === 'frontlever')).toBe(true)
-    const without = at(noBar)
+    // Kit is the place's and the athlete's together: no bar at the place nor at home, no lever opener.
+    const without = planWeekAhead(real(['frontlever', 'planche'], { goals: GYM_HEAVY }, { place: noBar, equipment: ['floor', 'parallettes'] }), MON).days
     for (const d of without) if (d.plan.skill?.opener) expect(d.plan.skill.skills, d.day).not.toContain('frontlever')
+    // No bar at home, one at the gym: the lever opens a pull day there (found by review), built with the gym's kit.
+    const gymBar = planWeekAhead(real(['frontlever', 'planche'], { goals: GYM_HEAVY }, { place: gymA, equipment: ['floor', 'parallettes'] }), MON).days
+    const lever = gymBar.find((d) => d.plan.skill?.opener && d.plan.skill.skills[0] === 'frontlever')
+    expect(lever?.plan.skill?.kit).toEqual(gymA.equipment)
+    expect(gymBar.filter((d) => d.kind === 'calisthenics').flatMap((d) => d.plan.skill!.skills)).not.toContain('frontlever')
     // The planche needs no bar: it still opens a push day there.
     expect(gymOpener(real(['frontlever', 'planche'], { goals: GYM_HEAVY }, { place: noBar }), 'push', noBar, MON, 60)?.skills).toEqual(['planche'])
   })
@@ -817,7 +820,7 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
   it('opens a gym session by the rules: focus, priority, room, pain, sore joints, rest rule, kit and goals', () => {
     const s = real(['planche', 'frontlever'], { goals: BALANCED })
     const op = (state: AppState, focus: GymFocus, minutes = 60, place = gymA, now = MON) => gymOpener(state, focus, place, now, minutes)?.skills[0]
-    expect(gymOpener(s, 'push', gymA, MON, 60)).toEqual({ minutes: MIN_SKILL_MINUTES[1], skills: ['planche'], hard: ['push'], opener: true })
+    expect(gymOpener(s, 'push', gymA, MON, 60)).toEqual({ minutes: MIN_SKILL_MINUTES[1], skills: ['planche'], hard: ['push'], opener: true, kit: gymA.equipment })
     expect(op(s, 'pull')).toBe('frontlever')
     expect(op(s, 'upper')).toBe('planche')
     for (const focus of ['lower', 'full', 'athletic'] as GymFocus[]) expect(op(s, focus), focus).toBeUndefined()
@@ -833,15 +836,18 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
     expect(op(wrist, 'push')).toBeUndefined()
     expect(op(wrist, 'pull')).toBe('frontlever')
     expect(op(wrist, 'upper')).toBe('frontlever')
-    // The rest rule: a hard planche session last night rests the push family; one earlier today does not.
+    // The rest rule: a hard planche session last night rests the push family, and so does one earlier today: the
+    // opener is never a second hard session of its family in a day (found by review: 8 am, then a 6 pm push pick).
     const lastNight = { ...s, sessions: [skillSession(MON - 15 * HOUR)] }
     expect(op(lastNight, 'push')).toBeUndefined()
     expect(op(lastNight, 'upper')).toBe('frontlever')
-    expect(op({ ...s, sessions: [skillSession(MON - 2 * HOUR)] }, 'push')).toBe('planche')
+    expect(op({ ...s, sessions: [skillSession(MON - 2 * HOUR)] }, 'push')).toBeUndefined()
+    expect(op({ ...s, sessions: [skillSession(MON - 2 * HOUR)] }, 'pull')).toBe('frontlever')
     expect(op(lastNight, 'push', 60, gymA, MON + 40 * HOUR)).toBe('planche')
     // The kit: at the place, and in the athlete's own list the session is built from.
-    expect(op(s, 'pull', 60, noBar)).toBeUndefined()
-    expect(op(real(['planche', 'frontlever'], { goals: BALANCED }, { equipment: ['floor'] }), 'pull')).toBeUndefined()
+    const noHomeBar = real(['planche', 'frontlever'], { goals: BALANCED }, { equipment: ['floor', 'parallettes'] })
+    expect(op(noHomeBar, 'pull', 60, noBar)).toBeUndefined()
+    expect(op(noHomeBar, 'pull')).toBe('frontlever')
     // The highest-priority skill of the family whose kit is there: no pole, so the flag gives way to the lever.
     expect(op(real(['flag', 'frontlever'], { goals: BALANCED }), 'pull')).toBe('frontlever')
     // Skills are not among the goals: no opener.
@@ -909,5 +915,16 @@ describe('the kind choice at its edges', () => {
     expect(week.filter((d) => d.kind === 'calisthenics').length, week.map((d) => d.kind).join()).toBeGreaterThanOrEqual(4)
     // The gym days it does pair still open with the family's skill.
     expect(week.some((d) => d.kind === 'gym' && d.plan.skill?.opener)).toBe(true)
+  })
+})
+
+describe('kit that travels', () => {
+  it('counts a home pull-up bar only at home, while rings go anywhere', () => {
+    const s = athlete(['frontlever'], { goals: { strength: 3, power: 0, physique: 3, skills: 3, endurance: 0 } })
+    const kit = (equipment: EquipmentId[]): AppState => ({ ...s, profile: { ...s.profile, equipment } })
+    const noBar: GymLocation = { ...gymA, id: 'nb', equipment: gymA.equipment.filter((e) => e !== 'pullup-bar') }
+    expect(gymOpener(kit(['floor', 'pullup-bar']), 'pull', noBar, MON, 60)).toBeUndefined()
+    expect(gymOpener(kit(['floor', 'pullup-bar']), 'pull', gymA, MON, 60)?.skills).toEqual(['frontlever'])
+    expect(gymOpener(kit(['floor', 'rings']), 'pull', noBar, MON, 60)?.skills).toEqual(['frontlever'])
   })
 })

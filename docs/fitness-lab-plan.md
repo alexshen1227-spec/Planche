@@ -205,6 +205,14 @@ Open, in order of value (none blocks using the app):
   (front lever first on a pull day) when the rest rule and the place allow.
   Then a second strict review.
 
+## Round four (2026-11-22): second strict review
+
+- Fresh reviewers on `58f1153`: 58/100 UX, 53/100 logic (up from 46/44).
+  Every major finding fixed (CLAUDE.md "Third review round"), most minors
+  and polish too. Known limit: a youth season is not in the closed-loop
+  evals; the handstand push-up day can be picked on Train but not assigned
+  in the week plan.
+
 ## Log
 
 - 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the

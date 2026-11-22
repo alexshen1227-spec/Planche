@@ -19,7 +19,7 @@ import { weekPlan, weekWork, workSets } from '../lib/volume'
 import { BridgeCard } from '../components/BridgeCard'
 import { BASIS_LABEL, tipOfTheDay } from '../data/tips'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
-import { sessionsInWeekOf, weekStreak, totalHoldSec, sessionHighlight } from '../lib/stats'
+import { weekStreak, totalHoldSec, sessionHighlight } from '../lib/stats'
 import { buildPlan, STRATEGY_BY_ID, coachConfidence } from '../lib/coach'
 import { CONFIDENCE_NOTE, describeForecast, forecastUnlock, goalOutlook } from '../lib/forecast'
 import { PLATEAU_LABEL, recentBreakthrough } from '../lib/plateau'
@@ -37,7 +37,12 @@ import { WeekPlanCard } from '../components/WeekPlanCard'
 import { INSTALL_STEPS, installState } from '../lib/install'
 import { WalkBackCalibrator } from '../components/WalkBackCalibrator'
 import { walkMeasureDue } from '../lib/sessionTiming'
-import { planToday } from '../lib/plan/planner'
+import { planToday, skillRequest } from '../lib/plan/planner'
+import { rememberNextBlock } from '../lib/plan/nextBlock'
+import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
+import { homeToday, trainingWeek } from '../lib/plan/screens'
+import { WeekPreview } from '../components/plan/WeekPreview'
+import type { GymPreset } from '../components/plan/TodayPlanCard'
 import { FOCUS_LABEL } from '../lib/gym/builder'
 
 /** Per-device memory of the complete-sessions notice; never state that matters. */
@@ -189,7 +194,11 @@ export function Dashboard({
   // Today's skill session is the skill block of today's plan (its minutes and
   // skills), the same request the Train tab's Today card starts.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const dayPlan = useMemo(() => planToday(whole), [whole, today])
+  // Today's choice ("Rather do … today?", "I have X min", "Train anyway") is one for every screen.
+  const [choice, setChoice] = useTodayChoice(today)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const dayPlan = useMemo(() => planToday(whole, choiceOptions(choice)), [whole, today, choice.kind, choice.minutes])
+  const mode = homeToday(dayPlan)
   const recommended: WorkoutRequest = useMemo(
     () =>
       // Only a calisthenics day's own block is today's calisthenics session: on a
@@ -210,7 +219,10 @@ export function Dashboard({
   const hour = new Date().getHours()
   const greeting = hour < 5 ? 'Burning the midnight oil' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
-  const thisWeek = sessionsInWeekOf(state, Date.now()).length
+  // Training days this week, skill and gym alike, as the plan counts them against the weekly goal.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const tw = useMemo(() => trainingWeek(whole, Date.now()), [whole, today])
+  const thisWeek = tw.days
   const goal = state.settings.weeklyGoal
   const streak = weekStreak(state)
   const tut = totalHoldSec(state)
@@ -320,7 +332,20 @@ export function Dashboard({
   }, [plan])
 
   const recent = useMemo(() => [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).slice(0, 3), [state.sessions])
-  const trainedDays = useMemo(() => new Set(state.sessions.map((s) => dayKey(s.startedAt))), [state.sessions])
+  const trainedDays = useMemo(
+    () => new Set([...state.sessions.map((s) => dayKey(s.startedAt)), ...(whole.gym?.sessions ?? []).map((s) => dayKey(s.startedAt))]),
+    [state.sessions, whole.gym],
+  )
+  /** A gym day starts its opener here (the lifts follow when it is saved), or opens the plan on Train. */
+  const startGymDay = () => {
+    const g = dayPlan.gym
+    const opener = dayPlan.skill?.opener ? dayPlan.skill : undefined
+    const doneToday = whole.sessions.some((s) => dayKey(s.startedAt) === today) || (whole.gym?.sessions ?? []).some((s) => dayKey(s.startedAt) === today)
+    if (g && opener && !doneToday) {
+      rememberNextBlock<GymPreset>({ focus: g.focus, minutes: g.minutes, avoidJoints: g.avoidJoints, volumeFactor: g.volumeFactor, musclesOff: g.musclesOff })
+      startWorkout(skillRequest(opener))
+    } else go('train')
+  }
   const recentAchievements = useMemo(
     () =>
       Object.entries(state.achievements)
@@ -448,8 +473,18 @@ export function Dashboard({
             </div>
           </div>
         </div>
-        {/* The coach picks one main session a day; on a gym day it is on the Train tab. */}
-        {dayPlan.kind === 'gym' && dayPlan.gym ? (
+        {/* The coach picks one main session a day, and Home says the same as Train: a rest day is a rest day. */}
+        {mode === 'rest' ? (
+          <div className="mt-4 rounded-inner border border-line bg-raised p-3">
+            <p className="text-footnote text-ink2">
+              <span className="font-semibold text-ink">Today: rest</span> — {dayPlan.reasons[0] ?? 'nothing is planned today.'}
+            </p>
+            <Button className="mt-2" variant="secondary" onClick={() => setChoice({ ...choice, minutes: whole.settings.sessionMinutes })}>
+              Train anyway
+            </Button>
+          </div>
+        ) : null}
+        {mode === 'gym' && dayPlan.gym ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-inner border border-line bg-raised p-3">
             <span className="text-footnote text-ink2">
               <span className="font-semibold text-ink">Today the coach recommends the gym</span> — {FOCUS_LABEL[dayPlan.gym.focus].toLowerCase()},{' '}
@@ -462,9 +497,21 @@ export function Dashboard({
           </div>
         ) : null}
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <Button size="lg" onClick={() => startWorkout(recommended)} className="w-full sm:w-auto">
-            <Icon name="play" size={16} /> {dayPlan.kind === 'gym' ? 'Start a calisthenics session' : 'Start today’s session'}
-          </Button>
+          {mode === 'calisthenics' ? (
+            <Button size="lg" onClick={() => startWorkout(recommended)} className="w-full sm:w-auto">
+              <Icon name="play" size={16} /> Start today’s session
+            </Button>
+          ) : mode === 'gym' ? (
+            <Button size="lg" onClick={startGymDay} className="w-full sm:w-auto">
+              <Icon name="play" size={16} />{' '}
+              {dayPlan.skill?.opener ? `Start with the ${SKILLS[dayPlan.skill.skills[0]].name.toLowerCase()}` : 'Open the gym session'}
+            </Button>
+          ) : null}
+          {dayPlan.alternative ? (
+            <Button variant="ghost" onClick={() => setChoice({ ...choice, kind: dayPlan.alternative })}>
+              {dayPlan.alternative === 'gym' ? 'Rather do the gym today?' : 'Rather do calisthenics today?'}
+            </Button>
+          ) : null}
           {/* The first session comes first: a max test is offered once there is one. */}
           {testBlocked || whole.sessions.length === 0 ? null : (
             <Button variant="secondary" onClick={() => startWorkout({ source: 'test', stepId: state.stepId })}>
@@ -639,6 +686,12 @@ export function Dashboard({
         style={{ animationDelay: '10ms' }}
         sessionSkills={lineup.map((entry) => entry.skill)}
       />
+      {/* The coach's week, the same as Train's: the athlete's own plan above can be empty. */}
+      {whole.gym?.prefs ? (
+        <Card className="animate-rise mt-4" style={{ animationDelay: '15ms' }}>
+          <WeekPreview />
+        </Card>
+      ) : null}
 
       {/* A named stall, or a real jump. Neither is filler: the card only
           exists when the log supports one, so an athlete who is simply
@@ -820,8 +873,11 @@ export function Dashboard({
             }
           />
           <Metric label="Week streak" value={streak.weeks} />
-          <Metric label="Sessions" value={state.sessions.length} />
+          <Metric label="Skill sessions" value={state.sessions.length} />
         </div>
+        <p className="mt-2 text-caption text-ink3 tnum">
+          Training days this week: {tw.cal} calisthenics, {tw.gym} gym — a day with a gym session counts as a gym day.
+        </p>
         <div className="mt-4">
           <WeekStrip trainedDays={trainedDays} />
         </div>
@@ -829,7 +885,7 @@ export function Dashboard({
             about to lose — and the displayed streak already counts the
             in-progress week. This states the fact and drops the loss frame. */}
         <p className="mt-3 text-footnote text-ink2">
-          {streak.currentMet ? 'this week is banked' : `${Math.max(0, goal - thisWeek)} more this week to meet your goal`}
+          {thisWeek >= goal ? 'this week is banked' : `${Math.max(0, goal - thisWeek)} more training ${goal - thisWeek === 1 ? 'day' : 'days'} this week to meet your goal`}
         </p>
         <p className="mt-1 text-footnote text-ink3">
           Time under tension <span className="tnum font-medium text-ink2">{fmtDuration(tut)}</span> — all holds, all time ·{' '}
@@ -849,7 +905,7 @@ export function Dashboard({
         <div className="flex items-center justify-between gap-2">
           <div className="text-footnote font-semibold uppercase tracking-wide text-ink3">This week’s work</div>
           <div className="text-caption text-ink3 tnum">
-            {work.sessions}/{goal} sessions
+            {thisWeek}/{goal} training days
           </div>
         </div>
         <div className="mt-3 space-y-3">
@@ -871,6 +927,11 @@ export function Dashboard({
             />
           ) : null}
         </div>
+        {tw.gymSessions ? (
+          <p className="mt-3 text-footnote text-ink2 tnum">
+            Gym: {tw.gymSessions} {tw.gymSessions === 1 ? 'session' : 'sessions'}, {tw.gymSets} working {tw.gymSets === 1 ? 'set' : 'sets'} this week.
+          </p>
+        ) : null}
         <p className="mt-3 text-caption leading-relaxed text-ink3">
           {several
             ? `What you have done on ${skillDef.name.toLowerCase()} this week. With several skills the week's plan follows the line-up day by day, so there is no weekly target to hold it against.`

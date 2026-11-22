@@ -82,7 +82,7 @@ export function ShareProgress({
     <>
       <button
         onClick={() => setOpen(true)}
-        className={`inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-2 text-[13px] font-medium text-ink2 transition hover:text-ink ${className}`}
+        className={`inline-flex items-center gap-1.5 rounded-full border border-line bg-surface min-h-11 px-3.5 py-2 text-[13px] font-medium text-ink2 transition hover:text-ink ${className}`}
       >
         <Icon name="share" size={14} /> {label}
       </button>
