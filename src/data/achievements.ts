@@ -1,3 +1,4 @@
+import type { IconName } from '../components/Icon'
 import type { AppState, Session, SkillId } from '../types'
 import { totalHoldSec, totalSets, weekStreak } from '../lib/stats'
 import { EXERCISE_BY_ID } from './exercises'
@@ -53,7 +54,7 @@ export interface AchievementDef {
   id: string
   name: string
   desc: string
-  icon: string
+  icon: IconName
   /**
    * The skill a badge belongs to. It is only listed for an athlete who trains
    * that skill, or has already earned it: thirty locked badges for roads
@@ -155,36 +156,36 @@ const exerciseVariety = (state: AppState) =>
   ).size
 
 export const ACHIEVEMENTS: AchievementDef[] = [
-  { id: 'first-session', name: 'First Blood', desc: 'Log your first session.', icon: '🏁', check: (s) => s.sessions.length >= 1 },
-  { id: 'sessions-3', name: 'Getting Rolling', desc: 'Log 3 sessions.', icon: '🛞', check: (s) => s.sessions.length >= 3, progress: (s) => ({ current: Math.min(3, s.sessions.length), target: 3 }) },
-  { id: 'sessions-10', name: 'Showing Up', desc: '10 sessions logged.', icon: '📅', check: (s) => s.sessions.length >= 10, progress: (s) => ({ current: Math.min(10, s.sessions.length), target: 10 }) },
-  { id: 'sessions-25', name: 'Quarter Century', desc: '25 sessions logged.', icon: '🎟️', check: (s) => s.sessions.length >= 25, progress: (s) => ({ current: Math.min(25, s.sessions.length), target: 25 }) },
-  { id: 'sessions-50', name: 'Brick by Brick', desc: '50 sessions logged.', icon: '🧱', check: (s) => s.sessions.length >= 50, progress: (s) => ({ current: Math.min(50, s.sessions.length), target: 50 }) },
-  { id: 'sessions-100', name: 'Centurion', desc: '100 sessions logged.', icon: '🏛️', check: (s) => s.sessions.length >= 100, progress: (s) => ({ current: Math.min(100, s.sessions.length), target: 100 }) },
-  { id: 'streak-2', name: 'Warm Streak', desc: 'Hit your weekly goal 2 weeks running.', icon: '🔥', check: (s, last) => weekStreak(s, last.endedAt).weeks >= 2, progress: (s) => ({ current: Math.min(2, weekStreak(s).weeks), target: 2 }) },
-  { id: 'streak-4', name: 'On Fire', desc: 'Hit your weekly goal 4 weeks running.', icon: '🔥', check: (s, last) => weekStreak(s, last.endedAt).weeks >= 4, progress: (s) => ({ current: Math.min(4, weekStreak(s).weeks), target: 4 }) },
-  { id: 'streak-8', name: 'Unstoppable', desc: 'Hit your weekly goal 8 weeks running.', icon: '🌋', check: (s, last) => weekStreak(s, last.endedAt).weeks >= 8, progress: (s) => ({ current: Math.min(8, weekStreak(s).weeks), target: 8 }) },
-  { id: 'streak-12', name: 'Seasoned', desc: 'Hit your weekly goal 12 weeks running.', icon: '🌲', check: (s, last) => weekStreak(s, last.endedAt).weeks >= 12, progress: (s) => ({ current: Math.min(12, weekStreak(s).weeks), target: 12 }) },
-  { id: 'tut-300', name: 'First Five', desc: '5 cumulative minutes under tension.', icon: '⌛', check: (s) => totalHoldSec(s) >= 300, progress: durationProgress(300) },
-  { id: 'tut-600', name: 'Ten Minutes of Truth', desc: '10 cumulative minutes under tension.', icon: '⏱️', check: (s) => totalHoldSec(s) >= 600, progress: durationProgress(600) },
-  { id: 'tut-3600', name: 'Hour of Power', desc: 'One cumulative hour of holds.', icon: '⏳', check: (s) => totalHoldSec(s) >= 3600, progress: durationProgress(3600) },
-  { id: 'tut-10800', name: 'Made of Stone', desc: 'Three cumulative hours of holds.', icon: '🗿', check: (s) => totalHoldSec(s) >= 10800, progress: durationProgress(10800) },
-  { id: 'tut-21600', name: 'Time Bender', desc: 'Six cumulative hours of holds.', icon: '🌀', check: (s) => totalHoldSec(s) >= 21600, progress: durationProgress(21600) },
-  { id: 'lean-30', skill: 'planche', name: 'Lean Machine', desc: 'Verified 30-second planche lean.', icon: '🎯', check: (s) => prAtLeast(s, 'planche-lean', 30), progress: prProgress('planche-lean', 30) },
-  { id: 'frog-30', skill: 'planche', name: 'Zen Frog', desc: 'Verified 30-second frog stand.', icon: '🐸', check: (s) => prAtLeast(s, 'frog-stand', 30), progress: prProgress('frog-stand', 30) },
-  { id: 'tuck-5', skill: 'planche', name: 'First Flight', desc: 'Verified 5-second tuck planche.', icon: '🪽', check: (s) => prAtLeast(s, 'tuck-planche', 5), progress: prProgress('tuck-planche', 5) },
-  { id: 'tuck-10', skill: 'planche', name: 'Liftoff', desc: 'Verified 10-second tuck planche.', icon: '🛫', check: (s) => prAtLeast(s, 'tuck-planche', 10), progress: prProgress('tuck-planche', 10) },
-  { id: 'tuck-20', skill: 'planche', name: 'Cleared for Takeoff', desc: 'Verified 20-second tuck planche.', icon: '🚀', check: (s) => prAtLeast(s, 'tuck-planche', 20), progress: prProgress('tuck-planche', 20) },
-  { id: 'advtuck-10', skill: 'planche', name: 'Open the Hips', desc: 'Verified 10-second advanced tuck.', icon: '📏', check: (s) => prAtLeast(s, 'adv-tuck-planche', 10), progress: prProgress('adv-tuck-planche', 10) },
-  { id: 'oneleg-5', skill: 'planche', name: 'Split Decision', desc: 'Verified 5-second one-leg planche on both sides.', icon: '🌓', check: (s) => qualifyingProgress(s, 'oneleg').value >= 5, progress: (s) => ({ current: Math.min(5, Math.round(qualifyingProgress(s, 'oneleg').value)), target: 5, unit: 'seconds' }) },
-  { id: 'straddle-5', skill: 'planche', name: 'Wingspan', desc: 'Verified 5-second straddle planche.', icon: '🦅', check: (s) => prAtLeast(s, 'straddle-planche', 5), progress: prProgress('straddle-planche', 5) },
-  { id: 'unlock-advtuck', skill: 'planche', name: 'Flat Back Society', desc: 'Verify the Advanced Tuck unlock.', icon: '📐', check: (s) => stepMastered(s, 'tuck') },
-  { id: 'unlock-straddle', skill: 'planche', name: 'Wings Out', desc: 'Verify the Straddle Planche unlock.', icon: '🦅', check: (s) => stepMastered(s, 'oneleg') },
-  { id: 'unlock-full', skill: 'planche', name: 'The Summit', desc: 'Verify the Full Planche unlock.', icon: '🏔️', check: (s) => stepMastered(s, 'straddle') },
-  { id: 'full-5', skill: 'planche', name: 'Gravity Is a Suggestion', desc: 'Verified 5-second full planche.', icon: '👑', check: (s) => prAtLeast(s, 'full-planche', 5), progress: prProgress('full-planche', 5) },
-  { id: 'full-10', skill: 'planche', name: 'Double Digits', desc: 'Verified 10-second full planche.', icon: '💫', check: (s) => prAtLeast(s, 'full-planche', 10), progress: prProgress('full-planche', 10) },
-  { id: 'early-bird', name: 'Early Bird', desc: 'Train before 7am.', icon: '🌅', check: (_s, last) => new Date(last.startedAt).getHours() < 7 },
-  { id: 'night-owl', name: 'Night Owl', desc: 'Train after 10pm.', icon: '🦉', check: (_s, last) => new Date(last.startedAt).getHours() >= 22 },
+  { id: 'first-session', name: 'First Blood', desc: 'Log your first session.', icon: 'flag', check: (s) => s.sessions.length >= 1 },
+  { id: 'sessions-3', name: 'Getting Rolling', desc: 'Log 3 sessions.', icon: 'repeat', check: (s) => s.sessions.length >= 3, progress: (s) => ({ current: Math.min(3, s.sessions.length), target: 3 }) },
+  { id: 'sessions-10', name: 'Showing Up', desc: '10 sessions logged.', icon: 'calendar', check: (s) => s.sessions.length >= 10, progress: (s) => ({ current: Math.min(10, s.sessions.length), target: 10 }) },
+  { id: 'sessions-25', name: 'Quarter Century', desc: '25 sessions logged.', icon: 'layers', check: (s) => s.sessions.length >= 25, progress: (s) => ({ current: Math.min(25, s.sessions.length), target: 25 }) },
+  { id: 'sessions-50', name: 'Brick by Brick', desc: '50 sessions logged.', icon: 'dumbbell', check: (s) => s.sessions.length >= 50, progress: (s) => ({ current: Math.min(50, s.sessions.length), target: 50 }) },
+  { id: 'sessions-100', name: 'Centurion', desc: '100 sessions logged.', icon: 'shield', check: (s) => s.sessions.length >= 100, progress: (s) => ({ current: Math.min(100, s.sessions.length), target: 100 }) },
+  { id: 'streak-2', name: 'Warm Streak', desc: 'Hit your weekly goal 2 weeks running.', icon: 'flame', check: (s, last) => weekStreak(s, last.endedAt).weeks >= 2, progress: (s) => ({ current: Math.min(2, weekStreak(s).weeks), target: 2 }) },
+  { id: 'streak-4', name: 'On Fire', desc: 'Hit your weekly goal 4 weeks running.', icon: 'flame', check: (s, last) => weekStreak(s, last.endedAt).weeks >= 4, progress: (s) => ({ current: Math.min(4, weekStreak(s).weeks), target: 4 }) },
+  { id: 'streak-8', name: 'Unstoppable', desc: 'Hit your weekly goal 8 weeks running.', icon: 'bolt', check: (s, last) => weekStreak(s, last.endedAt).weeks >= 8, progress: (s) => ({ current: Math.min(8, weekStreak(s).weeks), target: 8 }) },
+  { id: 'streak-12', name: 'Seasoned', desc: 'Hit your weekly goal 12 weeks running.', icon: 'leaf', check: (s, last) => weekStreak(s, last.endedAt).weeks >= 12, progress: (s) => ({ current: Math.min(12, weekStreak(s).weeks), target: 12 }) },
+  { id: 'tut-300', name: 'First Five', desc: '5 cumulative minutes under tension.', icon: 'clock', check: (s) => totalHoldSec(s) >= 300, progress: durationProgress(300) },
+  { id: 'tut-600', name: 'Ten Minutes of Truth', desc: '10 cumulative minutes under tension.', icon: 'clock', check: (s) => totalHoldSec(s) >= 600, progress: durationProgress(600) },
+  { id: 'tut-3600', name: 'Hour of Power', desc: 'One cumulative hour of holds.', icon: 'hourglass', check: (s) => totalHoldSec(s) >= 3600, progress: durationProgress(3600) },
+  { id: 'tut-10800', name: 'Made of Stone', desc: 'Three cumulative hours of holds.', icon: 'mountain', check: (s) => totalHoldSec(s) >= 10800, progress: durationProgress(10800) },
+  { id: 'tut-21600', name: 'Time Bender', desc: 'Six cumulative hours of holds.', icon: 'sparkle', check: (s) => totalHoldSec(s) >= 21600, progress: durationProgress(21600) },
+  { id: 'lean-30', skill: 'planche', name: 'Lean Machine', desc: 'Verified 30-second planche lean.', icon: 'target', check: (s) => prAtLeast(s, 'planche-lean', 30), progress: prProgress('planche-lean', 30) },
+  { id: 'frog-30', skill: 'planche', name: 'Zen Frog', desc: 'Verified 30-second frog stand.', icon: 'leaf', check: (s) => prAtLeast(s, 'frog-stand', 30), progress: prProgress('frog-stand', 30) },
+  { id: 'tuck-5', skill: 'planche', name: 'First Flight', desc: 'Verified 5-second tuck planche.', icon: 'wing', check: (s) => prAtLeast(s, 'tuck-planche', 5), progress: prProgress('tuck-planche', 5) },
+  { id: 'tuck-10', skill: 'planche', name: 'Liftoff', desc: 'Verified 10-second tuck planche.', icon: 'rocket', check: (s) => prAtLeast(s, 'tuck-planche', 10), progress: prProgress('tuck-planche', 10) },
+  { id: 'tuck-20', skill: 'planche', name: 'Cleared for Takeoff', desc: 'Verified 20-second tuck planche.', icon: 'rocket', check: (s) => prAtLeast(s, 'tuck-planche', 20), progress: prProgress('tuck-planche', 20) },
+  { id: 'advtuck-10', skill: 'planche', name: 'Open the Hips', desc: 'Verified 10-second advanced tuck.', icon: 'compass', check: (s) => prAtLeast(s, 'adv-tuck-planche', 10), progress: prProgress('adv-tuck-planche', 10) },
+  { id: 'oneleg-5', skill: 'planche', name: 'Split Decision', desc: 'Verified 5-second one-leg planche on both sides.', icon: 'balance', check: (s) => qualifyingProgress(s, 'oneleg').value >= 5, progress: (s) => ({ current: Math.min(5, Math.round(qualifyingProgress(s, 'oneleg').value)), target: 5, unit: 'seconds' }) },
+  { id: 'straddle-5', skill: 'planche', name: 'Wingspan', desc: 'Verified 5-second straddle planche.', icon: 'wing', check: (s) => prAtLeast(s, 'straddle-planche', 5), progress: prProgress('straddle-planche', 5) },
+  { id: 'unlock-advtuck', skill: 'planche', name: 'Flat Back Society', desc: 'Verify the Advanced Tuck unlock.', icon: 'compass', check: (s) => stepMastered(s, 'tuck') },
+  { id: 'unlock-straddle', skill: 'planche', name: 'Wings Out', desc: 'Verify the Straddle Planche unlock.', icon: 'lock', check: (s) => stepMastered(s, 'oneleg') },
+  { id: 'unlock-full', skill: 'planche', name: 'The Summit', desc: 'Verify the Full Planche unlock.', icon: 'mountain', check: (s) => stepMastered(s, 'straddle') },
+  { id: 'full-5', skill: 'planche', name: 'Gravity Is a Suggestion', desc: 'Verified 5-second full planche.', icon: 'crown', check: (s) => prAtLeast(s, 'full-planche', 5), progress: prProgress('full-planche', 5) },
+  { id: 'full-10', skill: 'planche', name: 'Double Digits', desc: 'Verified 10-second full planche.', icon: 'star', check: (s) => prAtLeast(s, 'full-planche', 10), progress: prProgress('full-planche', 10) },
+  { id: 'early-bird', name: 'Early Bird', desc: 'Train before 7am.', icon: 'sun', check: (_s, last) => new Date(last.startedAt).getHours() < 7 },
+  { id: 'night-owl', name: 'Night Owl', desc: 'Train after 10pm.', icon: 'moon', check: (_s, last) => new Date(last.startedAt).getHours() >= 22 },
   {
     // Id kept so earned history is untouched. The name is a record of what
     // was done; "Guardian" implied the routine protects the wrist, which no
@@ -192,7 +193,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     id: 'wrist-guardian',
     name: 'Wrist Prep Habit',
     desc: '10 sessions that included wrist preparation.',
-    icon: '🔄',
+    icon: 'refresh',
     check: (s) =>
       s.sessions.filter((ss) => ss.sets.some((set) => EXERCISE_BY_ID[set.exerciseId]?.category === 'wrist')).length >= 10,
     progress: (s) => ({
@@ -203,13 +204,13 @@ export const ACHIEVEMENTS: AchievementDef[] = [
       target: 10,
     }),
   },
-  { id: 'tester', name: 'Moment of Truth', desc: 'Make an attempt in a max test.', icon: '🔬', check: (_s, last) => testWasAttempted(last) },
-  { id: 'deload-disciple', skill: 'planche', name: 'Restraint', desc: 'Complete a Deload Flow.', icon: '🧘', check: (_s, last) => last.workoutName === 'Deload Flow' },
+  { id: 'tester', name: 'Moment of Truth', desc: 'Make an attempt in a max test.', icon: 'flask', check: (_s, last) => testWasAttempted(last) },
+  { id: 'deload-disciple', skill: 'planche', name: 'Restraint', desc: 'Complete a Deload Flow.', icon: 'leaf', check: (_s, last) => last.workoutName === 'Deload Flow' },
   {
     id: 'film-study',
     name: 'Film Study',
     desc: 'Have the camera judge read 10 of your skill holds.',
-    icon: '🎬',
+    icon: 'eye',
     check: (s) => filmedSkillSets(s) >= 10,
     progress: (s) => ({ current: Math.min(10, filmedSkillSets(s)), target: 10 }),
   },
@@ -217,7 +218,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     id: 'precision-pass',
     name: 'Precision Pass',
     desc: 'Earn a confirmed 90+ camera form score.',
-    icon: '💎',
+    icon: 'diamond',
     check: (_s, last) =>
       last.sets.some(
         (set) =>
@@ -250,7 +251,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     id: 'exercise-variety-12',
     name: 'Full Toolbox',
     desc: 'Train 12 different movements in full sessions.',
-    icon: '🧰',
+    icon: 'layers',
     check: (s) => exerciseVariety(s) >= 12,
     progress: (s) => ({ current: Math.min(12, exerciseVariety(s)), target: 12 }),
   },
@@ -258,7 +259,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     id: 'sets-250',
     name: 'Built by Reps',
     desc: 'Log 250 total sets.',
-    icon: '⚒️',
+    icon: 'hammer',
     check: (s) => totalSets(s) >= 250,
     progress: (s) => ({ current: Math.min(250, totalSets(s)), target: 250 }),
   },
@@ -268,7 +269,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     id: 'big-day',
     name: 'Two Minutes on the Line',
     desc: '120+ seconds of skill holds in one session.',
-    icon: '💪',
+    icon: 'dumbbell',
     check: (_s, last) => {
       let t = 0
       for (const set of last.sets) {
@@ -280,36 +281,36 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   },
 
   // ——— Front lever ———
-  { id: 'fl-tuck-10', skill: 'frontlever', name: 'Off the Floor', desc: 'Verified 10-second tuck front lever.', icon: '🪝', check: (s) => prAtLeast(s, 'tuck-front-lever', 10), progress: prProgress('tuck-front-lever', 10) },
-  { id: 'fl-advtuck-10', skill: 'frontlever', name: 'Flat Back, Hanging', desc: 'Verified 10-second advanced tuck front lever.', icon: '🧲', check: (s) => prAtLeast(s, 'adv-tuck-front-lever', 10), progress: prProgress('adv-tuck-front-lever', 10) },
-  { id: 'fl-straddle-5', skill: 'frontlever', name: 'Wide and Level', desc: 'Verified 5-second straddle front lever.', icon: '🦇', check: (s) => prAtLeast(s, 'straddle-front-lever', 5), progress: prProgress('straddle-front-lever', 5) },
-  { id: 'fl-full-3', skill: 'frontlever', name: 'Dead Level', desc: 'Verified 3-second front lever.', icon: '🎚️', check: (s) => prAtLeast(s, 'front-lever', 3), progress: prProgress('front-lever', 3) },
-  { id: 'fl-full-8', skill: 'frontlever', name: 'Lever Pulled', desc: 'Verified 8-second front lever.', icon: '🏆', check: (s) => prAtLeast(s, 'front-lever', 8), progress: prProgress('front-lever', 8) },
+  { id: 'fl-tuck-10', skill: 'frontlever', name: 'Off the Floor', desc: 'Verified 10-second tuck front lever.', icon: 'hook', check: (s) => prAtLeast(s, 'tuck-front-lever', 10), progress: prProgress('tuck-front-lever', 10) },
+  { id: 'fl-advtuck-10', skill: 'frontlever', name: 'Flat Back, Hanging', desc: 'Verified 10-second advanced tuck front lever.', icon: 'magnet', check: (s) => prAtLeast(s, 'adv-tuck-front-lever', 10), progress: prProgress('adv-tuck-front-lever', 10) },
+  { id: 'fl-straddle-5', skill: 'frontlever', name: 'Wide and Level', desc: 'Verified 5-second straddle front lever.', icon: 'compass', check: (s) => prAtLeast(s, 'straddle-front-lever', 5), progress: prProgress('straddle-front-lever', 5) },
+  { id: 'fl-full-3', skill: 'frontlever', name: 'Dead Level', desc: 'Verified 3-second front lever.', icon: 'layers', check: (s) => prAtLeast(s, 'front-lever', 3), progress: prProgress('front-lever', 3) },
+  { id: 'fl-full-8', skill: 'frontlever', name: 'Lever Pulled', desc: 'Verified 8-second front lever.', icon: 'trophy', check: (s) => prAtLeast(s, 'front-lever', 8), progress: prProgress('front-lever', 8) },
 
   // ——— Handstand and handstand push-up ———
-  { id: 'hs-wall-30', skill: 'handstand', name: 'Stacked', desc: 'Verified 30-second wall handstand.', icon: '🧍', check: (s) => prAtLeast(s, 'wall-handstand', 30), progress: prProgress('wall-handstand', 30) },
-  { id: 'hs-free-5', skill: 'handstand', name: 'Hands for Feet', desc: 'Verified 5-second freestanding handstand.', icon: '🤸', check: (s) => prAtLeast(s, 'freestanding-handstand', 5), progress: prProgress('freestanding-handstand', 5) },
-  { id: 'hs-free-15', skill: 'handstand', name: 'Found the Balance', desc: 'Verified 15-second freestanding handstand.', icon: '⚖️', check: (s) => prAtLeast(s, 'freestanding-handstand', 15), progress: prProgress('freestanding-handstand', 15) },
-  { id: 'hs-free-30', skill: 'handstand', name: 'Half a Minute Upside Down', desc: 'Verified 30-second freestanding handstand.', icon: '🙃', check: (s) => prAtLeast(s, 'freestanding-handstand', 30), progress: prProgress('freestanding-handstand', 30) },
-  { id: 'hspu-wall-1', skill: 'handstand', name: 'Pressed Upside Down', desc: 'A replay-checked wall handstand push-up.', icon: '🔺', check: repsAtLeast('wall-hspu', 1) },
-  { id: 'hspu-wall-5', skill: 'handstand', name: 'Five Strict', desc: 'Five replay-checked wall handstand push-ups in one set.', icon: '🖐️', check: repsAtLeast('wall-hspu', 5), progress: repProgress('wall-hspu', 5) },
-  { id: 'hspu-free-1', skill: 'handstand', name: 'No Wall', desc: 'A replay-checked freestanding handstand push-up.', icon: '🎪', check: repsAtLeast('freestanding-hspu', 1) },
+  { id: 'hs-wall-30', skill: 'handstand', name: 'Stacked', desc: 'Verified 30-second wall handstand.', icon: 'person', check: (s) => prAtLeast(s, 'wall-handstand', 30), progress: prProgress('wall-handstand', 30) },
+  { id: 'hs-free-5', skill: 'handstand', name: 'Hands for Feet', desc: 'Verified 5-second freestanding handstand.', icon: 'star', check: (s) => prAtLeast(s, 'freestanding-handstand', 5), progress: prProgress('freestanding-handstand', 5) },
+  { id: 'hs-free-15', skill: 'handstand', name: 'Found the Balance', desc: 'Verified 15-second freestanding handstand.', icon: 'balance', check: (s) => prAtLeast(s, 'freestanding-handstand', 15), progress: prProgress('freestanding-handstand', 15) },
+  { id: 'hs-free-30', skill: 'handstand', name: 'Half a Minute Upside Down', desc: 'Verified 30-second freestanding handstand.', icon: 'diamond', check: (s) => prAtLeast(s, 'freestanding-handstand', 30), progress: prProgress('freestanding-handstand', 30) },
+  { id: 'hspu-wall-1', skill: 'handstand', name: 'Pressed Upside Down', desc: 'A replay-checked wall handstand push-up.', icon: 'mountain', check: repsAtLeast('wall-hspu', 1) },
+  { id: 'hspu-wall-5', skill: 'handstand', name: 'Five Strict', desc: 'Five replay-checked wall handstand push-ups in one set.', icon: 'hand', check: repsAtLeast('wall-hspu', 5), progress: repProgress('wall-hspu', 5) },
+  { id: 'hspu-free-1', skill: 'handstand', name: 'No Wall', desc: 'A replay-checked freestanding handstand push-up.', icon: 'rocket', check: repsAtLeast('freestanding-hspu', 1) },
 
   // ——— 90° hold and push-up ———
-  { id: 'n90-tuck-5', skill: 'ninety', name: 'Right Angle', desc: 'Verified 5-second tuck 90° hold.', icon: '🦾', check: (s) => prAtLeast(s, 'tuck-ninety-hold', 5), progress: prProgress('tuck-ninety-hold', 5) },
-  { id: 'n90-full-3', skill: 'ninety', name: 'Ninety', desc: 'Verified 3-second 90° hold.', icon: '🧊', check: (s) => prAtLeast(s, 'ninety-hold', 3), progress: prProgress('ninety-hold', 3) },
-  { id: 'n90-pushup-1', skill: 'ninety', name: 'There and Back', desc: 'A replay-checked 90° push-up.', icon: '🎖️', check: repsAtLeast('ninety-pushup', 1) },
+  { id: 'n90-tuck-5', skill: 'ninety', name: 'Right Angle', desc: 'Verified 5-second tuck 90° hold.', icon: 'dumbbell', check: (s) => prAtLeast(s, 'tuck-ninety-hold', 5), progress: prProgress('tuck-ninety-hold', 5) },
+  { id: 'n90-full-3', skill: 'ninety', name: 'Ninety', desc: 'Verified 3-second 90° hold.', icon: 'shield', check: (s) => prAtLeast(s, 'ninety-hold', 3), progress: prProgress('ninety-hold', 3) },
+  { id: 'n90-pushup-1', skill: 'ninety', name: 'There and Back', desc: 'A replay-checked 90° push-up.', icon: 'medal', check: repsAtLeast('ninety-pushup', 1) },
 
   // ——— Human flag ———
-  { id: 'flag-tuck-5', skill: 'flag', name: 'Half Mast', desc: 'Verified 5-second tuck flag.', icon: '🚩', check: (s) => prAtLeast(s, 'tuck-flag', 5), progress: prProgress('tuck-flag', 5) },
-  { id: 'flag-straddle-3', skill: 'flag', name: 'Unfurled', desc: 'Verified 3-second straddle flag.', icon: '🎏', check: (s) => prAtLeast(s, 'straddle-flag', 3), progress: prProgress('straddle-flag', 3) },
-  { id: 'flag-full-3', skill: 'flag', name: 'Flying the Flag', desc: 'Verified 3-second human flag.', icon: '🎌', check: (s) => prAtLeast(s, 'human-flag', 3), progress: prProgress('human-flag', 3) },
-  { id: 'flag-full-5', skill: 'flag', name: 'Full Mast', desc: 'Verified 5-second human flag.', icon: '⛳', check: (s) => prAtLeast(s, 'human-flag', 5), progress: prProgress('human-flag', 5) },
+  { id: 'flag-tuck-5', skill: 'flag', name: 'Half Mast', desc: 'Verified 5-second tuck flag.', icon: 'flag', check: (s) => prAtLeast(s, 'tuck-flag', 5), progress: prProgress('tuck-flag', 5) },
+  { id: 'flag-straddle-3', skill: 'flag', name: 'Unfurled', desc: 'Verified 3-second straddle flag.', icon: 'wing', check: (s) => prAtLeast(s, 'straddle-flag', 3), progress: prProgress('straddle-flag', 3) },
+  { id: 'flag-full-3', skill: 'flag', name: 'Flying the Flag', desc: 'Verified 3-second human flag.', icon: 'crown', check: (s) => prAtLeast(s, 'human-flag', 3), progress: prProgress('human-flag', 3) },
+  { id: 'flag-full-5', skill: 'flag', name: 'Full Mast', desc: 'Verified 5-second human flag.', icon: 'ladder', check: (s) => prAtLeast(s, 'human-flag', 5), progress: prProgress('human-flag', 5) },
 
   // ——— More than one skill ———
-  { id: 'two-skills-session', name: 'Double Feature', desc: 'Train two skills’ own holds as main work in one session.', icon: '🎭', check: (_s, last) => skillsTrainedIn(last) >= 2 },
-  { id: 'three-roads', name: 'Triple Threat', desc: 'A verified hold on three different skills.', icon: '🔱', check: (s) => verifiedSkillCount(s) >= 3, progress: (s) => ({ current: Math.min(3, verifiedSkillCount(s)), target: 3 }) },
-  { id: 'rung-opened', name: 'Next Rung', desc: 'Meet a rung’s standard on a push-up line with a replay-checked set.', icon: '🪜', check: (s) => rungsClimbed(s) >= 1 },
+  { id: 'two-skills-session', name: 'Double Feature', desc: 'Train two skills’ own holds as main work in one session.', icon: 'repeat', check: (_s, last) => skillsTrainedIn(last) >= 2 },
+  { id: 'three-roads', name: 'Triple Threat', desc: 'A verified hold on three different skills.', icon: 'route', check: (s) => verifiedSkillCount(s) >= 3, progress: (s) => ({ current: Math.min(3, verifiedSkillCount(s)), target: 3 }) },
+  { id: 'rung-opened', name: 'Next Rung', desc: 'Meet a rung’s standard on a push-up line with a replay-checked set.', icon: 'ladder', check: (s) => rungsClimbed(s) >= 1 },
 ]
 
 export const ACHIEVEMENT_BY_ID: Record<string, AchievementDef> = Object.fromEntries(

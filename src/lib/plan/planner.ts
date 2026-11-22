@@ -259,3 +259,70 @@ export function skillGoalPace(state: AppState, goal: SkillGoal, now = Date.now()
   if (range.low > weeksLeft) return { status: 'behind', text: `Behind: about ${range.low}${range.high !== null ? `–${range.high}` : '+'} weeks at your current rate, ${Math.floor(weeksLeft)} left.` }
   return { status: 'possible', text: `Possible: ${range.low}${range.high !== null ? `–${range.high}` : '+'} weeks at your current rate, ${Math.floor(weeksLeft)} left.` }
 }
+
+export interface WeekDayPlan {
+  /** Local calendar day, YYYY-MM-DD. */
+  day: string
+  at: number
+  plan: TodayPlan
+}
+
+const PREVIEW_SKILL_EXERCISE: Partial<Record<'push' | 'pull', string>> = { push: 'tuck-planche', pull: 'tuck-front-lever' }
+const PREVIEW_GYM_EXERCISES: Record<GymFocus, string[]> = {
+  push: ['db-bench-press', 'db-shoulder-press'],
+  pull: ['lat-pulldown', 'db-row'],
+  lower: ['goblet-squat', 'romanian-deadlift'],
+  upper: ['db-bench-press', 'db-row'],
+  full: ['goblet-squat', 'db-bench-press', 'db-row'],
+}
+
+/**
+ * The next seven days, each planned as if the days before it went as planned:
+ * a preview of how the rest rules and the push / pull / legs rotation play
+ * out. Only a preview — every real day is planned again from what actually
+ * happened.
+ */
+export function planWeek(state: AppState, now = Date.now()): WeekDayPlan[] {
+  const out: WeekDayPlan[] = []
+  let s: AppState = state
+  const startOfToday = new Date(now)
+  startOfToday.setHours(0, 0, 0, 0)
+  for (let d = 0; d < 7; d++) {
+    const day = new Date(startOfToday)
+    day.setDate(day.getDate() + d)
+    const at = d === 0 ? now : day.getTime() + 17 * HOUR
+    const plan = planToday(s, { now: at })
+    out.push({ day: `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`, at, plan })
+    if (plan.rest) continue
+    // Pretend the day happened, so tomorrow is planned around it.
+    const families = new Set((plan.skill?.skills ?? []).map(skillFamily))
+    const skillSets = [...families].flatMap((f) => {
+      const id = f === 'balance' ? undefined : PREVIEW_SKILL_EXERCISE[f]
+      return id ? Array.from({ length: 3 }, () => ({ exerciseId: id, kind: 'hold' as const, value: 8, target: 8, section: 'main' as const, at })) : []
+    })
+    const sessions = skillSets.length
+      ? [
+          ...s.sessions,
+          { id: `preview-${at}`, startedAt: at, endedAt: at + HOUR, workoutName: 'Preview', workoutKind: 'skill' as AppState['sessions'][number]['workoutKind'], stepId: s.stepId, sets: skillSets },
+        ]
+      : s.sessions
+    const gymSessions = plan.gym && s.gym
+      ? [
+          ...s.gym.sessions,
+          {
+            id: `preview-gym-${at}`,
+            locationId: s.gym.activeLocationId ?? 'home',
+            startedAt: at + HOUR,
+            endedAt: at + 2 * HOUR,
+            name: plan.gym.focus,
+            exercises: PREVIEW_GYM_EXERCISES[plan.gym.focus].map((exerciseId) => ({
+              exerciseId,
+              sets: Array.from({ length: 3 }, () => ({ kg: 20, reps: 8, rpe: 8, at: at + HOUR })),
+            })),
+          },
+        ]
+      : s.gym?.sessions
+    s = { ...s, sessions, ...(s.gym ? { gym: { ...s.gym, sessions: gymSessions ?? [] } } : {}) }
+  }
+  return out
+}

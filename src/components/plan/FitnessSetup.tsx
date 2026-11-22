@@ -6,6 +6,7 @@ import { defaultGym, defaultPrefs, newLocation } from '../../lib/gym/state'
 import type { TrainingPrefs } from '../../lib/gym/types'
 import { availableAt } from '../../lib/gym/availability'
 import { LocationEditor } from '../gym/LocationEditor'
+import { Button } from '../ds'
 import { GoalsEditor, MusclesEditor, ScheduleEditor, SkillGoalsEditor } from './PlanSettings'
 
 const STEPS = ['Goals', 'Places', 'Schedule', 'Muscles', 'Age and safety'] as const
@@ -67,12 +68,13 @@ export function FitnessSetup({ onDone }: { onDone: () => void }) {
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-[12px] font-medium text-ink3">
+        <h2 className="font-display text-title2 font-semibold text-ink">Set up Fitness Lab</h2>
+        <p className="mt-1 text-caption font-medium text-ink3">
           Step {step + 1} of {STEPS.length} · {STEPS[step]}
         </p>
-        <div className="mt-2 grid grid-cols-5 gap-1" aria-hidden>
+        <div className="mt-2 grid grid-cols-5 gap-1" role="progressbar" aria-label="Setup progress" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={step + 1}>
           {STEPS.map((s, i) => (
-            <span key={s} className={`h-1 rounded-full ${i <= step ? 'bg-accent' : 'bg-raised'}`} />
+            <span key={s} className={`h-1 rounded-full transition-colors duration-200 ${i <= step ? 'bg-accent' : 'bg-line-strong'}`} />
           ))}
         </div>
       </div>
@@ -86,29 +88,29 @@ export function FitnessSetup({ onDone }: { onDone: () => void }) {
 
       {step === 1 && gym ? (
         <section className="space-y-3">
-          <h3 className="text-[15px] font-semibold">Where do you train?</h3>
-          <p className="text-[13px] text-ink2">Each place keeps its own equipment and weights, so sessions only use what is there. Home already has your calisthenics kit.</p>
+          <h3 className="font-display text-title3 font-semibold">Where do you train?</h3>
+          <p className="text-footnote text-ink2">Each place keeps its own equipment and weights, so sessions only use what is there. Home already has your calisthenics kit.</p>
           <ul className="space-y-2">
             {gym.locations.map((l) => (
               <li key={l.id}>
                 <button
                   onClick={() => setEditing(l.id)}
-                  className="flex min-h-14 w-full items-center justify-between rounded-2xl border border-line px-4 text-left"
+                  className="ds-press flex min-h-14 w-full items-center justify-between rounded-inner border border-line px-4 text-left"
                 >
                   <span>
-                    <span className="block text-[15px] font-semibold">{l.name}</span>
-                    <span className="block text-[12px] text-ink3">
+                    <span className="block text-body font-semibold">{l.name}</span>
+                    <span className="block text-caption text-ink3">
                       {l.equipment.length} pieces of kit · {availableAt(l).length} exercises · {l.unit}
                     </span>
                   </span>
-                  <span className="text-[13px] font-medium text-accent-text">Edit</span>
+                  <span className="text-footnote font-medium text-accent-text">Edit</span>
                 </button>
               </li>
             ))}
           </ul>
-          <button onClick={() => setEditing('new')} className="min-h-12 w-full rounded-2xl border border-dashed border-line-strong text-[14px] font-medium text-ink2">
+          <Button variant="secondary" full onClick={() => setEditing('new')}>
             Add a gym
-          </button>
+          </Button>
         </section>
       ) : null}
 
@@ -118,17 +120,17 @@ export function FitnessSetup({ onDone }: { onDone: () => void }) {
       {step === 4 ? (
         <section className="space-y-4">
           <label className="block">
-            <span className="text-[15px] font-semibold">Year you were born</span>
+            <span className="font-display text-title3 font-semibold">Year you were born</span>
             <input
               inputMode="numeric"
               value={birthYear}
               onChange={(e) => setBirthYear(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
               placeholder="e.g. 2010"
-              className="mt-1 min-h-11 w-full rounded-xl border border-line bg-raised px-3 text-[15px]"
+              className="mt-1 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body"
             />
-            <span className="mt-1 block text-[12px] text-ink3">Stays on this phone. It only changes how careful the plan is.</span>
+            <span className="mt-1 block text-caption text-ink3">Stays on this phone. It only changes how careful the plan is.</span>
           </label>
-          <div className="rounded-2xl bg-raised p-3 text-[13px] leading-relaxed text-ink2">
+          <div className="rounded-inner bg-raised p-4 text-footnote leading-relaxed text-ink2">
             {age === undefined || age < 18 ? (
               <p>
                 <strong className="text-ink">Careful mode is on{age === undefined ? ' until you add your age' : ''}.</strong> Rep ranges stay at 6 or more
@@ -147,10 +149,10 @@ export function FitnessSetup({ onDone }: { onDone: () => void }) {
               and if it keeps coming back, tell a parent, coach or physio.
             </p>
           </div>
-          <label className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-line px-4">
+          <label className="flex min-h-14 items-center justify-between gap-3 rounded-inner border border-line px-4">
             <span>
-              <span className="block text-[14px] font-medium">Bodyweight reminders</span>
-              <span className="block text-[12px] text-ink3">Off by default{age !== undefined && age < 18 ? ' — and never under 18' : ''}. No weight-loss or calorie features, ever.</span>
+              <span className="block text-body font-medium">Bodyweight reminders</span>
+              <span className="block text-caption text-ink3">Off by default{age !== undefined && age < 18 ? ' — and never under 18' : ''}. No weight-loss or calorie features, ever.</span>
             </span>
             <input type="checkbox" checked={bodyweight} onChange={(e) => setBodyweight(e.target.checked)} className="h-5 w-5 accent-[var(--t-accent)]" />
           </label>
@@ -159,18 +161,18 @@ export function FitnessSetup({ onDone }: { onDone: () => void }) {
 
       <div className="flex gap-2">
         {step > 0 ? (
-          <button onClick={() => setStep(step - 1)} className="min-h-12 rounded-xl border border-line px-5 text-[15px] font-medium">
+          <Button size="lg" variant="secondary" onClick={() => setStep(step - 1)}>
             Back
-          </button>
+          </Button>
         ) : null}
         {step < STEPS.length - 1 ? (
-          <button onClick={() => setStep(step + 1)} className="min-h-12 flex-1 rounded-xl bg-accent text-[15px] font-semibold text-on-accent">
+          <Button size="lg" className="flex-1" onClick={() => setStep(step + 1)}>
             Next
-          </button>
+          </Button>
         ) : (
-          <button onClick={finish} className="min-h-12 flex-1 rounded-xl bg-accent text-[15px] font-semibold text-on-accent">
+          <Button size="lg" className="flex-1" onClick={finish}>
             Finish
-          </button>
+          </Button>
         )}
       </div>
     </div>

@@ -28,6 +28,7 @@ import { exportData } from '../lib/exportImport'
 import { useToday } from '../lib/useToday'
 import { pushToast } from '../lib/toast'
 import { Icon } from '../components/Icon'
+import { BadgeGlyph } from '../components/ds/BadgeGlyph'
 import { Figure } from '../components/Figure'
 import { Modal, ProgressRing, Stat, SectionTitle } from '../components/ui'
 import { AddSkill } from '../components/AddSkill'
@@ -991,7 +992,7 @@ export function Dashboard({
             <div className="mt-3 space-y-2.5">
               {recentAchievements.map(({ def, at }) => (
                 <div key={def.id} className="flex items-center gap-3">
-                  <span className="text-[22px]">{def.icon}</span>
+                  <BadgeGlyph icon={def.icon} size={36} />
                   <div className="min-w-0">
                     <div className="truncate text-[14px] font-semibold text-ink">{def.name}</div>
                     <div className="text-[12.5px] text-ink3">{fmtDate(at)}</div>

@@ -46,6 +46,7 @@ import { defaultSurface, surfaceLabel, TRAINING_SURFACES } from '../data/equipme
 import { recordForSurface } from '../lib/records'
 import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { Icon } from '../components/Icon'
+import { BadgeGlyph } from '../components/ds/BadgeGlyph'
 import { Figure } from '../components/Figure'
 import { ShareProgress } from '../components/ShareProgress'
 import { MainTarget, ProgressRing, Modal } from '../components/ui'
@@ -2875,7 +2876,7 @@ export function SessionPlayer({
               const a = ACHIEVEMENT_BY_ID[id]
               return (
                 <div key={id} className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3.5 text-left">
-                  <div className="text-[26px]">{a.icon}</div>
+                  <BadgeGlyph icon={a.icon} size={44} />
                   <div>
                     <div className="text-[14.5px] font-semibold text-ink">{a.name}</div>
                     <div className="text-[13px] text-ink2">{a.desc}</div>

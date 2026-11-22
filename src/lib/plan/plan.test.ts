@@ -201,3 +201,21 @@ describe('the week in review', () => {
     expect(w.focus.some((f) => f.includes('upper chest'))).toBe(true)
   })
 })
+
+describe('the week preview', () => {
+  it('plans seven days, keeps rest days, and never puts a straight-arm family on back-to-back hard days', async () => {
+    const { planWeek, skillFamily } = await import('./planner')
+    const s = athlete(['planche', 'frontlever'], { minutesByDay: [60, 60, 60, 60, 60, 60, 60] })
+    const week = planWeek(s, NOW)
+    expect(week).toHaveLength(7)
+    for (let i = 1; i < week.length; i++) {
+      const before = new Set((week[i - 1].plan.skill?.skills ?? []).map(skillFamily))
+      const today = new Set((week[i].plan.skill?.skills ?? []).map(skillFamily))
+      for (const f of ['push', 'pull'] as const) expect(before.has(f) && today.has(f), `${week[i].day} ${f}`).toBe(false)
+    }
+    // The gym side rotates rather than repeating one focus all week.
+    expect(new Set(week.map((d) => d.plan.gym?.focus).filter(Boolean)).size).toBeGreaterThan(1)
+    const rest = planWeek(athlete(['planche'], { minutesByDay: [0, 45, 0, 45, 0, 45, 0] }), NOW)
+    expect(rest.filter((d) => d.plan.rest)).toHaveLength(4)
+  })
+})

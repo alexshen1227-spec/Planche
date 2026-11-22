@@ -35,6 +35,34 @@ export type IconName =
   | 'skip'
   | 'volume'
   | 'monitor'
+  | 'flag'
+  | 'medal'
+  | 'calendar'
+  | 'hourglass'
+  | 'layers'
+  | 'mountain'
+  | 'rocket'
+  | 'wing'
+  | 'crown'
+  | 'ladder'
+  | 'hand'
+  | 'person'
+  | 'balance'
+  | 'diamond'
+  | 'hook'
+  | 'magnet'
+  | 'shield'
+  | 'star'
+  | 'dumbbell'
+  | 'compass'
+  | 'leaf'
+  | 'flask'
+  | 'repeat'
+  | 'pencil'
+  | 'alert'
+  | 'refresh'
+  | 'eye'
+  | 'hammer'
 
 const PATHS: Record<IconName, JSX.Element> = {
   home: (
@@ -211,6 +239,34 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M9 20.5h6M12 17v3.5" />
     </>
   ),
+  flag: <><path d="M5 21V4" /><path d="M5 4h11l-2 4 2 4H5" /></>,
+  medal: <><circle cx="12" cy="15" r="5" /><path d="M8.5 10.5 6 3h4l2 4 2-4h4l-2.5 7.5" /></>,
+  calendar: <><rect x="4" y="5" width="16" height="15" rx="2.5" /><path d="M4 10h16M8.5 3v4M15.5 3v4" /></>,
+  hourglass: <><path d="M7 3h10M7 21h10M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9" /></>,
+  layers: <><path d="m12 3 9 5-9 5-9-5 9-5z" /><path d="m3 13 9 5 9-5" /></>,
+  mountain: <><path d="m3 20 6-11 4 7 2-3 6 7H3z" /></>,
+  rocket: <><path d="M12 3c3 2 5 5 5 9l-2 4H9l-2-4c0-4 2-7 5-9z" /><circle cx="12" cy="10" r="1.6" /><path d="M9 16l-2 4M15 16l2 4" /></>,
+  wing: <><path d="M3 18c4 0 8-2 10-6 1-2 2-4 5-6 0 5-1 8-4 11-3 2-7 2-11 1z" /><path d="M9 15c2-1 4-3 5-5" /></>,
+  crown: <><path d="m4 8 4 4 4-7 4 7 4-4-2 11H6L4 8z" /></>,
+  ladder: <><path d="M8 3v18M16 3v18M8 7h8M8 12h8M8 17h8" /></>,
+  hand: <><path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V6a1.5 1.5 0 0 1 3 0v8a6 6 0 0 1-6 6h-1a5 5 0 0 1-4-2l-2.5-3.5a1.5 1.5 0 0 1 2.3-1.8L8 14" /></>,
+  person: <><circle cx="12" cy="5" r="2" /><path d="M12 8v7M8 11l4-3 4 3M9.5 21 12 15l2.5 6" /></>,
+  balance: <><path d="M12 4v16M6 20h12M4 8h16" /><path d="m4 8-2 5h4l-2-5zM20 8l-2 5h4l-2-5z" /></>,
+  diamond: <><path d="M6 4h12l4 6-10 11L2 10l4-6z" /><path d="M2 10h20" /></>,
+  hook: <><path d="M12 3v11a4 4 0 0 1-8 0M12 3h-2M20 14a4 4 0 0 1-8 0" /></>,
+  magnet: <><path d="M5 3v8a7 7 0 0 0 14 0V3h-4v8a3 3 0 0 1-6 0V3H5z" /><path d="M5 7h4M15 7h4" /></>,
+  shield: <><path d="M12 3 4.5 6v6c0 4.5 3 7.5 7.5 9 4.5-1.5 7.5-4.5 7.5-9V6L12 3z" /></>,
+  star: <><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3z" /></>,
+  dumbbell: <><path d="M6.5 7v10M17.5 7v10M3.5 9.5v5M20.5 9.5v5M6.5 12h11" /></>,
+  compass: <><circle cx="12" cy="12" r="9" /><path d="m15.5 8.5-2 5-5 2 2-5 5-2z" /></>,
+  leaf: <><path d="M5 19C5 10 10 5 20 4c0 10-5 15-14 15z" /><path d="M5 19c3-5 6-8 10-10" /></>,
+  flask: <><path d="M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3" /><path d="M7.5 15h9" /></>,
+  repeat: <><path d="M17 3l3 3-3 3M4 11V9a3 3 0 0 1 3-3h13M7 21l-3-3 3-3M20 13v2a3 3 0 0 1-3 3H4" /></>,
+  pencil: <><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z" /><path d="m13.5 6.5 4 4" /></>,
+  alert: <><path d="M12 3 2.5 20h19L12 3z" /><path d="M12 10v4.5M12 17.5v.1" /></>,
+  refresh: <><path d="M20 11a8 8 0 0 0-14-4L4 9M4 4v5h5M4 13a8 8 0 0 0 14 4l2-2M20 20v-5h-5" /></>,
+  eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
+  hammer: <><path d="m14 6 4 4M4 20l9-9M12 4l4-1 5 5-1 4-4 1-4-4V4z" /></>,
 }
 
 export function Icon({

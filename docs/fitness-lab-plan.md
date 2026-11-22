@@ -107,11 +107,14 @@ Diagnosis (2026-11-21, read from `src/lib/poseForm.ts`):
 
 ## Phase 5 — design system and UI overhaul
 
-- [ ] Tokens (type scale, spacing, colour, radius, motion), dark first.
-- [ ] Component library: buttons, cards, sheets, inputs, steppers, charts.
-- [ ] Motion: spring transitions, press feedback, count-ups, ring fills,
+- [x] Tokens (type scale, spacing, colour, radius, motion), dark first (`src/index.css`).
+- [x] Component library `src/components/ds/` (Button, Card, Sheet, SegmentedControl, ToggleChip, Stepper, Metric, CountUp, RingTimer, SwipeRow, EmptyState, ErrorState, Skeleton, BadgeGlyph). Charts still use `charts.tsx`.
+- [x] Motion: spring transitions, press feedback, count-ups, ring fills,
       unlock moments; `prefers-reduced-motion` respected; haptics on set done.
-- [ ] Every screen: loading, empty and error states; 44 px targets; contrast.
+      Applied to the Fitness screens; the skill screens (Dashboard, Path,
+      SessionPlayer, Onboarding, Settings, Stats) only got the tokens and badge
+      icons — migrating their ~40 inline-styled buttons to `Button` is next.
+- [ ] Every screen: loading, empty and error states; 44 px targets; contrast. (Fitness screens done; skill screens to go.)
 
 ## Later ideas (for a teen athlete mixing gym, skills and a sport)
 
@@ -120,6 +123,12 @@ growth-spurt caution prompt, sleep/readiness check-in, exam-week light plans,
 travel mode (bodyweight-only location), coach/parent share card.
 
 ## Log
+
+- 2026-11-22 ~00:15 PST — Phase 5 first pass pushed (design system on the
+  Fitness screens, swipe/ring/count-up/unlock, emoji badges → icons) and the
+  7-day week preview on the Today card. Reviewed in the preview at desktop and
+  phone width; swipe, rest ring and save verified; the badge-unlock sheet was
+  not triggered in review (no new badge qualified).
 
 - 2026-11-22 ~00:40 PST — Phase 3 pushed: `lib/plan/` (load, planner),
   Today card on Train, goals/schedule editor, weekly volume, activity log.

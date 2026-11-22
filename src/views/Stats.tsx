@@ -41,6 +41,7 @@ import {
 import { ClipPlayer } from '../components/ClipPlayer'
 import { CLIP_RETENTION_DAYS } from '../lib/clips'
 import { Icon } from '../components/Icon'
+import { BadgeGlyph } from '../components/ds/BadgeGlyph'
 import { Modal, SectionTitle, Stat } from '../components/ui'
 import { WeeklySummary } from '../components/plan/WeeklySummary'
 import { pushToast } from '../lib/toast'
@@ -985,7 +986,7 @@ export function Stats({
                     onClick={() => setAchievementFilter('next')}
                     className="flex items-center gap-2.5 rounded-xl border border-line bg-surface/75 p-2.5 text-left transition hover:border-line-strong"
                   >
-                    <span className="text-[20px] grayscale-[35%]">{achievement.icon}</span>
+                    <BadgeGlyph icon={achievement.icon} size={32} earned={false} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[12.5px] font-semibold text-ink">{achievement.name}</span>
                       <span className="mt-1 block h-1 overflow-hidden rounded-full bg-line">
@@ -1034,7 +1035,7 @@ export function Stats({
                 at ? 'card-sheen border-accent/30 bg-surface shadow-card' : 'border-line bg-surface/40'
               }`}
             >
-              <div className={`text-[26px] ${at ? '' : 'opacity-40 grayscale'}`}>{a.icon}</div>
+              <BadgeGlyph icon={a.icon} size={44} earned={!!at} />
               <div className={`mt-1.5 text-[13.5px] font-semibold ${at ? 'text-ink' : 'text-ink3'}`}>{a.name}</div>
               <div className="mt-0.5 text-[12px] leading-snug text-ink3">{a.desc}</div>
               {at ? (

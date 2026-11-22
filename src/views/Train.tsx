@@ -40,6 +40,7 @@ import { STRATEGY_BY_ID } from '../lib/coach'
 import { useToday } from '../lib/useToday'
 import { ASSIST_LABEL } from '../components/SetupRow'
 import { WeekPlanCard } from '../components/WeekPlanCard'
+import { SegmentedControl } from '../components/ds'
 
 const SECTION_LABEL: Record<Section, string> = {
   warmup: 'Warm-up',
@@ -642,19 +643,16 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
           setGymPreset(preset)
         }}
       />
-      <div className="mx-auto mb-5 grid max-w-sm grid-cols-2 rounded-2xl border border-line bg-raised p-1" role="tablist" aria-label="What to train">
-        {(['skills', 'gym'] as const).map((m) => (
-          <button
-            key={m}
-            role="tab"
-            aria-selected={mode === m}
-            onClick={() => choose(m)}
-            className={`min-h-11 rounded-xl text-[14px] font-semibold transition ${mode === m ? 'bg-surface text-ink shadow-sm' : 'text-ink3'}`}
-          >
-            {m === 'skills' ? 'Skills' : 'Gym'}
-          </button>
-        ))}
-      </div>
+      <SegmentedControl
+        className="mx-auto mb-5 max-w-sm"
+        label="What to train"
+        value={mode}
+        onChange={choose}
+        options={[
+          { value: 'skills', label: 'Skills' },
+          { value: 'gym', label: 'Gym' },
+        ]}
+      />
       {mode === 'skills' ? <SkillsTrain startWorkout={startWorkout} /> : <GymHub preset={gymPreset} onPresetUsed={() => setGymPreset(null)} />}
     </div>
   )

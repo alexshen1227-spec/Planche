@@ -50,7 +50,9 @@
   --t-grid: #e4e6ea;
   --t-glow: rgba(224, 135, 0, 0.16);
   --t-glow2: rgba(42, 120, 214, 0.1);
-  --t-btn-accent: linear-gradient(135deg, #f59b0b, #ef6c1a);
+  /* One solid accent: a decorative gradient on every primary button was the
+     most template-looking thing on screen. Rings keep theirs (below). */
+  --t-btn-accent: #e08700;
   --t-ring-grad-a: #f59b0b;
   --t-ring-grad-b: #ef6c1a;
   --t-sheen: rgba(255, 255, 255, 0.65);
@@ -92,7 +94,7 @@
   --t-grid: #21262e;
   --t-glow: rgba(255, 178, 36, 0.14);
   --t-glow2: rgba(78, 128, 220, 0.1);
-  --t-btn-accent: linear-gradient(135deg, #ffb224, #ff7a2e);
+  --t-btn-accent: #ffb224;
   --t-ring-grad-a: #ffc14d;
   --t-ring-grad-b: #ff7a2e;
   --t-sheen: rgba(255, 255, 255, 0.14);
@@ -138,6 +140,91 @@
   --animate-pop-num: popNum 0.9s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
   --animate-ping-soft: pingSoft 1.8s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
 }
+
+
+/* ---- Design tokens: type, space, radius, motion (Phase 5) ---------------- */
+:root {
+  /* Spacing on a 4px grid. Tailwind's own scale is 4px per step, so p-4 is
+     --space-4; these exist for inline styles and the ds components. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  --radius-control: 10px;
+  --radius-inner: 16px;
+  --radius-card: 20px;
+  --radius-sheet: 28px;
+
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 320ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* A spring that settles with a slight overshoot (about 4%). */
+  --ease-spring: linear(0, 0.1 4%, 0.35 9%, 0.62 15%, 0.84 22%, 0.97 30%, 1.03 40%, 1.045 48%, 1.03 58%, 1.01 70%, 1 85%, 1);
+
+  --tap: 44px;
+}
+
+@theme {
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-footnote: 13px;
+  --text-footnote--line-height: 18px;
+  --text-body: 15px;
+  --text-body--line-height: 22px;
+  --text-title3: 17px;
+  --text-title3--line-height: 24px;
+  --text-title2: 20px;
+  --text-title2--line-height: 26px;
+  --text-title1: 24px;
+  --text-title1--line-height: 30px;
+  --text-display: 32px;
+  --text-display--line-height: 38px;
+  --text-hero: 40px;
+  --text-hero--line-height: 44px;
+  --radius-control: 10px;
+  --radius-inner: 16px;
+  --radius-card: 20px;
+  --radius-sheet: 28px;
+}
+
+@keyframes ds-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes ds-sheet-out {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}
+@keyframes ds-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ds-backdrop-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes ds-badge-in {
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+@keyframes ds-shimmer {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+.ds-sheet { animation: ds-sheet-in var(--dur-slow) var(--ease-spring) both; }
+.ds-sheet[data-closing='true'] { animation: ds-sheet-out var(--dur) var(--ease-out) both; }
+.ds-backdrop { animation: ds-backdrop-in var(--dur) var(--ease-out) both; }
+.ds-backdrop[data-closing='true'] { animation: ds-backdrop-out var(--dur) var(--ease-out) both; }
+.ds-badge-in { animation: ds-badge-in 520ms var(--ease-spring) both; }
+.ds-skeleton { animation: ds-shimmer 900ms ease-in-out infinite alternate; background: var(--t-raised); }
+.ds-press {
+  transition: transform var(--dur-fast) var(--ease-spring), background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+}
+.ds-press:active:not(:disabled) { transform: scale(0.97); }
+.ds-swipe { transition: transform var(--dur-slow) var(--ease-spring); touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.ds-swipe[data-dragging='true'] { transition: none; }
 
 @keyframes rise {
   from {
@@ -236,10 +323,7 @@ body {
 
 /* Layered ambient glow: warm main light + cool counterpoint */
 .app-ambient {
-  background:
-    radial-gradient(1000px 460px at 16% -12%, var(--t-glow), transparent 62%),
-    radial-gradient(820px 420px at 96% -18%, var(--t-glow2), transparent 60%),
-    radial-gradient(600px 300px at 55% -30%, color-mix(in oklab, var(--t-glow) 45%, transparent), transparent 70%);
+  background: radial-gradient(900px 380px at 20% -14%, var(--t-glow), transparent 64%);
 }
 
 /* Film grain — one fixed overlay above everything, purely textural */
@@ -361,5 +445,19 @@ input[type='range'] {
 
   html {
     scroll-behavior: auto !important;
+  }
+
+  /* The design system's own movement is off, not merely fast: no press
+     scale, no sheet slide, no badge pop, no swipe travel animation. */
+  .ds-press:active:not(:disabled) {
+    transform: none !important;
+  }
+  .ds-sheet,
+  .ds-badge-in,
+  .ds-skeleton {
+    animation: none !important;
+  }
+  .ds-swipe {
+    transition: none !important;
   }
 }

@@ -2,21 +2,15 @@ import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
 
-export function Modal({
-  open,
-  onClose,
-  children,
-  wide = false,
-  label = 'Dialog',
-}: {
-  open: boolean
-  onClose: () => void
-  children: ReactNode
-  wide?: boolean
-  /** Concise accessible name announced when focus enters the modal. */
-  label?: string
-}) {
-  const dialogRef = useRef<HTMLDivElement | null>(null)
+/**
+ * Focus trap, Escape, scroll lock and focus return for any dialog. Shared by
+ * Modal and the design system's Sheet so there is one implementation.
+ */
+export function useDialogFocus(
+  open: boolean,
+  onClose: () => void,
+  dialogRef: { current: HTMLDivElement | null },
+) {
 
   /**
    * Read through a ref, never a dependency.
@@ -100,6 +94,24 @@ export function Modal({
       if (previouslyFocused?.isConnected) previouslyFocused.focus()
     }
   }, [open])
+}
+
+export function Modal({
+  open,
+  onClose,
+  children,
+  wide = false,
+  label = 'Dialog',
+}: {
+  open: boolean
+  onClose: () => void
+  children: ReactNode
+  wide?: boolean
+  /** Concise accessible name announced when focus enters the modal. */
+  label?: string
+}) {
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(open, onClose, dialogRef)
 
   if (!open) return null
   // Portalled to <body>: the views animate in with a transform, and a

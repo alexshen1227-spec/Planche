@@ -24,15 +24,15 @@ export function WeekVolume() {
   )
   return (
     <section>
-      <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink3">This week, sets per muscle</h2>
-      <p className="mt-1 text-[12px] text-ink3">
+      <h2 className="text-footnote font-semibold uppercase tracking-wide text-ink3">This week, sets per muscle</h2>
+      <p className="mt-1 text-caption text-ink3">
         Gym and skill sets together (a secondary muscle counts half). Targets follow your physique goal — a coaching
         convention: more weekly sets help muscle growth up to roughly 10–20, and the exact number for you is unknown.
       </p>
       <div className="mt-3 space-y-4">
         {MUSCLE_GROUPS.map((group) => (
           <div key={group.id}>
-            <p className="text-[12px] font-semibold text-ink2">{group.label}</p>
+            <p className="text-caption font-semibold text-ink2">{group.label}</p>
             <ul className="mt-1 space-y-1.5">
               {MUSCLES.filter((m) => m.group === group.id).map((m) => {
                 const target = volumeTarget(m.id, prefs)
@@ -40,7 +40,7 @@ export function WeekVolume() {
                 const status = volumeStatus(done, target)
                 const width = target[1] > 0 ? Math.min(100, (done / target[1]) * 100) : 0
                 return (
-                  <li key={m.id} className="grid grid-cols-[7.5rem_1fr_5.5rem] items-center gap-2 text-[13px]">
+                  <li key={m.id} className="grid grid-cols-[7.5rem_1fr_5.5rem] items-center gap-2 text-footnote">
                     <span className="truncate">{m.label}</span>
                     <span className="relative h-2 overflow-hidden rounded-full bg-raised" aria-hidden>
                       {target[1] > 0 ? (
@@ -54,7 +54,7 @@ export function WeekVolume() {
                         style={{ width: `${width}%` }}
                       />
                     </span>
-                    <span className={`text-right tabular-nums ${STATUS[status].tone}`}>
+                    <span className={`text-right tnum ${STATUS[status].tone}`}>
                       {status === 'off' ? 'off' : `${done}/${target[0]}–${target[1]}`}
                     </span>
                   </li>

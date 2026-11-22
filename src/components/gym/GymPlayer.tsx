@@ -11,7 +11,9 @@ import { conservative, saveDraft, sessionFromDraft, type DraftItem, type GymDraf
 import { gymRecords, lastPerformance, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GymLocation, Rating } from '../../lib/gym/types'
 import { displayLoad, formatLoad, stepKgFor, unitFor } from '../../lib/gym/units'
+import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
 import { Icon } from '../Icon'
+import { BadgeGlyph, Button, CountUp, RingTimer, Sheet, SwipeRow } from '../ds'
 
 const RPE_CHOICES = [6, 7, 8, 9, 10]
 
@@ -75,6 +77,10 @@ export function GymPlayer({
   const [finishing, setFinishing] = useState(false)
   const [query, setQuery] = useState('')
   const restEndedRef = useRef(false)
+  const [unlocked, setUnlocked] = useState<GymBadge[] | null>(null)
+  const lastSheet = useRef(sheet)
+  if (sheet) lastSheet.current = sheet
+  const sh = sheet ?? lastSheet.current
 
   // Every change is mirrored, so a closed tab or a crash resumes here.
   useEffect(() => saveDraft(draft), [draft])
@@ -134,6 +140,28 @@ export function GymPlayer({
     setQuery('')
   }
 
+  /** Estimated maxes this session would beat, for the summary and the toast. */
+  const newMaxes = (session: ReturnType<typeof sessionFromDraft>) => {
+    const after = gymRecords([...gym.sessions, session])
+    return Object.values(after)
+      .filter((r) => {
+        const before = records[r.exerciseId]?.bestE1rm?.kg ?? 0
+        return (r.bestE1rm?.kg ?? 0) > before + 0.01 && before > 0
+      })
+      .map((r) => {
+        const unit = draft.items.find((it) => it.exerciseId === r.exerciseId)?.unit ?? 'kg'
+        return { id: r.exerciseId, name: GYM_EXERCISE_BY_ID[r.exerciseId]?.name ?? 'Lift', value: displayLoad(r.bestE1rm!.kg, unit), unit }
+      })
+  }
+
+  const summary = useMemo(() => {
+    if (!finishing) return null
+    const session = sessionFromDraft(draft, Date.now())
+    return { maxes: session.exercises.length ? newMaxes(session) : [] }
+    // Computed when the sheet opens; the draft cannot change underneath it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finishing])
+
   const save = () => {
     const session = sessionFromDraft(draft, Date.now())
     if (!session.exercises.length) {
@@ -141,14 +169,21 @@ export function GymPlayer({
       onClose()
       return
     }
+    const earnedBefore = new Set(gymBadges(state).filter((b) => b.at !== undefined).map((b) => b.id))
     dispatch({ type: 'GYM', op: { op: 'saveSession', session } })
     saveDraft(null)
-    const after = gymRecords([...gym.sessions, session])
-    const prs = Object.values(after).filter((r) => {
-      const before = records[r.exerciseId]?.bestE1rm?.kg ?? 0
-      return (r.bestE1rm?.kg ?? 0) > before + 0.01 && before > 0
-    }).length
+    const prs = newMaxes(session).length
+    const fresh = gymBadges({ sessions: state.sessions, gym: { ...gym, sessions: [...gym.sessions, session] } }).filter(
+      (b) => b.at !== undefined && !earnedBefore.has(b.id),
+    )
     pushToast(prs ? `Saved — ${prs} new estimated max${prs > 1 ? 'es' : ''}.` : 'Gym session saved.', 'success')
+    if (fresh.length) {
+      // The player stays up for the moment; closing it waits for the sheet.
+      buzz([30, 50, 30])
+      setFinishing(false)
+      setUnlocked(fresh)
+      return
+    }
     onClose()
   }
 
@@ -167,17 +202,12 @@ export function GymPlayer({
     <div className="fixed inset-0 z-50 flex flex-col bg-bg text-ink" role="dialog" aria-label="Gym session">
       <header className="flex items-center gap-3 border-b border-line bg-surface px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[17px] font-semibold">{draft.name}</p>
-          <p className="text-[12px] text-ink3">
+          <p className="truncate text-title3 font-semibold">{draft.name}</p>
+          <p className="text-caption text-ink3">
             {location.name} · {mmss(elapsed)} · {doneSets}/{plannedSets} sets
           </p>
         </div>
-        <button
-          onClick={() => setFinishing(true)}
-          className="min-h-11 rounded-xl bg-accent px-4 text-[15px] font-semibold text-on-accent active:scale-[0.97]"
-        >
-          Finish
-        </button>
+        <Button onClick={() => setFinishing(true)}>Finish</Button>
       </header>
 
       <main className="flex-1 overflow-y-auto px-4 pb-40 pt-3">
@@ -188,25 +218,25 @@ export function GymPlayer({
             const stepDisplay = step > 0 ? Math.max(0.5, displayLoad(step, item.unit)) : 0
             const best = records[item.exerciseId]?.bestE1rm
             return (
-              <section key={`${item.exerciseId}-${i}`} className="rounded-2xl border border-line bg-surface p-4">
+              <section key={`${item.exerciseId}-${i}`} className="rounded-card border border-line bg-surface p-4">
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-[16px] font-semibold leading-tight">
+                    <h3 className="text-title3 font-semibold leading-tight">
                       {ex.name}
-                      {rating(ex.id) === 'love' ? <span className="ml-2 text-[12px] font-medium text-accent-text">Favourite</span> : null}
+                      {rating(ex.id) === 'love' ? <span className="ml-2 text-caption font-medium text-accent-text">Favourite</span> : null}
                     </h3>
-                    <p className="mt-0.5 text-[13px] text-ink2">
+                    <p className="mt-0.5 text-footnote text-ink2">
                       {item.sets.length} × {item.plan.range[0]}–{item.plan.range[1]} reps · stop about RPE {item.plan.targetRpe}
                       {best ? ` · est. max ${formatLoad(best.kg, item.unit)}` : ''}
                     </p>
-                    {item.suggestion ? <p className="mt-1 text-[12px] text-ink3">{item.suggestion.why}</p> : null}
+                    {item.suggestion ? <p className="mt-1 text-caption text-ink3">{item.suggestion.why}</p> : null}
                     {item.swappedFrom ? (
-                      <p className="mt-1 text-[12px] text-ink3">In place of {GYM_EXERCISE_BY_ID[item.swappedFrom]?.name}.</p>
+                      <p className="mt-1 text-caption text-ink3">In place of {GYM_EXERCISE_BY_ID[item.swappedFrom]?.name}.</p>
                     ) : null}
                   </div>
                   <button
                     onClick={() => setSheet({ kind: 'menu', item: i })}
-                    className="min-h-11 rounded-xl border border-line px-3 text-[13px] font-medium text-ink2"
+                    className="min-h-11 rounded-control border border-line px-3 text-footnote font-medium text-ink2"
                     aria-label={`Options for ${ex.name}`}
                   >
                     More
@@ -215,11 +245,22 @@ export function GymPlayer({
 
                 <div className="mt-3 space-y-2">
                   {item.sets.map((s, j) => (
-                    <div key={j}>
-                      <div
-                        className={`flex items-center gap-2 rounded-xl px-2 py-1.5 ${s.done ? 'bg-ok-soft' : 'bg-raised'}`}
+                    <div key={j} data-set={`${i}-${j}`}>
+                      <SwipeRow
+                        onComplete={s.done ? undefined : () => completeSet(i, j)}
+                        onEdit={() => document.querySelector<HTMLInputElement>(`[data-set="${i}-${j}"] input`)?.focus()}
+                        onDelete={() =>
+                          update((d) => {
+                            d.items[i].sets.splice(j, 1)
+                            return d
+                          })
+                        }
+                        canDelete={item.sets.length > 1}
                       >
-                        <span className="w-6 text-center text-[13px] font-semibold text-ink3">{s.warmup ? 'W' : j + 1}</span>
+                      <div
+                        className={`flex flex-wrap items-center gap-x-2 gap-y-1 rounded-inner px-2 py-1.5 ${s.done ? 'bg-ok-soft' : 'bg-raised'}`}
+                      >
+                        <span className="w-6 text-center text-footnote font-semibold text-ink3">{s.warmup ? 'W' : j + 1}</span>
                         {ex.load !== 'bodyweight' || s.load !== undefined ? (
                           <Stepper
                             value={s.load ?? 0}
@@ -241,7 +282,7 @@ export function GymPlayer({
                             }
                           />
                         ) : (
-                          <span className="flex-1 text-center text-[13px] text-ink3">Bodyweight</span>
+                          <span className="flex-1 text-center text-footnote text-ink3">Bodyweight</span>
                         )}
                         <Stepper
                           value={s.reps}
@@ -259,19 +300,20 @@ export function GymPlayer({
                           onClick={() => completeSet(i, j)}
                           aria-pressed={s.done}
                           aria-label={s.done ? `Set ${j + 1} done — tap to undo` : `Complete set ${j + 1}`}
-                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition active:scale-90 ${
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-control ds-press ${
                             s.done ? 'bg-ok text-white' : 'border border-line-strong bg-surface text-ink3'
                           }`}
                         >
                           <Icon name="check" />
                         </button>
                       </div>
+                      </SwipeRow>
                       {s.done && s.rpe !== undefined ? (
-                        <p className="mt-0.5 pl-9 text-[11px] text-ink3">RPE {s.rpe}</p>
+                        <p className="mt-0.5 pl-9 text-caption text-ink3">RPE {s.rpe}</p>
                       ) : null}
                       {askRpe && askRpe.item === i && askRpe.set === j ? (
                         <div className="mt-1.5 flex items-center gap-1.5 pl-8" role="group" aria-label="How hard was that set?">
-                          <span className="mr-1 text-[12px] text-ink3">Effort</span>
+                          <span className="mr-1 text-caption text-ink3">Effort</span>
                           {RPE_CHOICES.map((r) => (
                             <button
                               key={r}
@@ -282,12 +324,12 @@ export function GymPlayer({
                                 })
                                 setAskRpe(null)
                               }}
-                              className="h-10 min-w-10 rounded-lg border border-line bg-surface px-2 text-[14px] font-semibold active:scale-95"
+                              className="h-11 min-w-11 rounded-lg border border-line bg-surface px-2 text-body font-semibold ds-press"
                             >
                               {r}
                             </button>
                           ))}
-                          <button onClick={() => setAskRpe(null)} className="h-10 px-2 text-[12px] text-ink3">
+                          <button onClick={() => setAskRpe(null)} className="h-11 px-2 text-caption text-ink3">
                             Skip
                           </button>
                         </div>
@@ -304,7 +346,7 @@ export function GymPlayer({
                         return d
                       })
                     }
-                    className="min-h-11 flex-1 rounded-xl border border-dashed border-line-strong text-[13px] font-medium text-ink2"
+                    className="min-h-11 flex-1 rounded-control border border-dashed border-line-strong text-footnote font-medium text-ink2"
                   >
                     Add set
                   </button>
@@ -316,7 +358,7 @@ export function GymPlayer({
                           return d
                         })
                       }
-                      className="min-h-11 rounded-xl border border-line px-3 text-[13px] text-ink3"
+                      className="min-h-11 rounded-control border border-line px-3 text-footnote text-ink3"
                     >
                       Remove set
                     </button>
@@ -327,7 +369,7 @@ export function GymPlayer({
           })}
           <button
             onClick={() => setSheet({ kind: 'add' })}
-            className="min-h-12 w-full rounded-2xl border border-dashed border-line-strong text-[14px] font-medium text-ink2"
+            className="min-h-12 w-full rounded-card border border-dashed border-line-strong text-body font-medium text-ink2"
           >
             Add an exercise
           </button>
@@ -337,73 +379,65 @@ export function GymPlayer({
       {rest ? (
         <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
           <div className="mx-auto flex max-w-xl items-center gap-3">
+            <RingTimer left={restLeft} total={rest.total} label={`Rest, ${mmss(restLeft)} left`}>
+              <span className="tnum font-display text-title3 font-semibold">{mmss(restLeft)}</span>
+            </RingTimer>
             <div className="min-w-0 flex-1">
-              <p className="text-[12px] font-medium text-ink3">Rest</p>
-              <p className="text-[28px] font-semibold tabular-nums leading-none">{mmss(restLeft)}</p>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-raised">
-                <div
-                  className="h-full rounded-full bg-accent transition-[width] duration-500 ease-linear motion-reduce:transition-none"
-                  style={{ width: `${Math.max(0, Math.min(100, (restLeft / rest.total) * 100))}%` }}
-                />
-              </div>
+              <p className="text-body font-semibold">Rest</p>
+              <p className="text-caption text-ink3">Start the next set when you are ready.</p>
             </div>
-            <button onClick={() => setRest((r) => (r ? { ...r, until: r.until - 15_000 } : r))} className="h-11 rounded-xl border border-line px-3 text-[14px] font-medium">
+            <Button variant="secondary" aria-label="15 seconds less" onClick={() => setRest((r) => (r ? { ...r, until: r.until - 15_000 } : r))}>
               −15
-            </button>
-            <button onClick={() => setRest((r) => (r ? { ...r, until: r.until + 15_000, total: r.total + 15 } : r))} className="h-11 rounded-xl border border-line px-3 text-[14px] font-medium">
+            </Button>
+            <Button variant="secondary" aria-label="15 seconds more" onClick={() => setRest((r) => (r ? { ...r, until: r.until + 15_000, total: r.total + 15 } : r))}>
               +15
-            </button>
-            <button onClick={() => setRest(null)} className="h-11 rounded-xl bg-raised px-3 text-[14px] font-medium">
+            </Button>
+            <Button variant="ghost" onClick={() => setRest(null)}>
               Skip
-            </button>
+            </Button>
           </div>
         </div>
       ) : null}
 
-      {sheet ? (
-        <div className="fixed inset-0 z-20 flex items-end bg-black/40" onClick={() => setSheet(null)}>
-          <div
-            className="max-h-[80vh] w-full overflow-y-auto rounded-t-3xl bg-surface p-4 pb-[max(16px,env(safe-area-inset-bottom))] shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mx-auto max-w-xl">
-              {sheet.kind === 'menu' && sheet.item !== undefined ? (
+      <Sheet open={!!sheet} onClose={() => setSheet(null)} label="Exercise options">
+        <div>
+              {sh?.kind === 'menu' && sh.item !== undefined && draft.items[sh.item] ? (
                 <MenuSheet
-                  exercise={GYM_EXERCISE_BY_ID[draft.items[sheet.item].exerciseId]}
-                  rating={rating(draft.items[sheet.item].exerciseId)}
-                  hardHere={location.hardHere?.includes(draft.items[sheet.item].exerciseId) ?? false}
-                  favoriteHere={gym.favoriteAt[draft.items[sheet.item].exerciseId] === location.id}
+                  exercise={GYM_EXERCISE_BY_ID[draft.items[sh.item].exerciseId]}
+                  rating={rating(draft.items[sh.item].exerciseId)}
+                  hardHere={location.hardHere?.includes(draft.items[sh.item].exerciseId) ?? false}
+                  favoriteHere={gym.favoriteAt[draft.items[sh.item].exerciseId] === location.id}
                   locationName={location.name}
-                  onRate={(r) => dispatch({ type: 'GYM', op: { op: 'rate', exerciseId: draft.items[sheet.item!].exerciseId, rating: r } })}
-                  onHard={() => dispatch({ type: 'GYM', op: { op: 'toggleHardHere', locationId: location.id, exerciseId: draft.items[sheet.item!].exerciseId } })}
+                  onRate={(r) => dispatch({ type: 'GYM', op: { op: 'rate', exerciseId: draft.items[sh.item!].exerciseId, rating: r } })}
+                  onHard={() => dispatch({ type: 'GYM', op: { op: 'toggleHardHere', locationId: location.id, exerciseId: draft.items[sh.item!].exerciseId } })}
                   onFavorite={(on) =>
-                    dispatch({ type: 'GYM', op: { op: 'setFavorite', exerciseId: draft.items[sheet.item!].exerciseId, locationId: on ? location.id : null } })
+                    dispatch({ type: 'GYM', op: { op: 'setFavorite', exerciseId: draft.items[sh.item!].exerciseId, locationId: on ? location.id : null } })
                   }
-                  onSwap={() => setSheet({ kind: 'swap', item: sheet.item })}
+                  onSwap={() => setSheet({ kind: 'swap', item: sh.item })}
                   onRemove={() => {
                     update((d) => {
-                      d.items.splice(sheet.item!, 1)
+                      d.items.splice(sh.item!, 1)
                       return d
                     })
                     setSheet(null)
                   }}
                 />
               ) : null}
-              {sheet.kind === 'swap' && sheet.item !== undefined ? (
+              {sh?.kind === 'swap' && sh.item !== undefined && draft.items[sh.item] ? (
                 <>
-                  <h2 className="text-[17px] font-semibold">Swap {GYM_EXERCISE_BY_ID[draft.items[sheet.item].exerciseId].name}</h2>
-                  <p className="mt-1 text-[13px] text-ink3">Same movement first, then the same muscles — everything here can be done at {location.name}.</p>
+                  <h2 className="text-title3 font-semibold">Swap {GYM_EXERCISE_BY_ID[draft.items[sh.item].exerciseId].name}</h2>
+                  <p className="mt-1 text-footnote text-ink3">Same movement first, then the same muscles — everything here can be done at {location.name}.</p>
                   <ul className="mt-3 space-y-2">
-                    {alternativesFor(draft.items[sheet.item].exerciseId, location, gym.ratings, draft.items.map((d) => d.exerciseId))
+                    {alternativesFor(draft.items[sh.item].exerciseId, location, gym.ratings, draft.items.map((d) => d.exerciseId))
                       .slice(0, 10)
                       .map((alt) => (
                         <li key={alt.id}>
                           <button
-                            onClick={() => swapTo(sheet.item!, alt.id)}
-                            className="flex min-h-12 w-full items-center justify-between rounded-xl border border-line px-3 text-left"
+                            onClick={() => swapTo(sh.item!, alt.id)}
+                            className="flex min-h-12 w-full items-center justify-between rounded-control border border-line px-3 text-left"
                           >
-                            <span className="text-[15px] font-medium">{alt.name}</span>
-                            <span className="text-[12px] text-ink3">
+                            <span className="text-body font-medium">{alt.name}</span>
+                            <span className="text-caption text-ink3">
                               {gym.ratings[alt.id] === 'love' ? 'Favourite · ' : ''}
                               {PATTERN_LABEL[alt.pattern]}
                             </span>
@@ -413,14 +447,14 @@ export function GymPlayer({
                   </ul>
                 </>
               ) : null}
-              {sheet.kind === 'add' ? (
+              {sh?.kind === 'add' ? (
                 <>
-                  <h2 className="text-[17px] font-semibold">Add an exercise</h2>
+                  <h2 className="text-title3 font-semibold">Add an exercise</h2>
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search"
-                    className="mt-3 min-h-11 w-full rounded-xl border border-line bg-raised px-3 text-[15px]"
+                    className="mt-3 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body"
                     aria-label="Search exercises"
                   />
                   <ul className="mt-3 space-y-2">
@@ -432,42 +466,80 @@ export function GymPlayer({
                         <li key={e.id}>
                           <button
                             onClick={() => addExercise(e.id)}
-                            className="flex min-h-12 w-full items-center justify-between rounded-xl border border-line px-3 text-left"
+                            className="flex min-h-12 w-full items-center justify-between rounded-control border border-line px-3 text-left"
                           >
-                            <span className="text-[15px] font-medium">{e.name}</span>
-                            <span className="text-[12px] text-ink3">{PATTERN_LABEL[e.pattern]}</span>
+                            <span className="text-body font-medium">{e.name}</span>
+                            <span className="text-caption text-ink3">{PATTERN_LABEL[e.pattern]}</span>
                           </button>
                         </li>
                       ))}
                   </ul>
                 </>
               ) : null}
-            </div>
-          </div>
         </div>
-      ) : null}
+      </Sheet>
 
-      {finishing ? (
-        <div className="fixed inset-0 z-30 flex items-end bg-black/40 sm:items-center sm:justify-center">
-          <div className="w-full max-w-md rounded-t-3xl bg-surface p-5 pb-[max(20px,env(safe-area-inset-bottom))] sm:rounded-3xl">
-            <h2 className="text-[19px] font-semibold">Finish this session?</h2>
-            <p className="mt-1 text-[14px] text-ink2">
-              {doneSets} of {plannedSets} sets done in {mmss(elapsed)}. Only finished sets are saved.
-            </p>
-            <div className="mt-4 grid gap-2">
-              <button onClick={save} className="min-h-12 rounded-xl bg-accent text-[15px] font-semibold text-on-accent">
-                {doneSets ? 'Save session' : 'Close — nothing to save'}
-              </button>
-              <button onClick={() => setFinishing(false)} className="min-h-12 rounded-xl border border-line text-[15px] font-medium">
-                Keep training
-              </button>
-              <button onClick={discard} className="min-h-11 text-[14px] font-medium text-danger-text">
-                Discard session
-              </button>
+      <Sheet open={finishing} onClose={() => setFinishing(false)} title="Finish this session?">
+        <p className="text-body text-ink2">Only finished sets are saved.</p>
+        <div className="mt-4 grid grid-cols-2 gap-4 rounded-inner bg-raised p-4">
+          <div>
+            <div className="text-footnote font-medium text-ink3">Sets done</div>
+            <div className="mt-0.5 font-display text-display font-semibold leading-none">
+              <CountUp value={doneSets} />
+              <span className="ml-1 text-body font-normal text-ink3">of {plannedSets}</span>
             </div>
           </div>
+          <div>
+            <div className="text-footnote font-medium text-ink3">Time</div>
+            <div className="tnum mt-0.5 font-display text-display font-semibold leading-none">{mmss(elapsed)}</div>
+          </div>
         </div>
-      ) : null}
+        {summary && summary.maxes.length ? (
+          <div className="mt-3 rounded-inner border border-accent/30 bg-accent-soft p-4" aria-live="polite">
+            <div className="text-footnote font-semibold text-accent-text">New estimated max</div>
+            <ul className="mt-2 space-y-1.5">
+              {summary.maxes.map((m) => (
+                <li key={m.id} className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 truncate text-body text-ink">{m.name}</span>
+                  <span className="shrink-0 font-display text-title3 font-semibold text-ink">
+                    <CountUp value={m.value} decimals={Number.isInteger(m.value) ? 0 : 1} />
+                    <span className="ml-1 text-footnote font-normal text-ink3">{m.unit}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        <div className="mt-4 grid gap-2">
+          <Button size="lg" full onClick={save}>
+            {doneSets ? 'Save session' : 'Close — nothing to save'}
+          </Button>
+          <Button variant="secondary" full onClick={() => setFinishing(false)}>
+            Keep training
+          </Button>
+          <Button variant="ghost" full onClick={discard} className="text-danger-text">
+            Discard session
+          </Button>
+        </div>
+      </Sheet>
+
+      <Sheet open={!!unlocked} onClose={onClose} label="Badge unlocked">
+        <div className="flex flex-col items-center px-2 pb-2 pt-2 text-center">
+          {unlocked?.map((b) => (
+            <div key={b.id} className="mb-4 flex flex-col items-center">
+              <div className="ds-badge-in">
+                <BadgeGlyph icon={b.icon} size={88} />
+              </div>
+              <p className="mt-4 text-footnote font-semibold text-accent-text">Badge unlocked</p>
+              <h2 className="mt-1 font-display text-title2 font-semibold text-ink">{b.name}</h2>
+              <p className="mt-1 max-w-[34ch] text-body text-ink2">{b.desc}</p>
+            </div>
+          ))}
+          <Button size="lg" full onClick={onClose}>
+            Nice
+          </Button>
+        </div>
+      </Sheet>
     </div>
   )
   return createPortal(body, document.body)
@@ -491,7 +563,7 @@ function Stepper({
     <div className="flex flex-1 items-center justify-center gap-1" role="group" aria-label={label}>
       <button
         onClick={() => onChange(Math.max(0, Math.round((value - step) * 2) / 2))}
-        className="flex h-11 w-10 items-center justify-center rounded-lg text-ink2 active:scale-90 active:bg-surface"
+        className="ds-press flex h-11 w-11 items-center justify-center rounded-control text-ink2 hover:bg-surface"
         aria-label={`Less ${unit}`}
       >
         <Icon name="minus" />
@@ -503,17 +575,17 @@ function Stepper({
           const v = Number(e.target.value.replace(',', '.'))
           if (Number.isFinite(v) && v >= 0 && v < 1000) onChange(v)
         }}
-        className="h-11 w-14 rounded-lg bg-surface text-center text-[17px] font-semibold tabular-nums"
+        className="h-11 w-14 rounded-lg bg-surface text-center text-title3 font-semibold tnum"
         aria-label={label}
       />
       <button
         onClick={() => onChange(Math.round((value + step) * 2) / 2)}
-        className="flex h-11 w-10 items-center justify-center rounded-lg text-ink2 active:scale-90 active:bg-surface"
+        className="ds-press flex h-11 w-11 items-center justify-center rounded-control text-ink2 hover:bg-surface"
         aria-label={`More ${unit}`}
       >
         <Icon name="plus" />
       </button>
-      <span className="w-7 text-[11px] text-ink3">{unit}</span>
+      <span className="w-7 text-caption text-ink3">{unit}</span>
     </div>
   )
 }
@@ -545,32 +617,32 @@ function MenuSheet({
     <button
       onClick={() => onRate(rating === r ? null : r)}
       aria-pressed={rating === r}
-      className={`min-h-11 flex-1 rounded-xl border text-[14px] font-medium ${rating === r ? 'border-transparent bg-accent text-on-accent' : 'border-line'}`}
+      className={`min-h-11 flex-1 rounded-control border text-body font-medium ${rating === r ? 'border-transparent bg-accent text-on-accent' : 'border-line'}`}
     >
       {label}
     </button>
   )
   return (
     <>
-      <h2 className="text-[17px] font-semibold">{exercise.name}</h2>
-      <p className="mt-1 text-[13px] text-ink2">{exercise.cue}</p>
-      <p className="mt-3 text-[12px] font-medium text-ink3">How do you like it? The planner picks favourites and leaves out avoided ones.</p>
+      <h2 className="text-title3 font-semibold">{exercise.name}</h2>
+      <p className="mt-1 text-footnote text-ink2">{exercise.cue}</p>
+      <p className="mt-3 text-caption font-medium text-ink3">How do you like it? The planner picks favourites and leaves out avoided ones.</p>
       <div className="mt-2 flex gap-2">
         {choice('love', 'Love')}
         {choice('fine', 'Fine')}
         {choice('avoid', 'Avoid')}
       </div>
       <div className="mt-3 grid gap-2">
-        <button onClick={onSwap} className="min-h-12 rounded-xl border border-line text-[15px] font-medium">
+        <button onClick={onSwap} className="min-h-12 rounded-control border border-line text-body font-medium">
           Swap — machine taken or not today
         </button>
-        <button onClick={onHard} aria-pressed={hardHere} className="min-h-12 rounded-xl border border-line text-[15px] font-medium">
+        <button onClick={onHard} aria-pressed={hardHere} className="min-h-12 rounded-control border border-line text-body font-medium">
           {hardHere ? `Marked hard to do at ${locationName} — undo` : `Hard to do at ${locationName}`}
         </button>
-        <button onClick={() => onFavorite(!favoriteHere)} aria-pressed={favoriteHere} className="min-h-12 rounded-xl border border-line text-[15px] font-medium">
+        <button onClick={() => onFavorite(!favoriteHere)} aria-pressed={favoriteHere} className="min-h-12 rounded-control border border-line text-body font-medium">
           {favoriteHere ? `Your favourite place for this — undo` : `Favourite place for this: ${locationName}`}
         </button>
-        <button onClick={onRemove} className="min-h-11 text-[14px] font-medium text-danger-text">
+        <button onClick={onRemove} className="min-h-11 text-body font-medium text-danger-text">
           Remove from today
         </button>
       </div>

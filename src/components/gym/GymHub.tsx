@@ -8,7 +8,8 @@ import { activeLocation, conservative, loadDraft, type GymDraft } from '../../li
 import { gymRecords } from '../../lib/gym/progression'
 import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
 import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
-import { Modal } from '../ui'
+import { Icon } from '../Icon'
+import { Button, Card, CardTitle, EmptyState, Sheet, ToggleChip } from '../ds'
 import { GymPlayer } from './GymPlayer'
 import { WeekVolume } from '../plan/WeekVolume'
 import type { GymPreset } from '../plan/TodayPlanCard'
@@ -61,22 +62,20 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
 
   if (!gym || !location) {
     return (
-      <section className="rounded-3xl border border-line bg-surface p-5">
-        <h2 className="text-[19px] font-semibold">Gym training</h2>
-        <p className="mt-2 text-[14px] leading-relaxed text-ink2">
-          Log weights, reps and effort next to your skill work, and get sessions built from what each place actually
-          has. Start with where you train — your calisthenics kit is already listed for Home.
-        </p>
-        <button
-          onClick={() => {
+      <Card>
+        <EmptyState
+          icon="dumbbell"
+          title="Gym training"
+          action="Set up my places"
+          onAction={() => {
             dispatch({ type: 'GYM', op: { op: 'init', gym: defaultGym(state.profile.equipment) } })
             setEditing('home')
           }}
-          className="mt-4 min-h-12 w-full rounded-xl bg-accent text-[15px] font-semibold text-on-accent"
         >
-          Set up my places
-        </button>
-      </section>
+          Log weights, reps and effort next to your skill work, and get sessions built from what each place has. Start
+          with where you train — your calisthenics kit is already listed for Home.
+        </EmptyState>
+      </Card>
     )
   }
 
@@ -138,22 +137,23 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
   return (
     <div className="space-y-5">
       {resumable && !running ? (
-        <section className="rounded-3xl border border-accent bg-accent-soft p-4">
-          <p className="text-[15px] font-semibold">A gym session is still open</p>
-          <p className="mt-1 text-[13px] text-ink2">
+        <Card tone="accent">
+          <p className="text-body font-semibold">A gym session is still open</p>
+          <p className="mt-1 text-footnote text-ink2">
             {resumable.name}, started {dayLabel(resumable.startedAt)} — nothing logged in it was lost.
           </p>
           <div className="mt-3 flex gap-2">
-            <button
+            <Button
+              className="flex-1"
               onClick={() => {
                 setRunning(resumable)
                 setResumable(null)
               }}
-              className="min-h-11 flex-1 rounded-xl bg-accent text-[14px] font-semibold text-on-accent"
             >
               Resume
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
               onClick={() => {
                 setResumable(null)
                 try {
@@ -162,67 +162,57 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
                   // Nothing to clear.
                 }
               }}
-              className="min-h-11 rounded-xl border border-line px-4 text-[14px] font-medium"
             >
               Discard
-            </button>
+            </Button>
           </div>
-        </section>
+        </Card>
       ) : null}
 
       <section>
         <div className="flex items-center justify-between">
-          <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink3">Where are you training?</h2>
-          <button onClick={() => setEditing(location.id)} className="min-h-10 px-2 text-[13px] font-medium text-accent-text">
+          <h2 className="text-footnote font-semibold uppercase tracking-wide text-ink3">Where are you training?</h2>
+          <button onClick={() => setEditing(location.id)} className="min-h-11 px-2 text-footnote font-medium text-accent-text">
             Edit {location.name}
           </button>
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
           {gym.locations.map((l) => (
-            <button
+            <ToggleChip
               key={l.id}
+              active={l.id === location.id}
               onClick={() => dispatch({ type: 'GYM', op: { op: 'setActiveLocation', id: l.id } })}
-              aria-pressed={l.id === location.id}
-              className={`min-h-11 rounded-full border px-4 text-[14px] font-medium transition active:scale-95 ${
-                l.id === location.id ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-surface text-ink2'
-              }`}
             >
               {l.name}
-            </button>
+            </ToggleChip>
           ))}
-          <button onClick={() => setEditing('new')} className="min-h-11 rounded-full border border-dashed border-line-strong px-4 text-[14px] font-medium text-ink2">
+          <button
+            onClick={() => setEditing('new')}
+            className="ds-press inline-flex min-h-11 items-center gap-1.5 rounded-full border border-dashed border-line-strong px-4 text-footnote font-medium text-ink2"
+          >
+            <Icon name="plus" size={14} />
             Add a place
           </button>
         </div>
       </section>
 
-      <section className="rounded-3xl border border-line bg-surface p-4">
-        <h2 className="text-[17px] font-semibold">Today’s gym session</h2>
-        <p className="mt-0.5 text-[13px] text-ink3">Built from what {location.name} has, your likes and your last sessions.</p>
-        <p className="mt-3 text-[12px] font-medium text-ink3">Time</p>
+      <Card>
+        <CardTitle>Today’s gym session</CardTitle>
+        <p className="-mt-2 text-footnote text-ink3">Built from what {location.name} has, your likes and your last sessions.</p>
+        <p className="mt-3 text-caption font-medium text-ink3">Time</p>
         <div className="mt-1 flex flex-wrap gap-2">
           {MINUTES.map((m) => (
-            <button
-              key={m}
-              onClick={() => setMinutes(m)}
-              aria-pressed={minutes === m}
-              className={`min-h-10 rounded-full border px-3.5 text-[13px] font-medium ${minutes === m ? 'border-transparent bg-accent text-on-accent' : 'border-line text-ink2'}`}
-            >
+            <ToggleChip key={m} active={minutes === m} onClick={() => setMinutes(m)}>
               {m} min
-            </button>
+            </ToggleChip>
           ))}
         </div>
-        <p className="mt-3 text-[12px] font-medium text-ink3">Focus</p>
+        <p className="mt-3 text-caption font-medium text-ink3">Focus</p>
         <div className="mt-1 flex flex-wrap gap-2">
           {FOCI.map((f) => (
-            <button
-              key={f}
-              onClick={() => setFocus(f)}
-              aria-pressed={focus === f}
-              className={`min-h-10 rounded-full border px-3.5 text-[13px] font-medium ${focus === f ? 'border-transparent bg-accent text-on-accent' : 'border-line text-ink2'}`}
-            >
+            <ToggleChip key={f} active={focus === f} onClick={() => setFocus(f)}>
               {f === 'auto' ? `Auto (${FOCUS_LABEL[autoFocus]})` : FOCUS_LABEL[f]}
-            </button>
+            </ToggleChip>
           ))}
         </div>
         {plan && plan.items.length ? (
@@ -232,10 +222,10 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
               return (
                 <li key={it.exerciseId} className="flex items-baseline justify-between gap-3 py-2.5">
                   <span className="min-w-0">
-                    <span className="block text-[15px] font-medium">{ex.name}</span>
-                    <span className="block text-[12px] text-ink3">{it.suggestion.why}</span>
+                    <span className="block text-body font-medium">{ex.name}</span>
+                    <span className="block text-caption text-ink3">{it.suggestion.why}</span>
                   </span>
-                  <span className="shrink-0 text-right text-[13px] tabular-nums text-ink2">
+                  <span className="shrink-0 text-right text-footnote tnum text-ink2">
                     {it.sets} × {it.plan.range[0]}–{it.plan.range[1]}
                     <br />
                     {it.suggestion.kg !== undefined ? formatLoad(it.suggestion.kg, unitFor(ex, location)) : ex.load === 'bodyweight' ? 'Bodyweight' : 'Pick a weight'}
@@ -245,49 +235,45 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
             })}
           </ol>
         ) : (
-          <p className="mt-4 rounded-xl bg-raised p-3 text-[13px] text-ink2">
+          <p className="mt-4 rounded-control bg-raised p-3 text-footnote text-ink2">
             Nothing to program for this focus with what {location.name} has. Add equipment, pick another focus, or start an
             empty session.
           </p>
         )}
         {plan?.dropped.length ? (
-          <p className="mt-2 text-[12px] text-ink3">Left out to fit {minutes} minutes: {plan.dropped.join(', ')}.</p>
+          <p className="mt-2 text-caption text-ink3">Left out to fit {minutes} minutes: {plan.dropped.join(', ')}.</p>
         ) : null}
-        {plan && plan.items.length ? <p className="mt-1 text-[12px] text-ink3">About {plan.estimatedMin} minutes with warm-up and rests.</p> : null}
+        {plan && plan.items.length ? <p className="mt-1 text-caption text-ink3">About {plan.estimatedMin} minutes with warm-up and rests.</p> : null}
         <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
-          <button
-            disabled={!plan?.items.length}
-            onClick={() => setPending({ empty: false })}
-            className="min-h-12 rounded-xl bg-accent text-[15px] font-semibold text-on-accent transition active:scale-[0.98] disabled:opacity-40"
-          >
+          <Button size="lg" disabled={!plan?.items.length} onClick={() => setPending({ empty: false })}>
             Start session
-          </button>
-          <button onClick={() => setPending({ empty: true })} className="min-h-12 rounded-xl border border-line px-4 text-[14px] font-medium">
+          </Button>
+          <Button size="lg" variant="secondary" onClick={() => setPending({ empty: true })}>
             Empty
-          </button>
+          </Button>
         </div>
         {youth ? (
-          <p className="mt-3 text-[12px] leading-relaxed text-ink3">
+          <p className="mt-3 text-caption leading-relaxed text-ink3">
             Careful mode (under 18, or no age set): rep ranges stay at 6 or more, loads go up one step at a time, and lifts
             that need coaching are not picked unless you mark them a favourite.
           </p>
         ) : null}
-      </section>
+      </Card>
 
       <section>
-        <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink3">Recent</h2>
+        <h2 className="text-footnote font-semibold uppercase tracking-wide text-ink3">Recent</h2>
         {recent.length ? (
           <ul className="mt-2 space-y-2">
             {recent.map((s) => {
               const sets = s.exercises.reduce((n, e) => n + e.sets.filter((x) => !x.warmup).length, 0)
               const place = gym.locations.find((l) => l.id === s.locationId)?.name ?? 'A deleted place'
               return (
-                <li key={s.id} className="rounded-2xl border border-line bg-surface px-4 py-3">
+                <li key={s.id} className="rounded-card border border-line bg-surface p-4">
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-[15px] font-semibold">{s.name}</span>
-                    <span className="text-[12px] text-ink3">{dayLabel(s.startedAt)}</span>
+                    <span className="text-body font-semibold">{s.name}</span>
+                    <span className="text-caption text-ink3">{dayLabel(s.startedAt)}</span>
                   </div>
-                  <p className="mt-0.5 text-[13px] text-ink2">
+                  <p className="mt-0.5 text-footnote text-ink2">
                     {place} · {s.exercises.length} {s.exercises.length === 1 ? 'exercise' : 'exercises'} · {sets} {sets === 1 ? 'set' : 'sets'}
                     {s.completion === 'partial' ? ' · ended early' : ''}
                   </p>
@@ -296,23 +282,25 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
             })}
           </ul>
         ) : (
-          <p className="mt-2 rounded-2xl border border-dashed border-line p-4 text-[13px] text-ink3">
-            No gym sessions yet. Your first one sets the starting weights for the next.
-          </p>
+          <Card className="mt-2 border-dashed">
+            <EmptyState icon="calendar" title="No gym sessions yet">
+              Your first one sets the starting weights for the next.
+            </EmptyState>
+          </Card>
         )}
       </section>
 
       {topRecords.length ? (
         <section>
-          <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink3">Estimated maxes</h2>
-          <p className="mt-1 text-[12px] text-ink3">From your best set of 12 reps or fewer, adjusted for effort — an estimate, never a test.</p>
+          <h2 className="text-footnote font-semibold uppercase tracking-wide text-ink3">Estimated maxes</h2>
+          <p className="mt-1 text-caption text-ink3">From your best set of 12 reps or fewer, adjusted for effort — an estimate, never a test.</p>
           <ul className="mt-2 grid grid-cols-2 gap-2">
             {topRecords.map((r) => {
               const ex = GYM_EXERCISE_BY_ID[r.exerciseId]
               return (
-                <li key={r.exerciseId} className="rounded-2xl border border-line bg-surface p-3">
-                  <p className="truncate text-[12px] text-ink3">{ex?.name}</p>
-                  <p className="text-[19px] font-semibold tabular-nums">{formatLoad(r.bestE1rm!.kg, ex ? unitFor(ex, location) : location.unit)}</p>
+                <li key={r.exerciseId} className="rounded-card border border-line bg-surface p-4">
+                  <p className="truncate text-footnote text-ink3">{ex?.name}</p>
+                  <p className="mt-0.5 font-display text-title1 font-semibold tnum">{formatLoad(r.bestE1rm!.kg, ex ? unitFor(ex, location) : location.unit)}</p>
                 </li>
               )
             })}
@@ -322,11 +310,11 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
 
       <WeekVolume />
 
-      <Modal open={pending !== null} onClose={() => setPending(null)} label="Before you start">
+      <Sheet open={pending !== null} onClose={() => setPending(null)} label="Before you start">
         {pending ? <PainCheck onAnswer={launch} /> : null}
-      </Modal>
+      </Sheet>
 
-      <Modal open={editingLocation !== null} onClose={() => setEditing(null)} label={editing === 'new' ? 'Add a place' : 'Edit place'} wide>
+      <Sheet open={editingLocation !== null} onClose={() => setEditing(null)} label={editing === 'new' ? 'Add a place' : 'Edit place'}>
         {editingLocation ? (
           <LocationEditor
             location={editingLocation}
@@ -342,7 +330,7 @@ export function GymHub({ preset, onPresetUsed }: { preset?: GymPreset | null; on
             }}
           />
         ) : null}
-      </Modal>
+      </Sheet>
 
       {running ? (
         <GymPlayer
@@ -374,39 +362,34 @@ function PainCheck({ onAnswer }: { onAnswer: (joints: Joint[], kind: 'none' | 'n
   const [picked, setPicked] = useState<Joint[]>([])
   return (
     <div className="space-y-4">
-      <p className="text-[15px] font-semibold">Anything hurting today?</p>
+      <h2 className="font-display text-title2 font-semibold">Anything hurting today?</h2>
       <div className="flex flex-wrap gap-2">
         {CHECK_JOINTS.map((j) => {
           const on = picked.includes(j.id)
           return (
-            <button
-              key={j.id}
-              aria-pressed={on}
-              onClick={() => setPicked(on ? picked.filter((x) => x !== j.id) : [...picked, j.id])}
-              className={`min-h-11 rounded-full border px-4 text-[14px] font-medium ${on ? 'border-transparent bg-accent text-on-accent' : 'border-line text-ink2'}`}
-            >
+            <ToggleChip key={j.id} active={on} onClick={() => setPicked(on ? picked.filter((x) => x !== j.id) : [...picked, j.id])}>
               {j.label}
-            </button>
+            </ToggleChip>
           )
         })}
       </div>
       {picked.length ? (
         <div className="grid gap-2">
-          <button onClick={() => onAnswer(picked, 'niggle')} className="min-h-12 rounded-xl border border-line text-[15px] font-medium">
+          <Button size="lg" variant="secondary" full onClick={() => onAnswer(picked, 'niggle')}>
             Just a niggle — work around it
-          </button>
-          <button onClick={() => onAnswer(picked, 'pain')} className="min-h-12 rounded-xl bg-accent text-[15px] font-semibold text-on-accent">
+          </Button>
+          <Button size="lg" full onClick={() => onAnswer(picked, 'pain')}>
             It hurts — keep off it and go light
-          </button>
-          <p className="text-[12px] leading-relaxed text-ink3">
+          </Button>
+          <p className="text-caption leading-relaxed text-ink3">
             Nothing that loads {picked.length > 1 ? 'those areas' : 'that area'} goes in today. Never train through pain; if it keeps
             coming back, tell a parent, coach or physio.
           </p>
         </div>
       ) : (
-        <button onClick={() => onAnswer([], 'none')} className="min-h-12 w-full rounded-xl bg-accent text-[15px] font-semibold text-on-accent">
+        <Button size="lg" full onClick={() => onAnswer([], 'none')}>
           Nothing hurts — start
-        </button>
+        </Button>
       )}
     </div>
   )

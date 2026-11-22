@@ -19,6 +19,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-22',
+    title: 'A cleaner look, and a gym logger that feels quick',
+    area: 'app',
+    notes: [
+      'One design system across the new screens: one type scale, consistent spacing and corners, solid buttons instead of gradients, and sheets that slide up from the bottom. Badges use drawn icons instead of emoji.',
+      'Gym logger: swipe a set right to finish it (tapping still works), swipe left to edit or delete; the rest timer is a ring that counts down; finishing shows the sets and any new estimated max before you save, and a new gym badge gets its moment.',
+      'Today shows the week ahead: each day’s skills and gym focus as planned if the days before go to plan — a preview, re-planned every day from what you actually did.',
+      'Animations follow your phone’s reduce-motion setting.',
+    ],
+  },
+  {
+    date: '2026-11-22',
     title: 'One plan for skills and the gym',
     area: 'coach',
     notes: [

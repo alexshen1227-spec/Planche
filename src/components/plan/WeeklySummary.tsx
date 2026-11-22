@@ -8,6 +8,7 @@ import { useStore } from '../../lib/store'
 import { fmtHold } from '../../lib/time'
 import { HoldLineChart } from '../charts'
 import { Icon } from '../Icon'
+import { Card, CardTitle, CountUp, EmptyState, Metric } from '../ds'
 
 /** The week in one place: skills and gym together, what moved, and what to focus on next. */
 export function WeeklySummary() {
@@ -34,25 +35,26 @@ export function WeeklySummary() {
   const earned = badges.filter((b) => b.at !== undefined)
 
   return (
-    <section className="space-y-4 rounded-3xl border border-line bg-surface p-4">
+    <Card className="space-y-4">
       <div>
-        <h2 className="text-[17px] font-semibold">This week</h2>
-        <p className="text-[12px] text-ink3">Skills and gym together, Monday to Sunday.</p>
+        <CardTitle>This week</CardTitle>
+        <p className="-mt-2 text-footnote text-ink3">Skills and gym together, Monday to Sunday.</p>
       </div>
       <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {[
-          ['Skill sessions', String(summary.skillSessions)],
-          ['Gym sessions', String(summary.gymSessions)],
-          ['Skill hold time', fmtHold(Math.round(summary.holdSec))],
-          ['Gym sets', String(summary.gymSets)],
-        ].map(([k, v]) => (
-          <div key={k} className="rounded-2xl bg-raised p-3">
-            <dt className="text-[12px] text-ink3">{k}</dt>
-            <dd className="text-[22px] font-semibold tabular-nums leading-tight">{v}</dd>
+        {(
+          [
+            ['Skill sessions', <CountUp key="a" value={summary.skillSessions} />],
+            ['Gym sessions', <CountUp key="b" value={summary.gymSessions} />],
+            ['Skill hold time', fmtHold(Math.round(summary.holdSec))],
+            ['Gym sets', <CountUp key="c" value={summary.gymSets} />],
+          ] as const
+        ).map(([k, v]) => (
+          <div key={k} className="rounded-inner bg-raised p-4">
+            <Metric label={k} value={v} />
           </div>
         ))}
       </dl>
-      <p className="text-[13px] text-ink2">
+      <p className="text-footnote text-ink2">
         {summary.streakWeeks > 0
           ? `${summary.streakWeeks} ${summary.streakWeeks === 1 ? 'week' : 'weeks'} in a row with two or more training days.`
           : 'Two training days in a week starts a streak.'}
@@ -62,10 +64,10 @@ export function WeeklySummary() {
       </p>
       {summary.focus.length ? (
         <div>
-          <h3 className="text-[13px] font-semibold">Focus next week</h3>
+          <h3 className="font-display text-body font-semibold">Focus next week</h3>
           <ul className="mt-1 space-y-1">
             {summary.focus.map((f) => (
-              <li key={f} className="flex gap-2 text-[13px] leading-snug text-ink2">
+              <li key={f} className="flex gap-2 text-footnote leading-snug text-ink2">
                 <span aria-hidden className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
                 <span>{f}</span>
               </li>
@@ -77,12 +79,12 @@ export function WeeklySummary() {
       {shown && shownEx ? (
         <div>
           <div className="flex items-baseline justify-between gap-2">
-            <h3 className="text-[13px] font-semibold">Estimated max — {shownEx.name}</h3>
+            <h3 className="font-display text-body font-semibold">Estimated max — {shownEx.name}</h3>
             {series.length > 1 ? (
               <select
                 value={shown[0]}
                 onChange={(e) => setLift(e.target.value)}
-                className="min-h-10 max-w-[50%] rounded-lg border border-line bg-raised px-2 text-[13px]"
+                className="min-h-11 max-w-[50%] rounded-control border border-line bg-raised px-2 text-footnote"
                 aria-label="Lift to chart"
               >
                 {series.map(([id]) => (
@@ -94,19 +96,23 @@ export function WeeklySummary() {
             ) : null}
           </div>
           <HoldLineChart points={shown[1]} height={160} label={`Estimated max for ${shownEx.name}`} format={(v) => formatLoad(v, unit)} />
-          <p className="text-[12px] text-ink3">Estimated from your best set of 12 reps or fewer each session, adjusted for effort. Tap a point to read it.</p>
+          <p className="text-caption text-ink3">Estimated from your best set of 12 reps or fewer each session, adjusted for effort. Tap a point to read it.</p>
         </div>
-      ) : null}
+      ) : (
+        <EmptyState icon="chart" title="No chart yet">
+          Log the same lift in two sessions and its estimated max appears here.
+        </EmptyState>
+      )}
 
       {earned.length ? (
         <div>
-          <h3 className="text-[13px] font-semibold">Gym badges</h3>
+          <h3 className="font-display text-body font-semibold">Gym badges</h3>
           <ul className="mt-2 flex flex-wrap gap-2">
             {badges.map((b) => (
               <li
                 key={b.id}
                 title={b.desc}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-medium ${b.at !== undefined ? 'border-transparent bg-accent-soft text-accent-text' : 'border-line text-ink3'}`}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-caption font-medium ${b.at !== undefined ? 'border-transparent bg-accent-soft text-accent-text' : 'border-line text-ink3'}`}
               >
                 <Icon name={b.icon} size={14} />
                 {b.name}
@@ -115,6 +121,6 @@ export function WeeklySummary() {
           </ul>
         </div>
       ) : null}
-    </section>
+    </Card>
   )
 }
