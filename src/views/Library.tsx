@@ -1,6 +1,4 @@
-import { EmptyState } from '../components/ds'
-import { BadgeGlyph } from '../components/ds'
-import { Button } from '../components/ds'
+import { BadgeGlyph, Button, EmptyState, SegmentedControl, ToggleChip } from '../components/ds'
 import { useMemo, useState } from 'react'
 import type { Category, Exercise } from '../types'
 import { useStore } from '../lib/store'
@@ -10,7 +8,7 @@ import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
 import { pushToast } from '../lib/toast'
 import { fmtHold, fmtDate } from '../lib/time'
 import { Icon } from '../components/Icon'
-import { Modal, Chip } from '../components/ui'
+import { Modal } from '../components/ui'
 import { ClipGallery } from '../components/ClipGallery'
 import { isFilmable } from '../lib/poseForm'
 import { ladderOfExercise } from '../lib/repLadder'
@@ -37,30 +35,22 @@ export function Library() {
 
   return (
     <div className="animate-rise">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-display text-[28px] font-bold text-ink">Learn</h1>
-          <p className="mt-0.5 text-body text-ink2">
-            {pane === 'exercises'
-              ? 'Every movement the programs use — how to do it, what to feel, what to avoid.'
-              : 'Plain-English guides and the jargon decoded. Start here if you are new.'}
-          </p>
-        </div>
-        <div className="flex overflow-hidden rounded-control border border-line">
-          {(['exercises', 'basics'] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPane(p)}
-              aria-pressed={pane === p}
-              className={`px-4 py-2 text-footnote font-medium capitalize transition ${
-                pane === p ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-      </div>
+      <h1 className="font-display text-title1 font-bold text-ink">Learn</h1>
+      <p className="mt-0.5 text-body text-ink2">
+        {pane === 'exercises'
+          ? 'Every movement the programs use — how to do it, what to feel, what to avoid.'
+          : 'Plain-English guides and the jargon decoded. Start here if you are new.'}
+      </p>
+      <SegmentedControl
+        className="mt-4"
+        label="Learn section"
+        value={pane}
+        onChange={setPane}
+        options={[
+          { value: 'exercises' as const, label: 'Exercises' },
+          { value: 'basics' as const, label: 'Basics' },
+        ]}
+      />
 
       {pane === 'exercises' ? <ExercisePane /> : <BasicsPane />}
     </div>
@@ -88,79 +78,84 @@ function ExercisePane() {
 
   return (
     <>
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        {CATS.map((c) => (
-          <Chip key={c} active={cat === c} onClick={() => setCat(c)}>
-            {c === 'all' ? 'All' : CATEGORY_LABEL[c]}
-          </Chip>
-        ))}
-        <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
-          <span className="shrink-0 text-footnote text-ink3 tnum">
-            {list.length} move{list.length === 1 ? '' : 's'}
-          </span>
-          <div className="relative min-w-0 flex-1 sm:w-[210px]">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              aria-label="Search exercises"
-              placeholder="Search cues, muscles…"
-              className="w-full rounded-full border border-line bg-surface py-1.5 pl-4 pr-9 text-footnote text-ink outline-none placeholder:text-ink3 focus:border-accent"
-            />
-            {query ? (
-              <button
-                onClick={() => setQuery('')}
-                aria-label="Clear exercise search"
-                className="absolute right-1 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full text-ink3 transition hover:bg-raised hover:text-ink"
-              >
-                <Icon name="x" size={13} />
-              </button>
-            ) : null}
-          </div>
-        </div>
+      <div className="relative mt-4">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search exercises"
+          placeholder="Search cues, muscles…"
+          className="min-h-11 w-full rounded-control border border-line bg-surface pl-4 pr-12 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
+        />
+        {query ? (
+          <button
+            onClick={() => setQuery('')}
+            aria-label="Clear exercise search"
+            className="absolute right-0 top-0 grid h-11 w-11 place-items-center rounded-full text-ink3 transition hover:text-ink"
+          >
+            <Icon name="x" size={16} />
+          </button>
+        ) : null}
       </div>
+      <div className="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1" role="group" aria-label="Category">
+        {CATS.map((c) => (
+          <div key={c} className="shrink-0">
+            <ToggleChip active={cat === c} onClick={() => setCat(c)}>
+              {c === 'all' ? 'All' : CATEGORY_LABEL[c]}
+            </ToggleChip>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-footnote text-ink3 tnum">
+        {list.length} move{list.length === 1 ? '' : 's'}
+      </p>
 
-      <div className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="mt-2 divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
         {list.map((e) => {
           const pr = state.prs[e.id]
           const pinned = state.videoLinks[e.id]
           return (
-            <button
-              key={e.id}
-              onClick={() => setDetail(e)}
-              className="card-int rounded-inner border border-line bg-surface p-5 text-left shadow-card"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="font-display text-title3 font-semibold leading-snug text-ink">{e.name}</div>
-                <span
-                  className={`shrink-0 rounded-full px-2.5 py-0.5 text-caption font-semibold uppercase tracking-wide ${
-                    e.type === 'hold' ? 'bg-accent-soft text-accent-text' : 'bg-info-soft text-info-text'
-                  }`}
-                >
-                  {e.type}
-                </span>
-              </div>
-              <p className="mt-1 line-clamp-2 text-footnote leading-relaxed text-ink2">{e.blurb}</p>
-              <div className="mt-2.5 flex items-center justify-between">
-                <div className="flex items-center gap-1" aria-label={`Difficulty ${e.difficulty} of 5`}>
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <span key={n} className={`h-1.5 w-4 rounded-full ${n <= e.difficulty ? 'bg-accent' : 'bg-line'}`} />
-                  ))}
-                </div>
-                <span className="flex items-center gap-2 text-footnote text-ink3">
-                  {pinned ? <Icon name="play" size={12} className="text-accent-text" /> : null}
-                  {pr ? (
-                    <span className="font-medium text-ink2 tnum">
-                      best {e.type === 'hold' ? fmtHold(pr.value) : `${pr.value} reps`}
+            <li key={e.id}>
+              <button
+                onClick={() => setDetail(e)}
+                className="flex min-h-[64px] w-full items-center gap-3 px-4 py-3 text-left hover:bg-raised"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 truncate text-body font-semibold text-ink">{e.name}</span>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-caption font-semibold uppercase tracking-wide ${
+                        e.type === 'hold' ? 'bg-accent-soft text-accent-text' : 'bg-info-soft text-info-text'
+                      }`}
+                    >
+                      {e.type}
                     </span>
-                  ) : (
-                    CATEGORY_LABEL[e.category]
-                  )}
-                </span>
-              </div>
-            </button>
+                  </div>
+                  <p className="mt-0.5 line-clamp-1 text-footnote text-ink2">{e.blurb}</p>
+                  <div className="mt-1.5 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-1" aria-label={`Difficulty ${e.difficulty} of 5`}>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <span key={n} className={`h-1.5 w-4 rounded-full ${n <= e.difficulty ? 'bg-accent' : 'bg-line'}`} />
+                      ))}
+                    </div>
+                    <span className="flex items-center gap-2 text-caption text-ink3">
+                      {pinned ? <Icon name="play" size={12} className="text-accent-text" /> : null}
+                      {pr ? (
+                        <span className="font-medium text-ink2 tnum">
+                          best {e.type === 'hold' ? fmtHold(pr.value) : `${pr.value} reps`}
+                        </span>
+                      ) : (
+                        CATEGORY_LABEL[e.category]
+                      )}
+                    </span>
+                  </div>
+                </div>
+                <Icon name="chevronR" size={16} className="shrink-0 text-ink3" />
+              </button>
+            </li>
           )
         })}
-      </div>
+      </ul>
       {list.length === 0 ? (
         <div className="mt-6 rounded-card border border-dashed border-line-strong">
           <EmptyState icon="book" title="No matches">
@@ -200,7 +195,7 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
   }
 
   return (
-    <div className="mt-4 rounded-inner border border-line bg-raised p-4">
+    <div className="mt-4 rounded-card border border-line bg-raised p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-footnote font-semibold text-ink">
           <Icon name="play" size={14} className="text-accent-text" /> Demo video
@@ -282,7 +277,7 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
   const { state } = useStore()
   const pr = state.prs[e.id]
   return (
-    <div className="p-6 sm:p-8">
+    <div className="p-4 sm:p-6">
       <div className="pr-10">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-footnote font-semibold uppercase tracking-wider text-accent-text">
@@ -296,7 +291,7 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
             {e.type === 'hold' ? 'timed hold' : 'reps'}
           </span>
         </div>
-        <h2 className="mt-1 font-display text-[24px] font-bold text-ink">{e.name}</h2>
+        <h2 className="mt-1 font-display text-title1 font-bold text-ink">{e.name}</h2>
         <p className="mt-1 text-body leading-relaxed text-ink2">{e.blurb}</p>
       </div>
 
@@ -323,7 +318,7 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
       <VideoPanel exercise={e} />
 
       {isFilmable(e.id) || ladderOfExercise(e.id) ? (
-        <div className="mt-4 rounded-inner border border-line bg-raised p-4">
+        <div className="mt-4 rounded-card border border-line bg-raised p-4">
           <div className="flex items-center gap-1.5 text-footnote font-semibold text-ink">
             <Icon name="monitor" size={14} className="text-accent-text" /> Your recorded sets
           </div>
@@ -336,7 +331,7 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
         </div>
       ) : null}
 
-      <div className="mt-4 rounded-inner border border-line bg-raised p-4">
+      <div className="mt-4 rounded-card border border-line bg-raised p-4">
         <div className="mb-2 text-footnote font-semibold text-ink">How to do it</div>
         <ol className="space-y-1.5 text-footnote leading-relaxed text-ink2">
           {e.howTo.map((s, i) => (
@@ -349,7 +344,7 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
       </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div className="rounded-inner border border-line bg-raised p-4">
+        <div className="rounded-card border border-line bg-raised p-4">
           <div className="mb-2 flex items-center gap-1.5 text-footnote font-semibold text-ok-text">
             <Icon name="check" size={14} /> Cues
           </div>
@@ -362,7 +357,7 @@ function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {
             ))}
           </ul>
         </div>
-        <div className="rounded-inner border border-line bg-raised p-4">
+        <div className="rounded-card border border-line bg-raised p-4">
           <div className="mb-2 flex items-center gap-1.5 text-footnote font-semibold text-danger-text">
             <Icon name="x" size={14} /> Watch out for
           </div>
@@ -412,45 +407,57 @@ function BasicsPane() {
               {group.title}
             </h2>
             <p className="mt-0.5 text-footnote text-ink3">{group.blurb}</p>
-            <div className="mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-              {guides.map((g) => (
-                <button
-                  key={g.id}
-                  onClick={() => setGuide(g)}
-                  className="card-int rounded-inner border border-line bg-surface p-5 text-left shadow-card"
-                >
-                  <div className="flex items-start justify-between gap-2">
+            {group.id === 'skill' ? (
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                {guides.map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => setGuide(g)}
+                    className="ds-press flex min-h-[132px] flex-col items-start rounded-card border border-line bg-surface p-4 text-left"
+                  >
                     <BadgeGlyph icon={g.icon} size={44} />
+                    <div className="mt-3 font-display text-body font-semibold leading-snug text-ink">{g.title}</div>
+                    <p className="mt-0.5 line-clamp-2 text-caption leading-snug text-ink2">{g.summary}</p>
                     {g.skill && mine.includes(g.skill) ? (
-                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-caption font-semibold text-accent-text">
-                        you train this
-                      </span>
+                      <span className="mt-auto pt-2 text-caption font-semibold text-accent-text">you train this</span>
                     ) : null}
-                  </div>
-                  <div className="mt-1.5 font-display text-title3 font-semibold text-ink">{g.title}</div>
-                  <p className="mt-1 text-footnote leading-relaxed text-ink2">{g.summary}</p>
-                  <div className="mt-2.5 inline-flex items-center gap-1 text-footnote font-medium text-accent-text">
-                    Read <Icon name="chevronR" size={14} />
-                  </div>
-                </button>
-              ))}
-            </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <ul className="mt-3 divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+                {guides.map((g) => (
+                  <li key={g.id}>
+                    <button
+                      onClick={() => setGuide(g)}
+                      className="flex min-h-[64px] w-full items-center gap-3 px-4 py-3 text-left hover:bg-raised"
+                    >
+                      <BadgeGlyph icon={g.icon} size={40} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-body font-semibold text-ink">{g.title}</span>
+                        <span className="mt-0.5 line-clamp-2 block text-footnote text-ink2">{g.summary}</span>
+                      </span>
+                      <Icon name="chevronR" size={16} className="shrink-0 text-ink3" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         )
       })}
 
-      <div className="mb-3 mt-8 flex flex-wrap items-end justify-between gap-3">
-        <h2 className="font-display text-title3 font-semibold text-ink">Glossary</h2>
-        <input
-          value={term}
-          onChange={(e) => setTerm(e.target.value)}
-          placeholder="Search terms…"
-          className="w-full max-w-[200px] rounded-full border border-line bg-surface px-4 py-1.5 text-footnote text-ink outline-none placeholder:text-ink3 focus:border-accent"
-        />
-      </div>
-      <div className="grid gap-2.5 sm:grid-cols-2">
+      <h2 className="mt-6 font-display text-title3 font-semibold text-ink">Glossary</h2>
+      <input
+        value={term}
+        onChange={(e) => setTerm(e.target.value)}
+        placeholder="Search terms…"
+        aria-label="Search terms"
+        className="mt-3 min-h-11 w-full rounded-control border border-line bg-surface px-4 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
+      />
+      <div className="mt-3 divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
         {terms.map((t) => (
-          <div key={t.term} className="rounded-inner border border-line bg-surface p-4 shadow-card">
+          <div key={t.term} className="px-4 py-3">
             <div className="flex flex-wrap items-baseline gap-x-2">
               <span className="font-display text-body font-semibold text-ink">{t.term}</span>
               <span className="text-footnote text-accent-text">{t.short}</span>
@@ -460,8 +467,10 @@ function BasicsPane() {
         ))}
       </div>
       {terms.length === 0 ? (
-        <div className="rounded-inner border border-dashed border-line-strong p-8 text-center text-body text-ink3">
-          No terms match that.
+        <div className="mt-3 rounded-card border border-dashed border-line-strong">
+          <EmptyState icon="book" title="No terms match">
+            No terms match that.
+          </EmptyState>
         </div>
       ) : null}
 
@@ -472,10 +481,10 @@ function BasicsPane() {
         wide
       >
         {guide ? (
-          <div className="p-6 sm:p-8">
+          <div className="p-4 sm:p-6">
             <div className="pr-10">
               <BadgeGlyph icon={guide.icon} size={52} />
-              <h2 className="mt-1 font-display text-[24px] font-bold text-ink">{guide.title}</h2>
+              <h2 className="mt-1 font-display text-title1 font-bold text-ink">{guide.title}</h2>
               <p className="mt-1 text-body leading-relaxed text-ink2">{guide.summary}</p>
             </div>
             <div className="mt-5 space-y-5">

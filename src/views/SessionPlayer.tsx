@@ -1857,12 +1857,12 @@ export function SessionPlayer({
       const overBudget = requested !== undefined && workout.minutes > requested + 1
       return (
         <div className="mx-auto w-full max-w-lg px-5 pb-10">
-          <div className="mt-6 rounded-card border border-line bg-surface p-6 shadow-card">
+          <div className="mt-4 rounded-card border border-line bg-surface p-4">
             <div className="flex items-baseline justify-between gap-3">
               <div className="text-footnote font-medium uppercase tracking-wide text-ink3">Up next</div>
               <div className="text-footnote text-ink3 tnum">About {workout.minutes} min</div>
             </div>
-            <h1 className="mt-1 font-display text-[26px] font-bold text-ink">{workout.name}</h1>
+            <h1 className="mt-1 font-display text-title1 font-bold text-ink">{workout.name}</h1>
             <p className="mt-1.5 text-body leading-relaxed text-ink2">{workout.focus}</p>
             {workout.purpose && workout.purpose !== workout.focus ? (
               <p className="mt-1 text-footnote leading-relaxed text-ink3">
@@ -1970,16 +1970,16 @@ export function SessionPlayer({
                 </div>
               </div>
             ) : null}
-            <Button size="lg"
-              onClick={startSession}
-              className="mt-4 flex w-full items-center justify-center gap-2 "
-            >
-              <Icon name="play" size={18} /> Begin session
-            </Button>
-            <div className="mt-2 text-center text-footnote text-ink3">
-              Space = start / stop · S = skip rest · Esc = exit
+            {/* The one action of this screen stays in thumb reach. */}
+            <div className="sticky bottom-0 z-10 -mx-4 mt-4 bg-surface px-4 pb-[max(env(safe-area-inset-bottom),12px)] pt-3">
+              <Button size="lg" onClick={startSession} className="flex w-full items-center justify-center gap-2 ">
+                <Icon name="play" size={18} /> Begin session
+              </Button>
+              <div className="mt-2 text-center text-footnote text-ink3">
+                Space = start / stop · S = skip rest · Esc = exit
+              </div>
             </div>
-            <div className="mt-5 space-y-4 border-t border-line pt-5">
+            <div className="mt-4 space-y-4 border-t border-line pt-4">
               {sections.map((sec) => (
                 <div key={sec}>
                   <div className="mb-1.5 text-caption font-semibold uppercase tracking-wide text-ink3">
@@ -2037,7 +2037,7 @@ export function SessionPlayer({
           <div className="mt-4 text-footnote font-semibold uppercase tracking-wide text-accent-text">
             {blockLabel(block) ?? SECTION_LABEL[block.section]} · Set {displaySet} of {displayTotal}
           </div>
-          <h1 className="mt-1 font-display text-[30px] font-bold leading-tight text-ink">{exercise.name}</h1>
+          <h1 className="mt-1 font-display text-display font-bold text-ink">{exercise.name}</h1>
           {perSide ? (
             <div className="mt-1.5 inline-flex items-center gap-2 rounded-full bg-accent-soft px-3.5 py-1 text-body font-semibold text-accent-text">
               {side === 'left' ? 'Left side' : 'Right side'}
@@ -2098,21 +2098,21 @@ export function SessionPlayer({
             <div className="mt-6" />
           )}
           {interruptedAt.current?.bi === bi && interruptedAt.current?.si === si ? interruptedCard('ready') : null}
-          <div className="mx-auto mt-2 max-w-sm space-y-1.5">
+          <div className="mx-auto mt-2 max-w-sm divide-y divide-line overflow-hidden rounded-card border border-line bg-surface text-left empty:hidden">
             {exercise.cues.slice(0, 3).map((c) => (
-              <div key={c} className="rounded-control border border-line bg-surface px-4 py-2 text-footnote text-ink2">
+              <div key={c} className="px-4 py-3 text-footnote text-ink2">
                 {c}
               </div>
             ))}
             {block.note ? (
-              <div className="rounded-control border border-accent/25 bg-accent-soft px-4 py-2 text-footnote text-ink">
+              <div className="bg-accent-soft px-4 py-3 text-footnote text-ink">
                 {block.note}
               </div>
             ) : null}
           </div>
           {filmable && recorder.supported ? (
             <div className="mx-auto mt-3 w-full max-w-sm">
-              <div className="flex items-center justify-between gap-3 rounded-inner border border-line bg-surface px-4 py-2.5">
+              <div className="flex items-center justify-between gap-3 rounded-card border border-line bg-surface py-1 pl-4 pr-1">
                 <span className="flex min-w-0 items-center gap-2 text-left text-footnote text-ink2" role="status">
                   <Icon name="monitor" size={15} className={filmingThis ? 'shrink-0 text-accent-text' : 'shrink-0 text-ink3'} />
                   {!cameraOn
@@ -2135,11 +2135,13 @@ export function SessionPlayer({
                   role="switch"
                   aria-checked={cameraOn}
                   aria-label="Film this set"
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${cameraOn ? 'bg-accent' : 'bg-line-strong'}`}
+                  className="flex h-11 w-14 shrink-0 items-center justify-center"
                 >
-                  <span
-                    className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-all ${cameraOn ? 'left-6' : 'left-1'}`}
-                  />
+                  <span className={`relative block h-6 w-11 rounded-full transition ${cameraOn ? 'bg-accent' : 'bg-line-strong'}`}>
+                    <span
+                      className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-all ${cameraOn ? 'left-6' : 'left-1'}`}
+                    />
+                  </span>
                 </button>
               </div>
               {cameraOn && !cameraFailure ? (
@@ -2232,13 +2234,13 @@ export function SessionPlayer({
               the one screen where taps are one-handed and mid-workout. The
               padding buys a real target without changing how the row looks. */}
           <div className="mt-4 flex flex-wrap justify-center gap-x-4 text-footnote">
-            <button onClick={() => setShowDemo(true)} className="px-1 py-2 text-accent-text underline-offset-2 hover:underline">
+            <button onClick={() => setShowDemo(true)} className="inline-flex min-h-11 items-center px-2 text-accent-text underline-offset-2 hover:underline">
               How do I do this?
             </button>
-            <button onClick={skipSet} className="px-1 py-2 text-ink3 underline-offset-2 hover:text-ink hover:underline">
+            <button onClick={skipSet} className="inline-flex min-h-11 items-center px-2 text-ink3 underline-offset-2 hover:text-ink hover:underline">
               {perSide && si % 2 === 0 ? 'Skip this pair' : 'Skip set'}
             </button>
-            <button onClick={skipBlock} className="px-1 py-2 text-ink3 underline-offset-2 hover:text-ink hover:underline">
+            <button onClick={skipBlock} className="inline-flex min-h-11 items-center px-2 text-ink3 underline-offset-2 hover:text-ink hover:underline">
               Skip exercise
             </button>
           </div>
@@ -2281,7 +2283,6 @@ export function SessionPlayer({
         <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
           <div className="mt-6 text-body font-medium uppercase tracking-wide text-ink2">Get into position</div>
           <div className="relative mt-2 grid h-56 w-56 place-items-center">
-            <div className="absolute inset-0 rounded-full bg-accent-soft blur-2xl" />
             <div key={n} className="font-timer relative text-[130px] leading-none text-accent-text animate-pop-num">
               {n}
             </div>
@@ -2336,7 +2337,6 @@ export function SessionPlayer({
             </div>
           ) : null}
           <div className="relative mt-4">
-            <div className="pointer-events-none absolute inset-6 rounded-full bg-accent-soft blur-3xl" />
             <ProgressRing
               value={Math.min(1, cues.towardSec / Math.max(1, target))}
               size={ringSize}
@@ -2375,7 +2375,7 @@ export function SessionPlayer({
           <div className="sticky bottom-0 z-10 mt-6 w-full max-w-sm bg-bg/80 pb-[max(env(safe-area-inset-bottom),16px)] pt-3 backdrop-blur-sm">
             <button
               onClick={() => stopHold()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-inner bg-danger-solid px-6 py-5 font-display text-[18px] font-semibold text-white shadow-card transition active:scale-[0.99]"
+              className="ds-press inline-flex min-h-[72px] w-full items-center justify-center gap-2 rounded-card bg-danger-solid px-6 font-display text-title3 font-semibold text-white"
             >
               <Icon name="stop" size={18} /> Stop hold
             </button>
@@ -2458,7 +2458,7 @@ export function SessionPlayer({
             </div>
           </ProgressRing>
           {lastLog ? (
-            <div className="mt-5 flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-inner border border-line bg-surface px-4 py-2 text-footnote text-ink2">
+            <div className="mt-5 flex w-full max-w-sm flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-card border border-line bg-surface p-3 pl-4 text-footnote text-ink2">
               Logged {lastLog.kind === 'hold' ? fmtHold(lastLog.value) : `${lastLog.value} reps`}
               {note ? <span className="text-caption text-ink3 tnum">{note}</span> : null}
               <span className="flex gap-1">
@@ -2526,7 +2526,7 @@ export function SessionPlayer({
             />
           ) : null}
 
-          <div className="mt-5 text-body text-ink2">
+          <div className="mt-5 w-full max-w-sm rounded-card border border-line bg-surface p-4 text-left text-body text-ink2">
             Next: <span className="font-medium text-ink">{nx.name}</span>
             {nx.perSide ? (
               <>
@@ -2572,16 +2572,16 @@ export function SessionPlayer({
               </div>
             </div>
           ) : null}
-          <div className="mt-5 flex gap-3">
+          <div className="sticky bottom-0 z-10 mt-5 flex w-full max-w-sm gap-3 bg-bg/90 pb-[max(env(safe-area-inset-bottom),14px)] pt-3 backdrop-blur-sm">
             <button
               onClick={() => setRestEnd((e) => Math.max(e, Date.now()) + 30_000)}
-              className="min-h-11 rounded-control border border-line bg-surface px-5 py-2.5 text-body font-medium text-ink2 hover:text-ink"
+              className="ds-press min-h-[52px] flex-1 rounded-control border border-line-strong bg-raised px-5 text-body font-medium text-ink"
             >
               +30s
             </button>
             <button
               onClick={() => setRestEnd(Date.now())}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-control border border-line bg-surface px-5 py-2.5 text-body font-medium text-ink2 hover:text-ink"
+              className="ds-press inline-flex min-h-[52px] flex-1 items-center justify-center gap-1.5 rounded-control bg-accent px-5 text-body font-semibold text-on-accent"
             >
               <Icon name="skip" size={15} /> Skip rest
             </button>
@@ -2634,7 +2634,7 @@ export function SessionPlayer({
     const lastNote = lastLog ? timingNote(lastLog) : null
     return (
       <div className="mx-auto w-full max-w-lg px-5 pb-10">
-        <h1 className="mt-6 text-center font-display text-[26px] font-bold text-ink">
+        <h1 className="mt-6 text-center font-display text-title1 font-bold text-ink">
           {finishedEarly ? 'Finished early' : 'Session done'}
         </h1>
         <p className="mt-1 text-center text-footnote text-ink2">Review and save — nothing is kept until you do.</p>
@@ -2650,9 +2650,9 @@ export function SessionPlayer({
             ['Sets', String(doneSets)],
             ['Hold time', `${holdSecTotal}s`],
           ].map(([l, v]) => (
-            <div key={l} className="rounded-inner border border-line bg-surface p-3 text-center">
+            <div key={l} className="rounded-card border border-line bg-surface p-3 text-center">
               <div className="text-caption text-ink3">{l}</div>
-              <div className="font-display text-[20px] font-semibold text-ink tnum">{v}</div>
+              <div className="font-display text-title2 font-semibold text-ink tnum">{v}</div>
             </div>
           ))}
         </div>
@@ -2744,7 +2744,7 @@ export function SessionPlayer({
           {waiting && logs.length > 0 ? (
             <button
               onClick={save}
-              className="mt-2 w-full rounded-inner border border-line bg-surface py-3 text-body font-medium text-ink"
+              className="mt-2 min-h-11 w-full rounded-control border border-line-strong bg-raised py-3 text-body font-medium text-ink"
             >
               Save without waiting
             </button>
@@ -2761,7 +2761,7 @@ export function SessionPlayer({
         ) : null}
         <button
           onClick={() => setConfirmExit(true)}
-          className="mt-2 w-full rounded-inner py-3 text-body font-medium text-ink3 hover:text-ink"
+          className="mt-2 min-h-11 w-full rounded-control py-3 text-body font-medium text-ink3 hover:text-ink"
         >
           {logs.length ? 'Discard…' : 'Close'}
         </button>

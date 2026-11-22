@@ -364,23 +364,26 @@ export function Onboarding() {
   }
 
   const stageIndex = STAGE_ORDER.indexOf(stage)
-  const primaryBtn =
-    'flex flex-1 items-center justify-center gap-2 rounded-inner px-6 py-3.5 font-display text-title3 font-semibold text-on-accent shadow-card transition hover:brightness-105'
+  // The primary action: big, last in the row, within thumb reach. Back is quiet.
+  const primaryBtn = 'min-h-[52px] flex-1'
   const backBtn =
-    'rounded-inner border border-line bg-surface px-5 py-3.5 text-body font-medium text-ink2 hover:text-ink'
+    'ds-press min-h-[52px] rounded-control px-5 text-body font-medium text-ink2 hover:text-ink'
+  const actionRow =
+    'sticky bottom-0 z-10 -mx-5 mt-6 flex gap-2 border-t border-line bg-bg px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-3'
 
   return (
     <div className="app-ambient grain fixed inset-0 z-50 overflow-y-auto bg-bg">
       <div className="mx-auto flex min-h-full w-full max-w-xl flex-col justify-center px-5 py-10">
-        <div className="mb-8 flex justify-center gap-2" aria-hidden="true">
-          {STAGE_ORDER.map((s, i) => (
-            <span
-              key={s}
-              className={`h-1.5 rounded-full transition-all ${
-                i === stageIndex ? 'w-8 bg-accent' : 'w-1.5 bg-line-strong'
-              }`}
+        <div className="mb-8" aria-hidden="true">
+          <div className="h-1 overflow-hidden rounded-full bg-line-strong">
+            <div
+              className="h-full rounded-full bg-accent transition-[width] duration-300"
+              style={{ width: `${((stageIndex + 1) / STAGE_ORDER.length) * 100}%` }}
             />
-          ))}
+          </div>
+          <div className="mt-2 text-center text-caption font-medium text-ink3 tnum">
+            Step {stageIndex + 1} of {STAGE_ORDER.length}
+          </div>
         </div>
         {/* Carries the question, not only the stage: the whole ladder lives
             inside one stage, so a region that only said "Step 3 of 6" went
@@ -399,7 +402,7 @@ export function Onboarding() {
             >
               <Figure step="full" className="h-10 w-12" />
             </div>
-            <h1 className="font-display text-[34px] font-bold leading-tight text-ink">{APP_NAME}</h1>
+            <h1 className="font-display text-display font-bold text-ink">{APP_NAME}</h1>
             <p className="mx-auto mt-2 max-w-md text-body leading-relaxed text-ink2">{APP_TAGLINE}</p>
             {/* Both halves, plainly: nothing the athlete records goes anywhere,
                 and the checker is fetched from two outside hosts on first use
@@ -505,7 +508,7 @@ export function Onboarding() {
                   ? `${SKILLS[focus].name} only — every session is built around it.`
                   : `${SKILLS[focus].name} leads. No trial has tested how best to combine skills like these; the mix follows what coaches broadly do — one main skill a session, a second that loads different joints.`}
             </p>
-            <div className="mt-5 flex gap-2.5">
+            <div className={actionRow}>
               <button onClick={() => setStage('welcome')} className={backBtn}>
                 Back
               </button>
@@ -559,7 +562,7 @@ export function Onboarding() {
                 )
               })}
             </div>
-            <div className="mt-6 flex gap-2.5">
+            <div className={actionRow}>
               <button onClick={() => setStage('skills')} className={backBtn}>
                 Back
               </button>
@@ -799,7 +802,7 @@ export function Onboarding() {
               )
             })}
 
-            <div className="mt-6 flex gap-2.5">
+            <div className={actionRow}>
               <button
                 onClick={() => {
                   // Going back into a *finished* interview would render an
@@ -981,7 +984,7 @@ export function Onboarding() {
               </span>
             </label>
 
-            <div className="mt-6 flex gap-2.5">
+            <div className={actionRow}>
               <button onClick={() => setStage('result')} className={backBtn}>
                 Back
               </button>
@@ -1110,7 +1113,7 @@ export function Onboarding() {
                 then it runs a sensible default and says so rather than pretending to know.
               </p>
             </div>
-            <div className="mt-6 flex gap-2.5">
+            <div className={actionRow}>
               <button onClick={() => setStage('details')} className={backBtn}>
                 Back
               </button>
@@ -1188,7 +1191,7 @@ function ManualPlacement({
           )
         })}
       </div>
-      <div className="mt-6 flex gap-2.5">
+      <div className="sticky bottom-0 z-10 -mx-5 mt-6 flex gap-2 border-t border-line bg-bg px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">
         <button onClick={onBack} className={backBtn}>
           Back
         </button>
