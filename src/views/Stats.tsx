@@ -1,4 +1,4 @@
-import { Card, Metric, ToggleChip } from '../components/ds'
+import { Card, Metric, Sheet, ToggleChip } from '../components/ds'
 import { EmptyState } from '../components/ds'
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../lib/store'
@@ -13,11 +13,10 @@ import {
   bestSeries,
   plotsProgressionCredit,
   weeklyVolume,
-  totalHoldSec,
-  totalSets,
-  sessionHoldSec,
   sessionDurationSec,
 } from '../lib/stats'
+import { historyEntries, progressTotals, skillHoldSecOf, workingGymSets, workingSkillSets } from '../lib/progressTotals'
+import { SessionDetail } from '../components/gym/SessionDetail'
 import {
   armStats,
   STRATEGY_BY_ID,
@@ -455,6 +454,11 @@ export function Stats({
   const weightNow = useMemo(() => lastOf(state, 'weightKg'), [state])
   const volume = useMemo(() => weeklyVolume(state, 12), [state])
   const sessions = useMemo(() => [...state.sessions].sort((a, b) => b.startedAt - a.startedAt), [state.sessions])
+  // Skill and gym sessions together, so the list holds what "Sessions" counts.
+  const history = useMemo(() => historyEntries(sessions, whole.gym?.sessions ?? []), [sessions, whole.gym?.sessions])
+  const totals = useMemo(() => progressTotals(whole), [whole])
+  const [openGymId, setOpenGymId] = useState<string | null>(null)
+  const openGym = whole.gym?.sessions.find((session) => session.id === openGymId)
 
   // The selector leads with the viewed skill's own road, then any other hold
   // that has actually been logged. Every hold in the catalogue used to be
@@ -582,12 +586,13 @@ export function Stats({
 
       <Card className="mt-6">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Metric label="Sessions" value={whole.sessions.length + (whole.gym?.sessions.length ?? 0)} />
           <Metric
-            label="Total sets"
-            value={totalSets(whole) + (whole.gym?.sessions ?? []).reduce((n, g) => n + g.exercises.reduce((m, e) => m + e.sets.filter((x) => !x.warmup).length, 0), 0)}
+            label="Sessions"
+            value={totals.sessions}
+            sub={`${totals.skillSessions} skill · ${totals.gymSessions} gym`}
           />
-          <Metric label="Time under tension" value={fmtDuration(totalHoldSec(state))} />
+          <Metric label="Working sets" value={totals.sets} sub={`${totals.skillSets} skill · ${totals.gymSets} gym`} />
+          <Metric label="Skill hold time" value={fmtDuration(totals.skillHoldSec)} sub="All time" />
           <Metric
             label="Achievements"
             value={
@@ -598,6 +603,11 @@ export function Stats({
             }
           />
         </div>
+        <p className="mt-4 text-footnote leading-relaxed text-ink3">
+          Working sets leave out warm-ups and cool-down stretches. Skill hold time adds up your key holds and strength
+          holds, as “This week” does — so a week holding all your training shows the same seconds in both, and in
+          History.
+        </p>
       </Card>
 
       <nav
@@ -916,6 +926,12 @@ export function Stats({
       {/* PR board */}
       <section id="records" className="scroll-mt-5">
       <SectionTitle>Personal records</SectionTitle>
+      {trackedPrs.length > 0 ? (
+        <p className="-mt-1 mb-3 text-footnote leading-relaxed text-ink3">
+          Your best single set of each movement, as logged — a timed hold after its stop allowance. The totals above add
+          every working set together.
+        </p>
+      ) : null}
       {trackedPrs.length === 0 ? (
         <div className="rounded-card border border-dashed border-line-strong">
           <EmptyState icon="trophy" title="No records yet">
@@ -1066,7 +1082,7 @@ export function Stats({
       {/* History */}
       <section id="history" className="scroll-mt-5">
       <SectionTitle>History</SectionTitle>
-      {sessions.length === 0 ? (
+      {history.length === 0 ? (
         <div className="rounded-card border border-dashed border-line-strong">
           <EmptyState icon="calendar" title="No sessions yet">
             Your session log will live here.
@@ -1074,7 +1090,39 @@ export function Stats({
         </div>
       ) : (
         <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-          {sessions.map((s) => {
+          {history.map((entry) => {
+            if (entry.kind === 'gym') {
+              const g = entry.session
+              const sets = workingGymSets(g)
+              return (
+                <div key={`gym-${g.id}`}>
+                  <button
+                    onClick={() => setOpenGymId(g.id)}
+                    aria-haspopup="dialog"
+                    className="flex w-full items-center gap-3 p-4 text-left"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-baseline gap-x-2.5">
+                        <span className="text-body font-semibold text-ink">{g.name}</span>
+                        <span className="rounded-full border border-line bg-raised px-2 py-0.5 text-caption font-medium text-ink3">
+                          Gym
+                        </span>
+                        <span className="text-footnote text-ink3">
+                          {fmtDate(g.startedAt)} · {fmtTime(g.startedAt)}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-footnote text-ink2 tnum">
+                        {sets} working set{sets === 1 ? '' : 's'} · {g.exercises.length} exercise
+                        {g.exercises.length === 1 ? '' : 's'} · {fmtClock(Math.max(0, (g.endedAt - g.startedAt) / 1000))}
+                        {g.completion === 'partial' ? ' · finished early' : ''}
+                      </div>
+                    </div>
+                    <Icon name="chevronR" size={16} className="shrink-0 text-ink3" />
+                  </button>
+                </div>
+              )
+            }
+            const s = entry.session
             const open = expanded === s.id
             const panelId = `session-${s.id}`
             return (
@@ -1093,7 +1141,8 @@ export function Stats({
                       </span>
                     </div>
                     <div className="mt-0.5 text-footnote text-ink2 tnum">
-                      {s.sets.length} set{s.sets.length === 1 ? '' : 's'} · {sessionHoldSec(s)}s held ·{' '}
+                      {workingSkillSets(s)} working set{workingSkillSets(s) === 1 ? '' : 's'} · {skillHoldSecOf(s.sets)}s
+                      skill hold time ·{' '}
                       {fmtClock(sessionDurationSec(s))}
                       {s.rpe ? ` · RPE ${s.rpe}` : ''}
                       {s.completion === 'partial' ? (
@@ -1153,6 +1202,11 @@ export function Stats({
         </div>
       )}
       </section>
+
+      {/* A gym session opens where the gym keeps it: corrections and deletion included. */}
+      <Sheet open={openGym !== undefined} onClose={() => setOpenGymId(null)} label="Gym session">
+        {openGym ? <SessionDetail session={openGym} onClose={() => setOpenGymId(null)} /> : null}
+      </Sheet>
 
       <Modal open={confirmDelete !== null} onClose={() => setConfirmDelete(null)} label="Delete session">
         <div className="p-6">

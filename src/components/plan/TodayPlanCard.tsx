@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { FOCUS_LABEL, type GymFocus } from '../../lib/gym/builder'
 import { AFTER_OPENER_WARM_UP_MIN, planWeekAhead, skillRequest, type ReadinessLevel } from '../../lib/plan/planner'
-import { openerLine } from '../../lib/plan/screens'
+import { dayFinished, openerLine } from '../../lib/plan/screens'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
 import { rememberNextBlock } from '../../lib/plan/nextBlock'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
@@ -24,6 +24,8 @@ export interface GymPreset {
   musclesOff: Muscle[]
   /** Warm-up minutes for the lifts: short straight after a skill opener (`AFTER_OPENER_WARM_UP_MIN`), the usual otherwise. */
   warmUpMin?: number
+  /** Muscles the week leaves furthest under target (`TodayPlan.gym.priority`), given priority beside the athlete's own. */
+  priority?: Muscle[]
 }
 
 const SKILL_LABEL: Record<SkillId, string> = {
@@ -76,10 +78,18 @@ export function TodayPlanCard({
   todayStart.setHours(0, 0, 0, 0)
   const skillDone = state.sessions.some((s) => s.startedAt >= todayStart.getTime())
   const gymDone = (state.gym?.sessions ?? []).some((s) => s.startedAt >= todayStart.getTime())
-  const allDone = plan.kind === 'calisthenics' ? skillDone : plan.kind === 'gym' ? gymDone : false
+  // Today's main session done: nothing more is recommended, only a quiet way to train again.
+  const allDone = dayFinished(state, plan)
   const opener = plan.kind === 'gym' && plan.skill?.opener ? plan.skill : undefined
   const preset: GymPreset | null = plan.gym
-    ? { focus: plan.gym.focus, minutes: plan.gym.minutes, avoidJoints: plan.gym.avoidJoints, volumeFactor: plan.gym.volumeFactor, musclesOff: plan.gym.musclesOff }
+    ? {
+        focus: plan.gym.focus,
+        minutes: plan.gym.minutes,
+        avoidJoints: plan.gym.avoidJoints,
+        volumeFactor: plan.gym.volumeFactor,
+        musclesOff: plan.gym.musclesOff,
+        ...(plan.gym.priority?.length ? { priority: plan.gym.priority } : {}),
+      }
     : null
   const session =
     plan.kind === 'calisthenics' && plan.skill
@@ -99,7 +109,8 @@ export function TodayPlanCard({
   const start = () => {
     if (plan.kind === 'calisthenics' && plan.skill) {
       rememberNextBlock(null)
-      startWorkout({ source: 'auto', minutes: plan.skill.minutes, skills: plan.skill.skills })
+      // Built where the athlete is: the block carries the active place's kit beside their own.
+      startWorkout(skillRequest(plan.skill))
     } else if (plan.kind === 'gym' && preset) {
       if (opener && !skillDone && !gymDone) {
         // The lifts follow on their own once the opener is saved.
@@ -164,7 +175,20 @@ export function TodayPlanCard({
         </p>
       ) : null}
 
-      {session && !plan.rest ? (
+      {allDone ? (
+        <section className="mt-4 rounded-inner bg-raised p-4" aria-label="Today’s session">
+          <div className="flex items-start gap-3">
+            <span className="min-w-0 flex-1">
+              <span className="block text-body font-semibold">Today’s main session is done</span>
+              <span className="block text-caption text-ink3">Nothing more is planned today. Rest is part of the plan.</span>
+            </span>
+            {marker(true, 1)}
+          </div>
+          <button onClick={start} className="mt-2 min-h-11 px-1 text-footnote font-medium text-accent-text">
+            Train again
+          </button>
+        </section>
+      ) : session && !plan.rest ? (
         <section className="mt-4 rounded-inner bg-raised p-4" aria-label="Today’s session">
           <div className="flex items-start gap-3">
             <span className="min-w-0 flex-1">
@@ -212,7 +236,7 @@ export function TodayPlanCard({
         </button>
       ) : null}
 
-      {plan.reasons.length ? (
+      {plan.reasons.length && !allDone ? (
         <ul className="mt-3 space-y-1.5">
           {plan.reasons.map((r) => (
             <li key={r} className="flex gap-2 text-footnote leading-snug text-ink2">

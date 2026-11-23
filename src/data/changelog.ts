@@ -19,6 +19,22 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-22',
+    title: 'The week keeps your muscles balanced, and a done day stays done',
+    area: 'coach',
+    notes: [
+      'Weekly volume now steers the plan: a muscle the week already takes well past its target (front delts after planche work, for one) is kept out of that day’s lifts, the muscles furthest under target come first, and the same muscles are never hit hard on two days running — full-body days’ leg work included.',
+      'Picking “gym” on the coach’s own gym day now gives the same session, opener included, on every screen. Home’s short versions go through the coach and your rest rule.',
+      'Calisthenics is planned and built with the kit where you are: at a gym with a bar, front lever days happen even with no bar at home.',
+      'A new sore joint named before the lifts re-plans them to something that still works, instead of leaving one exercise. Once today’s main session is done, nothing else is pushed — just a quiet “Train again”.',
+      'A lift whose estimated max falls 5% from one week to the next calls a lighter week (a coaching convention). Sport days read calendar days, the 48-hour rule allows for the clock change, and a remembered gym block survives an opener that runs past midnight.',
+      'Progress adds up: sessions, working sets and skill hold time count the same way everywhere, and gym sessions are in History, where you can open, correct or delete them.',
+      'The session summary rates the right set and never counts a cooldown stretch as your last set; every time taken off a hold says which allowance it is. After a first session, the coach explains when a starting target was only an estimate.',
+      'A muscle tapped to “off” in setup now really turns off (two quick taps once landed on “priority”). Two tabs can never leave you with no places, corrections in two tabs both survive, and time away is counted across gyms.',
+      'The first-run schedule starts today, and screen readers stay on the session player while it is open.',
+    ],
+  },
+  {
+    date: '2026-11-22',
     title: 'Lighter days that are lighter, safer returns, one clear today',
     area: 'coach',
     notes: [

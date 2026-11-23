@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent } from 'react'
 import { MUSCLE_GROUPS, MUSCLES, type Muscle } from '../../data/gym/catalog'
 import { ALL_STEPS } from '../../data/progressions'
-import { defaultPrefs } from '../../lib/gym/state'
+import { cycleMuscleState, defaultPrefs } from '../../lib/gym/state'
 import type { ActivityKind, GoalWeights, SkillGoal, SportSlot, TrainingPrefs } from '../../lib/gym/types'
 import { skillGoalPace } from '../../lib/plan/planner'
 import { useStore } from '../../lib/store'
@@ -293,15 +293,7 @@ export function SkillGoalsEditor({ prefs, setPrefs }: Edit) {
 export function MusclesEditor({ prefs, setPrefs }: Edit) {
   const muscleState = (m: Muscle): 'off' | 'normal' | 'priority' =>
     prefs.musclesOff.includes(m) ? 'off' : prefs.musclesPriority.includes(m) ? 'priority' : 'normal'
-  const cycleMuscle = (m: Muscle) => {
-    const next = { normal: 'priority', priority: 'off', off: 'normal' } as const
-    const to = next[muscleState(m)]
-    setPrefs((p) => ({
-      ...p,
-      musclesOff: to === 'off' ? [...p.musclesOff, m] : p.musclesOff.filter((x) => x !== m),
-      musclesPriority: to === 'priority' ? [...p.musclesPriority, m] : p.musclesPriority.filter((x) => x !== m),
-    }))
-  }
+  const cycleMuscle = (m: Muscle) => setPrefs((p) => cycleMuscleState(p, m))
   return (
       <section>
         <h3 className="font-display text-title3 font-semibold">Muscles</h3>

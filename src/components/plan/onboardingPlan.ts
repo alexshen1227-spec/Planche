@@ -40,8 +40,19 @@ export function summariseSchedule(minutesByDay: readonly number[]): ScheduleSumm
   }
 }
 
-/** Three weekday sessions: what the old first run defaulted to, so a skipped schedule changes nothing. */
-export const STARTING_MINUTES_BY_DAY = [0, 45, 0, 45, 0, 45, 0]
+/**
+ * Three sessions of 45 minutes, every other day from today: a first run on a
+ * Sunday once started on a rest day (the old default was Monday, Wednesday and
+ * Friday, which it still is for a Monday start).
+ */
+export function startingMinutesByDay(now = new Date()): number[] {
+  const out = [0, 0, 0, 0, 0, 0, 0]
+  for (const k of [0, 2, 4]) out[(now.getDay() + k) % 7] = 45
+  return out
+}
+
+/** The first-run schedule as the app opens: `startingMinutesByDay` for the day it was opened. */
+export const STARTING_MINUTES_BY_DAY: readonly number[] = startingMinutesByDay()
 
 /** A birth year the app accepts: a whole year, 1920 or later, at least six years ago. */
 export function parseBirthYear(text: string, now = new Date()): number | undefined {

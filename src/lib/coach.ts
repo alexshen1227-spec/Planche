@@ -16,6 +16,7 @@ import { EXERCISE_BY_ID as EXERCISE_BY_ID_COACH } from '../data/exercises'
 import { defaultSurface } from '../data/equipment'
 import { diagnosePlateau, type PlateauVerdict } from './plateau'
 import { workingTarget } from './workingTarget'
+import { toldHold } from './bridge'
 import { emphasisFromGaps } from './assessment'
 import {
   MAX_WEEKLY_LOAD_RAMP,
@@ -2151,11 +2152,37 @@ export function debriefSession(
     })
   }
 
-  // The number that actually changes their next session.
+  // The number that actually changes their next session. A fall says what it
+  // follows: the base target is read from the holds logged (sets that broke
+  // down never count), not from form, so "rebuilding quality" — the old
+  // wording — was said to athletes who had rated every set Clean and simply
+  // held less than they were asked. And a first session's target was a
+  // starting estimate: the step's usual start, or a share of a setup answer
+  // that was "not yet" — never a measure of the athlete.
   if (!hurt && targets && targets.after !== undefined && Math.abs(targets.after - targets.before) >= 1) {
     const up = targets.after > targets.before
+    let why = ''
+    if (!up) {
+      const key = step?.keyExerciseId
+      const held = session.sets
+        .filter((x) => x.exerciseId === key && x.kind === 'hold' && x.section === 'main' && x.value > 0)
+        .reduce((best, x) => Math.max(best, x.value), 0)
+      const name = (key && EXERCISE_BY_ID_COACH[key]?.name.toLowerCase()) || 'key hold'
+      const estimated =
+        step !== undefined &&
+        learningSeries(prev, step.id, defaultSurface(prev.profile.equipment, prev.profile.preferredSurface)).points
+          .length === 0 &&
+        toldHold(prev, step.id) === undefined &&
+        !((prev.prs[step.keyExerciseId]?.value ?? 0) > 0)
+      why =
+        held > 0 && held < targets.before
+          ? `: your ${name} holds came in under ${targets.before}s (best ${Math.round(held * 10) / 10}s), and the target follows what you hold.${
+              estimated ? ` The ${targets.before}s was a starting estimate, not a measure of you.` : ''
+            }`
+          : ' — it follows your recent holds.'
+    }
     out.push({
-      text: `Working target moves ${targets.before}s → ${targets.after}s next session${up ? '' : ' — rebuilding quality before pushing again'}.`,
+      text: `Working target moves ${targets.before}s → ${targets.after}s next session${why || '.'}`,
       kind: up ? 'good' : 'info',
     })
   }

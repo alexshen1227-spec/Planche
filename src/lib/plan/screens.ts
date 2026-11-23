@@ -2,7 +2,8 @@ import type { AppState, SkillId, StepId, Workout, WorkoutRequest } from '../../t
 import { STEP_BY_ID, stepAfter } from '../../data/progressions'
 import { qualifyingProgress } from '../progression'
 import { addDays, dayKey, weekStart } from '../time'
-import { skillFamily, type SkillBlock, type TodayPlan } from './planner'
+import { missingKit } from '../../data/skills'
+import { atActivePlace, insideRestRule, MIN_SKILL_MINUTES, planToday, skillFamily, type SkillBlock, type TodayPlan } from './planner'
 
 /**
  * Decisions the Home and Train screens make about today and this week, kept
@@ -54,8 +55,65 @@ export function homeToday(plan: TodayPlan): 'rest' | 'gym' | 'calisthenics' {
  * first session comes first), and not on a day the test is blocked — the card
  * once sat there saying "Not today".
  */
-export function maxTestOffered(state: AppState, blockedReason: string | null | undefined): boolean {
-  return state.sessions.length > 0 && !blockedReason
+export function maxTestOffered(state: AppState, blockedReason: string | null | undefined, now = Date.now()): boolean {
+  return state.sessions.length > 0 && !blockedReason && !trainedToday(state, now)
+}
+
+/** Whether a session (skill or gym, a minimum dose aside) was logged today, by the athlete's calendar day. */
+export function trainedToday(state: AppState, now = Date.now()): { skill: boolean; gym: boolean } | false {
+  const from = startOfDay(now)
+  const skill = state.sessions.some((s) => s.startedAt >= from && s.startedAt <= now && s.workoutKind !== 'micro')
+  const gym = (state.gym?.sessions ?? []).some((s) => s.startedAt >= from && s.startedAt <= now)
+  return skill || gym ? { skill, gym } : false
+}
+
+/**
+ * Whether today's one main session is done: the lifts on a gym day (its
+ * opener alone is half of it), and any session on another day. Once it is,
+ * nothing more is recommended — "Today: done" once sat over "Calisthenics ·
+ * 60 min — Again", with reasons why the planche needed it, and the Gym side
+ * offered a 55-minute leg session.
+ */
+export function dayFinished(state: AppState, plan: Pick<TodayPlan, 'kind'>, now = Date.now()): boolean {
+  const done = trainedToday(state, now)
+  if (!done) return false
+  return plan.kind === 'gym' ? done.gym : true
+}
+
+/**
+ * Home's "Short on time?" through the coach: the plan for those minutes, as
+ * "I have X min" plans it. It once built a hard planche session 22 hours after
+ * heavy bench — inside the rest rule, on a day the coach had made a gym day —
+ * and said nothing. A calisthenics day trains its own skills short; any other
+ * day only skills outside the rest rule (never on a pain day), and with none
+ * the reason is said instead of a session. Built where the athlete is.
+ */
+export function shortVersion(
+  state: AppState,
+  minutes: number,
+  opts: { now?: number; kind?: 'calisthenics' | 'gym' } = {},
+): { request: WorkoutRequest } | { reason: string } {
+  const now = opts.now ?? Date.now()
+  const plan = planToday(state, { now, minutes: Math.max(minutes, MIN_SKILL_MINUTES[1]), ...(opts.kind ? { kind: opts.kind } : {}) })
+  if (plan.kind === 'calisthenics' && plan.skill && !plan.skill.opener) {
+    return { request: atActivePlace(state, { source: 'auto', minutes, skills: plan.skill.skills }) }
+  }
+  const skills = (state.profile.skills?.length ? state.profile.skills : ['planche']) as SkillId[]
+  const pain = plan.reasons.some((r) => r.startsWith('You reported pain'))
+  const free = skills.filter((s) => !insideRestRule(state, [s], now) && missingKit(s, state.profile.equipment).length === 0)
+  if (free.length && !pain) return { request: atActivePlace(state, { source: 'auto', minutes, skills: free }) }
+  const rule = skills.map((s) => insideRestRule(state, [s], now)).find(Boolean)
+  return {
+    reason: rule
+      ? `Your last ${rule.gym ? `heavy ${rule.family === 'push' ? 'pressing' : 'pulling'}` : 'hard straight-arm'} session was ${rule.hours} h ago — under your ${rule.ruleHours} h rest rule, so a short session of it waits too. Pick it on Train if you want it anyway.`
+      : (plan.reasons[0] ?? 'Nothing short fits today.'),
+  }
+}
+
+const startOfDay = (t: number) => {
+  const d = new Date(t)
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
 }
 
 /** A skill day previewed on a pain day: the session built is the pain-safe one, and the preview says so. */

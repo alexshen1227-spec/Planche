@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
@@ -7,12 +7,12 @@ import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
 import { activeLocation, conservative, loadDraft, prefillReps, previousSets, type GymDraft } from '../../lib/gym/draft'
 import { AFTER_OPENER_WARM_UP_MIN, gymToday, MIN_GYM_MINUTES, planToday, skillFamily, skillRequest, soreJoints } from '../../lib/plan/planner'
-import { openerLine } from '../../lib/plan/screens'
+import { dayFinished, openerLine } from '../../lib/plan/screens'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
 import { rememberNextBlock } from '../../lib/plan/nextBlock'
 import { choiceOptions, useTodayChoice } from '../../lib/plan/todayChoice'
 import { useToday } from '../../lib/useToday'
-import type { SkillId, WorkoutRequest } from '../../types'
+import type { AppState, SkillId, WorkoutRequest } from '../../types'
 import { countUnit, gymRecords, lastPerformance } from '../../lib/gym/progression'
 import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
 import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
@@ -60,6 +60,18 @@ export function GymHub({
   useEffect(() => {
     if (choice.minutes !== undefined) setMinutes(Math.max(MIN_GYM_MINUTES, choice.minutes))
   }, [choice.minutes])
+  // A tab left open past midnight starts the new day at that day's minutes, not yesterday's pick.
+  const minutesDay = useRef(todayKey)
+  useEffect(() => {
+    if (minutesDay.current === todayKey) return
+    minutesDay.current = todayKey
+    setMinutes(Math.max(MIN_GYM_MINUTES, choice.minutes ?? (today.minutes > 0 ? today.minutes : 45)))
+    setAgain(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayKey])
+  // Today's main session done: nothing more is recommended here, only a quiet way to train again.
+  const [again, setAgain] = useState(false)
+  const finished = dayFinished(state, today)
   const [skipOpener, setSkipOpener] = useState(false)
   const [focus, setFocus] = useState<GymFocus | 'auto'>('auto')
   const [editing, setEditing] = useState<string | 'new' | null>(null)
@@ -103,7 +115,10 @@ export function GymHub({
             sessions: gym.sessions,
             ratings: gym.ratings,
             youth,
-            ...(gym.prefs ? { goals: gym.prefs.goals, priority: gym.prefs.musclesPriority } : {}),
+            ...(gym.prefs ? { goals: gym.prefs.goals } : {}),
+            // The athlete's priorities and the week's: the muscles it leaves furthest under target.
+            priority: [...new Set([...(gym.prefs?.musclesPriority ?? []), ...coach.priority])],
+            now: Date.now(),
           })
         : null,
     [gym, location, liftMinutes, resolvedFocus, youth, coach, opener],
@@ -188,13 +203,53 @@ export function GymHub({
         volumeFactor: coach?.volumeFactor ?? 1,
         musclesOff: coach?.musclesOff ?? gym.prefs?.musclesOff ?? [],
         warmUpMin: AFTER_OPENER_WARM_UP_MIN,
+        ...(coach?.priority.length ? { priority: coach.priority } : {}),
       })
       setPending(null)
       // The place's kit goes with it: a lever with no bar at home trains on the gym's.
       startWorkout(skillRequest(opener))
       return
     }
-    const base = p
+    // A joint named now that the planned lifts did not steer round (the lifts after an opener were planned before
+    // it): the coach plans them again with it — the same focus while it still builds two movements, else the coach's
+    // pick for the day — or there are none, and the reason is said. A shoulder named after a planche opener once
+    // left a 35-minute push block of one triceps pushdown.
+    let replanned: ReturnType<typeof gymToday> | null = null
+    if (p && !pending.empty && kind !== 'none' && joints.some((j) => !(p.avoidJoints ?? []).includes(j))) {
+      const now = Date.now()
+      const event = { id: `check-${now}`, at: now, joints: kind, regions: regions.length ? regions : ['other'], source: 'check-in' } as NonNullable<AppState['symptoms']>[number]
+      const reported: AppState = { ...state, symptoms: [...(state.symptoms ?? []), event] }
+      const builds = (g: ReturnType<typeof gymToday>) => {
+        if (!g.focus) return false
+        const b = buildGymSession({
+          location,
+          minutes: p.minutes,
+          focus: g.focus,
+          musclesOff: g.musclesOff,
+          avoidJoints: [...new Set([...g.avoidJoints, ...joints])],
+          volumeFactor: kind === 'pain' ? Math.min(g.volumeFactor, 0.6) : g.volumeFactor,
+          sessions: gym.sessions,
+          ratings: gym.ratings,
+          youth,
+          ...(p.warmUpMin !== undefined ? { warmUpMin: p.warmUpMin } : {}),
+          now,
+        })
+        return b.fits && b.items.length >= 2
+      }
+      const same = gymToday(reported, { now, minutes: p.minutes, focus: p.focus, location })
+      replanned = builds(same) ? same : gymToday(reported, { now, minutes: p.minutes, focus: 'auto', location })
+      if (!builds(replanned)) {
+        setPending(null)
+        pushToast(
+          `No lifts today: with your ${joints.map((j) => j.replace('-', ' ')).join(' and ')} kept out, nothing at ${location.name} builds two movements in ${p.minutes} minutes. Your skill work is saved; the lifts rest today.`,
+          'info',
+        )
+        return
+      }
+    }
+    const base = replanned?.focus
+      ? { focus: replanned.focus, musclesOff: replanned.musclesOff, avoidJoints: replanned.avoidJoints, volumeFactor: replanned.volumeFactor }
+      : p
       ? { focus: p.focus, musclesOff: p.musclesOff ?? gym.prefs?.musclesOff ?? [], avoidJoints: p.avoidJoints ?? [], volumeFactor: p.volumeFactor ?? 1 }
       : {
           ...(resolvedFocus ? { focus: resolvedFocus } : {}),
@@ -221,7 +276,9 @@ export function GymHub({
           volumeFactor,
           ...(p?.warmUpMin !== undefined ? { warmUpMin: p.warmUpMin } : {}),
           musclesOff,
-          ...(gym.prefs ? { goals: gym.prefs.goals, priority: gym.prefs.musclesPriority } : {}),
+          ...(gym.prefs ? { goals: gym.prefs.goals } : {}),
+          priority: [...new Set([...(gym.prefs?.musclesPriority ?? []), ...(replanned ? replanned.priority : p ? (p.priority ?? []) : (coach?.priority ?? []))])],
+          now: Date.now(),
         })
     setPending(null)
     setRunning({
@@ -315,6 +372,17 @@ export function GymHub({
         <p className="-mt-2 text-footnote text-ink3">
           Built from what {location.name} has, your likes and your last sessions. Auto is today planned as a gym day; any focus keeps today’s limits.
         </p>
+        {finished && !again ? (
+          <div className="mt-3 rounded-inner border border-line bg-raised p-3">
+            <p className="text-footnote text-ink2">
+              <span className="font-semibold text-ink">Today: done</span> — today’s main session is in, and nothing more is planned.
+            </p>
+            <button onClick={() => setAgain(true)} className="mt-1 min-h-11 text-footnote font-medium text-accent-text">
+              Train again
+            </button>
+          </div>
+        ) : (
+        <>
         {sore.joints.length ? (
           <p className="mt-3 rounded-control bg-raised p-3 text-footnote text-ink2">
             Keeping load off your {sore.joints.map((j) => j.replace('-', ' ')).join(' and ')} — you reported {sore.joints.length > 1 ? 'them' : 'it'}{' '}
@@ -400,6 +468,8 @@ export function GymHub({
             Empty
           </Button>
         </div>
+        </>
+        )}
         {youth ? (
           <p className="mt-3 text-caption leading-relaxed text-ink3">
             Careful mode (under 18, or no age set): rep ranges stay at 6 or more, loads go up one step at a time, and lifts

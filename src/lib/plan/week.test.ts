@@ -17,7 +17,7 @@ import { readDay } from '../weekPlan'
 import { conservative } from '../gym/draft'
 import { weekStart } from '../time'
 import { familyEvents, skillSetLoading } from './load'
-import { focusFamilies, gymOpener, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutes } from './planner'
+import { focusFamilies, gymOpener, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutes, skillRequest } from './planner'
 import { missingKit } from '../../data/skills'
 import type { StepId, Weekday, WeekPlan } from '../../types'
 
@@ -608,7 +608,8 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
         }
         let used = 0
         if (p.skill) {
-          const w = finalizeWorkout(s, { source: 'auto', minutes: p.skill.minutes, skills: p.skill.skills }, undefined, d.at)
+          // As the app starts it: the block's request, with the kit where the athlete is.
+          const w = finalizeWorkout(s, skillRequest(p.skill), undefined, d.at)
           used += w.minutes
           // A calisthenics day only for a session that can train: never one that is waiting for kit.
           if (p.kind === 'calisthenics') {
@@ -802,7 +803,11 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
     const gymBar = planWeekAhead(real(['frontlever', 'planche'], { goals: GYM_HEAVY }, { place: gymA, equipment: ['floor', 'parallettes'] }), MON).days
     const lever = gymBar.find((d) => d.plan.skill?.opener && d.plan.skill.skills[0] === 'frontlever')
     expect(new Set(lever?.plan.skill?.kit)).toEqual(new Set(['floor', 'parallettes', ...gymA.equipment]))
-    expect(gymBar.filter((d) => d.kind === 'calisthenics').flatMap((d) => d.plan.skill!.skills)).not.toContain('frontlever')
+    // Calisthenics happens where the athlete is (round four): a lever on a calisthenics day there is built with the bar.
+    for (const d of gymBar.filter((x) => x.kind === 'calisthenics' && x.plan.skill!.skills.includes('frontlever'))) {
+      expect(d.plan.skill!.kit, d.day).toContain('pullup-bar')
+      expect(finalizeWorkout(real(['frontlever', 'planche'], { goals: GYM_HEAVY }, { place: gymA, equipment: ['floor', 'parallettes'] }), skillRequest(d.plan.skill!), undefined, d.at).name, d.day).not.toMatch(/waiting for kit/)
+    }
     // The planche needs no bar: it still opens a push day there.
     expect(gymOpener(real(['frontlever', 'planche'], { goals: GYM_HEAVY }, { place: noBar }), 'push', noBar, MON, 60)?.skills).toEqual(['planche'])
   })

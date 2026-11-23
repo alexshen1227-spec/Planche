@@ -6,7 +6,7 @@ import { buildGymSession } from '../gym/builder'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { GymLocation, GymSession, TrainingPrefs } from '../gym/types'
 import { lastHardStraightArm, setsPerMuscle, volumeStatus, volumeTarget } from './load'
-import { gymDeloadDue, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, planToday, skillGoalPace } from './planner'
+import { gymDeloadDue, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutes, planToday, skillGoalPace } from './planner'
 import { weekStart } from '../time'
 
 // A Saturday afternoon, local time: the default schedule gives Saturday 60 minutes.
@@ -81,7 +81,7 @@ describe('the day plan', () => {
           if (p.skill) {
             expect(p.skill.opener, what).toBe(true)
             expect(p.skill.skills, what).toHaveLength(1)
-            expect(p.skill.minutes, what).toBe(MIN_SKILL_MINUTES[1])
+            expect(p.skill.minutes, what).toBe(openerMinutes(minutes))
             expect(p.skill.minutes + p.gym!.minutes, what).toBe(minutes)
           } else expect(p.gym!.minutes, what).toBe(minutes)
           if (minutes < MIN_SKILL_MINUTES[1] + MIN_GYM_MINUTES) expect(p.skill, what).toBeUndefined()

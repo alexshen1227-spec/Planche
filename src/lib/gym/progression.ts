@@ -124,11 +124,13 @@ export function lastPerformance(
   return null
 }
 
+const isFreeWeight = (ex: GymExercise) => ['barbell', 'dumbbell', 'kettlebell'].includes(ex.load)
+
 /** Best estimated max for an exercise across every location, when free weights make them comparable. */
 export function sharedEstimate(sessions: GymSession[], exerciseId: string, before = Infinity): number | null {
   const ex = GYM_EXERCISE_BY_ID[exerciseId]
   // Machines differ from gym to gym; only free weights carry a load across.
-  if (!ex || !['barbell', 'dumbbell', 'kettlebell'].includes(ex.load)) return null
+  if (!ex || !isFreeWeight(ex)) return null
   let best: number | null = null
   // Without a clock (before = Infinity) there is no window: every session counts.
   const cutoff = Number.isFinite(before) ? before - 120 * 86_400_000 : -Infinity
@@ -229,6 +231,17 @@ export function suggestLoad(input: {
     const shared = sharedEstimate(sessions, exerciseId, now)
     if (shared !== null) {
       const kg = roundToStep(loadForReps(shared, hi, plan.targetRpe), step, top)
+      // Time away follows the lift, not the place: a new gym does not forget it.
+      const elsewhere = lastPerformance(sessions, exerciseId, undefined, now, keep)
+      const awayDays = elsewhere && Number.isFinite(now) ? (now - elsewhere.session.startedAt) / 86_400_000 : 0
+      if (awayDays > STEP_DOWN_DAYS && step > 0 && kg > 0) {
+        return {
+          ...base,
+          kg: roundToStep(Math.max(0, kg - step), step, top),
+          kind: 'decrease',
+          why: `First time here, and first time in ${Math.round(awayDays / 7)} weeks: a step under your estimate from elsewhere, then build back.`,
+        }
+      }
       return { ...base, kg, kind: 'from-estimate', why: `First time here — started from your estimated max on this lift elsewhere.` }
     }
     if (ex.load === 'bodyweight') {
@@ -252,7 +265,10 @@ export function suggestLoad(input: {
   const working = last.sets
   // Time away: a session this old says little about what the body can do today (CONSENSUS —
   // the usual return-to-training convention, not a measured rule), at any age.
-  const gapDays = Number.isFinite(now) ? (now - last.session.startedAt) / 86_400_000 : 0
+  // Free weights carry between gyms, so the gap runs from the lift's latest session at any place
+  // (work elsewhere is not time away); a machine's is its own place's.
+  const gapFrom = isFreeWeight(ex) ? (lastPerformance(sessions, exerciseId, undefined, now, keep) ?? last).session : last.session
+  const gapDays = Number.isFinite(now) ? (now - gapFrom.startedAt) / 86_400_000 : 0
   const stale = gapDays > NO_STEP_UP_DAYS
   const away = gapDays > STEP_DOWN_DAYS
   const weeksAway = Math.round(gapDays / 7)

@@ -43,7 +43,7 @@ import { useToday } from '../lib/useToday'
 import { ASSIST_LABEL } from '../components/SetupRow'
 import { WeekPlanCard } from '../components/WeekPlanCard'
 import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
-import { insideRestRule } from '../lib/plan/planner'
+import { atActivePlace, insideRestRule, placeKit } from '../lib/plan/planner'
 import { calisthenicsCardLabel } from '../lib/plan/screens'
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { becamePainSafe, maxTestOffered } from '../lib/plan/screens'
@@ -117,7 +117,8 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   )
   const finalized = useMemo(() => {
     const now = Date.now()
-    const build = (request: WorkoutRequest) => finalizeFromPlan(state, request, plan, now).workout
+    // Built where the athlete is: the active place's kit beside their own (a lever day at a gym with a bar).
+    const build = (request: WorkoutRequest) => finalizeFromPlan(state, atActivePlace(state, request), plan, now).workout
     return {
       today: build(recommended),
       templates: new Map(TEMPLATES.map((t) => [t.id, build({ source: 'template', templateId: t.id })])),
@@ -156,7 +157,8 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   // is only a request: the preview and Start build it the way every workout is.
   const skillDays = skills.flatMap((skill) => {
     const def = SKILLS[skill]
-    const needsList = missingKit(skill, state.profile.equipment)
+    // The kit where the athlete is: their own and the active place's (`placeKit`), as the session is built.
+    const needsList = missingKit(skill, placeKit(state) ?? state.profile.equipment)
     const needs = needsList.length ? kitNeedsPhrase(needsList) : null
     const rest = restNotes.get(skill)?.text ?? null
     const days: { key: string; title: string; line: string; needs: string | null; rest: string | null; request: WorkoutRequest }[] = [
@@ -476,7 +478,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                 setPreviewRequest(null)
                 // The request, not this preview: the session is decided again
                 // at the moment it starts, with whatever is true then.
-                if (request) startWorkout(request)
+                if (request) startWorkout(atActivePlace(state, request))
               }}
               className="mt-5 flex w-full items-center justify-center gap-2 "
             >

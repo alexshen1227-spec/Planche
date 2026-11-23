@@ -37,10 +37,10 @@ import { WeekPlanCard } from '../components/WeekPlanCard'
 import { INSTALL_STEPS, installState } from '../lib/install'
 import { WalkBackCalibrator } from '../components/WalkBackCalibrator'
 import { walkMeasureDue } from '../lib/sessionTiming'
-import { AFTER_OPENER_WARM_UP_MIN, planToday, skillRequest } from '../lib/plan/planner'
+import { AFTER_OPENER_WARM_UP_MIN, atActivePlace, planToday, skillRequest } from '../lib/plan/planner'
 import { rememberNextBlock } from '../lib/plan/nextBlock'
 import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
-import { GOAL_HERE_TEXT, goalStanding, homeToday, openerLine, stepPassed, trainingWeek } from '../lib/plan/screens'
+import { dayFinished, GOAL_HERE_TEXT, goalStanding, homeToday, maxTestOffered, openerLine, shortVersion, stepPassed, trainingWeek } from '../lib/plan/screens'
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { ladderStatus } from '../lib/repLadder'
 import { WeekPreview } from '../components/plan/WeekPreview'
@@ -213,10 +213,20 @@ export function Dashboard({
       // Only a calisthenics day's own block is today's calisthenics session: on a
       // gym day the skill block is the gym's opener, not this card.
       dayPlan.kind === 'calisthenics' && dayPlan.skill && !dayPlan.skill.opener
-        ? { source: 'auto', minutes: dayPlan.skill.minutes, skills: dayPlan.skill.skills }
-        : { source: 'auto' },
-    [dayPlan],
+        ? atActivePlace(whole, { source: 'auto', minutes: dayPlan.skill.minutes, skills: dayPlan.skill.skills })
+        : atActivePlace(whole, { source: 'auto' }),
+    [dayPlan, whole],
   )
+  // Today's main session done: Home recommends nothing more, only a quiet way to train again.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const finished = useMemo(() => dayFinished(whole, dayPlan, Date.now()), [whole, dayPlan, today, clock])
+  // "Short on time?" goes through the coach (`shortVersion`): never a hard session inside the rest rule, unsaid.
+  const startShort = (m: number) => {
+    const kind = choiceOptions(choice).kind
+    const short = shortVersion(whole, m, kind ? { kind } : {})
+    if ('request' in short) startWorkout(short.request)
+    else pushToast(short.reason, 'info')
+  }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const todays = useMemo(() => finalizeWorkoutWithPlan(whole, recommended, undefined, Date.now()), [whole, today, clock, recommended])
   const lineup = todays.lineup
@@ -351,7 +361,15 @@ export function Dashboard({
     const opener = dayPlan.skill?.opener ? dayPlan.skill : undefined
     const doneToday = whole.sessions.some((s) => dayKey(s.startedAt) === today) || (whole.gym?.sessions ?? []).some((s) => dayKey(s.startedAt) === today)
     if (g && opener && !doneToday) {
-      rememberNextBlock<GymPreset>({ focus: g.focus, minutes: g.minutes, avoidJoints: g.avoidJoints, volumeFactor: g.volumeFactor, musclesOff: g.musclesOff, warmUpMin: AFTER_OPENER_WARM_UP_MIN })
+      rememberNextBlock<GymPreset>({
+        focus: g.focus,
+        minutes: g.minutes,
+        avoidJoints: g.avoidJoints,
+        volumeFactor: g.volumeFactor,
+        musclesOff: g.musclesOff,
+        warmUpMin: AFTER_OPENER_WARM_UP_MIN,
+        ...(g.priority?.length ? { priority: g.priority } : {}),
+      })
       startWorkout(skillRequest(opener))
     } else go('train')
   }
@@ -489,7 +507,16 @@ export function Dashboard({
           </div>
         </div>
         {/* The coach picks one main session a day, and Home says the same as Train: a rest day is a rest day. */}
-        {mode === 'rest' ? (
+        {finished ? (
+          <div className="mt-4 rounded-inner border border-line bg-raised p-3">
+            <p className="text-footnote text-ink2">
+              <span className="font-semibold text-ink">Today: done</span> — today’s main session is in, and nothing more is planned.
+            </p>
+            <button onClick={() => (mode === 'gym' ? go('train') : startWorkout(recommended))} className="mt-1 min-h-11 text-footnote font-medium text-accent-text">
+              Train again
+            </button>
+          </div>
+        ) : mode === 'rest' ? (
           <div className="mt-4 rounded-inner border border-line bg-raised p-3">
             <p className="text-footnote text-ink2">
               <span className="font-semibold text-ink">Today: rest</span> — {dayPlan.reasons[0] ?? 'nothing is planned today.'}
@@ -499,7 +526,7 @@ export function Dashboard({
             </Button>
           </div>
         ) : null}
-        {mode === 'gym' && dayPlan.gym ? (
+        {mode === 'gym' && dayPlan.gym && !finished ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-inner border border-line bg-raised p-3">
             <span className="text-footnote text-ink2">
               <span className="font-semibold text-ink">Today the coach recommends the gym</span> — {FOCUS_LABEL[dayPlan.gym.focus].toLowerCase()},{' '}
@@ -512,7 +539,7 @@ export function Dashboard({
           </div>
         ) : null}
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          {mode === 'calisthenics' ? (
+          {finished ? null : mode === 'calisthenics' ? (
             <Button size="lg" onClick={() => startWorkout(recommended)} className="w-full sm:w-auto">
               <Icon name="play" size={16} /> Start today’s session
             </Button>
@@ -522,13 +549,13 @@ export function Dashboard({
               {dayPlan.skill?.opener ? `Start with the ${SKILLS[dayPlan.skill.skills[0]].name.toLowerCase()}` : 'Open the gym session'}
             </Button>
           ) : null}
-          {dayPlan.alternative ? (
+          {dayPlan.alternative && !finished ? (
             <Button variant="ghost" onClick={() => setChoice({ ...choice, kind: dayPlan.alternative })}>
               {dayPlan.alternative === 'gym' ? 'Rather do the gym today?' : 'Rather do calisthenics today?'}
             </Button>
           ) : null}
           {/* The first session comes first: a max test is offered once there is one. */}
-          {testBlocked || whole.sessions.length === 0 ? null : (
+          {!maxTestOffered(whole, testBlocked) ? null : (
             <Button variant="secondary" onClick={() => startWorkout({ source: 'test', stepId: state.stepId })}>
               <Icon name="target" size={16} /> Max test{several ? ` · ${skillDef.short}` : ''}
             </Button>
@@ -667,7 +694,7 @@ export function Dashboard({
             {[15, 20].map((m) => (
               <button
                 key={m}
-                onClick={() => startWorkout({ source: 'auto', minutes: m })}
+                onClick={() => startShort(m)}
                 className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-body font-medium text-ink"
               >
                 {m} min version
@@ -679,7 +706,7 @@ export function Dashboard({
           <div className="flex flex-wrap items-center gap-2 text-footnote">
             <span className="text-ink3">No full session today?</span>
             <button
-              onClick={() => startWorkout({ source: 'micro', ...(several ? { skills: [viewSkill] } : {}) })}
+              onClick={() => startWorkout(atActivePlace(whole, { source: 'micro', ...(several ? { skills: [viewSkill] } : {}) }))}
               className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-body font-medium text-ink"
             >
               Minimum dose · {microMinutes} min

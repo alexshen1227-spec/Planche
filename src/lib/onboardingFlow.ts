@@ -1,5 +1,6 @@
 import type { SkillId, StepId } from '../types'
 import { SKILLS } from '../data/skills'
+import { nextInterviewItem, type InterviewAnswers } from './placement'
 
 /**
  * The destination to keep once the placement is known. A goal at or behind the
@@ -27,6 +28,31 @@ export function goalMovedNote(toName: string, placedName: string): string {
 }
 
 /**
+ * How many questions the interview for these skills will ask in all, counting
+ * those already answered: the shortest and the longest way through, by always
+ * picking the lowest or the highest option.
+ */
+export function interviewLength(skills: SkillId[], answers: InterviewAnswers): { atLeast: number; atMost: number } {
+  const asked = Object.keys(answers).length
+  const run = (pick: (values: number[]) => number) => {
+    const sim: InterviewAnswers = { ...answers }
+    let more = 0
+    // Bounded: no interview is this long, and a stuck one must not spin.
+    for (let item = nextInterviewItem(skills, sim); item && more < 60; item = nextInterviewItem(skills, sim)) {
+      sim[item.id] = pick(item.options.map((option) => option.value))
+      more += 1
+    }
+    return asked + more
+  }
+  const shortest = run((values) => Math.min(...values))
+  const longest = run((values) => Math.max(...values))
+  return { atLeast: Math.min(shortest, longest), atMost: Math.max(shortest, longest) }
+}
+
+/** Every skill on offer: the skills screen's bound, before the choice is made. */
+export const ALL_SKILL_IDS = Object.keys(SKILLS) as SkillId[]
+
+/**
  * Where the Skills section's counter stands. Its screens are: pick the skills,
  * the destination, each question the interview will ask (one flow across the
  * chosen skills, or one screen per skill when the athlete picks their own
@@ -41,8 +67,19 @@ export function skillsProgress(input: {
   position: number
   longest: number
   shortest: number
+  /**
+   * The longest interview any choice of skills could ask (`interviewLength`
+   * over every skill). The skills screen is where the choice is made, so its
+   * count cannot follow the skills ticked so far: it once read "1 of 5" with
+   * one skill ticked, and the next screen of the same step "2 of up to 17".
+   * Bounded by every choice, the total only ever tightens through the step.
+   */
+  widest?: number
 }): { at: number; total: number; open: boolean } {
   const middle = (asked: number) => (input.skipped ? Math.max(1, input.skillCount) : Math.max(asked, input.longest))
+  if (input.stage === 'skills' && !input.skipped) {
+    return { at: 1, total: 3 + Math.max(1, input.widest ?? input.longest, input.longest), open: true }
+  }
   const total = 3 + middle(input.position + 1)
   const open = !input.skipped && input.shortest !== input.longest
   if (input.stage === 'skills') return { at: 1, total, open }

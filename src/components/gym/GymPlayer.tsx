@@ -313,9 +313,9 @@ export function GymPlayer({
                   <button
                     onClick={() => setSheet({ kind: 'menu', item: i })}
                     className="min-h-11 rounded-control border border-line px-3 text-footnote font-medium text-ink2"
-                    aria-label={`Options for ${ex.name}`}
+                    aria-label={`Exercise options for ${ex.name}`}
                   >
-                    More
+                    Exercise options
                   </button>
                 </div>
 
@@ -847,7 +847,7 @@ function MenuSheet({
           {hardHere ? `Marked hard to do at ${locationName} — undo` : `Hard to do at ${locationName}`}
         </button>
         <button onClick={() => onFavorite(!favoriteHere)} aria-pressed={favoriteHere} className="min-h-12 rounded-control border border-line text-body font-medium">
-          {favoriteHere ? `Your favourite place for this — undo` : `Favourite place for this: ${locationName}`}
+          {favoriteHere ? `Doing this first at ${locationName} — undo` : `Do this here first: ${locationName}`}
         </button>
         <button onClick={onRemove} className="min-h-11 text-body font-medium text-danger-text">
           Remove from today

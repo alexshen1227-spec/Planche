@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { SKILLS, SKILL_LIST } from '../data/skills'
-import { goalMovedNote, goalPastPlacement, skillsProgress } from './onboardingFlow'
+import { ALL_SKILL_IDS, goalMovedNote, goalPastPlacement, interviewLength, skillsProgress } from './onboardingFlow'
+import { nextInterviewItem, type InterviewAnswers } from './placement'
+import type { SkillId } from '../types'
 
 describe('goalPastPlacement', () => {
   it('moves a goal the placement has reached to the next step on the road', () => {
@@ -53,6 +55,55 @@ describe('skillsProgress', () => {
   it('reports an open upper bound while the ladder can still end early', () => {
     expect(skillsProgress({ ...base, shortest: 5, stage: 'interview', position: 2 }).open).toBe(true)
   })
+})
+
+describe('the Skills step counter keeps one denominator (review round four, m3)', () => {
+  /** Every screen of the step, walked forward with real answers: the counter shown on each. */
+  function walk(skills: SkillId[], pick: (values: number[]) => number) {
+    const shown: { at: number; total: number; open: boolean }[] = []
+    let answers: InterviewAnswers = {}
+    const counter = (stage: 'skills' | 'goal' | 'interview' | 'result', ticked: SkillId[]) => {
+      const count = interviewLength(ticked, answers)
+      return skillsProgress({
+        stage,
+        skillCount: ticked.length,
+        skipped: false,
+        position: Object.keys(answers).length,
+        longest: count.atMost,
+        shortest: count.atLeast,
+        widest: interviewLength(ALL_SKILL_IDS, answers).atMost,
+      })
+    }
+    // Ticking skills one at a time on the skills screen.
+    for (let n = 0; n <= skills.length; n += 1) shown.push(counter('skills', skills.slice(0, n)))
+    shown.push(counter('goal', skills))
+    for (let item = nextInterviewItem(skills, answers); item; item = nextInterviewItem(skills, answers)) {
+      shown.push(counter('interview', skills))
+      answers = { ...answers, [item.id]: pick(item.options.map((option) => option.value)) }
+    }
+    shown.push(counter('result', skills))
+    return shown
+  }
+
+  const choices: SkillId[][] = [['planche'], ['handstand'], ['frontlever', 'handstand'], ['planche', 'frontlever', 'handstand', 'ninety', 'flag'], ['flag', 'planche']]
+  for (const skills of choices) {
+    for (const [label, pick] of [['highest', (v: number[]) => Math.max(...v)], ['lowest', (v: number[]) => Math.min(...v)]] as const) {
+      it(`never raises the total, ${skills.join(' + ')}, ${label} answers`, () => {
+        const shown = walk(skills, pick)
+        const ticking = shown.slice(0, skills.length + 1)
+        // The skills screen shows one count whatever is ticked so far.
+        expect(new Set(ticking.map((s) => s.total)).size).toBe(1)
+        expect(ticking.every((s) => s.at === 1 && s.open)).toBe(true)
+        const forward = shown.slice(skills.length)
+        for (let i = 1; i < forward.length; i += 1) {
+          expect(forward[i].at).toBe(forward[i - 1].at + 1)
+          expect(forward[i].total).toBeLessThanOrEqual(forward[i - 1].total)
+        }
+        const last = forward[forward.length - 1]
+        expect(last.at).toBe(last.total)
+      })
+    }
+  }
 })
 
 import { DAY_MINUTE_CHOICES, stepDayMinutes } from '../components/plan/PlanSettings'

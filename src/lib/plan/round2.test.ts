@@ -130,11 +130,14 @@ describe('the week', () => {
     expect(w.days.some((d) => d.kind === 'calisthenics')).toBe(true)
     for (const d of w.days) {
       if (d.kind !== 'calisthenics') continue
-      for (const k of d.plan.skill!.skills) expect(missingKit(k, s.profile.equipment), d.day).toEqual([])
-      expect(finalizeWorkout(s, { source: 'auto', minutes: d.plan.skill!.minutes, skills: d.plan.skill!.skills }, undefined, d.at).name, d.day).not.toMatch(/waiting for kit/)
+      // The kit the session is built with: the athlete's and the active place's (round four: calisthenics happens where the athlete is).
+      for (const k of d.plan.skill!.skills) expect(missingKit(k, ['floor', ...(d.plan.skill!.kit ?? s.profile.equipment)]), d.day).toEqual([])
+      expect(finalizeWorkout(s, skillRequest(d.plan.skill!), undefined, d.at).name, d.day).not.toMatch(/waiting for kit/)
     }
-    // A lever alone with no bar at home: no calisthenics day at all.
-    expect(planWeekAhead(athlete(['frontlever'], {}, {}, ['floor']), at(0, 9)).days.filter((d) => d.kind === 'calisthenics')).toEqual([])
+    // A lever alone with no bar at home nor at the place: no calisthenics day at all.
+    const bare = athlete(['frontlever'], {}, {}, ['floor'])
+    const noBar = { ...bare, gym: { ...bare.gym!, locations: bare.gym!.locations.map((l) => ({ ...l, equipment: l.equipment.filter((e) => e !== 'pullup-bar' && e !== 'rings') })) } }
+    expect(planWeekAhead(noBar, at(0, 9)).days.filter((d) => d.kind === 'calisthenics')).toEqual([])
   })
 
   it('trains the weekly goal’s days without a gym schedule, today first, spread over what is left', () => {
@@ -229,9 +232,11 @@ describe('one today for every screen', () => {
     const rest = planToday({ ...s, gym: { ...s.gym!, prefs: { ...s.gym!.prefs!, minutesByDay: [0, 0, 0, 0, 0, 0, 0] } } }, { now: at(0, 9) })
     expect(homeToday(rest)).toBe('rest')
     expect(homeToday(planToday({ ...s, gym: { ...s.gym!, prefs: { ...s.gym!.prefs!, minutesByDay: [0, 0, 0, 0, 0, 0, 0] } } }, { now: at(0, 9), minutes: 45 }))).not.toBe('rest')
-    expect(maxTestOffered({ ...s, sessions: [] }, null)).toBe(false)
-    expect(maxTestOffered(s, 'joint pain reported')).toBe(false)
-    expect(maxTestOffered(s, null)).toBe(true)
+    // Read on a day with nothing logged: since round four a day already trained offers no max test.
+    expect(maxTestOffered({ ...s, sessions: [] }, null, at(4, 9))).toBe(false)
+    expect(maxTestOffered(s, 'joint pain reported', at(4, 9))).toBe(false)
+    expect(maxTestOffered(s, null, at(4, 9))).toBe(true)
+    expect(maxTestOffered(s, null, at(0, 12))).toBe(false)
     const painSafe = { name: 'Pain-safe' } as Workout
     expect(becamePainSafe({ source: 'auto', skills: ['planche'] }, painSafe, () => true)).toBe(true)
     expect(becamePainSafe({ source: 'auto' }, painSafe, () => true)).toBe(false)

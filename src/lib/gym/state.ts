@@ -247,6 +247,7 @@ function sanitizeSet(raw: unknown, exerciseId?: string): GymSet | null {
     ...(rpe !== undefined ? { rpe } : {}),
     ...(isUnit(r.unit) ? { unit: r.unit } : {}),
     ...(r.warmup === true ? { warmup: true } : {}),
+    ...(isTime(r.editedAt) ? { editedAt: r.editedAt } : {}),
   }
 }
 
@@ -379,6 +380,32 @@ export function doubtedLoad(
   return { bestKg: best, ...(probablyKg !== undefined ? { probablyKg } : {}) }
 }
 
+/**
+ * Two copies of one session: the newer wins as a whole, except that sets
+ * corrected on both sides merge set by set, the later edit taking each set.
+ */
+export function mergeSession(a: GymSession, b: GymSession): GymSession {
+  const [older, newer] = sessionStamp(b) > sessionStamp(a) ? [a, b] : [b, a]
+  // A tie keeps `a`.
+  const shaped =
+    older.exercises.length === newer.exercises.length &&
+    older.exercises.every((e, i) => e.exerciseId === newer.exercises[i].exerciseId && e.sets.length === newer.exercises[i].sets.length)
+  if (!shaped) return newer
+  let changed = false
+  const exercises = newer.exercises.map((e, i) => ({
+    ...e,
+    sets: e.sets.map((set, j) => {
+      const other = older.exercises[i].sets[j]
+      if ((other.editedAt ?? 0) > (set.editedAt ?? 0)) {
+        changed = true
+        return other
+      }
+      return set
+    }),
+  }))
+  return changed ? { ...newer, exercises } : newer
+}
+
 const sessionStamp = (s: GymSession) => s.updatedAt ?? s.endedAt
 
 /**
@@ -397,7 +424,8 @@ export function mergeGym(local: GymState | undefined, incoming: GymState | undef
   for (const s of [...local.sessions, ...incoming.sessions]) {
     if (deadS.has(s.id)) continue
     const have = sessions.get(s.id)
-    if (!have || sessionStamp(s) > sessionStamp(have)) sessions.set(s.id, s)
+    if (!have) sessions.set(s.id, s)
+    else sessions.set(s.id, mergeSession(have, s))
   }
   const locations = new Map<string, GymLocation>()
   for (const l of [...local.locations, ...incoming.locations]) {
@@ -405,6 +433,16 @@ export function mergeGym(local: GymState | undefined, incoming: GymState | undef
     const have = locations.get(l.id)
     if (!have) locations.set(l.id, l)
     else locations.set(l.id, mergeLocation(have, l))
+  }
+  let deadLocationIds = deadLocations
+  if (locations.size === 0) {
+    // Two tabs each deleting a different place must not leave none: the newest survivor stays.
+    const all = [...local.locations, ...incoming.locations]
+    if (all.length) {
+      const keep = all.reduce((best, l) => (l.updatedAt > best.updatedAt ? l : best))
+      for (const l of all) if (l.id === keep.id) locations.set(l.id, locations.has(l.id) ? mergeLocation(locations.get(l.id)!, l) : l)
+      deadLocationIds = deadLocations.filter((id) => id !== keep.id)
+    }
   }
   const prefsStamp =
     local.prefsUpdatedAt === undefined && incoming.prefsUpdatedAt === undefined
@@ -433,10 +471,15 @@ export function mergeGym(local: GymState | undefined, incoming: GymState | undef
   const prefs = mergePrefs(local.prefs, incoming.prefs)
   const merged: GymState = {
     locations: [...locations.values()],
-    activeLocationId: local.activeLocationId && locations.has(local.activeLocationId) ? local.activeLocationId : [...locations.keys()][0],
+    activeLocationId:
+      local.activeLocationId && locations.has(local.activeLocationId)
+        ? local.activeLocationId
+        : incoming.activeLocationId && locations.has(incoming.activeLocationId)
+          ? incoming.activeLocationId
+          : [...locations.keys()][0],
     sessions: [...sessions.values()].sort((a, b) => a.startedAt - b.startedAt),
     ...(deadSessions.length ? { deletedSessionIds: deadSessions } : {}),
-    ...(deadLocations.length ? { deletedLocationIds: deadLocations } : {}),
+    ...(deadLocationIds.length ? { deletedLocationIds: deadLocationIds } : {}),
     ratings: ratings.vals,
     favoriteAt: favorites.vals,
     ...(Object.keys(ratings.at).length ? { ratingAtTime: ratings.at } : {}),
@@ -544,7 +587,7 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
       const log = session?.exercises[action.exerciseIndex]
       const set = log?.sets[action.setIndex]
       if (!session || !log || !set) return gym
-      const fixed: GymSet = { ...set }
+      const fixed: GymSet = { ...set, editedAt: now }
       if (action.kg === null) delete fixed.kg
       else if (action.kg !== undefined) {
         if (!(action.kg > 0 && action.kg < 1000)) return gym
@@ -636,5 +679,21 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
         }),
       }
     }
+  }
+}
+
+/**
+ * One tap on a muscle: normal → priority → off → normal, advanced from the
+ * state `prefs` holds *now* (never a render's copy of it), with the other two
+ * lists cleaned so a muscle is in at most one, once.
+ */
+export function cycleMuscleState(prefs: TrainingPrefs, m: Muscle): TrainingPrefs {
+  const state = prefs.musclesOff.includes(m) ? 'off' : prefs.musclesPriority.includes(m) ? 'priority' : 'normal'
+  const to = ({ normal: 'priority', priority: 'off', off: 'normal' } as const)[state]
+  const without = (list: Muscle[]) => list.filter((x) => x !== m)
+  return {
+    ...prefs,
+    musclesOff: to === 'off' ? [...without(prefs.musclesOff), m] : without(prefs.musclesOff),
+    musclesPriority: to === 'priority' ? [...without(prefs.musclesPriority), m] : without(prefs.musclesPriority),
   }
 }

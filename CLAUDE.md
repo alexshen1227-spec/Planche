@@ -966,6 +966,34 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     additions keep the day (`GymDraft.volumeFactor`/`goals`, `dayOfItem`);
     `usePlanClock` re-plans open screens every 15 minutes; onboarding moves
     the goal past the placement (`goalPastPlacement`).
+  - Fifth review round (54 UX / 46 logic), fixed and pinned in
+    `plan/round4.test.ts`, `gym/review5.test.ts`, `progressTotals.test.ts`,
+    `sessionSummary.test.ts`, `firstSessionTarget.test.ts`: `decide()` makes
+    the coach's own call first and a pick only overrides it when they differ
+    (a forced gym keeps the coach's pairing), so `planToday`, `{kind:'gym'}`
+    and `gymToday` agree. Skill days credit muscles from the session they
+    build (`builtSkill`); after the week is planned each gym day is steered —
+    a muscle past `STEER_LINE` (1.3×) of its weekly top is kept out while the
+    focus still builds, and the two furthest under go in as `priority`
+    (carried on `TodayPlan.gym`, `GymToday`, `GymPreset`). Known limit: side
+    delts still land short in short weeks (one priority set; isolation trims
+    first). `shortVersion` routes Home's 15/20-minute buttons through the
+    coach. Calisthenics is built with the athlete's kit plus the kit where
+    they are (`placeKit`, `atActivePlace`). A new joint at the lifts' pain
+    check re-plans through `gymToday`. `dayFinished`/`trainedToday`: a done
+    main session ends the day's recommendations and the max test.
+    `insideRest` allows an hour across a clock change; `LIFT_DROP` (5%) calls
+    a lighter week; `NEXT_BLOCK_HOURS` (8) outlives midnight. Data:
+    `mergeGym` never leaves zero places; free-weight time away reads the
+    lift's latest session at any place; sets carry `editedAt` and
+    `mergeSession` merges per set; `cycleMuscleState` advances from the
+    stored state. Progress counts through `progressTotals` (working sets,
+    skill hold time as the week tile counts it, one history of both kinds).
+    The summary reads `summaryLastSet`, warm-up and cooldown holds take no
+    stop allowance (`stopAllowanceFor`), and the 12 s → 1 s first-session drop
+    was correct by the rules (no told hold): the copy now says so. The
+    session player is portalled and makes the app inert; toasts are
+    portalled beside it.
   - Skill days are requests (`{source: 'auto', skills: [skill]}`); a ladder
     day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
     pins every session built without it — regenerate only for an intended

@@ -39,6 +39,8 @@ export interface GymSet {
   unit?: Unit
   warmup?: boolean
   at: number
+  /** When this set was last corrected; two tabs' corrections merge set by set on it. */
+  editedAt?: number
 }
 
 export interface GymExerciseLog {

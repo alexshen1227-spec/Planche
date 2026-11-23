@@ -220,6 +220,13 @@ Open, in order of value (none blocks using the app):
   that change the sets, time away, the rest rule on picked skill days, a
   fuller opener, one message about today, the goal past the placement.
 
+## Round six (2026-11-22): fourth strict review
+
+- Fresh reviewers on `056e7af`: 54/100 UX (inside real sessions for the
+  first time) and 46/100 logic (the athlete's own profile over weeks). All
+  majors fixed (CLAUDE.md "Fifth review round"). Left: side delts short in
+  short weeks; the 1.5× cap holds to within ~5 sets.
+
 ## Log
 
 - 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { dismissToast, subscribeToasts, type Toast } from '../lib/toast'
 import { Icon } from './Icon'
 
@@ -51,7 +52,9 @@ export function Toasts() {
       </div>
     )
 
-  return (
+  // Portalled beside the app, not inside it: while a session player makes the
+  // app inert, a toast inside it could neither be heard nor dismissed.
+  return createPortal(
     <div className="pointer-events-none fixed inset-x-0 top-4 z-[60] flex flex-col items-center gap-2 px-4">
       {/* aria-atomic false on both: each container holds a *list*, and the
           implicit `true` on alert/status re-announces the whole stack every
@@ -63,6 +66,7 @@ export function Toasts() {
       <div role="status" aria-live="polite" aria-atomic="false" className="flex flex-col items-center gap-2">
         {polite.map(bubble)}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

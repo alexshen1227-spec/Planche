@@ -166,7 +166,12 @@ describe('2. time away', () => {
       plan,
       now: T0 + 100 * DAY,
     })
-    expect(s.kind).toBe('from-estimate')
+    // Still inside the window — and the time away shows at the new place too (review 5).
+    expect(s.kind).toBe('decrease')
+    expect(s.why).toMatch(/weeks/)
+    const past = suggestLoad({ exerciseId: 'back-squat', location: { ...gymA, id: 'b' }, sessions: [squat(0, 60, [8, 8])], plan, now: T0 + 130 * DAY })
+    expect(past.kind).not.toBe('from-estimate')
+    expect(past.kind).not.toBe('decrease')
   })
 })
 

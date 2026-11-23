@@ -12,7 +12,7 @@ import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
 import { displayToKg, CM_PER_IN } from '../lib/units'
 import type { Placement } from '../lib/assessment'
 import { fullParts, roomIn } from '../lib/lineup'
-import { goalMovedNote, goalPastPlacement, skillsProgress } from '../lib/onboardingFlow'
+import { ALL_SKILL_IDS, goalMovedNote, goalPastPlacement, interviewLength, skillsProgress } from '../lib/onboardingFlow'
 import {
   goalChoices,
   nextInterviewItem,
@@ -28,7 +28,7 @@ import { GoalsEditor, MusclesEditor, ScheduleEditor } from '../components/plan/P
 import {
   activeLocationFor,
   parseBirthYear,
-  STARTING_MINUTES_BY_DAY,
+  startingMinutesByDay,
   summariseSchedule,
 } from '../components/plan/onboardingPlan'
 import { conservative } from '../lib/gym/draft'
@@ -111,23 +111,6 @@ const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th']
  * promised: it is never less than the question on screen, and an answer can
  * only bring it down.
  */
-function interviewLength(skills: SkillId[], answers: InterviewAnswers): { atLeast: number; atMost: number } {
-  const asked = Object.keys(answers).length
-  const run = (pick: (values: number[]) => number) => {
-    const sim: InterviewAnswers = { ...answers }
-    let more = 0
-    // Bounded: no interview is this long, and a stuck one must not spin.
-    for (let item = nextInterviewItem(skills, sim); item && more < 60; item = nextInterviewItem(skills, sim)) {
-      sim[item.id] = pick(item.options.map((option) => option.value))
-      more += 1
-    }
-    return asked + more
-  }
-  const shortest = run((values) => Math.min(...values))
-  const longest = run((values) => Math.max(...values))
-  return { atLeast: Math.min(shortest, longest), atMost: Math.max(shortest, longest) }
-}
-
 /** "planche, front lever and human flag" — skills named inside a sentence. */
 function skillNames(skills: SkillId[]): string {
   const names = skills.map((skill) => SKILLS[skill].name.toLowerCase())
@@ -226,7 +209,8 @@ export function Onboarding() {
   /** Goal weights, muscles and the week: what Fitness Lab's setup writes to `gym.prefs`. */
   const [prefs, setPrefs] = useState<TrainingPrefs>(() => ({
     ...defaultPrefs(),
-    minutesByDay: [...STARTING_MINUTES_BY_DAY],
+    // Worked out when the first run opens, so today is a training day even in a tab left open overnight.
+    minutesByDay: startingMinutesByDay(),
   }))
   /** Gyms added here; Home is always the first place and takes the kit ticked below. */
   const [gyms, setGyms] = useState<GymLocation[]>([])
@@ -257,6 +241,8 @@ export function Onboarding() {
   )
   const currentItem = useMemo(() => nextInterviewItem(skills, answers), [skills, answers])
   const questionCount = useMemo(() => interviewLength(skills, answers), [skills, answers])
+  /** The longest interview any choice of skills could ask: the skills screen's bound. */
+  const widestCount = useMemo(() => interviewLength(ALL_SKILL_IDS, answers).atMost, [answers])
   const questionNumber = Object.keys(answers).length + 1
   /** "Question 5 of up to 19" while the ladder is open, "Question 5 of 12" once the rest is certain. */
   const questionProgress = `Question ${questionNumber} of ${
@@ -461,6 +447,7 @@ export function Onboarding() {
         position: skippedInterview && stage === 'interview' ? manualIndex : Object.keys(answers).length,
         longest: questionCount.atMost,
         shortest: questionCount.atLeast,
+        widest: widestCount,
       })
     : null
   const progressText = `Step ${sectionIndex + 1} of ${SECTIONS.length} · ${SECTIONS[sectionIndex]}${

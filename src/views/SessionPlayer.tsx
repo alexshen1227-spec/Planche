@@ -1,6 +1,16 @@
 import { SetEffort } from '../components/SetEffort'
 import { Button } from '../components/ds'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useInertBackground } from '../components/gym/GymPlayer'
+import { skillHoldSecOf } from '../lib/progressTotals'
+import {
+  creditedWhileHolding,
+  deductionNote,
+  ratedSetLabel,
+  stopAllowanceFor,
+  summaryLastSet,
+} from '../lib/sessionSummary'
 import { setToSetCeiling } from '../lib/workingTarget'
 import type {
   CheckIn,
@@ -286,10 +296,7 @@ function timingNote(log: SetLog): string | null {
   if (log.timing?.method === 'interrupted') {
     return log.raw !== undefined ? `(interrupted at ${log.raw.toFixed(1)}s on the timer)` : '(interrupted)'
   }
-  if (log.raw !== undefined && log.raw - log.value > 0.05) {
-    return `(${log.raw.toFixed(1)}s − ${(log.raw - log.value).toFixed(1)}s to stop it)`
-  }
-  return null
+  return deductionNote(log)
 }
 
 export function SessionPlayer({
@@ -311,9 +318,12 @@ export function SessionPlayer({
   onCheckInAnswered?: (c: CheckIn) => void
 }) {
   const { state, dispatch, persist } = useStore()
+  // Everything in #root sits behind this full-screen session.
+  useInertBackground()
   const restoredSetup = restoredSessionSetup(resumeFrom, state.settings)
   const resumeExerciseId = resumeFrom ? workout.blocks[resumeFrom.blockIndex]?.exerciseId : undefined
-  const resumeLatency = stopLatencySecondsFor(
+  const resumeLatency = stopAllowanceFor(
+    resumeFrom ? workout.blocks[resumeFrom.blockIndex]?.section : undefined,
     resumeExerciseId,
     state.settings.stopLatencySec,
     !restoredSetup.walkedBack,
@@ -595,9 +605,11 @@ export function SessionPlayer({
     return Math.max(stored ?? 0, thisSession)
   }, [exercise, state.prs, logs, surface])
   const leadSec = leadInSecondsFor(exercise?.id)
+  // A warm-up drill or a cool-down stretch is done at its prescribed count:
+  // nothing comes off it (a stretch once logged 2.1s of 4.4s held).
   const latency =
     exercise?.type === 'hold'
-      ? stopLatencySecondsFor(exercise.id, state.settings.stopLatencySec, !walkedBack, state.settings.walkBackSec)
+      ? stopAllowanceFor(block?.section, exercise.id, state.settings.stopLatencySec, !walkedBack, state.settings.walkBackSec)
       : 0
   // A rung of a push-up line the athlete is on. Its sets are filmed too: the
   // replay, checked by the athlete, is the only evidence a rep standard has.
@@ -1667,7 +1679,9 @@ export function SessionPlayer({
     : 0
   const lastLog = logs[logs.length - 1]
 
-  const holdSecTotal = Math.round(logs.filter((l) => l.kind === 'hold').reduce((t, l) => t + l.value, 0))
+  // The same rule as Progress and the week's tile: main and strength holds,
+  // not warm-up drills or stretches (see lib/progressTotals).
+  const holdSecTotal = skillHoldSecOf(logs)
   const layerOpen = showCheckIn || showDemo || showRpeHelp || confirmExit || reviewOpen || problemReportOpen
 
   // ————— Render helpers —————
@@ -1776,7 +1790,7 @@ export function SessionPlayer({
         // read as whichever line sat just above it.
         {...(rest
           ? {}
-          : { setLabel: `your ${fmtHold(log.value)} ${EXERCISE_BY_ID[log.exerciseId]?.name.toLowerCase() ?? 'hold'}` })}
+          : { setLabel: ratedSetLabel(log, logs, EXERCISE_BY_ID[log.exerciseId]?.name.toLowerCase() ?? 'hold') })}
       />
     )
   }
@@ -2366,7 +2380,14 @@ export function SessionPlayer({
                   )}
                 </div>
                 {latency > 0 ? (
-                  <div className="mt-0.5 text-caption text-ink3 tnum">counts as {holdCredited.toFixed(1)}s</div>
+                  <div className="mt-0.5 text-caption text-ink3 tnum">
+                    {creditedWhileHolding(
+                      holdCredited,
+                      latency,
+                      exercise && isMainProgressionHold(exercise.id) && walkedBack ? 'walk-back' : 'reaction',
+                      state.settings.walkBackSec !== undefined,
+                    )}
+                  </div>
                 ) : null}
               </div>
             </ProgressRing>
@@ -2631,7 +2652,11 @@ export function SessionPlayer({
         Boolean(log.clipKey ?? log.form?.clipKey ?? pendingRepClips.has(log.at)) &&
         rungInPlay(state, log.exerciseId, log) !== null,
     )
-    const lastNote = lastLog ? timingNote(lastLog) : null
+    // The last *training* set: a session ends on its cool-down, and the
+    // summary once reported a stretch as "Last set" above a question about a
+    // planche lean.
+    const lastSet = summaryLastSet(logs)
+    const lastNote = lastSet ? timingNote(lastSet) : null
     return (
       <div className="mx-auto w-full max-w-lg px-5 pb-10">
         <h1 className="mt-6 text-center font-display text-title1 font-bold text-ink">
@@ -2648,7 +2673,7 @@ export function SessionPlayer({
           {[
             ['Training time', fmtClock(sessionElapsed)],
             ['Sets', String(doneSets)],
-            ['Hold time', `${holdSecTotal}s`],
+            ['Skill hold time', `${holdSecTotal}s`],
           ].map(([l, v]) => (
             <div key={l} className="rounded-card border border-line bg-surface p-3 text-center">
               <div className="text-caption text-ink3">{l}</div>
@@ -2657,25 +2682,25 @@ export function SessionPlayer({
           ))}
         </div>
         {interruptedAt.current ? interruptedCard('summary') : null}
-        {lastLog ? (
+        {lastSet ? (
           <div className="mt-3 text-center">
             <div className="text-caption text-ink3">
-              Last set: {lastLog.kind === 'hold' ? fmtHold(lastLog.value) : `${lastLog.value} reps`}{' '}
-              {EXERCISE_BY_ID[lastLog.exerciseId]?.name ?? ''}
+              Last set: {lastSet.kind === 'hold' ? fmtHold(lastSet.value) : `${lastSet.value} reps`}{' '}
+              {EXERCISE_BY_ID[lastSet.exerciseId]?.name ?? ''}
               {lastNote ? ` ${lastNote}` : ''}
             </div>
-            {finalPathHold && finalPathHold.at === lastLog.at ? stopAllowanceCorrection(finalPathHold) : null}
+            {finalPathHold && finalPathHold.at === lastSet.at ? stopAllowanceCorrection(finalPathHold) : null}
             <AttemptEnd
-              key={`end-${lastLog.at}`}
-              log={lastLog}
-              askReason={lastLog.kind === 'hold' && (lastLog.section === 'main' || lastLog.section === 'strength')}
-              onReason={(reason) => setEndReason(lastLog.at, reason)}
+              key={`end-${lastSet.at}`}
+              log={lastSet}
+              askReason={lastSet.kind === 'hold' && (lastSet.section === 'main' || lastSet.section === 'strength')}
+              onReason={(reason) => setEndReason(lastSet.at, reason)}
               onSymptom={recordAttemptSymptom}
               onUndoSymptom={undoAttemptSymptom}
             />
           </div>
         ) : null}
-        {finalPathHold && finalPathHold.at !== lastLog?.at ? (
+        {finalPathHold && finalPathHold.at !== lastSet?.at ? (
           <div className="mt-3 text-center">
             <div className="text-caption text-ink3">
               Last {EXERCISE_BY_ID[finalPathHold.exerciseId]?.name.toLowerCase() ?? 'Path hold'}:{' '}
@@ -2919,7 +2944,7 @@ export function SessionPlayer({
   const holdRunning = phase === 'hold' && holdElapsed > 1
   const canFinishEarly = phase !== 'summary' && (logs.length > 0 || holdRunning)
 
-  return (
+  return createPortal(
     <div
       ref={sessionRef}
       role="dialog"
@@ -3068,7 +3093,10 @@ export function SessionPlayer({
           )}
         </div>
       </Modal>
-    </div>
+    </div>,
+    // Outside #root, so the app behind can be inert and hidden from assistive
+    // technology while a session runs — as the gym player does.
+    document.body,
   )
 }
 
