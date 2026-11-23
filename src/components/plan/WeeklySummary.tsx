@@ -64,7 +64,7 @@ export function WeeklySummary() {
       </p>
       {summary.focus.length ? (
         <div>
-          <h3 className="font-display text-body font-semibold">Focus next week</h3>
+          <h3 className="font-display text-body font-semibold">Focus for the rest of this week</h3>
           <ul className="mt-1 space-y-1">
             {summary.focus.map((f) => (
               <li key={f} className="flex gap-2 text-footnote leading-snug text-ink2">

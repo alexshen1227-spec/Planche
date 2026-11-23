@@ -23,7 +23,7 @@ export const CHANGELOG: ChangeEntry[] = [
     area: 'app',
     notes: [
       'When a short session leaves out a movement whose warm-up primer stays, it now says the sets were left out — “planche lean sets (the warm-up primer stays)” — instead of naming a movement you still do.',
-      'The close button on dialogs is a full-size tap target.',
+      'The close button on dialogs and Home’s “Full history” link are full-size tap targets, and the weekly focus is headed “for the rest of this week”, which is what it is about.',
       'A machine’s heaviest weight is now the heaviest on that gym’s machine, like its estimated max: another gym’s weight stack is not the same weight.',
     ],
   },

@@ -1198,7 +1198,7 @@ export function Dashboard({
       <SectionTitle
         right={
           state.sessions.length > 0 ? (
-            <button onClick={() => go('stats')} className="-my-2 px-1 py-2 text-footnote font-medium text-ink3 hover:text-ink">
+            <button onClick={() => go('stats')} className="-my-3 inline-flex min-h-11 items-center px-1 text-footnote font-medium text-ink3 hover:text-ink">
               Full history →
             </button>
           ) : undefined
