@@ -8,7 +8,7 @@ import type { EquipmentId, TrainingSurface } from '../types'
  * bars", and the bare label elsewhere gave "it needs pull-up bar".
  */
 export const EQUIPMENT_OPTIONS: { id: EquipmentId; label: string; article: 'a' | 'the' | ''; hint: string }[] = [
-  { id: 'floor', label: 'Floor', article: 'the', hint: 'Always available; useful for wrist-specific carryover' },
+  { id: 'floor', label: 'Floor', article: 'the', hint: 'Always there for leans, planks and other floor work' },
   { id: 'parallettes', label: 'Parallettes', article: '', hint: 'A different wrist angle and extra clearance for tuck work' },
   { id: 'band', label: 'Resistance band', article: 'a', hint: 'Assisted longer-lever work later on' },
   { id: 'pullup-bar', label: 'Pull-up bar', article: 'a', hint: 'Front lever and pulling work; also anchors assistance bands' },

@@ -179,9 +179,14 @@ describe('deloads and goals', () => {
   it('calls a lighter week after a run of hard ones — sooner under 18', () => {
     const adult = (w: number) => ({ ...athlete(['planche'], {}, 1990), gym: { ...athlete(['planche']).gym!, sessions: weeksOfHardGym(w) } })
     const teen = (w: number) => ({ ...athlete(['planche'], {}, 2012), gym: { ...athlete(['planche']).gym!, sessions: weeksOfHardGym(w) } })
-    expect(gymDeloadDue(adult(3), NOW).due).toBe(false)
-    expect(gymDeloadDue(adult(6), NOW).due).toBe(true)
+    expect(gymDeloadDue(adult(4), NOW).due).toBe(false)
+    expect(gymDeloadDue(adult(5), NOW).due).toBe(true)
     expect(gymDeloadDue(teen(3), NOW).due).toBe(true)
+    // The week after a run was itself the lighter week the plan called, whatever was logged in it (round three):
+    // the next one comes a full run later, not every week.
+    expect(gymDeloadDue(adult(6), NOW).due).toBe(false)
+    expect(gymDeloadDue(teen(4), NOW).due).toBe(false)
+    expect(gymDeloadDue(teen(7), NOW).due).toBe(true)
   })
   it('says when a dated skill goal cannot be judged yet, and when its date has passed', () => {
     const s = athlete(['planche'])

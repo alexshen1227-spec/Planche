@@ -213,6 +213,13 @@ Open, in order of value (none blocks using the app):
   evals; the handstand push-up day can be picked on Train but not assigned
   in the week plan.
 
+## Round five (2026-11-22): third strict review
+
+- Fresh reviewers on `b263978`: 52/100 UX (the first to reach a training
+  day) and 60/100 logic (up from 53). Majors fixed: lighter days and weeks
+  that change the sets, time away, the rest rule on picked skill days, a
+  fuller opener, one message about today, the goal past the placement.
+
 ## Log
 
 - 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the

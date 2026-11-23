@@ -43,6 +43,9 @@ import { useToday } from '../lib/useToday'
 import { ASSIST_LABEL } from '../components/SetupRow'
 import { WeekPlanCard } from '../components/WeekPlanCard'
 import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
+import { insideRestRule } from '../lib/plan/planner'
+import { calisthenicsCardLabel } from '../lib/plan/screens'
+import { usePlanClock } from '../lib/plan/usePlanClock'
 import { becamePainSafe, maxTestOffered } from '../lib/plan/screens'
 import { Button, SegmentedControl } from '../components/ds'
 
@@ -76,12 +79,14 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   const [previewRequest, setPreviewRequest] = useState<WorkoutRequest | null>(null)
   const [quickLog, setQuickLog] = useState(false)
   const todayKey = useToday()
+  // The coarse clock re-plans a screen left open: pain, joints and the rest rule run in hours.
+  const clock = usePlanClock()
 
   // One plan for every card on the screen, decided for today. Each card shows
   // what would actually run — after equipment, readiness and capacity — not
   // the template as written.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const plan = useMemo(() => planForToday(state, Date.now()), [state, todayKey])
+  const plan = useMemo(() => planForToday(state, Date.now()), [state, todayKey, clock])
   // The skills the athlete trains, and which of them can train with the kit
   // listed: a skill waiting for a bar is not offered a session.
   const skills = activeSkills(state)
@@ -97,11 +102,14 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   // Today's choice ("Rather do … today?", "I have X min") is one for every screen.
   const [choice] = useTodayChoice(todayKey)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const dayPlan = useMemo(() => planToday(state, choiceOptions(choice)), [state, todayKey, choice.kind, choice.minutes])
+  const dayPlan = useMemo(() => planToday(state, choiceOptions(choice)), [state, todayKey, clock, choice.kind, choice.minutes])
+  // A skill picked here still outranks the plan, but a pick inside the athlete's rest rule says so.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const restNotes = useMemo(() => new Map(activeSkills(state).map((skill) => [skill, insideRestRule(state, [skill], Date.now())])), [state, todayKey, clock])
   const recommended: WorkoutRequest = useMemo(
     () =>
       // Only a calisthenics day's own block is today's calisthenics session: on a
-      // gym day the skill block is the gym's 18-minute opener, not this card.
+      // gym day the skill block is the gym's opener, not this card.
       dayPlan.kind === 'calisthenics' && dayPlan.skill && !dayPlan.skill.opener
         ? { source: 'auto', minutes: dayPlan.skill.minutes, skills: dayPlan.skill.skills }
         : { source: 'auto' },
@@ -138,6 +146,11 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [previewRequest && requestKey(previewRequest), finalized, recommended],
   )
+  // An explicit pick of skills (a skill day, your own mix) inside the rest rule says so in its preview too.
+  const previewRest =
+    previewRequest?.skills?.length && !isRecommendedRequest(previewRequest) && requestKey(previewRequest) !== requestKey(recommended)
+      ? (insideRestRule(state, previewRequest.skills, Date.now())?.text ?? null)
+      : null
   const step = STEP_BY_ID[stepOfSkill(state, testSkill)]
   // One card per trained skill, and one more for each rep ladder it has. Each
   // is only a request: the preview and Start build it the way every workout is.
@@ -145,12 +158,14 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
     const def = SKILLS[skill]
     const needsList = missingKit(skill, state.profile.equipment)
     const needs = needsList.length ? kitNeedsPhrase(needsList) : null
-    const days: { key: string; title: string; line: string; needs: string | null; request: WorkoutRequest }[] = [
+    const rest = restNotes.get(skill)?.text ?? null
+    const days: { key: string; title: string; line: string; needs: string | null; rest: string | null; request: WorkoutRequest }[] = [
       {
         key: skill,
         title: `${def.holdName[0].toUpperCase()}${def.holdName.slice(1)} day`,
         line: `${def.tagline} Now: ${STEP_BY_ID[stepOfSkill(state, skill)].name}.`,
         needs,
+        rest,
         request: { source: 'auto', skills: [skill] },
       },
     ]
@@ -163,6 +178,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
           ? `The ${def.ladder.name.toLowerCase()} line comes first: ${EXERCISE_BY_ID[status.rung.exerciseId]?.name ?? status.rung.exerciseId} for about five sets, the hold as short practice.`
           : def.ladder.summit,
         needs,
+        rest,
         request: { source: 'auto', skills: [skill], focus: 'ladder' },
       })
     }
@@ -193,7 +209,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
           <div className="pointer-events-none absolute -right-8 -top-12 h-44 w-44 rounded-full bg-accent-soft blur-2xl" />
           <div className="relative">
             <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wider text-accent-text">
-              <Icon name="bolt" size={14} /> Today's calisthenics
+              <Icon name="bolt" size={14} /> {calisthenicsCardLabel(dayPlan)}
             </div>
             <div className="mt-1.5 font-display text-[22px] font-bold text-ink">{today.name}</div>
             <p className="mt-1 max-w-lg text-body leading-relaxed text-ink2">{today.focus}</p>
@@ -287,6 +303,8 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
             <p className="mt-1 text-footnote leading-relaxed text-ink2">{day.line}</p>
             {day.needs !== null ? (
               <p className="mt-1.5 text-caption font-medium text-ink3">Waiting for kit — needs {day.needs}. Add it under Settings → Equipment.</p>
+            ) : day.rest ? (
+              <p className="mt-1.5 text-caption font-medium text-ink2">{day.rest}</p>
             ) : null}
           </button>
         ))}
@@ -391,6 +409,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
             <div className="pr-10">
               <h2 className="font-display text-[22px] font-bold text-ink">{preview.name}</h2>
               <p className="mt-1 text-body text-ink2">{preview.focus}</p>
+              {previewRest ? <p className="mt-2 rounded-inner border border-line bg-raised p-3 text-footnote leading-relaxed text-ink2">{previewRest}</p> : null}
               {becamePainSafe(previewRequest, preview, isPainSafe) ? (
                 <p className="mt-2 rounded-inner border border-line bg-raised px-3 py-2 text-footnote text-ink2">
                   Today’s joint report turned this {(previewRequest?.skills ?? []).map((s) => SKILLS[s].name.toLowerCase()).join(' and ')} day into the

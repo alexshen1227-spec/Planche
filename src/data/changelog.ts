@@ -19,6 +19,21 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-22',
+    title: 'Lighter days that are lighter, safer returns, one clear today',
+    area: 'coach',
+    notes: [
+      'Light days, lighter weeks and pain days now really cut the gym sets, to about 60% of a normal day, and a push day adds a set where the time allows. A lighter week the plan called ends the run of hard weeks, so under 18 it comes once a cycle, not every week.',
+      'Coming back after time away: a lift you have not done for four weeks no longer steps up, after six weeks it starts a step lighter, and the first gym session after three weeks off keeps at most 80% of the sets.',
+      'Picking a skill day inside your rest rule now says so, with the hours since your last hard session, and still lets you train.',
+      'On days of an hour or more the skill work that opens a gym session is 25 minutes, with a short warm-up before the lifts, and the plan says what it covers.',
+      'On a gym or rest day the calisthenics session is labelled as the alternative; a goal that is your current step is not “reached” until you pass it; Home starts with today’s session and keeps the extras lower down; open screens re-plan as the hours pass.',
+      'The first run moves your goal past where you were placed, its step counter moves on every screen, and the schedule has − and + buttons and direct minute choices.',
+      'Holds up to an hour are kept; marking an exercise hard to do at a place no longer undoes an equipment change made in another tab; a lift swapped in keeps the day’s limits; after a unit change the app says “nearest load here”; an assisted lift getting easier no longer earns a badge.',
+      'Skill work at the gym is built from the kit that is actually there.',
+    ],
+  },
+  {
+    date: '2026-11-22',
     title: 'One coach on every screen, safer youth work, holds in seconds',
     area: 'coach',
     notes: [

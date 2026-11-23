@@ -1,6 +1,8 @@
-import type { AppState, Workout, WorkoutRequest } from '../../types'
+import type { AppState, SkillId, StepId, Workout, WorkoutRequest } from '../../types'
+import { STEP_BY_ID, stepAfter } from '../../data/progressions'
+import { qualifyingProgress } from '../progression'
 import { addDays, dayKey, weekStart } from '../time'
-import type { TodayPlan } from './planner'
+import { skillFamily, type SkillBlock, type TodayPlan } from './planner'
 
 /**
  * Decisions the Home and Train screens make about today and this week, kept
@@ -59,4 +61,57 @@ export function maxTestOffered(state: AppState, blockedReason: string | null | u
 /** A skill day previewed on a pain day: the session built is the pain-safe one, and the preview says so. */
 export function becamePainSafe(request: WorkoutRequest | null, workout: Workout | null, isPainSafe: (w: Workout) => boolean): boolean {
   return Boolean(request?.skills?.length && workout && isPainSafe(workout))
+}
+
+const OPENER_HOLDS: Record<SkillId, string> = {
+  planche: 'planche holds',
+  frontlever: 'front lever holds',
+  handstand: 'handstand practice',
+  ninety: '90° holds',
+  flag: 'human flag holds',
+}
+
+/**
+ * A gym day's opener in words, honest about what it holds: the skill's holds
+ * while fresh, and its family's strength work with the lifts. "Opens with
+ * planche (18 min)" once stood for a warm-up, four short holds and a cooldown.
+ */
+export function openerLine(block: Pick<SkillBlock, 'skills' | 'minutes'>): string {
+  const skill = block.skills[0]
+  const family = skillFamily(skill)
+  const work = family === 'push' ? 'the pressing' : family === 'pull' ? 'the pulling' : 'the strength work'
+  return `Opens with ${OPENER_HOLDS[skill]} (${block.minutes} min); ${work} comes with the lifts`
+}
+
+/**
+ * What the calisthenics session card is to today: today's session on a
+ * calisthenics day, and otherwise the alternative to what the coach planned —
+ * on a gym day it once sat unlabelled under "the coach recommends the gym".
+ */
+export function calisthenicsCardLabel(plan: TodayPlan): string {
+  const mode = homeToday(plan)
+  return mode === 'calisthenics' ? 'Today’s calisthenics' : mode === 'gym' ? 'Instead of the gym: a calisthenics session' : 'If you train anyway: a calisthenics session'
+}
+
+/**
+ * Where the goal stands against the step being trained. A goal that is the
+ * current step is reached only once that step is passed — its bar verified,
+ * or a later step open: a brand-new athlete placed on their goal once read
+ * "goal reached" at 0%.
+ */
+export function goalStanding(current: { order: number }, goal: { order: number }, passed: boolean): 'ahead' | 'here' | 'reached' {
+  if (goal.order > current.order) return 'ahead'
+  if (goal.order < current.order) return 'reached'
+  return passed ? 'reached' : 'here'
+}
+
+/** Said when the goal is the step the athlete is on and not yet passed. */
+export const GOAL_HERE_TEXT = 'Your goal is the step you are on: hold it clean to complete it.'
+
+/** Whether a skill view is past a step: the step after it open, or — on the last step — its bar verified. */
+export function stepPassed(view: AppState, stepId: StepId): boolean {
+  const next = stepAfter(stepId)
+  if (next) return view.unlocked.includes(next.id)
+  const step = STEP_BY_ID[stepId]
+  return Boolean(step) && qualifyingProgress(view, stepId).value >= step.unlockSec
 }

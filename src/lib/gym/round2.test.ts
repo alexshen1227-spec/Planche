@@ -15,6 +15,7 @@ import type { GymLocation, GymSession, GymSet, GymState } from './types'
 const T0 = Date.UTC(2026, 10, 2, 17)
 const DAY = 86_400_000
 const NOW = T0 + 100 * DAY
+const SOON = T0 + 10 * DAY // a few days after the sessions these tests build
 
 const everything = (): GymLocation => ({
   id: 'all',
@@ -123,7 +124,7 @@ describe('3. a lift with no effort logged still moves up, after two sessions at 
   const plan = { range: [6, 10] as [number, number], targetRpe: 8 }
   const squat = (id: string, day: number, kg: number, reps: number[], rpe?: number) =>
     session(id, 'a', T0 + day * DAY, 'back-squat', reps.map((r) => set(kg, r, rpe)))
-  const next = (sessions: GymSession[], youth = false) => suggestLoad({ exerciseId: 'back-squat', location: gymA, sessions, plan, youth, now: NOW })
+  const next = (sessions: GymSession[], youth = false) => suggestLoad({ exerciseId: 'back-squat', location: gymA, sessions, plan, youth, now: SOON })
   it('repeats after one unrated session at the top (the pinned rule)', () => {
     const s = next([squat('a', 0, 60, [12, 12, 12])])
     expect(s.kind).toBe('repeat')
@@ -184,14 +185,14 @@ describe('5. a loaded lift is never logged at 0 kg', () => {
       location: gymA,
       sessions: [squat('a', 0, [set(60, 8), set(60, 8)]), squat('b', 3, [set(undefined, 8), set(undefined, 8)])],
       plan,
-      now: NOW,
+      now: SOON,
     })
     expect(earlier.kind).toBe('repeat')
     expect(earlier.kg).toBe(60)
   })
   it('does not ignore bodyweight movements', () => {
     const pushUp = session('p', 'a', T0, 'push-up', [set(undefined, 12)])
-    expect(suggestLoad({ exerciseId: 'push-up', location: gymA, sessions: [pushUp], plan, now: NOW }).why).toContain('12')
+    expect(suggestLoad({ exerciseId: 'push-up', location: gymA, sessions: [pushUp], plan, now: SOON }).why).toContain('12')
   })
   it('knows which sets need a weight and which movements may go without', () => {
     const squatEx = GYM_EXERCISE_BY_ID['back-squat']

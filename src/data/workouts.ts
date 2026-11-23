@@ -2172,16 +2172,17 @@ export function finalizeWorkoutWithPlan(
 }
 
 /**
- * The kit at the place a session happens (`WorkoutRequest.kit`), added to the
- * athlete's own for this build only: nothing is stored. A request without it
- * returns the very same state, so it builds exactly what it always built.
+ * The kit available for this build (`WorkoutRequest.kit`): when it names
+ * anything it REPLACES the athlete's own list for this build only, with the
+ * floor always there. A gym opener is therefore built from the gym's kit, never
+ * from a home wall or dip bars that are not in the room. Nothing is stored.
+ * A request without kit (absent or empty) returns the very same state, so it
+ * builds exactly what it always built.
  */
 export function withRequestKit(state: AppState, request: WorkoutRequest): AppState {
   if (!request.kit?.length) return state
-  const have = state.profile.equipment
-  const extra = request.kit.filter((k) => !have.includes(k))
-  if (!extra.length) return state
-  return { ...state, profile: { ...state.profile, equipment: [...have, ...extra] } }
+  const equipment = [...new Set<EquipmentId>(['floor', ...request.kit])]
+  return { ...state, profile: { ...state.profile, equipment } }
 }
 
 /**

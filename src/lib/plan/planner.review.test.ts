@@ -260,11 +260,13 @@ describe('deloads for an athlete who does not rate sets', () => {
     ).flat()
   it('counts a week too thinly rated to judge as a hard one, so the built-in lighter week still comes', () => {
     const kid = (sessions: GymSession[]) => withGymSessions(athlete(['planche'], {}, { birthYear: 2013 }), sessions)
-    expect(gymDeloadDue(kid(weeks(8)), MON).due).toBe(true)
+    // Seven weeks: the fourth was the lighter week the plan called (it counts as light whatever was logged), then three more.
+    expect(gymDeloadDue(kid(weeks(7)), MON).due).toBe(true)
+    expect(gymDeloadDue(kid(weeks(8)), MON).due).toBe(false)
     expect(gymDeloadDue(kid(weeks(2)), MON).due).toBe(false)
     // Rated easy weeks are judged, and are not hard.
     expect(gymDeloadDue(kid(weeks(8, 6)), MON).due).toBe(false)
-    expect(gymDeloadDue(kid(weeks(8, 8)), MON).due).toBe(true)
+    expect(gymDeloadDue(kid(weeks(7, 8)), MON).due).toBe(true)
   })
 
   it('counts calendar weeks across a daylight-saving change', () => {

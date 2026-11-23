@@ -13,6 +13,7 @@ import type { GymLocation, GymSession, GymSet } from './types'
 const T0 = Date.UTC(2026, 10, 2, 17)
 const DAY = 86_400_000
 const NOW = T0 + 100 * DAY
+const SOON = T0 + 10 * DAY // a few days after the sessions these tests build
 
 const everything = (): GymLocation => ({
   id: 'all',
@@ -79,7 +80,7 @@ describe('the working load is where the working sets were done', () => {
   const plan = repPlanFor(GYM_EXERCISE_BY_ID['back-squat'], 'muscle', true)
   it('a heavier top set before back-off sets does not become everyone’s load', () => {
     const s = [session('s1', 'a', T0, 'back-squat', [set(60, 3, 9), set(55, 10, 7.5), set(55, 10, 7.5), set(55, 10, 7.5)])]
-    const next = suggestLoad({ exerciseId: 'back-squat', location: gymA, sessions: s, plan, youth: true, now: NOW })
+    const next = suggestLoad({ exerciseId: 'back-squat', location: gymA, sessions: s, plan, youth: true, now: SOON })
     // Three sets at 55 reached the top of the range at the target effort: one step up from 55, never from 60.
     expect(next.kg).toBe(57.5)
     expect(next.kind).toBe('increase')
@@ -87,13 +88,13 @@ describe('the working load is where the working sets were done', () => {
   it('an adult gets at most the same single step from the working load', () => {
     const adult = repPlanFor(GYM_EXERCISE_BY_ID['back-squat'], 'muscle', false)
     const s = [session('s1', 'a', T0, 'back-squat', [set(60, 3, 9), set(55, 10, 8), set(55, 10, 8), set(55, 10, 8)])]
-    expect(suggestLoad({ exerciseId: 'back-squat', location: gymA, sessions: s, plan: adult, now: NOW }).kg).toBe(57.5)
+    expect(suggestLoad({ exerciseId: 'back-squat', location: gymA, sessions: s, plan: adult, now: SOON }).kg).toBe(57.5)
   })
 })
 
 describe('failed sets with no effort logged lighten the load', () => {
   const plan = repPlanFor(GYM_EXERCISE_BY_ID['back-squat'], 'muscle', false)
-  const next = (sets: GymSet[]) => suggestLoad({ exerciseId: 'back-squat', location: gymA, sessions: [session('s', 'a', T0, 'back-squat', sets)], plan, now: NOW })
+  const next = (sets: GymSet[]) => suggestLoad({ exerciseId: 'back-squat', location: gymA, sessions: [session('s', 'a', T0, 'back-squat', sets)], plan, now: SOON })
   it('4, 4, 3 reps on a 6–10 range steps down once', () => {
     expect(next([set(60, 4), set(60, 4), set(60, 3)]).kg).toBe(57.5)
     expect(next([set(60, 4), set(60, 4), set(60, 3)]).kind).toBe('decrease')
@@ -221,7 +222,7 @@ describe('a repeat is a load this place can make', () => {
   it('rounds 22.5 kg to the two-kilo dumbbell steps here', () => {
     const plan = repPlanFor(GYM_EXERCISE_BY_ID['db-bench-press'], 'muscle', false)
     const s = [session('s', 'a', T0, 'db-bench-press', [set(22.5, 8, 8), set(22.5, 8, 8), set(22.5, 7, 8.5)])]
-    const next = suggestLoad({ exerciseId: 'db-bench-press', location: gymA, sessions: s, plan, now: NOW })
+    const next = suggestLoad({ exerciseId: 'db-bench-press', location: gymA, sessions: s, plan, now: SOON })
     expect(next.kind).toBe('repeat')
     expect(next.kg! % 2).toBe(0)
     expect(next.kg).toBe(22)
@@ -229,7 +230,7 @@ describe('a repeat is a load this place can make', () => {
   it('never past the heaviest dumbbell', () => {
     const plan = repPlanFor(GYM_EXERCISE_BY_ID['db-bench-press'], 'muscle', false)
     const s = [session('s', 'a', T0, 'db-bench-press', [set(40, 8, 8), set(40, 8, 8)])]
-    expect(suggestLoad({ exerciseId: 'db-bench-press', location: gymA, sessions: s, plan, now: NOW }).kg).toBeLessThanOrEqual(30)
+    expect(suggestLoad({ exerciseId: 'db-bench-press', location: gymA, sessions: s, plan, now: SOON }).kg).toBeLessThanOrEqual(30)
   })
 })
 

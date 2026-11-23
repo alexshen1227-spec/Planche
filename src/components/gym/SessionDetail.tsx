@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { allowsUnloaded, countUnit, countWord } from '../../lib/gym/progression'
-import { doubtedLoad } from '../../lib/gym/state'
+import { doubtedLoad, maxCountFor } from '../../lib/gym/state'
 import type { GymSession, GymSet } from '../../lib/gym/types'
 import { displayLoad, formatLoad, toKg } from '../../lib/gym/units'
 import { useStore } from '../../lib/store'
@@ -131,7 +131,7 @@ function SetEditor({
   const field = 'min-h-11 w-24 rounded-control border border-line-strong bg-surface px-3 text-body tnum'
 
   const submit = (kg: number | null) => onSave(kg, Math.round(Number(reps)))
-  const valid = reps !== '' && Number(reps) >= 0 && Number(reps) <= 200
+  const valid = reps !== '' && Number(reps) >= 0 && Number(reps) <= maxCountFor(exerciseId)
   const typed = load.trim() === '' ? null : toKg(Number(load), unit)
   const exercise = GYM_EXERCISE_BY_ID[exerciseId]
   // A loaded lift cannot be corrected to no weight: that would read as a 0 kg set.

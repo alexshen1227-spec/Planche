@@ -120,6 +120,24 @@ const WARM_UP_MIN = 6
 /** The speed and power session's own drills are its warm-up. */
 const ATHLETIC_WARM_UP_MIN = 2
 
+export type Emphasis = 'strength' | 'muscle' | 'endurance' | 'power'
+
+/**
+ * The rep-range kind goals ask of a movement: compounds follow strength or
+ * endurance when those lead, isolation work follows endurance or physique.
+ * Shared with the player so a movement added mid-session reads the same goals.
+ */
+export function goalEmphasisFor(goals: GoalWeights | undefined, ex: GymExercise): 'strength' | 'muscle' | 'endurance' {
+  if (!goals) return 'muscle'
+  if (ex.compound) return goals.endurance > Math.max(goals.strength, goals.physique) ? 'endurance' : goals.strength > goals.physique ? 'strength' : 'muscle'
+  return goals.endurance > goals.physique ? 'endurance' : 'muscle'
+}
+
+/** Sets a movement is given on a day at this volume factor: the usual three, scaled, never under two. */
+export function setsForFactor(factor: number, priority = false): number {
+  return Math.max(2, Math.round((3 + (priority ? 1 : 0)) * factor))
+}
+
 /** Which focus comes next: the part of the body trained longest ago at the gym, among the ones still switched on. */
 export function nextFocus(sessions: GymSession[], now = Date.now(), musclesOff: readonly Muscle[] = []): GymFocus {
   const recent = sessions.filter((s) => s.startedAt < now).slice(-6)
@@ -162,6 +180,8 @@ export function buildGymSession(input: {
   avoidJoints?: Joint[]
   /** Below 1 on a lighter day: fewer sets, stopping a rep further from failure. */
   volumeFactor?: number
+  /** Minutes of warm-up in the budget; the default is the usual one (the lifts after a skill opener need only a couple). */
+  warmUpMin?: number
   /** Where each movement is liked best (`gym.favoriteAt`): it wins its slot at that place. */
   favoriteAt?: Record<string, string>
   now?: number
@@ -171,19 +191,8 @@ export function buildGymSession(input: {
   const priority = new Set(input.priority ?? [])
   const avoid = new Set(input.avoidJoints ?? [])
   const factor = input.volumeFactor ?? 1
-  const goalEmphasis = input.goals
-    ? {
-        compound: (input.goals.endurance > Math.max(input.goals.strength, input.goals.physique)
-          ? 'endurance'
-          : input.goals.strength > input.goals.physique
-            ? 'strength'
-            : 'muscle') as 'strength' | 'muscle' | 'endurance',
-        isolation: (input.goals.endurance > input.goals.physique ? 'endurance' : 'muscle') as 'muscle' | 'endurance',
-        power: input.goals.power >= 3,
-      }
-    : null
-  const emphasisOf = (e: GymExercise) =>
-    input.emphasis ?? (goalEmphasis ? (e.compound ? goalEmphasis.compound : goalEmphasis.isolation) : 'muscle')
+  const goalEmphasis = input.goals ? { power: input.goals.power >= 3 } : null
+  const emphasisOf = (e: GymExercise) => input.emphasis ?? goalEmphasisFor(input.goals, e)
   const usable = (e: GymExercise) =>
     !e.primary.some((m) => musclesOff.has(m)) &&
     !e.stress.some((j) => avoid.has(j)) &&
@@ -208,7 +217,8 @@ export function buildGymSession(input: {
     const plan = factor < 1 ? { ...base, targetRpe: Math.max(6, base.targetRpe - 1) } : base
     return {
       exerciseId: pick.id,
-      sets: sets ?? Math.max(2, Math.round((3 + (isPriority(pick) ? 1 : 0)) * factor)),
+      // The usual dose: a light or hard day is made from the fitted session below, so it cannot lose to the time fit.
+      sets: sets ?? 3 + (isPriority(pick) ? 1 : 0),
       plan,
       suggestion: suggestLoad({ exerciseId: pick.id, location, sessions, plan, youth, now }),
       restSec: restFor(pick, plan),
@@ -257,7 +267,7 @@ export function buildGymSession(input: {
     }
     // A lighter day has no maximal or high-impact work.
     let cap: IntensityTier = factor < 1 ? 'medium' : 'high'
-    const dose = (e: GymExercise | undefined) => (e?.dose ? Math.max(1, Math.round(e.dose.sets * factor)) : undefined)
+    const dose = (e: GymExercise | undefined) => (e?.dose ? e.dose.sets : undefined)
     // Warm-up drills: one gentle, one at the highest tier allowed (never above medium).
     const drillPool = here.filter((e) => e.pattern === 'drill' && usable(e))
     const gentle = drillPool.filter((e) => e.tier === 'low').sort(ladder)[0]
@@ -336,7 +346,7 @@ export function buildGymSession(input: {
   // down to two; then give up the last slots, down to one block. A block that
   // cannot fit even alone is reported, never built on invented minutes.
   const dropped: string[] = []
-  const warm = focus === 'athletic' ? ATHLETIC_WARM_UP_MIN : WARM_UP_MIN
+  const warm = input.warmUpMin !== undefined ? Math.max(0, input.warmUpMin) : focus === 'athletic' ? ATHLETIC_WARM_UP_MIN : WARM_UP_MIN
   const total = () =>
     warm + items.reduce((m, it) => m + blockMinutes(it.sets, it.restSec, GYM_EXERCISE_BY_ID[it.exerciseId].dose?.workSec), 0)
   for (const compound of [false, true]) {
@@ -352,6 +362,36 @@ export function buildGymSession(input: {
   if (!fits) {
     for (const it of items) dropped.unshift(GYM_EXERCISE_BY_ID[it.exerciseId].name)
     items.length = 0
+  }
+  // The day's factor works on the fitted session, so it changes the sets and not only the effort:
+  // a lighter day keeps about that share of the usual working sets (taken off the lifts first, then
+  // the last lifts), and a harder one adds a set at a time while the minutes allow — never fewer.
+  const setCount = () => items.reduce((n, it) => n + it.sets, 0)
+  if (items.length && factor < 1) {
+    const target = Math.max(1, Math.floor(setCount() * factor + 0.25))
+    while (setCount() > target) {
+      let cut = -1
+      let best = -Infinity
+      items.forEach((it, i) => {
+        const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
+        if (it.sets <= 1) return
+        const score = it.sets - (isPriority(ex) ? 1 : 0) + (ex.compound ? 0 : 0.3) + i * 0.01
+        if (score > best) {
+          best = score
+          cut = i
+        }
+      })
+      if (cut >= 0) items[cut] = { ...items[cut], sets: items[cut].sets - 1 }
+      else if (items.length > 1) dropped.unshift(GYM_EXERCISE_BY_ID[items.pop()!.exerciseId].name)
+      else break
+    }
+  } else if (items.length && factor > 1) {
+    for (let i = 0; i < items.length; i++) {
+      const ex = GYM_EXERCISE_BY_ID[items[i].exerciseId]
+      if (ex.dose) continue
+      if (total() + blockMinutes(1, items[i].restSec) > minutes) break
+      items[i] = { ...items[i], sets: items[i].sets + 1 }
+    }
   }
   return { name: FOCUS_LABEL[focus], focus, items, dropped, estimatedMin: items.length ? Math.round(total()) : 0, fits, notes }
 }

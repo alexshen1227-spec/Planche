@@ -335,27 +335,85 @@ export function MusclesEditor({ prefs, setPrefs }: Edit) {
   )
 }
 
+/** The minutes a day can take: rest, then 15-minute steps up to two hours. */
+export const DAY_MINUTE_CHOICES = [0, 15, 30, 45, 60, 75, 90, 105, 120]
+
+/** One step up or down the day's minutes, never past rest or two hours. Off-grid values snap onto the grid. */
+export function stepDayMinutes(minutes: number, direction: 1 | -1): number {
+  const next = direction === 1 ? Math.floor(minutes / 15) * 15 + 15 : Math.ceil(minutes / 15) * 15 - 15
+  return Math.min(120, Math.max(0, next))
+}
+
+const stepBtn = 'ds-press flex min-h-11 min-w-11 items-center justify-center rounded-control border border-line bg-surface text-title3 font-semibold text-ink disabled:opacity-40'
+
 export function ScheduleEditor({ prefs, setPrefs }: Edit) {
+  const [picked, setPicked] = useState<number | null>(null)
+  const setDay = (i: number, minutes: number) =>
+    setPrefs((p) => ({ ...p, minutesByDay: p.minutesByDay.map((m, j) => (j === i ? minutes : m)) }))
+  const pickedMinutes = picked === null ? 0 : (prefs.minutesByDay[picked] ?? 0)
   return (
     <>
       <section>
         <h3 className="font-display text-title3 font-semibold">When you can train</h3>
         <p className="mt-1 text-caption text-ink3">Minutes per day; 0 is a rest day. “I have X minutes” on the day still overrides it.</p>
-        <ul className="mt-2 grid grid-cols-7 gap-1.5">
+        <ul className="mt-2 grid grid-cols-7 gap-1">
           {DAYS.map((d, i) => (
             <li key={d} className="flex flex-col items-center gap-1">
               <span className="text-caption font-medium text-ink3">{d}</span>
               <button
-                onClick={() => setPrefs((p) => ({ ...p, minutesByDay: p.minutesByDay.map((m, j) => (j === i ? (m >= 120 ? 0 : m + 15) : m)) }))}
-                className={`min-h-12 w-full rounded-control border text-body font-semibold tnum ${prefs.minutesByDay[i] ? 'border-line bg-surface' : 'border-dashed border-line text-ink3'}`}
-                aria-label={`${d}: ${prefs.minutesByDay[i] ? `${prefs.minutesByDay[i]} minutes` : 'rest'} — tap to change`}
+                onClick={() => setPicked(picked === i ? null : i)}
+                aria-pressed={picked === i}
+                className={`min-h-12 w-full rounded-control border text-body font-semibold tnum ${
+                  picked === i ? 'border-accent bg-accent-soft' : prefs.minutesByDay[i] ? 'border-line bg-surface' : 'border-dashed border-line text-ink3'
+                }`}
+                aria-label={`${FULL_DAYS[i]}: ${prefs.minutesByDay[i] ? `${prefs.minutesByDay[i]} minutes` : 'rest'} — choose`}
               >
                 {prefs.minutesByDay[i] || 'Rest'}
               </button>
             </li>
           ))}
         </ul>
-        <p className="mt-1 text-caption text-ink3">Tap a day to add 15 minutes; past 120 it goes back to rest.</p>
+        {picked === null ? (
+          <p className="mt-1 text-caption text-ink3">Tap a day to set its minutes.</p>
+        ) : (
+          <div className="mt-3 rounded-inner border border-line bg-surface p-3" role="group" aria-label={`${FULL_DAYS[picked]} minutes`}>
+            <div className="flex items-center justify-between gap-3">
+              <button
+                onClick={() => setDay(picked, stepDayMinutes(pickedMinutes, -1))}
+                disabled={pickedMinutes <= 0}
+                aria-label={`${FULL_DAYS[picked]}: 15 minutes less`}
+                className={stepBtn}
+              >
+                −
+              </button>
+              <div className="text-center text-body font-semibold text-ink tnum" aria-live="polite">
+                {FULL_DAYS[picked]}: {pickedMinutes ? `${pickedMinutes} minutes` : 'rest'}
+              </div>
+              <button
+                onClick={() => setDay(picked, stepDayMinutes(pickedMinutes, 1))}
+                disabled={pickedMinutes >= 120}
+                aria-label={`${FULL_DAYS[picked]}: 15 minutes more`}
+                className={stepBtn}
+              >
+                +
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {DAY_MINUTE_CHOICES.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setDay(picked, m)}
+                  aria-pressed={pickedMinutes === m}
+                  className={`min-h-11 min-w-11 rounded-full border px-3 text-footnote font-medium tnum ${
+                    pickedMinutes === m ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2'
+                  }`}
+                >
+                  {m === 0 ? 'Rest' : m}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <section>

@@ -6,10 +6,10 @@ import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
 import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
 import { alternativesFor, availableAt } from '../../lib/gym/availability'
-import { restFor } from '../../lib/gym/builder'
-import { conservative, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
+import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../lib/gym/builder'
+import { conservative, dayOfItem, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
 import { allowsUnloaded, countUnit, countWord, gymRecords, isUnloadedSet, lastPerformance, plyoGate, repPlanFor, suggestLoad } from '../../lib/gym/progression'
-import type { GymLocation, Rating } from '../../lib/gym/types'
+import type { GoalWeights, GymLocation, Rating } from '../../lib/gym/types'
 import { displayLoad, formatLoad, stepKgFor, toKg, unitFor } from '../../lib/gym/units'
 import { doubtedLoad } from '../../lib/gym/state'
 import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
@@ -58,8 +58,11 @@ export function draftItemFor(
   youth: boolean,
   sets = 3,
   now = Date.now(),
+  day: { emphasis?: Emphasis; rpeShift?: number; factor?: number; goals?: GoalWeights } = {},
 ): DraftItem {
-  const plan = repPlanFor(exercise, 'muscle', youth)
+  const base = repPlanFor(exercise, day.emphasis ?? goalEmphasisFor(day.goals, exercise), youth)
+  const shift = day.rpeShift ?? ((day.factor ?? 1) < 1 ? -1 : 0)
+  const plan = shift ? { ...base, targetRpe: Math.max(6, base.targetRpe + shift) } : base
   const suggestion = suggestLoad({ exerciseId: exercise.id, location, sessions, plan, youth, now })
   const unit = unitFor(exercise, location)
   const last = lastPerformance(sessions, exercise.id, location.id, now)
@@ -176,7 +179,16 @@ export function GymPlayer({
       const old = d.items[i]
       const done = old.sets.filter((s) => s.done)
       const left = Math.max(1, old.sets.length - done.length)
-      const fresh = { ...draftItemFor(ex, location, gym.sessions, youth, left), swappedFrom: old.swappedFrom ?? old.exerciseId }
+      // The swap keeps what the day gave the movement it replaces: the rep-range kind, the set count
+      // and the effort (a light day's easier target stays easier).
+      const carried = dayOfItem(old, youth)
+      const fresh = {
+        ...draftItemFor(ex, location, gym.sessions, youth, left, Date.now(), {
+          emphasis: carried.emphasis ?? goalEmphasisFor(draft.goals ?? gym.prefs?.goals, ex),
+          rpeShift: carried.rpeShift,
+        }),
+        swappedFrom: old.swappedFrom ?? old.exerciseId,
+      }
       // Sets already finished stay logged under the movement they were done on.
       if (done.length) d.items.splice(i, 1, { ...old, sets: done }, fresh)
       else d.items[i] = fresh
@@ -192,7 +204,11 @@ export function GymPlayer({
 
   const addExercise = (exerciseId: string) => {
     update((d) => {
-      d.items.push(draftItemFor(GYM_EXERCISE_BY_ID[exerciseId], location, gym.sessions, youth))
+      const ex = GYM_EXERCISE_BY_ID[exerciseId]
+      const factor = d.volumeFactor ?? 1
+      d.items.push(
+        draftItemFor(ex, location, gym.sessions, youth, setsForFactor(factor), Date.now(), { factor, goals: d.goals ?? gym.prefs?.goals }),
+      )
       return d
     })
     setSheet(null)

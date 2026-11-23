@@ -17,7 +17,7 @@ import { readDay } from '../weekPlan'
 import { conservative } from '../gym/draft'
 import { weekStart } from '../time'
 import { familyEvents, skillSetLoading } from './load'
-import { focusFamilies, gymOpener, MIN_GYM_MINUTES, MIN_SKILL_MINUTES } from './planner'
+import { focusFamilies, gymOpener, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutes } from './planner'
 import { missingKit } from '../../data/skills'
 import type { StepId, Weekday, WeekPlan } from '../../types'
 
@@ -588,7 +588,7 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
           const skill = p.skill.skills[0]
           const fam = skillFamily(skill)
           expect(p.skill.skills, `${who} ${d.day} one skill opens`).toHaveLength(1)
-          expect(p.skill.minutes, who).toBe(MIN_SKILL_MINUTES[1])
+          expect(p.skill.minutes, who).toBe(openerMinutes(p.minutes))
           expect(p.skill.minutes + p.gym!.minutes, `${who} ${d.day} opener and gym`).toBe(p.minutes)
           expect(p.gym!.minutes, who).toBeGreaterThanOrEqual(MIN_GYM_MINUTES)
           // Its family is the focus's, its kit is at the place, and no joint the family loads is sore.
@@ -784,7 +784,11 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
     const within = (t: number) => t - (MON - 2 * HOUR) < 72 * HOUR
     expect(control.filter((d) => within(d.at) && d.plan.skill?.opener).length, 'the control opens inside the window').toBeGreaterThan(0)
     for (const d of week) if (within(d.at)) expect(d.plan.skill?.opener, `${d.day} ${d.plan.gym?.focus}`).toBeUndefined()
-    expect(week.some((d) => !within(d.at) && d.plan.skill?.opener)).toBe(true)
+    // Once the window has passed, the elbow no longer shuts the opener. (With 25-minute openers the week's own
+    // rest rules can leave the rest of this particular week without one, so the rule is asked directly.)
+    const after = MON + 4 * 24 * HOUR + 8 * HOUR
+    expect(gymOpener(sore, 'push', gymA, after, 60)?.skills).toEqual(['planche'])
+    expect(gymOpener(sore, 'push', gymA, MON + 8 * HOUR, 60)).toBeUndefined()
   })
 
   it('opens no front lever day at a place with no bar, and still opens push days with the planche', () => {
@@ -797,7 +801,7 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
     // No bar at home, one at the gym: the lever opens a pull day there (found by review), built with the gym's kit.
     const gymBar = planWeekAhead(real(['frontlever', 'planche'], { goals: GYM_HEAVY }, { place: gymA, equipment: ['floor', 'parallettes'] }), MON).days
     const lever = gymBar.find((d) => d.plan.skill?.opener && d.plan.skill.skills[0] === 'frontlever')
-    expect(lever?.plan.skill?.kit).toEqual(gymA.equipment)
+    expect(new Set(lever?.plan.skill?.kit)).toEqual(new Set(['floor', 'parallettes', ...gymA.equipment]))
     expect(gymBar.filter((d) => d.kind === 'calisthenics').flatMap((d) => d.plan.skill!.skills)).not.toContain('frontlever')
     // The planche needs no bar: it still opens a push day there.
     expect(gymOpener(real(['frontlever', 'planche'], { goals: GYM_HEAVY }, { place: noBar }), 'push', noBar, MON, 60)?.skills).toEqual(['planche'])
@@ -820,7 +824,10 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
   it('opens a gym session by the rules: focus, priority, room, pain, sore joints, rest rule, kit and goals', () => {
     const s = real(['planche', 'frontlever'], { goals: BALANCED })
     const op = (state: AppState, focus: GymFocus, minutes = 60, place = gymA, now = MON) => gymOpener(state, focus, place, now, minutes)?.skills[0]
-    expect(gymOpener(s, 'push', gymA, MON, 60)).toEqual({ minutes: MIN_SKILL_MINUTES[1], skills: ['planche'], hard: ['push'], opener: true, kit: gymA.equipment })
+    // 25 minutes from an hour up (round three), with the whole kit at the place: the gym's list and the portable kit.
+    expect(gymOpener(s, 'push', gymA, MON, 60)).toEqual({ minutes: openerMinutes(60), skills: ['planche'], hard: ['push'], opener: true, kit: expect.any(Array) })
+    expect(new Set(gymOpener(s, 'push', gymA, MON, 60)!.kit)).toEqual(new Set(['floor', 'parallettes', 'rings', ...gymA.equipment]))
+    expect(gymOpener(s, 'push', gymA, MON, 45)?.minutes).toBe(MIN_SKILL_MINUTES[1])
     expect(op(s, 'pull')).toBe('frontlever')
     expect(op(s, 'upper')).toBe('planche')
     for (const focus of ['lower', 'full', 'athletic'] as GymFocus[]) expect(op(s, focus), focus).toBeUndefined()

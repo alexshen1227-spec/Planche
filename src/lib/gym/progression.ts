@@ -5,7 +5,7 @@ import {
   type GymExercise,
   type IntensityTier,
 } from '../../data/gym/exercises'
-import { maxKgFor, roundToStep, stepKgFor } from './units'
+import { formatLoad, maxKgFor, roundToStep, stepKgFor, unitFor } from './units'
 import type { GymLocation, GymSession, GymSet } from './types'
 
 /**
@@ -50,9 +50,11 @@ export function isUnloadedSet(ex: GymExercise | undefined, set: Pick<GymSet, 'kg
 }
 
 /**
- * Default ranges. An athlete under 18 never gets a range under 6 reps: no
- * near-maximal singles or doubles, and their maxes are estimated from sets of
- * 6+ rather than tested (the goal's youth rule; see `estimateOneRepMax`).
+ * Default ranges. An athlete under 18 never gets a loaded range under 6 reps:
+ * no near-maximal singles or doubles, and their maxes are estimated from sets
+ * of 6+ rather than tested (the goal's youth rule; see `estimateOneRepMax`).
+ * The one exception is hard bodyweight work (a Nordic curl, a dragon flag),
+ * which is 4–6 slow reps under 18: those are not loaded maxes.
  */
 export function repPlanFor(
   exercise: GymExercise,
@@ -143,6 +145,11 @@ export function sharedEstimate(sessions: GymSession[], exerciseId: string, befor
   }
   return best
 }
+
+/** Past this many days since a lift was last done, it does not step up: the last session is not today's strength. */
+export const NO_STEP_UP_DAYS = 28
+/** Past this many, it starts one step lighter and builds back. */
+export const STEP_DOWN_DAYS = 42
 
 /** What to say for work counted in contacts or runs: quality and rest, never "add reps". */
 function countedWhy(ex: GymExercise, plan: RepPlan, lastSeconds?: number[]): string {
@@ -243,6 +250,12 @@ export function suggestLoad(input: {
     }
   }
   const working = last.sets
+  // Time away: a session this old says little about what the body can do today (CONSENSUS —
+  // the usual return-to-training convention, not a measured rule), at any age.
+  const gapDays = Number.isFinite(now) ? (now - last.session.startedAt) / 86_400_000 : 0
+  const stale = gapDays > NO_STEP_UP_DAYS
+  const away = gapDays > STEP_DOWN_DAYS
+  const weeksAway = Math.round(gapDays / 7)
   // The working load is where the working sets were done: the load most sets
   // used, the heavier one on a tie. A heavier top set before back-off sets is
   // not what the next session repeats.
@@ -250,14 +263,14 @@ export function suggestLoad(input: {
   const atLoad = working.filter((s) => (s.kg ?? 0) === kg)
   // One set stopped early is not "every set": a step up needs at least two.
   // ...and each with its effort logged: a set nobody rated says nothing about effort.
-  const allTop = atLoad.length >= 2 && atLoad.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
+  const allTop = !stale && atLoad.length >= 2 && atLoad.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
   const anyShort = atLoad.some((s) => s.reps < lo)
   const grinding = atLoad.some((s) => s.rpe !== undefined && s.rpe >= 9.5)
   // No effort was ever logged, so one session at the top of the range proves
   // nothing (it may have been a grind). The same load at the top of the range
   // in two sessions running is repeatable: that earns one step.
   const unratedTwice = (() => {
-    if (allTop || atLoad.length < 2 || atLoad.some((s) => s.rpe !== undefined) || !atLoad.every((s) => s.reps >= hi)) return false
+    if (stale || allTop || atLoad.length < 2 || atLoad.some((s) => s.rpe !== undefined) || !atLoad.every((s) => s.reps >= hi)) return false
     const before = lastPerformance(sessions, exerciseId, location?.id, last.session.startedAt, keep)
     if (!before) return false
     const prior = before.sets.filter((s) => (s.kg ?? 0) === kg)
@@ -269,11 +282,19 @@ export function suggestLoad(input: {
     const r = roundToStep(v, step, top)
     return r > 0 || !(v > 0) ? r : v
   }
-  if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, top)
+  if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, top, { stale, away, weeksAway })
   if (ex.load === 'bodyweight' && !(kg > 0)) {
     if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan, working.map((s) => s.reps)) }
     if (allTop) return { ...base, kind: 'bodyweight', why: `Every set reached ${hi} last time: add a few reps, slow the lowering, or move to a harder version.` }
     return { ...base, kind: 'bodyweight', why: `Aim to beat last time’s ${working.map((s) => s.reps).join(', ')} reps.` }
+  }
+  if (away && step > 0 && kg > 0) {
+    return {
+      ...base,
+      kg: roundToStep(Math.max(0, reach(kg) - step), step, top),
+      kind: 'decrease',
+      why: `First time in ${weeksAway} weeks: a step lighter, then build back.`,
+    }
   }
   if ((allTop || unratedTwice) && step > 0) {
     const here = reach(kg)
@@ -303,7 +324,13 @@ export function suggestLoad(input: {
   if (failing && step > 0 && kg > 0) {
     return { ...base, kg: roundToStep(Math.max(0, reach(kg) - step), step, top), kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step lighter, then build back.` }
   }
-  return { ...base, kg: reach(kg), kind: 'repeat', why: `Same weight: aim to add a rep to last time’s ${atLoad.map((s) => s.reps).join(', ')}.` }
+  const repeatKg = reach(kg)
+  const reps = atLoad.map((s) => s.reps).join(', ')
+  // This place's steps may not reach last time's exact load (a unit change, other plates): say so.
+  if (kg > 0 && Math.abs(repeatKg - kg) > 0.01) {
+    return { ...base, kg: repeatKg, kind: 'repeat', why: `Nearest load here to last time’s ${formatLoad(kg, atLoad[0]?.unit ?? unitFor(ex, location))}: aim to add a rep to last time’s ${reps}.` }
+  }
+  return { ...base, kg: repeatKg, kind: 'repeat', why: `Same weight: aim to add a rep to last time’s ${reps}.` }
 }
 
 /**
@@ -320,10 +347,14 @@ function assistedSuggestion(
   plan: RepPlan,
   step: number,
   top: number | undefined,
+  gap: { stale: boolean; away: boolean; weeksAway: number } = { stale: false, away: false, weeksAway: 0 },
 ): LoadSuggestion {
   const help = workingLoad(working.map((s) => s.kg ?? 0), 'lightest')
   const atHelp = working.filter((s) => (s.kg ?? 0) === help)
-  const allTop = atHelp.length >= 2 && atHelp.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
+  if (gap.away && step > 0) {
+    return { ...base, kg: roundToStep(help + step, step, top), kind: 'decrease', why: `First time in ${gap.weeksAway} weeks: a step more help, then build back.` }
+  }
+  const allTop = !gap.stale && atHelp.length >= 2 && atHelp.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
   const anyShort = atHelp.some((s) => s.reps < lo)
   const grinding = atHelp.some((s) => s.rpe !== undefined && s.rpe >= 9.5)
   if (allTop) {

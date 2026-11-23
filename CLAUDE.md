@@ -935,7 +935,8 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
   - Third review round (58 UX / 53 logic), fixed and pinned in
     `plan/round2.test.ts`, `gym/round2.test.ts`, `data/youthWarmup.test.ts`:
     kit at a place is its own list plus the athlete's *portable* kit
-    (`PORTABLE_KIT`), and `WorkoutRequest.kit` adds it to that one build
+    (`PORTABLE_KIT`), and `WorkoutRequest.kit` is the kit for that one
+    build — it *replaces* the profile's list, floor always kept
     (`withRequestKit`); no opener after a hard session of the family earlier
     the same day, and planned family days hold; calisthenics days only for
     skills with kit; the weekly goal spreads open days; the RPE-9 deload is
@@ -949,6 +950,22 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     dips, push-ups and curls; a loaded lift is never logged at 0 kg
     (`isUnloadedSet`); prefs merge per field (`TrainingPrefs.fieldTimes`);
     the gym player makes the app behind it inert (`useInertBackground`).
+  - Fourth review round (52 UX / 60 logic), fixed and pinned in
+    `plan/round3.test.ts`, `gym/review4.test.ts`, `onboardingFlow.test.ts`:
+    `buildGymSession` fits the normal session first, then a factor below 1
+    cuts the total working sets to about factor × normal (sets go to 1 before
+    lifts go) and above 1 adds a set per lift while it fits
+    (`setsForFactor`; `warmUpMin`, 2 after an opener). A lighter week the
+    plan called ends the hard run whatever its sets. Time away: a last
+    performance over 28 days never steps up, over 42 steps down, and the
+    first gym session after 21+ days keeps at most 0.8 of the sets. A picked
+    skill day inside the rest rule is named (hours and rule) and still
+    builds. Openers are `OPENER_MINUTES` (18) under 60-minute days and
+    `LONG_OPENER_MINUTES` (25) from 60. `maxCountFor` keeps holds to 3600 s
+    and reps to 1000; `toggleHardHere` no longer stamps the place; swaps and
+    additions keep the day (`GymDraft.volumeFactor`/`goals`, `dayOfItem`);
+    `usePlanClock` re-plans open screens every 15 minutes; onboarding moves
+    the goal past the placement (`goalPastPlacement`).
   - Skill days are requests (`{source: 'auto', skills: [skill]}`); a ladder
     day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
     pins every session built without it — regenerate only for an intended

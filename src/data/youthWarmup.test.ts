@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, SkillId, WorkoutRequest } from '../types'
-import { finalizeWorkout, finalizeFromPlan, planForToday, requestFor } from './workouts'
+import { finalizeWorkout, finalizeFromPlan, hasEquipmentFor, planForToday, requestFor, withRequestKit } from './workouts'
 import { startingState } from '../lib/skillLoop'
 
 const NOW = Date.UTC(2026, 10, 20, 12)
@@ -82,22 +82,22 @@ describe('WorkoutRequest.kit', () => {
     const without = build(home, { source: 'auto', skills: ['frontlever'] })
     expect(without.name).toMatch(/waiting for kit/)
     expect(mains(without)).toEqual([])
-    const withBar = build(home, { source: 'auto', skills: ['frontlever'], kit: ['pullup-bar'] })
+    const withBar = build(home, { source: 'auto', skills: ['frontlever'], kit: ['floor', 'pullup-bar'] })
     expect(withBar.name).not.toMatch(/waiting for kit/)
     expect(mains(withBar)).toContain('tuck-front-lever')
   })
 
   it('stores nothing and keeps the field on the request', () => {
     const before = JSON.stringify(home)
-    const request: WorkoutRequest = { source: 'auto', skills: ['frontlever'], kit: ['pullup-bar'] }
+    const request: WorkoutRequest = { source: 'auto', skills: ['frontlever'], kit: ['floor', 'pullup-bar'] }
     const w = build(home, request)
     expect(JSON.stringify(home)).toBe(before)
     expect(home.profile.equipment).toEqual(['floor'])
-    expect(requestFor(w).kit).toEqual(['pullup-bar'])
+    expect(requestFor(w).kit).toEqual(['floor', 'pullup-bar'])
   })
 
   it('also applies through finalizeFromPlan', () => {
-    const request: WorkoutRequest = { source: 'auto', skills: ['frontlever'], kit: ['pullup-bar'] }
+    const request: WorkoutRequest = { source: 'auto', skills: ['frontlever'], kit: ['floor', 'pullup-bar'] }
     const { workout } = finalizeFromPlan(home, request, planForToday(home, NOW, undefined, request), NOW)
     expect(workout.blocks.filter((b) => b.section === 'main').map((b) => b.exerciseId)).toContain('tuck-front-lever')
   })
@@ -106,9 +106,31 @@ describe('WorkoutRequest.kit', () => {
     const rich = athlete('frontlever', 'fl-tuck', 1990)
     const plain = build(rich, { source: 'auto', skills: ['frontlever'] })
     const empty = build(rich, { source: 'auto', skills: ['frontlever'], kit: [] })
-    const redundant = build(rich, { source: 'auto', skills: ['frontlever'], kit: ['floor'] })
     expect(empty.blocks).toEqual(plain.blocks)
-    expect(redundant.blocks).toEqual(plain.blocks)
+  })
+
+  it('replaces the athlete kit for the build: the floor is always there, nothing else is borrowed', () => {
+    const rich = athlete('frontlever', 'fl-tuck', 1990)
+    expect(withRequestKit(rich, { source: 'auto' })).toBe(rich)
+    expect(withRequestKit(rich, { source: 'auto', kit: [] })).toBe(rich)
+    expect(withRequestKit(rich, { source: 'auto', kit: ['pullup-bar'] }).profile.equipment).toEqual(['floor', 'pullup-bar'])
+    expect(withRequestKit(rich, { source: 'auto', kit: ['floor', 'pullup-bar'] }).profile.equipment).toEqual(['floor', 'pullup-bar'])
+    expect(rich.profile.equipment).toContain('wall')
+  })
+
+  it('a lever athlete with no bar at home builds a real lever session with a place that has one', () => {
+    const noBar = athlete('frontlever', 'fl-tuck', 1990, ['floor', 'wall', 'dip-bars'])
+    const w = build(noBar, { source: 'auto', skills: ['frontlever'], kit: ['floor', 'pullup-bar'] })
+    expect(w.name).not.toMatch(/waiting for kit/)
+    expect(mains(w)).toContain('tuck-front-lever')
+  })
+
+  it('a session whose kit lacks a wall never uses one, though home has it', () => {
+    const homeWall = athlete('handstand', 'hs-wall', 1990)
+    const atHome = build(homeWall, { source: 'auto', skills: ['handstand'] })
+    const away = build(homeWall, { source: 'auto', skills: ['handstand'], kit: ['floor', 'pullup-bar'] })
+    const needsWall = (w: ReturnType<typeof build>) => w.blocks.filter((b) => hasEquipmentFor(b.exerciseId, ['floor', 'pullup-bar']) === false)
+    expect(needsWall(away)).toEqual([])
+    expect(atHome.blocks.some((b) => !hasEquipmentFor(b.exerciseId, ['floor']))).toBe(true)
   })
 })
-

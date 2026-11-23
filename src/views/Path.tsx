@@ -9,6 +9,7 @@ import { kitNeedsPhrase } from '../data/equipment'
 import { activeSkills, skillView, viewForStep } from '../lib/skills'
 import { ladderStatus, type LadderStatus } from '../lib/repLadder'
 import { goalChoices } from '../lib/placement'
+import { GOAL_HERE_TEXT, goalStanding, stepPassed } from '../lib/plan/screens'
 import { AddSkill } from '../components/AddSkill'
 import { daysAtBar } from '../lib/progression'
 import { challengeBlockedReason } from '../data/workouts'
@@ -138,6 +139,10 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   )
   const stopById = new Map(journey.stops.map((stop) => [stop.stepId, stop]))
   const ladder = useMemo(() => ladderStatus(whole, viewSkill), [whole, viewSkill])
+  const goalStep = STEP_BY_ID[goalStepId]
+  const currentStep = STEP_BY_ID[state.stepId]
+  // The goal on the step being trained is not reached until that step is passed (a placement once read as "reached").
+  const goalHere = Boolean(goalStep && currentStep) && goalStanding(currentStep, goalStep, stepPassed(state, state.stepId)) === 'here'
 
   return (
     <div className="animate-rise">
@@ -244,6 +249,13 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
             )
           })}
         </div>
+        {goalHere ? <p className="mt-2.5 text-footnote font-medium text-accent-text">{GOAL_HERE_TEXT}</p> : null}
+        {ladder ? (
+          <p className="mt-2 text-footnote leading-relaxed text-ink2">
+            Beside the hold, the {ladder.ladder.name.toLowerCase()} moves on its own rungs: now{' '}
+            {EXERCISE_BY_ID[ladder.rung.exerciseId]?.name ?? ladder.rung.exerciseId}.
+          </p>
+        ) : null}
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-2 text-footnote">

@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { FOCUS_LABEL, type GymFocus } from '../../lib/gym/builder'
-import { planWeekAhead, skillRequest, type ReadinessLevel } from '../../lib/plan/planner'
+import { AFTER_OPENER_WARM_UP_MIN, planWeekAhead, skillRequest, type ReadinessLevel } from '../../lib/plan/planner'
+import { openerLine } from '../../lib/plan/screens'
+import { usePlanClock } from '../../lib/plan/usePlanClock'
 import { rememberNextBlock } from '../../lib/plan/nextBlock'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useStore } from '../../lib/store'
@@ -20,6 +22,8 @@ export interface GymPreset {
   avoidJoints: Joint[]
   volumeFactor: number
   musclesOff: Muscle[]
+  /** Warm-up minutes for the lifts: short straight after a skill opener (`AFTER_OPENER_WARM_UP_MIN`), the usual otherwise. */
+  warmUpMin?: number
 }
 
 const SKILL_LABEL: Record<SkillId, string> = {
@@ -52,6 +56,7 @@ export function TodayPlanCard({
   // "I have X minutes" and "Rather do … today?" are today's choice on every
   // screen (Home, Train, the Gym tab), for the calendar day it was made on.
   const todayKey = useToday()
+  const clock = usePlanClock()
   const [choice, setChoice] = useTodayChoice(todayKey)
   const override = choice.minutes
   const todayKind = choice.kind
@@ -60,7 +65,7 @@ export function TodayPlanCard({
   const week = useMemo(
     () => planWeekAhead(state, Date.now(), { ...(override !== undefined ? { todayMinutes: override } : {}), ...(todayKind ? { todayKind } : {}) }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, override, todayKind, todayKey],
+    [state, override, todayKind, todayKey, clock],
   )
   const plan = week.days[0].plan
   const lastSheet = useRef(sheet)
@@ -98,7 +103,7 @@ export function TodayPlanCard({
     } else if (plan.kind === 'gym' && preset) {
       if (opener && !skillDone && !gymDone) {
         // The lifts follow on their own once the opener is saved.
-        rememberNextBlock(preset)
+        rememberNextBlock<GymPreset>({ ...preset, warmUpMin: AFTER_OPENER_WARM_UP_MIN })
         // The place's kit goes with it: a lever with no bar at home trains on the gym's.
         startWorkout(skillRequest(opener))
       } else onStartGym(preset)
@@ -174,9 +179,7 @@ export function TodayPlanCard({
                 <li className="flex items-center gap-3">
                   {marker(skillDone, 1)}
                   <span className="min-w-0 flex-1">
-                    <span className="block text-footnote font-semibold">
-                      Opens with {opener.skills.map((s) => SKILL_LABEL[s]).join(', ')} ({opener.minutes} min)
-                    </span>
+                    <span className="block text-footnote font-semibold">{openerLine(opener)}</span>
                     <span className="block text-caption text-ink3">First, while you are fresh — logged with your skills</span>
                   </span>
                 </li>
@@ -220,10 +223,17 @@ export function TodayPlanCard({
         </ul>
       ) : null}
 
+      {/* The coach's week folds away: today comes first on Train. */}
       {state.gym?.prefs ? (
-        <div className="mt-4">
-          <WeekPreview week={week} />
-        </div>
+        <details className="group mt-4 rounded-inner border border-line">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-footnote font-semibold text-ink2">
+            The week ahead
+            <Icon name="chevronR" size={14} className="transition group-open:rotate-90" />
+          </summary>
+          <div className="px-3 pb-3">
+            <WeekPreview week={week} hideTitle />
+          </div>
+        </details>
       ) : null}
 
       <Button variant="secondary" full className="mt-3" onClick={() => setSheet('activity')}>

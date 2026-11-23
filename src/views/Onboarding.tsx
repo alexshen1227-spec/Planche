@@ -12,6 +12,7 @@ import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
 import { displayToKg, CM_PER_IN } from '../lib/units'
 import type { Placement } from '../lib/assessment'
 import { fullParts, roomIn } from '../lib/lineup'
+import { goalMovedNote, goalPastPlacement, skillsProgress } from '../lib/onboardingFlow'
 import {
   goalChoices,
   nextInterviewItem,
@@ -268,6 +269,9 @@ export function Onboarding() {
   const placedFor = (skill: SkillId): StepId =>
     skippedInterview ? (manual[skill] ?? SKILLS[skill].steps[0].id) : (placements[skill]?.stepId ?? SKILLS[skill].steps[0].id)
   const goalStepId = goalFor(focus)
+  /** The destination that is kept: one the placement has already reached moves on, so the first screen never says "reached" at 0%. */
+  const settledGoal = (skill: SkillId) => goalPastPlacement(skill, placedFor(skill), goalFor(skill))
+  const finalGoalFor = (skill: SkillId): StepId => settledGoal(skill).goal
   /** Chosen skills whose road cannot be trained with the kit ticked so far. */
   const kitGaps = skills
     .map((skill) => ({ skill, missing: missingKit(skill, equipment.length ? equipment : ['floor']) }))
@@ -408,7 +412,7 @@ export function Onboarding() {
             skill,
             {
               stepId: placedFor(skill),
-              goalStepId: goalFor(skill),
+              goalStepId: finalGoalFor(skill),
               ...(skippedInterview ? {} : { assessment: placementRecord(skill, answers, reportedAt) }),
             },
           ]),
@@ -423,7 +427,7 @@ export function Onboarding() {
       profile: {
         equipment: homeKit,
         preferredSurface: homeKit.includes('parallettes') ? 'parallettes' : 'floor',
-        goalStepId: goalFor('planche'),
+        goalStepId: finalGoalFor('planche'),
         injuryNote: injuryNote.trim() || undefined,
         heightCm: parsedHeight,
         trainingAgeMonths: answers.experience,
@@ -448,8 +452,19 @@ export function Onboarding() {
 
   const sectionIndex = SECTION_OF[stage]
   const inSkills = SKILLS_SCREENS.indexOf(stage)
+  const skillsStage = inSkills >= 0 ? (stage as 'skills' | 'goal' | 'interview' | 'result') : null
+  const skillsAt = skillsStage
+    ? skillsProgress({
+        stage: skillsStage,
+        skillCount: skills.length,
+        skipped: skippedInterview,
+        position: skippedInterview && stage === 'interview' ? manualIndex : Object.keys(answers).length,
+        longest: questionCount.atMost,
+        shortest: questionCount.atLeast,
+      })
+    : null
   const progressText = `Step ${sectionIndex + 1} of ${SECTIONS.length} · ${SECTIONS[sectionIndex]}${
-    inSkills >= 0 ? ` · ${inSkills + 1} of ${SKILLS_SCREENS.length}` : ''
+    skillsAt ? ` · ${skillsAt.at} of ${skillsAt.open ? 'up to ' : ''}${skillsAt.total}` : ''
   }`
   // The primary action: big, last in the row, within thumb reach. Back is quiet.
   const primaryBtn = 'min-h-[52px] flex-1'
@@ -762,6 +777,7 @@ export function Onboarding() {
                     // one, placed the athlete a whole step high. Exactly the
                     // failure this interview exists to prevent.
                     key={`${currentItem.id}:${opt.label}`}
+                    aria-label={opt.hint ? `${opt.label}. ${opt.hint}` : opt.label}
                     onClick={() => {
                       // Advance here rather than in an effect: the ladder ends
                       // the moment an answer makes the next question
@@ -847,6 +863,11 @@ export function Onboarding() {
                         <div className="text-footnote text-ink2">{STEP_BY_ID[stepId].tagline}</div>
                       </div>
                     </div>
+                    {settledGoal(skill).moved ? (
+                      <p className="mt-3 text-footnote font-medium leading-relaxed text-ink">
+                        {goalMovedNote(STEP_BY_ID[finalGoalFor(skill)].name, STEP_BY_ID[stepId].name)}
+                      </p>
+                    ) : null}
                     <p className="mt-3 text-footnote leading-relaxed text-ink2">
                       {skippedInterview || !placement
                         ? 'You picked this yourself, so the app treats it as a starting guess and nothing more. Your first filmed sets are what confirm it.'
@@ -1033,12 +1054,19 @@ export function Onboarding() {
                   )
                 })}
               </div>
-              <p className="mt-2 text-caption leading-relaxed text-ink3">
-                {EQUIPMENT_OPTIONS.filter((eq) => equipment.includes(eq.id))
-                  .map((eq) => eq.hint)
-                  .filter(Boolean)
-                  .join(' · ') || 'Pick everything you can get to — sessions substitute around what is missing.'}
-              </p>
+              {equipment.length ? (
+                <ul className="mt-2 space-y-1">
+                  {EQUIPMENT_OPTIONS.filter((eq) => equipment.includes(eq.id) && eq.hint).map((eq) => (
+                    <li key={eq.id} className="text-caption leading-relaxed text-ink3">
+                      <span className="font-medium text-ink2">{eq.label}</span>: {eq.hint}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-caption leading-relaxed text-ink3">
+                  Pick everything you can get to — sessions substitute around what is missing.
+                </p>
+              )}
               {kitGaps.length ? (
                 <div className="mt-3 space-y-2" role="status">
                   {kitGaps.map(({ skill, missing }) => (
@@ -1293,7 +1321,7 @@ export function Onboarding() {
               <div className="text-footnote font-semibold uppercase tracking-wide text-ink3">Your plan</div>
               {skills.map((skill) => {
                 const from = STEP_BY_ID[placedFor(skill)]
-                const to = STEP_BY_ID[goalFor(skill)]
+                const to = STEP_BY_ID[finalGoalFor(skill)]
                 const stepsToGo = Math.max(0, to.order - from.order)
                 const missing = kitGaps.find((gap) => gap.skill === skill)?.missing
                 const several = skills.length > 1

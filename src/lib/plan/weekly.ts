@@ -1,4 +1,5 @@
 import { MUSCLE_BY_ID, MUSCLES } from '../../data/gym/catalog'
+import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { AppState } from '../../types'
 import { estimateOneRepMax } from '../gym/progression'
 import { defaultPrefs } from '../gym/state'
@@ -48,6 +49,8 @@ export function gymBadges(state: Pick<AppState, 'sessions' | 'gym'>): GymBadge[]
   const lastLoad = new Map<string, number>()
   for (const s of gym) {
     for (const log of s.exercises) {
+      // An assisted lift gets easier as the help goes down: a bigger number is not a step up.
+      if (GYM_EXERCISE_BY_ID[log.exerciseId]?.assisted) continue
       const key = `${s.locationId}:${log.exerciseId}`
       const top = Math.max(0, ...log.sets.filter((x) => !x.warmup).map((x) => x.kg ?? 0))
       const had = lastLoad.get(key)

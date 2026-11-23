@@ -6,6 +6,7 @@ import { choiceOptions, useTodayChoice } from '../../lib/plan/todayChoice'
 import { useStore } from '../../lib/store'
 import { useToday } from '../../lib/useToday'
 import type { SkillId } from '../../types'
+import { usePlanClock } from '../../lib/plan/usePlanClock'
 
 const SHORT: Record<SkillId, string> = {
   planche: 'Planche',
@@ -38,10 +39,12 @@ function dayWords({ plan }: WeekDayPlan): string {
  * and skill sessions add up, and why: tap a day. A plan, not a promise: it is
  * planned again from what actually happened.
  */
-export function WeekPreview({ week: given }: { week?: WeekAhead } = {}) {
+export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhead; hideTitle?: boolean } = {}) {
   const { state } = useStore()
-  // Today's choice and the calendar day: the same today as every other screen, re-planned after midnight.
+  // Today's choice and the calendar day: the same today as every other screen, re-planned after midnight,
+  // and on the coarse clock for the rules that run in hours.
   const todayKey = useToday()
+  const clock = usePlanClock()
   const [choice] = useTodayChoice(todayKey)
   const computed = useMemo(
     () => {
@@ -50,14 +53,14 @@ export function WeekPreview({ week: given }: { week?: WeekAhead } = {}) {
       return planWeekAhead(state, Date.now(), { ...(c.minutes !== undefined ? { todayMinutes: c.minutes } : {}), ...(c.kind ? { todayKind: c.kind } : {}) })
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, given, todayKey, choice.kind, choice.minutes],
+    [state, given, todayKey, clock, choice.kind, choice.minutes],
   )
   const week = given ?? computed!
   const [picked, setPicked] = useState(0)
   const selected = week.days[Math.min(picked, week.days.length - 1)]
   return (
     <section aria-label="The week ahead">
-      <h3 className="text-footnote font-semibold text-ink2">The week ahead</h3>
+      {hideTitle ? null : <h3 className="text-footnote font-semibold text-ink2">The week ahead</h3>}
       {week.missed.length ? (
         <p className="mt-1 text-caption leading-snug text-ink2">
           {week.missed.map((m) => m.text).join(' ')}

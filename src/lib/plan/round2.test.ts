@@ -115,8 +115,9 @@ describe('openers', () => {
     const s = athlete(['frontlever', 'planche'], {}, {}, ['floor'])
     const op = gymToday(s, { now: at(0, 17), minutes: 60, focus: 'pull' }).opener
     expect(op?.skills).toEqual(['frontlever'])
-    expect(op?.kit).toEqual(gymA.equipment)
-    expect(skillRequest(op!)).toEqual({ source: 'auto', minutes: op!.minutes, skills: ['frontlever'], kit: gymA.equipment })
+    // The whole kit at the place (round three: `WorkoutRequest.kit` is the kit for that build): the gym's list and the athlete's portable kit.
+    expect(new Set(op?.kit)).toEqual(new Set(['floor', ...gymA.equipment]))
+    expect(skillRequest(op!)).toEqual({ source: 'auto', minutes: op!.minutes, skills: ['frontlever'], kit: op!.kit })
     const noBar = { ...gymA, id: 'nb', name: 'No bar', equipment: gymA.equipment.filter((e) => e !== 'pullup-bar') }
     expect(gymToday(s, { now: at(0, 17), minutes: 60, focus: 'pull', location: noBar }).opener).toBeUndefined()
   })

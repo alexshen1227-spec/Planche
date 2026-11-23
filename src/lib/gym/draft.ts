@@ -1,8 +1,8 @@
 import type { GymPlan } from './builder'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { Joint, Muscle } from '../../data/gym/catalog'
-import { lastPerformance, type LoadSuggestion, type RepPlan } from './progression'
-import type { GymSession, GymState } from './types'
+import { lastPerformance, repPlanFor, type LoadSuggestion, type RepPlan } from './progression'
+import type { GoalWeights, GymSession, GymState } from './types'
 import { displayLoad, toKg } from './units'
 import type { Unit } from '../../data/gym/catalog'
 import type { Profile } from '../../types'
@@ -60,6 +60,31 @@ export interface GymDraft {
   /** What today's plan kept out — swaps and additions honour it too. */
   avoidJoints?: Joint[]
   musclesOff?: Muscle[]
+  /**
+   * The day's volume factor and the athlete's goals, so a movement added or swapped in mid-session is
+   * dosed like the rest of the day. Both absent on an older draft: it then reads as a usual day on
+   * the athlete's saved goals.
+   */
+  volumeFactor?: number
+  goals?: GoalWeights
+}
+
+/**
+ * What the day gave a movement, read back from its block so a swap can keep it: the kind of rep
+ * range (strength, muscle, endurance, power) it was programmed with and how far its target effort
+ * sits from that kind's usual (a lighter day stops a rep sooner). The kind is undefined when the
+ * range matches none of them.
+ */
+export function dayOfItem(old: DraftItem, youth: boolean): { emphasis?: 'strength' | 'muscle' | 'endurance' | 'power'; rpeShift: number } {
+  const ex = GYM_EXERCISE_BY_ID[old.exerciseId]
+  const kind = ex
+    ? (['muscle', 'strength', 'endurance', 'power'] as const).find((e) => {
+        const r = repPlanFor(ex, e, youth).range
+        return r[0] === old.plan.range[0] && r[1] === old.plan.range[1]
+      })
+    : undefined
+  const base = ex ? repPlanFor(ex, kind ?? 'muscle', youth) : old.plan
+  return { ...(kind ? { emphasis: kind } : {}), rpeShift: old.plan.targetRpe - base.targetRpe }
 }
 
 /** Reps to pre-fill: the bottom of the range, or one more than last time when repeating a load. */

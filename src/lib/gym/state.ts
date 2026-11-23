@@ -228,11 +228,16 @@ function sanitizeLocation(raw: unknown): GymLocation | null {
   }
 }
 
-function sanitizeSet(raw: unknown): GymSet | null {
+/** The most one set can hold: an hour for a movement counted in seconds, 1000 reps otherwise. */
+export function maxCountFor(exerciseId: string | undefined): number {
+  return exerciseId !== undefined && GYM_EXERCISE_BY_ID[exerciseId]?.count === 'seconds' ? 3600 : 1000
+}
+
+function sanitizeSet(raw: unknown, exerciseId?: string): GymSet | null {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
   const reps = typeof r.reps === 'number' && Number.isFinite(r.reps) ? Math.round(r.reps) : NaN
-  if (!(reps >= 0 && reps <= 200) || !isTime(r.at)) return null
+  if (!(reps >= 0 && reps <= maxCountFor(exerciseId)) || !isTime(r.at)) return null
   const kg = typeof r.kg === 'number' && Number.isFinite(r.kg) && r.kg > 0 && r.kg < 1000 ? r.kg : undefined
   const rpe = typeof r.rpe === 'number' && r.rpe >= 1 && r.rpe <= 10 ? Math.round(r.rpe * 2) / 2 : undefined
   return {
@@ -249,7 +254,7 @@ function sanitizeLog(raw: unknown): GymExerciseLog | null {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
   if (typeof r.exerciseId !== 'string' || !(r.exerciseId in GYM_EXERCISE_BY_ID)) return null
-  const sets = Array.isArray(r.sets) ? r.sets.map(sanitizeSet).filter((s): s is GymSet => s !== null) : []
+  const sets = Array.isArray(r.sets) ? r.sets.map((x) => sanitizeSet(x, r.exerciseId as string)).filter((s): s is GymSet => s !== null) : []
   const range =
     Array.isArray(r.repRange) && r.repRange.length === 2 && r.repRange.every((n) => typeof n === 'number' && n > 0 && n < 100)
       ? ([r.repRange[0], r.repRange[1]] as [number, number])
@@ -546,7 +551,7 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
         fixed.kg = action.kg
       }
       if (action.reps !== undefined) {
-        if (!(Number.isInteger(action.reps) && action.reps >= 0 && action.reps <= 200)) return gym
+        if (!(Number.isInteger(action.reps) && action.reps >= 0 && action.reps <= maxCountFor(log.exerciseId))) return gym
         fixed.reps = action.reps
       }
       const exercises = session.exercises.map((e, i) =>
@@ -623,9 +628,11 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
           const hard = new Set(l.hardHere ?? [])
           if (hard.has(action.exerciseId)) hard.delete(action.exerciseId)
           else hard.add(action.exerciseId)
+          // The place's own stamp stays put: marks carry their own times, and bumping it would let this
+          // toggle outvote an equipment edit made on another tab.
           const { hardHere: _old, ...rest } = l
           void _old
-          return { ...rest, ...(hard.size ? { hardHere: [...hard] } : {}), hardHereAt: { ...l.hardHereAt, [action.exerciseId]: now }, updatedAt: now }
+          return { ...rest, ...(hard.size ? { hardHere: [...hard] } : {}), hardHereAt: { ...l.hardHereAt, [action.exerciseId]: now }, updatedAt: l.updatedAt }
         }),
       }
     }

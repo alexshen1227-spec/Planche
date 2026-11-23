@@ -5,6 +5,7 @@ import { SKILLS } from '../data/skills'
 import { activeSkills, wholeState } from '../lib/skills'
 import { niggleRegionsToday } from '../lib/signals'
 import { useToday } from '../lib/useToday'
+import { usePlanClock } from '../lib/plan/usePlanClock'
 import { describeDay, nextPlannedDay, todaysDay, weekOutline, WEEKDAY_NAMES, WEEKDAY_SHORT, type WeekOutlineDay } from '../lib/weekPlan'
 import { Icon } from './Icon'
 import { WeekPlanEditor } from './WeekPlanEditor'
@@ -16,8 +17,10 @@ function planWords(day: WeekOutlineDay): string {
 }
 
 /**
- * "Your week": the athlete's own plan, Monday to Sunday, and what it says
- * about today.
+ * "Your own week plan (optional)": the athlete's own plan, Monday to Sunday,
+ * and what it says about today. Beside the coach's "The week ahead" it once
+ * read as a second plan (all "–" when empty), so it is labelled as the
+ * athlete's own and folds to a one-line link until there is one.
  *
  * The strip shows what each day is for as the app will train it — a skill that
  * cannot train (dropped, or waiting for kit) is not listed, and a day with
@@ -40,6 +43,7 @@ export function WeekPlanCard({
   const { state: stored } = useStore()
   const state = wholeState(stored)
   const todayKey = useToday()
+  const clock = usePlanClock()
   const [editing, setEditing] = useState(false)
   // One moment for everything read off the calendar, re-read when the date changes.
   const { week, today, next, sore } = useMemo(() => {
@@ -51,8 +55,25 @@ export function WeekPlanCard({
       sore: niggleRegionsToday(state, now),
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, todayKey])
+  }, [state, todayKey, clock])
   const hasPlan = state.settings.weekPlan !== undefined
+  if (!hasPlan) {
+    return (
+      <section aria-label="Your own week plan" className={`rounded-2xl border border-line bg-surface px-4 shadow-card ${className}`} style={style}>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="flex min-h-11 w-full items-center justify-between gap-2 py-2 text-left text-[13px] text-ink2 transition hover:text-ink"
+        >
+          <span>
+            <span className="font-semibold text-ink">Your own week plan (optional)</span> — choose which day is for which skill
+          </span>
+          <Icon name="chevronR" size={14} />
+        </button>
+        <WeekPlanEditor open={editing} onClose={() => setEditing(false)} />
+      </section>
+    )
+  }
   const line = todayLine({
     today,
     next,
@@ -71,9 +92,9 @@ export function WeekPlanCard({
     .join('. ')
 
   return (
-    <section aria-label="Your week" className={`rounded-2xl border border-line bg-surface p-4 shadow-card ${className}`} style={style}>
+    <section aria-label="Your own week plan" className={`rounded-2xl border border-line bg-surface p-4 shadow-card ${className}`} style={style}>
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink3">Your week</h2>
+        <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink3">Your own week plan (optional)</h2>
         {hasPlan ? (
           <button
             type="button"
