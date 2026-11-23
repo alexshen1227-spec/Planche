@@ -5,7 +5,7 @@ import { kitNeedsPhrase } from '../../data/equipment'
 import { missingKit, skillOfExercise, SKILLS } from '../../data/skills'
 import { finalizeWorkout, withRequestKit } from '../../data/workouts'
 import type { AppState, BodyRegion, EquipmentId, LineupRole, Session, SkillId, WorkoutRequest } from '../../types'
-import { forecastUnlock, goalOutlook } from '../forecast'
+import { goalOutlook } from '../forecast'
 import { daysSinceFullPart, todaysLineup } from '../lineup'
 import { fullParts, shortDoses } from '../sessionRoom'
 import { readinessTimeline } from '../signals'
@@ -3934,29 +3934,37 @@ export function skillGoalPace(state: AppState, goal: SkillGoal, now = Date.now()
   const view = skillView(state, goal.skill)
   const current = STEP_BY_ID[view.stepId]
   if (!current) return { status: 'unknown', text: 'Not started on this skill yet.' }
+  // A goal is a step to reach, as Home's outlook reads it: training at it is
+  // reaching it. At the goal step this once forecast that step's own unlock
+  // bar — "Behind: about 7–7 weeks" — while Home said "You are training at
+  // Advanced Tuck, your chosen goal".
+  if (current.id === target.id) return { status: 'reached', text: `Reached: you are training at ${target.name}.` }
   if (view.unlocked.includes(goal.stepId) && current.order > target.order) return { status: 'reached', text: `Reached ${target.name}.` }
   const [y, m, d] = goal.by.split('-').map(Number)
   const weeksLeft = (new Date(y, m - 1, d, 23, 59).getTime() - now) / WEEK
   if (weeksLeft <= 0) return { status: 'behind', text: `The date has passed — set a new one.` }
   let range: { low: number; high: number | null } | null = null
   let why = ''
-  if (current.id === target.id) {
-    const f = forecastUnlock(view, target.id, now)
-    if (f.kind === 'ready') return { status: 'on-pace', text: `Your holds already clear ${target.name}'s bar — time to test it.` }
-    if (f.kind === 'range') range = { low: f.lowWeeks, high: f.highWeeks }
-    else why = 'need' in f ? String(f.need) : 'the recent holds are not trending up'
-  } else if (current.order < target.order) {
+  if (current.order < target.order) {
     const o = goalOutlook({ ...view, profile: { ...view.profile, goalStepId: target.id } }, now)
     if (o.estimate) range = { low: o.estimate.lowWeeks, high: o.estimate.highWeeks }
     else why = o.note
   }
-  const left = Math.ceil(weeksLeft)
+  // Whole weeks left, rounded down in every sentence: 5.5 once read "6 weeks"
+  // when the pace was unknown and "5 weeks left" when it was not.
+  const whole = Math.floor(weeksLeft)
+  const leftText = whole < 1 ? 'under a week' : `${whole} ${whole === 1 ? 'week' : 'weeks'}`
   // One full stop, whatever the reason ends with; "1 week", never "1 weeks".
   const because = (why || 'not enough history').trim().replace(/[.\s]+$/, '')
-  if (!range) return { status: 'unknown', text: `Can't tell yet whether ${left} ${left === 1 ? 'week is' : 'weeks are'} enough: ${because}.` }
-  const whole = Math.floor(weeksLeft)
-  const remaining = `${whole} ${whole === 1 ? 'week' : 'weeks'} left`
-  const span = `${range.low}${range.high !== null ? `–${range.high}` : '+'} ${range.high === 1 || (range.high === null && range.low === 1) ? 'week' : 'weeks'}`
+  if (!range) return { status: 'unknown', text: `Can't tell yet whether ${leftText} ${whole > 1 ? 'are' : 'is'} enough: ${because}.` }
+  const remaining = `${leftText} left`
+  // One number when both ends agree: "7–7 weeks" read as a bug.
+  const span =
+    range.high === null
+      ? `${range.low}+ weeks`
+      : range.low === range.high
+        ? `${range.low} ${range.low === 1 ? 'week' : 'weeks'}`
+        : `${range.low}–${range.high} weeks`
   if (range.high !== null && range.high <= weeksLeft) return { status: 'on-pace', text: `On pace: about ${span} at your current rate, ${remaining}.` }
   if (range.low > weeksLeft) return { status: 'behind', text: `Behind: about ${span} at your current rate, ${remaining}.` }
   return { status: 'possible', text: `Possible: ${span} at your current rate, ${remaining}.` }

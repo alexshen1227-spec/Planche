@@ -157,7 +157,9 @@ export function nextTimeLines(
     const text =
       hasLoad && s.repsToMoveUp !== undefined
         ? `Repeat ${formatLoad(s.kg, unit)}: every set needs ${s.repsToMoveUp} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`
-        : hasLoad
+        : hasLoad && s.nearestTo !== undefined
+          ? `Nearest load here: ${formatLoad(s.kg, unit)} × ${lo}–${hi}${word} (not a step up; no ${formatLoad(s.nearestTo, unit)} here)`
+          : hasLoad
           ? `Next time: ${formatLoad(s.kg, unit)} × ${lo}–${hi}${word}`
           : s.kind === 'bodyweight' || s.kg === 0
             ? `Next time: ${s.kg === 0 ? 'no help' : 'bodyweight'} × ${lo}–${hi}${word}`

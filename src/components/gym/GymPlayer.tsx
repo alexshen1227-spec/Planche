@@ -8,7 +8,7 @@ import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
 import { alternativesFor, availableAt } from '../../lib/gym/availability'
 import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../lib/gym/builder'
 import { addedSetReps, conservative, dayOfItem, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
-import { allowsUnloaded, countUnit, countWord, gymRecords, isUnloadedSet, lastPerformance, plyoGate, repPlanFor, suggestLoad } from '../../lib/gym/progression'
+import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, maxKey, isUnloadedSet, lastPerformance, plyoGate, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GoalWeights, GymLocation, Rating } from '../../lib/gym/types'
 import { displayLoad, formatLoad, stepKgFor, toKg, unitFor } from '../../lib/gym/units'
 import { doubtedLoad } from '../../lib/gym/state'
@@ -196,6 +196,12 @@ export function GymPlayer({
     const secs = draft.items[i].restSec
     restEndedRef.current = false
     setRest({ until: Date.now() + secs * 1000, total: secs })
+    // The completed button is replaced under the finger, which dropped focus to the page: it goes on to the next
+    // set's input, or back to this set's own button when it was the last.
+    requestAnimationFrame(() => {
+      const next = document.querySelector<HTMLElement>(`[data-set="${i}-${j + 1}"] input`) ?? document.querySelector<HTMLElement>(`[data-set="${i}-${j}"] button[aria-label^="Set"]`)
+      next?.focus()
+    })
   }
 
   const swapTo = (i: number, exerciseId: string) => {
@@ -246,16 +252,15 @@ export function GymPlayer({
 
   /** Estimated maxes this session would beat, for the summary and the toast. */
   const newMaxes = (session: ReturnType<typeof sessionFromDraft>) => {
-    const after = gymRecords([...gym.sessions, session])
-    return Object.values(after)
-      .filter((r) => {
-        const before = records[r.exerciseId]?.bestE1rm?.kg ?? 0
-        return (r.bestE1rm?.kg ?? 0) > before + 0.01 && before > 0
-      })
-      .map((r) => {
-        const unit = draft.items.find((it) => it.exerciseId === r.exerciseId)?.unit ?? 'kg'
-        return { id: r.exerciseId, name: GYM_EXERCISE_BY_ID[r.exerciseId]?.name ?? 'Lift', value: displayLoad(r.bestE1rm!.kg, unit), unit }
-      })
+    // Beating an earlier session's estimate on the same lift (the same place for a machine), load and reps alone.
+    const mine = new Map<string, number>()
+    for (const g of estimatedMaxGains([...gym.sessions.filter((x) => x.id !== session.id), session])) {
+      if (g.sessionId === session.id) mine.set(g.exerciseId, g.kg)
+    }
+    return [...mine].map(([id, kg]) => {
+      const unit = draft.items.find((it) => it.exerciseId === id)?.unit ?? 'kg'
+      return { id, name: GYM_EXERCISE_BY_ID[id]?.name ?? 'Lift', value: displayLoad(kg, unit), unit }
+    })
   }
 
   const summary = useMemo(() => {
@@ -342,7 +347,9 @@ export function GymPlayer({
             const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
             const step = stepKgFor(ex, location)
             const stepDisplay = step > 0 ? Math.max(0.5, displayLoad(step, item.unit)) : 0
-            const best = records[item.exerciseId]?.bestE1rm
+            const rec = records[item.exerciseId]
+            // A machine's max belongs to the gym it was set at; another gym's is not shown beside this one's.
+            const best = rec?.bestE1rm && maxKey(item.exerciseId, location.id) !== item.exerciseId && rec.bestE1rm.locationId !== location.id ? undefined : rec?.bestE1rm
             return (
               <section key={`${item.exerciseId}-${i}`} className="rounded-card border border-line bg-surface p-4">
                 <div className="flex items-start gap-2">
@@ -357,7 +364,7 @@ export function GymPlayer({
                         ? `${item.suggestion.repsToMoveUp} reps to move up · ${item.plan.range[0]}–${item.plan.range[1]} is the range`
                         : `${item.plan.range[0]}–${item.plan.range[1]} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`}{' '}
                       · stop about RPE {item.plan.targetRpe}
-                      {best ? ` · est. max ${formatLoad(best.kg, item.unit)}` : ''}
+                      {best ? ` · est. max ${formatLoad(best.kg, item.unit)}${isFirstEstimate(rec) ? ` (${FIRST_ESTIMATE_NOTE})` : ''}` : ''}
                     </p>
                     {item.suggestion ? <p className="mt-1 text-caption text-ink3">{item.suggestion.why}</p> : null}
                     {item.swappedFrom ? (
@@ -416,7 +423,7 @@ export function GymPlayer({
                             value={s.load ?? 0}
                             unit={item.unit}
                             step={stepDisplay || 1}
-                            label={`Set ${j + 1} ${ex.assisted ? 'assistance' : 'load'}`}
+                            label={`${ex.name}, set ${j + 1} ${ex.assisted ? 'assistance' : 'load'}`}
                             onChange={(v) =>
                               update((d) => {
                                 const sets = d.items[i].sets
@@ -438,7 +445,7 @@ export function GymPlayer({
                           value={s.reps}
                           unit={countUnit(ex) === 'seconds' ? 'sec' : 'reps'}
                           step={countUnit(ex) === 'seconds' ? 5 : 1}
-                          label={`Set ${j + 1} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`}
+                          label={`${ex.name}, set ${j + 1} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`}
                           onChange={(v) =>
                             update((d) => {
                               d.items[i].sets[j].reps = Math.max(0, Math.round(v))
@@ -860,7 +867,7 @@ function Stepper({
       <button
         onClick={() => onChange(Math.max(0, Math.round((value - step) * 2) / 2))}
         className="ds-press flex h-11 w-11 items-center justify-center rounded-control text-ink2 hover:bg-surface"
-        aria-label={`Less ${unit}`}
+        aria-label={`Less ${unit}, ${label}`}
       >
         <Icon name="minus" />
       </button>
@@ -877,7 +884,7 @@ function Stepper({
       <button
         onClick={() => onChange(Math.round((value + step) * 2) / 2)}
         className="ds-press flex h-11 w-11 items-center justify-center rounded-control text-ink2 hover:bg-surface"
-        aria-label={`More ${unit}`}
+        aria-label={`More ${unit}, ${label}`}
       >
         <Icon name="plus" />
       </button>

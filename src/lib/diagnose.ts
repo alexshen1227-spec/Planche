@@ -1,7 +1,8 @@
 import type { AppState } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { forecastUnlock, MIN_FORECAST_POINTS, mostlyFloors, qualifyingSeries } from './forecast'
+import { forecastUnlock, MIN_FORECAST_POINTS, mostlyFloors, noiseSentence, qualifyingSeries } from './forecast'
+import { conservative } from './gym/draft'
 import { readSignals } from './signals'
 import { diagnosePlateau, PLATEAU_MIN_DAYS, type PlateauVerdict } from './plateau'
 import { fmtWeight } from './units'
@@ -95,7 +96,7 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
   // The rate and its evidence gates are the unlock forecast's — verified holds,
   // recent pace — so Progress never says "too early to call" while Home quotes
   // a range from the same log, or quotes a different pace for the same climb.
-  const forecast = forecastUnlock(state, state.stepId, now)
+  const forecast = forecastUnlock(state, state.stepId, now, sig)
   // "Too early" is the wrong reason for an athlete with a month of sessions and
   // nothing verified: the evidence is missing, not young.
   const keySessions = state.sessions.filter((s) =>
@@ -119,11 +120,14 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
     for (const issue of set.form!.auto!.issues) flagCounts.set(issue, (flagCounts.get(issue) ?? 0) + 1)
   const topFlag = [...flagCounts.entries()].sort((a, b) => b[1] - a[1])[0]
 
+  // Noise is one reading for both screens: the forecast refuses on it, so
+  // Progress reports the same swing Home does.
+  const swing = forecast.kind === 'noisy' ? forecast.variability : sig.variability
   const status: ProgressStatus = verdict
     ? verdict.status
     : forecast.kind === 'insufficient'
       ? 'insufficient'
-      : sig.noisy
+      : forecast.kind === 'noisy' || sig.noisy
         ? 'noisy'
         : forecast.kind === 'ready' || forecast.kind === 'range'
           ? 'progressing'
@@ -185,8 +189,9 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
   // Not for athletes still growing: gaining weight then is growth, and a
   // "worth tightening" card about bodyweight is the wrong thing to show a
   // teenager.
-  const age = state.profile.birthYear ? new Date(now).getFullYear() - state.profile.birthYear : null
-  const stillGrowing = age !== null && age < 18
+  // The same rule the rest of the app uses for "under 18": an unknown age, or
+  // a birth year that may still be 18, counts as still growing.
+  const stillGrowing = conservative(state.profile, now)
   if (!stillGrowing && sig.weightTrendPerWeek !== null && sig.weightTrendPerWeek > 0.15 && sig.weightKg) {
     const monthly = fmtWeight(sig.weightTrendPerWeek * 4, state.settings.units)
     causes.push({
@@ -232,9 +237,7 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
           verdict!.weeksFlat === 1 ? '' : 's'
         }.${tighten}`
       : status === 'noisy'
-        ? `Your recent ${keyName} holds swing about ±${Math.round(
-            (sig.variability ?? 0) * 100,
-          )}% from session to session — wider than any trend, so whether you are progressing cannot be read yet. The same setup every time is the cheapest fix.${tighten}`
+        ? `${noiseSentence(keyName, swing)}${tighten}`
         : status === 'progressing'
           ? forecast.kind === 'ready'
             ? `You have already held the unlock bar on verified evidence — test it and take the step.${tighten}`
@@ -254,7 +257,9 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
                       }. That is the thing to fix, and the record starts with the first hold that passes.`
                     : 'Film a set from the side next session to start the record.'
                 }${tighten}`
-              : `${floorsOnly ? 'Not measured yet' : 'Too early to call'} — progress is read from verified ${keyName} holds, and this needs ${forecast.need}${
+              : `${
+                  forecast.staleDays !== undefined ? 'Not measured lately' : floorsOnly ? 'Not measured yet' : 'Too early to call'
+                } — progress is read from verified ${keyName} holds, and this needs ${forecast.need}${
                   forecast.need.endsWith('.') ? '' : '.'
                 }${tighten}`
             : `${

@@ -1,6 +1,6 @@
 import type { AppState, StepId, StrategyId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
-import { measuredSeries } from './forecast'
+import { measuredSeries, noiseReading } from './forecast'
 import { median, type Signals } from './signals'
 
 /**
@@ -29,6 +29,32 @@ export const FLAT_RATE = 0.15
  * in red, to someone who had just set a record.
  */
 export const PLATEAU_MIN_WEEKS_FLAT = 2
+/**
+ * Days without a session after which time stops counting toward a plateau.
+ * "Flat for about 31 weeks" once came from five flat weeks and seven months
+ * off: a week or two away is part of a stall, months away are not training.
+ */
+export const UNTRAINED_GAP_DAYS = 14
+
+const DAY = 86_400_000
+
+/**
+ * Days between `from` and `to` that count as training time: every stretch
+ * without a session counts only its first `UNTRAINED_GAP_DAYS`.
+ */
+export function trainedDaysBetween(sessions: { startedAt: number }[], from: number, to: number): number {
+  const times = sessions
+    .map((s) => s.startedAt)
+    .filter((t) => t > from && t <= to)
+    .sort((a, b) => a - b)
+  let total = 0
+  let prev = from
+  for (const t of [...times, to]) {
+    total += Math.min(Math.max(0, t - prev), UNTRAINED_GAP_DAYS * DAY)
+    prev = t
+  }
+  return total / DAY
+}
 
 export type PlateauCause =
   | 'form-limited'
@@ -87,7 +113,8 @@ export function diagnosePlateau(
   // best of the ones before it by a meaningful margin.
   const overallBest = Math.max(...series.map((p) => p.value))
   const firstAtBest = series.find((p) => p.value >= overallBest * 0.98)?.at ?? series[0].at
-  const weeksFlat = Math.floor((now - firstAtBest) / (7 * 86_400_000))
+  // Trained time only: months off are not weeks of a plateau.
+  const weeksFlat = Math.floor(trainedDaysBetween(state.sessions, firstAtBest, now) / 7)
   if (weeksFlat < PLATEAU_MIN_WEEKS_FLAT) return null
 
   const status: PlateauVerdict['status'] = rate < -FLAT_RATE ? 'regressing' : 'stalled'
@@ -270,27 +297,48 @@ export const PLATEAU_LABEL: Record<PlateauCause, string> = {
   unclear: 'No clear cause',
 }
 
+/** The newest a breakthrough's reference may be: before this, it is "now". */
+export const BREAKTHROUGH_RECENT_DAYS = 28
+/**
+ * The oldest a breakthrough's reference may be. Past it the level in between
+ * is unknown — a return from seven months off was compared with holds from
+ * before the break and called "up on where it sat a month ago".
+ */
+export const BREAKTHROUGH_REFERENCE_MAX_DAYS = 84
+
 /**
  * Progress worth celebrating, measured the same way the plateau is.
  *
  * Deliberately paired with the plateau check: an app that only speaks up when
- * things go wrong trains its users to dread opening it.
+ * things go wrong trains its users to dread opening it. It refuses when the
+ * holds are too noisy to read (the same gate as the forecast), compares
+ * typical holds with typical holds — the median of the last four weeks, so
+ * one lucky hold cannot make it — and `weeks` is the real distance back to the
+ * reference, which is never older than `BREAKTHROUGH_REFERENCE_MAX_DAYS`.
+ *
+ * @param sig the signals already read for this state and moment, if any.
  */
 export function recentBreakthrough(
   state: AppState,
   stepId: StepId = state.stepId,
   now = Date.now(),
+  sig?: Pick<Signals, 'noisy' | 'variability'> | null,
 ): { gainSec: number; weeks: number } | null {
   const series = measuredSeries(state, stepId)
   if (series.length < 3) return null
-  const recent = series.filter((p) => now - p.at <= 28 * 86_400_000)
+  const recent = series.filter((p) => now - p.at <= BREAKTHROUGH_RECENT_DAYS * DAY)
   if (recent.length < 3) return null
-  const earlier = series.filter((p) => now - p.at > 28 * 86_400_000)
+  const earlier = series.filter(
+    (p) => now - p.at > BREAKTHROUGH_RECENT_DAYS * DAY && now - p.at <= BREAKTHROUGH_REFERENCE_MAX_DAYS * DAY,
+  )
   if (earlier.length === 0) return null
-  const before = median(earlier.slice(-4).map((p) => p.value))
-  const after = Math.max(...recent.map((p) => p.value))
-  if (before === null || before <= 0) return null
+  if (noiseReading(state, stepId, now, sig).noisy) return null
+  const reference = earlier.slice(-4)
+  const before = median(reference.map((p) => p.value))
+  const after = median(recent.map((p) => p.value))
+  if (before === null || before <= 0 || after === null) return null
   const gain = after - before
   if (gain < Math.max(1, before * 0.15)) return null
-  return { gainSec: Math.round(gain * 10) / 10, weeks: 4 }
+  const referenceAt = median(reference.map((p) => p.at)) ?? reference[0].at
+  return { gainSec: Math.round(gain * 10) / 10, weeks: Math.max(4, Math.round((now - referenceAt) / (7 * DAY))) }
 }

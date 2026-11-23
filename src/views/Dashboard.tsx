@@ -287,18 +287,18 @@ export function Dashboard({
   const trainedToday = todaysLatest !== null
   const tip = tipOfTheDay(Date.now(), skills)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const forecast = useMemo(() => forecastUnlock(state), [state, today])
+  const plan = useMemo(() => buildPlan(state), [state, today, clock])
+  // Read with the plan's own signals: the forecast, the breakthrough card and
+  // the coach refuse on one noise reading, the one Progress reports.
+  const forecast = useMemo(() => forecastUnlock(state, state.stepId, Date.now(), plan.signals), [state, plan])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const outlook = useMemo(() => goalOutlook(state), [state, today])
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const plan = useMemo(() => buildPlan(state), [state, today, clock])
   // The minimum dose is offered only on a day it is allowed (see microBlockedReason).
   const microMinutes = useMemo(
     () => (microBlockedReason(state, plan) ? null : microDoseWorkout(state, plan).minutes),
     [state, plan],
   )
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const breakthrough = useMemo(() => recentBreakthrough(state), [state, today])
+  const breakthrough = useMemo(() => recentBreakthrough(state, state.stepId, Date.now(), plan.signals), [state, plan])
   const confidence = useMemo(() => coachConfidence(state), [state])
   // An athlete who set up before the other roads existed was never asked which
   // skills they want — their save has no list at all. They are told once, here,
@@ -526,6 +526,9 @@ export function Dashboard({
                       // falling, and climbing too slowly to date — and calling
                       // all three "flat" told some athletes the opposite of
                       // what their own data said.
+                      <span className="text-footnote leading-relaxed text-ink3">{forecast.basis}</span>
+                    ) : forecast.kind === 'noisy' ? (
+                      // Progress's own sentence: the two screens read one noise gate.
                       <span className="text-footnote leading-relaxed text-ink3">{forecast.basis}</span>
                     ) : (
                       <span className="text-footnote leading-relaxed text-ink3">
@@ -849,7 +852,8 @@ export function Dashboard({
             <span className="font-semibold">
               Your verified {keyEx.name.toLowerCase()} is up {breakthrough.gainSec}s
             </span>{' '}
-            on where it sat a month ago. That is real, camera-checked progress rather than a stopwatch number.
+            on where it typically sat about {breakthrough.weeks} weeks ago. That is real, camera-checked progress rather than a
+            stopwatch number.
           </span>
         </div>
       ) : null}

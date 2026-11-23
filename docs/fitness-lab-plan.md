@@ -292,6 +292,18 @@ Open, in order of value (none blocks using the app):
   skill side, setup tombstones, clock moved backwards) and the single
   quarantine slot.
 
+## Round eleven (2026-11-23): ninth review, split by area
+
+- On `d20c28e`: progress/history/accessibility UX 62 (accessibility basics
+  and speed good; the planche's ladder under other skills, two hold totals,
+  a first-session "new max", confident one-session maxes) and numbers 36
+  (noisy holds produced a confident forecast, a breakthrough and a jump
+  beside a coach line calling them noise; one lucky hold swung the
+  forecast; stale evidence forecast; machine maxes across gyms). Fixed and
+  pinned (CLAUDE.md "Tenth review round"). Still open: the Settings modal
+  close button is 36 px (in the shared `Modal`); machine "heaviest" records
+  across places; the plateau's noise branch reads only `sig.noisy`.
+
 ## Log
 
 - 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the

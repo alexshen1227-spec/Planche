@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { activeLocation } from '../../lib/gym/draft'
-import { countUnit, estimateOneRepMax, gymRecords } from '../../lib/gym/progression'
+import { countUnit, estimateOneRepMax, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate } from '../../lib/gym/progression'
 import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { useStore } from '../../lib/store'
 import { HoldLineChart } from '../charts'
@@ -69,6 +69,7 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
         <div className="rounded-inner bg-raised p-3">
           <dt className="text-caption text-ink3">Est. max</dt>
           <dd className="text-title3 font-semibold tnum">{record?.bestE1rm ? formatLoad(record.bestE1rm.kg, unit) : '—'}</dd>
+          {record?.bestE1rm && isFirstEstimate(record) ? <p className="text-caption text-ink3">{FIRST_ESTIMATE_NOTE}</p> : null}
         </div>
       </dl>
       {points.length >= 2 ? (

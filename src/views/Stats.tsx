@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID, stepForKeyExercise, stepsOf } from '../data/progressions'
 import { isQualifyingSet } from '../lib/progression'
-import { verifiedReps } from '../lib/repLadder'
+import { ladderStatus, verifiedReps, type LadderStatus } from '../lib/repLadder'
 import { SKILLS } from '../data/skills'
 import { activeSkills, isSkillHold, isSurfaceAware, skillView, stepOfSkill } from '../lib/skills'
 import { ACHIEVEMENTS, type AchievementProgress } from '../data/achievements'
@@ -83,6 +83,41 @@ const NO_LEADER: Record<NoLeaderReason, string> = {
  * ("seen in 4 of 11") is part of the answer, not a footnote.
  */
 /**
+ * The selected skill's own rep line: its rungs in order, where the athlete is, and what a rung asks. Reps are
+ * counted by the athlete and passed on the replay; the camera does not count them.
+ */
+function RepLadderProgress({ status, skillName }: { status: LadderStatus; skillName: string }) {
+  const { ladder, rungs, index, verifiedBest, loggedBest } = status
+  return (
+    <section id="rep-ladder" className="scroll-mt-5">
+      <SectionTitle>{ladder.name}</SectionTitle>
+      <div className="rounded-card border border-line bg-surface p-4">
+        <ol className="space-y-2">
+          {rungs.map((rung, i) => (
+            <li
+              key={rung.exerciseId}
+              className={`flex min-h-11 items-center justify-between gap-3 rounded-control px-3 py-2 text-footnote ${
+                i === index ? 'border border-accent/40 bg-accent-soft' : 'bg-raised'
+              }`}
+            >
+              <span className="min-w-0 font-medium text-ink2">
+                {EXERCISE_BY_ID[rung.exerciseId]?.name ?? rung.exerciseId}
+                {i === index ? <span className="ml-2 text-caption font-bold uppercase tracking-wide text-accent-text">now</span> : null}
+                {i < index ? <span className="ml-2 text-caption text-ink3">passed</span> : null}
+              </span>
+              <span className="shrink-0 tnum text-ink3">{i === index ? `${verifiedBest} verified · ${loggedBest} logged` : `${rung.standardReps} to open the next`}</span>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-2.5 text-caption leading-relaxed text-ink3">
+          The {skillName.toLowerCase()} rep line moves on its own standards: a filmed set you rate Clean and pass on the replay. The camera does not count reps, so “verified” means you checked them, not that it measured them.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+/**
  * The push-up versions as a ladder: where your press is now, your best reps on
  * each rung, and what opens the next one. Reps are the athlete's own logged
  * bests (any section), never a verified measure — the card says so.
@@ -150,7 +185,7 @@ function FormTrendCard({ skill }: { skill: SkillId }) {
   if (!active || !result) {
     return (
       <div id="form-trend" className="mt-6 scroll-mt-5 rounded-card border border-line bg-surface p-4">
-        <div className="font-display text-title3 font-semibold text-ink">Form over time</div>
+        <h3 className="font-display text-title3 font-semibold text-ink">Form over time</h3>
         <p className="mt-1 text-footnote leading-relaxed text-ink2">
           Once you have filmed a position a few times, this compares those clips against each other — whether your
           elbows are locking out more, whether your lean is deepening, whether your hips are drifting. Turn on the
@@ -170,7 +205,7 @@ function FormTrendCard({ skill }: { skill: SkillId }) {
     <div id="form-trend" className="mt-6 scroll-mt-5 rounded-card border border-line bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="font-display text-title3 font-semibold text-ink">Form over time</div>
+          <h3 className="font-display text-title3 font-semibold text-ink">Form over time</h3>
           <div className="text-footnote text-ink2">
             What the camera measured across your filmed {EXERCISE_BY_ID[active]?.name.toLowerCase() ?? 'sets'} sets
           </div>
@@ -379,6 +414,13 @@ export function Stats({
   const [pickedSkill, setPickedSkill] = useState<SkillId | null>(null)
   const viewSkill: SkillId = pickedSkill && skills.includes(pickedSkill) ? pickedSkill : skills[0]
   const state = useMemo(() => skillView(whole, viewSkill), [whole, viewSkill])
+  // The selected skill's own rep line (the handstand push-up, the 90° push-up), or nothing: the planche has the pressing ladder.
+  const repLadder = useMemo(() => (viewSkill === 'planche' ? null : ladderStatus(whole, viewSkill)), [whole, viewSkill])
+  const heatmapLabel = useMemo(() => {
+    const since = Date.now() - 16 * 7 * 86_400_000
+    const days = new Set(state.sessions.filter((x) => x.startedAt >= since).map((x) => new Date(x.startedAt).toDateString()))
+    return `Consistency: ${days.size} training ${days.size === 1 ? 'day' : 'days'} in the last 16 weeks, darker squares mean more hold time`
+  }, [state.sessions])
   const [chartEx, setChartEx] = useState(() => STEP_BY_ID[state.stepId].keyExerciseId)
   // Changing skill moves the chart to that skill's key hold.
   useEffect(() => {
@@ -577,6 +619,7 @@ export function Stats({
     <div className="animate-rise">
       <h1 className="font-display text-title1 font-bold text-ink">Progress</h1>
       <p className="mt-0.5 text-body text-ink2">Charts, records, history and trophies.</p>
+      <h2 className="sr-only">This week</h2>
       <div className="mt-6">
         <WeeklySummary />
       </div>
@@ -647,9 +690,9 @@ export function Stats({
       <div id="trends" className="mt-6 scroll-mt-5 rounded-card border border-line bg-surface p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="font-display text-title3 font-semibold text-ink">
+            <h3 className="font-display text-title3 font-semibold text-ink">
               {chartIsCredit ? 'Form-qualified credit per session' : 'Best hold per session'}
-            </div>
+            </h3>
             <div className="text-footnote text-ink2">
               {EXERCISE_BY_ID[chartEx]?.name}
               {chartIsPlanche && chartSurface !== 'all' ? ` · ${surfaceLabel(chartSurface)}` : ''}
@@ -722,7 +765,7 @@ export function Stats({
 
       {/* Weekly volume */}
       <div id="insights" className="mt-6 scroll-mt-5 rounded-card border border-line bg-surface p-4">
-        <div className="font-display text-title3 font-semibold text-ink">Weekly hold volume</div>
+        <h3 className="font-display text-title3 font-semibold text-ink">Weekly hold volume</h3>
         <div className="text-footnote text-ink2">Seconds accumulated in holds, last 12 weeks</div>
         <div className="mt-3">
           <VolumeBarChart weeks={volume} />
@@ -733,7 +776,7 @@ export function Stats({
           screen and Home can never disagree about whether you are stuck. */}
       <div className="mt-6 rounded-card border border-line bg-surface p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="font-display text-title3 font-semibold text-ink">Why am I stuck?</div>
+          <h3 className="font-display text-title3 font-semibold text-ink">Why am I stuck?</h3>
           <span
             className={`rounded-full px-3 py-1 text-footnote font-semibold ${
               diag.status === 'progressing'
@@ -801,7 +844,7 @@ export function Stats({
       {weightNow ? (
         <div className="mt-6 rounded-card border border-line bg-surface p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <div className="font-display text-title3 font-semibold text-ink">Bodyweight</div>
+            <h3 className="font-display text-title3 font-semibold text-ink">Bodyweight</h3>
             <div className="text-footnote text-ink2 tnum">
               Now {fmtWeight(weightNow.value, state.settings.units)}
             </div>
@@ -817,9 +860,9 @@ export function Stats({
       <div className="mt-6 rounded-card border border-line bg-surface p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="font-display text-title3 font-semibold text-ink">
+            <h3 className="font-display text-title3 font-semibold text-ink">
               What your coach has learned{skills.length > 1 ? ` · ${SKILLS[viewSkill].name}` : ''}
-            </div>
+            </h3>
             <div className="max-w-xl text-footnote leading-relaxed text-ink2">
               It tries different ways of shaping your main sets, then looks at how your key hold moved in the sessions
               after each. The approach with the best measured results gets used most, and untested ones get their turn —
@@ -923,15 +966,16 @@ export function Stats({
 
       {/* Consistency heatmap */}
       <div className="mt-6 rounded-card border border-line bg-surface p-4">
-        <div className="font-display text-title3 font-semibold text-ink">Consistency</div>
+        <h3 className="font-display text-title3 font-semibold text-ink">Consistency</h3>
         <div className="text-footnote text-ink2">Every training day of the last 16 weeks — darker means more hold time</div>
-        <div className="mt-4">
+        <div className="mt-4" role="img" aria-label={heatmapLabel}>
           <TrainingHeatmap sessions={state.sessions} />
         </div>
       </div>
 
       {/* The pressing ladder: the push-up versions as a road of their own */}
-      {skills.includes('planche') ? <PressingLadder /> : null}
+      {viewSkill === 'planche' ? <PressingLadder /> : null}
+      {repLadder ? <RepLadderProgress status={repLadder} skillName={SKILLS[viewSkill].name} /> : null}
 
       {/* PR board */}
       <section id="records" className="scroll-mt-5">

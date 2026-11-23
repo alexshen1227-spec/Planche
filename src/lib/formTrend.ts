@@ -2,7 +2,7 @@ import type { AppState, AutoForm, SkillId } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { skillOfExercise } from '../data/skills'
 import { elbowSlack, kneeSlack, MATERIAL_TOLERANCE, POSE_PROFILES } from './poseForm'
-import { robustSlopePerWeek } from './signals'
+import { median, robustSlopePerWeek } from './signals'
 import { verifiedCleanRatio } from './progression'
 
 /**
@@ -450,6 +450,13 @@ export function readFormTrends(
     // Median pairwise slope: one hallucinated frame cannot flip the direction.
     const perWeek = robustSlopePerWeek(points) ?? 0
     const totalChange = perWeek * (pointSpanDays / 7)
+    // The endpoints quoted are the same robust line's, not the raw first and
+    // last frames: one bad last frame printed "160° → 140°" beside a verdict
+    // that the elbows had straightened.
+    const perMs = perWeek / (7 * DAY)
+    const t0 = points[0].at
+    const intercept = median(points.map((p) => p.value - perMs * (p.at - t0))) ?? points[0].value
+    const lineAt = (at: number) => intercept + perMs * (at - t0)
 
     // A move smaller than the camera's own measurement error is not a move.
     const direction: FormTrend['direction'] =
@@ -473,8 +480,8 @@ export function readFormTrends(
       unit: spec.unit,
       direction,
       points,
-      earliest: points[0].value,
-      latest: points[points.length - 1].value,
+      earliest: lineAt(points[0].at),
+      latest: lineAt(points[points.length - 1].at),
       changePerWeek: perWeek,
       seen: points.length,
       unseen,
@@ -551,7 +558,9 @@ export function describeTrend(t: FormTrend): string {
   if (t.direction === 'steady') {
     return `Holding around ${to} across ${t.seen} filmed sets — no change the camera can distinguish from its own error.`
   }
-  const verb = t.direction === 'improving' ? 'up' : 'down'
+  // Which way the number moved, said apart from whether that is good: lower
+  // is better for some criteria, and every improvement once read "up".
+  const verb = t.latest > t.earliest ? 'up' : 'down'
   return `${from} → ${to} across ${t.seen} filmed sets. That is ${verb}, and ${
     t.direction === 'improving' ? 'in the direction you want' : `the wrong way — better here means ${t.betterMeans}`
   }.`

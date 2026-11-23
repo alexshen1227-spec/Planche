@@ -19,6 +19,20 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-23',
+    title: 'Numbers that say when they cannot know',
+    area: 'coach',
+    notes: [
+      'When your holds swing too much to read a trend, the forecast, the breakthrough card and the “capability jump” now say so in the same words as Progress, instead of quoting weeks and “good confidence” beside a coach line that calls it noise.',
+      'One lucky hold no longer moves the forecast: the distance is measured from where your holds sit now, not from your single best. After weeks without a measurement it says the evidence is old rather than forecasting, and a plateau no longer counts the time you were not training.',
+      'A range is shown as a range, a goal you have reached reads as reached, and the goal outlook now works for the front lever and handstand push-up too. A line that quoted a timeline nobody measured is gone.',
+      'Form trends say “better” or “worse” the right way round for every criterion, a max test only says “PR” when it beat your record, and the weight card follows the same age rule as the rest of the app.',
+      'A new estimated max on a lift needs an earlier session to beat, never compares two gyms’ machines, and is not created by rating a set afterwards. A lift seen once shows its number as a first estimate.',
+      'When a place has no plate for last time’s weight, the next-time line says it is the nearest load here, not a step up. Progress shows each skill’s own ladder, and the hold-time totals and badges count the same thing.',
+      'The weekly summary waits until later in the week before saying the gym time cannot cover every muscle, and names training frequency only when it is actually low — as coaching convention, not fact.',
+    ],
+  },
+  {
+    date: '2026-11-23',
     title: 'Your history is safer, and every lift says what comes next',
     area: 'app',
     notes: [

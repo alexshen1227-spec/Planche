@@ -1,8 +1,8 @@
 import type { AppState, Session, StepId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { addDays, weekStart } from './time'
-import { median } from './signals'
-import { measuredSeries } from './forecast'
+import { median, type Signals } from './signals'
+import { measuredSeries, noiseReading } from './forecast'
 import { measuredLevel } from './progression'
 
 /**
@@ -233,6 +233,7 @@ export function readCapabilityJump(
   state: AppState,
   stepId: StepId = state.stepId,
   now = Date.now(),
+  sig?: Pick<Signals, 'noisy' | 'variability'> | null,
 ): CapabilityJump | null {
   // Measured sessions only, against where the athlete last measured before
   // the window. Holds stopped at their calls are the prescription read back,
@@ -252,6 +253,10 @@ export function readCapabilityJump(
   if (before === null || before <= 0) return null
   const gainPct = (after - before) / before
   if (gainPct < CAPABILITY_JUMP_PCT) return null
+  // Through a swing wider than the trend, a recent high is the swing, not a
+  // jump — the same gate as the forecast and the breakthrough card. Home once
+  // announced a jump beside a coach calling the same holds noise.
+  if (noiseReading(state, stepId, now, sig).noisy) return null
   return { fromSec: Math.round(before * 10) / 10, toSec: Math.round(after * 10) / 10, gainPct }
 }
 

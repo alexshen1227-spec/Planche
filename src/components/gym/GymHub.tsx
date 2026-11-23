@@ -14,7 +14,7 @@ import { rememberNextBlock, useDayMarks, useNextBlock } from '../../lib/plan/nex
 import { choiceOptions, useTodayChoice } from '../../lib/plan/todayChoice'
 import { useToday } from '../../lib/useToday'
 import type { AppState, SkillId, WorkoutRequest } from '../../types'
-import { countUnit, gymRecords, lastPerformance } from '../../lib/gym/progression'
+import { countUnit, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, lastPerformance } from '../../lib/gym/progression'
 import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
 import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { Icon } from '../Icon'
@@ -609,10 +609,11 @@ export function GymHub({
                   <button
                     onClick={() => setHistoryOf(r.exerciseId)}
                     className="ds-press w-full rounded-card border border-line bg-surface p-4 text-left"
-                    aria-label={`${ex?.name}: estimated max ${formatLoad(r.bestE1rm!.kg, ex ? unitFor(ex, location) : location.unit)} — open its history`}
+                    aria-label={`${ex?.name}: estimated max ${formatLoad(r.bestE1rm!.kg, ex ? unitFor(ex, location) : location.unit)}${isFirstEstimate(r) ? ` (${FIRST_ESTIMATE_NOTE})` : ''} — open its history`}
                   >
                     <p className="truncate text-footnote text-ink3">{ex?.name}</p>
                     <p className="mt-0.5 font-display text-title1 font-semibold tnum">{formatLoad(r.bestE1rm!.kg, ex ? unitFor(ex, location) : location.unit)}</p>
+                    {isFirstEstimate(r) ? <p className="text-caption text-ink3">{FIRST_ESTIMATE_NOTE}</p> : null}
                   </button>
                 </li>
               )

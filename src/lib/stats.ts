@@ -1,3 +1,4 @@
+import { skillHoldSecOf } from './progressTotals'
 import type { AppState, Session, Settings, TrainingSurface } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
@@ -117,6 +118,15 @@ export function totalHoldSec(state: AppState): number {
   let t = 0
   for (const s of state.sessions) for (const set of s.sets) if (set.kind === 'hold') t += set.value
   return Math.round(t)
+}
+
+/**
+ * Hold time as Progress's "Skill hold time" tile counts it: key holds and strength work, never the warm-up drills
+ * and cool-down stretches that `totalHoldSec` adds. The hold-time achievements read this one, so the tile and the
+ * badges say the same seconds (they once read 1h 3m beside a badge's 1h 47m).
+ */
+export function totalSkillHoldSec(state: AppState): number {
+  return skillHoldSecOf(state.sessions.flatMap((s) => s.sets))
 }
 
 export function totalSets(state: AppState): number {

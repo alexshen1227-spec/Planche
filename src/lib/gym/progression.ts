@@ -97,16 +97,73 @@ export function repPlanFor(
  * assisted movement, where the logged weight is the help, and for bodyweight
  * movements, where only the added load is known.
  */
-export function estimateOneRepMax(set: Pick<GymSet, 'kg' | 'reps' | 'rpe'>, exerciseId?: string): number | null {
+export function estimateOneRepMax(set: Pick<GymSet, 'kg' | 'reps' | 'rpe'>, exerciseId?: string, opts: { effort?: boolean } = {}): number | null {
   const known = exerciseId !== undefined ? GYM_EXERCISE_BY_ID[exerciseId] : undefined
   if (known?.assisted) return null
   // Bodyweight is optional and usually unknown, so the added load alone says nothing about a max.
   if (known?.load === 'bodyweight') return null
   if (set.kg === undefined || !(set.kg > 0) || !(set.reps >= 1)) return null
-  const rir = set.rpe !== undefined ? Math.max(0, 10 - set.rpe) : 0
+  const rir = opts.effort !== false && set.rpe !== undefined ? Math.max(0, 10 - set.rpe) : 0
   const total = set.reps + rir
   if (total > 12) return null
   return total <= 1 ? set.kg : set.kg * (1 + total / 30)
+}
+
+/**
+ * The estimate a "new max" is judged on: load and reps alone, the effort left out. An unrated set reads as no reps
+ * in reserve, so rating the same 60 kg × 8 at RPE 7 once moved its estimate from 76 to 82 and called it a new max
+ * (found by review). A rating added later must not make a "new" max out of the same performance; a lift that was
+ * really easier at the same load shows in its reps or its load. The prescription (`loadForReps`) and the displayed
+ * estimate still use the effort, which is a better guess for what to lift, not a claim of progress.
+ */
+export function comparableMax(set: Pick<GymSet, 'kg' | 'reps'>, exerciseId?: string): number | null {
+  return estimateOneRepMax(set, exerciseId, { effort: false })
+}
+
+/**
+ * Whether an estimate on this lift can be compared across places. Free weights are the same bar anywhere; a
+ * machine is not ("machines differ from gym to gym"), so its maxes are only compared within one place.
+ */
+export function maxKey(exerciseId: string, locationId: string): string {
+  const ex = GYM_EXERCISE_BY_ID[exerciseId]
+  return !ex || isFreeWeight(ex) ? exerciseId : `${locationId}:${exerciseId}`
+}
+
+export interface MaxGain {
+  sessionId: string
+  exerciseId: string
+  at: number
+  endedAt: number
+  kg: number
+  before: number
+}
+
+/**
+ * Every time a session's best comparable estimate beat the best of the sessions before it on the same lift (same
+ * place for a machine). A new max needs an earlier estimate from an earlier session: the first session has nothing
+ * to beat, and a heavier set inside the same session is not a new max. Derived by replay, never stored.
+ */
+export function estimatedMaxGains(sessions: GymSession[]): MaxGain[] {
+  const out: MaxGain[] = []
+  const best = new Map<string, number>()
+  for (const s of [...sessions].sort((a, b) => a.startedAt - b.startedAt || a.endedAt - b.endedAt)) {
+    const today = new Map<string, number>()
+    for (const log of s.exercises) {
+      const key = maxKey(log.exerciseId, s.locationId)
+      for (const set of log.sets) {
+        if (set.warmup || !(set.reps > 0)) continue
+        const e = comparableMax(set, log.exerciseId)
+        if (e !== null && e > (today.get(key) ?? 0)) today.set(key, e)
+      }
+    }
+    for (const [key, e] of today) {
+      const had = best.get(key)
+      const exerciseId = key.includes(':') ? key.slice(key.indexOf(':') + 1) : key
+      if (had !== undefined && e > had + 0.01) out.push({ sessionId: s.id, exerciseId, at: s.startedAt, endedAt: s.endedAt, kg: e, before: had })
+      if (had === undefined || e > had) best.set(key, e)
+    }
+  }
+  return out
 }
 
 /** The load that should give `reps` at `rpe`, from an estimated max (the same model, inverted). */
@@ -141,24 +198,21 @@ export function lastPerformance(
 
 const isFreeWeight = (ex: GymExercise) => ['barbell', 'dumbbell', 'kettlebell'].includes(ex.load)
 
-/** Best estimated max for an exercise across every location, when free weights make them comparable. */
+/**
+ * The estimated max from the latest session of a free-weight lift at any place, for a place the athlete has not
+ * lifted it at. The latest performance, never the best of the last months: the best of 120 days once sent a bench of
+ * 80 × 8 (RPE 10) to a new gym at 82.5 kg × 6–10. Machines return null: they differ from gym to gym.
+ */
 export function sharedEstimate(sessions: GymSession[], exerciseId: string, before = Infinity): number | null {
   const ex = GYM_EXERCISE_BY_ID[exerciseId]
-  // Machines differ from gym to gym; only free weights carry a load across.
   if (!ex || !isFreeWeight(ex)) return null
-  let best: number | null = null
-  // Without a clock (before = Infinity) there is no window: every session counts.
   const cutoff = Number.isFinite(before) ? before - 120 * 86_400_000 : -Infinity
-  for (const s of sessions) {
-    if (s.startedAt >= before || s.startedAt < cutoff) continue
-    for (const log of s.exercises) {
-      if (log.exerciseId !== exerciseId) continue
-      for (const set of log.sets) {
-        if (set.warmup) continue
-        const e = estimateOneRepMax(set, exerciseId)
-        if (e !== null && (best === null || e > best)) best = e
-      }
-    }
+  const latest = lastPerformance(sessions, exerciseId, undefined, before, (set) => !isUnloadedSet(ex, set))
+  if (!latest || latest.session.startedAt < cutoff) return null
+  let best: number | null = null
+  for (const set of latest.sets) {
+    const e = estimateOneRepMax(set, exerciseId)
+    if (e !== null && (best === null || e > best)) best = e
   }
   return best
 }
@@ -259,6 +313,8 @@ export interface LoadSuggestion {
   kind: 'increase' | 'repeat' | 'decrease' | 'from-estimate' | 'first-time' | 'bodyweight' | 'at-top-weight'
   /** Set when the next step is held back: the reps every set needs at this load first. The screen shows and pre-fills it. */
   repsToMoveUp?: number
+  /** Set when the load is only the nearest this place can make to last time's (kg): the screen says so, never "up". */
+  nearestTo?: number
 }
 
 /**
@@ -309,7 +365,13 @@ export function suggestLoad(input: {
   if (!last) {
     const shared = sharedEstimate(sessions, exerciseId, now)
     if (shared !== null) {
-      const kg = roundToStep(loadForReps(shared, hi, plan.targetRpe), step, top)
+      let kg = roundToStep(loadForReps(shared, hi, plan.targetRpe), step, top)
+      // Under 18 a new place never asks for more than one step past what was really lifted last (the youth rule).
+      const elsewhereLast = lastPerformance(sessions, exerciseId, undefined, now, keep)
+      if (youth && elsewhereLast && step > 0) {
+        const lifted = workingLoad(elsewhereLast.sets.map((x) => x.kg ?? 0), 'heaviest')
+        if (lifted > 0) kg = Math.min(kg, youthCeiling(lifted, step, top))
+      }
       // Time away follows the lift, not the place: a new gym does not forget it.
       const elsewhere = lastPerformance(sessions, exerciseId, undefined, now, keep)
       const awayDays = elsewhere && Number.isFinite(now) ? (now - elsewhere.session.startedAt) / 86_400_000 : 0
@@ -424,16 +486,22 @@ export function suggestLoad(input: {
     // Under 18 a jump is one step of the unit in use from the load that was really lifted: rounding that load to
     // the grid first (20 kg is 44.1 lb, which became 45) and adding a step landed 2.68 kg up against a 2.27 kg step.
     const jump = youth ? Math.min(twoSteps, youthCeiling(kg, step, top)) : twoSteps
-    return {
-      ...base,
-      kg: jump,
-      kind: 'increase',
-      why:
-        twoSteps > next
-          ? `Every set went well past ${hi} at an easy effort last time: up two steps.`
-          : unratedTwice
-            ? `Every set reached ${hi} in your last two sessions at this weight (no effort logged, so two in a row stands in for it): up one step.`
-            : `Every set reached ${hi} at the target effort last time: up one step.`,
+    // Only a real step is "up one step". When the grid has nothing between last time's load and one step above it
+    // but a load barely heavier (22.5 kg dumbbells at a place now counted in pounds: 50 lb is +0.18 kg), it is the
+    // nearest load, not a step — said as such below.
+    const realStep = !youth || jump - kg >= step / 2 - 1e-9
+    if (realStep) {
+      return {
+        ...base,
+        kg: jump,
+        kind: 'increase',
+        why:
+          twoSteps > next
+            ? `Every set went well past ${hi} at an easy effort last time: up two steps.`
+            : unratedTwice
+              ? `Every set reached ${hi} in your last two sessions at this weight (no effort logged, so two in a row stands in for it): up one step.`
+              : `Every set reached ${hi} at the target effort last time: up one step.`,
+      }
     }
   }
   if (anyShort && grinding && step > 0) {
@@ -458,7 +526,15 @@ export function suggestLoad(input: {
   }
   // This place's steps may not reach last time's exact load (a unit change, other plates): say so.
   if (kg > 0 && Math.abs(repeatKg - kg) > 0.01) {
-    return { ...base, kg: repeatKg, kind: 'repeat', why: `Nearest load here to last time’s ${formatLoad(kg, atLoad[0]?.unit ?? unitFor(ex, location))}: aim to add a rep to last time’s ${reps}.` }
+    const there = formatLoad(kg, atLoad[0]?.unit ?? unitFor(ex, location))
+    const grown = (allTop || unratedTwice) && repeatKg > kg
+    return {
+      ...base,
+      kg: repeatKg,
+      kind: 'repeat',
+      nearestTo: kg,
+      why: `Nearest load here to last time’s ${there}${grown ? ' (not a step up: the next real step is further than an under-18 jump allows)' : ''}: aim to add a rep to last time’s ${reps}.`,
+    }
   }
   return { ...base, kg: repeatKg, kind: 'repeat', why: `Same weight: aim to add a rep to last time’s ${reps}.` }
 }
@@ -515,6 +591,11 @@ export interface GymRecord {
   exerciseId: string
   /** Best estimated one-rep max, with the set it came from. */
   bestE1rm?: { kg: number; at: number; locationId: string; set: GymSet }
+  /**
+   * How many sessions gave an estimate in the same comparison as `bestE1rm` (the same place for a machine). One
+   * session is a first estimate, not a trend: screens say so until a second session backs it.
+   */
+  e1rmSessions?: number
   /** Heaviest working load moved for at least one rep (never for an assisted movement, where the weight is help). */
   heaviest?: { kg: number; reps: number; at: number }
   /** Most reps in one working set (bodyweight work). */
@@ -523,16 +604,31 @@ export interface GymRecord {
   longestHold?: { sec: number; at: number }
 }
 
+/** What every screen says beside an estimated max that rests on a single session. */
+export const FIRST_ESTIMATE_NOTE = 'first estimate, one session'
+
+/** Whether a record's estimated max is only a first estimate: fewer than two sessions of the lift gave one. */
+export function isFirstEstimate(rec: Pick<GymRecord, 'e1rmSessions'> | undefined): boolean {
+  return (rec?.e1rmSessions ?? 0) < 2
+}
+
 /** Records per exercise, derived by replaying history — never stored, never edited. */
 export function gymRecords(sessions: GymSession[]): Record<string, GymRecord> {
   const out: Record<string, GymRecord> = {}
-  for (const s of [...sessions].sort((a, b) => a.startedAt - b.startedAt)) {
+  const ordered = [...sessions].sort((a, b) => a.startedAt - b.startedAt)
+  // A machine's estimate is only comparable inside one place: the record is the one at the place it was last used.
+  const lastPlace = new Map<string, string>()
+  for (const s of ordered) for (const log of s.exercises) if (log.sets.some((x) => !x.warmup && x.reps > 0)) lastPlace.set(log.exerciseId, s.locationId)
+  for (const s of ordered) {
     for (const log of s.exercises) {
       const rec = (out[log.exerciseId] ??= { exerciseId: log.exerciseId })
       const assisted = Boolean(GYM_EXERCISE_BY_ID[log.exerciseId]?.assisted)
+      const sameBar = maxKey(log.exerciseId, s.locationId) === log.exerciseId || lastPlace.get(log.exerciseId) === s.locationId
+      let gaveEstimate = false
       for (const set of log.sets) {
         if (set.warmup || !(set.reps > 0)) continue
-        const e = estimateOneRepMax(set, log.exerciseId)
+        const e = sameBar ? estimateOneRepMax(set, log.exerciseId) : null
+        if (e !== null) gaveEstimate = true
         if (e !== null && (!rec.bestE1rm || e > rec.bestE1rm.kg)) rec.bestE1rm = { kg: e, at: set.at, locationId: s.locationId, set }
         if (!assisted && set.kg !== undefined && set.kg > 0 && (!rec.heaviest || set.kg > rec.heaviest.kg)) {
           rec.heaviest = { kg: set.kg, reps: set.reps, at: set.at }
@@ -542,6 +638,7 @@ export function gymRecords(sessions: GymSession[]): Record<string, GymRecord> {
         }
         if (!rec.mostReps || set.reps > rec.mostReps.reps) rec.mostReps = { reps: set.reps, ...(set.kg ? { kg: set.kg } : {}), at: set.at }
       }
+      if (gaveEstimate) rec.e1rmSessions = (rec.e1rmSessions ?? 0) + 1
     }
   }
   return out

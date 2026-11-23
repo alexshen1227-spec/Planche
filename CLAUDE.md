@@ -1151,6 +1151,29 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     to finish over a pending ask. Pinned in `dataSafety.data8.test.ts`,
     `dataSafetyBoot.test.ts` (jsdom), `gym/review9*.test.ts(x)` and
     `diagnoseFrequency.test.ts`.
+  - Tenth review round, by area (progress/a11y UX 62, numbers 36). **One
+    evidence gate for the headline numbers**: `forecast.ts` `noiseReading`
+    (the signals' `noisy`, or the step's verified spread past
+    `NOISY_SPREAD` 0.22 — the same bar as `signals.ts`) makes
+    `forecastUnlock` return `kind: 'noisy'`, and `recentBreakthrough` and
+    `readCapabilityJump` refuse on it; Home and Progress quote one
+    `noiseSentence`. "Good confidence" needs spread ≤ `CONSISTENT_SPREAD`.
+    The distance is measured from `robustLevel` (the median-slope line at
+    the latest measurement), never the all-time best; no measurement in
+    `MEASUREMENT_FRESH_DAYS` is `insufficient` with `staleDays`; plateau
+    length counts trained time only (`trainedDaysBetween`); a breakthrough
+    compares medians against a reference 4–12 weeks back and names the real
+    span. Ranges always have two edges; a goal at the current step is
+    `reached`. Goal outlook reads each skill's own road (`COMPARABLE_FROM`).
+    Gym: `estimatedMaxGains` is the one definition of a new max (load and
+    reps, a machine keyed by place, an earlier session to beat);
+    `isFirstEstimate` labels a one-session number; `LoadSuggestion.nearestTo`
+    says a grid change is not a step; new-gym starts read the latest
+    estimate, youth-capped. Progress shows the selected skill's ladder
+    (`RepLadderProgress`); hold badges read `totalSkillHoldSec`
+    (`ACHIEVEMENT_VERSION` 6). `weekly.ts` judges coverage from Friday
+    (`judgeable`) and names frequency only when low. Pinned in
+    `numbers9.test.ts`, `gym/gym9.test.ts`, `progress9*.test.ts(x)`.
   - Skill days are requests (`{source: 'auto', skills: [skill]}`); a ladder
     day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
     pins every session built without it — regenerate only for an intended

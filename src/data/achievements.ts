@@ -1,6 +1,6 @@
 import type { IconName } from '../components/Icon'
 import type { AppState, Session, SkillId } from '../types'
-import { totalHoldSec, totalSets, weekStreak } from '../lib/stats'
+import { totalSkillHoldSec, totalSets, weekStreak } from '../lib/stats'
 import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID } from './progressions'
 import { SKILL_LIST, skillOfExercise } from './skills'
@@ -13,9 +13,10 @@ import { isSkillHold } from '../lib/skills'
  * Version 4 added the front lever, handstand, 90° and flag badges, and widened
  * three planche-only ones (film study, precision pass, two minutes on the
  * line) to any skill's holds. Version 5 recounts records without warm-up and
- * cooldown sets, which had been setting them.
+ * cooldown sets, which had been setting them. Version 6 counts the hold-time
+ * badges from key and strength holds only — the Skill hold time tile's rule.
  */
-export const ACHIEVEMENT_VERSION = 5
+export const ACHIEVEMENT_VERSION = 6
 
 /**
  * Badges whose *rule* was corrected in a catalog version, so an award made
@@ -96,7 +97,7 @@ const prProgress =
   })
 
 const durationProgress = (target: number) => (s: AppState) => ({
-  current: Math.min(target, totalHoldSec(s)),
+  current: Math.min(target, totalSkillHoldSec(s)),
   target,
   unit: 'duration' as const,
 })
@@ -166,11 +167,11 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'streak-4', name: 'On Fire', desc: 'Hit your weekly goal 4 weeks running.', icon: 'flame', check: (s, last) => weekStreak(s, last.endedAt).weeks >= 4, progress: (s) => ({ current: Math.min(4, weekStreak(s).weeks), target: 4 }) },
   { id: 'streak-8', name: 'Unstoppable', desc: 'Hit your weekly goal 8 weeks running.', icon: 'bolt', check: (s, last) => weekStreak(s, last.endedAt).weeks >= 8, progress: (s) => ({ current: Math.min(8, weekStreak(s).weeks), target: 8 }) },
   { id: 'streak-12', name: 'Seasoned', desc: 'Hit your weekly goal 12 weeks running.', icon: 'leaf', check: (s, last) => weekStreak(s, last.endedAt).weeks >= 12, progress: (s) => ({ current: Math.min(12, weekStreak(s).weeks), target: 12 }) },
-  { id: 'tut-300', name: 'First Five', desc: '5 cumulative minutes under tension.', icon: 'clock', check: (s) => totalHoldSec(s) >= 300, progress: durationProgress(300) },
-  { id: 'tut-600', name: 'Ten Minutes of Truth', desc: '10 cumulative minutes under tension.', icon: 'clock', check: (s) => totalHoldSec(s) >= 600, progress: durationProgress(600) },
-  { id: 'tut-3600', name: 'Hour of Power', desc: 'One cumulative hour of holds.', icon: 'hourglass', check: (s) => totalHoldSec(s) >= 3600, progress: durationProgress(3600) },
-  { id: 'tut-10800', name: 'Made of Stone', desc: 'Three cumulative hours of holds.', icon: 'mountain', check: (s) => totalHoldSec(s) >= 10800, progress: durationProgress(10800) },
-  { id: 'tut-21600', name: 'Time Bender', desc: 'Six cumulative hours of holds.', icon: 'sparkle', check: (s) => totalHoldSec(s) >= 21600, progress: durationProgress(21600) },
+  { id: 'tut-300', name: 'First Five', desc: '5 cumulative minutes of key and strength holds.', icon: 'clock', check: (s) => totalSkillHoldSec(s) >= 300, progress: durationProgress(300) },
+  { id: 'tut-600', name: 'Ten Minutes of Truth', desc: '10 cumulative minutes of key and strength holds.', icon: 'clock', check: (s) => totalSkillHoldSec(s) >= 600, progress: durationProgress(600) },
+  { id: 'tut-3600', name: 'Hour of Power', desc: 'One cumulative hour of key and strength holds.', icon: 'hourglass', check: (s) => totalSkillHoldSec(s) >= 3600, progress: durationProgress(3600) },
+  { id: 'tut-10800', name: 'Made of Stone', desc: 'Three cumulative hours of key and strength holds.', icon: 'mountain', check: (s) => totalSkillHoldSec(s) >= 10800, progress: durationProgress(10800) },
+  { id: 'tut-21600', name: 'Time Bender', desc: 'Six cumulative hours of key and strength holds.', icon: 'sparkle', check: (s) => totalSkillHoldSec(s) >= 21600, progress: durationProgress(21600) },
   { id: 'lean-30', skill: 'planche', name: 'Lean Machine', desc: 'Verified 30-second planche lean.', icon: 'target', check: (s) => prAtLeast(s, 'planche-lean', 30), progress: prProgress('planche-lean', 30) },
   { id: 'frog-30', skill: 'planche', name: 'Zen Frog', desc: 'Verified 30-second frog stand.', icon: 'leaf', check: (s) => prAtLeast(s, 'frog-stand', 30), progress: prProgress('frog-stand', 30) },
   { id: 'tuck-5', skill: 'planche', name: 'First Flight', desc: 'Verified 5-second tuck planche.', icon: 'wing', check: (s) => prAtLeast(s, 'tuck-planche', 5), progress: prProgress('tuck-planche', 5) },

@@ -23,7 +23,9 @@ describe('under 18: one step of the unit in use, from the load that was lifted',
 
   it('20 kg after a switch to lb goes up by no more than one step (it was 2.68 kg against 2.27)', () => {
     const s = ask(true, 20)
-    expect(s.kind).toBe('increase')
+    // The only grid load within one step is 45 lb, +0.41 kg: that is the nearest load, not a step up (gym9 pins it).
+    expect(s.kind).toBe('repeat')
+    expect(s.nearestTo).toBe(20)
     expect(s.kg!).toBeGreaterThan(20)
     expect(s.kg! - 20).toBeLessThanOrEqual(step + 1e-9)
     // It lands on a dumbbell this place has: a multiple of 5 lb.

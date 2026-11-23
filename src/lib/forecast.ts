@@ -1,8 +1,9 @@
-import type { AppState, StepId } from '../types'
-import { STEPS, STEP_BY_ID } from '../data/progressions'
+import type { AppState, SkillId, StepId } from '../types'
+import { roadOf, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { qualifyingProgress, qualifyingSessionValue, qualifyingValueIsFloor } from './progression'
-import { median } from './signals'
+import { skillForStep } from '../data/skills'
+import { MEASUREMENT_FRESH_DAYS, qualifyingProgress, qualifyingSessionValue, qualifyingValueIsFloor } from './progression'
+import { median, readSignals, spreadAroundTrend, type Signals } from './signals'
 
 /**
  * How long until the next unlock — answered as a range, or not at all.
@@ -58,8 +59,17 @@ export type Forecast =
     }
   /** Measured, and the trend is flat or downward — a number would be fiction. */
   | { kind: 'not-trending'; basis: string; ratePerWeek: number; points: number }
-  /** Not enough evidence. Says what is missing rather than guessing. */
-  | { kind: 'insufficient'; need: string }
+  /**
+   * Measured, but the holds swing wider than any trend: the reading the coach
+   * holds targets on and Progress reports. `basis` is Progress's own sentence.
+   */
+  | { kind: 'noisy'; variability: number; points: number; basis: string }
+  /**
+   * Not enough evidence. Says what is missing rather than guessing.
+   * `staleDays`: there were measurements, but none recent — the days since
+   * the last one.
+   */
+  | { kind: 'insufficient'; need: string; staleDays?: number }
 
 interface Point {
   at: number
@@ -133,6 +143,91 @@ export function mostlyFloors(points: Point[]): boolean {
 }
 
 /**
+ * The bar `readSignals` calls noisy: the spread of the last six measurements
+ * around their own robust trend line, as a share of their median. Past it the
+ * swing from session to session is wider than any trend, so a pace, a
+ * breakthrough or a jump read from those points is reading the swing. Kept
+ * equal to the signals' bar (numbers9.test pins the two together).
+ */
+export const NOISY_SPREAD = 0.22
+/**
+ * The most scatter a "Good confidence" forecast may rest on — half the noise
+ * bar — because that note says the progress has been consistent. Before, the
+ * tier never looked at the scatter at all. The app's design, not a measured
+ * threshold.
+ */
+export const CONSISTENT_SPREAD = NOISY_SPREAD / 2
+
+/**
+ * The signals' spread reading on a series: the last six points from the
+ * eight weeks before the latest, their spread around the median-slope line,
+ * over their median. Null when it cannot be read.
+ */
+export function seriesSpread(points: { at: number; value: number }[]): number | null {
+  if (points.length === 0) return null
+  const lastAt = points[points.length - 1].at
+  const recent = points.filter((p) => lastAt - p.at <= FORECAST_WINDOW_DAYS * DAY).slice(-6)
+  const mid = median(recent.map((p) => p.value))
+  const spread = spreadAroundTrend(recent)
+  return mid !== null && mid > 0 && spread !== null ? spread / mid : null
+}
+
+export interface NoiseReading {
+  noisy: boolean
+  /** The swing as a share of the level, when it could be read. */
+  variability: number | null
+}
+
+/**
+ * Whether a step's holds are too noisy to read a pace, a breakthrough or a
+ * jump from — one gate for every headline number. Noisy when the signals say
+ * so (what the coach holds targets on and Progress reports), or when the
+ * step's own verified measurements spread past the same bar. Home once showed
+ * "2–5 weeks", "Good confidence", a breakthrough card and a capability jump
+ * beside a coach calling the same holds "±28% … measurement noise".
+ *
+ * @param sig the signals already read for this state and moment; left out,
+ *   they are read here. They describe the current step only.
+ */
+export function noiseReading(
+  state: AppState,
+  stepId: StepId = state.stepId,
+  now = Date.now(),
+  sig?: Pick<Signals, 'noisy' | 'variability'> | null,
+): NoiseReading {
+  const own = seriesSpread(measuredSeries(state, stepId))
+  const signals = stepId === state.stepId ? (sig !== undefined ? sig : readSignals(state, now)) : null
+  if (signals?.noisy) return { noisy: true, variability: signals.variability ?? own }
+  if (own !== null && own > NOISY_SPREAD) return { noisy: true, variability: own }
+  return { noisy: false, variability: own }
+}
+
+/** Progress's words for noise, so every screen that refuses says the same. */
+export function noiseSentence(holdName: string, variability: number | null): string {
+  return `Your recent ${holdName} holds swing about ±${Math.round(
+    (variability ?? 0) * 100,
+  )}% from session to session — wider than any trend, so whether you are progressing cannot be read yet. The same setup every time is the cheapest fix.`
+}
+
+/** "3 weeks ago", "about 7 months ago" — how long since a day count. */
+export function sinceText(days: number): string {
+  if (days < 14) return `${days} day${days === 1 ? '' : 's'} ago`
+  if (days < 90) return `${Math.round(days / 7)} weeks ago`
+  return `about ${Math.round(days / 30.4)} months ago`
+}
+
+/**
+ * Where the athlete is now, read the way the rate is: the level of the
+ * median-slope line at the latest measurement. One lucky hold moves a median
+ * of adjusted values by one place; it moved the all-time best by eight
+ * seconds.
+ */
+function robustLevel(series: Point[], ratePerWeek: number): number {
+  const lastAt = series[series.length - 1].at
+  return median(series.map((p) => p.value + (ratePerWeek * (lastAt - p.at)) / WEEK)) ?? series[series.length - 1].value
+}
+
+/**
  * The stretch of history a rate is measured from: the last
  * `FORECAST_WINDOW_DAYS` when that alone meets the evidence minimums, and the
  * whole history otherwise — sparse training has no "recent rate" to prefer,
@@ -154,15 +249,37 @@ function forecastWindow(all: Point[], now: number): Point[] {
  * gracefully on five points, and one outlier session moves the quartiles far
  * less than it moves a variance.
  */
-export function forecastUnlock(state: AppState, stepId: StepId = state.stepId, now = Date.now()): Forecast {
+export function forecastUnlock(
+  state: AppState,
+  stepId: StepId = state.stepId,
+  now = Date.now(),
+  sig?: Pick<Signals, 'noisy' | 'variability'> | null,
+): Forecast {
   const step = STEP_BY_ID[stepId]
   if (!step) return { kind: 'insufficient', need: 'a known step' }
 
+  // The bar is the unlock's own: held once with the full evidence chain.
   const best = qualifyingProgress(state, stepId).value
   if (best >= step.unlockSec) return { kind: 'ready' }
 
   const verified = qualifyingSeries(state, stepId)
-  const series = forecastWindow(verified.filter((p) => !p.floor), now)
+  const measured = verified.filter((p) => !p.floor)
+  // Old evidence is not a pace. With nothing measured in the last six weeks
+  // the window fell back to all history, and after six months off the
+  // forecast still promised "about 7 weeks, Good confidence" from a climb
+  // that ended in spring.
+  const latest = measured[measured.length - 1]
+  if (latest && now - latest.at > MEASUREMENT_FRESH_DAYS * DAY) {
+    const staleDays = Math.floor((now - latest.at) / DAY)
+    return {
+      kind: 'insufficient',
+      staleDays,
+      need: `a recent measured ${EX_LABEL(step.keyExerciseId)} hold. Your last one was ${sinceText(
+        staleDays,
+      )}, and a pace from before a break says little about where you are now — one filmed max hold that passes the form check measures it again.`,
+    }
+  }
+  const series = forecastWindow(measured, now)
   if (series.length < MIN_FORECAST_POINTS) {
     const missing = MIN_FORECAST_POINTS - series.length
     const floors = mostlyFloors(verified)
@@ -188,11 +305,28 @@ export function forecastUnlock(state: AppState, stepId: StepId = state.stepId, n
     }
   }
 
+  // Noise before any rate: a pace read through a swing wider than the trend
+  // is the swing, and Progress says so in these words.
+  const noise = noiseReading(state, stepId, now, sig)
+  if (noise.noisy) {
+    return {
+      kind: 'noisy',
+      variability: noise.variability ?? 0,
+      points: series.length,
+      basis: noiseSentence(EX_LABEL(step.keyExerciseId), noise.variability),
+    }
+  }
+
   const rates = pairwiseRates(series).sort((a, b) => a - b)
   if (rates.length === 0) return { kind: 'insufficient', need: 'form-checked holds on separate days' }
 
   const central = median(rates) ?? 0
-  const remaining = step.unlockSec - best
+  // Measured from a robust current level, never above the best: from the
+  // all-time best, one lucky 19s hold beside a steady 8 → 11s climb turned
+  // "12–16 weeks" into "about 2 weeks, Good confidence" — and the tip on Home
+  // promises one lucky hold cannot swing it.
+  const level = Math.min(best, robustLevel(series, central))
+  const remaining = step.unlockSec - level
 
   // Quartiles, not extremes: the fastest and slowest pair in a noisy series are
   // both artefacts, and quoting them would make every interval useless.
@@ -237,17 +371,24 @@ export function forecastUnlock(state: AppState, stepId: StepId = state.stepId, n
   const lowWeeks = lowRaw
   const highRate = slow > 0.01 ? slow : null
   const highRaw = highRate === null ? null : Math.ceil(remaining / highRate)
-  const highWeeks = highRaw === null || highRaw > MAX_FORECAST_WEEKS ? null : Math.max(lowWeeks, highRaw)
+  // A range is always a range: both edges rounding to the same week printed
+  // "about 3 weeks" beside a note saying the evidence is "enough for a range,
+  // not enough for a date".
+  const highEdge = highRaw === null ? null : Math.max(lowWeeks + 1, highRaw)
+  const highWeeks = highEdge === null || highEdge > MAX_FORECAST_WEEKS ? null : highEdge
 
   // Confidence is about the evidence, not the answer. Wide bands, thin series
-  // and stale data each cost a tier.
+  // and stale data each cost a tier, and "good" — whose note says the progress
+  // has been consistent — needs the scatter around the trend to be small.
+  const spread = seriesSpread(series)
+  const consistent = spread !== null && spread <= CONSISTENT_SPREAD
   let score = 0
   if (points >= 6) score += 1
   if (points >= 10) score += 1
   if (spanDays >= 28) score += 1
   if (highWeeks !== null && highWeeks <= lowWeeks * 2.5) score += 1
   if (staleDays > 21) score -= 1
-  const confidence: ForecastConfidence = score >= 3 ? 'good' : score >= 2 ? 'moderate' : 'low'
+  const confidence: ForecastConfidence = score >= 3 && consistent ? 'good' : score >= 2 ? 'moderate' : 'low'
 
   return {
     kind: 'range',
@@ -259,7 +400,7 @@ export function forecastUnlock(state: AppState, stepId: StepId = state.stepId, n
     spanDays: Math.round(spanDays),
     basis: `Measured from ${points} verified sessions over ${Math.round(spanDays)} days: typically +${central.toFixed(
       1,
-    )}s a week, with ${remaining.toFixed(1)}s of clean hold left to find.`,
+    )}s a week from a current level of about ${level.toFixed(1)}s, with ${remaining.toFixed(1)}s of clean hold left to find.`,
   }
 }
 
@@ -274,11 +415,15 @@ export function describeForecast(f: Forecast): string {
     case 'ready':
       return 'You have already held the bar on verified evidence — test it and take the step.'
     case 'range':
+      // Printed as the range it is. Equal edges cannot come out of
+      // forecastUnlock; if one ever does, it is one number, never "3–3".
       return f.highWeeks === null
-        ? `${f.lowWeeks}+ weeks at your current rate`
+        ? `${f.lowWeeks}+ weeks`
         : f.lowWeeks === f.highWeeks
-          ? `about ${f.lowWeeks} week${f.lowWeeks === 1 ? '' : 's'}`
+          ? `${f.lowWeeks} week${f.lowWeeks === 1 ? '' : 's'}`
           : `${f.lowWeeks}–${f.highWeeks} weeks`
+    case 'noisy':
+      return 'no date yet — the holds swing wider than they trend'
     case 'not-trending':
       // Three different situations reach this branch and they are not the same
       // news. Saying "flat" to an athlete whose holds are measurably climbing
@@ -297,7 +442,7 @@ export function describeForecast(f: Forecast): string {
 export const CONFIDENCE_NOTE: Record<ForecastConfidence, string> = {
   low: 'Low confidence — this is a wide guess off thin evidence, and it will sharpen as you log more verified holds.',
   moderate: 'Moderate confidence — enough evidence for a range, not enough for a date.',
-  good: 'Good confidence — your progress has been consistent enough for this range to mean something.',
+  good: 'Good confidence — your verified holds have stayed close to their trend, consistent enough for this range to mean something.',
 }
 
 export interface GoalOutlook {
@@ -325,9 +470,13 @@ export interface GoalOutlook {
  * nothing to measure, it says how many steps remain and stops talking.
  */
 export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
-  const goalStepId = state.profile.goalStepId ?? 'straddle'
-  const goal = STEP_BY_ID[goalStepId] ?? STEP_BY_ID.straddle
   const current = STEP_BY_ID[state.stepId]
+  // The athlete's own road. The planche's steps once stood in for every
+  // skill, so a front-lever athlete with two finished steps never got an
+  // estimate.
+  const road = roadOf(current.id)
+  const onRoad = (id: StepId | undefined) => (id && road.some((s) => s.id === id) ? STEP_BY_ID[id] : undefined)
+  const goal = onRoad(state.profile.goalStepId) ?? onRoad(skillForStep(current.id).defaultGoal) ?? road[road.length - 1]
   const stepsRemaining = Math.max(0, goal.order - current.order)
 
   if (stepsRemaining === 0) {
@@ -335,7 +484,9 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
       goalStepId: goal.id,
       stepsRemaining: 0,
       estimate: null,
-      note: `You are training at ${goal.name}, your chosen goal. Pick a longer-lever goal whenever you want the road to keep going.`,
+      note: `${goal.order === current.order ? 'You are training at' : 'You are past'} ${
+        goal.name
+      }, your chosen goal. Pick a longer-lever goal whenever you want the road to keep going.`,
     }
   }
 
@@ -344,7 +495,7 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
   for (const s of [...state.sessions].sort((a, b) => a.startedAt - b.startedAt)) {
     if (!firstSessionOnStep.has(s.stepId)) firstSessionOnStep.set(s.stepId, s.startedAt)
   }
-  const ordered = STEPS.filter((s) => firstSessionOnStep.has(s.id)).sort((a, b) => a.order - b.order)
+  const ordered = road.filter((s) => firstSessionOnStep.has(s.id)).sort((a, b) => a.order - b.order)
 
   /**
    * Only steps that resemble the ones still ahead.
@@ -355,12 +506,13 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
    * by the remaining four produced "1–14 weeks to a straddle planche", which
    * is not a wide estimate so much as a wrong one. So the pace is measured
    * only from steps at Tuck or beyond, and with fewer than two of those the
-   * honest output is a step count and no duration at all.
+   * honest output is a step count and no duration at all. Every road has its
+   * own such step (`COMPARABLE_FROM`).
    */
-  const COMPARABLE_FROM = STEP_BY_ID.tuck.order
+  const comparableFrom = STEP_BY_ID[COMPARABLE_FROM[current.skill]]?.order ?? 0
   const durations: number[] = []
   for (let i = 0; i < ordered.length - 1; i++) {
-    if (ordered[i].order < COMPARABLE_FROM) continue
+    if (ordered[i].order < comparableFrom) continue
     const from = firstSessionOnStep.get(ordered[i].id)!
     const to = firstSessionOnStep.get(ordered[i + 1].id)!
     if (to > from) durations.push((to - from) / WEEK)
@@ -386,7 +538,7 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
       estimate: null,
       note: `${stepsRemaining} step${stepsRemaining === 1 ? '' : 's'} between you and ${
         goal.name
-      }. How long that takes depends on leverage, bodyweight, training age and how consistently you recover, and the honest ranges people report span years rather than months. The app will put a number on it once you have finished a couple of steps at this level of difficulty and it can measure your own pace instead of quoting somebody else's.`,
+      }. How long that takes depends on leverage, bodyweight, training age and how consistently you recover. The app will put a number on it once you have finished a couple of steps at this level of difficulty and it can measure your own pace.`,
     }
   }
 
@@ -403,18 +555,11 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
   // produced "2–3 weeks to a full planche" — narrower than the original bug
   // but the same lie. Nobody has gone straddle-to-full in a month, and the
   // app should not be the one to suggest it. INFERENCE, deliberately coarse.
-  const hardestAhead = STEPS.filter((s) => s.order > current.order && s.order <= goal.order).reduce(
-    (max, s) => Math.max(max, s.order),
-    current.order,
-  )
-  const MIN_WEEKS_PER_STEP_AT: Record<number, number> = {
-    [STEP_BY_ID.tuck.order]: 4,
-    [STEP_BY_ID.advtuck.order]: 6,
-    [STEP_BY_ID.oneleg.order]: 6,
-    [STEP_BY_ID.straddle.order]: 8,
-    [STEP_BY_ID.full.order]: 12,
-  }
-  const floorPerStep = MIN_WEEKS_PER_STEP_AT[hardestAhead] ?? 2
+  // The hardest step ahead is the goal itself; its floor is read by how far it
+  // sits below its road's summit (the planche's original table: full 12,
+  // straddle 8, one-leg and advanced tuck 6, tuck 4, anything earlier 2).
+  const fromSummit = road.length - 1 - road.findIndex((s) => s.id === goal.id)
+  const floorPerStep = MIN_WEEKS_FROM_SUMMIT[fromSummit] ?? 2
   const lowWeeks = Math.max(
     Math.round(floorPerStep * stepsRemaining),
     Math.round(fastest * stepsRemaining),
@@ -440,3 +585,24 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
     } Treat the far end as the realistic one: every step on this road is harder than the one before it, and this range cannot know by how much.`,
   }
 }
+
+/**
+ * Where each road's steps start to resemble the ones ahead: its first lever
+ * shape (the planche's tuck). The steps before are conditioning and position
+ * drills, quick for most people, and their pace says little about the hard
+ * end of the road. The app's judgement, like the planche's original rule.
+ */
+const COMPARABLE_FROM: Record<SkillId, StepId> = {
+  planche: 'tuck',
+  frontlever: 'fl-tuck',
+  handstand: 'hs-float',
+  ninety: 'n90-tuck',
+  flag: 'flag-tuck',
+}
+
+/**
+ * The fewest weeks a step is allowed to take in the goal estimate, by how far
+ * the hardest step ahead sits below its road's summit. INFERENCE, deliberately
+ * coarse — the planche's original numbers, read from the top of each road.
+ */
+const MIN_WEEKS_FROM_SUMMIT = [12, 8, 6, 6, 4]

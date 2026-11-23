@@ -1,7 +1,7 @@
 import { MUSCLE_BY_ID, MUSCLES } from '../../data/gym/catalog'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { AppState } from '../../types'
-import { estimateOneRepMax } from '../gym/progression'
+import { estimatedMaxGains } from '../gym/progression'
 import { defaultPrefs } from '../gym/state'
 import type { GymSession } from '../gym/types'
 import { addDays, dayKey, weekStart } from '../time'
@@ -9,6 +9,18 @@ import { setsPerMuscle, volumeStatus, volumeTarget } from './load'
 import { gymDeloadDue, planWeekAhead, PLANNABLE_MUSCLES, skillGoalPace } from './planner'
 
 const DAY = 86_400_000
+
+/** Skill sessions a week, over the last four weeks, under which frequency is a fair thing to name. */
+export const LOW_SKILL_FREQUENCY = 3
+
+/** Skill sessions per week over the four weeks before `now`, or fewer weeks when the athlete is newer (never a flat divide). */
+export function skillSessionsPerWeek(state: Pick<AppState, 'sessions'>, now: number): number {
+  const recent = state.sessions.filter((s) => s.workoutKind !== 'micro' && s.startedAt <= now && s.startedAt > now - 28 * DAY)
+  if (!recent.length) return 0
+  const first = Math.min(...recent.map((s) => s.startedAt))
+  const weeks = Math.max(1, Math.min(28, (now - first) / DAY) / 7)
+  return recent.length / weeks
+}
 
 export interface GymBadge {
   id: string
@@ -29,21 +41,8 @@ export function gymBadges(state: Pick<AppState, 'sessions' | 'gym'>): GymBadge[]
   const places = new Map<string, number>()
   for (const s of gym) if (!places.has(s.locationId)) places.set(s.locationId, s.endedAt)
   const secondPlace = [...places.values()].sort((a, b) => a - b)[1]
-  // The first estimated max that beat an earlier one on the same lift.
-  let firstPr: number | undefined
-  const best = new Map<string, number>()
-  for (const s of gym) {
-    for (const log of s.exercises) {
-      for (const set of log.sets) {
-        if (set.warmup) continue
-        const e = estimateOneRepMax(set, log.exerciseId)
-        if (e === null) continue
-        const had = best.get(log.exerciseId)
-        if (had !== undefined && e > had + 0.01 && firstPr === undefined) firstPr = s.endedAt
-        if (had === undefined || e > had) best.set(log.exerciseId, e)
-      }
-    }
-  }
+  // The first estimated max that beat an earlier session's on the same lift (the same place for a machine).
+  const firstPr = estimatedMaxGains(gym)[0]?.endedAt
   // A step up earned: the same lift, same place, heavier working load than last time.
   let firstStep: number | undefined
   const lastLoad = new Map<string, number>()
@@ -119,21 +118,7 @@ export function weeklySummary(state: AppState, now = Date.now()): WeeklySummary 
     0,
   )
   const gymSets = gymWeek.reduce((n, s) => n + s.exercises.reduce((m, e) => m + e.sets.filter((x) => !x.warmup).length, 0), 0)
-  const bestBefore = new Map<string, number>()
-  for (const s of gym) {
-    if (s.startedAt >= from) continue
-    for (const e of s.exercises) for (const x of e.sets) {
-      const v = estimateOneRepMax(x, e.exerciseId)
-      if (v !== null && v > (bestBefore.get(e.exerciseId) ?? 0)) bestBefore.set(e.exerciseId, v)
-    }
-  }
-  const newMaxes = new Set<string>()
-  for (const s of gymWeek) for (const e of s.exercises) for (const x of e.sets) {
-    if (x.warmup) continue
-    const v = estimateOneRepMax(x, e.exerciseId)
-    const before = bestBefore.get(e.exerciseId)
-    if (v !== null && before !== undefined && v > before + 0.01) newMaxes.add(e.exerciseId)
-  }
+  const newMaxes = [...new Set(estimatedMaxGains(gym).filter((g) => g.at >= from && g.at < to).map((g) => g.exerciseId))]
   let streakWeeks = 0
   for (let w = 0; w < 104; w++) {
     const start = addDays(from, -7 * w)
@@ -152,19 +137,26 @@ export function weeklySummary(state: AppState, now = Date.now()): WeeklySummary 
   // Nothing logged this week is nothing to compare with the weekly targets: a brand-new athlete was told several
   // muscles were under target and that the plan steered toward them, before a single session.
   const logged = skill.length + gymWeek.length > 0
-  if (!logged) focus.push('Nothing logged this week yet, so there is nothing to compare with the weekly muscle targets.')
+  // The week can only be judged once most of it has happened (Friday on): a verdict on a Monday is a guess. Today's
+  // plan names the muscles it steers toward from day one, so this card says the same instead of "nothing to compare".
+  const judgeable = now - from >= 4 * DAY
+  if (!logged) focus.push('Nothing logged this week yet, so no muscle has a count to judge — Today’s plan lists the muscles it is steering toward first.')
   const priorityUnder = logged ? under.filter((x) => prefs.musclesPriority.includes(x.m)) : []
   if (priorityUnder.length) {
     focus.push(`Your priority ${priorityUnder.length > 1 ? 'muscles' : 'muscle'} — ${priorityUnder.map((x) => MUSCLE_BY_ID[x.m].label.toLowerCase()).join(', ')} — ${priorityUnder.length > 1 ? 'are' : 'is'} short of target this week.`)
   }
   for (const goal of prefs.skillGoals) {
     const pace = skillGoalPace(state, goal, now)
-    if (pace.status === 'behind') focus.push(`${pace.text} More frequent skill sessions are the biggest lever.`)
+    if (pace.status === 'behind') {
+      // Frequency is only named when it is actually low, and never for a date that has simply passed.
+      const lowFrequency = skillSessionsPerWeek(state, now) < LOW_SKILL_FREQUENCY && !/date has passed/.test(pace.text)
+      focus.push(lowFrequency ? `${pace.text} You have trained skills under ${LOW_SKILL_FREQUENCY} times a week lately; coaches usually say more frequent practice helps skills (coaching convention, not a measured rule).` : pace.text)
+    }
   }
-  if (skill.length === 0 && prefs.goals.skills > 0 && now - from > 3 * DAY) focus.push('No skill session yet this week — skills move with frequency, so get one in early next week.')
+  if (skill.length === 0 && prefs.goals.skills > 0 && now - from > 3 * DAY) focus.push('No skill session yet this week — coaches usually say regular practice matters for skills (a convention, not a measured rule), so plan one early next week.')
   const deload = gymDeloadDue(state, now)
   if (deload.due) focus.push('This is a lighter gym week — fewer sets, stopping further from failure (see Today’s reasons).')
-  if (logged && !priorityUnder.length && under.length >= 4) {
+  if (logged && judgeable && !priorityUnder.length && under.length >= 4) {
     // Only what the days left can reach is said to be steered toward: the week as planned (`planWeekAhead`'s
     // shortfall), and no muscle that no gym focus plans for. Twelve weeks once said so while 13–18 of 21 muscles
     // stayed under every week.
@@ -181,5 +173,5 @@ export function weeklySummary(state: AppState, now = Date.now()): WeeklySummary 
       )
     }
   }
-  return { from, skillSessions: skill.length, gymSessions: gymWeek.length, holdSec, gymSets, newMaxes: [...newMaxes], streakWeeks, focus }
+  return { from, skillSessions: skill.length, gymSessions: gymWeek.length, holdSec, gymSets, newMaxes, streakWeeks, focus }
 }

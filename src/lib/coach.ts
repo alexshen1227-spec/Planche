@@ -1791,11 +1791,16 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // detraining, muscle size decayed sooner than tendon did. The defensible
   // version is narrower: early gains outrun tissue change, so hold the dose.
   // It caps volume, not difficulty — an earned target rise still stands.
-  const capabilityJump = readCapabilityJump(state, state.stepId, now)
+  // Through noise there is no jump to hold for: the same gate as the
+  // forecast and the breakthrough card (readCapabilityJump).
+  const capabilityJump = readCapabilityJump(state, state.stepId, now, sig)
   if (capabilityJump && loadedDay) {
     volumeFactor = Math.min(volumeFactor, 0.85)
     decisions.push({
-      text: `Your verified hold has gone from about ${capabilityJump.fromSec}s before the last two weeks to ${capabilityJump.toSec}s within them. Volume is being held rather than raised to match. A climb that fast is mostly your nervous system learning the position rather than new tissue — measured strength can climb by a third while muscle and tendon are both still unchanged — so the structures carrying the load have not caught up with what the stopwatch says. Reasoning rather than a measured rule, and it costs you almost nothing to respect.`,
+      // What was measured, and no more: early gains are largely neural. Not
+      // that some tissue "has not caught up" — that is the tendon-lag story
+      // the research ledger rejects.
+      text: `Your verified hold has gone from about ${capabilityJump.fromSec}s before the last two weeks to ${capabilityJump.toSec}s within them, so volume holds steady rather than rising to match. Early strength gains are largely neural — the nervous system learning the position: in a study that measured it month by month, strength climbed by about a third while muscle size and tendon stiffness had not measurably changed. Holding the volume is this app's reasoning from that finding, not a tested rule.`,
       kind: 'info',
     })
   }
@@ -2385,37 +2390,57 @@ export function debriefSession(
 
   // A max test that missed the bar: name the gap instead of leaving silence.
   if (session.workoutKind === 'test' && next.stepId === session.stepId) {
+    // The test's own holds: a warm-up primer is never its best.
     const timerBest = session.sets.reduce(
-      (b, x) => (x.exerciseId === step.keyExerciseId && x.value > b ? x.value : b),
+      (b, x) => (x.exerciseId === step.keyExerciseId && x.section === 'main' && x.value > b ? x.value : b),
       0,
     )
     const verifiedBest = qualifyingSessionValue(session, session.stepId)
+    // A PR only when it beat the record standing before this session: "It
+    // remains a PR" once followed a 12s test under an 18s record.
+    const record = timerBest > (prev.prs[step.keyExerciseId]?.value ?? 0)
     if (timerBest > 0 && verifiedBest < step.unlockSec) {
       out.push({
         text:
           verifiedBest > 0
             ? `Camera-verified clean best ${Math.round(verifiedBest * 10) / 10}s against the ${step.unlockSec}s bar — ${Math.round((step.unlockSec - verifiedBest) * 10) / 10}s of clean time to close.`
-            : `Timer best ${Math.round(timerBest * 10) / 10}s, but no attempt had both athlete-confirmed Clean form and passing filmed evidence. It remains a PR, not an unlock.`,
+            : `Timer best ${Math.round(timerBest * 10) / 10}s, but no attempt had both athlete-confirmed Clean form and passing filmed evidence. ${
+                record ? 'It is a PR, not an unlock.' : 'It does not count toward the unlock.'
+              }`,
         kind: 'info',
       })
     }
   }
 
-  // Left/right gap inside this session's unilateral work.
-  const sided = session.sets.filter((x) => x.side && x.kind === 'hold' && x.value > 0)
-  const lv = sided.filter((x) => x.side === 'left').map((x) => x.value)
-  const rv = sided.filter((x) => x.side === 'right').map((x) => x.value)
-  const lm = median(lv)
-  const rm = median(rv)
-  if (lm !== null && rm !== null && Math.max(lm, rm) > 0) {
+  // Left/right gap inside this session's unilateral work — like with like:
+  // one exercise's main-section sides. Pooled, a flag tuck's 5s and 8s sat
+  // beside 30s cooldown stretches and a side plank, and the gap reported was
+  // between things nobody compared.
+  const sides = new Map<string, { left: number[]; right: number[] }>()
+  for (const x of session.sets) {
+    if (x.section !== 'main' || x.kind !== 'hold' || !(x.value > 0)) continue
+    if (x.side !== 'left' && x.side !== 'right') continue
+    const pair = sides.get(x.exerciseId) ?? { left: [], right: [] }
+    pair[x.side].push(x.value)
+    sides.set(x.exerciseId, pair)
+  }
+  let widest: { exerciseId: string; lm: number; rm: number; gap: number } | null = null
+  for (const [exerciseId, pair] of sides) {
+    const lm = median(pair.left)
+    const rm = median(pair.right)
+    if (lm === null || rm === null || Math.max(lm, rm) <= 0) continue
     const gap = Math.abs(lm - rm) / Math.max(lm, rm)
-    if (gap >= 0.15) {
-      const weak = lm < rm ? 'left' : 'right'
-      out.push({
-        text: `Your ${weak} side trailed today (${Math.round(Math.min(lm, rm))}s vs ${Math.round(Math.max(lm, rm))}s). Lead with it next time so the strong side never sets the pace.`,
-        kind: 'info',
-      })
-    }
+    if (gap >= 0.15 && (widest === null || gap > widest.gap)) widest = { exerciseId, lm, rm, gap }
+  }
+  if (widest) {
+    const weak = widest.lm < widest.rm ? 'left' : 'right'
+    const name = (EXERCISE_BY_ID_COACH[widest.exerciseId]?.name ?? widest.exerciseId.replace(/-/g, ' ')).toLowerCase()
+    out.push({
+      text: `Your ${weak} side trailed on the ${name} today (${Math.round(Math.min(widest.lm, widest.rm))}s vs ${Math.round(
+        Math.max(widest.lm, widest.rm),
+      )}s). Lead with it next time so the strong side never sets the pace.`,
+      kind: 'info',
+    })
   }
 
   // Only the step's own hold speaks to its bar. Any main-section hold used
