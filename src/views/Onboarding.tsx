@@ -12,7 +12,7 @@ import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
 import { displayToKg, CM_PER_IN } from '../lib/units'
 import type { Placement } from '../lib/assessment'
 import { fullParts, roomIn } from '../lib/lineup'
-import { goalMovedNote, goalPastPlacement, interviewLength, ladderStopNote, pruneBlockedAnswers } from '../lib/onboardingFlow'
+import { goalMovedNote, goalPastPlacement, interviewCounter, interviewLength, ladderStopNote, pruneBlockedAnswers, skillKitStanding } from '../lib/onboardingFlow'
 import {
   goalChoices,
   nextInterviewItem,
@@ -239,10 +239,17 @@ export function Onboarding() {
   const currentItem = useMemo(() => nextInterviewItem(skills, answers), [skills, answers])
   const questionCount = useMemo(() => interviewLength(skills, answers), [skills, answers])
   const questionNumber = Object.keys(answers).length + 1
-  /** "Question 5 of up to 19" while the ladder is open, "Question 5 of 12" once the rest is certain. */
-  const questionProgress = `Question ${questionNumber} of ${
-    questionCount.atLeast === questionCount.atMost ? '' : 'up to '
-  }${Math.max(questionNumber, questionCount.atMost)}`
+  /** "Question 5 of up to 19" while the ladder is open, "Question 5 of 12" once the rest is certain (`interviewCounter`). */
+  const questionProgress =
+    interviewCounter({ stage: 'interview', skipped: false, answered: questionNumber - 1, shortest: questionCount.atLeast, longest: questionCount.atMost }) ?? ''
+  /** Beside "Step 3 of 7": the placement's own progress on the goal screen and through the interview. */
+  const placementCounter = interviewCounter({
+    stage,
+    skipped: skippedInterview,
+    answered: questionNumber - 1,
+    shortest: questionCount.atLeast,
+    longest: questionCount.atMost,
+  })
 
   useEffect(() => {
     headingRef.current?.focus()
@@ -257,7 +264,13 @@ export function Onboarding() {
   const kitGaps = skills
     .map((skill) => ({ skill, missing: missingKit(skill, equipment.length ? equipment : ['floor']) }))
     .filter((gap) => gap.missing.length > 0)
-  const waitingSkills = kitGaps.map((gap) => gap.skill)
+  /**
+   * Where each chosen skill can train once the places already added are counted: a gym with the bar and the wall
+   * trains the lever and the handstand there. Only a skill that nothing the athlete has told the app about can
+   * train is waiting (`skillKitStanding`).
+   */
+  const kitStanding = skillKitStanding(skills, equipment.length ? equipment : ['floor'], gyms)
+  const waitingSkills = kitStanding.waiting.map((entry) => entry.skill)
   /**
    * The chosen skills that kit can train, in the order picked. Sessions are
    * built from these alone, and the first of them leads — which is the first
@@ -315,6 +328,12 @@ export function Onboarding() {
           ? ` and ${waitingSkills.length === 1 ? 'joins' : 'join'} your sessions once you have it`
           : ', so until you have it your sessions are support work only'
       } — your plan below says what ${waitingSkills.length === 1 ? 'it needs' : 'each needs'}.`
+    : ''
+  /** Skills home lacks the kit for that a place already added has it for: they train there. */
+  const placeNote = kitStanding.atPlaces.length
+    ? kitStanding.atPlaces
+        .map(({ skill, places }) => `${capitalised(named(skill))} trains at ${places.length === 1 ? places[0] : `${places.slice(0, -1).join(', ')} and ${places[places.length - 1]}`}, which has the kit.`)
+        .join(' ')
     : ''
 
   const parsedWeight = (() => {
@@ -434,7 +453,7 @@ export function Onboarding() {
   const sectionIndex = SECTION_OF[stage]
   // The header counts the seven setup steps and nothing else: the screens inside Skills used to be counted
   // in it too ("2 of up to 19", "13 of 19", "16 of 16"). The interview counts its own questions.
-  const progressText = `Step ${sectionIndex + 1} of ${SECTIONS.length} · ${SECTIONS[sectionIndex]}`
+  const progressText = `Step ${sectionIndex + 1} of ${SECTIONS.length} · ${SECTIONS[sectionIndex]}${placementCounter ? ` · ${placementCounter}` : ''}`
   // The primary action: big, last in the row, within thumb reach. Back is quiet.
   const primaryBtn = 'min-h-[52px] flex-1'
   const backBtn =
@@ -1145,6 +1164,7 @@ export function Onboarding() {
                     week you will keep.
                     {sharing ? ` ${sharing}` : ''}
                     {trainable.length > 1 ? ` ${sessionRoom}` : ''}
+                    {placeNote ? ` ${placeNote}` : ''}
                     {waitingNote ? ` ${waitingNote}` : ''}
                   </p>
                 </>
@@ -1293,7 +1313,8 @@ export function Onboarding() {
                 const from = STEP_BY_ID[placedFor(skill)]
                 const to = STEP_BY_ID[finalGoalFor(skill)]
                 const stepsToGo = Math.max(0, to.order - from.order)
-                const missing = kitGaps.find((gap) => gap.skill === skill)?.missing
+                const missing = kitStanding.waiting.find((entry) => entry.skill === skill)?.missing
+                const trainsAt = kitStanding.atPlaces.find((entry) => entry.skill === skill)?.places
                 const several = skills.length > 1
                 // "Foundations" is the first step of every road: say which hold it is.
                 const hold = holdBehind(from.id)
@@ -1313,7 +1334,9 @@ export function Onboarding() {
                         </div>
                       ) : null}
                       <div className="text-footnote text-ink2">
-                        {missing
+                        {trainsAt
+                          ? `Trains at ${trainsAt.length === 1 ? trainsAt[0] : `${trainsAt.slice(0, -1).join(', ')} and ${trainsAt[trainsAt.length - 1]}`} — the kit it needs is there. At home it waits for that kit.`
+                          : missing
                           ? `Waiting for ${kitNeedsPhrase(missing)} at home — it joins your sessions once that is on your equipment list, or a place you add next has it.`
                           : stepsToGo === 0
                             ? `Placed at your goal: ${to.name}`

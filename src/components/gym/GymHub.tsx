@@ -197,6 +197,12 @@ export function GymHub({
     const regions = joints.map((j) => JOINT_REGION[j]).filter((r): r is BodyRegion => Boolean(r))
     if (kind !== 'none' && joints.length) {
       dispatch({ type: 'RECORD_SYMPTOM', event: { at: Date.now(), joints: kind, regions: regions.length ? regions : ['other'], source: 'check-in' } })
+    } else if (kind === 'none' && sore.joints.length) {
+      // "Nothing hurts" while a joint is still being kept out is the athlete saying it is fine now: recorded as an
+      // all-good check-in, so the report that kept it out stops standing for the lifts and the skills alike. The
+      // 72-hour union still holds (`soreJoints`). Without it a report days old stayed out of the lifts with no way
+      // to clear it from the gym.
+      dispatch({ type: 'RECORD_SYMPTOM', event: { at: Date.now(), joints: 'good', source: 'check-in' } })
     }
     const p = pending.preset
     // The opener runs first as its own skill session; the lifts follow on when
@@ -408,7 +414,8 @@ export function GymHub({
           <p className="mt-3 rounded-control bg-raised p-3 text-footnote text-ink2">
             Keeping load off your {sore.joints.map((j) => j.replace('-', ' ')).join(' and ')} — you reported {sore.joints.length > 1 ? 'them' : 'it'}{' '}
             {sore.lastAt ? dayLabel(sore.lastAt) : 'lately'}. Anything that loads {sore.joints.length > 1 ? 'them' : 'it'} stays out for three days after a
-            report, whichever focus you pick.{sore.pain ? ' Never train through pain.' : ''}
+            report, and after that until you answer “Nothing hurts” at the check before you start — whichever focus you pick.
+            {sore.pain ? ' Never train through pain.' : ''}
           </p>
         ) : null}
         <p className="mt-3 text-caption font-medium text-ink3">Time</p>

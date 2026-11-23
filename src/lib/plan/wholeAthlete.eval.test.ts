@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import type { SkillId, StepId } from '../../types'
+import type { EquipmentId, SkillId, StepId } from '../../types'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { STEP_BY_ID, stepsOf } from '../../data/progressions'
 import { buildPlan } from '../coach'
@@ -52,8 +52,9 @@ const control = (prefs: AthleteCfg['prefs'] = {}): AthleteCfg => ({
 })
 
 /** The days, at the fixed hour, with the system clock on each (anything that reads it reads the day being trained). */
-function season(cfg: AthleteCfg, days: number, extra: Partial<LoopOpts> = {}): LoopOut {
-  const start = makeAthlete(cfg)
+function season(cfg: AthleteCfg, days: number, extra: Partial<LoopOpts> = {}, place = GYM_PLACE): LoopOut {
+  let start = makeAthlete(cfg)
+  if (place !== GYM_PLACE) start = { ...start, gym: { ...start.gym!, locations: start.gym!.locations.map((l) => (l.id === GYM_PLACE.id ? place : l)) } }
   // Almost at an advanced tuck: a 16 s tuck against its 20 s bar, a few seconds of the next shape.
   const truthStart: Record<string, number> = { 'tuck-planche': 16, 'adv-tuck-planche': 4 }
   for (const skill of cfg.skills) {
@@ -248,6 +249,30 @@ describe('the whole athlete: the planche first, then the rest (round five)', () 
     expect(others('frontlever')).toBeGreaterThanOrEqual(3)
     // Measured chest sets a week 4, 4, 4, 3: each week's Tuesday is the planche's gym day, pressing beside its own holds.
     expectWeeklyPressing(m, 48)
+  })
+
+  it('on three days a week, with the wall and the bar only at the gym, takes the handstand and the lever there (round six)', () => {
+    // The athlete's own order — the planche, the handstand push-up, the front lever — at home on parallettes, with no
+    // wall and no bar there. Before round six every calisthenics day was the planche alone at home: six weeks, nothing
+    // for the lever or the handstand.
+    const wallGym = { ...GYM_PLACE, equipment: [...GYM_PLACE.equipment, 'wall' as const] }
+    const days = { minutesByDay: [0, 45, 0, 45, 0, 45, 0] }
+    const away = { kit: ['floor', 'parallettes'] as EquipmentId[], active: 'home' as const }
+    const m = season(teen(days, { ...away, skills: ['planche', 'handstand', 'frontlever'] }), 42, {}, wallGym)
+    const c = season({ ...control(days), ...away }, 42, {}, wallGym)
+    expectExposures(m, c)
+    // Measured 0.90 (75 of 83 key-hold sets), as before round six: the visits cost the planche nothing.
+    expect(doseRatio(m, c)).toBeGreaterThanOrEqual(0.84)
+    expectSteps(m, c)
+    // Measured: every week the handstand once (2–4 main sets) and the lever once or twice (2–6), each beside the planche
+    // at the gym, the planche leading.
+    for (const [w, week] of weeksOf(m).entries()) {
+      for (const skill of ['handstand', 'frontlever'] as SkillId[]) {
+        const runs = week.filter((d) => d.skill.some((s) => (s.parts[skill]?.main ?? 0) > 0))
+        expect(runs.length, `week ${w + 1} ${skill}`).toBeGreaterThanOrEqual(1)
+        for (const d of runs) expect(d.plan.skill?.placeId ?? (d.plan.gym ? GYM_PLACE.id : 'home'), `${dayKey(d.at)} ${skill}`).toBe(GYM_PLACE.id)
+      }
+    }
   })
 
   it('on 20-minute days gives the handstand its turns', () => {

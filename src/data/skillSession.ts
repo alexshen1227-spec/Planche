@@ -7,7 +7,7 @@ import { needsYouthWarmup, youthWarmup, YOUTH_WARMUP_NOTE } from './youthWarmup'
 import { pressingChoiceFor } from './pressing'
 import { SKILLS, type BlockSpec, type SkillDef } from './skills'
 import { bridgeStatus } from '../lib/bridge'
-import { buildPlan, STRATEGY_BY_ID, type CoachPlan, type WarmupLevel } from '../lib/coach'
+import { buildPlan, cappedBase, cappedTarget, STRATEGY_BY_ID, type CoachPlan, type WarmupLevel } from '../lib/coach'
 import { isReviewOnly } from '../lib/progression'
 import { ladderStatus } from '../lib/repLadder'
 import { adaptiveTarget, workingTargetSec } from '../lib/workingTarget'
@@ -168,6 +168,82 @@ function twinFor(
   return { spec, reason: choice.reason, ...(eased ? { eased } : {}) }
 }
 
+/** One more set at a time of a block already in the session, up to `to` sets. */
+export interface SetTopUp {
+  role: BlockRole
+  to: number
+}
+
+/** The work a ladder day may add to fill a time it was given, best first. */
+function ladderFillers(
+  state: AppState,
+  skill: SkillDef,
+  stepProgram: { strength?: BlockSpec; core: BlockSpec[]; support?: BlockSpec },
+  equipment: AppState['profile']['equipment'],
+  rests: { main: number; accessory: number },
+  holdSets: number,
+): (Block | SetTopUp)[] {
+  const out: (Block | SetTopUp)[] = []
+  if (stepProgram.strength) out.push(blockFrom(stepProgram.strength, 'strength', rests, { role: 'pressing' }))
+  const status = skill.ladder ? ladderStatus(state, skill.id) : null
+  const below = status && status.index > 0 ? status.rungs[status.index - 1] : undefined
+  if (below) {
+    out.push(
+      blockFrom({ exerciseId: below.exerciseId, sets: 3, amount: below.startReps, rest: 'accessory', note: `The rung below, as volume behind the main rung: ${below.why}` }, 'strength', rests, {
+        role: 'pressing',
+      }),
+    )
+  }
+  if (stepProgram.core[1]) out.push(blockFrom(stepProgram.core[1], 'core', rests, { role: 'core' }))
+  const kept = out.filter((b) => 'exerciseId' in b && hasEquipmentFor(b.exerciseId, equipment))
+  // Then the sets the ladder day cut back: the hold practice up to what an
+  // ordinary day of this step does, one more set of the support work, and a
+  // third of the core.
+  kept.push({ role: 'skill', to: holdSets })
+  if (stepProgram.support) kept.push({ role: 'straight-arm', to: stepProgram.support.sets + 1 })
+  kept.push({ role: 'core', to: (stepProgram.core[0]?.sets ?? 2) + 1 })
+  return kept
+}
+
+/**
+ * Add candidates one at a time while the estimate stays inside the budget: a
+ * block not already in the session, or one more set of one that is. What would
+ * overrun the budget is skipped.
+ */
+export function fillLadderDay(
+  blocks: Block[],
+  options: { candidates: (Block | SetTopUp)[]; budget: number; stopLatencySec: number; phoneWithinReach: boolean },
+): { blocks: Block[]; added: string[] } {
+  const minutes = (list: Block[]) => estimateMinutes(withSides(list), options.stopLatencySec, options.phoneWithinReach)
+  let current = blocks
+  const added: string[] = []
+  for (const candidate of options.candidates) {
+    if (!('exerciseId' in candidate)) {
+      const at = current.findIndex((b) => b.role === candidate.role && b.section !== 'warmup')
+      if (at < 0) continue
+      let grown = 0
+      while (current[at].sets + grown < candidate.to) {
+        const next = current.map((b, i) => (i === at ? { ...b, sets: b.sets + grown + 1 } : b))
+        if (minutes(next) > options.budget) break
+        grown += 1
+      }
+      if (grown > 0) {
+        current = current.map((b, i) => (i === at ? { ...b, sets: b.sets + grown } : b))
+        added.push(`${grown} more ${grown === 1 ? 'set' : 'sets'} of ${EXERCISE_BY_ID[current[at].exerciseId]?.name.toLowerCase() ?? current[at].exerciseId}`)
+      }
+      continue
+    }
+    if (current.some((b) => b.exerciseId === candidate.exerciseId && b.section !== 'warmup')) continue
+    const cut = current.findIndex((b) => (candidate.section === 'core' ? b.section === 'cooldown' : b.section === 'core' || b.section === 'cooldown'))
+    const index = cut < 0 ? current.length : cut
+    const next = [...current.slice(0, index), candidate, ...current.slice(index)]
+    if (minutes(next) > options.budget) continue
+    current = next
+    added.push(EXERCISE_BY_ID[candidate.exerciseId]?.name.toLowerCase() ?? candidate.exerciseId)
+  }
+  return { blocks: current, added }
+}
+
 export function skillSession(
   state: AppState,
   planIn?: CoachPlan,
@@ -202,9 +278,9 @@ export function skillSession(
   let ladderPlaced = false
 
   // ——— The key hold's numbers (shared with the coach, so its copy matches) ———
-  const baseTarget = adaptiveTarget(state, stepId, now)
+  const baseTarget = cappedBase(adaptiveTarget(state, stepId, now), plan)
   const capacity = observedCapacity(state, stepId)
-  const target = workingTargetSec(state, stepId, plan.targetFactor, now)
+  const target = cappedTarget(workingTargetSec(state, stepId, plan.targetFactor, now), baseTarget, plan)
 
   // An extended warm-up is a coach safety rail and cannot be disabled by the
   // convenience preference.
@@ -486,7 +562,22 @@ export function skillSession(
   const baseBudget = sessionBudget(state.settings.sessionMinutes, light)
   // One part of a mixed session is built at whatever it is given.
   const budget = options.part && minutesOverride !== undefined ? minutesOverride : sessionBudget(state.settings.sessionMinutes, light, minutesOverride)
-  const whole = withSides(lightened)
+  // A ladder day given a time fills it with the skill's own strength work
+  // after the rung — the second strength movement, the rung below as back-off
+  // volume, a second core exercise — and stops at the budget. A 60-minute
+  // handstand push-up day was five rung sets, two wall holds and 29 minutes.
+  // Only a ladder day with an explicit time; any other session is built as it
+  // always was (ladderDay.golden.json pins that).
+  const fill =
+    ladderPlaced && minutesOverride !== undefined && !options.part && !light
+      ? fillLadderDay(lightened, {
+          candidates: ladderFillers(state, skill, stepProgram, equipment, rests, Math.max(2, mainHoldSets(...doseArgs, skill.holdAggregateSec) - sideLess)),
+          budget,
+          stopLatencySec: state.settings.stopLatencySec,
+          phoneWithinReach: state.settings.phoneWithinReach,
+        })
+      : { blocks: lightened, added: [] as string[] }
+  const whole = withSides(fill.blocks)
   const fit = fitToBudget(whole, budget, emphasis === 'core', state.settings.stopLatencySec, state.settings.phoneWithinReach)
   const fitted = fit.blocks.map((b) => ({ ...b, skill: skill.id }))
   // Whether the budget took anything off: a block, or a set.
@@ -561,7 +652,9 @@ export function skillSession(
   if (minutesOverride !== undefined && !options.part && !trimmed && budget - fittedMinutes >= SHORTER_THAN_ASKED_MIN) {
     adjustments.push(
       ladderPlaced && skill.ladder
-        ? `This ladder day holds about ${fittedMinutes} minutes: the ${skill.ladder.name.toLowerCase()} rung first, with the ${skill.holdName} kept to two short sets. Nothing is added just to fill the time — a ${skill.holdName} day under Train has the full hold practice.`
+        ? `This ladder day holds about ${fittedMinutes} minutes: the ${skill.ladder.name.toLowerCase()} rung first${
+            fill.added.length ? `, then ${joinWords(fill.added)} to fill the time` : `, with the ${skill.holdName} kept to two short sets`
+          }. That is everything this ladder day programs — it is shorter than the ${budget} you gave it, and nothing more is added just to fill the time. A ${skill.holdName} day under Train has the full hold practice.`
         : `This session holds about ${fittedMinutes} minutes: everything the ${stepTitle(step).toLowerCase()} step programs today. Nothing is added just to fill the time.`,
     )
   }

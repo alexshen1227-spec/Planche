@@ -19,6 +19,24 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-23',
+    title: 'Every skill has its week, and gym days use their time',
+    area: 'coach',
+    notes: [
+      'The week view now lists each of your skills with its days and where they happen — or, when a skill has none this week, the plain reason: its kit is only at a place no day is planned at, no room in the time, the rest rule, or pain.',
+      'A skill whose kit is only at the gym — a front lever that needs the bar, a handstand that needs a clear wall — now gets a calisthenics day planned there each week it would otherwise miss, beside your first skill and without taking from it.',
+      'Handstand push-ups now count as hard pressing next to the planche, like heavy pressing at the gym: they are kept the rest rule away from planche days, and a handstand push-up day picked inside it says so.',
+      'The gym day’s focus follows the week as planned: when your skills already give the pressing muscles plenty, a gym day opening with the planche becomes an upper day rather than a push day with the pressing taken out. Muscles you marked as a priority are never left out to make room — beside a planche day pressing still stays light, and they get their sets on your other gym days.',
+      'A long gym day now uses its time: once the day’s own movements are in, it adds work for the muscles the session gives least, up to 30 sets — the app’s own ceiling. When your gym time this week cannot reach every muscle’s weekly target, the weekly summary says which, rather than promising the plan will get there.',
+      'A joint you reported stays out of the lifts as long as the skill side still counts the report — and answering “Nothing hurts” at the gym’s check clears it. The two sides once disagreed.',
+      'Coming back after two weeks or more without a log, the first session is a real step back: nothing maximal, no harder strategy, and the target does not rise above where you left off.',
+      'When your target falls after a hold that beat it, the summary says why: until a step has its own measurements, the hold you gave at setup still counts beside what you log.',
+      'A machine weight that was too big a step no longer bounces back and forth: after a step up falls short, the lighter weight has to earn two more reps first.',
+      'A handstand push-up day given more time adds the strength work behind it, and says so when it still cannot fill the time. Setup counts the kit at the places you add, and shows how far through the placement questions you are.',
+      'Under 18, jump and landing drills follow the same 6–8 rep range as other power work, and edits to a place made in two tabs at once both survive.',
+    ],
+  },
+  {
+    date: '2026-11-23',
     title: 'A gym press every week, and an hour means an hour',
     area: 'coach',
     notes: [

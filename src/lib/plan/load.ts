@@ -1,7 +1,8 @@
 import { MUSCLES, type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { EXERCISE_BY_ID } from '../../data/exercises'
-import type { AppState, Category, Session } from '../../types'
+import { SKILLS } from '../../data/skills'
+import type { AppState, Category, Session, SkillId } from '../../types'
 import type { GoalWeights, GymSession, OutsideActivity, TrainingPrefs } from '../gym/types'
 import { sportBetween } from './sport'
 
@@ -24,6 +25,48 @@ interface Loading {
   joints: Joint[]
   /** Which straight-arm family a hard set of this belongs to. */
   straightArm?: 'push' | 'pull'
+  /**
+   * A hard bent-arm press of the push family: a rung of the handstand's pressing ladder that puts the whole body
+   * weight on the arms overhead (`HARD_PRESSES`). Counted with the push family's sets by the rest rule
+   * (`restFamilyOf`), as heavy gym pressing is; the handstand hold itself stays balance work.
+   */
+  press?: boolean
+}
+
+/**
+ * The handstand's pressing ladder is overhead pressing, and is credited as the
+ * gym credits the same movement (`data/gym/exercises.ts`): the pike push-ups
+ * as its pike push-ups, every wall rung — negative, deficit and freestanding
+ * included — as its wall handstand push-up. Front delts and triceps, the side
+ * delts and upper back half (INFERENCE from the movement, like every skill
+ * credit here); never chest, which the category's push-up credit once gave
+ * them.
+ */
+const HANDSTAND_PRESS_TWIN: Record<string, string> = { 'pike-pushup': 'pike-push-up', 'elevated-pike-pushup': 'elevated-pike-push-up' }
+const HANDSTAND_PRESSES: readonly string[] = SKILLS.handstand.ladder?.rungs.map((r) => r.exerciseId) ?? []
+
+/**
+ * The rungs that are a hard press, read off the ladder's own data: from the
+ * wall negative up — "your whole weight", then the press, the deficit and the
+ * freestanding press. The pike push-up is "the pattern, at the lightest load"
+ * and the feet-elevated one "more of your weight", not all of it, so neither
+ * counts (INFERENCE from the positions, like the rest rule's shared joints).
+ */
+const FIRST_HARD_PRESS = 'wall-hspu-negative'
+export const HARD_PRESSES: ReadonlySet<string> = new Set(HANDSTAND_PRESSES.slice(Math.max(0, HANDSTAND_PRESSES.indexOf(FIRST_HARD_PRESS))))
+
+/** Skills whose sessions can press hard (a rung of their ladder is in `HARD_PRESSES`): the handstand. */
+export const PRESS_SKILLS: ReadonlySet<SkillId> = new Set(
+  Object.values(SKILLS)
+    .filter((sk) => sk.ladder?.rungs.some((r) => HARD_PRESSES.has(r.exerciseId)))
+    .map((sk) => sk.id),
+)
+
+function pressLoading(exerciseId: string): Loading | null {
+  if (!HANDSTAND_PRESSES.includes(exerciseId)) return null
+  const twin = gymSetLoading(HANDSTAND_PRESS_TWIN[exerciseId] ?? 'wall-hspu')
+  if (!twin) return null
+  return { muscles: twin.muscles, joints: twin.joints, ...(HARD_PRESSES.has(exerciseId) ? { press: true } : {}) }
 }
 
 const SKILL_LOADING: Partial<Record<Category, Loading>> = {
@@ -54,8 +97,26 @@ export function familyLoading(family: 'push' | 'pull' | 'balance'): Credit {
 /** How a skill set loads the body; warm-up and cooldown sets count for nothing. */
 export function skillSetLoading(exerciseId: string, section: string): Loading | null {
   if (section === 'warmup' || section === 'cooldown') return null
+  const press = pressLoading(exerciseId)
+  if (press) return press
   const ex = EXERCISE_BY_ID[exerciseId]
   return ex ? SKILL_LOADING[ex.category] ?? null : null
+}
+
+/**
+ * The family a skill set counts toward for the straight-arm rest rule: a
+ * straight-arm set of it (main or strength work), or a hard press of the
+ * handstand's ladder (`HARD_PRESSES`) for the push family — pressing the whole
+ * body weight overhead loads the front delts, wrists and elbows a planche
+ * does, as heavy gym pressing does (CONSENSUS: shared recovery; the joints are
+ * INFERENCE). An easy day's light dose is not a hard press.
+ */
+export function restFamilyOf(set: { exerciseId: string; section: string; light?: boolean }): 'push' | 'pull' | undefined {
+  if (set.section !== 'main' && set.section !== 'strength') return undefined
+  const l = skillSetLoading(set.exerciseId, set.section)
+  if (!l) return undefined
+  if (l.straightArm) return l.straightArm
+  return l.press && !set.light ? 'push' : undefined
 }
 
 export function gymSetLoading(exerciseId: string): Loading | null {
@@ -242,29 +303,33 @@ export interface FamilyEvent {
   at: number
   /** A gym session (heavy pressing or pulling) rather than skill work. */
   gym: boolean
+  /** A skill session that reached the count only with its handstand push-ups (`HARD_PRESSES`), not with holds. */
+  press?: true
 }
 
 /**
  * Every logged hard session of each straight-arm family up to `now`: skill
- * sessions with three or more main sets of the family (as
- * `lastHardStraightArm` counts them), and gym sessions with
- * `HARD_GYM_FAMILY_SETS` or more working sets of pressing (push) or pulling
- * (pull). Planche, push-ups and presses load the same front delts, wrists and
- * elbows, and the front lever and rows or pull-ups the same lats and elbows, so
- * the rest rule spaces them together (CONSENSUS; the shared joints are
- * INFERENCE from the positions).
+ * sessions with three or more main sets of the family — straight-arm holds,
+ * and for the push family the handstand's hard presses (`restFamilyOf`) — and
+ * gym sessions with `HARD_GYM_FAMILY_SETS` or more working sets of pressing
+ * (push) or pulling (pull). Planche, handstand push-ups and presses load the
+ * same front delts, wrists and elbows, and the front lever and rows or
+ * pull-ups the same lats and elbows, so the rest rule spaces them together
+ * (CONSENSUS; the shared joints are INFERENCE from the positions).
  */
 export function familyEvents(state: Pick<AppState, 'sessions' | 'gym'>, now: number): Record<'push' | 'pull', FamilyEvent[]> {
   const out: Record<'push' | 'pull', FamilyEvent[]> = { push: [], pull: [] }
   for (const s of state.sessions) {
     if (s.startedAt > now) continue
     const count = { push: 0, pull: 0 }
+    const holds = { push: 0, pull: 0 }
     for (const set of s.sets) {
-      if (set.section !== 'main' && set.section !== 'strength') continue
-      const family = skillSetLoading(set.exerciseId, set.section)?.straightArm
-      if (family) count[family]++
+      const family = restFamilyOf(set)
+      if (!family) continue
+      count[family]++
+      if (skillSetLoading(set.exerciseId, set.section)?.straightArm) holds[family]++
     }
-    for (const f of ['push', 'pull'] as const) if (count[f] >= 3) out[f].push({ at: s.startedAt, gym: false })
+    for (const f of ['push', 'pull'] as const) if (count[f] >= 3) out[f].push({ at: s.startedAt, gym: false, ...(holds[f] < 3 ? { press: true as const } : {}) })
   }
   for (const s of state.gym?.sessions ?? []) {
     if (s.startedAt > now) continue

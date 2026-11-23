@@ -15,8 +15,8 @@ import { activeSkills } from './skills'
 import { EXERCISE_BY_ID as EXERCISE_BY_ID_COACH } from '../data/exercises'
 import { defaultSurface } from '../data/equipment'
 import { diagnosePlateau, type PlateauVerdict } from './plateau'
-import { workingTarget } from './workingTarget'
-import { toldHold } from './bridge'
+import { adaptiveTarget, workingTarget } from './workingTarget'
+import { settled, toldHold } from './bridge'
 import { emphasisFromGaps } from './assessment'
 import {
   MAX_WEEKLY_LOAD_RAMP,
@@ -697,6 +697,13 @@ export interface CoachPlan {
    */
   gap: 'none' | 'trained-elsewhere' | 'break' | 'unknown'
   /**
+   * Set on the first loaded session after a long logging gap: nothing maximal,
+   * no push day, a factor of at most 1, and a base target no higher than
+   * `baseCapSec` (the base last trained at; null when there is none or the
+   * athlete kept training elsewhere). The app's own cautious rule.
+   */
+  gapReturn: { days: number; baseCapSec: number | null } | null
+  /**
    * The latest joint report when it was a complaint nobody has updated since.
    * A stale concern is asked about rather than silently forgotten.
    */
@@ -861,6 +868,21 @@ function daysAgoWords(days: number): string {
 }
 
 /**
+ * The base target after the first-session-back-from-a-gap cap: never above the
+ * base the athlete last trained at (`CoachPlan.gapReturn.baseCapSec`).
+ */
+export function cappedBase(base: number, plan: Pick<CoachPlan, 'gapReturn'>): number {
+  const cap = plan.gapReturn?.baseCapSec
+  return cap !== null && cap !== undefined ? Math.max(1, Math.min(base, cap)) : base
+}
+
+/** Today's working seconds under the same cap: the capped base, scaled by the plan's factor, never above the uncapped answer. */
+export function cappedTarget(target: number, cappedBaseSec: number, plan: Pick<CoachPlan, 'gapReturn' | 'targetFactor'>): number {
+  if (plan.gapReturn?.baseCapSec == null) return target
+  return Math.max(1, Math.min(target, Math.round(cappedBaseSec * plan.targetFactor)))
+}
+
+/**
  * The full session plan: bandit choice for stimulus shape, signal-driven
  * adjustments, then safety rails that always get the last word.
  */
@@ -916,10 +938,10 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     dayType = 'build'
     dayReason =
       gap === 'break'
-        ? `Back after about ${sig.restDays} days away — today re-establishes your current working level rather than testing it. Everything you earned before still stands.`
+        ? `Back after about ${sig.restDays} days away — today re-establishes your current working level rather than testing it: nothing maximal, and no target above the base you last trained at. Everything you earned before still stands.`
         : gap === 'trained-elsewhere'
-          ? `Nothing logged here for ${sig.restDays} days, but you kept training elsewhere — an ordinary session today, with no unlock attempt queued off results this old.`
-          : `Nothing logged for ${sig.restDays} days. That could be a break or training the app could not see, so today is an ordinary session rather than a push day, and old results are not treated as today's capacity.`
+          ? `Nothing logged here for ${sig.restDays} days, but you kept training elsewhere — an ordinary build session today, with nothing maximal and no unlock attempt queued off results this old.`
+          : `Nothing logged for ${sig.restDays} days. That could be a break or training the app could not see, so today is a build day rather than a push day: nothing maximal, no harder strategy, and no target above the base you last trained at. Old results are not treated as today's capacity.`
   } else if (sig.daysSinceLoaded === 0) {
     dayType = 'technique'
     dayReason = 'Second loaded session today — skill work only. One hard session a day is this app’s ceiling: a design choice, not a measured limit.'
@@ -1648,6 +1670,41 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   }
 
+  // ——— The first loaded session after a long gap is a step back ———
+  //
+  // `longGap` once changed only the day's name and its copy: a 22-day gap came
+  // back as "an ordinary session rather than a push day, and old results are
+  // not treated as today's capacity" beside the high-intensity strategy, a
+  // target that rose from 5s to 6s and the attempts. Modelled on the return
+  // from pain: never a push day, nothing above the base the athlete last
+  // trained at, no strategy that lengthens holds, nothing maximal. It lasts
+  // one loaded session — the gap closes as soon as one is logged. The app's
+  // own cautious rule: no source measured how long a layoff erodes a hold, so
+  // the copy says so. An athlete who says they trained elsewhere keeps their
+  // base (they were not away), but still gets no maximal effort off old logs.
+  const gapReturn = longGap && loadPermission !== 'none'
+  let gapBaseCapSec: number | null = null
+  if (gapReturn) {
+    targetFactor = Math.min(targetFactor, 1)
+    queueUnlockAttempt = false
+    suggestMaxTest = false
+    if (strategy === 'intensity') strategy = 'balanced'
+    if (dayType === 'push') dayType = 'build'
+    if (gap !== 'trained-elsewhere') {
+      const lastBase = [...state.sessions]
+        .reverse()
+        .find((s) => s.stepId === state.stepId && s.workoutKind === 'auto' && s.baseTargetSec !== undefined && s.baseTargetSec > 0)
+      gapBaseCapSec = lastBase?.baseTargetSec ?? null
+    }
+    decisions.push({
+      text: `First session back after ${sig.restDays} days without a log: a build day with nothing maximal, no strategy that lengthens holds${
+        gapBaseCapSec !== null ? `, and a base target no higher than the ${gapBaseCapSec}s you last trained at` : ''
+      }. That is this app’s cautious rule — no source measured how long a layoff erodes a hold. If this session goes well, the next one is back to normal.`,
+      kind: 'warn',
+      source: 'loaded-session',
+    })
+  }
+
   // ——— Low energy: ordinary work, no maximal effort ———
   //
   // Tired used to trim volume and nothing else, so a tired athlete who had
@@ -1805,13 +1862,14 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   }
 
+  if (gapReturn && strategy === 'intensity') strategy = 'balanced'
   const shape = STRATEGY_BY_ID[strategy]
   // The first session back after pain never asks for more than the base
   // target, whatever shape the strategy has: the rail above capped the day's
   // factor, and a strategy that lengthens holds must not undo that here. Nor
   // does a pick inside the rest rule.
   const finalTarget = clampTo(
-    firstSessionBack || pickedInsideRest ? Math.min(1, targetFactor * shape.targetFactor) : targetFactor * shape.targetFactor,
+    firstSessionBack || pickedInsideRest || gapReturn ? Math.min(1, targetFactor * shape.targetFactor) : targetFactor * shape.targetFactor,
     LIMITS.targetFactor,
   )
 
@@ -1820,7 +1878,10 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // the target up 7%" beside the same 5s: at that length 7% is a third of a
   // second, and rounding took it.
   const today = workingTarget(state, state.stepId, finalTarget, now)
-  const todaySec = today.sec
+  // The first session back from a gap is built under the base cap, so the
+  // seconds quoted here are the capped ones.
+  const gapCap = gapReturn ? { gapReturn: { days: sig.restDays, baseCapSec: gapBaseCapSec } } : { gapReturn: null }
+  const todaySec = cappedTarget(today.sec, cappedBase(adaptiveTarget(state, state.stepId, now), gapCap), { ...gapCap, targetFactor: finalTarget })
   const lastSec = sig.lastWorkingTarget
   // A rise this size is a measurement, not the nudge: weeks of holds stopped
   // at the call, then a max clean hold or a hold taken past its target. "You
@@ -1940,6 +2001,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     // test, no next-shape attempts, no minimum dose. Nor in a session picked
     // inside the rest rule.
     !firstSessionBack &&
+    !gapReturn &&
     !pickedInsideRest &&
     dayType !== 'technique' &&
     dayType !== 'deload' &&
@@ -2123,6 +2185,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     loadPermission,
     challengeAllowed,
     gap,
+    gapReturn: gapReturn ? { days: sig.restDays, baseCapSec: gapBaseCapSec } : null,
     openConcern,
     askCheckIn,
     decisions: finalDecisions,
@@ -2242,8 +2305,21 @@ export function debriefSession(
           .length === 0 &&
         toldHold(prev, step.id) === undefined &&
         !((prev.prs[step.keyExerciseId]?.value ?? 0) > 0)
+      // A hold that beat the target cannot be why the target fell. While the
+      // step has no measurements of its own, the placement answer for this
+      // exact hold stands beside the logged holds (`adaptiveTarget`), so a
+      // hold under what the athlete said pulls the target down even when it
+      // was above the target they had been given.
+      const nextSeries =
+        step !== undefined
+          ? learningSeries(next, step.id, defaultSurface(next.profile.equipment, next.profile.preferredSurface))
+          : undefined
+      const told = step !== undefined && nextSeries && !nextSeries.transferred ? toldHold(next, step.id) : undefined
+      const setupStands = told !== undefined && nextSeries !== undefined && !settled(nextSeries.points)
       why =
-        held > 0 && held < targets.before
+        held >= targets.before && told !== undefined && setupStands && held < told
+          ? `: your best ${name} hold (${Math.round(held * 10) / 10}s) beat the ${targets.before}s target, but it came in under the ${told}s you gave at setup. Until this step has three logged sessions and one measured hold, that answer stands beside what you log, so the target settles near ${targets.after}s rather than following one hold.`
+          : held > 0 && held < targets.before
           ? `: your ${name} holds came in under ${targets.before}s (best ${Math.round(held * 10) / 10}s), and the target follows what you hold.${
               estimated ? ` The ${targets.before}s was a starting estimate, not a measure of you.` : ''
             }`

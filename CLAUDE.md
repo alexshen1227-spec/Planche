@@ -1046,6 +1046,52 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     0.912 with Home active. The longer budget costs the lever two partner
     parts late in the default run (advanced tuck 11-30 → 12-05) because the
     stronger planche needs its dose first — the first-priority rule working.
+  - Seventh review round (62 UX / 55 logic; the logic loop had the planche
+    at 91% of the control, so this round was the other skills and the gym).
+    **HSPU pressing is heavy pressing**: `load.ts` `HARD_PRESSES` (from the
+    wall negative up, read off the ladder's own data; pikes excluded) count
+    with the push family (`restFamilyOf`, 3 sets, `press: true` events), the
+    planner never puts a hard HSPU session on a push-rest day, and
+    `insideRestRule` names it; the handstand hold stays balance. Ladder
+    rungs are credited like the gym's version (`pressLoading`: front delts
+    and triceps, never chest — INFERENCE). **The gym focus sees the planned
+    week** (`allocate` counts planned calisthenics days up front; `spent()`
+    keeps a focus whose main muscles are past the steer line from being
+    chosen while another fills the day — a planche opener day can be upper),
+    light pressing is not offered when a later gym day opens with a push
+    skill (`heavierLater`), the athlete's priorities are never in the steer's
+    spare list (`PAIR_HELD` keeps the light pair off non-light days), and the
+    builder fills long days (fill after the fit: priority, then the focus's
+    own unspared muscles, then the rest; push days add only pressing, pull
+    only pulling, full/lower neither; ≤10 sets a muscle, ≤30 a session, the
+    app's own ceiling) while `priority` beats every spare but the light pair.
+    **One pain memory**: `standingReport` keeps the latest non-good report
+    current for the lifts as the coach does, and the gym's "Nothing hurts"
+    records an all-good check-in when a joint is still held. **Gym-only
+    skills** move to the gym in an end-of-week pass of `planSkills` (a skill
+    with no lead or partner part that week takes the partner or short slot
+    on the first calisthenics day whose lead trains there, the lead keeping
+    its dose); `SkillBlock.roles` parallels `skills`, and
+    `plan/skillWeek.ts` `skillWeekLines` shows each skill's week (or one
+    reason it has none) in WeekPreview. **Time away is a rail**
+    (`CoachPlan.gapReturn`, `gapReturn.test`): the first loaded session
+    after a long gap is never push, factor ≤ 1, never `intensity`, base ≤
+    the last base trained at (`cappedBase`), nothing maximal. Also:
+    `steerOutside` keeps the steer for "Train again"; `weekly.ts` refuses on
+    an empty week and names what the gym time cannot cover; failed machine
+    steps hold the lighter load to `hi + 2` reps (`failedStepsAbove`); a
+    youth rep floor for jumps (`YOUTH_REP_FLOOR`, 6–8); locations merge per
+    field; ladder days fill an explicit time (`fillLadderDay`); the debrief
+    names a setup answer that holds a target down. Pinned in
+    `plan/round6.test.ts`, `gym/review7.test.ts`, `gapReturn.test.ts`,
+    `debriefFallingTarget.test.ts`, `ladderDayFill.test.ts`,
+    `plan/skillWeek.test.ts`, `onboardingKit.test.ts`; the eval has a
+    gym-only three-day variant (front lever 0 → 1–2 sessions a week).
+    Measured: planche key-hold sets 0.958 default, 0.921 at 72 h, 0.895 on
+    three days, 0.912 Home, 0.904 gym-only three days. Known limits: 13–17 of
+    ~21 muscles stay under their weekly floor with two short gym days (the
+    summary says so); the long-head triceps slot rarely fits a 20-minute
+    pressing day.
   - Skill days are requests (`{source: 'auto', skills: [skill]}`); a ladder
     day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
     pins every session built without it — regenerate only for an intended

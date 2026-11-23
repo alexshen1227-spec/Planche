@@ -150,9 +150,13 @@ describe('round 5b: the gym presses every week beside the planche', () => {
       expect(built.items.some((it) => chestPress(it.exerciseId)), built.items.map((it) => it.exerciseId).join()).toBe(true)
       expect(pressingSets(built.items)).toBeLessThan(HARD_GYM_FAMILY_SETS)
     }
-    // One light pressing day in the week: the rest are as they were, the planche's days its own.
+    // The light pressing days of the week: the lever's Wednesday among them, none pressing hard, the planche's days its
+    // own. (Round six: handstand push-ups are pressing, so the handstand's Sunday — 48 h after Friday's planche, inside
+    // the 72 h rule — went to the lever, and Saturday's game day is a light full-body day; it was one light day.)
     const thisWeek = week.days.filter((d) => d.at < at(14))
-    expect(thisWeek.filter((d) => d.plan.gym?.lightPress).map((d) => d.day)).toEqual([wed.day])
+    const light = thisWeek.filter((d) => d.plan.gym?.lightPress)
+    expect(light.map((d) => d.day)).toContain(wed.day)
+    for (const d of light) expect(pressingSets(asBuilt(state(), d, {}).items), d.day).toBeLessThan(HARD_GYM_FAMILY_SETS)
     expect(thisWeek.filter((d) => d.plan.skill?.skills[0] === 'planche' && d.kind === 'calisthenics').map((d) => d.day)).toEqual([dayKey(at(7)), dayKey(at(11))])
     expect(wed.plan.reasons.some((r) => r.startsWith('Pressing stays light today'))).toBe(true)
   })

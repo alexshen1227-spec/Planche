@@ -244,6 +244,20 @@ Open, in order of value (none blocks using the app):
   event the planner did not plan; Home and the Today card have no place
   switcher of their own (the Gym tab's place chips set today's place).
 
+## Round eight (2026-11-23): sixth strict review
+
+- Fresh reviewers on `aed9b9b`: 62/100 UX, 55/100 logic. The logic loop
+  (12 weeks, the athlete's own skill order) had the planche at 91% of a
+  planche-only control and every step within two days of it, so the round
+  went to the rest: HSPU pressing outside shared recovery, a gym focus chosen
+  before the week's skill work was counted (push days with the pressing taken
+  out, priorities ignored, long days building 21 minutes), two pain memories,
+  time away that only changed wording, gym-only skills never planned, and no
+  screen saying where each skill trains. All fixed and pinned (CLAUDE.md
+  "Seventh review round"). Still open: muscles under their floor with two
+  short gym days (now said, not hidden); the long-head triceps slot on
+  20-minute pressing days; nothing verified on a physical phone.
+
 ## Log
 
 - 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the

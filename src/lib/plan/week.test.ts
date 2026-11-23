@@ -361,7 +361,8 @@ describe('movement variety', () => {
     expect(liftTrend(climbing, 'bench-press', MON).status).toBe('progressing')
     const plan = buildGymSession({ ...pushDay, sessions: climbing })
     expect(plan.items[0].exerciseId).toBe('bench-press')
-    expect(plan.notes).toEqual([])
+    // No stall note; a long day's fill says what it added (round six), which is not about this lift.
+    expect(plan.notes.filter((n) => !n.startsWith('There was time left'))).toEqual([])
   })
 
   it('reads three rising sessions under an old high as progress, and says nothing without enough recent history', () => {
@@ -777,11 +778,14 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
     expect(count(gymWeek, 'gym'), gymWeek.join()).toBeGreaterThan(count(gymWeek, 'calisthenics'))
     expect(count(skillsWeek, 'calisthenics')).toBeGreaterThan(count(gymWeek, 'calisthenics'))
     const pushPull = gymWeekPlan.days.filter((d) => d.plan.gym && (d.plan.gym.focus === 'push' || d.plan.gym.focus === 'pull'))
-    expect(pushPull.length, gymWeek.join()).toBeGreaterThanOrEqual(1)
     for (const d of pushPull) {
       expect(d.plan.skill?.opener, `${d.day} ${d.plan.gym!.focus}`).toBe(true)
       expect(skillFamily(d.plan.skill!.skills[0]), d.day).toBe(d.plan.gym!.focus)
     }
+    // Pairing holds whichever pressing or pulling focus fills the day (round six: a push or pull day the week's skill
+    // sessions have spent is an upper day): at least one gym day opens with a skill its focus trains.
+    const paired = gymWeekPlan.days.filter((d) => d.plan.gym && d.plan.skill?.opener && (focusFamilies(d.plan.gym.focus) as string[]).includes(skillFamily(d.plan.skill.skills[0])))
+    expect(paired.length, gymWeekPlan.days.map((d) => `${d.kind}:${d.plan.gym?.focus ?? ''}${d.plan.skill?.opener ? '+' + d.plan.skill.skills[0] : ''}`).join()).toBeGreaterThanOrEqual(1)
     for (const d of gymWeekPlan.days) if (d.plan.gym && ['lower', 'full', 'athletic'].includes(d.plan.gym.focus)) expect(d.plan.skill, d.day).toBeUndefined()
     // A hard opener counts toward its family's weekly sessions. The planche's gym day opens with it; the front lever's
     // two sessions are wherever they fit — since round 5b builds a 60-minute day as 60, they are the lever partnering

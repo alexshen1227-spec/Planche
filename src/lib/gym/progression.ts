@@ -49,6 +49,14 @@ export function isUnloadedSet(ex: GymExercise | undefined, set: Pick<GymSet, 'kg
   return Boolean(ex) && !allowsUnloaded(ex) && !(set.kg !== undefined && set.kg > 0)
 }
 
+/** The fewest reps in a range for an athlete under 18 (see `repPlanFor`). */
+export const YOUTH_REP_FLOOR = 6
+
+/** A jump or throw counted in reps or contacts: the unloaded work whose dose range a youth floor applies to. */
+function isCountedInReps(ex: GymExercise): boolean {
+  return (ex.pattern === 'jump' || ex.pattern === 'throw') && (ex.count === 'reps' || ex.count === 'contacts')
+}
+
 /**
  * Default ranges. An athlete under 18 never gets a loaded range under 6 reps:
  * no near-maximal singles or doubles, and their maxes are estimated from sets
@@ -62,7 +70,14 @@ export function repPlanFor(
   youth = false,
 ): RepPlan {
   // Runs, hops and throws are dosed in contacts or reps at an effort, never by load.
-  if (exercise.dose && exercise.load === 'bodyweight') return { range: exercise.dose.range, targetRpe: exercise.dose.rpe }
+  if (exercise.dose && exercise.load === 'bodyweight') {
+    const [lo, hi] = exercise.dose.range
+    // Under 18 a jump or a throw counted in reps never goes under six, like every other rep range (a landing, a
+    // box jump, a medicine-ball throw): the dose's own range is the adult one. A run is one rep by definition,
+    // a hold is counted in seconds, and a drill's contacts already start higher.
+    if (youth && lo < YOUTH_REP_FLOOR && isCountedInReps(exercise)) return { range: [YOUTH_REP_FLOOR, Math.max(hi, YOUTH_REP_FLOOR + 2)], targetRpe: exercise.dose.rpe }
+    return { range: exercise.dose.range, targetRpe: exercise.dose.rpe }
+  }
   if (exercise.explosive || emphasis === 'power') return youth ? { range: [6, 8], targetRpe: 7 } : { range: [3, 6], targetRpe: 7 }
   // A hard bodyweight movement (a Nordic curl, a dragon flag) is a few slow, controlled reps, never an
   // isolation set of 10–15. Under 18 the floor stays one rep above the lowest: these are not loaded maxes.
@@ -186,6 +201,45 @@ function workingLoad(loads: number[], tie: 'heaviest' | 'lightest'): number {
     }
   }
   return best
+}
+
+/** A step up that fell short is remembered this long: after it the lighter load has to earn the next try. */
+export const FAILED_STEP_MEMORY_DAYS = 56
+/** Reps past the top of the range each remembered failed step asks for before the same step is tried again. */
+export const FAILED_STEP_EXTRA_REPS = 2
+/** The most failed steps that count: the bar rises to this many times the extra reps, never further. */
+const FAILED_STEP_CAP = 3
+
+/**
+ * How many times a heavier load than `kg` was tried at this place lately and fell short (a set under the range
+ * at a near-max effort, or half the sets under it with no effort logged). It looks back from the session being
+ * read through the sessions at heavier loads and stops at the first heavier session that was handled or at the
+ * edge of the memory, so a step that worked clears the slate. Pure; history in, a count out.
+ */
+function failedStepsAbove(
+  sessions: GymSession[],
+  exerciseId: string,
+  locationId: string | undefined,
+  kg: number,
+  from: GymSession,
+  lo: number,
+  keep: (set: GymSet) => boolean,
+): number {
+  let failed = 0
+  let before = from.startedAt
+  for (let i = 0; i < 16; i++) {
+    const prev = lastPerformance(sessions, exerciseId, locationId, before, keep)
+    if (!prev) break
+    if (from.startedAt - prev.session.startedAt > FAILED_STEP_MEMORY_DAYS * 86_400_000) break
+    before = prev.session.startedAt
+    const load = workingLoad(prev.sets.map((s) => s.kg ?? 0), 'heaviest')
+    if (!(load > kg + 0.01)) continue
+    const atHeavier = prev.sets.filter((s) => (s.kg ?? 0) === load)
+    const fell = atHeavier.some((s) => s.reps < lo) && (atHeavier.some((s) => s.rpe !== undefined && s.rpe >= 9.5) || failedWithoutEffort(atHeavier, lo))
+    if (!fell) break
+    failed++
+  }
+  return failed
 }
 
 /** At least half the sets at the working load fell short of the range, and no effort was logged on any of them. */
@@ -318,7 +372,14 @@ export function suggestLoad(input: {
       why: `First time in ${weeksAway} weeks: a step lighter, then build back.`,
     }
   }
-  if ((allTop || unratedTwice) && step > 0) {
+  const wantsUp = (allTop || unratedTwice) && step > 0
+  // A step that fell short lately is not tried again on the same evidence: the sets that earned it last time did
+  // not hold at the heavier load. Reps past the top of the range are the proof that there is room (double
+  // progression, CONSENSUS; the extra bar is the app's own rule, not a measured one).
+  const failedSteps = wantsUp ? failedStepsAbove(sessions, exerciseId, location?.id, kg, last.session, lo, keep) : 0
+  const retryBar = hi + FAILED_STEP_EXTRA_REPS * Math.min(failedSteps, FAILED_STEP_CAP)
+  const heldBack = failedSteps > 0 && !atLoad.every((s) => s.reps >= retryBar)
+  if ((allTop || unratedTwice) && step > 0 && !heldBack) {
     const here = reach(kg)
     const next = roundToStep(here + step, step, top)
     if (next <= here) {
@@ -327,7 +388,7 @@ export function suggestLoad(input: {
     // Sets that blew well past the range at an easy effort earn two steps —
     // for an adult. Under 18 a jump is always the smallest step there is.
     const easy = !unratedTwice && atLoad.every((s) => s.reps >= hi + 3 && s.rpe !== undefined && s.rpe <= 7)
-    const twoSteps = !youth && easy ? roundToStep(here + 2 * step, step, top) : next
+    const twoSteps = !youth && easy && failedSteps === 0 ? roundToStep(here + 2 * step, step, top) : next
     // Under 18 a jump is one step of the unit in use from the load that was really lifted: rounding that load to
     // the grid first (20 kg is 44.1 lb, which became 45) and adding a step landed 2.68 kg up against a 2.27 kg step.
     const jump = youth ? Math.min(twoSteps, youthCeiling(kg, step, top)) : twoSteps
@@ -351,6 +412,14 @@ export function suggestLoad(input: {
   }
   const repeatKg = reach(kg)
   const reps = atLoad.map((s) => s.reps).join(', ')
+  if (heldBack) {
+    return {
+      ...base,
+      kg: repeatKg,
+      kind: 'repeat',
+      why: `Every set reached ${hi}, but a heavier weight than this fell short of ${lo} reps lately: stay here until every set reaches ${retryBar} reps, then try the step again (the app's own rule on top of double progression, a coaching convention).`,
+    }
+  }
   // This place's steps may not reach last time's exact load (a unit change, other plates): say so.
   if (kg > 0 && Math.abs(repeatKg - kg) > 0.01) {
     return { ...base, kg: repeatKg, kind: 'repeat', why: `Nearest load here to last time’s ${formatLoad(kg, atLoad[0]?.unit ?? unitFor(ex, location))}: aim to add a rep to last time’s ${reps}.` }

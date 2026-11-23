@@ -6,7 +6,7 @@ import { defaultPrefs } from '../gym/state'
 import type { GymSession } from '../gym/types'
 import { addDays, dayKey, weekStart } from '../time'
 import { setsPerMuscle, volumeStatus, volumeTarget } from './load'
-import { gymDeloadDue, skillGoalPace } from './planner'
+import { gymDeloadDue, planWeekAhead, PLANNABLE_MUSCLES, skillGoalPace } from './planner'
 
 const DAY = 86_400_000
 
@@ -149,7 +149,11 @@ export function weeklySummary(state: AppState, now = Date.now()): WeeklySummary 
     .filter((x) => volumeStatus(x.done, x.target) === 'under' && x.target[0] > 0)
     .sort((a, b) => a.done / a.target[0] - b.done / b.target[0])
   const focus: string[] = []
-  const priorityUnder = under.filter((x) => prefs.musclesPriority.includes(x.m))
+  // Nothing logged this week is nothing to compare with the weekly targets: a brand-new athlete was told several
+  // muscles were under target and that the plan steered toward them, before a single session.
+  const logged = skill.length + gymWeek.length > 0
+  if (!logged) focus.push('Nothing logged this week yet, so there is nothing to compare with the weekly muscle targets.')
+  const priorityUnder = logged ? under.filter((x) => prefs.musclesPriority.includes(x.m)) : []
   if (priorityUnder.length) {
     focus.push(`Your priority ${priorityUnder.length > 1 ? 'muscles' : 'muscle'} — ${priorityUnder.map((x) => MUSCLE_BY_ID[x.m].label.toLowerCase()).join(', ')} — ${priorityUnder.length > 1 ? 'are' : 'is'} short of target this week.`)
   }
@@ -160,8 +164,22 @@ export function weeklySummary(state: AppState, now = Date.now()): WeeklySummary 
   if (skill.length === 0 && prefs.goals.skills > 0 && now - from > 3 * DAY) focus.push('No skill session yet this week — skills move with frequency, so get one in early next week.')
   const deload = gymDeloadDue(state, now)
   if (deload.due) focus.push('This is a lighter gym week — fewer sets, stopping further from failure (see Today’s reasons).')
-  if (!priorityUnder.length && under.length >= 4) {
-    focus.push(`Several muscles are under target so far (${under.slice(0, 3).map((x) => MUSCLE_BY_ID[x.m].label.toLowerCase()).join(', ')} and more) — the plan steers the rest of the week toward them.`)
+  if (logged && !priorityUnder.length && under.length >= 4) {
+    // Only what the days left can reach is said to be steered toward: the week as planned (`planWeekAhead`'s
+    // shortfall), and no muscle that no gym focus plans for. Twelve weeks once said so while 13–18 of 21 muscles
+    // stayed under every week.
+    const short = new Set(planWeekAhead(state, now).shortfall)
+    const uncovered = under.filter((x) => short.has(x.m) || !PLANNABLE_MUSCLES.has(x.m))
+    const names = (xs: typeof under) => xs.map((x) => MUSCLE_BY_ID[x.m].label.toLowerCase())
+    if (!uncovered.length) {
+      focus.push(`Several muscles are under target so far (${names(under.slice(0, 3)).join(', ')} and more) — the gym days planned for the rest of the week cover them.`)
+    } else {
+      const list = names(uncovered.slice(0, 4))
+      const more = uncovered.length - list.length
+      focus.push(
+        `This week’s gym time cannot cover every muscle: ${list.join(', ')}${more > 0 ? ` and ${more} more` : ''} stay under the weekly target (the targets are coaching conventions).`,
+      )
+    }
   }
   return { from, skillSessions: skill.length, gymSessions: gymWeek.length, holdSec, gymSets, newMaxes: [...newMaxes], streakWeeks, focus }
 }

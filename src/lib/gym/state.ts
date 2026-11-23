@@ -216,6 +216,7 @@ function sanitizeLocation(raw: unknown): GymLocation | null {
     ? [...new Set(r.hardHere.filter((id): id is string => typeof id === 'string' && id in GYM_EXERCISE_BY_ID))]
     : []
   const hardHereAt = sanitizeTimes(r.hardHereAt)
+  const fieldTimes = sanitizeLocationTimes(r.fieldTimes)
   return {
     id: r.id,
     name: typeof r.name === 'string' && r.name.trim() ? r.name.trim().slice(0, 40) : 'Gym',
@@ -224,9 +225,33 @@ function sanitizeLocation(raw: unknown): GymLocation | null {
     ...(Object.keys(gear).length ? { gear } : {}),
     ...(hardHere.length ? { hardHere } : {}),
     ...(Object.keys(hardHereAt).length ? { hardHereAt } : {}),
+    ...(fieldTimes ? { fieldTimes } : {}),
     updatedAt: isTime(r.updatedAt) ? r.updatedAt : 1,
   }
 }
+
+/**
+ * A place's own settings, each stamped when it last changed: two tabs that edit different ones (the unit on one,
+ * the equipment on the other) both keep their edit. A save from before these stamps has none, and the place's
+ * `updatedAt` stands in for every field.
+ */
+export const LOCATION_FIELDS = ['name', 'unit', 'equipment', 'gear'] as const
+type LocationField = (typeof LOCATION_FIELDS)[number]
+export type LocationFieldTimes = Partial<Record<LocationField, number>>
+/** A place as stored: `GymLocation` plus the per-setting times. */
+export type StampedLocation = GymLocation & { fieldTimes?: LocationFieldTimes }
+
+function sanitizeLocationTimes(raw: unknown): LocationFieldTimes | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const out: LocationFieldTimes = {}
+  for (const k of LOCATION_FIELDS) {
+    const t = (raw as Record<string, unknown>)[k]
+    if (isTime(t)) out[k] = t
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+const locationFieldTime = (l: StampedLocation, k: LocationField) => l.fieldTimes?.[k] ?? l.updatedAt
 
 /** The most one set can hold: an hour for a movement counted in seconds, 1000 reps otherwise. */
 export function maxCountFor(exerciseId: string | undefined): number {
@@ -526,19 +551,32 @@ function mergeStamped<V>(a: Side<V>, b: Side<V>): { vals: Record<string, V>; at:
   return { vals, at }
 }
 
-/** The newer copy of a place, with its hard-here marks merged mark by mark. */
-function mergeLocation(a: GymLocation, b: GymLocation): GymLocation {
+/**
+ * Two copies of a place, converged setting by setting: each of name, unit, equipment and gear comes from the side
+ * that changed it last (a tie keeps `a`, the local one), and the hard-here marks merge mark by mark.
+ */
+function mergeLocation(a: StampedLocation, b: StampedLocation): GymLocation {
   const list = (l: GymLocation) => Object.fromEntries((l.hardHere ?? []).map((id) => [id, true as const]))
   const m = mergeStamped(
     { vals: list(a), at: a.hardHereAt, fallback: a.updatedAt, freeze: false },
     { vals: list(b), at: b.hardHereAt, fallback: b.updatedAt, freeze: false, side: 'incoming' },
   )
-  const winner = b.updatedAt > a.updatedAt ? b : a
   const hardHere = Object.keys(m.vals)
-  const { hardHere: _h, hardHereAt: _t, ...rest } = winner
-  void _h
-  void _t
-  return { ...rest, ...(hardHere.length ? { hardHere } : {}), ...(Object.keys(m.at).length ? { hardHereAt: m.at } : {}) }
+  const out: Record<string, unknown> = { id: a.id }
+  const times: LocationFieldTimes = {}
+  for (const k of LOCATION_FIELDS) {
+    const from = locationFieldTime(b, k) > locationFieldTime(a, k) ? b : a
+    if (from[k] !== undefined) out[k] = from[k]
+    times[k] = locationFieldTime(from, k)
+  }
+  const stamped = Boolean(a.fieldTimes || b.fieldTimes)
+  return {
+    ...(out as unknown as GymLocation),
+    ...(hardHere.length ? { hardHere } : {}),
+    ...(Object.keys(m.at).length ? { hardHereAt: m.at } : {}),
+    ...(stamped ? { fieldTimes: times } : {}),
+    updatedAt: Math.max(a.updatedAt, b.updatedAt),
+  }
 }
 
 /** JSON with keys sorted, so two equal states compare equal whatever order built them. */
@@ -603,8 +641,14 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
       return { ...gym, sessions: gym.sessions.map((s) => (s.id === session.id ? { ...session, exercises, updatedAt: now } : s)) }
     }
     case 'saveLocation': {
-      const location = { ...action.location, updatedAt: now }
-      const exists = gym.locations.some((l) => l.id === location.id)
+      const before = gym.locations.find((l) => l.id === action.location.id) as StampedLocation | undefined
+      // Each setting is stamped when this save changed it; the rest keep their own time.
+      const fieldTimes: LocationFieldTimes = {}
+      for (const k of LOCATION_FIELDS) {
+        fieldTimes[k] = !before || stableJson(before[k]) !== stableJson(action.location[k]) ? now : locationFieldTime(before, k)
+      }
+      const location: StampedLocation = { ...action.location, fieldTimes, updatedAt: now }
+      const exists = Boolean(before)
       return {
         ...gym,
         locations: exists ? gym.locations.map((l) => (l.id === location.id ? location : l)) : [...gym.locations, location],

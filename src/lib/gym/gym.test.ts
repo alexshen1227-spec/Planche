@@ -128,8 +128,9 @@ describe('double progression', () => {
   })
   it('never gives an athlete under 18 a range below six reps', () => {
     for (const e of GYM_EXERCISES) {
-      // Unloaded runs, hops and throws are dosed in contacts or reps with no weight: the 6-rep floor is for loaded work.
-      if (e.dose && e.load === 'bodyweight') continue
+      // A run is one rep a set and a hold is counted in seconds: neither has a rep range. Jumps and throws counted
+      // in reps do (round seven: a landing was programmed at 5-8 for a 13-year-old).
+      if (e.pattern === 'sprint' || e.count === 'seconds') continue
       for (const emphasis of ['strength', 'muscle', 'endurance', 'power'] as const) {
         // A hard bodyweight movement (Nordic curl, dragon flag) is a few slow lowering reps, not a loaded max:
         // its floor is 4 (round 2 review). Everything else keeps the six-rep floor.

@@ -1,5 +1,6 @@
-import type { SkillId, StepId } from '../types'
-import { SKILLS } from '../data/skills'
+import type { EquipmentId, SkillId, StepId } from '../types'
+import { missingKit, SKILLS } from '../data/skills'
+import { placesWithKit, type KitPlace } from '../components/weekPlanCopy'
 import { ASSESSMENT_ITEMS } from './assessment'
 import { nextInterviewItem, type InterviewAnswers } from './placement'
 
@@ -125,4 +126,62 @@ export function ladderStopNote(answers: InterviewAnswers): string | null {
   const rung = LADDER[stop]
   const name = rung.exerciseId ? rung.question.split(' — ')[0].toLowerCase() : 'that hold'
   return `You answered “not yet” to the ${name}, so the harder planche holds are skipped. They would not change your start.`
+}
+
+/**
+ * Where each chosen skill can train, counting the places the athlete has
+ * added. The schedule and "Your plan" steps once said a skill was "waiting for
+ * kit at home" after the athlete had added a gym with the bar, the wall and
+ * the dip bars: waiting is for a skill that no place has the kit for.
+ *
+ * - `home`: the kit ticked for home trains it.
+ * - `atPlaces`: home lacks something, a place has all of it — it trains there.
+ * - `waiting`: nothing the athlete has told the app about has it.
+ */
+export function skillKitStanding(
+  skills: readonly SkillId[],
+  homeKit: EquipmentId[],
+  places: readonly KitPlace[],
+): {
+  home: SkillId[]
+  atPlaces: { skill: SkillId; places: string[] }[]
+  waiting: { skill: SkillId; missing: EquipmentId[][] }[]
+} {
+  const out: ReturnType<typeof skillKitStanding> = { home: [], atPlaces: [], waiting: [] }
+  for (const skill of skills) {
+    const missing = missingKit(skill, homeKit)
+    if (missing.length === 0) {
+      out.home.push(skill)
+      continue
+    }
+    const at = placesWithKit(skill, homeKit, places)
+    if (at.length) out.atPlaces.push({ skill, places: at })
+    else out.waiting.push({ skill, missing })
+  }
+  return out
+}
+
+/**
+ * The counter beside the section name while the placement runs: "Question 4
+ * of 16" through the interview, and on the goal screen before it "Then up to
+ * 16 questions" — so "Step 3 of 7 · Skills" does not sit unchanged through
+ * seventeen screens. The total is the interview's longest way through while it
+ * is still open ("of up to 16"). Null on every other screen, and when the
+ * athlete places themselves by hand (one screen per skill, no questions).
+ */
+export function interviewCounter(input: {
+  stage: string
+  skipped: boolean
+  /** Questions answered so far. */
+  answered: number
+  /** `interviewLength`: the shortest and the longest way through. */
+  shortest: number
+  longest: number
+}): string | null {
+  if (input.skipped) return null
+  const open = input.shortest !== input.longest
+  if (input.stage === 'goal') return `Then ${open ? 'up to ' : ''}${Math.max(1, input.longest)} questions`
+  if (input.stage !== 'interview') return null
+  const at = input.answered + 1
+  return `Question ${at} of ${open ? 'up to ' : ''}${Math.max(at, input.longest)}`
 }

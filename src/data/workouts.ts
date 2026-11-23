@@ -21,7 +21,7 @@ import { ownsKit, SKILLS } from './skills'
 import { skillSession, skillWarmup } from './skillSession'
 import { mixedSession } from './mixedSession'
 import { bridgeStatus, capacityOn } from '../lib/bridge'
-import { buildPlan, STRATEGY_BY_ID, type CoachPlan, type PlanContext, type WarmupLevel } from '../lib/coach'
+import { buildPlan, cappedBase, cappedTarget, STRATEGY_BY_ID, type CoachPlan, type PlanContext, type WarmupLevel } from '../lib/coach'
 import { median } from '../lib/signals'
 import { capacityReading, endedForNonCapacityReason, isAssisted } from '../lib/progression'
 import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
@@ -1265,10 +1265,10 @@ export function todaysSession(
   // Built for `now`, like everything else here: read at the wall clock instead,
   // a history replayed from another date lost its "done as prescribed" floor
   // and a compliant athlete's targets fell from 12s to 3s.
-  const baseTarget = adaptiveTarget(state, stepId, now)
+  const baseTarget = cappedBase(adaptiveTarget(state, stepId, now), plan)
   const capacity = observedCapacity(state, stepId)
   // Shared with the coach, so what it says about the target is what it is.
-  const target = workingTargetSec(state, stepId, plan.targetFactor, now)
+  const target = cappedTarget(workingTargetSec(state, stepId, plan.targetFactor, now), baseTarget, plan)
   const surface = defaultSurface(equipment, state.profile.preferredSurface)
   const transferred = plan.signals.keySeriesTransferred
   const strategyNote =
@@ -2166,6 +2166,7 @@ export function challengeBlockedReason(plan: CoachPlan): string | null {
   // The latest answer was "good", so none of the joint reasons above apply:
   // what holds maximal work back is the first loaded session after the report.
   if (plan.signals.returningFromPain) return 'this is your first session back after a pain report'
+  if (plan.gapReturn) return `this is your first session back after ${plan.gapReturn.days} days without a log`
   if (plan.insideRest) return `today sits inside your ${plan.insideRest.ruleHours} h rest rule`
   if (plan.signals.daysSinceLoaded === 0) return 'you already trained hard today'
   if (plan.dayType === 'deload') return 'this is a scheduled easy week'

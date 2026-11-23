@@ -7,6 +7,7 @@ import { useStore } from '../../lib/store'
 import { useToday } from '../../lib/useToday'
 import type { SkillId } from '../../types'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
+import { skillDayWords, skillWeekLines } from '../../lib/plan/skillWeek'
 
 const SHORT: Record<SkillId, string> = {
   planche: 'Planche',
@@ -57,6 +58,7 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
   )
   const week = given ?? computed!
   const [picked, setPicked] = useState(0)
+  const bySkill = useMemo(() => skillWeekLines(week, state), [week, state])
   const selected = week.days[Math.min(picked, week.days.length - 1)]
   return (
     <section aria-label="The week ahead">
@@ -121,6 +123,32 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
               </li>
             ))}
           </ul>
+        </div>
+      ) : null}
+      {bySkill.length ? (
+        <div className="mt-3" role="group" aria-labelledby="week-by-skill">
+          <h4 id="week-by-skill" className="text-footnote font-semibold text-ink2">
+            This week by skill
+          </h4>
+          <ul className="mt-1 space-y-1.5">
+            {bySkill.map((line) => (
+              <li key={line.skill} className="min-w-0 break-words rounded-inner bg-raised px-3 py-2 text-caption leading-snug text-ink2">
+                <span className="font-semibold text-ink">{line.name}</span>
+                {line.days.length ? (
+                  <ul className="mt-0.5 space-y-0.5" aria-label={`${line.name} days this week`}>
+                    {line.days.map((d) => (
+                      <li key={d.day}>{skillDayWords(d)}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="mt-0.5 block">No day this week in your plan. {line.reason?.text}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-caption text-ink3">
+            From your plan as it stands — it is planned again from what you log. How often a skill trains is a coaching convention, not a measured amount.
+          </p>
         </div>
       ) : null}
       <p className="mt-1.5 text-caption text-ink3">

@@ -1,4 +1,4 @@
-import type { Joint, Muscle, Pattern } from '../../data/gym/catalog'
+import { type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
 import { athleticDomain, GYM_EXERCISE_BY_ID, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
 import { availableAt, preferenceRank } from './availability'
 import { gateTier, liftTrend, plyoGate, repPlanFor, STALL_SESSIONS, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
@@ -65,6 +65,26 @@ export const NAMED_PATTERNS: Record<GymFocus, Pattern[][]> = {
     ['horizontal-press', 'incline-press', 'dip'],
     ['vertical-pull', 'horizontal-pull'],
   ],
+  athletic: [],
+}
+
+/** Movements that press (a push skill's family): the light-pressing rail keeps them out. */
+const PRESSING_PATTERNS: ReadonlySet<Pattern> = new Set<Pattern>(['horizontal-press', 'incline-press', 'vertical-press', 'dip'])
+
+/** Movements that pull (a pull skill's family). */
+const PULLING_PATTERNS: ReadonlySet<Pattern> = new Set<Pattern>(['vertical-pull', 'horizontal-pull', 'straight-arm-pull'])
+
+/**
+ * What a day adds with spare time. The planner counts a session's pressing or pulling sets as a hard session of
+ * that family (the straight-arm rest rule), so time does not buy more of either family than the day is named for:
+ * a push day adds pressing, a pull day pulling, an upper day both, and no other day either.
+ */
+const FILL_FAMILIES: Record<GymFocus, ReadonlySet<Pattern>[]> = {
+  push: [PRESSING_PATTERNS],
+  pull: [PULLING_PATTERNS],
+  upper: [PRESSING_PATTERNS, PULLING_PATTERNS],
+  full: [],
+  lower: [],
   athletic: [],
 }
 
@@ -144,6 +164,12 @@ function blockMinutes(sets: number, restSec: number, workSec = 40): number {
 const FAVOURITE_HERE_BONUS = 1
 
 const WARM_UP_MIN = 6
+/** Minutes the added movements leave unspent: changing plates and finding a machine run over the estimate, and a harder day needs room for its extra sets. */
+const FILL_HEADROOM_MIN = 4
+/** The most sets of credit one muscle gets in a session through the added movements (the app's own ceiling). */
+const FILL_MUSCLE_SETS = 10
+/** ...and the most working sets a whole session reaches this way: a long day is not a reason for an endless one. */
+const FILL_SESSION_SETS = 30
 /** The speed and power session's own drills are its warm-up. */
 const ATHLETIC_WARM_UP_MIN = 2
 
@@ -223,8 +249,18 @@ export function buildGymSession(input: {
   const { location, minutes, sessions, ratings = {}, youth = false, now = Date.now() } = input
   const musclesOff = new Set(input.musclesOff ?? [])
   const priority = new Set(input.priority ?? [])
+  // A muscle the athlete asked for is not spared: a movement built on a priority muscle keeps its slot whatever
+  // the week's steer says about the other muscles it leans on, and a muscle on both lists counts as priority.
+  // One exception is a recovery rail, not a steer: with the pressing pair spared (the planner's light pressing
+  // beside a push skill, `LIGHT_PRESS_SPARE`) nothing built on either of them comes back for a priority — the
+  // week is lighter on them because the skill days carry them.
   const spare = new Set(input.spare ?? [])
-  const spareIn = (e: GymExercise) => e.primary.filter((m) => spare.has(m)).length
+  const lightPress = spare.has('front-delts') && spare.has('triceps')
+  const spareIn = (e: GymExercise) => {
+    const held = lightPress && e.primary.some((m) => m === 'front-delts' || m === 'triceps')
+    if (!held && e.primary.some((m) => priority.has(m))) return 0
+    return e.primary.filter((m) => spare.has(m)).length
+  }
   const avoid = new Set(input.avoidJoints ?? [])
   const factor = input.volumeFactor ?? 1
   const goalEmphasis = input.goals ? { power: input.goals.power >= 3 } : null
@@ -399,19 +435,84 @@ export function buildGymSession(input: {
   const warm = input.warmUpMin !== undefined ? Math.max(0, input.warmUpMin) : focus === 'athletic' ? ATHLETIC_WARM_UP_MIN : WARM_UP_MIN
   const total = () =>
     warm + items.reduce((m, it) => m + blockMinutes(it.sets, it.restSec, GYM_EXERCISE_BY_ID[it.exerciseId].dose?.workSec), 0)
+  let trimmed = false
   for (const compound of [false, true]) {
     for (let i = items.length - 1; i >= 0 && total() > minutes; i--) {
-      if (Boolean(GYM_EXERCISE_BY_ID[items[i].exerciseId].compound) === compound && items[i].sets > 2) items[i] = { ...items[i], sets: 2 }
+      if (Boolean(GYM_EXERCISE_BY_ID[items[i].exerciseId].compound) === compound && items[i].sets > 2) {
+        items[i] = { ...items[i], sets: 2 }
+        trimmed = true
+      }
     }
   }
   while (items.length > 1 && total() > minutes) {
     const gone = items.pop()!
     dropped.unshift(GYM_EXERCISE_BY_ID[gone.exerciseId].name)
+    trimmed = true
   }
   const fits = items.length === 0 || total() <= minutes
   if (!fits) {
     for (const it of items) dropped.unshift(GYM_EXERCISE_BY_ID[it.exerciseId].name)
     items.length = 0
+  }
+  // A long day uses its minutes: when the focus's own slots are placed and time is still there (a few minutes are
+  // left unspent, and nothing was trimmed to fit), movements are added for the muscles the session gives least to —
+  // the athlete's priorities first, then the focus's own muscles, then the rest of what its slots train. Spared and
+  // switched-off muscles, avoided joints and kit all hold, no more pressing or pulling is added than the day is
+  // named for, and a short day, which has no such room, builds exactly what it always did.
+  if (focus !== 'athletic' && fits && items.length && !trimmed) {
+    const slotPatterns = new Set<Pattern>(SLOTS[focus].flat())
+    const main = new Set<Muscle>(FOCUS_MAIN[focus])
+    const credit = new Map<Muscle, number>()
+    const addCredit = (ex: GymExercise, sets: number) => {
+      for (const m of ex.primary) credit.set(m, (credit.get(m) ?? 0) + sets)
+      for (const m of ex.secondary) credit.set(m, (credit.get(m) ?? 0) + sets * 0.5)
+    }
+    for (const it of items) addCredit(GYM_EXERCISE_BY_ID[it.exerciseId], it.sets)
+    const added: GymExercise[] = []
+    // A harder day (factor above 1) keeps room above the usual ceiling for its extra sets.
+    const ceiling = Math.round(FILL_SESSION_SETS * Math.max(1, factor))
+    for (;;) {
+      const room = minutes - FILL_HEADROOM_MIN - total()
+      const setsSoFar = items.reduce((n, it) => n + it.sets, 0)
+      if (setsSoFar + 2 > ceiling) break
+      const candidates = here
+        .filter(
+          (e) =>
+            !used.has(e.id) &&
+            slotPatterns.has(e.pattern) &&
+            !e.explosive &&
+            (![PRESSING_PATTERNS, PULLING_PATTERNS].some((f) => f.has(e.pattern)) || FILL_FAMILIES[focus].some((f) => f.has(e.pattern))) &&
+            usable(e) &&
+            spareIn(e) === 0 &&
+            technicalPenalty(e) === 0 &&
+            e.primary.every((m) => (credit.get(m) ?? 0) < FILL_MUSCLE_SETS),
+        )
+        .map((e) => {
+          const tier = isPriority(e) ? 0 : e.primary.some((m) => (main.size ? main.has(m) : true)) ? 1 : 2
+          const least = Math.min(...e.primary.map((m) => credit.get(m) ?? 0))
+          return { e, score: tier * 1000 + least * 10 + hardHere(e) * 3 + scoreOf(e, staleness(e)) }
+        })
+        .sort((a, b) => a.score - b.score)
+      let placed = false
+      for (const { e } of candidates) {
+        const want = 3 + (isPriority(e) ? 1 : 0)
+        const rest = restFor(e, makeItem(e, false, 2).plan)
+        const sets = [...new Set([want, 3, 2])].find((n) => n <= want && setsSoFar + n <= ceiling && blockMinutes(n, rest, e.dose?.workSec) <= room)
+        if (sets === undefined) continue
+        used.add(e.id)
+        items.push(makeItem(e, false, sets))
+        addCredit(e, sets)
+        added.push(e)
+        placed = true
+        break
+      }
+      if (!placed) break
+    }
+    if (added.length) {
+      notes.push(
+        `There was time left in the ${minutes} minutes, so ${added.map((e) => e.name).join(', ')} ${added.length === 1 ? 'was' : 'were'} added for the muscles the session gave least — your priority muscles first. It is the app's own way of using a long day, not a prescription.`,
+      )
+    }
   }
   // The day's factor works on the fitted session, so it changes the sets and not only the effort:
   // a lighter day keeps about that share of the usual working sets (taken off the lifts first, then

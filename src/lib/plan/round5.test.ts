@@ -193,11 +193,14 @@ describe('following the plan does not change the plan (round five)', () => {
   it('a saved opener leaves today the gym day, lifts next, and moves no later planche day; nor do the lifts', () => {
     const s = teen()
     const plan = planToday(s, { now: MON })
-    expect([plan.kind, plan.gym?.focus, plan.skill?.skills, plan.skill?.opener]).toEqual(['gym', 'push', ['planche'], true])
+    // A pressing day the planche opens: push, or (round six) upper when the week's planche days already take the front
+    // delts and triceps past the steer's line, so a push day could not fill its time.
+    expect([plan.kind, plan.skill?.skills, plan.skill?.opener]).toEqual(['gym', ['planche'], true])
+    expect(['push', 'upper']).toContain(plan.gym?.focus)
     const before = firstDays(planWeekAhead(s, MON))
     const opened = doSkill(s, skillRequest(plan.skill!), MON)
     const mid = planWeekAhead(opened, MON + 30 * 60_000)
-    expect([mid.days[0].plan.kind, mid.days[0].plan.gym?.focus, mid.days[0].plan.skill?.opener]).toEqual(['gym', 'push', true])
+    expect([mid.days[0].plan.kind, mid.days[0].plan.gym?.focus, mid.days[0].plan.skill?.opener]).toEqual(['gym', plan.gym?.focus, true])
     expect(firstDays(mid)).toEqual(before)
     // The lifts, stamped when they start — after the opener.
     const lifted = doLifts(opened, ['db-bench-press', 'incline-db-press', 'db-lateral-raise'], MON + 40 * 60_000)
@@ -259,7 +262,8 @@ describe('the gym side of round five', () => {
     // A week whose planche work has front delts and triceps far past their tops.
     let s = teen()
     for (const day of [-6, -4, -2]) s = doSkill(s, { source: 'auto', skills: ['planche'], minutes: 45 }, at(day))
-    const week = planWeekAhead(s, MON)
+    // The coach no longer picks a push day the week has spent (round six): the athlete's own pick of one is steered.
+    const week = planWeekAhead(s, MON, { todayKind: 'gym', todayFocus: 'push' })
     const push = week.days.filter((d) => d.plan.gym?.focus === 'push')
     expect(push.length).toBeGreaterThan(0)
     for (const d of push) {
