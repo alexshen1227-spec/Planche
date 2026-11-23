@@ -630,7 +630,9 @@ export function gymRecords(sessions: GymSession[]): Record<string, GymRecord> {
         const e = sameBar ? estimateOneRepMax(set, log.exerciseId) : null
         if (e !== null) gaveEstimate = true
         if (e !== null && (!rec.bestE1rm || e > rec.bestE1rm.kg)) rec.bestE1rm = { kg: e, at: set.at, locationId: s.locationId, set }
-        if (!assisted && set.kg !== undefined && set.kg > 0 && (!rec.heaviest || set.kg > rec.heaviest.kg)) {
+        // The heaviest load follows the same rule as the estimate: a machine's weight stack is only comparable inside
+        // one place, so another gym's machine never sets this one's heaviest.
+        if (!assisted && sameBar && set.kg !== undefined && set.kg > 0 && (!rec.heaviest || set.kg > rec.heaviest.kg)) {
           rec.heaviest = { kg: set.kg, reps: set.reps, at: set.at }
         }
         if (GYM_EXERCISE_BY_ID[log.exerciseId]?.count === 'seconds' && (!rec.longestHold || set.reps > rec.longestHold.sec)) {
