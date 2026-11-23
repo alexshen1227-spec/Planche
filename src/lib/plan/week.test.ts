@@ -17,7 +17,7 @@ import { readDay } from '../weekPlan'
 import { conservative } from '../gym/draft'
 import { weekStart } from '../time'
 import { familyEvents, skillSetLoading } from './load'
-import { focusFamilies, gymOpener, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutes, skillRequest } from './planner'
+import { focusFamilies, gymOpener, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutes, openerMinutesFor, REST_SLACK_HOURS, skillRequest } from './planner'
 import { missingKit } from '../../data/skills'
 import type { StepId, Weekday, WeekPlan } from '../../types'
 
@@ -181,16 +181,19 @@ describe('the week plan', () => {
     // One block a day, and three planche days in the week, spaced by the rest rule.
     for (const d of week.days) if (!d.plan.rest) expect(Boolean(d.plan.skill) !== Boolean(d.plan.gym), d.day).toBe(true)
     expect(week.frequency.find((f) => f.family === 'push')).toMatchObject({ planned: 3, target: 3 })
-    expect(week.days.some((d) => d.plan.reasons.some((r) => r.includes('needs it to get 3 hard sessions in this week')))).toBe(true)
-    // Sunday, the week's last day: with two done it takes the third; with three done it is the gym's.
+    // Round five: the first priority gets every session its rest rule allows, and the reason says the week's own count.
+    expect(week.days.some((d) => d.plan.reasons.some((r) => r.includes('every session your 48h rest rule allows on your training days — 3 sessions this week')))).toBe(true)
+    // Sunday, the week's last day: with two done it takes the third — and with three done, the fourth: a
+    // planche-only athlete on these days would train it, so the first priority does (round five; the convention's
+    // three no longer caps it).
     const sun = at(6, 9)
     const two = { ...s, sessions: [skillSession(at(0, 8)), skillSession(at(4, 8))] }
     const three = { ...s, sessions: [skillSession(at(0, 8)), skillSession(at(2, 8)), skillSession(at(4, 8))] }
     expect(planToday(two, { now: sun }).skill?.skills).toEqual(['planche'])
     expect(planToday(two, { now: sun }).gym).toBeUndefined()
     expect(planWeekAhead(three, sun).frequency[0].done).toBe(3)
-    expect(planToday(three, { now: sun }).skill).toBeUndefined()
-    expect(planToday(three, { now: sun }).gym).toBeDefined()
+    expect(planToday(three, { now: sun }).skill?.skills).toEqual(['planche'])
+    expect(planToday(three, { now: sun }).gym).toBeUndefined()
   })
 
   it('respects a longer straight-arm rest rule across the whole week', () => {
@@ -588,7 +591,8 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
           const skill = p.skill.skills[0]
           const fam = skillFamily(skill)
           expect(p.skill.skills, `${who} ${d.day} one skill opens`).toHaveLength(1)
-          expect(p.skill.minutes, who).toBe(openerMinutes(p.minutes))
+          // The first priority's opener is the long one from 45-minute days (round five).
+          expect(p.skill.minutes, who).toBe(openerMinutesFor(skill === skills[0], p.minutes))
           expect(p.skill.minutes + p.gym!.minutes, `${who} ${d.day} opener and gym`).toBe(p.minutes)
           expect(p.gym!.minutes, who).toBeGreaterThanOrEqual(MIN_GYM_MINUTES)
           // Its family is the focus's, its kit is at the place, and no joint the family loads is sore.
@@ -597,8 +601,12 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
           const f = fam === 'balance' ? 'push' : fam
           expect(p.gym!.avoidJoints.filter((j) => (FAMILY_JOINTS[f] as readonly string[]).includes(j)), `${who} ${d.day} ${skill} opens on a sore joint`).toEqual([])
           // The family's rest rule: nothing logged on an earlier day, nor another day's hard session of it, inside it.
+          // In calendar days, the unit planned days are spaced in, with no genuinely short gap in real hours (round five).
           for (const e of familyEvents(s, now)[f]) {
-            if (!sameDay(e.at, d.at) && e.at < d.at) expect(d.at - e.at, `${who} ${d.day} ${skill} opens after a logged session`).toBeGreaterThanOrEqual(rest)
+            if (!sameDay(e.at, d.at) && e.at < d.at) {
+              expect(calendarApart(d.at, e.at), `${who} ${d.day} ${skill} opens after a logged session`).toBeGreaterThanOrEqual(rest)
+              expect(d.at - e.at, `${who} ${d.day} ${skill} opens after a logged session`).toBeGreaterThanOrEqual(rest - REST_SLACK_HOURS * HOUR)
+            }
           }
           for (const o of week.days) {
             if (o === d || o.plan.rest || calendarApart(o.at, d.at) >= rest) continue
@@ -614,7 +622,9 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
           // A calisthenics day only for a session that can train: never one that is waiting for kit.
           if (p.kind === 'calisthenics') {
             expect(w.name, `${who} ${d.day} ${p.skill.skills} with kit [${s.profile.equipment}]`).not.toMatch(/waiting for kit/)
-            for (const k of p.skill.skills) expect(missingKit(k, s.profile.equipment), `${who} ${d.day} ${k}`).toEqual([])
+            // With the kit it is built with: the athlete's own, or the gym's on a day planned there (round five).
+            const builtWith = p.skill.kit?.length ? (['floor', ...p.skill.kit] as typeof s.profile.equipment) : s.profile.equipment
+            for (const k of p.skill.skills) expect(missingKit(k, builtWith), `${who} ${d.day} ${k}`).toEqual([])
             stats.kitless += kit.length < KIT.length ? 1 : 0
           }
           // A family called hard gets the sets the app counts as hard.
@@ -674,9 +684,11 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
             const a = events[i]
             const b = events[j]
             if (sameDay(a.at, b.at) || (a.fixed && b.fixed)) continue
-            // Logged sessions keep their hours; two planned days are counted in calendar days (daylight saving).
+            // Every pair is counted in calendar days (daylight saving); a logged session also keeps clear of a genuinely
+            // short gap in real hours (round five: its real hours once refused a day the plan had promised).
             const real2 = a.what.startsWith('logged') || b.what.startsWith('logged')
-            expect(real2 ? Math.abs(a.at - b.at) : calendarApart(a.at, b.at), `${who} ${fam}: ${a.what} vs ${b.what} under ${rest / HOUR}h`).toBeGreaterThanOrEqual(rest)
+            expect(calendarApart(a.at, b.at), `${who} ${fam}: ${a.what} vs ${b.what} under ${rest / HOUR}h`).toBeGreaterThanOrEqual(rest)
+            if (real2) expect(Math.abs(a.at - b.at), `${who} ${fam}: ${a.what} vs ${b.what} a short gap`).toBeGreaterThanOrEqual(rest - REST_SLACK_HOURS * HOUR)
           }
       }
       if (own && goals.physique >= 3 && loc === gymA) {
@@ -717,7 +729,8 @@ describe('a sore joint, wherever the session is built', () => {
     const days = planWeekAhead(s, MON, { todayKind: 'calisthenics' }).days
     const lines = days.slice(0, 2).flatMap((d) => d.why)
     expect(lines.some((l) => /Planche: hard session/.test(l)), lines.join(' | ')).toBe(false)
-    expect(lines.some((l) => /Planche: an eased session/.test(l)), lines.join(' | ')).toBe(true)
+    // Round five: a day whose session is the pain-safe one says that, not "eased" — it trains none of the holds.
+    expect(lines.some((l) => /Planche: an eased session|Pain-safe recovery: gentle movement, no loaded holds/.test(l)), lines.join(' | ')).toBe(true)
   })
 })
 
@@ -830,9 +843,12 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
     const s = real(['planche', 'frontlever'], { goals: BALANCED })
     const op = (state: AppState, focus: GymFocus, minutes = 60, place = gymA, now = MON) => gymOpener(state, focus, place, now, minutes)?.skills[0]
     // 25 minutes from an hour up (round three), with the whole kit at the place: the gym's list and the portable kit.
-    expect(gymOpener(s, 'push', gymA, MON, 60)).toEqual({ minutes: openerMinutes(60), skills: ['planche'], hard: ['push'], opener: true, kit: expect.any(Array) })
+    // The block says where it is planned (round five).
+    expect(gymOpener(s, 'push', gymA, MON, 60)).toEqual({ minutes: openerMinutes(60), skills: ['planche'], hard: ['push'], opener: true, kit: expect.any(Array), placeId: gymA.id })
     expect(new Set(gymOpener(s, 'push', gymA, MON, 60)!.kit)).toEqual(new Set(['floor', 'parallettes', 'rings', ...gymA.equipment]))
-    expect(gymOpener(s, 'push', gymA, MON, 45)?.minutes).toBe(MIN_SKILL_MINUTES[1])
+    // The first priority's opener is the long one from 45 minutes (round five); another skill's keeps 18 under an hour.
+    expect(gymOpener(s, 'push', gymA, MON, 45)?.minutes).toBe(openerMinutesFor(true, 45))
+    expect(gymOpener(s, 'pull', gymA, MON, 45)?.minutes).toBe(MIN_SKILL_MINUTES[1])
     expect(op(s, 'pull')).toBe('frontlever')
     expect(op(s, 'upper')).toBe('planche')
     for (const focus of ['lower', 'full', 'athletic'] as GymFocus[]) expect(op(s, focus), focus).toBeUndefined()

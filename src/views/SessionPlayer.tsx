@@ -5,8 +5,10 @@ import { createPortal } from 'react-dom'
 import { useInertBackground } from '../components/gym/GymPlayer'
 import { skillHoldSecOf } from '../lib/progressTotals'
 import {
+  countedNote,
   creditedWhileHolding,
-  deductionNote,
+  holdTotalCaption,
+  offerWalkMeasure,
   ratedSetLabel,
   stopAllowanceFor,
   summaryLastSet,
@@ -62,6 +64,7 @@ import { BadgeGlyph } from '../components/ds/BadgeGlyph'
 import { Figure } from '../components/Figure'
 import { ShareProgress } from '../components/ShareProgress'
 import { MainTarget, ProgressRing, Modal } from '../components/ui'
+import { WalkBackCalibrator } from '../components/WalkBackCalibrator'
 import { FramingCheck } from '../components/FramingCheck'
 import {
   FormCheckRow,
@@ -285,7 +288,24 @@ function videoIntervalOf(log: SetLog): { startSec: number; endSec: number } | un
     : undefined
 }
 
-function timingNote(log: SetLog): string | null {
+const WALK_OFFER_KEY = 'planchelab.offer.measure-walk'
+/** The measurement is offered in a session summary once per device; after that it lives in Settings. */
+function walkOfferSeen(): boolean {
+  try {
+    return localStorage.getItem(WALK_OFFER_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+function markWalkOffered(): void {
+  try {
+    localStorage.setItem(WALK_OFFER_KEY, '1')
+  } catch {
+    // Offered again next time; harmless.
+  }
+}
+
+function timingNote(log: SetLog, walkBackSec?: number): string | null {
   if (log.kind !== 'hold') return null
   if (log.timing?.method === 'video') {
     return log.raw !== undefined ? `(timed from the video · the timer read ${log.raw.toFixed(1)}s)` : '(timed from the video)'
@@ -296,7 +316,8 @@ function timingNote(log: SetLog): string | null {
   if (log.timing?.method === 'interrupted') {
     return log.raw !== undefined ? `(interrupted at ${log.raw.toFixed(1)}s on the timer)` : '(interrupted)'
   }
-  return deductionNote(log)
+  // Both numbers and why: the timer's reading beside what counted, and which allowance came off.
+  return countedNote(log, walkBackSec)
 }
 
 export function SessionPlayer({
@@ -318,6 +339,8 @@ export function SessionPlayer({
   onCheckInAnswered?: (c: CheckIn) => void
 }) {
   const { state, dispatch, persist } = useStore()
+  const [measuringWalk, setMeasuringWalk] = useState(false)
+  const walkOfferKept = useRef(false)
   // Everything in #root sits behind this full-screen session.
   useInertBackground()
   const restoredSetup = restoredSessionSetup(resumeFrom, state.settings)
@@ -2467,7 +2490,7 @@ export function SessionPlayer({
       const moveOnKey = `${bi}:${(blockLogAts[bi] ?? []).length}`
       const showMoveOn = Boolean(advice?.suggestMoveOn) && !keptGoing.has(moveOnKey) && si < nb.sets
       const total = restTotal || nb.restSec
-      const note = lastLog ? timingNote(lastLog) : null
+      const note = lastLog ? timingNote(lastLog, state.settings.walkBackSec) : null
       return (
         <div className="relative mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
           <div className="mt-4 text-body font-medium uppercase tracking-wide text-ink3">
@@ -2656,7 +2679,18 @@ export function SessionPlayer({
     // summary once reported a stretch as "Last set" above a question about a
     // planche lean.
     const lastSet = summaryLastSet(logs)
-    const lastNote = lastSet ? timingNote(lastSet) : null
+    const lastNote = lastSet ? timingNote(lastSet, state.settings.walkBackSec) : null
+    const totalCaption = holdTotalCaption(logs)
+    // The first time an assumed walk took off more than half a hold: say it can be measured, once.
+    const walkOffer = offerWalkMeasure(logs, {
+      walkBackSec: state.settings.walkBackSec,
+      phoneWithinReach: state.settings.phoneWithinReach,
+      seen: walkOfferSeen() && !walkOfferKept.current,
+    })
+    if (walkOffer && !walkOfferKept.current) {
+      walkOfferKept.current = true
+      markWalkOffered()
+    }
     return (
       <div className="mx-auto w-full max-w-lg px-5 pb-10">
         <h1 className="mt-6 text-center font-display text-title1 font-bold text-ink">
@@ -2681,6 +2715,23 @@ export function SessionPlayer({
             </div>
           ))}
         </div>
+        {totalCaption ? <p className="mt-2 text-center text-caption text-ink3">{totalCaption}.</p> : null}
+        {walkOffer ? (
+          <div className="mt-3 rounded-inner border border-line bg-raised p-3 text-center">
+            <p className="text-footnote leading-relaxed text-ink2">
+              Most of a hold went to an assumed walk back to the phone. Measuring your own walk takes about a minute, and every main hold then
+              uses it.
+            </p>
+            <Button
+              className="mt-2"
+              variant="secondary"
+              onClick={() => setMeasuringWalk(true)}
+            >
+              Measure my walk now
+            </Button>
+            <p className="mt-1 text-caption text-ink3">Or later: Settings → Measure my walk.</p>
+          </div>
+        ) : null}
         {interruptedAt.current ? interruptedCard('summary') : null}
         {lastSet ? (
           <div className="mt-3 text-center">
@@ -2960,6 +3011,17 @@ export function SessionPlayer({
         {phase !== 'celebrate' ? progressBar : null}
         {body()}
       </div>
+      <Modal open={measuringWalk} onClose={() => setMeasuringWalk(false)} label="Measure your walk back">
+        {measuringWalk ? (
+          <WalkBackCalibrator
+            onDone={(sec) => {
+              dispatch({ type: 'SET_SETTINGS', patch: { walkBackSec: sec } })
+              setMeasuringWalk(false)
+              pushToast(`Walk back set to ${sec.toFixed(1)}s for main Path holds. Change it any time in Settings.`, 'success')
+            }}
+          />
+        ) : null}
+      </Modal>
       <Modal open={showCheckIn} onClose={() => setShowCheckIn(false)} label="Readiness check-in">
         <CheckInForm
           context={checkInContext}

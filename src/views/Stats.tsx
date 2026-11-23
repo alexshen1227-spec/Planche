@@ -15,6 +15,10 @@ import {
   weeklyVolume,
   sessionDurationSec,
 } from '../lib/stats'
+import { coachTodayLabel } from '../lib/coachLabel'
+import { usePlanClock } from '../lib/plan/usePlanClock'
+import { useToday } from '../lib/useToday'
+import { holdTotalCaption } from '../lib/sessionSummary'
 import { historyEntries, progressTotals, skillHoldSecOf, workingGymSets, workingSkillSets } from '../lib/progressTotals'
 import { SessionDetail } from '../components/gym/SessionDetail'
 import {
@@ -444,7 +448,11 @@ export function Stats({
   const arms = useMemo(() => armStats(state), [state])
   const triedArms = useMemo(() => arms.filter((arm) => arm.attempts > 0).length, [arms])
   const measuredArms = useMemo(() => arms.filter((arm) => arm.n > 0).length, [arms])
-  const coachPick = useMemo(() => buildPlan(state), [state])
+  // Re-planned on the same clock as Home's coach card, so the two cannot describe different moments.
+  const todayKey = useToday()
+  const clock = usePlanClock()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const coachPick = useMemo(() => buildPlan(state), [state, todayKey, clock])
   const standing = useMemo(
     () => strategyStanding(arms, STEP_BY_ID[state.stepId]?.unlockSec ?? 20),
     [arms, state.stepId],
@@ -457,6 +465,7 @@ export function Stats({
   // Skill and gym sessions together, so the list holds what "Sessions" counts.
   const history = useMemo(() => historyEntries(sessions, whole.gym?.sessions ?? []), [sessions, whole.gym?.sessions])
   const totals = useMemo(() => progressTotals(whole), [whole])
+  const holdCaption = useMemo(() => holdTotalCaption(whole.sessions.flatMap((x) => x.sets)), [whole.sessions])
   const [openGymId, setOpenGymId] = useState<string | null>(null)
   const openGym = whole.gym?.sessions.find((session) => session.id === openGymId)
 
@@ -607,6 +616,7 @@ export function Stats({
           Working sets leave out warm-ups and cool-down stretches. Skill hold time adds up your key holds and strength
           holds, as “This week” does — so a week holding all your training shows the same seconds in both, and in
           History.
+          {holdCaption ? ` Across everything: ${holdCaption}.` : ''}
         </p>
       </Card>
 
@@ -817,7 +827,7 @@ export function Stats({
             </div>
           </div>
           <span className="rounded-full bg-accent-soft px-3 py-1 text-footnote font-semibold text-accent-text">
-            Today: {STRATEGY_BY_ID[coachPick.strategy].name}
+            {coachTodayLabel(STRATEGY_BY_ID[coachPick.strategy].name, skills.length > 1 ? SKILLS[viewSkill].name : null)}
           </span>
         </div>
 

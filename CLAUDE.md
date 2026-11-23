@@ -994,6 +994,33 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     was correct by the rules (no told hold): the copy now says so. The
     session player is portalled and makes the app inert; toasts are
     portalled beside it.
+  - Sixth review round (52 UX / 47 logic) — **the first priority is
+    protected** (the athlete: "make sure I won't lose my planche progress,
+    stuff too spread out"). `reserveExposures` reserves every day its rest
+    rule allows (a planche-only athlete's days); each exposure carries the key
+    hold's kept dose (`keepsDose`; an opener short of it is `half`, counts ½);
+    at most one first-priority opener a week (`openerAllowed`), 25 minutes
+    from 45-minute days (`openerMinutesFor`); a partner stays only while the
+    lead keeps its alone-dose (`exposureParts`), and `mixedSession` fills the
+    first priority's key hold to its full time before the partner's extras.
+    `plan/wholeAthlete.eval.test.ts` (helper `wholeAthleteLoop.ts`) pins it
+    against a planche-only control on the same days — key-hold sets 89%
+    default, 95% at 72 h, 89% Sun/Tue/Thu, 88% with Home active; re-measure,
+    never loosen. Re-tests read `Signals.skillRestDays` (identical to
+    `restDays` for a planche-only athlete). A niggle moves the lead
+    (`niggleOrder`). `WorkoutRequest.insideRest` steps a picked day back.
+    Logged rest counts calendar days with a `REST_SLACK_HOURS` (12) floor;
+    today plans from the state as the day began (`asTodayBegan`), so
+    following the plan never re-plans it. Steering is `TodayPlan.gym.spare`
+    (which movements), never `musclesOff`; the day's named pattern keeps 2
+    sets. One-skill days take turns (`turnOf`). Gym days carry
+    `TodayPlan.gym.placeId`; legs get the week's last sport-free day every
+    other week (`LEG_DAY_EVERY_DAYS`). Screens: `dayStage` (open /
+    lifts-next / done, day marks in nextBlock); holds show the timer beside
+    the counted value (`countedNote`); `youthCeiling` caps an under-18 jump
+    across units; one gym sheet at a time (`askStillApplies`). Pinned in
+    `plan/round5.test.ts`, `round5skills.test.ts`, `plan/review6.test.ts`,
+    `gym/review6.test.ts`, `gym/loadAsk.test.ts`.
   - Skill days are requests (`{source: 'auto', skills: [skill]}`); a ladder
     day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
     pins every session built without it — regenerate only for an intended

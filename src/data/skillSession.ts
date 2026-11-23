@@ -25,6 +25,8 @@ import {
   painSafeRecoveryWorkout,
   resolveEquipment,
   restAfterHold,
+  SHORTER_THAN_ASKED_MIN,
+  totalSetsOf,
   withSides,
 } from './workouts'
 
@@ -288,9 +290,13 @@ export function skillSession(
           prev ? `practising ${EXERCISE_BY_ID[prev.keyExerciseId].name.toLowerCase()}` : 'an easier version'
         } is worth reviewing with your replay.`
       : ''
+  // What to do, not what is missing: every step starts with a hold that is not
+  // there yet, and the shape before this one is the way into it.
   const placementNote =
     plan.signals.totalSessions === 0 && state.assessment?.answers[step.keyExerciseId] === 0
-      ? ' You said you cannot hold this yet: take the easiest version you can keep clean so the target is holdable, and build from there.'
+      ? prev && prev.order >= 1
+        ? ` You said you cannot hold this yet — every step starts there. Hold it for as long as it stays clean, even a second or two; if it will not hold at all, take a shape between your ${EXERCISE_BY_ID[prev.keyExerciseId].name.toLowerCase()} and this one, and open it up as it gets controlled.`
+        : ' You said you cannot hold this yet — every step starts there. Take the easiest version you can keep clean so the target is holdable, and build from there.'
       : ''
   const lockoutCue =
     plan.accessoryEmphasis === 'lockout' && skill.straightArm
@@ -483,14 +489,11 @@ export function skillSession(
       : minutesOverride !== undefined
         ? Math.min(baseBudget, Math.max(8, minutesOverride))
         : baseBudget
-  const fit = fitToBudget(
-    withSides(lightened),
-    budget,
-    emphasis === 'core',
-    state.settings.stopLatencySec,
-    state.settings.phoneWithinReach,
-  )
+  const whole = withSides(lightened)
+  const fit = fitToBudget(whole, budget, emphasis === 'core', state.settings.stopLatencySec, state.settings.phoneWithinReach)
   const fitted = fit.blocks.map((b) => ({ ...b, skill: skill.id }))
+  // Whether the budget took anything off: a block, or a set.
+  const trimmed = fit.dropped.length > 0 || totalSetsOf(fit.blocks) < totalSetsOf(whole)
 
   const present = new Set(fitted.filter((b) => b.section !== 'warmup').map((b) => b.exerciseId))
   // What the athlete's kit left out, said once per missing piece rather than
@@ -526,7 +529,12 @@ export function skillSession(
   }
 
   const fittedMinutes = estimateMinutes(fitted, state.settings.stopLatencySec, state.settings.phoneWithinReach)
-  const shortened = minutesOverride !== undefined && fittedMinutes < baseBudget && !options.part
+  // "Short" is a session the time took something from, or one that could not
+  // get down to it — not one whose step simply holds less than the time
+  // given. A front lever day at 45 minutes holds about 37, and was named
+  // "Short" with "accessories came off first" when nothing had come off.
+  const shortened =
+    minutesOverride !== undefined && fittedMinutes < baseBudget && !options.part && (trimmed || fittedMinutes > budget)
   const strategy = STRATEGY_BY_ID[plan.strategy]
   const strategyContext = `${strategy.blurb} ${plan.dayReason}`
   const title = stepTitle(step)
@@ -547,6 +555,14 @@ export function skillSession(
       purpose: `Support work only — ${keyName} is waiting for kit.`,
       ...(adjustments.length ? { adjustments } : {}),
     }
+  }
+  // Shorter than the time it was given, with nothing cut: said, and why.
+  if (minutesOverride !== undefined && !options.part && !trimmed && budget - fittedMinutes >= SHORTER_THAN_ASKED_MIN) {
+    adjustments.push(
+      ladderPlaced && skill.ladder
+        ? `This ladder day holds about ${fittedMinutes} minutes: the ${skill.ladder.name.toLowerCase()} rung first, with the ${skill.holdName} kept to two short sets. Nothing is added just to fill the time — a ${skill.holdName} day under Train has the full hold practice.`
+        : `This session holds about ${fittedMinutes} minutes: everything the ${stepTitle(step).toLowerCase()} step programs today. Nothing is added just to fill the time.`,
+    )
   }
   return {
     id: `auto-${stepId}-${plan.dayType}-${plan.strategy}${ladderPlaced ? '-ladder' : ''}${shortened ? `-${budget}m` : ''}`,

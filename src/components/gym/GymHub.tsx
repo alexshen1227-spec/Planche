@@ -7,9 +7,9 @@ import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
 import { activeLocation, conservative, loadDraft, prefillReps, previousSets, type GymDraft } from '../../lib/gym/draft'
 import { AFTER_OPENER_WARM_UP_MIN, gymToday, MIN_GYM_MINUTES, planToday, skillFamily, skillRequest, soreJoints } from '../../lib/plan/planner'
-import { dayFinished, openerLine } from '../../lib/plan/screens'
+import { dayStage, openerLine } from '../../lib/plan/screens'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
-import { rememberNextBlock } from '../../lib/plan/nextBlock'
+import { rememberNextBlock, useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
 import { choiceOptions, useTodayChoice } from '../../lib/plan/todayChoice'
 import { useToday } from '../../lib/useToday'
 import type { AppState, SkillId, WorkoutRequest } from '../../types'
@@ -71,7 +71,12 @@ export function GymHub({
   }, [todayKey])
   // Today's main session done: nothing more is recommended here, only a quiet way to train again.
   const [again, setAgain] = useState(false)
-  const finished = dayFinished(state, today)
+  const marks = useDayMarks(todayKey)
+  const remembered = useNextBlock<GymPreset>(todayKey)
+  const stage = dayStage(state, today, Date.now(), marks)
+  const finished = stage === 'done'
+  // The opener is saved and the lifts are what is left: no second opener, and the lifts keep the minutes the day planned.
+  const liftsNext = stage === 'lifts-next'
   const [skipOpener, setSkipOpener] = useState(false)
   const [focus, setFocus] = useState<GymFocus | 'auto'>('auto')
   const [editing, setEditing] = useState<string | 'new' | null>(null)
@@ -96,9 +101,9 @@ export function GymHub({
     [auto, state, gym, location, minutes, focus, todayKey, clock],
   )
   const resolvedFocus: GymFocus | undefined = coach?.focus
-  const offeredOpener = startWorkout ? coach?.opener : undefined
+  const offeredOpener = startWorkout && !liftsNext ? coach?.opener : undefined
   const opener = skipOpener ? undefined : offeredOpener
-  const liftMinutes = minutes - (opener?.minutes ?? 0)
+  const liftMinutes = liftsNext && remembered ? remembered.minutes : minutes - (opener?.minutes ?? 0)
   const plan = useMemo(
     () =>
       gym && location && coach && resolvedFocus
@@ -418,6 +423,10 @@ export function GymHub({
               {skipOpener ? 'Add it' : 'Skip it'}
             </Button>
           </div>
+        ) : liftsNext ? (
+          <p className="mt-3 rounded-control bg-accent-soft p-3 text-footnote text-ink2">
+            Your skill opener is saved — these are the lifts that follow it{remembered ? `, in the ${remembered.minutes} minutes the day planned` : ''}.
+          </p>
         ) : coach?.noOpener ? (
           <p className="mt-3 text-caption text-ink3">No skill work first: {coach.noOpener}</p>
         ) : null}

@@ -5,7 +5,7 @@ import { SKILLS } from './skills'
 import type { CoachPlan } from '../lib/coach'
 import type { LineupEntry, LineupRole } from '../lib/lineup'
 import { isBarAttempt } from '../lib/progression'
-import { skillView, stepOfSkill } from '../lib/skills'
+import { focusSkill, skillView, stepOfSkill } from '../lib/skills'
 import { estimateMinutes, fitToBudget, joinWords, LIGHT_DOSE_SHARE } from './workouts'
 
 /**
@@ -29,7 +29,9 @@ import { estimateMinutes, fitToBudget, joinWords, LIGHT_DOSE_SHARE } from './wor
  * each full part's step, the lead's next-shape attempts, more sets of the
  * holds, one shared core block, each skill's support work, then second
  * strength movements and back-off work. Whatever does not fit is left out and
- * named.
+ * named. A lead that is the athlete's first priority takes its full key-hold
+ * dose, then the core block, before the partner's extra holds: a second skill
+ * is not allowed to cost the first its practice time.
  *
  * Two earlier versions got this wrong in opposite ways. The first let each part
  * trim itself to a share of the time, and every part gave up its core first —
@@ -109,8 +111,22 @@ function tierOf(block: Block, role: LineupRole): Tier | null {
  */
 type Who = 'lead' | 'partner' | 'practice'
 type FillStep =
-  | { op: 'add'; tier: Tier; who: Who; start: 'two' | 'whole' }
-  | { op: 'raise'; what: 'hold' | Tier; who: Who; to: 'cap' | 'full' }
+  | {
+      op: 'add'
+      tier: Tier
+      who: Who
+      start: 'two' | 'whole'
+      /** Only when the lead is the athlete's first priority. */
+      firstPriority?: true
+    }
+  | {
+      op: 'raise'
+      what: 'hold' | Tier
+      who: Who
+      to: 'cap' | 'full'
+      /** Only when the lead is the athlete's first priority. */
+      firstPriority?: true
+    }
 
 const FILL: FillStep[] = [
   // A full part is the hold and the strength work behind it.
@@ -122,8 +138,21 @@ const FILL: FillStep[] = [
   // Next-shape attempts are how a step opens early. Left behind the extra
   // holds, a second skill never got them and sat on its first step all season.
   { op: 'add', tier: 'nextshape', who: 'partner', start: 'two' },
-  // Then more of the holds, the lead's first.
+  // Then more of the holds, the lead's first. A lead that is the athlete's
+  // first priority goes all the way to its full practice time (`Block.reach`)
+  // before the partner's extras: left last, it lost two of its six
+  // advanced-tuck sets to a partner in 45 minutes (measured: 6 alone, 4
+  // beside the front lever; 5 against 3 on an intensity day), so training a
+  // second skill cost the first priority a third of its dose. The partner
+  // keeps what the order above protects: its key hold at its floor, its
+  // moving version and its next-shape attempts. The session's one core block
+  // comes straight after the reach, still ahead of the partner's extra holds:
+  // left where it was, behind them, it fell out of four mixed sessions in
+  // five once the reach went in first (measured on the review's athlete at 45
+  // minutes: in 57% of sessions before, 21% after, 61% here).
   { op: 'raise', what: 'hold', who: 'lead', to: 'cap' },
+  { op: 'raise', what: 'hold', who: 'lead', to: 'full', firstPriority: true },
+  { op: 'add', tier: 'core', who: 'lead', start: 'whole', firstPriority: true },
   { op: 'raise', what: 'hold', who: 'partner', to: 'cap' },
   { op: 'add', tier: 'core', who: 'lead', start: 'whole' },
   { op: 'raise', what: 'twin', who: 'lead', to: 'full' },
@@ -146,7 +175,7 @@ const FILL: FillStep[] = [
   { op: 'add', tier: 'strength', who: 'partner', start: 'whole' },
   { op: 'add', tier: 'extra', who: 'lead', start: 'whole' },
   { op: 'add', tier: 'extra', who: 'partner', start: 'whole' },
-  // Last, the lead's reach toward its full practice time.
+  // Last, any other lead's reach toward its full practice time.
   { op: 'raise', what: 'hold', who: 'lead', to: 'full' },
 ]
 
@@ -173,10 +202,10 @@ const sidesOf = (block: Block) => (EXERCISE_BY_ID[block.exerciseId]?.perSide ? 2
  * and the most the session will raise it to when there is room (`cap`).
  *
  * The lead's cap is the dose a short single-skill session keeps; its reach
- * toward its full practice time (`Block.reach`) is added back last — the same
- * order a time budget gives it up in on a single-skill day. A partner's cap is
- * four sets: past that, more of the same hold is worth less to it than the
- * strength movement the time would otherwise go to.
+ * toward its full practice time (`Block.reach`) is added back straight after,
+ * before the partner's extras, so a second skill does not cost the first its
+ * dose. A partner's cap is four sets: past that, more of the same hold is worth
+ * less to it than the strength movement the time would otherwise go to.
  */
 function shapeForRole(block: Block, role: LineupRole): { block: Block; cap: number } {
   if (block.role !== 'skill') return { block, cap: block.sets }
@@ -358,9 +387,14 @@ export function mixedSession(
     }
   }
 
+  // Whose dose the order protects first: the athlete's first priority, when it leads.
+  const leadIsFirst = lead.skill === focusSkill(state)
   for (const step of FILL) {
+    if (step.firstPriority && !leadIsFirst) continue
     if (step.op === 'add') {
       for (const candidate of candidates.filter((c) => c.tier === step.tier && c.role === step.who)) {
+        // A block an earlier step already brought in is not brought in twice.
+        if (chosen.some((c) => c.skill === candidate.skill && c.index === candidate.index)) continue
         // Whole, or — for work that scales by sets — at two sets, or not at all.
         const two = Math.min(candidate.block.sets, 2 * sidesOf(candidate.block))
         const options = step.start === 'two' || two === candidate.block.sets ? [two] : [candidate.block.sets, two]

@@ -3,8 +3,7 @@ import { useMemo, useState } from 'react'
 import type { SkillId, Tab, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
 import { STEP_BY_ID, stepAfter, stepsOf } from '../data/progressions'
-import { missingKit, SKILLS } from '../data/skills'
-import { kitNeedsPhrase } from '../data/equipment'
+import { SKILLS } from '../data/skills'
 import { activeSkills, skillView } from '../lib/skills'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import {
@@ -37,10 +36,13 @@ import { WeekPlanCard } from '../components/WeekPlanCard'
 import { INSTALL_STEPS, installState } from '../lib/install'
 import { WalkBackCalibrator } from '../components/WalkBackCalibrator'
 import { walkMeasureDue } from '../lib/sessionTiming'
+import { kitStatusLine, skillChipLabel } from '../components/weekPlanCopy'
+import { coachTodayLabel } from '../lib/coachLabel'
+import { recordNote } from '../lib/sessionSummary'
 import { AFTER_OPENER_WARM_UP_MIN, atActivePlace, planToday, skillRequest } from '../lib/plan/planner'
-import { rememberNextBlock } from '../lib/plan/nextBlock'
+import { endTheDay, rememberNextBlock, useDayMarks, useNextBlock } from '../lib/plan/nextBlock'
 import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
-import { dayFinished, GOAL_HERE_TEXT, goalStanding, homeToday, maxTestOffered, openerLine, shortVersion, stepPassed, trainingWeek } from '../lib/plan/screens'
+import { dayStage, GOAL_HERE_TEXT, goalStanding, homeToday, maxTestOffered, openerLine, shortVersion, stepPassed, trainingWeek } from '../lib/plan/screens'
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { ladderStatus } from '../lib/repLadder'
 import { WeekPreview } from '../components/plan/WeekPreview'
@@ -189,6 +191,12 @@ export function Dashboard({
   const prBest = state.prs[step.keyExerciseId]?.value ?? 0
   const qualified = qualifyingProgress(state, state.stepId)
   const best = qualified.value
+  // A record that is a stopwatch hold read short of its timer: both numbers, and why.
+  const bestNote = useMemo(() => {
+    const sets = state.sessions.flatMap((x) => x.sets)
+    const shown = Math.max(best, prBest)
+    return shown > 0 ? recordNote(sets, step.keyExerciseId, shown, state.settings.walkBackSec) : null
+  }, [state.sessions, state.settings.walkBackSec, step.keyExerciseId, best, prBest])
   const unlockPct = Math.min(1, best / step.unlockSec)
   const next = stepAfter(state.stepId)
   const goalStep = STEP_BY_ID[state.profile.goalStepId ?? skillDef.defaultGoal] ?? road[road.length - 1]
@@ -219,7 +227,13 @@ export function Dashboard({
   )
   // Today's main session done: Home recommends nothing more, only a quiet way to train again.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const finished = useMemo(() => dayFinished(whole, dayPlan, Date.now()), [whole, dayPlan, today, clock])
+  const marks = useDayMarks(today)
+  const rememberedLifts = useNextBlock<GymPreset>(today)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stage = useMemo(() => dayStage(whole, dayPlan, Date.now(), marks), [whole, dayPlan, today, clock, marks])
+  const finished = stage === 'done'
+  // A gym day's opener is saved: the lifts are what is left, and nothing here recommends the opener's skill again.
+  const liftsNext = stage === 'lifts-next'
   // "Short on time?" goes through the coach (`shortVersion`): never a hard session inside the rest rule, unsaid.
   const startShort = (m: number) => {
     const kind = choiceOptions(choice).kind
@@ -231,9 +245,10 @@ export function Dashboard({
   const todays = useMemo(() => finalizeWorkoutWithPlan(whole, recommended, undefined, Date.now()), [whole, today, clock, recommended])
   const lineup = todays.lineup
   /** Chosen skills that cannot train until some kit is added. */
-  const waiting = skills
-    .map((skill) => ({ skill, missing: missingKit(skill, whole.profile.equipment) }))
-    .filter((entry) => entry.missing.length > 0)
+  const kitLines = skills.flatMap((skill) => {
+    const status = kitStatusLine(skill, whole.profile.equipment, whole.gym?.locations ?? [])
+    return status.kind === 'ready' ? [] : [{ skill, status }]
+  })
 
   const hour = new Date().getHours()
   const greeting = hour < 5 ? 'Burning the midnight oil' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
@@ -415,6 +430,7 @@ export function Dashboard({
               <button
                 key={skill}
                 aria-pressed={on}
+                aria-label={skillChipLabel(skill, index === 0)}
                 onClick={() => setPickedSkill(skill)}
                 className={`min-h-11 rounded-full border px-3.5 py-1.5 text-footnote font-semibold transition ${
                   on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-surface text-ink2 hover:text-ink'
@@ -459,6 +475,7 @@ export function Dashboard({
                 <span className="font-semibold text-ink tnum">{best ? fmtHold(best) : '—'}</span>
                 {prBest > best ? <span className="text-ink3"> · PR {fmtHold(prBest)}</span> : null}
               </div>
+              {bestNote ? <p className="text-caption leading-relaxed text-ink3">{bestNote}</p> : null}
               <div className="text-footnote text-ink2">
                 {next ? (
                   <>
@@ -526,7 +543,21 @@ export function Dashboard({
             </Button>
           </div>
         ) : null}
-        {mode === 'gym' && dayPlan.gym && !finished ? (
+        {liftsNext ? (
+          <div className="mt-4 rounded-inner border border-line bg-raised p-3">
+            <p className="text-footnote text-ink2">
+              <span className="font-semibold text-ink">Today: the lifts are next</span> — your skill opener is saved, and the day is not done until the lifts are
+              {rememberedLifts ? ` (${FOCUS_LABEL[rememberedLifts.focus].toLowerCase()}, ${rememberedLifts.minutes} min)` : ''}.
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button onClick={() => go('train')}>{rememberedLifts ? 'Go to the lifts' : 'Open the Gym side'}</Button>
+              <button onClick={() => endTheDay()} className="min-h-11 px-1 text-footnote font-medium text-accent-text">
+                End the day here
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {mode === 'gym' && dayPlan.gym && !finished && !liftsNext ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-inner border border-line bg-raised p-3">
             <span className="text-footnote text-ink2">
               <span className="font-semibold text-ink">Today the coach recommends the gym</span> — {FOCUS_LABEL[dayPlan.gym.focus].toLowerCase()},{' '}
@@ -539,7 +570,7 @@ export function Dashboard({
           </div>
         ) : null}
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          {finished ? null : mode === 'calisthenics' ? (
+          {finished || liftsNext ? null : mode === 'calisthenics' ? (
             <Button size="lg" onClick={() => startWorkout(recommended)} className="w-full sm:w-auto">
               <Icon name="play" size={16} /> Start today’s session
             </Button>
@@ -549,7 +580,7 @@ export function Dashboard({
               {dayPlan.skill?.opener ? `Start with the ${SKILLS[dayPlan.skill.skills[0]].name.toLowerCase()}` : 'Open the gym session'}
             </Button>
           ) : null}
-          {dayPlan.alternative && !finished ? (
+          {dayPlan.alternative && !finished && !liftsNext ? (
             <Button variant="ghost" onClick={() => setChoice({ ...choice, kind: dayPlan.alternative })}>
               {dayPlan.alternative === 'gym' ? 'Rather do the gym today?' : 'Rather do calisthenics today?'}
             </Button>
@@ -597,13 +628,17 @@ export function Dashboard({
       </div>
 
       {/* Quieter things, kept off the hero. */}
-      {(waiting.length > 0 || showSessionsNotice || showSkillsNotice || showWalkNotice) ? (
+      {(kitLines.length > 0 || showSessionsNotice || showSkillsNotice || showWalkNotice) ? (
         <div className="mt-6 space-y-2">
-        {waiting.map(({ skill, missing }) => (
+        {kitLines.map(({ skill, status }) => (
           <p key={skill} className="rounded-card border border-line bg-surface p-4 text-footnote leading-relaxed text-ink">
-            <span className="font-semibold">{SKILLS[skill].name} is waiting for kit.</span>{' '}
-            {SKILLS[skill].requiresNote ?? `It needs ${kitNeedsPhrase(missing)}.`}{' '}
-            Add it under Settings → Equipment and it joins your sessions.
+            {status.kind === 'waiting' ? (
+              <>
+                {status.text} Add it under Settings → Equipment and it joins your sessions.
+              </>
+            ) : (
+              status.text
+            )}
           </p>
         ))}
         {showSessionsNotice ? (
@@ -890,7 +925,8 @@ export function Dashboard({
               </span>
             ) : (
               <span>
-                <span className="font-semibold">Today is banked.</span> The next plan builds on what you logged.
+                <span className="font-semibold">{liftsNext ? 'Your opener is banked.' : 'Today is banked.'}</span>{' '}
+                {liftsNext ? 'The lifts are still to come.' : 'The next plan builds on what you logged.'}
               </span>
             )}
           </div>
@@ -919,7 +955,7 @@ export function Dashboard({
             </h2>
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
               <span className="rounded-full bg-accent-soft px-3 py-1 text-footnote font-semibold text-accent-text">
-                {STRATEGY_BY_ID[plan.strategy].name}
+                {coachTodayLabel(STRATEGY_BY_ID[plan.strategy].name, several ? skillDef.name : null)}
               </span>
               {plan.limiter ? (
                 <span className="rounded-full border border-accent/30 bg-accent-soft px-3 py-1 text-footnote font-semibold text-accent-text">

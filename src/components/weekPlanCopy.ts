@@ -1,5 +1,6 @@
-import type { BodyRegion, SkillId, Weekday } from '../types'
-import { SKILLS } from '../data/skills'
+import type { BodyRegion, EquipmentId, SkillId, Weekday } from '../types'
+import { kitNeedsPhrase } from '../data/equipment'
+import { missingKit, SKILLS } from '../data/skills'
 import { roomIn } from '../lib/lineup'
 import { describeDay, WEEKDAY_NAMES, type DayReading, type PlanCoverage } from '../lib/weekPlan'
 
@@ -143,4 +144,42 @@ export function todayLine({ today, next, hasPlan, active, minutes, sessionSkills
     )
   }
   return lines.join(' ')
+}
+
+/** Kit an athlete brings from place to place; a doorway bar or a wall at home is not at the gym (the planner's `PORTABLE_KIT`). */
+const CARRIED_KIT: EquipmentId[] = ['floor', 'parallettes', 'band', 'rings']
+
+export interface KitPlace {
+  name: string
+  equipment: readonly string[]
+}
+
+/** The places where a skill the athlete's own list cannot train has what it needs: their portable kit and the place's own list together. */
+export function placesWithKit(skill: SkillId, own: EquipmentId[], places: readonly KitPlace[]): string[] {
+  const carried = own.filter((id) => CARRIED_KIT.includes(id))
+  return places
+    .filter((place) => missingKit(skill, [...new Set([...carried, ...(place.equipment as EquipmentId[])])]).length === 0)
+    .map((place) => place.name)
+}
+
+/**
+ * What to say about a skill the athlete's own kit cannot train: where it does
+ * train, or what it is waiting for. "Front lever is waiting for kit" once sat
+ * on Home beside a Gym A that has a pull-up bar.
+ */
+export function kitStatusLine(skill: SkillId, own: EquipmentId[], places: readonly KitPlace[]): { kind: 'ready' } | { kind: 'at-places'; text: string } | { kind: 'waiting'; text: string } {
+  const missing = missingKit(skill, own)
+  if (missing.length === 0) return { kind: 'ready' }
+  const name = SKILLS[skill].name
+  const at = placesWithKit(skill, own, places)
+  if (at.length) {
+    const where = at.length === 1 ? at[0] : `${at.slice(0, -1).join(', ')} and ${at[at.length - 1]}`
+    return { kind: 'at-places', text: `${name} trains at ${where} — ${kitNeedsPhrase(missing)} is there. At home it waits for that kit.` }
+  }
+  return { kind: 'waiting', text: `${name} is waiting for kit. ${SKILLS[skill].requiresNote ?? `It needs ${kitNeedsPhrase(missing)}.`}` }
+}
+
+/** A skill chip's spoken name: "Planche" and its "main" badge need a break between them for a screen reader. */
+export function skillChipLabel(skill: SkillId, isMain: boolean): string {
+  return isMain ? `${SKILLS[skill].name}, main skill` : SKILLS[skill].name
 }

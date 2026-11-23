@@ -6,7 +6,7 @@ import { buildGymSession } from '../gym/builder'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { GymLocation, GymSession, TrainingPrefs } from '../gym/types'
 import { lastHardStraightArm, setsPerMuscle, volumeStatus, volumeTarget } from './load'
-import { gymDeloadDue, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutes, planToday, skillGoalPace } from './planner'
+import { gymDeloadDue, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutesFor, planToday, REST_SLACK_HOURS, skillGoalPace } from './planner'
 import { weekStart } from '../time'
 
 // A Saturday afternoon, local time: the default schedule gives Saturday 60 minutes.
@@ -81,7 +81,8 @@ describe('the day plan', () => {
           if (p.skill) {
             expect(p.skill.opener, what).toBe(true)
             expect(p.skill.skills, what).toHaveLength(1)
-            expect(p.skill.minutes, what).toBe(openerMinutes(minutes))
+            // The first priority's opener is the long one whenever the lifts keep their smallest block (round five).
+            expect(p.skill.minutes, what).toBe(openerMinutesFor(p.skill.skills[0] === 'planche', minutes))
             expect(p.skill.minutes + p.gym!.minutes, what).toBe(minutes)
           } else expect(p.gym!.minutes, what).toBe(minutes)
           if (minutes < MIN_SKILL_MINUTES[1] + MIN_GYM_MINUTES) expect(p.skill, what).toBeUndefined()
@@ -113,12 +114,19 @@ describe('the day plan', () => {
       const s = { ...athlete([skill], { minutesByDay: [60, 60, 60, 60, 60, 60, 60] }), sessions: [skillSession(NOW - 20 * HOUR, skill === 'planche' ? 'tuck-planche' : 'tuck-front-lever')] }
       const today = planToday(s, { now: NOW, minutes: 60 })
       expect(today.gym && focusFamilies(today.gym.focus), skill).not.toContain(fam)
-      // Across the week, a gym day of the family is a day of its holds or clear of them by the rest rule.
+      // Across the week, a gym day of the family is a day of its holds or clear of them by the rest rule — in calendar
+      // days, the unit the plan spaces days in, and never a genuinely short gap in real hours (round five: a logged
+      // session's real hours once refused a day the plan had promised).
       const week = planWeekAhead(s, NOW).days
       const holds = [NOW - 20 * HOUR, ...week.filter((d) => (d.plan.skill?.hard ?? []).includes(fam)).map((d) => d.at)]
+      const calendarDays = (a: number, b: number) => Math.round(Math.abs(new Date(a).setHours(0, 0, 0, 0) - new Date(b).setHours(0, 0, 0, 0)) / (24 * HOUR))
       for (const d of week) {
         if (!d.plan.gym || !focusFamilies(d.plan.gym.focus).includes(fam)) continue
-        for (const h of holds) if (new Date(h).toDateString() !== new Date(d.at).toDateString()) expect(Math.abs(d.at - h), d.day).toBeGreaterThanOrEqual(48 * HOUR)
+        for (const h of holds) {
+          if (new Date(h).toDateString() === new Date(d.at).toDateString()) continue
+          expect(calendarDays(d.at, h), d.day).toBeGreaterThanOrEqual(2)
+          expect(Math.abs(d.at - h), d.day).toBeGreaterThanOrEqual((48 - REST_SLACK_HOURS) * HOUR)
+        }
       }
     }
   })

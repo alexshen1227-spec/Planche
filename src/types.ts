@@ -522,6 +522,15 @@ export interface WorkoutRequest {
    * this build only; absent builds exactly as before.
    */
   kit?: EquipmentId[]
+  /**
+   * The athlete picked this session inside their straight-arm rest rule
+   * (`insideRestRule`): hours since the family's last hard session, and the
+   * rule's own hours. A pick still outranks the plan, so it is built — as a
+   * lighter day: never a push day, no target above the base, a little less
+   * volume, nothing maximal (`CoachPlan.insideRest`). Absent builds exactly as
+   * before.
+   */
+  insideRest?: { hours: number; ruleHours: number }
 }
 
 export interface Workout {

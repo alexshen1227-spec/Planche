@@ -43,8 +43,9 @@ import { useToday } from '../lib/useToday'
 import { ASSIST_LABEL } from '../components/SetupRow'
 import { WeekPlanCard } from '../components/WeekPlanCard'
 import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
+import { rememberNextBlock } from '../lib/plan/nextBlock'
 import { atActivePlace, insideRestRule, placeKit } from '../lib/plan/planner'
-import { calisthenicsCardLabel } from '../lib/plan/screens'
+import { calisthenicsCardLabel, withRestFlag } from '../lib/plan/screens'
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { becamePainSafe, maxTestOffered } from '../lib/plan/screens'
 import { Button, SegmentedControl } from '../components/ds'
@@ -115,10 +116,15 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
         : { source: 'auto' },
     [dayPlan],
   )
+  /** A picked skill day inside the rest rule says so on its request, in the preview and on Start alike. */
+  const restFlagged = (request: WorkoutRequest, now: number): WorkoutRequest =>
+    request.skills?.length && !isRecommendedRequest(request) && requestKey(request) !== requestKey(recommended)
+      ? withRestFlag(request, insideRestRule(state, request.skills, now))
+      : request
   const finalized = useMemo(() => {
     const now = Date.now()
     // Built where the athlete is: the active place's kit beside their own (a lever day at a gym with a bar).
-    const build = (request: WorkoutRequest) => finalizeFromPlan(state, atActivePlace(state, request), plan, now).workout
+    const build = (request: WorkoutRequest) => finalizeFromPlan(state, atActivePlace(state, restFlagged(request, now)), plan, now).workout
     return {
       today: build(recommended),
       templates: new Map(TEMPLATES.map((t) => [t.id, build({ source: 'template', templateId: t.id })])),
@@ -478,7 +484,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                 setPreviewRequest(null)
                 // The request, not this preview: the session is decided again
                 // at the moment it starts, with whatever is true then.
-                if (request) startWorkout(atActivePlace(state, request))
+                if (request) startWorkout(atActivePlace(state, restFlagged(request, Date.now())))
               }}
               className="mt-5 flex w-full items-center justify-center gap-2 "
             >
@@ -745,11 +751,11 @@ export function Train({
     }
   })
   const [gymPreset, setGymPreset] = useState<GymPreset | null>(null)
-  // A gym block handed over when a mixed day's skill session closes starts here.
+  // A gym block handed over when a mixed day's skill session closes waits on the Today card ("Start the
+  // lifts"): it once opened the pain check by itself on arrival, before anything was tapped.
   useEffect(() => {
     if (!nextGym) return
-    setMode('gym')
-    setGymPreset(nextGym)
+    rememberNextBlock<GymPreset>(nextGym)
     onNextGymUsed?.()
   }, [nextGym, onNextGymUsed])
   const choose = (m: 'skills' | 'gym') => {

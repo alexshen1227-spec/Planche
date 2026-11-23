@@ -227,6 +227,18 @@ Open, in order of value (none blocks using the app):
   majors fixed (CLAUDE.md "Fifth review round"). Left: side delts short in
   short weeks; the 1.5× cap holds to within ~5 sets.
 
+## Round seven (2026-11-22): fifth strict review
+
+- Fresh reviewers on `b3aacea`: 52/100 UX, 47/100 logic. The athlete's
+  question ("won't lose my planche progress … still improve in the other
+  skills, plus gym") was the lens. A closed loop of their week showed the
+  planche at 72% of a planche-only control (58% at 72 h, 42% on three days)
+  and a front lever never re-tested. Fixed: the first-priority rule, the
+  per-skill re-test, the niggle lead, chest presses, per-place days, plan
+  stability; pinned by `plan/wholeAthlete.eval.test.ts`. Left: `spare` and
+  `placeId` wired into the gym screens; light push days near planche days;
+  plan minutes may not yet lengthen a calisthenics session.
+
 ## Log
 
 - 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the

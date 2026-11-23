@@ -209,6 +209,12 @@ export interface LoadSuggestion {
  * What to load next time. Pure: history in, suggestion out. The athlete's
  * age only ever makes it more careful — one step at a time, never two.
  */
+/** The heaviest load on this unit's grid that is at most one step above the true last load (a jump under 18 never exceeds it). */
+export function youthCeiling(lastKg: number, stepKg: number, topKg?: number): number {
+  const grid = Math.floor((lastKg + stepKg) / stepKg + 1e-9) * stepKg
+  return topKg !== undefined ? Math.min(grid, topKg) : grid
+}
+
 export function suggestLoad(input: {
   exerciseId: string
   location: GymLocation | undefined
@@ -322,9 +328,12 @@ export function suggestLoad(input: {
     // for an adult. Under 18 a jump is always the smallest step there is.
     const easy = !unratedTwice && atLoad.every((s) => s.reps >= hi + 3 && s.rpe !== undefined && s.rpe <= 7)
     const twoSteps = !youth && easy ? roundToStep(here + 2 * step, step, top) : next
+    // Under 18 a jump is one step of the unit in use from the load that was really lifted: rounding that load to
+    // the grid first (20 kg is 44.1 lb, which became 45) and adding a step landed 2.68 kg up against a 2.27 kg step.
+    const jump = youth ? Math.min(twoSteps, youthCeiling(kg, step, top)) : twoSteps
     return {
       ...base,
-      kg: twoSteps,
+      kg: jump,
       kind: 'increase',
       why:
         twoSteps > next

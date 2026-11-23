@@ -172,8 +172,8 @@ export function CheckInForm({
           </div>
           <p className="mt-0.5 text-[12px] leading-relaxed text-ink3">
             This changes the session rather than just being recorded. A niggle makes today lighter — nothing maximal,
-            a longer warm-up, a little less volume — and where you train more than one skill, the second part goes to
-            one that does not load the area you name. Pain takes loaded work off altogether. An elbow is treated as
+            a longer warm-up, a little less volume — and where you train more than one skill, one that leaves the area
+            you name alone leads, and short doses skip the ones that load it. Pain takes loaded work off altogether. An elbow is treated as
             pain either way.
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-labelledby="ci-regions">

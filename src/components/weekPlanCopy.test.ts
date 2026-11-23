@@ -3,7 +3,7 @@ import type { SkillId } from '../types'
 import { reducer } from '../lib/store'
 import { startingState } from '../lib/skillLoop'
 import { coverageNotes, planCoverage, todaysDay, type DayReading } from '../lib/weekPlan'
-import { coverageSummary, skillWords, todayLine, unavailableClause, type TodayLineInput } from './weekPlanCopy'
+import { coverageSummary, kitStatusLine, placesWithKit, skillChipLabel, skillWords, todayLine, unavailableClause, type TodayLineInput } from './weekPlanCopy'
 
 const TWO: SkillId[] = ['planche', 'frontlever']
 const said = (input: Partial<TodayLineInput> & Pick<TodayLineInput, 'today'>) =>
@@ -112,5 +112,27 @@ describe('a plan’s week in one line', () => {
     expect(coverageNotes(saved, {})).toEqual([])
     expect(coverageSummary(planCoverage(saved, saved.settings.weekPlan))).toMatch(/^Planche 1 day/)
     expect(coverageSummary(planCoverage(saved, undefined))).toBeNull()
+  })
+})
+
+describe('kit at a place (fifth review)', () => {
+  const home = ['floor', 'parallettes'] as never
+  const gymA = { name: 'Gym A', equipment: ['pullup-bar', 'dumbbells', 'bench'] }
+  it('says the front lever trains at the gym that has the bar, not that it is waiting', () => {
+    const s = kitStatusLine('frontlever', home, [{ name: 'Home', equipment: [] }, gymA])
+    expect(s.kind).toBe('at-places')
+    expect('text' in s && s.text).toMatch(/^Front lever trains at Gym A/)
+    expect('text' in s && s.text).not.toMatch(/waiting for kit\./)
+  })
+  it('still says waiting when no place has it, and ready when the athlete does', () => {
+    expect(kitStatusLine('frontlever', home, [{ name: 'Home', equipment: [] }]).kind).toBe('waiting')
+    expect(kitStatusLine('frontlever', ['floor', 'pullup-bar'] as never, []).kind).toBe('ready')
+  })
+  it('a pull-up bar at home does not travel to a gym that has none', () => {
+    expect(placesWithKit('frontlever', ['floor', 'pullup-bar'] as never, [{ name: 'Gym B', equipment: ['dumbbells'] }])).toEqual([])
+  })
+  it('gives the skill chip a spoken break before its main badge', () => {
+    expect(skillChipLabel('planche', true)).toBe('Planche, main skill')
+    expect(skillChipLabel('frontlever', false)).toBe('Front lever')
   })
 })

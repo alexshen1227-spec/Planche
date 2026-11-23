@@ -76,6 +76,19 @@ export function currentStepForExercise(stateIn: AppState, exerciseId: string): S
   return undefined
 }
 
+/**
+ * The straight-arm family a skill's hard work belongs to, for shared recovery:
+ * the planche and the 90° hold push, the front lever and the flag pull — the
+ * pairs the planner's rest rule spaces as one. The handstand is balance work
+ * and belongs to neither. The pairing is CONSENSUS; the shared joints behind it
+ * are INFERENCE from the positions.
+ */
+export function straightArmFamily(skill: SkillId): 'push' | 'pull' | null {
+  if (skill === 'planche' || skill === 'ninety') return 'push'
+  if (skill === 'frontlever' || skill === 'flag') return 'pull'
+  return null
+}
+
 /** Skills the athlete trains, focus first. A save from before the other skills is the planche alone. */
 export function activeSkills(state: Pick<AppState, 'profile'>): SkillId[] {
   const listed = state.profile.skills

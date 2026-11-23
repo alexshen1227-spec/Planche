@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
 import { FOCUS_LABEL, type GymFocus } from '../../lib/gym/builder'
 import { AFTER_OPENER_WARM_UP_MIN, planWeekAhead, skillRequest, type ReadinessLevel } from '../../lib/plan/planner'
-import { dayFinished, openerLine } from '../../lib/plan/screens'
+import { dayStage, openerLine } from '../../lib/plan/screens'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
-import { rememberNextBlock } from '../../lib/plan/nextBlock'
+import { endTheDay, rememberNextBlock, useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useStore } from '../../lib/store'
 import { useToday } from '../../lib/useToday'
@@ -79,7 +79,12 @@ export function TodayPlanCard({
   const skillDone = state.sessions.some((s) => s.startedAt >= todayStart.getTime())
   const gymDone = (state.gym?.sessions ?? []).some((s) => s.startedAt >= todayStart.getTime())
   // Today's main session done: nothing more is recommended, only a quiet way to train again.
-  const allDone = dayFinished(state, plan)
+  const marks = useDayMarks(todayKey)
+  const remembered = useNextBlock<GymPreset>(todayKey)
+  const stage = dayStage(state, plan, Date.now(), marks)
+  const allDone = stage === 'done'
+  // A gym day whose opener is saved: the lifts are what is left, whatever the planner now calls the day.
+  const liftsNext = stage === 'lifts-next'
   const opener = plan.kind === 'gym' && plan.skill?.opener ? plan.skill : undefined
   const preset: GymPreset | null = plan.gym
     ? {
@@ -91,6 +96,7 @@ export function TodayPlanCard({
         ...(plan.gym.priority?.length ? { priority: plan.gym.priority } : {}),
       }
     : null
+  const liftsPreset: GymPreset | null = remembered ?? preset
   const session =
     plan.kind === 'calisthenics' && plan.skill
       ? { title: `Calisthenics · ${plan.skill.minutes} min`, line: cap(plan.skill.skills.map((s) => SKILL_LABEL[s]).join(', ')) }
@@ -107,7 +113,11 @@ export function TodayPlanCard({
           : 'Built from your place’s equipment'
     : ''
   const start = () => {
-    if (plan.kind === 'calisthenics' && plan.skill) {
+    if (liftsNext) {
+      // The lifts, as the opener's day planned them; the pain check comes when this is tapped, never before.
+      if (liftsPreset) onStartGym(liftsPreset)
+      else onSwitch?.('gym')
+    } else if (plan.kind === 'calisthenics' && plan.skill) {
       rememberNextBlock(null)
       // Built where the athlete is: the block carries the active place's kit beside their own.
       startWorkout(skillRequest(plan.skill))
@@ -120,8 +130,8 @@ export function TodayPlanCard({
       } else onStartGym(preset)
     }
   }
-  const startLabel = allDone ? 'Again' : opener && skillDone ? 'Start the lifts' : 'Start'
-  const switchTo = plan.alternative && !skillDone && !gymDone ? plan.alternative : undefined
+  const startLabel = allDone ? 'Again' : 'Start'
+  const switchTo = plan.alternative && !skillDone && !gymDone && !liftsNext ? plan.alternative : undefined
   const marker = (done: boolean, n: number) => (
     <span
       className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-footnote font-semibold ${done ? 'bg-ok text-white' : 'bg-accent-soft text-accent-text'}`}
@@ -135,7 +145,7 @@ export function TodayPlanCard({
     <Card className="mb-5">
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-display text-title3 font-semibold">
-          {allDone ? 'Today: done' : plan.rest ? 'Today: rest' : `Today: ${plan.minutes} minutes`}
+          {allDone ? 'Today: done' : liftsNext ? 'Today: the lifts are next' : plan.rest ? 'Today: rest' : `Today: ${plan.minutes} minutes`}
         </h2>
         <button onClick={() => setSheet('settings')} className="min-h-11 px-1 text-footnote font-medium text-accent-text">
           Goals and schedule
@@ -188,6 +198,24 @@ export function TodayPlanCard({
             Train again
           </button>
         </section>
+      ) : liftsNext ? (
+        <section className="mt-4 rounded-inner bg-raised p-4" aria-label="Today’s session">
+          <div className="flex items-start gap-3">
+            <span className="min-w-0 flex-1">
+              <span className="block text-body font-semibold">Your skill opener is saved. The lifts are next.</span>
+              <span className="block text-caption text-ink3">
+                {liftsPreset ? `${FOCUS_LABEL[liftsPreset.focus]} · ${liftsPreset.minutes} min — the day is not done until they are.` : 'Pick the lifts on the Gym side — the day is not done until they are.'}
+              </span>
+            </span>
+            {marker(true, 1)}
+          </div>
+          <Button full className="mt-3" onClick={start}>
+            {liftsPreset ? 'Start the lifts' : 'Open the Gym side'}
+          </Button>
+          <button onClick={() => endTheDay()} className="mt-1 min-h-11 px-1 text-footnote font-medium text-accent-text">
+            End the day here — skip the lifts
+          </button>
+        </section>
       ) : session && !plan.rest ? (
         <section className="mt-4 rounded-inner bg-raised p-4" aria-label="Today’s session">
           <div className="flex items-start gap-3">
@@ -236,7 +264,7 @@ export function TodayPlanCard({
         </button>
       ) : null}
 
-      {plan.reasons.length && !allDone ? (
+      {plan.reasons.length && !allDone && !liftsNext ? (
         <ul className="mt-3 space-y-1.5">
           {plan.reasons.map((r) => (
             <li key={r} className="flex gap-2 text-footnote leading-snug text-ink2">

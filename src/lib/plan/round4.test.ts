@@ -74,6 +74,7 @@ function buildLifts(s: AppState, g: ReturnType<typeof gymToday>, minutes: number
     minutes,
     focus: g.focus,
     musclesOff: g.musclesOff,
+    spare: g.spare,
     avoidJoints: g.avoidJoints,
     volumeFactor: g.volumeFactor,
     ...(g.opener ? { warmUpMin: 2 } : {}),
@@ -287,10 +288,18 @@ describe('the smaller items of round four', () => {
     expect(dawn.limits.join(' ')).toMatch(/later today/)
   })
 
-  it('keeps the rest rule in real hours when no clock change falls between', () => {
+  // Round five changed the unit: a logged session rests its family in calendar days, the unit planned days are spaced
+  // in, and real hours refuse only a genuinely short gap (`REST_SLACK_HOURS` under the rule). In real hours, Monday's
+  // 17:40 lifts once refused the Wednesday 17:00 planche day the plan had promised.
+  it('keeps the rest rule in calendar days, and in real hours only for a genuinely short gap', () => {
     const t0 = at(2026, 6, 4, 17)
-    expect(insideRest(t0 + 47 * HOUR, t0, 48 * HOUR)).toBe(true)
+    expect(insideRest(t0 + 23 * HOUR, t0, 48 * HOUR)).toBe(true)
+    expect(insideRest(t0 + 47 * HOUR, t0, 48 * HOUR)).toBe(false)
     expect(insideRest(t0 + 48 * HOUR, t0, 48 * HOUR)).toBe(false)
+    // Saturday 21:00, then Monday 07:00: two calendar days, 34 hours — refused.
+    const late = at(2026, 6, 4, 21)
+    expect(insideRest(at(2026, 6, 6, 7), late, 48 * HOUR)).toBe(true)
+    expect(insideRest(at(2026, 6, 6, 10), late, 48 * HOUR)).toBe(false)
   })
 
   // Runs where the clocks spring forward on 8 March 2026 (America/New_York, which `npm run test:clock` includes).
@@ -300,7 +309,10 @@ describe('the smaller items of round four', () => {
     const mon = at(2026, 2, 9, 17)
     expect((mon - sat) / HOUR).toBe(47)
     expect(insideRest(mon, sat, 48 * HOUR)).toBe(false)
-    expect(insideRest(mon - HOUR, sat, 48 * HOUR)).toBe(true)
+    // A day early by the calendar is inside the rule whatever the hours; the real-hours floor allows the clock's hour.
+    expect(insideRest(mon - DAY, sat, 48 * HOUR)).toBe(true)
+    expect(insideRest(at(2026, 2, 9, 5), sat, 48 * HOUR)).toBe(false)
+    expect(insideRest(at(2026, 2, 9, 4), at(2026, 2, 7, 20), 48 * HOUR)).toBe(true)
     const s = logSkill(atTuck(athlete(1995, ['planche'], { minutesByDay: EVERY_DAY })), sat, { source: 'auto', minutes: 60, skills: ['planche'] })
     const p = planToday(s, { now: mon, kind: 'calisthenics' })
     expect(p.kind).toBe('calisthenics')

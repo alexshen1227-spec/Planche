@@ -1,5 +1,6 @@
 import type { SkillId, StepId } from '../types'
 import { SKILLS } from '../data/skills'
+import { ASSESSMENT_ITEMS } from './assessment'
 import { nextInterviewItem, type InterviewAnswers } from './placement'
 
 /**
@@ -87,4 +88,41 @@ export function skillsProgress(input: {
   if (input.stage === 'interview') return { at: 3 + input.position, total, open }
   const lastMiddle = input.skipped ? Math.max(1, input.skillCount) : input.position
   return { at: 3 + lastMiddle, total: 3 + lastMiddle, open: false }
+}
+
+const LADDER = ASSESSMENT_ITEMS.filter((item) => item.ladder)
+
+/** The first planche rung answered "not yet" (the frog stand aside, it gates nothing), if any. */
+function firstZeroRung(answers: InterviewAnswers): number {
+  return LADDER.findIndex((item) => item.id !== 'frog-stand' && answers[item.id] === 0)
+}
+
+/**
+ * The placement ladder stops at the first rung answered zero (the frog stand
+ * aside): harder holds are not asked. An answer to one that was given anyway —
+ * the athlete went back and changed a lower rung after answering above it —
+ * must not stay in the record, or a stale "1–3 s" on a straddle would sit past
+ * a "not yet" on the advanced tuck.
+ */
+export function pruneBlockedAnswers(answers: InterviewAnswers): InterviewAnswers {
+  const stop = firstZeroRung(answers)
+  if (stop < 0) return answers
+  const next: InterviewAnswers = { ...answers }
+  let changed = false
+  for (const item of LADDER.slice(stop + 1)) {
+    if (item.id !== 'frog-stand' && next[item.id] !== undefined) {
+      delete next[item.id]
+      changed = true
+    }
+  }
+  return changed ? next : answers
+}
+
+/** Said while the ladder is cut short, so the missing questions read as a decision rather than as the app not asking. */
+export function ladderStopNote(answers: InterviewAnswers): string | null {
+  const stop = firstZeroRung(answers)
+  if (stop < 0 || stop >= LADDER.length - 1) return null
+  const rung = LADDER[stop]
+  const name = rung.exerciseId ? rung.question.split(' — ')[0].toLowerCase() : 'that hold'
+  return `You answered “not yet” to the ${name}, so the harder planche holds are skipped. They would not change your start.`
 }

@@ -19,6 +19,21 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-22',
+    title: 'Your first skill keeps its sessions, and every skill moves',
+    area: 'coach',
+    notes: [
+      'Your first priority now gets every session your rest rule allows — as many as if you trained it alone — and each one carries its full set of main holds. The other skills and the gym fill the days it cannot use. In the app’s own simulation of a week like yours, the planche got about 90% of a planche-only athlete’s main holds, where it had about 70%.',
+      'When your first skill leads a two-skill session, its main holds go in first, and a gym day it opens gives it 25 minutes from 45-minute days. Following the plan no longer changes it: doing what it said never moves a later day.',
+      'A second skill now gets its re-test on your real schedule. It once waited for two full rest days that a week of several skills never has, so the front lever’s target never rose.',
+      'A niggle moves the lead: with a wrist niggle, a skill that leaves the wrists alone leads today. A skill day you pick inside your rest rule is built lighter and says why.',
+      'Gym days are planned at the gym, and a skill whose kit is only at the gym trains there. Push days always keep a chest press, the week finds a leg day when your games leave one, and rising effort counts as tiredness only at the same loads.',
+      'Holds show the time on the timer beside what was counted — a 5 s walk back to the phone is taken off until you measure yours — with a way to measure it.',
+      'A gym day that opened with skill work is not done until its lifts are saved or you end the day, and nothing opens by itself. Gym logging asks one thing at a time, a typed weight logs the set, and under 18 a jump never exceeds one step after a unit change.',
+      'The setup counts its steps plainly, placement skips holds past one you cannot do yet, and a skill day shorter than the time you gave says why.',
+    ],
+  },
+  {
+    date: '2026-11-22',
     title: 'The week keeps your muscles balanced, and a done day stays done',
     area: 'coach',
     notes: [

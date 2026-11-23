@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { holdAxis, niceTicks } from '../lib/chartAxis'
 import { addDays, dayKey, fmtDuration, fmtHold, fmtShortDay, weekStart } from '../lib/time'
 import { useToday } from '../lib/useToday'
 import type { WeekVolume } from '../lib/stats'
@@ -16,17 +17,6 @@ function useWidth<T extends HTMLElement>() {
     return () => ro.disconnect()
   }, [])
   return { ref, width: w }
-}
-
-function niceTicks(max: number, count = 3): number[] {
-  if (max <= 0) return [0]
-  const rough = max / count
-  const pow = 10 ** Math.floor(Math.log10(rough))
-  const candidates = [1, 2, 2.5, 5, 10].map((m) => m * pow)
-  const step = candidates.find((c) => c >= rough) ?? candidates[candidates.length - 1]
-  const ticks: number[] = []
-  for (let v = 0; v <= max + 1e-9; v += step) ticks.push(Math.round(v * 100) / 100)
-  return ticks
 }
 
 /**
@@ -410,9 +400,10 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
   const w = Math.max(width, 280)
   const iw = w - pad.l - pad.r
   const ih = height - pad.t - pad.b
-  const maxMin = Math.max(...totals) / 60
-  const ticks = niceTicks(maxMin * 1.1)
-  const maxV = Math.max(ticks[ticks.length - 1], maxMin) * 60 || 60
+  const maxSec = Math.max(...totals)
+  const axis = holdAxis(maxSec)
+  const ticks = axis.ticks
+  const maxV = Math.max(ticks[ticks.length - 1] * axis.secPerTick, maxSec) || 60
   const slot = iw / weeks.length
   const bw = Math.min(24, slot * 0.55)
   const y = (sec: number) => pad.t + ih - (sec / maxV) * ih
@@ -452,9 +443,9 @@ export function VolumeBarChart({ weeks, height = 200 }: { weeks: WeekVolume[]; h
       >
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={pad.l} x2={w - pad.r} y1={y(t * 60)} y2={y(t * 60)} stroke="var(--t-grid)" strokeWidth={1} />
-            <text x={pad.l - 8} y={y(t * 60) + 4} textAnchor="end" fontSize={12} fill="var(--t-ink3)" className="tnum">
-              {t}m
+            <line x1={pad.l} x2={w - pad.r} y1={y(t * axis.secPerTick)} y2={y(t * axis.secPerTick)} stroke="var(--t-grid)" strokeWidth={1} />
+            <text x={pad.l - 8} y={y(t * axis.secPerTick) + 4} textAnchor="end" fontSize={12} fill="var(--t-ink3)" className="tnum">
+              {axis.label(t)}
             </text>
           </g>
         ))}

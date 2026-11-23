@@ -21,7 +21,7 @@ import { ownsKit, SKILLS } from './skills'
 import { skillSession, skillWarmup } from './skillSession'
 import { mixedSession } from './mixedSession'
 import { bridgeStatus, capacityOn } from '../lib/bridge'
-import { buildPlan, STRATEGY_BY_ID, type CoachPlan, type WarmupLevel } from '../lib/coach'
+import { buildPlan, STRATEGY_BY_ID, type CoachPlan, type PlanContext, type WarmupLevel } from '../lib/coach'
 import { median } from '../lib/signals'
 import { capacityReading, endedForNonCapacityReason, isAssisted } from '../lib/progression'
 import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
@@ -647,6 +647,14 @@ function roleOf(b: Block): BlockRole | undefined {
   return undefined
 }
 
+/** Minutes under the time it was given before a session says why it is shorter. */
+export const SHORTER_THAN_ASKED_MIN = 5
+
+/** Every set in a list of blocks. */
+export function totalSetsOf(blocks: readonly Block[]): number {
+  return blocks.reduce((sum, block) => sum + block.sets, 0)
+}
+
 /**
  * Trim a session to the athlete's time budget, giving up the least
  * planche-specific work first.
@@ -1267,9 +1275,16 @@ export function todaysSession(
           stepBefore(stepId) ? EXERCISE_BY_ID[stepBefore(stepId)!.keyExerciseId].name.toLowerCase() : 'an easier lean'
         } or using a smaller lean is worth reviewing with your replay.`
       : ''
+  // What to do, not what is missing: every step starts with a hold that is not
+  // there yet. On the floor the way in is a smaller lean; once the feet leave
+  // it (the frog stand up), a smaller lean only puts them back down, and the
+  // way in is the shape before this one.
+  const placedBefore = stepBefore(stepId)
   const placementNote =
     plan.signals.totalSessions === 0 && state.assessment?.answers[step.keyExerciseId] === 0
-      ? ' You said you cannot hold this yet: use a smaller lean — shoulders only just past the wrists — so the target is holdable, and build the lean as it gets controlled.'
+      ? step.order >= 2 && placedBefore
+        ? ` You said you cannot hold this yet — every step starts there, and your ${EXERCISE_BY_ID[placedBefore.keyExerciseId].name.toLowerCase()} is what it is built on. Hold the shape for as long as it stays clean, even a second or two; if it will not hold at all, take a shape between your ${EXERCISE_BY_ID[placedBefore.keyExerciseId].name.toLowerCase()} and this one, and open it up as it gets controlled.`
+        : ' You said you cannot hold this yet — every step starts there. Use a smaller lean, shoulders only just past the wrists, so the target is holdable, and build the lean as it gets controlled.'
       : ''
   const transferNote = transferred
     ? ` No ${surface} holds are logged yet, so this target comes conservatively from your other surface — expect the first sets to tell you more.`
@@ -1718,14 +1733,11 @@ export function todaysSession(
         : baseBudget
   // Sides are expanded before trimming, so the budget accounts for the fact
   // that unilateral work costs twice as long.
-  const fit = fitToBudget(
-    withSides(lightened),
-    budget,
-    plan.accessoryEmphasis === 'core',
-    state.settings.stopLatencySec,
-    state.settings.phoneWithinReach,
-  )
+  const whole = withSides(lightened)
+  const fit = fitToBudget(whole, budget, plan.accessoryEmphasis === 'core', state.settings.stopLatencySec, state.settings.phoneWithinReach)
   const fitted = fit.blocks
+  // Whether the budget took anything off: a block, or a set.
+  const trimmed = fit.dropped.length > 0 || totalSetsOf(fit.blocks) < totalSetsOf(whole)
 
   // Notes about blocks the budget then removed would describe a session the
   // athlete is not getting — "pseudo planche push-ups set to 4 reps" above a
@@ -1764,7 +1776,17 @@ export function todaysSession(
   // and promising "about 15 minutes" for a 20-minute session is the kind of
   // number this app is not allowed to invent.
   const fittedMinutes = estimateMinutes(fitted, state.settings.stopLatencySec, state.settings.phoneWithinReach)
-  const shortened = minutesOverride !== undefined && fittedMinutes < baseBudget && !options.part
+  // "Short" is a session the time took something from, or one that could not
+  // get down to it — not one whose step simply holds less than the time given
+  // (a light day's 24 minutes of a 30-minute cap was called "Trimmed …
+  // accessories came off first" with nothing taken off).
+  const shortened =
+    minutesOverride !== undefined && fittedMinutes < baseBudget && !options.part && (trimmed || fittedMinutes > budget)
+  if (minutesOverride !== undefined && !options.part && !trimmed && budget - fittedMinutes >= SHORTER_THAN_ASKED_MIN) {
+    adjustments.push(
+      `This session holds about ${fittedMinutes} minutes: everything the ${step.name.toLowerCase()} step programs today. Nothing is added just to fill the time.`,
+    )
+  }
   const strategy = STRATEGY_BY_ID[plan.strategy]
   const strategyContext = `${strategy.blurb} ${plan.dayReason}`
   return {
@@ -2129,6 +2151,7 @@ export function challengeBlockedReason(plan: CoachPlan): string | null {
   // The latest answer was "good", so none of the joint reasons above apply:
   // what holds maximal work back is the first loaded session after the report.
   if (plan.signals.returningFromPain) return 'this is your first session back after a pain report'
+  if (plan.insideRest) return `today sits inside your ${plan.insideRest.ruleHours} h rest rule`
   if (plan.signals.daysSinceLoaded === 0) return 'you already trained hard today'
   if (plan.dayType === 'deload') return 'this is a scheduled easy week'
   if (plan.dayType === 'technique' || plan.dayType === 'recovery') return 'today is set up as a lighter day'
@@ -2185,6 +2208,19 @@ export function withRequestKit(state: AppState, request: WorkoutRequest): AppSta
   return { ...state, profile: { ...state.profile, equipment } }
 }
 
+/** What a request tells the plan beyond the log: a pick made inside the rest rule. */
+function planContext(request: WorkoutRequest): PlanContext | undefined {
+  return request.insideRest ? { insideRest: request.insideRest } : undefined
+}
+
+/** Whether a plan was built for the same rest-rule note a request carries. */
+function sameInsideRest(plan: CoachPlan, context: PlanContext | undefined): boolean {
+  const built = plan.insideRest
+  const asked = context?.insideRest
+  if (!built || !asked) return !built && !asked
+  return built.hours === asked.hours && built.ruleHours === asked.ruleHours
+}
+
 /**
  * The plan for the skill that leads a session — what the screens show as
  * "today". For an athlete training the planche alone this is `buildPlan(state)`;
@@ -2197,8 +2233,8 @@ export function planForToday(
   request: WorkoutRequest = { source: 'auto' },
 ): CoachPlan {
   const state = wholeState(stateIn)
-  const lead = lineupFor(state, request, now)[0].skill
-  return buildPlan(skillView(state, lead), now, freshCheckIn)
+  const lead = lineupFor(state, request, now, freshCheckIn)[0].skill
+  return buildPlan(skillView(state, lead), now, freshCheckIn, planContext(request))
 }
 
 /**
@@ -2259,16 +2295,20 @@ export function finalizeFromPlan(
   freshCheckIn?: CheckIn,
 ): { workout: Workout; plan: CoachPlan; lineup: LineupEntry[] } {
   const whole = wholeState(withRequestKit(stateIn, request))
-  const lineup = lineupFor(whole, request, now)
+  const lineup = lineupFor(whole, request, now, freshCheckIn)
   const lead = lineup[0].skill
   const state = skillView(whole, lead)
-  const plan = planIn.skill === lead ? planIn : buildPlan(state, now, freshCheckIn)
+  const context = planContext(request)
+  // A plan built without the request's rest-rule note is rebuilt with it: the
+  // screens preview many requests from one plan, and a picked day inside the
+  // rest rule must not borrow an ordinary day's.
+  const plan = planIn.skill === lead && sameInsideRest(planIn, context) ? planIn : buildPlan(state, now, freshCheckIn, context)
   /** Today's coach-built session: one skill, or the line-up mixed. */
   const coachSession = (): Workout => {
     if (lineup.length === 1) return todaysSession(state, plan, request.minutes, { now, ...(request.focus ? { focus: request.focus } : {}) })
     const plans: Partial<Record<SkillId, CoachPlan>> = { [lead]: plan }
     for (const entry of lineup) {
-      plans[entry.skill] ??= buildPlan(skillView(whole, entry.skill), now, freshCheckIn)
+      plans[entry.skill] ??= buildPlan(skillView(whole, entry.skill), now, freshCheckIn, context)
     }
     return mixedSession(whole, lineup, plans, (view, p, minutes) => todaysSession(view, p, minutes, { part: true, now }), request.minutes)
   }

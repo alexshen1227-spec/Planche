@@ -3,6 +3,7 @@ import { STEP_BY_ID, stepAfter } from '../../data/progressions'
 import { qualifyingProgress } from '../progression'
 import { addDays, dayKey, weekStart } from '../time'
 import { missingKit } from '../../data/skills'
+import { readDayMarks, type DayMarks } from './nextBlock'
 import { atActivePlace, insideRestRule, MIN_SKILL_MINUTES, planToday, skillFamily, type SkillBlock, type TodayPlan } from './planner'
 
 /**
@@ -67,6 +68,28 @@ export function trainedToday(state: AppState, now = Date.now()): { skill: boolea
   return skill || gym ? { skill, gym } : false
 }
 
+/** Where today's one main session stands: not begun, half done (an opener saved, the lifts owed), or done. */
+export type DayStage = 'open' | 'lifts-next' | 'done'
+
+/**
+ * Today's stage, from what was logged and what the day was. A gym day with an
+ * opener is finished when its lifts are saved or the athlete ends the day —
+ * never by the opener alone: once the opener is logged the planner sees a
+ * trained skill day and its `kind` flips, so the day is read from the marks
+ * (`DayMarks.openerDay`, set when an opener starts) as well as the plan.
+ * Another day is done with any session. An ended day is done whatever was
+ * logged. "Today: done" once sat over a gym player that had just opened.
+ */
+export function dayStage(state: AppState, plan: Pick<TodayPlan, 'kind'> & { skill?: { opener?: boolean } }, now = Date.now(), marks: DayMarks = readDayMarks(now)): DayStage {
+  if (marks.ended) return 'done'
+  const done = trainedToday(state, now)
+  if (!done) return 'open'
+  if (done.gym) return 'done'
+  const owesLifts = marks.openerDay || (plan.kind === 'gym' && Boolean(plan.skill?.opener))
+  if (owesLifts && done.skill) return 'lifts-next'
+  return plan.kind === 'gym' ? 'open' : 'done'
+}
+
 /**
  * Whether today's one main session is done: the lifts on a gym day (its
  * opener alone is half of it), and any session on another day. Once it is,
@@ -74,10 +97,13 @@ export function trainedToday(state: AppState, now = Date.now()): { skill: boolea
  * 60 min — Again", with reasons why the planche needed it, and the Gym side
  * offered a 55-minute leg session.
  */
-export function dayFinished(state: AppState, plan: Pick<TodayPlan, 'kind'>, now = Date.now()): boolean {
-  const done = trainedToday(state, now)
-  if (!done) return false
-  return plan.kind === 'gym' ? done.gym : true
+export function dayFinished(state: AppState, plan: Pick<TodayPlan, 'kind'> & { skill?: { opener?: boolean } }, now = Date.now(), marks?: DayMarks): boolean {
+  return dayStage(state, plan, now, marks) === 'done'
+}
+
+/** Whether a gym day's opener is saved and its lifts are what is left. */
+export function liftsNext(state: AppState, plan: Pick<TodayPlan, 'kind'> & { skill?: { opener?: boolean } }, now = Date.now(), marks?: DayMarks): boolean {
+  return dayStage(state, plan, now, marks) === 'lifts-next'
 }
 
 /**
@@ -114,6 +140,16 @@ const startOfDay = (t: number) => {
   const d = new Date(t)
   d.setHours(0, 0, 0, 0)
   return d.getTime()
+}
+
+/**
+ * An explicitly picked skill day inside the athlete's rest rule carries the
+ * fact on its request (`WorkoutRequest.insideRest`), so the coach steps back
+ * for it. The pick stands — the flag only says how recently the family was
+ * trained hard. Anything not picked, or outside the rule, is returned as it was.
+ */
+export function withRestFlag<R extends WorkoutRequest>(request: R, hit: { hours: number; ruleHours: number } | undefined): R {
+  return hit ? ({ ...request, insideRest: { hours: hit.hours, ruleHours: hit.ruleHours } } as R) : request
 }
 
 /** A skill day previewed on a pain day: the session built is the pain-safe one, and the preview says so. */

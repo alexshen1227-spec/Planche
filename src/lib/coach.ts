@@ -704,6 +704,22 @@ export interface CoachPlan {
   askCheckIn: boolean
   decisions: CoachDecision[]
   signals: Signals
+  /**
+   * The athlete picked today's session inside their straight-arm rest rule
+   * (`PlanContext.insideRest`), and the day was built lighter for it. Absent
+   * on every other day.
+   */
+  insideRest?: { hours: number; ruleHours: number }
+}
+
+/** What a request tells the plan beyond the log. */
+export interface PlanContext {
+  /**
+   * A session the athlete picked inside their straight-arm rest rule
+   * (`WorkoutRequest.insideRest`): the hours since the family's last hard
+   * session, and the rule's own hours.
+   */
+  insideRest?: { hours: number; ruleHours: number }
 }
 
 /**
@@ -848,7 +864,7 @@ function daysAgoWords(days: number): string {
  * The full session plan: bandit choice for stimulus shape, signal-driven
  * adjustments, then safety rails that always get the last word.
  */
-export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: CheckIn): CoachPlan {
+export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: CheckIn, context?: PlanContext): CoachPlan {
   const sig = readSignals(state, now, freshCheckIn)
   const step = STEP_BY_ID[state.stepId]
   const pick = pickStrategy(state)
@@ -1350,9 +1366,13 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // in-session re-test is how scatter gets settled. Blocking it too locked an
   // athlete whose only measurements were scattered into "noisy" for good —
   // nothing new could be measured, so nothing could change.
+  //
+  // Fresh means this skill rested, not the body: a day since its own work or
+  // hard work of its family (`skillRestDays`). Read from any session, a front
+  // lever that always followed a planche day was never re-tested at all.
   let suggestMaxTest =
     (sig.daysSinceMaxTest === null ? sig.totalSessions >= 8 : sig.daysSinceMaxTest >= 21) &&
-    sig.restDays >= 2 &&
+    sig.skillRestDays >= 2 &&
     !longGap &&
     dayType !== 'deload' &&
     !formRepairNeeded
@@ -1382,7 +1402,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     // are fresh and your numbers are steady" in the same breath. The later
     // rails still clear this flag on pain, elbow and persistent-complaint
     // days, so this is the floor rather than the last word.
-    if (plateau.suggestMaxTest && dayType !== 'deload' && !formRepairNeeded && sig.restDays >= 2) {
+    if (plateau.suggestMaxTest && dayType !== 'deload' && !formRepairNeeded && sig.skillRestDays >= 2) {
       suggestMaxTest = true
       plateauAskedMaxTest = true
     }
@@ -1584,6 +1604,50 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   }
 
+  // ——— A pick inside the athlete's own rest rule is built lighter ———
+  //
+  // A session the athlete chooses still outranks the plan, so it is built. But
+  // a planche day picked 22 hours after a hard planche session came out as
+  // High volume, eight sets of five seconds against six the day before: the
+  // screen knew the pick sat inside the rule and the plan did not. Handled
+  // like the first session back after pain — a build day at most, nothing
+  // above the base target, a little less volume, nothing maximal — and a
+  // strategy that adds sets or chases harder holds waits for a day outside
+  // the rule. The hours are the athlete's own setting; spacing hard
+  // straight-arm sessions is coaching convention, not a measured interval,
+  // and the line says both.
+  const restNote = context?.insideRest
+  const insideRest =
+    restNote &&
+    Number.isFinite(restNote.hours) &&
+    Number.isFinite(restNote.ruleHours) &&
+    restNote.hours >= 0 &&
+    restNote.hours < restNote.ruleHours
+      ? { hours: Math.round(restNote.hours), ruleHours: Math.round(restNote.ruleHours) }
+      : undefined
+  const pickedInsideRest = insideRest !== undefined && loadPermission !== 'none'
+  if (pickedInsideRest && insideRest) {
+    volumeFactor = Math.min(volumeFactor, 0.85)
+    targetFactor = Math.min(targetFactor, 1)
+    queueUnlockAttempt = false
+    suggestMaxTest = false
+    // More sets, shorter rests or harder holds: each is the opposite of lighter.
+    if (strategy === 'intensity' || strategy === 'volume' || strategy === 'density') strategy = 'balanced'
+    const buildDay = dayType === 'push' || dayType === 'build'
+    if (buildDay) {
+      dayType = 'build'
+      dayReason = `Build day — your pick comes ${insideRest.hours} h after a hard session that shares this skill's recovery, inside your ${insideRest.ruleHours} h rest rule, so nothing maximal today.`
+    }
+    decisions.push({
+      text: `Your pick sits inside your ${insideRest.ruleHours} h rest rule: the last hard session that shares this skill's recovery was ${insideRest.hours} h ago. It is your call, so the session stays — built as ${
+        buildDay ? 'a build day' : 'today’s lighter day'
+      } with nothing maximal, a little less volume and no target above your base. The rule is your own setting, and spacing hard straight-arm sessions is a coaching convention rather than a measured interval.`,
+      kind: 'warn',
+      // It describes loaded work, so a day the rails take loading off drops it.
+      source: 'loaded-session',
+    })
+  }
+
   // ——— Low energy: ordinary work, no maximal effort ———
   //
   // Tired used to trim volume and nothing else, so a tired athlete who had
@@ -1744,9 +1808,10 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const shape = STRATEGY_BY_ID[strategy]
   // The first session back after pain never asks for more than the base
   // target, whatever shape the strategy has: the rail above capped the day's
-  // factor, and a strategy that lengthens holds must not undo that here.
+  // factor, and a strategy that lengthens holds must not undo that here. Nor
+  // does a pick inside the rest rule.
   const finalTarget = clampTo(
-    firstSessionBack ? Math.min(1, targetFactor * shape.targetFactor) : targetFactor * shape.targetFactor,
+    firstSessionBack || pickedInsideRest ? Math.min(1, targetFactor * shape.targetFactor) : targetFactor * shape.targetFactor,
     LIMITS.targetFactor,
   )
 
@@ -1872,8 +1937,10 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     loadPermission === 'normal' &&
     !tiredToday &&
     // Nothing maximal in the first loaded session after a pain report: no max
-    // test, no next-shape attempts, no minimum dose.
+    // test, no next-shape attempts, no minimum dose. Nor in a session picked
+    // inside the rest rule.
     !firstSessionBack &&
+    !pickedInsideRest &&
     dayType !== 'technique' &&
     dayType !== 'deload' &&
     dayType !== 'recovery'
@@ -2060,6 +2127,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     askCheckIn,
     decisions: finalDecisions,
     signals: sig,
+    ...(insideRest ? { insideRest } : {}),
   }
 }
 

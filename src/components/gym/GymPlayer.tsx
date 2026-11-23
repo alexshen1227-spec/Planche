@@ -14,6 +14,7 @@ import { displayLoad, formatLoad, stepKgFor, toKg, unitFor } from '../../lib/gym
 import { doubtedLoad } from '../../lib/gym/state'
 import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
 import { Icon } from '../Icon'
+import { askStillApplies, parseTypedLoad, type LoadAsk } from '../../lib/gym/loadAsk'
 import { BadgeGlyph, Button, CountUp, RingTimer, Sheet, SwipeRow } from '../ds'
 
 const RPE_CHOICES = [6, 7, 8, 9, 10]
@@ -136,13 +137,36 @@ export function GymPlayer({
   const [doubt, setDoubt] = useState<{ item: number; set: number; probably?: number; best: number } | null>(null)
 
   /** A loaded lift completed with no weight on it: ask for the weight (or bodyweight, where the movement allows it). */
-  const [needLoad, setNeedLoad] = useState<{ item: number; set: number } | null>(null)
+  const [needLoadAsk, setNeedLoad] = useState<LoadAsk | null>(null)
+  // The question is about one movement: a swap or an edit that moves it away ends the question.
+  const needLoad = askStillApplies(needLoadAsk, draft.items) ? needLoadAsk : null
+  const [needValue, setNeedValue] = useState('')
+  /** One sheet at a time: opening any of them closes the others' questions. */
+  const openSheet = (next: { kind: 'swap' | 'add' | 'menu'; item?: number } | null) => {
+    if (next) {
+      setNeedLoad(null)
+      setDoubt(null)
+    }
+    setSheet(next)
+  }
 
-  const completeSet = (i: number, j: number, checked = false, unloadedOk = false) => {
+  const completeSet = (i: number, j: number, checked = false, unloadedOk = false, withLoad?: number) => {
     const item = draft.items[i]
-    const set = item.sets[j]
+    let set = item.sets[j]
+    // A weight typed in the set's box is the answer: it once could not be logged without the sheet in the way.
+    if (!set.done && (set.load === undefined || set.load === 0)) {
+      const typed = withLoad ?? parseTypedLoad(document.querySelector<HTMLInputElement>(`[data-set="${i}-${j}"] input[aria-label$="load"], [data-set="${i}-${j}"] input[aria-label$="assistance"]`)?.value)
+      if (typed !== undefined) {
+        set = { ...set, load: typed }
+        update((d) => {
+          d.items[i].sets[j].load = typed
+          return d
+        })
+      }
+    }
     if (!set.done && !unloadedOk && isUnloadedSet(GYM_EXERCISE_BY_ID[item.exerciseId], { kg: set.load !== undefined ? toKg(set.load, item.unit) : undefined })) {
-      setNeedLoad({ item: i, set: j })
+      setNeedValue('')
+      setNeedLoad({ item: i, set: j, exerciseId: item.exerciseId })
       return
     }
     if (!checked && !set.done && set.load !== undefined && set.load > 0 && !GYM_EXERCISE_BY_ID[item.exerciseId]?.assisted) {
@@ -194,6 +218,10 @@ export function GymPlayer({
       else d.items[i] = fresh
       return d
     })
+    // The old movement's questions go with it.
+    setNeedLoad(null)
+    setDoubt(null)
+    setAskRpe(null)
     setSheet(null)
     pushToast(`Swapped to ${ex.name}.`, 'info')
   }
@@ -311,7 +339,7 @@ export function GymPlayer({
                     ) : null}
                   </div>
                   <button
-                    onClick={() => setSheet({ kind: 'menu', item: i })}
+                    onClick={() => openSheet({ kind: 'menu', item: i })}
                     className="min-h-11 rounded-control border border-line px-3 text-footnote font-medium text-ink2"
                     aria-label={`Exercise options for ${ex.name}`}
                   >
@@ -464,7 +492,7 @@ export function GymPlayer({
             )
           })}
           <button
-            onClick={() => setSheet({ kind: 'add' })}
+            onClick={() => openSheet({ kind: 'add' })}
             className="min-h-12 w-full rounded-card border border-dashed border-line-strong text-body font-medium text-ink2"
           >
             Add an exercise
@@ -472,7 +500,7 @@ export function GymPlayer({
         </div>
       </main>
 
-      {rest ? (
+      {rest && !needLoad && !doubt && !sheet ? (
         <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
           <div className="mx-auto flex max-w-xl items-center gap-3">
             <RingTimer left={restLeft} total={rest.total} label={`Rest, ${mmss(restLeft)} left`}>
@@ -504,16 +532,31 @@ export function GymPlayer({
               {GYM_EXERCISE_BY_ID[draft.items[needLoad.item].exerciseId]?.name} is a loaded lift, and a set with no weight would count as nothing
               toward your next load.
             </p>
+            <label className="flex items-center gap-2 text-footnote text-ink2">
+              <span className="shrink-0">Weight</span>
+              <input
+                inputMode="decimal"
+                value={needValue}
+                onChange={(e) => setNeedValue(e.target.value)}
+                className="h-11 min-w-0 flex-1 rounded-lg bg-raised px-3 text-center text-title3 font-semibold tnum"
+                aria-label={`Weight in ${draft.items[needLoad.item].unit}`}
+              />
+              <span className="shrink-0 text-ink3">{draft.items[needLoad.item].unit}</span>
+            </label>
             <div className="grid gap-2">
               <Button
                 size="lg"
+                disabled={parseTypedLoad(needValue) === undefined}
                 onClick={() => {
                   const { item, set } = needLoad
+                  const typed = parseTypedLoad(needValue)
+                  if (typed === undefined) return
                   setNeedLoad(null)
-                  window.setTimeout(() => document.querySelector<HTMLInputElement>(`[data-set="${item}-${set}"] input`)?.focus(), 50)
+                  // Logged with that weight; the doubt check still runs on it.
+                  completeSet(item, set, false, false, typed)
                 }}
               >
-                Set the weight
+                Log the set
               </Button>
               {allowsUnloaded(GYM_EXERCISE_BY_ID[draft.items[needLoad.item].exerciseId]) ? (
                 <Button

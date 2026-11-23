@@ -1,7 +1,8 @@
-import type { AppState, BodyRegion, CheckIn, Session, SetLog, TrainingSurface } from '../types'
+import type { AppState, BodyRegion, CheckIn, Session, SetLog, SkillId, TrainingSurface } from '../types'
 import { skillOfStep, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { isSkillWork } from './skills'
+import { skillOfExercise } from '../data/skills'
+import { isSkillWork, straightArmFamily } from './skills'
 import { workSets } from './volume'
 import { defaultSurface } from '../data/equipment'
 import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
@@ -169,6 +170,35 @@ export function isHardSession(session: Session): boolean {
   return mainSkillWork && (session.rpe ?? 0) >= 9
 }
 
+/**
+ * Main or strength sets of a straight-arm family that make a session hard work
+ * of that family, as the planner's rest rule counts it (`lastHardStraightArm`).
+ */
+const HARD_FAMILY_SETS = 3
+
+/**
+ * Whether a session loaded a skill, for that skill's freshness
+ * (`Signals.skillRestDays`): any of its own work past the warm-up, hard work
+ * of its straight-arm family — three or more main or strength sets of a
+ * skill that shares it — or work that belongs to no skill at all, which is
+ * counted for every skill rather than guessed at. Sets that were not done
+ * (a value of zero) say nothing either way.
+ */
+export function sessionLoadsSkill(session: Pick<Session, 'sets'>, skill: SkillId): boolean {
+  const family = straightArmFamily(skill)
+  let attributed = false
+  let familySets = 0
+  for (const set of session.sets) {
+    if (set.section === 'warmup' || set.section === 'cooldown' || !(set.value > 0)) continue
+    const owner = skillOfExercise(set.exerciseId)
+    if (!owner) continue
+    if (owner === skill) return true
+    attributed = true
+    if (family && straightArmFamily(owner) === family && (set.section === 'main' || set.section === 'strength')) familySets++
+  }
+  return !attributed || familySets >= HARD_FAMILY_SETS
+}
+
 /** Linear slope (units per week) over timestamped points. */
 function slopePerWeek(points: { at: number; value: number }[]): number | null {
   if (points.length < 3) return null
@@ -311,8 +341,10 @@ export function painReportedIn(state: AppState, session: Pick<Session, 'startedA
  * Pain is not here: it takes loaded work off altogether, so there is nothing
  * left to steer. Neither is the elbow, which does the same on its own.
  */
-export function niggleRegionsToday(state: AppState, now = Date.now()): BodyRegion[] {
-  const timeline = readinessTimeline(state, now)
+export function niggleRegionsToday(state: AppState, now = Date.now(), freshCheckIn?: CheckIn): BodyRegion[] {
+  // An answer given moments ago counts before it is saved: the session rebuilt
+  // after the check-in is the one that has to steer round it.
+  const timeline = readinessTimeline(state, now, freshCheckIn)
   const latest = timeline[timeline.length - 1]
   if (!latest || latest.joints !== 'niggle') return []
   const sameDay = new Date(latest.at).setHours(0, 0, 0, 0) === new Date(now).setHours(0, 0, 0, 0)
@@ -321,8 +353,27 @@ export function niggleRegionsToday(state: AppState, now = Date.now()): BodyRegio
 }
 
 export interface Signals {
-  /** Days since the last logged session of any kind. */
+  /**
+   * Days since the last logged session of any kind: the body's rest, which is
+   * what a long gap, a cold-tissue warm-up and the check-in cadence read.
+   */
   restDays: number
+  /**
+   * Days since the last session that loaded *this* skill: any of its own work
+   * past the warm-up, three or more main or strength sets of another skill in
+   * its straight-arm family (a flag session for the front lever, a 90° hold
+   * for the planche), or a session whose work belongs to no skill — a wrist
+   * routine, a core day — which counts for every skill, as it always did.
+   * Another skill's session yesterday is not here.
+   *
+   * It is what a maximal effort waits on. Read from `restDays`, a front lever
+   * led on Saturdays and Mondays after a planche day never had its re-test:
+   * one day since *a* session on every lever day, so every hold it logged
+   * stayed a floor stopped at the call, and its target held at 5s for ten
+   * weeks while the simulated hold doubled. For an athlete whose sessions are
+   * all one skill it is `restDays`, day for day.
+   */
+  skillRestDays: number
   lastRpe?: number
   /**
    * Days since the last hard session, or `NEVER_DAYS` when none has ever been
@@ -483,6 +534,9 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     Math.max(0, Math.round((new Date(dayKey(now)).getTime() - new Date(dayKey(from)).getTime()) / DAY))
 
   const restDays = last ? daysBetween(last.startedAt) : NEVER_DAYS
+  const viewedSkill = skillOfStep(state.stepId)
+  const lastLoadOfSkill = [...sessions].reverse().find((s) => sessionLoadsSkill(s, viewedSkill))
+  const skillRestDays = lastLoadOfSkill ? daysBetween(lastLoadOfSkill.startedAt) : NEVER_DAYS
 
   // ——— Training load: what recovery actually depends on ———
   const lastLoaded = [...sessions].reverse().find(isHardSession)
@@ -647,7 +701,6 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // ——— Accessory pressing work ———
   // The planche's pressing accessories, or the strength movements of whichever
   // skill this state is read as — a lever's rows and pull-ups, a flag's negatives.
-  const viewedSkill = skillOfStep(state.stepId)
   const pressIds =
     viewedSkill === 'planche'
       ? ['pppu', 'pike-pushup', 'tuck-planche-pushup', 'pushup', 'dip']
@@ -1007,6 +1060,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
 
   return {
     restDays,
+    skillRestDays,
     lastRpe: last?.rpe,
     daysSinceLoaded,
     hasLoadedSession: lastLoaded !== undefined,

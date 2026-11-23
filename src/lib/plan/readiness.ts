@@ -43,34 +43,46 @@ export const READINESS_FACTOR: Record<ReadinessLevel, number> = { light: 0.7, no
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
 const one = (v: number) => Math.round(v * 10) / 10
 
-/** Rated working sets (gym and skill) in two windows before `at`, and the gym sets' distance from the effort asked. */
-export function ratedEffort(state: Pick<AppState, 'sessions' | 'gym'>, at: number): { recent: number[]; before: number[]; vsAsked: number[] } {
+/**
+ * Rated working sets (gym and skill) in two windows before `at`, the gym sets' distance from the effort asked, and
+ * how the loads moved: of the lifts done in both windows, how many were heavier lately (their heaviest working set).
+ */
+export function ratedEffort(
+  state: Pick<AppState, 'sessions' | 'gym'>,
+  at: number,
+): { recent: number[]; before: number[]; vsAsked: number[]; loads: { compared: number; heavier: number } } {
   const recentFrom = at - RECENT_DAYS * DAY
   const beforeFrom = recentFrom - BEFORE_DAYS * DAY
   const recent: number[] = []
   const before: number[] = []
   const vsAsked: number[] = []
+  const heaviest = { recent: new Map<string, number>(), before: new Map<string, number>() }
   const put = (t: number, rpe: number) => {
     if (t >= recentFrom && t < at) recent.push(rpe)
     else if (t >= beforeFrom && t < recentFrom) before.push(rpe)
   }
   for (const s of state.gym?.sessions ?? []) {
     if (s.startedAt < beforeFrom || s.startedAt >= at) continue
+    const window = s.startedAt >= recentFrom ? heaviest.recent : heaviest.before
     for (const log of s.exercises) {
       for (const x of log.sets) {
-        if (x.warmup || !(x.reps > 0) || x.rpe === undefined) continue
+        if (x.warmup || !(x.reps > 0)) continue
+        if (x.kg !== undefined && x.kg > (window.get(log.exerciseId) ?? -Infinity)) window.set(log.exerciseId, x.kg)
+        if (x.rpe === undefined) continue
         put(s.startedAt, x.rpe)
         if (log.targetRpe !== undefined && s.startedAt >= recentFrom) vsAsked.push(x.rpe - log.targetRpe)
       }
     }
   }
+  const both = [...heaviest.recent.keys()].filter((id) => heaviest.before.has(id))
+  const loads = { compared: both.length, heavier: both.filter((id) => heaviest.recent.get(id)! > heaviest.before.get(id)! + 0.01).length }
   for (const s of state.sessions) {
     if (s.startedAt < beforeFrom || s.startedAt >= at) continue
     for (const x of s.sets) {
       if ((x.section === 'main' || x.section === 'strength') && x.rpe !== undefined) put(s.startedAt, x.rpe)
     }
   }
-  return { recent, before, vsAsked }
+  return { recent, before, vsAsked, loads }
 }
 
 /**
@@ -80,7 +92,7 @@ export function ratedEffort(state: Pick<AppState, 'sessions' | 'gym'>, at: numbe
  * with too few rated sets it says it cannot tell rather than guessing.
  */
 export function dayReadiness(state: AppState, at: number, ctx: ReadinessContext): DayReadiness {
-  const { recent, before, vsAsked } = ratedEffort(state, at)
+  const { recent, before, vsAsked, loads } = ratedEffort(state, at)
   const enough = recent.length >= MIN_RATED_SETS
   const effort = enough
     ? {
@@ -99,10 +111,15 @@ export function dayReadiness(state: AppState, at: number, ctx: ReadinessContext)
     .pop()
   if (latest?.energy === 'tired') return withEffort({ level: 'light', reason: 'You said you were tired: a light day — fewer sets, stopping further from failure.' })
   if (latest?.sleep === 'poor') return withEffort({ level: 'light', reason: 'A poor night’s sleep: a light day — fewer sets, stopping further from failure.' })
-  if (effort && effort.before !== undefined && effort.recent - effort.before >= 0.75) {
+  // Effort up is the same work costing more only when it is the same work, at or past what was asked: loads that went
+  // up, or sets still coming in under the effort asked, are the plan working. Read without either, a teenager whose
+  // loads had climbed — sets at RPE 7.3 against an asked 7.5–8 — got six light gym days in a row.
+  const heavier = loads.compared > 0 && loads.heavier * 2 >= loads.compared
+  const underAsked = effort?.vsAsked !== undefined && effort.vsAsked < 0
+  if (effort && effort.before !== undefined && effort.recent - effort.before >= 0.75 && !heavier && !underAsked) {
     return withEffort({
       level: 'light',
-      reason: `Your rated sets averaged RPE ${effort.recent} over the last ten days, up from ${effort.before} before: the same work is costing more, so today is lighter. Reading effort like this is a coaching convention.`,
+      reason: `Your rated sets averaged RPE ${effort.recent} over the last ten days, up from ${effort.before} before, at the same loads: the same work is costing more, so today is lighter. Reading effort like this is a coaching convention.`,
     })
   }
   if (effort && effort.recent >= 9.25) {

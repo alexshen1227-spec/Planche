@@ -7,7 +7,7 @@ import { GYM_EXERCISES } from '../../data/gym/exercises'
 import { buildGymSession } from '../gym/builder'
 import { conservative } from '../gym/draft'
 import { finalizeWorkout } from '../../data/workouts'
-import { AWAY_FACTOR, gymDaysAway, gymDeloadDue, gymToday, insideRestRule, openerMinutes, planToday, skillRequest } from './planner'
+import { AWAY_FACTOR, gymDaysAway, gymDeloadDue, gymToday, insideRestRule, openerMinutes, openerMinutesFor, planToday, skillRequest } from './planner'
 import { calisthenicsCardLabel, goalStanding, openerLine, stepPassed } from './screens'
 import { planClockTick, PLAN_CLOCK_MIN } from './usePlanClock'
 import { STEP_BY_ID } from '../../data/progressions'
@@ -191,10 +191,12 @@ describe('the opener scales with the day', () => {
 
   it('is 18 minutes under an hour and 25 from an hour up, and the lifts still fit beside it', () => {
     expect([30, 45, 59, 60, 75, 90].map(openerMinutes)).toEqual([18, 18, 18, 25, 25, 25])
+    // Round five: the first priority's opener is 25 minutes whenever the lifts keep their 20 beside it — from 45.
+    expect([30, 44, 45, 59, 60].map((m) => openerMinutesFor(true, m))).toEqual([18, 18, 25, 25, 25])
     for (const minutes of [45, 60, 75]) {
       const g = gymToday(s, { now: NOW, minutes, focus: 'push' })
       expect(g.opener?.skills, `${minutes} min`).toEqual(['planche'])
-      expect(g.opener!.minutes).toBe(openerMinutes(minutes))
+      expect(g.opener!.minutes).toBe(openerMinutesFor(true, minutes))
       expect(g.opener!.minutes + g.plan.gym!.minutes).toBeLessThanOrEqual(minutes)
       // The opener builds with everything usable at the place: the gym's list and the athlete's portable kit.
       expect(g.opener!.kit).toEqual(expect.arrayContaining(['parallettes', 'pullup-bar']))
@@ -203,9 +205,11 @@ describe('the opener scales with the day', () => {
       const lifts = buildGymSession({ location: gymA, minutes: g.plan.gym!.minutes, focus: 'push', sessions: [], youth: true, warmUpMin: 2, now: NOW })
       expect(lifts.fits).toBe(true)
     }
-    const long = gymToday(s, { now: NOW, minutes: 60, focus: 'push' }).opener!
-    const short = gymToday(s, { now: NOW, minutes: 45, focus: 'push' }).opener!
+    // The long opener holds more than the 18-minute one (the first priority gets it from 45 minutes, round five).
+    const long = gymToday(s, { now: NOW, minutes: 45, focus: 'push' }).opener!
+    const short = { ...long, minutes: openerMinutes(45) }
     const main = (o: typeof long) => finalizeWorkout(s, skillRequest(o), undefined, NOW).blocks.filter((b) => b.section !== 'warmup' && b.section !== 'cooldown').reduce((n, b) => n + b.sets, 0)
+    expect(long.minutes).toBe(25)
     expect(main(long)).toBeGreaterThan(main(short))
   })
 

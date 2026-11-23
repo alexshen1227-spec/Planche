@@ -1520,12 +1520,14 @@ describe('the line-up', () => {
     // …until a wrist is flagged: the front lever is the one skill here that
     // leaves the wrist alone. It once went the other way — the handstand kept,
     // the lever dropped — under a form that said the plan leaves out whatever
-    // loads the area you name.
+    // loads the area you name. And since the fifth review it leads: the
+    // planche once led a wrist-niggle day regardless, one set lighter. The
+    // planche, first priority, takes the second part, eased with the rest.
     const flagged = reducer(state, { type: 'RECORD_SYMPTOM', event: { at: T0 - 60_000, joints: 'niggle', regions: ['wrist'], source: 'check-in' } })
     expect(niggleRegionsToday(flagged, T0)).toEqual(['wrist'])
     const lineup = todaysLineup(flagged, T0, 45)
-    expect(lineup.map((entry) => `${entry.skill}:${entry.role}`)).toEqual(['planche:lead', 'frontlever:partner'])
-    expect(lineup[1].reason).toMatch(/off the wrist you flagged today/)
+    expect(lineup.map((entry) => `${entry.skill}:${entry.role}`)).toEqual(['frontlever:lead', 'planche:partner'])
+    expect(lineup[0].reason).toMatch(/loads the wrist you flagged today/)
     // The day itself is eased, and says one thing about it.
     const { plan, workout } = finalizeWorkoutWithPlan(flagged, { source: 'auto' }, undefined, T0)
     expect(plan.loadPermission).toBe('reduced')

@@ -12,7 +12,7 @@ import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
 import { displayToKg, CM_PER_IN } from '../lib/units'
 import type { Placement } from '../lib/assessment'
 import { fullParts, roomIn } from '../lib/lineup'
-import { ALL_SKILL_IDS, goalMovedNote, goalPastPlacement, interviewLength, skillsProgress } from '../lib/onboardingFlow'
+import { goalMovedNote, goalPastPlacement, interviewLength, ladderStopNote, pruneBlockedAnswers } from '../lib/onboardingFlow'
 import {
   goalChoices,
   nextInterviewItem,
@@ -94,9 +94,6 @@ const SECTION_OF: Record<Stage, number> = {
   muscles: 5,
   safety: 6,
 }
-
-/** The screens inside the Skills section, in order, so the bar can say where in it you are. */
-const SKILLS_SCREENS: Stage[] = ['skills', 'goal', 'interview', 'result']
 
 const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th']
 
@@ -241,8 +238,6 @@ export function Onboarding() {
   )
   const currentItem = useMemo(() => nextInterviewItem(skills, answers), [skills, answers])
   const questionCount = useMemo(() => interviewLength(skills, answers), [skills, answers])
-  /** The longest interview any choice of skills could ask: the skills screen's bound. */
-  const widestCount = useMemo(() => interviewLength(ALL_SKILL_IDS, answers).atMost, [answers])
   const questionNumber = Object.keys(answers).length + 1
   /** "Question 5 of up to 19" while the ladder is open, "Question 5 of 12" once the rest is certain. */
   const questionProgress = `Question ${questionNumber} of ${
@@ -437,22 +432,9 @@ export function Onboarding() {
   }
 
   const sectionIndex = SECTION_OF[stage]
-  const inSkills = SKILLS_SCREENS.indexOf(stage)
-  const skillsStage = inSkills >= 0 ? (stage as 'skills' | 'goal' | 'interview' | 'result') : null
-  const skillsAt = skillsStage
-    ? skillsProgress({
-        stage: skillsStage,
-        skillCount: skills.length,
-        skipped: skippedInterview,
-        position: skippedInterview && stage === 'interview' ? manualIndex : Object.keys(answers).length,
-        longest: questionCount.atMost,
-        shortest: questionCount.atLeast,
-        widest: widestCount,
-      })
-    : null
-  const progressText = `Step ${sectionIndex + 1} of ${SECTIONS.length} · ${SECTIONS[sectionIndex]}${
-    skillsAt ? ` · ${skillsAt.at} of ${skillsAt.open ? 'up to ' : ''}${skillsAt.total}` : ''
-  }`
+  // The header counts the seven setup steps and nothing else: the screens inside Skills used to be counted
+  // in it too ("2 of up to 19", "13 of 19", "16 of 16"). The interview counts its own questions.
+  const progressText = `Step ${sectionIndex + 1} of ${SECTIONS.length} · ${SECTIONS[sectionIndex]}`
   // The primary action: big, last in the row, within thumb reach. Back is quiet.
   const primaryBtn = 'min-h-[52px] flex-1'
   const backBtn =
@@ -745,6 +727,7 @@ export function Onboarding() {
                     {currentItem.standard}
                   </p>
                 ) : null}
+                {ladderStopNote(answers) ? <p className="mx-auto mt-2 max-w-md text-caption leading-relaxed text-ink3">{ladderStopNote(answers)}</p> : null}
               </div>
               {/* Not a radiogroup. These options are *actions* — tapping one
                   answers and immediately advances, so nothing is ever left
@@ -770,7 +753,7 @@ export function Onboarding() {
                       // the moment an answer makes the next question
                       // unnecessary, and that is knowable synchronously from
                       // the answer just given.
-                      const next = { ...answers, [currentItem.id]: opt.value }
+                      const next = pruneBlockedAnswers({ ...answers, [currentItem.id]: opt.value })
                       setAnswers(next)
                       if (nextInterviewItem(skills, next) === null) setStage('result')
                     }}
@@ -1060,9 +1043,9 @@ export function Onboarding() {
                     <div key={skill} className="rounded-control border border-accent/30 bg-accent-soft px-3 py-2.5">
                       <p className="text-footnote leading-relaxed text-ink">
                         <span className="font-semibold">{SKILLS[skill].name}</span> needs {kitNeedsPhrase(missing)}.
-                        Without it this skill waits in your list
+                        Without it at home this skill waits in your list
                         {trainable.length ? ` and ${trainable.length === 1 ? 'your other skill trains' : 'your other skills train'} as normal` : ''}{' '}
-                        — tick it if you have it.
+                        — tick it if you have it. A gym that has it counts too: you add your places next.
                       </p>
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
                         {missing.flat().map((id) => (
@@ -1331,7 +1314,7 @@ export function Onboarding() {
                       ) : null}
                       <div className="text-footnote text-ink2">
                         {missing
-                          ? `Waiting for ${kitNeedsPhrase(missing)} — it joins your sessions once that is on your equipment list.`
+                          ? `Waiting for ${kitNeedsPhrase(missing)} at home — it joins your sessions once that is on your equipment list, or a place you add next has it.`
                           : stepsToGo === 0
                             ? `Placed at your goal: ${to.name}`
                             : `Aiming at ${to.name} · ${stepsToGo} step${stepsToGo === 1 ? '' : 's'} to go`}

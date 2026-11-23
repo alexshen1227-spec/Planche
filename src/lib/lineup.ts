@@ -1,4 +1,4 @@
-import type { AppState, Block, LineupRole, SetLog, SkillId, WorkoutRequest } from '../types'
+import type { AppState, Block, BodyRegion, CheckIn, LineupRole, SetLog, SkillId, WorkoutRequest } from '../types'
 import { skillOfStep } from '../data/progressions'
 import { missingKit, skillOfExercise, SKILLS } from '../data/skills'
 import { fullParts, roomIn, shortDoses } from './sessionRoom'
@@ -17,7 +17,10 @@ import { todaysDay, WEEKDAY_NAMES } from './weekPlan'
  *
  * - **The priority skill leads, every session.** It goes first among the
  *   strength work and gets the fullest dose. (For dynamic lifts "first gets the
- *   most" is well supported; for holds it is inference.)
+ *   most" is well supported; for holds it is inference.) The one exception is
+ *   a niggle named today: when the priority skill loads that area and another
+ *   skill does not, the other leads — the rule that keeps a sore family out of
+ *   a gym day's opener.
  * - **Push pairs with pull.** The second slot prefers a skill from a different
  *   family — the planche with the front lever is the textbook pair — and is
  *   marked down when it loads the same joints as the lead.
@@ -156,6 +159,43 @@ function joinNames(skills: SkillId[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 }
 
+const capitalised = (text: string) => `${text[0]?.toUpperCase() ?? ''}${text.slice(1)}`
+
+/** What a niggle named today means for who leads: the regions, and which skills load them. */
+interface Sore {
+  regions: BodyRegion[]
+  loads: (skill: SkillId) => boolean
+  /** "wrist", "wrist and shoulder". */
+  words: string
+}
+
+function soreToday(state: AppState, now: number, freshCheckIn?: CheckIn): Sore {
+  const regions = niggleRegionsToday(state, now, freshCheckIn)
+  return {
+    regions,
+    loads: (skill) => regions.some((region) => SKILLS[skill].loads.includes(region)),
+    words: regions.map((region) => region.replace('-', ' ')).join(' and '),
+  }
+}
+
+/**
+ * The order with today's niggle taken into account: when the first skill loads
+ * the area named today and another does not, the first of those that does not
+ * goes first and the rest keep their order. When every skill loads it, nothing
+ * moves — the first leads, under the coach's niggle rails. The same rule keeps
+ * a sore family out of a gym day's opener.
+ */
+function niggleOrder(skills: SkillId[], sore: Sore): SkillId[] {
+  if (!sore.regions.length || !skills.length || !sore.loads(skills[0])) return skills
+  const clear = skills.find((skill) => !sore.loads(skill))
+  return clear ? [clear, ...skills.filter((skill) => skill !== clear)] : skills
+}
+
+/** Why the first skill does not lead today, in the lead's reason. */
+function movedLeadWords(first: SkillId, lead: SkillId, sore: Sore): string {
+  return `the ${SKILLS[first].holdName} loads the ${sore.words} you flagged today, and the ${SKILLS[lead].holdName} leaves it alone`
+}
+
 /**
  * Today's line-up for a coach-built session, lead first.
  *
@@ -163,10 +203,17 @@ function joinNames(skills: SkillId[]): string {
  * time available — so the preview and the session started from it agree, and a
  * re-plan after a check-in keeps the same skills.
  */
-export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverride?: number): LineupEntry[] {
+export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverride?: number, freshCheckIn?: CheckIn): LineupEntry[] {
   const state = wholeState(stateIn)
   const skills = trainableActiveSkills(state)
   const lead = skills[0]
+  // ——— A niggle named today ———
+  // It moves the lead off a skill that loads the area, when another skill
+  // leaves it alone, and sends the second part and the short doses round it.
+  // The first priority once led a wrist-niggle day regardless — six sets of
+  // advanced tuck instead of seven — while the same report kept the planche
+  // out of a gym day's opener and the handstand out of the session.
+  const sore = soreToday(state, now, freshCheckIn)
   if (skills.length === 1) {
     // The only skill there is — even when its kit is missing, in which case
     // the session says so and holds support work only.
@@ -189,16 +236,18 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
   const day = todaysDay(state, now)
   if (day.kind === 'skills') {
     const dayName = WEEKDAY_NAMES[day.weekday]
-    const [first, ...rest] = day.skills
-    const sore = niggleRegionsToday(state, now)
+    // The day as written — unless what it puts first loads the area flagged today.
+    const ordered = niggleOrder(day.skills, sore)
+    const [first, ...rest] = ordered
+    const moved = first !== day.skills[0]
     const partnerSkill = slots >= 2 ? rest[0] : undefined
     // Short doses are optional work: none for a skill that loads what is sore today.
     const doses = rest
       .slice(partnerSkill ? 1 : 0)
-      .filter((skill) => slots >= 2 && !sore.some((region) => SKILLS[skill].loads.includes(region)))
+      .filter((skill) => slots >= 2 && !sore.loads(skill))
       .slice(0, shortDoses(minutes))
     const included = [first, ...(partnerSkill ? [partnerSkill] : []), ...doses]
-    const squeezed = day.skills.filter((skill) => !included.includes(skill))
+    const squeezed = ordered.filter((skill) => !included.includes(skill))
     const planned: LineupEntry[] = [
       {
         skill: first,
@@ -206,10 +255,14 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
         reason:
           day.skills.length === 1
             ? `${dayName} is your ${SKILLS[first].name.toLowerCase()} day in your week plan, so the whole session is built around it.`
-            : `${dayName} is set to ${joinNames(day.skills)} in your week plan, ${SKILLS[first].name.toLowerCase()} first.${
+            : `${dayName} is set to ${joinNames(day.skills)} in your week plan, ${
+                moved
+                  ? `${SKILLS[day.skills[0]].name.toLowerCase()} first — but ${movedLeadWords(day.skills[0], first, sore)}, so it leads.`
+                  : `${SKILLS[first].name.toLowerCase()} first.`
+              }${
                 squeezed.length
-                  ? ` ${joinNames(squeezed)[0].toUpperCase()}${joinNames(squeezed).slice(1)} ${squeezed.length === 1 ? 'is' : 'are'} left out today: a ${minutes}-minute session has room for ${roomIn(minutes)}${
-                      sore.length && squeezed.some((skill) => sore.some((region) => SKILLS[skill].loads.includes(region)))
+                  ? ` ${capitalised(joinNames(squeezed))} ${squeezed.length === 1 ? 'is' : 'are'} left out today: a ${minutes}-minute session has room for ${roomIn(minutes)}${
+                      sore.regions.length && squeezed.some(sore.loads)
                         ? ', and a short dose is not given to a skill that loads the joint you flagged'
                         : ''
                     }.`
@@ -221,7 +274,11 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
       planned.push({
         skill: partnerSkill,
         role: 'partner',
-        reason: `${SKILLS[partnerSkill].name} is the second skill in your plan for ${dayName}: a full part after the ${SKILLS[first].holdName}.`,
+        reason: `${SKILLS[partnerSkill].name} is ${moved && partnerSkill === day.skills[0] ? 'first' : 'the second skill'} in your plan for ${dayName}: ${
+          moved && partnerSkill === day.skills[0]
+            ? `today it is a full part after the ${SKILLS[first].holdName}, eased like the rest of the session.`
+            : `a full part after the ${SKILLS[first].holdName}.`
+        }`,
       })
     }
     for (const skill of doses) {
@@ -251,16 +308,32 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
   // sessions in three with one other, and the rest their turn in between.
   // (A one-off short version of a longer session is still the main skill's.)
   if (fullParts(state.settings.sessionMinutes) === 1) {
-    const turn = skills
+    const turns = skills
       .map((skill, rank) => {
         const sinceFull = daysSinceFullPart(state, skill, now)
         const weight = rank === 0 ? 2 : 1 / rank
         return { skill, rank, sinceFull, score: ((sinceFull ?? NEVER_TRAINED_DAYS) + 1) * weight }
       })
-      .sort((a, b) => b.score - a.score || a.rank - b.rank)[0]
+      .sort((a, b) => b.score - a.score || a.rank - b.rank)
+    // Today's niggle: the turn goes to a skill that leaves the area alone, when one does.
+    const due = turns[0]
+    const turn = sore.loads(due.skill) ? (turns.find((t) => !sore.loads(t.skill)) ?? due) : due
     const def = SKILLS[turn.skill]
     const others = skills.filter((skill) => skill !== lead)
     const fits = `${minutes}-minute sessions fit one skill at a time`
+    if (turn !== due) {
+      return [
+        {
+          skill: turn.skill,
+          role: 'lead',
+          reason: `${def.name} takes today's session: your ${fits}, and ${movedLeadWords(due.skill, turn.skill, sore)}. ${
+            due.skill === lead
+              ? `${SKILLS[lead].name} — your first priority — still takes most of them.`
+              : `${SKILLS[due.skill].name}, next in line, sits this one out.`
+          }`,
+        },
+      ]
+    }
     if (turn.skill === lead) {
       return [
         {
@@ -285,27 +358,32 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
     ]
   }
 
-  const leadDef = SKILLS[lead]
+  // ——— A niggle named today steers the session round it ———
+  // A skill that leaves the area alone leads when the first priority loads it;
+  // with every skill loading it, the first priority leads, eased by its own
+  // plan's niggle rails. The second part and the short doses go to skills that
+  // do not load the area — the check-in says the session changes, and a wrist
+  // niggle once kept the handstand and dropped the front lever, the one skill
+  // here that leaves the wrist alone.
+  const leading = niggleOrder(skills, sore)[0]
+  const moved = leading !== lead
+  const leadDef = SKILLS[leading]
   const lineup: LineupEntry[] = [
     {
-      skill: lead,
+      skill: leading,
       role: 'lead',
-      reason: `${leadDef.name} is your first priority, so it leads every session and gets the fullest dose.`,
+      reason: moved
+        ? `${leadDef.name} leads today: ${movedLeadWords(lead, leading, sore)}.`
+        : `${leadDef.name} is your first priority, so it leads every session and gets the fullest dose.`,
     },
   ]
-
-  // ——— A niggle named today steers the rest of the session round it ———
-  // The first priority still leads, eased by its own plan. But the second part
-  // and the short doses go to skills that do not load the area — the check-in
-  // says the session changes, and a wrist niggle once kept the handstand and
-  // dropped the front lever, the one skill here that leaves the wrist alone.
-  const sore = niggleRegionsToday(state, now)
-  const loadsSore = (skill: SkillId) => sore.some((region) => SKILLS[skill].loads.includes(region))
-  const soreWords = sore.map((region) => region.replace('-', ' ')).join(' and ')
+  const loadsSore = sore.loads
+  const soreWords = sore.words
 
   // ——— The other strength slots: most due first, weighted by priority and fit ———
-  const chosen: SkillId[] = [lead]
-  const candidates = skills.slice(1)
+  const chosen: SkillId[] = [leading]
+  // In the athlete's order: a first priority moved off the lead is first among them.
+  const candidates = skills.filter((skill) => skill !== leading)
   const scored = candidates
     .map((skill, rank) => {
       const def = SKILLS[skill]
@@ -334,7 +412,10 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
 
   // ——— The second full part ———
   const partner = slots >= 2 ? scored[0] : undefined
-  const steered = Boolean(partner) && sore.length > 0 && !loadsSore(partner!.skill) && scored.some((c) => loadsSore(c.skill))
+  const steered = Boolean(partner) && sore.regions.length > 0 && !loadsSore(partner!.skill) && scored.some((c) => loadsSore(c.skill))
+  // The first priority, moved off the lead, can still take the second part —
+  // eased like every part today. Said, so the order is not a mystery.
+  const eased = Boolean(partner) && moved && partner!.skill === lead
   if (partner) {
     const def = SKILLS[partner.skill]
     // The partner slot is about full training days, not any appearance.
@@ -355,7 +436,9 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
       role: 'partner',
       reason: `${def.name} is today's second skill: it ${when}${
         partner.complements ? `, and its ${def.words.strength} pairs with the ${leadDef.holdName}'s ${leadDef.words.strength}` : ''
-      }.${steered ? ` It also keeps the second part off the ${soreWords} you flagged today.` : ''}`,
+      }.${steered ? ` It also keeps the second part off the ${soreWords} you flagged today.` : ''}${
+        eased ? ` It is your first priority, and goes second today for the ${soreWords} you flagged — eased like the rest of the session.` : ''
+      }`,
     })
     chosen.push(partner.skill)
   }
@@ -401,13 +484,24 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
   const waiting = candidates.filter((skill) => !chosen.includes(skill))
   if (waiting.length) {
     // No promise of a day: when a skill comes back depends on how the next
-    // sessions go. What is true is the rule that decides it.
-    lineup[0] = {
-      ...lineup[0],
-      reason: `${lineup[0].reason} ${joinNames(waiting)[0].toUpperCase()}${joinNames(waiting).slice(1)} ${
-        waiting.length === 1 ? 'sits' : 'sit'
-      } this one out — a ${minutes}-minute session has room for ${roomIn(minutes)}, and the skill that has waited longest, weighted by your order, comes in next.`,
+    // sessions go. What is true is the rule that decides it — and a skill kept
+    // out for the area flagged today is out for that, not for want of room.
+    const forSore = waiting.filter(loadsSore)
+    const forRoom = waiting.filter((skill) => !loadsSore(skill))
+    const parts: string[] = []
+    if (forSore.length) {
+      parts.push(
+        `${capitalised(joinNames(forSore))} ${forSore.length === 1 ? 'sits' : 'sit'} this one out: ${
+          forSore.length === 1 ? 'it loads' : 'they load'
+        } the ${soreWords} you flagged today.`,
+      )
     }
+    if (forRoom.length) {
+      parts.push(
+        `${capitalised(joinNames(forRoom))} ${forRoom.length === 1 ? 'sits' : 'sit'} this one out — a ${minutes}-minute session has room for ${roomIn(minutes)}, and the skill that has waited longest, weighted by your order, comes in next.`,
+      )
+    }
+    lineup[0] = { ...lineup[0], reason: `${lineup[0].reason} ${parts.join(' ')}` }
   }
   return lineup
 }
@@ -417,7 +511,7 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
  * athlete's order (lead, partner, then maintenance); a test, a minimum dose and
  * a template are single-skill by nature.
  */
-export function lineupFor(stateIn: AppState, request: WorkoutRequest, now = Date.now()): LineupEntry[] {
+export function lineupFor(stateIn: AppState, request: WorkoutRequest, now = Date.now(), freshCheckIn?: CheckIn): LineupEntry[] {
   const state = wholeState(stateIn)
   if (request.source === 'test') {
     const skill = request.stepId ? skillOfStep(request.stepId) : (request.skills?.[0] ?? focusSkill(state))
@@ -427,14 +521,25 @@ export function lineupFor(stateIn: AppState, request: WorkoutRequest, now = Date
     const skill = request.skills?.[0] ?? focusSkill(state)
     return [{ skill, role: 'lead', reason: `Your ${SKILLS[skill].name.toLowerCase()} is the focus.` }]
   }
-  const asked = request.skills?.filter((skill, i, all) => SKILLS[skill] && all.indexOf(skill) === i)
+  const asked = request.skills?.filter((skill, i, all) => SKILLS[skill] && all.indexOf(skill) === i).slice(0, 3)
   if (asked?.length) {
-    return asked.slice(0, 3).map((skill, i) => ({
+    // The skills asked for are the session's; a niggle named today can only
+    // change which goes first. A planned day's list is written before the
+    // check-in, and rebuilt from it the planche still led a wrist-niggle day.
+    const sore = soreToday(state, now, freshCheckIn)
+    const ordered = niggleOrder(asked, sore)
+    const moved = ordered[0] !== asked[0]
+    return ordered.map((skill, i) => ({
       skill,
       // A third skill gets its short form: practice for a balance skill, two sets otherwise.
       role: i === 0 ? 'lead' : i === 1 ? 'partner' : SKILLS[skill].family === 'balance' ? 'practice' : 'maintenance',
-      reason: asked.length === 1 ? `You chose a ${SKILLS[skill].name.toLowerCase()} session.` : `You chose ${joinNames(asked.slice(0, 3))} for this session.`,
+      reason:
+        asked.length === 1
+          ? `You chose a ${SKILLS[skill].name.toLowerCase()} session.`
+          : `You chose ${joinNames(asked)} for this session.${
+              moved && i === 0 ? ` ${capitalised(movedLeadWords(asked[0], skill, sore))}, so it goes first today.` : ''
+            }${moved && skill === asked[0] ? ` It goes after the ${SKILLS[ordered[0]].holdName} today, eased like the rest of the session.` : ''}`,
     }))
   }
-  return todaysLineup(state, now, request.minutes)
+  return todaysLineup(state, now, request.minutes, freshCheckIn)
 }

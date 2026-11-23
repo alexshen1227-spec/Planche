@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { SKILLS, SKILL_LIST } from '../data/skills'
-import { ALL_SKILL_IDS, goalMovedNote, goalPastPlacement, interviewLength, skillsProgress } from './onboardingFlow'
+import { ALL_SKILL_IDS, goalMovedNote, goalPastPlacement, interviewLength, ladderStopNote, pruneBlockedAnswers, skillsProgress } from './onboardingFlow'
 import { nextInterviewItem, type InterviewAnswers } from './placement'
 import type { SkillId } from '../types'
 
@@ -124,5 +125,38 @@ describe('stepDayMinutes', () => {
   it('every choice is reachable by stepping from rest', () => {
     let m = 0
     for (const c of DAY_MINUTE_CHOICES.slice(1)) { m = stepDayMinutes(m, 1); expect(m).toBe(c) }
+  })
+})
+
+describe('the placement ladder stops at the first rung answered zero (fifth review)', () => {
+  const skills: SkillId[] = ['planche', 'handstand', 'frontlever']
+  it('never asks a rung past a "not yet" on the advanced tuck', () => {
+    const answers: InterviewAnswers = {}
+    const asked: string[] = []
+    for (let item = nextInterviewItem(skills, answers); item && asked.length < 40; item = nextInterviewItem(skills, answers)) {
+      asked.push(item.id)
+      answers[item.id] = item.id === 'adv-tuck-planche' ? 0 : item.options[1]?.value ?? 0
+    }
+    expect(asked).toContain('adv-tuck-planche')
+    for (const later of ['one-leg-planche', 'straddle-planche', 'full-planche']) expect(asked).not.toContain(later)
+  })
+  it('drops answers given past a zero, as when a lower rung is changed after going back', () => {
+    const stale: InterviewAnswers = { 'tuck-planche': 3, 'adv-tuck-planche': 0, 'straddle-planche': 2, 'full-planche': 1.5 }
+    expect(pruneBlockedAnswers(stale)).toEqual({ 'tuck-planche': 3, 'adv-tuck-planche': 0 })
+    const fine: InterviewAnswers = { 'tuck-planche': 3, 'adv-tuck-planche': 8 }
+    expect(pruneBlockedAnswers(fine)).toBe(fine)
+  })
+  it('says the harder holds are skipped, and says nothing when nothing was cut short', () => {
+    expect(ladderStopNote({ 'adv-tuck-planche': 0 })).toMatch(/advanced tuck.*skipped/)
+    expect(ladderStopNote({ 'adv-tuck-planche': 8 })).toBeNull()
+  })
+})
+
+describe('the setup header counts one thing', () => {
+  it('has the seven steps and no screen counter inside Skills', () => {
+    // Pinned on the source: the header string is built in Onboarding and must not append a second counter.
+    const src = readFileSync(new URL('../views/Onboarding.tsx', import.meta.url), 'utf8')
+    const line = src.split('\n').find((l) => l.includes('const progressText ='))!
+    expect(line).not.toMatch(/up to|skillsAt/)
   })
 })

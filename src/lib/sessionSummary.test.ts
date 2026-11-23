@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { SetLog } from '../types'
 import {
   allowanceName,
+  countedNote,
   creditedWhileHolding,
   deductionNote,
+  holdTotalCaption,
+  offerWalkMeasure,
+  recordNote,
+  timerAgainstCounted,
   ratedSetLabel,
   stopAllowanceFor,
   summaryLastSet,
@@ -75,5 +80,45 @@ describe('a deduction says which allowance it is (review round four, m2)', () =>
     expect(creditedWhileHolding(1.1, 2.3, 'reaction')).toBe('counts as 1.1s (2.3s off: stop reaction delay)')
     expect(creditedWhileHolding(5.2, 5, 'walk-back')).toBe('counts as 5.2s (5.0s off: walk-back allowance)')
     expect(creditedWhileHolding(7.1, 3.1, 'walk-back', true)).toBe('counts as 7.1s (3.1s off: your measured walk back)')
+  })
+})
+
+describe('both numbers of a hold, and why (fifth review)', () => {
+  const walked = set('advanced-tuck-planche', 'main', 1.2, 5, {
+    raw: 6.2,
+    timing: { method: 'stopwatch', allowanceSec: 5, allowance: 'walk-back' },
+  })
+  it('shows the timer beside what counted, and says the walk is assumed', () => {
+    expect(countedNote(walked)).toBe('6.2 s on the timer · 1.2 s counted: a 5 s walk back to the phone is assumed until you measure yours')
+  })
+  it('names the measured walk once it is measured, and the old assumption on an older hold', () => {
+    const measured = { ...walked, value: 3.1, timing: { ...walked.timing!, allowanceSec: 3.1, walkMeasured: true } }
+    expect(countedNote(measured, 3.1)).toBe('6.2 s on the timer · 3.1 s counted: your measured 3.1 s walk back to the phone is taken off')
+    expect(countedNote(walked, 3.1)).toMatch(/assumed when this was logged/)
+    expect(countedNote(walked, 3.1)).not.toMatch(/until you measure/)
+  })
+  it('says nothing for a hold nothing came off, or one timed another way', () => {
+    expect(countedNote({ ...walked, raw: 1.2 })).toBeNull()
+    expect(countedNote({ ...walked, timing: { method: 'video' } })).toBeNull()
+  })
+  it('captions a total with the timer seconds, only when something came off', () => {
+    const four = [walked, walked, walked, walked]
+    expect(timerAgainstCounted(four)).toEqual({ timerSec: expect.closeTo(24.8, 5), countedSec: expect.closeTo(4.8, 5), assumedWalk: true })
+    expect(holdTotalCaption(four)).toMatch(/^25 s on the timer; 5 s counted/)
+    expect(holdTotalCaption([set('advanced-tuck-planche', 'main', 5, 5)])).toBeNull()
+  })
+  it('explains a record from the set that made it', () => {
+    expect(recordNote([walked], 'advanced-tuck-planche', 1.2)).toMatch(/6\.2 s on the timer/)
+    expect(recordNote([walked], 'advanced-tuck-planche', 9)).toBeNull()
+  })
+  it('offers the measurement when the assumed walk took off more than half, once, and never after measuring', () => {
+    expect(offerWalkMeasure([walked], {})).toBe(walked)
+    expect(offerWalkMeasure([walked], { seen: true })).toBeNull()
+    expect(offerWalkMeasure([walked], { walkBackSec: 3.2 })).toBeNull()
+    expect(offerWalkMeasure([walked], { phoneWithinReach: true })).toBeNull()
+    const little = { ...walked, value: 10, raw: 15 }
+    expect(offerWalkMeasure([little], {})).toBeNull()
+    const measured = { ...walked, timing: { ...walked.timing!, walkMeasured: true } }
+    expect(offerWalkMeasure([measured], {})).toBeNull()
   })
 })

@@ -46,6 +46,28 @@ const SLOTS: Record<Exclude<GymFocus, 'athletic'>, Pattern[][]> = {
   pull: [['vertical-pull'], ['horizontal-pull'], ['straight-arm-pull'], ['rear-delt'], ['biceps'], ['core-flexion']],
 }
 
+/**
+ * The movements a gym day is named for: a push day presses, a pull day pulls,
+ * a lower day squats, lunges or hinges. Steering a day off a muscle the week
+ * already has plenty of (`spare`) may change which of them go in and how many
+ * sets, never take them all out.
+ */
+export const NAMED_PATTERNS: Record<GymFocus, Pattern[][]> = {
+  push: [['horizontal-press', 'incline-press']],
+  pull: [['vertical-pull', 'horizontal-pull']],
+  lower: [['squat', 'lunge', 'hinge']],
+  upper: [
+    ['horizontal-press', 'incline-press'],
+    ['vertical-pull', 'horizontal-pull'],
+  ],
+  full: [
+    ['squat', 'lunge', 'hinge'],
+    ['horizontal-press', 'incline-press', 'dip'],
+    ['vertical-pull', 'horizontal-pull'],
+  ],
+  athletic: [],
+}
+
 export interface PlannedExercise {
   exerciseId: string
   sets: number
@@ -82,6 +104,11 @@ const FOCUS_MAIN: Record<GymFocus, Muscle[]> = {
   push: ['chest', 'front-delts', 'triceps'],
   pull: ['lats', 'upper-back', 'biceps'],
   athletic: ['quads', 'glutes', 'hamstrings'],
+}
+
+/** The muscles a focus is for (a full-body day is for none in particular). */
+export function focusMain(focus: GymFocus): readonly Muscle[] {
+  return FOCUS_MAIN[focus]
 }
 
 export function focusOpen(focus: GymFocus, musclesOff: readonly Muscle[] = []): boolean {
@@ -176,6 +203,13 @@ export function buildGymSession(input: {
   musclesOff?: Muscle[]
   /** Lagging muscles: movements that train them win their slot and get an extra set. */
   priority?: Muscle[]
+  /**
+   * Muscles the week already has far past target (the planner's steer). A movement built on one gives its slot to
+   * one that is not, and a slot only such movements fill is left out — except the movements the day is named for
+   * (`NAMED_PATTERNS`), which keep one movement at two sets: a push day still presses. Unlike `musclesOff`, which is
+   * the athlete's own switch and always keeps a movement out.
+   */
+  spare?: Muscle[]
   /** Joints to keep load off today (a pain report or a niggle). */
   avoidJoints?: Joint[]
   /** Below 1 on a lighter day: fewer sets, stopping a rep further from failure. */
@@ -189,6 +223,8 @@ export function buildGymSession(input: {
   const { location, minutes, sessions, ratings = {}, youth = false, now = Date.now() } = input
   const musclesOff = new Set(input.musclesOff ?? [])
   const priority = new Set(input.priority ?? [])
+  const spare = new Set(input.spare ?? [])
+  const spareIn = (e: GymExercise) => e.primary.filter((m) => spare.has(m)).length
   const avoid = new Set(input.avoidJoints ?? [])
   const factor = input.volumeFactor ?? 1
   const goalEmphasis = input.goals ? { power: input.goals.power >= 3 } : null
@@ -203,6 +239,8 @@ export function buildGymSession(input: {
   const here = availableAt(location)
   const used = new Set<string>()
   const items: PlannedExercise[] = []
+  /** Movements kept for what the day is named for, though they lean on a spare muscle: never given a set more. */
+  const steered = new Set<string>()
   const notes: string[] = []
   // The day each movement was last logged, so rotation prefers what was done longest ago.
   const lastLogged = new Map<string, number>()
@@ -298,12 +336,22 @@ export function buildGymSession(input: {
     const slots: Pattern[][] = [...SLOTS[focus]]
     // Explosive work goes first, fresh, when power is a goal (and the legs are on).
     if (goalEmphasis?.power && focus !== 'pull' && !musclesOff.has('quads')) slots.unshift(['jump', 'throw'])
+    // What the day is named for, still to be filled: each group keeps one movement whatever the steer says.
+    const named = NAMED_PATTERNS[focus].map((group) => [...group])
+    const unfilled = (slot: Pattern[]) => named.some((group) => group.some((p) => slot.includes(p)) && !items.some((it) => group.includes(GYM_EXERCISE_BY_ID[it.exerciseId].pattern)))
     for (const slot of slots) {
       const wantsExplosive = slot.includes('jump') || slot.includes('throw')
       // Avoided means avoided: a slot nothing else can fill is left out.
-      const options = here.filter(
+      const fit = here.filter(
         (e) => slot.includes(e.pattern) && !used.has(e.id) && (wantsExplosive ? e.explosive : !e.explosive) && usable(e),
       )
+      // A muscle the week has plenty of steers the slot to a movement not built on it. When every movement of the
+      // slot is, the slot goes — unless it is what the day is named for: then the movement that leans on the spare
+      // muscles least goes in, at two sets.
+      const free = fit.filter((e) => spareIn(e) === 0)
+      const spared = free.length === 0 && fit.length > 0
+      if (spared && !unfilled(slot)) continue
+      const options = spared ? fit : free.length ? free : fit
       const ranked = options
         .map((e) => ({
           e,
@@ -316,7 +364,8 @@ export function buildGymSession(input: {
             (e.compound ? 0 : 0.25) -
             (isPriority(e) ? 1 : 0) +
             // Without a tier ladder to climb, prefer the gentler jump or throw.
-            (e.tier ? TIER_RANK[gateTier(e)!] * 0.25 : 0),
+            (e.tier ? TIER_RANK[gateTier(e)!] * 0.25 : 0) +
+            spareIn(e) * 0.5,
         }))
         .sort((a, b) => a.score - b.score)
       const first = ranked[0]
@@ -339,7 +388,8 @@ export function buildGymSession(input: {
         }
       }
       used.add(pick.id)
-      items.push(makeItem(pick, wantsExplosive))
+      items.push(makeItem(pick, wantsExplosive, spared ? 2 : undefined))
+      if (spared) steered.add(pick.id)
     }
   }
   // Fit the time strictly: trim sets on isolation work, then on compounds,
@@ -388,7 +438,7 @@ export function buildGymSession(input: {
   } else if (items.length && factor > 1) {
     for (let i = 0; i < items.length; i++) {
       const ex = GYM_EXERCISE_BY_ID[items[i].exerciseId]
-      if (ex.dose) continue
+      if (ex.dose || steered.has(ex.id)) continue
       if (total() + blockMinutes(1, items[i].restSec) > minutes) break
       items[i] = { ...items[i], sets: items[i].sets + 1 }
     }
