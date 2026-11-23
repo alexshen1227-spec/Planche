@@ -42,10 +42,11 @@ import { STRATEGY_BY_ID } from '../lib/coach'
 import { useToday } from '../lib/useToday'
 import { ASSIST_LABEL } from '../components/SetupRow'
 import { WeekPlanCard } from '../components/WeekPlanCard'
+import { skillDayKitNote } from '../components/weekPlanCopy'
 import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
 import { rememberNextBlock } from '../lib/plan/nextBlock'
-import { atActivePlace, insideRestRule, placeKit } from '../lib/plan/planner'
-import { calisthenicsCardLabel, withRestFlag } from '../lib/plan/screens'
+import { insideRestRule, placeKit } from '../lib/plan/planner'
+import { atPlanPlace, calisthenicsCardLabel, calisthenicsRequest, withRestFlag } from '../lib/plan/screens'
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { becamePainSafe, maxTestOffered } from '../lib/plan/screens'
 import { Button, SegmentedControl } from '../components/ds'
@@ -112,9 +113,11 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
       // Only a calisthenics day's own block is today's calisthenics session: on a
       // gym day the skill block is the gym's opener, not this card.
       dayPlan.kind === 'calisthenics' && dayPlan.skill && !dayPlan.skill.opener
-        ? { source: 'auto', minutes: dayPlan.skill.minutes, skills: dayPlan.skill.skills }
+        ? // Built where the plan has it (a lever day at the gym with the bar), or where the athlete said they are.
+          calisthenicsRequest(state, dayPlan.skill, choice.placeId)
         : { source: 'auto' },
-    [dayPlan],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dayPlan, choice.placeId],
   )
   /** A picked skill day inside the rest rule says so on its request, in the preview and on Start alike. */
   const restFlagged = (request: WorkoutRequest, now: number): WorkoutRequest =>
@@ -124,7 +127,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   const finalized = useMemo(() => {
     const now = Date.now()
     // Built where the athlete is: the active place's kit beside their own (a lever day at a gym with a bar).
-    const build = (request: WorkoutRequest) => finalizeFromPlan(state, atActivePlace(state, restFlagged(request, now)), plan, now).workout
+    const build = (request: WorkoutRequest) => finalizeFromPlan(state, atPlanPlace(state, restFlagged(request, now)), plan, now).workout
     return {
       today: build(recommended),
       templates: new Map(TEMPLATES.map((t) => [t.id, build({ source: 'template', templateId: t.id })])),
@@ -167,9 +170,10 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
     const needsList = missingKit(skill, placeKit(state) ?? state.profile.equipment)
     const needs = needsList.length ? kitNeedsPhrase(needsList) : null
     const rest = restNotes.get(skill)?.text ?? null
-    const days: { key: string; title: string; line: string; needs: string | null; rest: string | null; request: WorkoutRequest }[] = [
+    const days: { key: string; skill: SkillId; title: string; line: string; needs: string | null; rest: string | null; request: WorkoutRequest }[] = [
       {
         key: skill,
+        skill,
         title: `${def.holdName[0].toUpperCase()}${def.holdName.slice(1)} day`,
         line: `${def.tagline} Now: ${STEP_BY_ID[stepOfSkill(state, skill)].name}.`,
         needs,
@@ -181,6 +185,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
       const status = ladderStatus(state, skill)
       days.push({
         key: `${skill}-ladder`,
+        skill,
         title: `${def.ladder.name} day`,
         line: status
           ? `The ${def.ladder.name.toLowerCase()} line comes first: ${EXERCISE_BY_ID[status.rung.exerciseId]?.name ?? status.rung.exerciseId} for about five sets, the hold as short practice.`
@@ -310,7 +315,15 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
             <div className="font-display text-title3 font-semibold text-ink">{day.title}</div>
             <p className="mt-1 text-footnote leading-relaxed text-ink2">{day.line}</p>
             {day.needs !== null ? (
-              <p className="mt-1.5 text-caption font-medium text-ink3">Waiting for kit — needs {day.needs}. Add it under Settings → Equipment.</p>
+              <p className="mt-1.5 text-caption font-medium text-ink3">
+                {skillDayKitNote(
+                  day.skill,
+                  day.needs,
+                  state.profile.equipment,
+                  state.gym?.locations ?? [],
+                  state.gym?.locations.find((l) => l.id === state.gym?.activeLocationId)?.name,
+                )}
+              </p>
             ) : day.rest ? (
               <p className="mt-1.5 text-caption font-medium text-ink2">{day.rest}</p>
             ) : null}
@@ -484,7 +497,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                 setPreviewRequest(null)
                 // The request, not this preview: the session is decided again
                 // at the moment it starts, with whatever is true then.
-                if (request) startWorkout(atActivePlace(state, restFlagged(request, Date.now())))
+                if (request) startWorkout(atPlanPlace(state, restFlagged(request, Date.now())))
               }}
               className="mt-5 flex w-full items-center justify-center gap-2 "
             >

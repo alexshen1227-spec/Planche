@@ -6,7 +6,7 @@ import type { CoachPlan } from '../lib/coach'
 import type { LineupEntry, LineupRole } from '../lib/lineup'
 import { isBarAttempt } from '../lib/progression'
 import { focusSkill, skillView, stepOfSkill } from '../lib/skills'
-import { estimateMinutes, fitToBudget, joinWords, LIGHT_DOSE_SHARE } from './workouts'
+import { estimateMinutes, fitToBudget, joinWords, LIGHT_DOSE_SHARE, sessionBudget } from './workouts'
 
 /**
  * One session, several skills.
@@ -257,8 +257,8 @@ export function mixedSession(
   const lead = lineup.find((entry) => entry.role === 'lead') ?? lineup[0]
   const leadPlan = plans[lead.skill]!
   const light = leadPlan.dayType === 'technique' || leadPlan.dayType === 'deload'
-  const baseBudget = light ? Math.min(30, state.settings.sessionMinutes) : state.settings.sessionMinutes
-  const budget = minutesOverride !== undefined ? Math.min(baseBudget, Math.max(8, minutesOverride)) : baseBudget
+  // An explicit time is the budget, up to two hours; without one, the athlete's session length (`sessionBudget`).
+  const budget = sessionBudget(state.settings.sessionMinutes, light, minutesOverride)
 
   // ——— One maximal effort a session ———
   // The lead's by default. But a skill that never leads still has to be
@@ -475,10 +475,11 @@ export function mixedSession(
       const skillName = SKILLS[entry.skill].name.toLowerCase()
       // Only what is true: there is no day a second skill trains alone unless
       // the athlete picks one, and nothing here knows which session is next.
+      // The session length in Settings sets the budget only when no time was asked for (`sessionBudget`).
       adjustments.push(
         `Left out of the ${skillName} work to fit ${budget} minutes across today's skills: ${joinWords(names)}. ${
           names.length === 1 ? 'It fits' : 'They fit'
-        } in a longer session (Settings → session length), or when you pick ${skillName} on its own under Train → Choose today’s skills.`,
+        } in a longer session${minutesOverride === undefined ? ' (Settings → session length)' : ''}, or when you pick ${skillName} on its own under Train → Choose today’s skills.`,
       )
     }
   }

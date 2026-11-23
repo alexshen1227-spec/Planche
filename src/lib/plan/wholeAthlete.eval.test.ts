@@ -6,7 +6,8 @@ import { buildPlan } from '../coach'
 import { readSignals } from '../signals'
 import { skillView, stepOfSkill } from '../skills'
 import { dayKey } from '../time'
-import { exposuresOf, GYM_PLACE, keySets, makeAthlete, runLoop, SPORT_WEEK, weeksOf, type AthleteCfg, type DayRun, type LoopOpts, type LoopOut } from './wholeAthleteLoop'
+import { familyWorkingSets, HARD_GYM_FAMILY_SETS } from './load'
+import { exposureDays, exposuresOf, GYM_PLACE, keySets, makeAthlete, runLoop, SPORT_WEEK, weeksOf, type AthleteCfg, type DayRun, type LoopOpts, type LoopOut } from './wholeAthleteLoop'
 
 /**
  * The whole athlete, closed (round five). A fourteen-year-old whose first
@@ -23,7 +24,8 @@ import { exposuresOf, GYM_PLACE, keySets, makeAthlete, runLoop, SPORT_WEEK, week
  * sure I'll still improve in the planche and the other skills, plus the gym."
  * The rule this pins is the app's own: the first priority gets every session
  * its rest rule allows on the training days, each with its key hold's kept
- * dose, and the other skills and the gym fill the days it cannot use.
+ * dose, and the other skills and the gym fill the days it cannot use — the gym
+ * pressing every week, lightly beside the planche's days (round 5b).
  *
  * Every bar below was set from a measured run with room under it (the
  * measurement is in the comment beside it): when later work moves one, measure
@@ -98,6 +100,41 @@ function expectSteps(mixed: LoopOut, ctrl: LoopOut) {
   }
 }
 
+/** Calendar days between two moments, as the rest rule counts planned days. */
+const daysApart = (a: number, b: number) => Math.round(Math.abs(new Date(a).setHours(0, 0, 0, 0) - new Date(b).setHours(0, 0, 0, 0)) / 86_400_000)
+
+/**
+ * The gym presses every week (round 5b), and next to the planche only lightly: every calendar week has a chest press
+ * at the gym; no gym session inside the rest rule of a planche session on another day is a hard pressing session (the
+ * count `familyEvents` reads); and every planche day planned on a light pressing day happened. Returns how many light
+ * pressing days the run had, so a variant can say it reached the check.
+ */
+function expectWeeklyPressing(mixed: LoopOut, restHours: number): number {
+  const unpressed = weeksOf(mixed)
+    .map((week, w) => ({ w: w + 1, pressed: week.some((d) => d.gym?.chestPress) }))
+    .filter((x) => !x.pressed)
+    .map((x) => `week ${x.w}`)
+  expect(unpressed, 'weeks with no chest press at the gym').toEqual([])
+  const planche = exposuresOf(mixed.days, 'planche').map((e) => e.at)
+  const happened = new Set(planche.map(dayKey))
+  const last = dayKey(mixed.days[mixed.days.length - 1].at)
+  let light = 0
+  for (const d of mixed.days) {
+    if (!d.gym) continue
+    const session = mixed.state.gym!.sessions.find((g) => g.startedAt === d.gym!.at)!
+    const beside = planche.filter((t) => dayKey(t) !== dayKey(d.at) && daysApart(t, d.at) * 24 < restHours)
+    if (beside.length) {
+      expect(familyWorkingSets(session.exercises).push, `${dayKey(d.at)} ${d.gym.focus} beside the planche on ${beside.map(dayKey).join(', ')}`).toBeLessThan(HARD_GYM_FAMILY_SETS)
+    }
+    if (!d.plan.gym?.lightPress) continue
+    light++
+    // Nothing the light day did moved a planche day planned when it was trained.
+    const missing = exposureDays(d.week, 'planche').filter((day) => day <= last && !happened.has(day))
+    expect(missing, `${dayKey(d.at)}: planche days planned that day`).toEqual([])
+  }
+  return light
+}
+
 describe('the whole athlete: the planche first, then the rest (round five)', () => {
   // The default week: Sunday and Saturday an hour, Monday, Wednesday and Friday 45 minutes, a 48 h rule, the gym
   // active. Ten weeks; plan stability is read on the first five (each read re-plans twice).
@@ -121,8 +158,9 @@ describe('the whole athlete: the planche first, then the rest (round five)', () 
     run()
     if (CROSSES_A_CLOCK_CHANGE) expect(mixed.days).toHaveLength(70)
     expectExposures(mixed, ctrl)
-    // Measured 0.89 of the control's key-hold working sets over weeks 2–10 (the review's loop: 0.72); the openers —
-    // 6 of 27 sessions — keep the kept dose, not the reach.
+    // Measured 0.95 (180 of 190 sets) of the control's key-hold working sets over weeks 2–10 — 0.89 until round 5b
+    // built the weekend's hour as an hour, not the 45 minutes of the setup answer (the review's loop: 0.72); the
+    // openers — 6 of 27 sessions — keep the kept dose, not the reach.
     expect(doseRatio(mixed, ctrl), 'key-hold sets against the planche alone').toBeGreaterThanOrEqual(0.85)
     // Measured: advanced tuck two days sooner, one-leg three days later than the planche alone.
     expectSteps(mixed, ctrl)
@@ -163,6 +201,14 @@ describe('the whole athlete: the planche first, then the rest (round five)', () 
     expect(mixed.days.filter((d) => d.gym?.focus === 'lower').length).toBeGreaterThanOrEqual(4)
   })
 
+  it('presses at the gym every week — lightly beside the planche — and that pressing moves no planche day (round 5b)', () => {
+    run()
+    // Measured (gym chest and upper-chest sets a week): 4, 3, 3, 3, 3, 2.5, 3, 2, 2, 2 — the review's loop pressed only
+    // on the planche's opener day, and weeks 8–10 had none (4, 2.5, 2.5, 3, 3, 2.5, 2.5, 0, 0, 0). Those three weeks
+    // press on the lever's Saturday, a light upper day; the skill side already gives 17–32 chest sets a week.
+    expect(expectWeeklyPressing(mixed, 48), 'light pressing days').toBeGreaterThanOrEqual(1) // measured 3
+  })
+
   it('does not move a later planche day when today is followed, and a saved opener leaves its gym day the gym day', () => {
     run()
     const moved = mixed.days.filter((d) => d.moved.length).map((d) => `${dayKey(d.at)} ${d.moved.join(',')}`)
@@ -183,6 +229,9 @@ describe('the whole athlete: the planche first, then the rest (round five)', () 
     expect(doseRatio(m, c)).toBeGreaterThanOrEqual(0.88)
     expect(exposuresOf(m.days, 'planche').filter((e) => e.opener)).toEqual([])
     expectSteps(m, c)
+    // Measured chest sets a week 2, 4, 7, 4 (the review's loop: 2, 0, 2, 0): four light days — a full-body day, the
+    // lever's Wednesday twice as an upper day, a push day — none of them a hard pressing session.
+    expect(expectWeeklyPressing(m, 72), 'light pressing days').toBeGreaterThanOrEqual(1) // measured 4
   })
 
   it('on three days a week, every one the planche’s, still gives the other skills a place', () => {
@@ -197,6 +246,8 @@ describe('the whole athlete: the planche first, then the rest (round five)', () 
     const others = (skill: SkillId) => m.days.filter((d) => d.skill.some((s) => (s.parts[skill]?.main ?? 0) > 0)).length
     expect(others('handstand')).toBeGreaterThanOrEqual(4)
     expect(others('frontlever')).toBeGreaterThanOrEqual(3)
+    // Measured chest sets a week 4, 4, 4, 3: each week's Tuesday is the planche's gym day, pressing beside its own holds.
+    expectWeeklyPressing(m, 48)
   })
 
   it('on 20-minute days gives the handstand its turns', () => {
@@ -215,7 +266,7 @@ describe('the whole athlete: the planche first, then the rest (round five)', () 
     const m = season(teen({}, { active: 'home' }), 28)
     const ctrlDays = ctrl.days.slice(0, 28)
     expectExposures(m, ctrl, ctrlDays)
-    // Measured 0.88 over weeks 2–4.
+    // Measured 0.91 over weeks 2–4 (0.88 before round 5b's hour-long weekend days).
     expect(keySets(weeksOf(m).slice(1).flat(), 'planche') / keySets(weeksOf({ ...ctrl, days: ctrlDays }).slice(1).flat(), 'planche')).toBeGreaterThanOrEqual(0.84)
     for (const d of m.days.filter((x) => x.plan.gym)) {
       expect(d.plan.gym!.placeId, dayKey(d.at)).toBe(GYM_PLACE.id)

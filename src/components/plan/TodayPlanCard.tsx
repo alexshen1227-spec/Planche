@@ -1,14 +1,23 @@
 import { useMemo, useRef, useState } from 'react'
-import { FOCUS_LABEL, type GymFocus } from '../../lib/gym/builder'
-import { AFTER_OPENER_WARM_UP_MIN, planWeekAhead, skillRequest, type ReadinessLevel } from '../../lib/plan/planner'
-import { dayStage, openerLine } from '../../lib/plan/screens'
+import { FOCUS_LABEL } from '../../lib/gym/builder'
+import { AFTER_OPENER_WARM_UP_MIN, gymPlaceOf, planWeekAhead, type ReadinessLevel } from '../../lib/plan/planner'
+import {
+  calisthenicsPlaceLine,
+  calisthenicsRequest,
+  calisthenicsTitle,
+  dayStage,
+  gymPlaceLine,
+  gymPreset,
+  openerLine,
+  resolveGymPlace,
+  type GymPreset,
+} from '../../lib/plan/screens'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
 import { endTheDay, rememberNextBlock, useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useStore } from '../../lib/store'
 import { useToday } from '../../lib/useToday'
-import type { Joint, Muscle } from '../../data/gym/catalog'
-import type { SkillId, WorkoutRequest } from '../../types'
+import type { WorkoutRequest } from '../../types'
 import { Button, Card, Sheet, ToggleChip } from '../ds'
 import { Icon } from '../Icon'
 import { ActivitySheet } from './ActivitySheet'
@@ -16,28 +25,10 @@ import { PlanSettings } from './PlanSettings'
 import { FitnessSetup } from './FitnessSetup'
 import { WeekPreview } from './WeekPreview'
 
-export interface GymPreset {
-  focus: GymFocus
-  minutes: number
-  avoidJoints: Joint[]
-  volumeFactor: number
-  musclesOff: Muscle[]
-  /** Warm-up minutes for the lifts: short straight after a skill opener (`AFTER_OPENER_WARM_UP_MIN`), the usual otherwise. */
-  warmUpMin?: number
-  /** Muscles the week leaves furthest under target (`TodayPlan.gym.priority`), given priority beside the athlete's own. */
-  priority?: Muscle[]
-}
+export type { GymPreset }
 
-const SKILL_LABEL: Record<SkillId, string> = {
-  planche: 'planche',
-  frontlever: 'front lever',
-  handstand: 'handstand',
-  ninety: '90° hold',
-  flag: 'flag',
-}
 const QUICK = [20, 30, 45, 60, 90]
 const READINESS_LABEL: Record<ReadinessLevel, string> = { light: 'Light day', normal: 'Normal day', push: 'Push day' }
-const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1)
 
 /**
  * Today, as one recommended session: calisthenics, or the gym — opening with a
@@ -64,11 +55,19 @@ export function TodayPlanCard({
   const todayKind = choice.kind
   const [sheet, setSheet] = useState<'settings' | 'activity' | 'setup' | null>(null)
   // Today is one slot of the week plan; "I have X minutes" and a picked kind re-plan the rest of the week around it.
-  const week = useMemo(
-    () => planWeekAhead(state, Date.now(), { ...(override !== undefined ? { todayMinutes: override } : {}), ...(todayKind ? { todayKind } : {}) }),
+  // Where the athlete said they are today, when that is not where the plan has the day: the plan is made there.
+  const pickedId = choice.placeId
+  const week = useMemo(() => {
+    const now = Date.now()
+    const planned = gymPlaceOf(state, now)
+    const picked = pickedId && pickedId !== planned?.id ? state.gym?.locations.find((l) => l.id === pickedId) : undefined
+    return planWeekAhead(state, now, {
+      ...(override !== undefined ? { todayMinutes: override } : {}),
+      ...(todayKind ? { todayKind } : {}),
+      ...(picked ? { todayPlace: picked } : {}),
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, override, todayKind, todayKey, clock],
-  )
+  }, [state, override, todayKind, pickedId, todayKey, clock])
   const plan = week.days[0].plan
   const lastSheet = useRef(sheet)
   if (sheet) lastSheet.current = sheet
@@ -86,22 +85,16 @@ export function TodayPlanCard({
   // A gym day whose opener is saved: the lifts are what is left, whatever the planner now calls the day.
   const liftsNext = stage === 'lifts-next'
   const opener = plan.kind === 'gym' && plan.skill?.opener ? plan.skill : undefined
-  const preset: GymPreset | null = plan.gym
-    ? {
-        focus: plan.gym.focus,
-        minutes: plan.gym.minutes,
-        avoidJoints: plan.gym.avoidJoints,
-        volumeFactor: plan.gym.volumeFactor,
-        musclesOff: plan.gym.musclesOff,
-        ...(plan.gym.priority?.length ? { priority: plan.gym.priority } : {}),
-      }
-    : null
+  // A gym day is built where the plan has it (at the gym, even with Home set as the place now) unless the athlete
+  // said they are somewhere else; the card says which.
+  const where = plan.kind === 'gym' && plan.gym ? resolveGymPlace(state, Date.now(), { plannedId: pickedId ? undefined : plan.gym.placeId, pickedId }) : undefined
+  const preset: GymPreset | null = plan.gym ? gymPreset(plan.gym, { placeId: where?.place.id ?? plan.gym.placeId }) : null
   const liftsPreset: GymPreset | null = remembered ?? preset
   const session =
     plan.kind === 'calisthenics' && plan.skill
-      ? { title: `Calisthenics · ${plan.skill.minutes} min`, line: cap(plan.skill.skills.map((s) => SKILL_LABEL[s]).join(', ')) }
+      ? { ...calisthenicsTitle(plan.skill), place: calisthenicsPlaceLine(state, plan.skill, pickedId) }
       : plan.kind === 'gym' && plan.gym
-        ? { title: `Gym · ${FOCUS_LABEL[plan.gym.focus]} · ${(opener?.minutes ?? 0) + plan.gym.minutes} min`, line: '' }
+        ? { title: `Gym · ${FOCUS_LABEL[plan.gym.focus]} · ${(opener?.minutes ?? 0) + plan.gym.minutes} min`, line: '', place: gymPlaceLine(where) }
         : null
   const liftsLine = plan.gym
     ? plan.gym.deload
@@ -119,14 +112,14 @@ export function TodayPlanCard({
       else onSwitch?.('gym')
     } else if (plan.kind === 'calisthenics' && plan.skill) {
       rememberNextBlock(null)
-      // Built where the athlete is: the block carries the active place's kit beside their own.
-      startWorkout(skillRequest(plan.skill))
+      // Built where the plan has it (a lever day at the gym with the bar), or where the athlete said they are.
+      startWorkout(calisthenicsRequest(state, plan.skill, pickedId))
     } else if (plan.kind === 'gym' && preset) {
       if (opener && !skillDone && !gymDone) {
         // The lifts follow on their own once the opener is saved.
         rememberNextBlock<GymPreset>({ ...preset, warmUpMin: AFTER_OPENER_WARM_UP_MIN })
         // The place's kit goes with it: a lever with no bar at home trains on the gym's.
-        startWorkout(skillRequest(opener))
+        startWorkout(calisthenicsRequest(state, opener, pickedId))
       } else onStartGym(preset)
     }
   }
@@ -222,6 +215,7 @@ export function TodayPlanCard({
             <span className="min-w-0 flex-1">
               <span className="block text-body font-semibold">{session.title}</span>
               {session.line ? <span className="block text-caption text-ink3">{session.line}</span> : null}
+              {session.place ? <span className="block text-caption text-ink3">{session.place}</span> : null}
             </span>
             {allDone ? marker(true, 1) : null}
           </div>

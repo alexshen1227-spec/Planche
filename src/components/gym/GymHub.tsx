@@ -5,9 +5,9 @@ import { pushToast } from '../../lib/toast'
 import { buildGymSession, FOCUS_LABEL, type GymFocus, type PlannedExercise } from '../../lib/gym/builder'
 import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
-import { activeLocation, conservative, loadDraft, prefillReps, previousSets, type GymDraft } from '../../lib/gym/draft'
+import { conservative, loadDraft, prefillReps, previousSets, type GymDraft } from '../../lib/gym/draft'
 import { AFTER_OPENER_WARM_UP_MIN, gymToday, MIN_GYM_MINUTES, planToday, skillFamily, skillRequest, soreJoints } from '../../lib/plan/planner'
-import { dayStage, openerLine } from '../../lib/plan/screens'
+import { dayStage, gymPlaceLine, gymPreset, openerLine, resolveGymPlace, steerInput, type GymPreset } from '../../lib/plan/screens'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
 import { rememberNextBlock, useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
 import { choiceOptions, useTodayChoice } from '../../lib/plan/todayChoice'
@@ -20,7 +20,6 @@ import { Icon } from '../Icon'
 import { Button, Card, CardTitle, EmptyState, Sheet, ToggleChip } from '../ds'
 import { GymPlayer } from './GymPlayer'
 import { WeekVolume } from '../plan/WeekVolume'
-import type { GymPreset } from '../plan/TodayPlanCard'
 import { LocationEditor } from './LocationEditor'
 import { ExerciseHistory } from './ExerciseHistory'
 import { SessionDetail } from './SessionDetail'
@@ -46,7 +45,7 @@ export function GymHub({
   const todayKey = useToday()
   // The coarse clock re-plans a screen left open: the pain, joint and rest rules run in hours.
   const clock = usePlanClock()
-  const [choice] = useTodayChoice(todayKey)
+  const [choice, setChoice] = useTodayChoice(todayKey)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const today = useMemo(() => planToday(state, choiceOptions(choice)), [state, todayKey, clock, choice.kind, choice.minutes])
   // The pain memory applies whoever picks the focus: it once applied only to a
@@ -84,7 +83,11 @@ export function GymHub({
   const [openSessionId, setOpenSessionId] = useState<string | null>(null)
   const [running, setRunning] = useState<GymDraft | null>(null)
   const [resumable, setResumable] = useState<GymDraft | null>(() => loadDraft())
-  const location = activeLocation(gym)
+  // Where the lifts are built: where the plan has them (the gym, even with Home set as the place now) unless the
+  // athlete said today that they are somewhere else. Home being active is not a pick.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const where = useMemo(() => (gym ? resolveGymPlace(state, Date.now(), { pickedId: choice.placeId }) : undefined), [state, gym, choice.placeId, todayKey, clock])
+  const location = where?.place
 
   // The coach's gym session for now, as if today were a gym day: the focus, the
   // day's limits (season, sport, deload, joints) and the opener all come from
@@ -121,8 +124,8 @@ export function GymHub({
             ratings: gym.ratings,
             youth,
             ...(gym.prefs ? { goals: gym.prefs.goals } : {}),
-            // The athlete's priorities and the week's: the muscles it leaves furthest under target.
-            priority: [...new Set([...(gym.prefs?.musclesPriority ?? []), ...coach.priority])],
+            // The athlete's priorities and the week's: the muscles it leaves furthest under target, and the ones it has far past it.
+            ...steerInput(coach, gym.prefs?.musclesPriority),
             now: Date.now(),
           })
         : null,
@@ -201,15 +204,20 @@ export function GymHub({
     // skill loads, named just now leaves it out.
     const famJoints: Joint[] = opener ? (skillFamily(opener.skills[0]) === 'push' ? ['wrists', 'elbows', 'shoulders'] : ['elbows', 'shoulders']) : []
     if (!p && !pending.empty && opener && startWorkout && kind !== 'pain' && !joints.some((j) => famJoints.includes(j))) {
-      rememberNextBlock<GymPreset>({
-        focus: resolvedFocus ?? 'full',
-        minutes: liftMinutes,
-        avoidJoints: [...new Set([...(coach?.avoidJoints ?? []), ...joints])],
-        volumeFactor: coach?.volumeFactor ?? 1,
-        musclesOff: coach?.musclesOff ?? gym.prefs?.musclesOff ?? [],
-        warmUpMin: AFTER_OPENER_WARM_UP_MIN,
-        ...(coach?.priority.length ? { priority: coach.priority } : {}),
-      })
+      rememberNextBlock<GymPreset>(
+        gymPreset(
+          {
+            focus: resolvedFocus ?? 'full',
+            minutes: liftMinutes,
+            avoidJoints: [...new Set([...(coach?.avoidJoints ?? []), ...joints])],
+            volumeFactor: coach?.volumeFactor ?? 1,
+            musclesOff: coach?.musclesOff ?? gym.prefs?.musclesOff ?? [],
+            priority: coach?.priority,
+            spare: coach?.spare,
+          },
+          { placeId: location.id, warmUpMin: AFTER_OPENER_WARM_UP_MIN },
+        ),
+      )
       setPending(null)
       // The place's kit goes with it: a lever with no bar at home trains on the gym's.
       startWorkout(skillRequest(opener))
@@ -233,6 +241,7 @@ export function GymHub({
           musclesOff: g.musclesOff,
           avoidJoints: [...new Set([...g.avoidJoints, ...joints])],
           volumeFactor: kind === 'pain' ? Math.min(g.volumeFactor, 0.6) : g.volumeFactor,
+          ...steerInput(g),
           sessions: gym.sessions,
           ratings: gym.ratings,
           youth,
@@ -282,7 +291,7 @@ export function GymHub({
           ...(p?.warmUpMin !== undefined ? { warmUpMin: p.warmUpMin } : {}),
           musclesOff,
           ...(gym.prefs ? { goals: gym.prefs.goals } : {}),
-          priority: [...new Set([...(gym.prefs?.musclesPriority ?? []), ...(replanned ? replanned.priority : p ? (p.priority ?? []) : (coach?.priority ?? []))])],
+          ...steerInput(replanned ?? (p ? p : (coach ?? {})), gym.prefs?.musclesPriority),
           now: Date.now(),
         })
     setPending(null)
@@ -309,6 +318,8 @@ export function GymHub({
     .sort((a, b) => b.bestE1rm!.kg - a.bestE1rm!.kg)
     .slice(0, 6)
   const autoFocus = auto?.focus
+  // Said plainly where the lifts are built, and where the plan had them when the athlete moved them.
+  const placeNote = gymPlaceLine(where)
 
   return (
     <div className="space-y-5">
@@ -357,7 +368,11 @@ export function GymHub({
             <ToggleChip
               key={l.id}
               active={l.id === location.id}
-              onClick={() => dispatch({ type: 'GYM', op: { op: 'setActiveLocation', id: l.id } })}
+              onClick={() => {
+                dispatch({ type: 'GYM', op: { op: 'setActiveLocation', id: l.id } })
+                // Saying where you are today is a pick; going back to where the plan has it clears the pick.
+                setChoice({ ...choice, placeId: where?.planned && l.id === where.planned.id ? undefined : l.id })
+              }}
             >
               {l.name}
             </ToggleChip>
@@ -370,6 +385,7 @@ export function GymHub({
             Add a place
           </button>
         </div>
+        {placeNote ? <p className="mt-2 text-caption text-ink3">{placeNote}</p> : null}
       </section>
 
       <Card>

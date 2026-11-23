@@ -235,9 +235,14 @@ Open, in order of value (none blocks using the app):
   planche at 72% of a planche-only control (58% at 72 h, 42% on three days)
   and a front lever never re-tested. Fixed: the first-priority rule, the
   per-skill re-test, the niggle lead, chest presses, per-place days, plan
-  stability; pinned by `plan/wholeAthlete.eval.test.ts`. Left: `spare` and
-  `placeId` wired into the gym screens; light push days near planche days;
-  plan minutes may not yet lengthen a calisthenics session.
+  stability; pinned by `plan/wholeAthlete.eval.test.ts`.
+- Part two (2026-11-23): `spare` and `placeId` wired into every gym screen;
+  light pressing days near planche days (a gym press every week, never a
+  hard push event); an explicit time is the session budget. Still open: pike
+  push-ups and HSPU credited as chest; a picked push focus inside the rest
+  rule stays hard (the athlete's pick); a full-body day can log a hard pull
+  event the planner did not plan; Home and the Today card have no place
+  switcher of their own (the Gym tab's place chips set today's place).
 
 ## Log
 

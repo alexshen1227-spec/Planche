@@ -7,7 +7,7 @@ import type { GymLocation, GymSession, OutsideActivity, TrainingPrefs } from '..
 import { lineupFor } from '../lineup'
 import { startingState } from '../skillLoop'
 import { addDays, weekStart } from '../time'
-import { familyEvents, skillSetLoading } from './load'
+import { familyEvents, familyWorkingSets, HARD_GYM_FAMILY_SETS, skillSetLoading } from './load'
 import { focusFamilies, gymDeloadDue, MIN_SKILL_MINUTES, planToday, planWeekAhead, skillGoalPace } from './planner'
 import { sportBetween } from './sport'
 
@@ -94,7 +94,15 @@ describe('pressing and straight-arm skill work share recovery', () => {
       const s = { ...athlete(['planche'], { minutesByDay: [60, 60, 60, 60, 60, 60, 60], straightArmRestHours: restH, goals: { strength: 3, power: 0, physique: 5, skills: 3, endurance: 0 } }), sessions: [skillSession(FRI)] }
       for (const now of [at(5, 8), at(5, 18)]) {
         const week = planWeekAhead(s, now)
-        const events = [FRI, ...week.days.flatMap((d) => ((d.plan.skill?.hard ?? []).includes('push') || (d.plan.gym && focusFamilies(d.plan.gym.focus).includes('push')) ? [d.at] : []))]
+        // A light pressing day (round 5b) is no hard session of the family: built as planned, it stays under the line.
+        for (const d of week.days.filter((x) => x.plan.gym?.lightPress)) {
+          const g = d.plan.gym!
+          const built = buildGymSession({ location: gymA, minutes: g.minutes, focus: g.focus, sessions: [], youth: true, musclesOff: g.musclesOff, priority: g.priority ?? [], ...(g.spare ? { spare: g.spare } : {}), volumeFactor: g.volumeFactor, now: d.at })
+          const sets = familyWorkingSets(built.items.map((it) => ({ exerciseId: it.exerciseId, sets: Array.from({ length: it.sets }, () => ({ reps: 8 })) })))
+          expect(sets.push, `${restH}h ${d.day} light ${g.focus}`).toBeLessThan(HARD_GYM_FAMILY_SETS)
+        }
+        const hardGym = (d: (typeof week.days)[number]) => Boolean(d.plan.gym && focusFamilies(d.plan.gym.focus).includes('push') && !d.plan.gym.lightPress)
+        const events = [FRI, ...week.days.flatMap((d) => ((d.plan.skill?.hard ?? []).includes('push') || hardGym(d) ? [d.at] : []))]
         for (let i = 0; i < events.length; i++)
           for (let j = i + 1; j < events.length; j++) {
             if (new Date(events[i]).toDateString() === new Date(events[j]).toDateString()) continue

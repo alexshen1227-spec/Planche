@@ -3,7 +3,7 @@ import type { SkillId } from '../types'
 import { reducer } from '../lib/store'
 import { startingState } from '../lib/skillLoop'
 import { coverageNotes, planCoverage, todaysDay, type DayReading } from '../lib/weekPlan'
-import { coverageSummary, kitStatusLine, placesWithKit, skillChipLabel, skillWords, todayLine, unavailableClause, type TodayLineInput } from './weekPlanCopy'
+import { coverageSummary, kitStatusLine, placesWithKit, skillChipLabel, skillDayKitNote, skillWords, todayLine, unavailableClause, type TodayLineInput } from './weekPlanCopy'
 
 const TWO: SkillId[] = ['planche', 'frontlever']
 const said = (input: Partial<TodayLineInput> & Pick<TodayLineInput, 'today'>) =>
@@ -130,6 +130,15 @@ describe('kit at a place (fifth review)', () => {
   })
   it('a pull-up bar at home does not travel to a gym that has none', () => {
     expect(placesWithKit('frontlever', ['floor', 'pullup-bar'] as never, [{ name: 'Gym B', equipment: ['dumbbells'] }])).toEqual([])
+  })
+  it('a skill day the place cannot build names the place that can, not Settings', () => {
+    const places = [{ name: 'Home', equipment: [] }, gymA]
+    expect(skillDayKitNote('frontlever', 'a pull-up bar', home, places, 'Home')).toBe(
+      'Needs a pull-up bar, which Gym A has — choose it under Gym → Where are you training?',
+    )
+    expect(skillDayKitNote('frontlever', 'a pull-up bar', home, [{ name: 'Home', equipment: [] }], 'Home')).toMatch(/^Waiting for kit .* Settings → Equipment\.$/)
+    // The place the athlete is at is never the one named.
+    expect(skillDayKitNote('frontlever', 'a pull-up bar', home, [gymA], 'Gym A')).toMatch(/^Waiting for kit/)
   })
   it('gives the skill chip a spoken break before its main badge', () => {
     expect(skillChipLabel('planche', true)).toBe('Planche, main skill')

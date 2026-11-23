@@ -179,6 +179,18 @@ export function kitStatusLine(skill: SkillId, own: EquipmentId[], places: readon
   return { kind: 'waiting', text: `${name} is waiting for kit. ${SKILLS[skill].requiresNote ?? `It needs ${kitNeedsPhrase(missing)}.`}` }
 }
 
+/**
+ * A skill day the kit where the athlete is cannot build: the places that have
+ * what it needs, or what to add. "Add it under Settings → Equipment" once sat
+ * on the front lever day while the athlete's gym had the bar.
+ */
+export function skillDayKitNote(skill: SkillId, needs: string, own: EquipmentId[], places: readonly KitPlace[], here?: string): string {
+  const at = placesWithKit(skill, own, places).filter((name) => name !== here)
+  if (!at.length) return `Waiting for kit — needs ${needs}. Add it under Settings → Equipment.`
+  const where = at.length === 1 ? at[0] : `${at.slice(0, -1).join(', ')} and ${at[at.length - 1]}`
+  return `Needs ${needs}, which ${where} ${at.length === 1 ? 'has' : 'have'} — choose ${at.length === 1 ? 'it' : 'one'} under Gym → Where are you training?`
+}
+
 /** A skill chip's spoken name: "Planche" and its "main" badge need a break between them for a screen reader. */
 export function skillChipLabel(skill: SkillId, isMain: boolean): string {
   return isMain ? `${SKILLS[skill].name}, main skill` : SKILLS[skill].name

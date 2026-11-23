@@ -650,6 +650,23 @@ function roleOf(b: Block): BlockRole | undefined {
 /** Minutes under the time it was given before a session says why it is shorter. */
 export const SHORTER_THAN_ASKED_MIN = 5
 
+/** The longest time a request may ask a session to fill: two hours. */
+export const MAX_REQUEST_MINUTES = 120
+
+/**
+ * A session's time budget. An explicit time — "I have 60 minutes", or a day
+ * the week plan gives 60 (`WorkoutRequest.minutes`) — is the budget, from 8
+ * minutes up to `MAX_REQUEST_MINUTES`; without one it is the athlete's session
+ * length (`settings.sessionMinutes`). A light day keeps its 30-minute cap
+ * either way. The time once only ever shortened a session: a 60-minute weekend
+ * day was built as the 45 of the setup answer, while the planner had planned
+ * two full parts and a short dose for it.
+ */
+export function sessionBudget(sessionMinutes: number, light: boolean, minutesOverride?: number): number {
+  const asked = minutesOverride !== undefined ? Math.min(MAX_REQUEST_MINUTES, Math.max(8, minutesOverride)) : sessionMinutes
+  return light ? Math.min(30, asked) : asked
+}
+
 /** Every set in a list of blocks. */
 export function totalSetsOf(blocks: readonly Block[]): number {
   return blocks.reduce((sum, block) => sum + block.sets, 0)
@@ -1721,16 +1738,12 @@ export function todaysSession(
     )
   }
 
-  // Shorter than a full day, long enough for the whole shape at its light dose.
-  const baseBudget = light ? Math.min(30, state.settings.sessionMinutes) : state.settings.sessionMinutes
+  // Shorter than a full day, long enough for the whole shape at its light dose. The usual length is what "Short"
+  // is measured against; an explicit time is the budget (`sessionBudget`).
+  const baseBudget = sessionBudget(state.settings.sessionMinutes, light)
   // One part of a mixed session is built at whatever it is given: the mixed
   // session decides what goes in, across all of its skills.
-  const budget =
-    options.part && minutesOverride !== undefined
-      ? minutesOverride
-      : minutesOverride !== undefined
-        ? Math.min(baseBudget, Math.max(8, minutesOverride))
-        : baseBudget
+  const budget = options.part && minutesOverride !== undefined ? minutesOverride : sessionBudget(state.settings.sessionMinutes, light, minutesOverride)
   // Sides are expanded before trimming, so the budget accounts for the fact
   // that unilateral work costs twice as long.
   const whole = withSides(lightened)
@@ -1764,7 +1777,9 @@ export function todaysSession(
         ? `Left out of the planche part to make room for today's other skills: ${joinWords(droppedNames)}. They come back on a planche-only day.`
         : `Left out to fit ${budget} minutes: ${joinWords(droppedNames)}. ${
             minutesOverride !== undefined
-              ? 'They come back on a full-length day.'
+              ? budget < baseBudget
+                ? 'They come back on a full-length day.'
+                : 'A longer day keeps them.'
               : 'A longer session length in Settings keeps them.'
           }`,
     )

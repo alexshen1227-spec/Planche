@@ -206,6 +206,37 @@ const FAMILY_PATTERNS: Record<'push' | 'pull', ReadonlySet<Pattern>> = {
  */
 export const HARD_GYM_FAMILY_SETS = 4
 
+/**
+ * Muscles that every pressing movement (`FAMILY_PATTERNS.push`) has among its
+ * prime movers — each press, dip and shoulder press leans on the front delts or
+ * the triceps. A gym day built with them spared (`buildGymSession`'s `spare`)
+ * keeps the one press it is named for at two sets and leaves every other
+ * pressing movement out, so it stays under `HARD_GYM_FAMILY_SETS` and is never
+ * a hard pressing session: the planner's light pressing beside push-family
+ * skill days. Chest flies and lateral raises are not pressing and stay.
+ */
+export const LIGHT_PRESS_SPARE: readonly Muscle[] = ['front-delts', 'triceps']
+
+/** A gym session's working sets of each family's movements, as `familyEvents` counts them. */
+export function familyWorkingSets(exercises: readonly { exerciseId: string; sets: readonly { warmup?: boolean; reps: number }[] }[]): Record<'push' | 'pull', number> {
+  const count = { push: 0, pull: 0 }
+  for (const log of exercises) {
+    const pattern = GYM_EXERCISE_BY_ID[log.exerciseId]?.pattern
+    if (!pattern) continue
+    const working = log.sets.filter((x) => !x.warmup && x.reps > 0).length
+    for (const f of ['push', 'pull'] as const) if (FAMILY_PATTERNS[f].has(pattern)) count[f] += working
+  }
+  return count
+}
+
+/** The presses a push day is named for: a gym session with a working set of one has pressed (the weekly pressing rule). */
+const CHEST_PRESS_PATTERNS: ReadonlySet<Pattern> = new Set<Pattern>(['horizontal-press', 'incline-press'])
+
+/** Whether a logged gym session pressed: a working set of a bench or incline press. */
+export function pressedIn(session: Pick<GymSession, 'exercises'>): boolean {
+  return session.exercises.some((log) => CHEST_PRESS_PATTERNS.has(GYM_EXERCISE_BY_ID[log.exerciseId]?.pattern as Pattern) && log.sets.some((x) => !x.warmup && x.reps > 0))
+}
+
 /** A hard session of a straight-arm family, logged: skill work or the gym. */
 export interface FamilyEvent {
   at: number
@@ -237,13 +268,7 @@ export function familyEvents(state: Pick<AppState, 'sessions' | 'gym'>, now: num
   }
   for (const s of state.gym?.sessions ?? []) {
     if (s.startedAt > now) continue
-    const count = { push: 0, pull: 0 }
-    for (const log of s.exercises) {
-      const pattern = GYM_EXERCISE_BY_ID[log.exerciseId]?.pattern
-      if (!pattern) continue
-      const working = log.sets.filter((x) => !x.warmup && x.reps > 0).length
-      for (const f of ['push', 'pull'] as const) if (FAMILY_PATTERNS[f].has(pattern)) count[f] += working
-    }
+    const count = familyWorkingSets(s.exercises)
     for (const f of ['push', 'pull'] as const) if (count[f] >= HARD_GYM_FAMILY_SETS) out[f].push({ at: s.startedAt, gym: true })
   }
   for (const f of ['push', 'pull'] as const) out[f].sort((a, b) => a.at - b.at)

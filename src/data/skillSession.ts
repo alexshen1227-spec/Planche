@@ -25,6 +25,7 @@ import {
   painSafeRecoveryWorkout,
   resolveEquipment,
   restAfterHold,
+  sessionBudget,
   SHORTER_THAN_ASKED_MIN,
   totalSetsOf,
   withSides,
@@ -481,14 +482,10 @@ export function skillSession(
     )
   }
 
-  const baseBudget = light ? Math.min(30, state.settings.sessionMinutes) : state.settings.sessionMinutes
+  // The usual length is what "Short" is measured against; an explicit time is the budget (`sessionBudget`).
+  const baseBudget = sessionBudget(state.settings.sessionMinutes, light)
   // One part of a mixed session is built at whatever it is given.
-  const budget =
-    options.part && minutesOverride !== undefined
-      ? minutesOverride
-      : minutesOverride !== undefined
-        ? Math.min(baseBudget, Math.max(8, minutesOverride))
-        : baseBudget
+  const budget = options.part && minutesOverride !== undefined ? minutesOverride : sessionBudget(state.settings.sessionMinutes, light, minutesOverride)
   const whole = withSides(lightened)
   const fit = fitToBudget(whole, budget, emphasis === 'core', state.settings.stopLatencySec, state.settings.phoneWithinReach)
   const fitted = fit.blocks.map((b) => ({ ...b, skill: skill.id }))
@@ -523,7 +520,11 @@ export function skillSession(
       options.part
         ? `Left out of the ${skill.name.toLowerCase()} part to make room for today's other skills: ${joinWords(droppedNames)}. They come back on a ${skill.name.toLowerCase()}-only day.`
         : `Left out to fit ${budget} minutes: ${joinWords(droppedNames)}. ${
-            minutesOverride !== undefined ? 'They come back on a full-length day.' : 'A longer session length in Settings keeps them.'
+            minutesOverride !== undefined
+              ? budget < baseBudget
+                ? 'They come back on a full-length day.'
+                : 'A longer day keeps them.'
+              : 'A longer session length in Settings keeps them.'
           }`,
     )
   }

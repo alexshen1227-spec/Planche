@@ -39,10 +39,25 @@ import { walkMeasureDue } from '../lib/sessionTiming'
 import { kitStatusLine, skillChipLabel } from '../components/weekPlanCopy'
 import { coachTodayLabel } from '../lib/coachLabel'
 import { recordNote } from '../lib/sessionSummary'
-import { AFTER_OPENER_WARM_UP_MIN, atActivePlace, planToday, skillRequest } from '../lib/plan/planner'
+import { AFTER_OPENER_WARM_UP_MIN, atActivePlace, planToday } from '../lib/plan/planner'
 import { endTheDay, rememberNextBlock, useDayMarks, useNextBlock } from '../lib/plan/nextBlock'
 import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
-import { dayStage, GOAL_HERE_TEXT, goalStanding, homeToday, maxTestOffered, openerLine, shortVersion, stepPassed, trainingWeek } from '../lib/plan/screens'
+import {
+  calisthenicsPlaceLine,
+  calisthenicsRequest,
+  dayStage,
+  GOAL_HERE_TEXT,
+  goalStanding,
+  gymPlaceLine,
+  gymPreset,
+  homeToday,
+  maxTestOffered,
+  openerLine,
+  resolveGymPlace,
+  shortVersion,
+  stepPassed,
+  trainingWeek,
+} from '../lib/plan/screens'
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { ladderStatus } from '../lib/repLadder'
 import { WeekPreview } from '../components/plan/WeekPreview'
@@ -221,9 +236,10 @@ export function Dashboard({
       // Only a calisthenics day's own block is today's calisthenics session: on a
       // gym day the skill block is the gym's opener, not this card.
       dayPlan.kind === 'calisthenics' && dayPlan.skill && !dayPlan.skill.opener
-        ? atActivePlace(whole, { source: 'auto', minutes: dayPlan.skill.minutes, skills: dayPlan.skill.skills })
+        ? // Built where the plan has it (a lever day at the gym with the bar), or where the athlete said they are.
+          calisthenicsRequest(whole, dayPlan.skill, choice.placeId)
         : atActivePlace(whole, { source: 'auto' }),
-    [dayPlan, whole],
+    [dayPlan, whole, choice.placeId],
   )
   // Today's main session done: Home recommends nothing more, only a quiet way to train again.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -237,7 +253,7 @@ export function Dashboard({
   // "Short on time?" goes through the coach (`shortVersion`): never a hard session inside the rest rule, unsaid.
   const startShort = (m: number) => {
     const kind = choiceOptions(choice).kind
-    const short = shortVersion(whole, m, kind ? { kind } : {})
+    const short = shortVersion(whole, m, { ...(kind ? { kind } : {}), ...(choice.placeId ? { placeId: choice.placeId } : {}) })
     if ('request' in short) startWorkout(short.request)
     else pushToast(short.reason, 'info')
   }
@@ -371,21 +387,18 @@ export function Dashboard({
     [state.sessions, whole.gym],
   )
   /** A gym day starts its opener here (the lifts follow when it is saved), or opens the plan on Train. */
+  const gymWhere = useMemo(
+    () => (dayPlan.kind === 'gym' && dayPlan.gym ? resolveGymPlace(whole, Date.now(), { plannedId: choice.placeId ? undefined : dayPlan.gym.placeId, pickedId: choice.placeId }) : undefined),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [whole, dayPlan, choice.placeId, today, clock],
+  )
   const startGymDay = () => {
     const g = dayPlan.gym
     const opener = dayPlan.skill?.opener ? dayPlan.skill : undefined
     const doneToday = whole.sessions.some((s) => dayKey(s.startedAt) === today) || (whole.gym?.sessions ?? []).some((s) => dayKey(s.startedAt) === today)
     if (g && opener && !doneToday) {
-      rememberNextBlock<GymPreset>({
-        focus: g.focus,
-        minutes: g.minutes,
-        avoidJoints: g.avoidJoints,
-        volumeFactor: g.volumeFactor,
-        musclesOff: g.musclesOff,
-        warmUpMin: AFTER_OPENER_WARM_UP_MIN,
-        ...(g.priority?.length ? { priority: g.priority } : {}),
-      })
-      startWorkout(skillRequest(opener))
+      rememberNextBlock<GymPreset>(gymPreset(g, { placeId: gymWhere?.place.id ?? g.placeId, warmUpMin: AFTER_OPENER_WARM_UP_MIN }))
+      startWorkout(calisthenicsRequest(whole, opener, choice.placeId))
     } else go('train')
   }
   const recentAchievements = useMemo(
@@ -563,11 +576,15 @@ export function Dashboard({
               <span className="font-semibold text-ink">Today the coach recommends the gym</span> — {FOCUS_LABEL[dayPlan.gym.focus].toLowerCase()},{' '}
               {dayPlan.minutes} min
               {dayPlan.skill?.opener ? `. ${openerLine(dayPlan.skill)}` : ''}.
+              {gymPlaceLine(gymWhere) ? ` ${gymPlaceLine(gymWhere)}${gymPlaceLine(gymWhere)!.endsWith('.') ? '' : '.'}` : ''}
             </span>
             <Button variant="secondary" onClick={() => go('train')}>
               Go to Train
             </Button>
           </div>
+        ) : null}
+        {mode === 'calisthenics' && dayPlan.skill && !finished && !liftsNext && calisthenicsPlaceLine(whole, dayPlan.skill, choice.placeId) ? (
+          <p className="mt-3 text-footnote text-ink3">{calisthenicsPlaceLine(whole, dayPlan.skill, choice.placeId)}</p>
         ) : null}
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {finished || liftsNext ? null : mode === 'calisthenics' ? (

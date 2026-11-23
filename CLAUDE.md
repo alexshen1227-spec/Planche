@@ -1021,6 +1021,31 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     across units; one gym sheet at a time (`askStillApplies`). Pinned in
     `plan/round5.test.ts`, `round5skills.test.ts`, `plan/review6.test.ts`,
     `gym/review6.test.ts`, `gym/loadAsk.test.ts`.
+  - Round six, part two (2026-11-23). **Light pressing beside the
+    planche**: `weeklyPress` keeps one gym chest press a week for an athlete
+    with a push skill, gym goals and the chest on. A pressing day near a
+    planche day is light (`TodayPlan.gym.lightPress`): `LIGHT_PRESS_SPARE`
+    (front delts, triceps — every press, dip and shoulder press leans on one)
+    travels in `gym.spare`, so the named press keeps two sets and the day
+    stays under `HARD_GYM_FAMILY_SETS`; a light day is never a push event.
+    Light choices are offered only to a week with no gym pressing, only on a
+    gym day with a calm choice of its own (the rule never changes a day's
+    kind), anchored on a hinted day (unhinted days can flip kind later in the
+    week); pressing logged this week satisfies it. **An explicit time is the
+    budget** (`sessionBudget`, `MAX_REQUEST_MINUTES` = 120, 30 on a light
+    day): it once only shortened a session, so a planned 60-minute day built
+    the setup answer's 45. "Short" is still measured against the usual
+    length. **Screens build where the plan has it**: a gym day at its planned
+    place (`resolveGymPlace`; Home being active is not a pick), a calisthenics
+    day with the plan's kit (`calisthenicsRequest`, `atPlanPlace`); the
+    athlete's place for today is `TodayChoice.placeId`; every lifts build
+    passes `steerInput` (priority and spare) — dropping `spare` turns a light
+    day hard. Pinned in `plan/round5b.test.ts`, `plan/screens.place.test.ts`
+    and the eval's `expectWeeklyPressing`. Measured against the control:
+    planche key-hold sets 0.947 default, 0.947 at 72 h, 0.895 Sun/Tue/Thu,
+    0.912 with Home active. The longer budget costs the lever two partner
+    parts late in the default run (advanced tuck 11-30 → 12-05) because the
+    stronger planche needs its dose first — the first-priority rule working.
   - Skill days are requests (`{source: 'auto', skills: [skill]}`); a ladder
     day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
     pins every session built without it — regenerate only for an intended

@@ -11,16 +11,19 @@ import { dayKey } from '../time'
 export interface TodayChoice {
   kind?: 'calisthenics' | 'gym'
   minutes?: number
+  /** The place the athlete said they are at today, when it is not where the plan had the day (an explicit pick, never the place the app happens to be set to). */
+  placeId?: string
 }
 
 const KEY = 'planchelab.todayChoice'
 const EVENT = 'planchelab:todaychoice'
 
-function clean(x: { kind?: unknown; minutes?: unknown }): TodayChoice {
+function clean(x: { kind?: unknown; minutes?: unknown; placeId?: unknown }): TodayChoice {
   const minutes = typeof x.minutes === 'number' && Number.isFinite(x.minutes) && x.minutes >= 5 && x.minutes <= 240 ? Math.round(x.minutes) : undefined
   return {
     ...(x.kind === 'calisthenics' || x.kind === 'gym' ? { kind: x.kind } : {}),
     ...(minutes !== undefined ? { minutes } : {}),
+    ...(typeof x.placeId === 'string' && x.placeId && x.placeId.length <= 80 ? { placeId: x.placeId } : {}),
   }
 }
 
@@ -29,7 +32,7 @@ export function readTodayChoice(now = Date.now()): TodayChoice {
   try {
     const raw = globalThis.localStorage?.getItem(KEY)
     if (!raw) return {}
-    const x = JSON.parse(raw) as { day?: unknown; kind?: unknown; minutes?: unknown }
+    const x = JSON.parse(raw) as { day?: unknown; kind?: unknown; minutes?: unknown; placeId?: unknown }
     return x && x.day === dayKey(now) ? clean(x) : {}
   } catch {
     return {}
@@ -40,7 +43,7 @@ export function readTodayChoice(now = Date.now()): TodayChoice {
 export function writeTodayChoice(choice: TodayChoice, now = Date.now()): void {
   const c = clean(choice)
   try {
-    if (!c.kind && c.minutes === undefined) globalThis.localStorage?.removeItem(KEY)
+    if (!c.kind && c.minutes === undefined && !c.placeId) globalThis.localStorage?.removeItem(KEY)
     else globalThis.localStorage?.setItem(KEY, JSON.stringify({ day: dayKey(now), ...c }))
   } catch {
     // A per-device convenience only: without storage the choice lasts as long as the screen.
@@ -67,7 +70,7 @@ export function useTodayChoice(todayKey: string): [TodayChoice, (next: TodayChoi
     const sync = () =>
       setChoice((cur) => {
         const next = readTodayChoice()
-        return next.kind === cur.kind && next.minutes === cur.minutes ? cur : next
+        return next.kind === cur.kind && next.minutes === cur.minutes && next.placeId === cur.placeId ? cur : next
       })
     sync()
     window.addEventListener(EVENT, sync)

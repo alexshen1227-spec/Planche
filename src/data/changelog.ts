@@ -18,6 +18,19 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-11-23',
+    title: 'A gym press every week, and an hour means an hour',
+    area: 'coach',
+    notes: [
+      'The gym now keeps a chest press in every week. On days near your planche it is light — one press, two sets — so it never becomes the hard pressing your rest rule keeps away from planche days. In the app’s own simulation of a week like yours, every week then had a gym press, and the planche kept all of its sessions.',
+      'When you say you have 60 minutes, or your plan gives a day 60, the session is built for 60. The time you gave once only ever made a session shorter than your usual length.',
+      'A gym day is built at the gym even when Home is the place set now, and a front lever day keeps the gym’s bar. Say you are somewhere else today and the session is built there, with a line saying where the plan had it.',
+      'Muscles your week already covers well are now given less in the lifts, as the plan intended — the lifts used to ignore that part of it.',
+      'A pain-safe day is named for what it is on the Today card, and a short opener says it is short.',
+      'A skill day your current place cannot build now names the place that has the kit — the front lever day at home points to your gym’s bar instead of to Settings.',
+    ],
+  },
+  {
     date: '2026-11-22',
     title: 'Your first skill keeps its sessions, and every skill moves',
     area: 'coach',

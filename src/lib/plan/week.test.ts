@@ -16,7 +16,7 @@ import { startingState } from '../skillLoop'
 import { readDay } from '../weekPlan'
 import { conservative } from '../gym/draft'
 import { weekStart } from '../time'
-import { familyEvents, skillSetLoading } from './load'
+import { familyEvents, familyWorkingSets, HARD_GYM_FAMILY_SETS, LIGHT_PRESS_SPARE, skillSetLoading } from './load'
 import { focusFamilies, gymOpener, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutes, openerMinutesFor, REST_SLACK_HOURS, skillRequest } from './planner'
 import { missingKit } from '../../data/skills'
 import type { StepId, Weekday, WeekPlan } from '../../types'
@@ -501,7 +501,7 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
   })
 
   it('hard sessions of a family the rest rule apart, every day within its minutes, two movements a gym block, assigned days as written', () => {
-    const stats = { pressing: 0, athletes: 0, days: 0, cal: 0, gym: 0, openers: 0, kitless: 0 }
+    const stats = { pressing: 0, athletes: 0, days: 0, cal: 0, gym: 0, openers: 0, kitless: 0, light: 0 }
     const calendarApart = (a: number, b: number) => {
       const d0 = (t: number) => new Date(new Date(t).toDateString()).getTime()
       return Math.round(Math.abs(d0(a) - d0(b)) / (24 * HOUR)) * 24 * HOUR
@@ -653,7 +653,9 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
             youth,
             goals: (own ?? defaultPrefs(1)).goals,
             musclesOff: p.gym.musclesOff,
-            priority: (own ?? defaultPrefs(1)).musclesPriority,
+            // As the screens hand the plan on: the week's spare muscles and priorities beside the athlete's own.
+            priority: [...new Set([...(own ?? defaultPrefs(1)).musclesPriority, ...(p.gym.priority ?? [])])],
+            ...(p.gym.spare?.length ? { spare: p.gym.spare } : {}),
             avoidJoints: p.gym.avoidJoints,
             volumeFactor: p.gym.volumeFactor,
             favoriteAt: s.gym!.favoriteAt,
@@ -662,6 +664,13 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
           expect(b.fits && b.items.length >= 2, `${who} ${d.day} ${p.gym.focus} ${p.gym.minutes}m at ${loc.name} builds ${b.items.length}`).toBe(true)
           used += b.estimatedMin
           for (const it of b.items) if (PRESS.has(GYM_EXERCISE_BY_ID[it.exerciseId].pattern)) pressing += it.sets
+          // A light pressing day (round 5b) presses under the heavy-pressing line, whatever it is built from.
+          if (p.gym.lightPress) {
+            expect(LIGHT_PRESS_SPARE.every((m) => p.gym!.spare?.includes(m)), `${who} ${d.day} light spares ${p.gym.spare}`).toBe(true)
+            const sets = familyWorkingSets(b.items.map((it) => ({ exerciseId: it.exerciseId, sets: Array.from({ length: it.sets }, () => ({ reps: 1 })) })))
+            expect(sets.push, `${who} ${d.day} light ${p.gym.focus}: ${b.items.map((it) => `${it.exerciseId}x${it.sets}`)}`).toBeLessThan(HARD_GYM_FAMILY_SETS)
+            stats.light++
+          }
         }
         expect(used, `${who} ${d.day}: ${p.skill?.minutes ?? 0}+${p.gym?.minutes ?? 0} of ${p.minutes}`).toBeLessThanOrEqual(p.minutes + 1)
       }
@@ -675,7 +684,10 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
             const assigned = Boolean(s.settings.weekPlan) && readDay(s, new Date(d.at).getDay() as Weekday).kind === 'skills'
             return [
               ...((d.plan.skill?.hard ?? []).includes(fam) ? [{ at: d.at, fixed: assigned, what: `${d.day} skills` }] : []),
-              ...(d.plan.gym && focusFamilies(d.plan.gym.focus).includes(fam) ? [{ at: d.at, fixed: false, what: `${d.day} ${d.plan.gym.focus}` }] : []),
+              // Light pressing is not a hard session of the push family (checked above by building it).
+              ...(d.plan.gym && focusFamilies(d.plan.gym.focus).includes(fam) && !(fam === 'push' && d.plan.gym.lightPress)
+                ? [{ at: d.at, fixed: false, what: `${d.day} ${d.plan.gym.focus}` }]
+                : []),
             ]
           }),
         ]
@@ -702,6 +714,8 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
     expect(stats.gym, 'gym days').toBeGreaterThan(0)
     expect(stats.openers, 'openers').toBeGreaterThan(0)
     expect(stats.kitless, 'calisthenics days for athletes missing some kit').toBeGreaterThan(0)
+    // Light pressing days happen among them, so the check above is reached.
+    expect(stats.light, 'light pressing days').toBeGreaterThan(0)
     // Physique athletes still press: the family rule concentrates pressing, it does not remove it.
     expect(stats.pressing / Math.max(1, stats.athletes)).toBeGreaterThanOrEqual(4)
   })
@@ -763,17 +777,21 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
     expect(count(gymWeek, 'gym'), gymWeek.join()).toBeGreaterThan(count(gymWeek, 'calisthenics'))
     expect(count(skillsWeek, 'calisthenics')).toBeGreaterThan(count(gymWeek, 'calisthenics'))
     const pushPull = gymWeekPlan.days.filter((d) => d.plan.gym && (d.plan.gym.focus === 'push' || d.plan.gym.focus === 'pull'))
-    expect(pushPull.length, gymWeek.join()).toBeGreaterThanOrEqual(2)
+    expect(pushPull.length, gymWeek.join()).toBeGreaterThanOrEqual(1)
     for (const d of pushPull) {
       expect(d.plan.skill?.opener, `${d.day} ${d.plan.gym!.focus}`).toBe(true)
       expect(skillFamily(d.plan.skill!.skills[0]), d.day).toBe(d.plan.gym!.focus)
     }
     for (const d of gymWeekPlan.days) if (d.plan.gym && ['lower', 'full', 'athletic'].includes(d.plan.gym.focus)) expect(d.plan.skill, d.day).toBeUndefined()
-    // A hard opener counts toward its family's weekly sessions.
+    // A hard opener counts toward its family's weekly sessions. The planche's gym day opens with it; the front lever's
+    // two sessions are wherever they fit — since round 5b builds a 60-minute day as 60, they are the lever partnering
+    // the planche's calisthenics days (built at the 45 of the setup answer, that partner was a thin one and gave its
+    // place up, and the week paired the lever with two pull days instead).
     for (const f of gymWeekPlan.frequency) {
       const days = gymWeekPlan.days.filter((d) => (d.plan.skill?.hard ?? []).includes(f.family) && weekStart(d.at) === weekStart(MON))
       expect(f.planned, f.family).toBe(days.length)
-      expect(days.some((d) => d.plan.skill!.opener), f.family).toBe(true)
+      expect(f.planned, f.family).toBeGreaterThanOrEqual(f.family === 'push' ? 3 : 2)
+      if (f.family === 'push') expect(days.some((d) => d.plan.skill!.opener), f.family).toBe(true)
     }
   })
 
