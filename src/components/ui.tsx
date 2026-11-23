@@ -140,7 +140,7 @@ export function Modal({
         <button
           onClick={onClose}
           aria-label="Close"
-          className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full border border-line bg-raised text-ink2 transition hover:text-ink"
+          className="absolute right-3 top-3 z-10 grid h-11 w-11 place-items-center rounded-full border border-line bg-raised text-ink2 transition hover:text-ink"
         >
           <Icon name="x" size={16} />
         </button>

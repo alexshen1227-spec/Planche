@@ -1174,6 +1174,10 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     (`ACHIEVEMENT_VERSION` 6). `weekly.ts` judges coverage from Friday
     (`judgeable`) and names frequency only when low. Pinned in
     `numbers9.test.ts`, `gym/gym9.test.ts`, `progress9*.test.ts(x)`.
+    `NOISY_SPREAD` is defined once, in `signals.ts`. `droppedWorkNames`
+    names a movement kept only as a warm-up primer by its sets ("planche
+    lean sets (the warm-up primer stays)"); `ladderDay.golden.json` was
+    regenerated deliberately for that copy alone (six sentences).
   - Skill days are requests (`{source: 'auto', skills: [skill]}`); a ladder
     day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
     pins every session built without it — regenerate only for an intended

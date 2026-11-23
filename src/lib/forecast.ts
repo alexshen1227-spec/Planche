@@ -3,7 +3,7 @@ import { roadOf, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { skillForStep } from '../data/skills'
 import { MEASUREMENT_FRESH_DAYS, qualifyingProgress, qualifyingSessionValue, qualifyingValueIsFloor } from './progression'
-import { median, readSignals, spreadAroundTrend, type Signals } from './signals'
+import { median, NOISY_SPREAD, readSignals, spreadAroundTrend, type Signals } from './signals'
 
 /**
  * How long until the next unlock — answered as a range, or not at all.
@@ -143,13 +143,11 @@ export function mostlyFloors(points: Point[]): boolean {
 }
 
 /**
- * The bar `readSignals` calls noisy: the spread of the last six measurements
- * around their own robust trend line, as a share of their median. Past it the
- * swing from session to session is wider than any trend, so a pace, a
- * breakthrough or a jump read from those points is reading the swing. Kept
- * equal to the signals' bar (numbers9.test pins the two together).
+ * The bar `readSignals` calls noisy (defined there, one constant for both):
+ * past it the swing from session to session is wider than any trend, so a
+ * pace, a breakthrough or a jump read from those points is reading the swing.
  */
-export const NOISY_SPREAD = 0.22
+export { NOISY_SPREAD }
 /**
  * The most scatter a "Good confidence" forecast may rest on — half the noise
  * bar — because that note says the progress has been consistent. Before, the

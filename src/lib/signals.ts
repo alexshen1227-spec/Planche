@@ -16,6 +16,15 @@ import {
   verifiedCleanRatio,
 } from './progression'
 import { trustedCameraEvidence } from './formEvidence'
+
+/**
+ * The bar the signals call noisy: the spread of the last six measurements
+ * around their own robust trend line, as a share of their median. Past it the
+ * swing from session to session is wider than any trend. One constant, read by
+ * the forecast's evidence gate too (`forecast.ts` `noiseReading`), so the
+ * coach and the headline numbers cannot disagree about what noise is.
+ */
+export const NOISY_SPREAD = 0.22
 import { leadInSecondsFor, stopLatencySecondsFor } from './sessionTiming'
 
 /**
@@ -631,7 +640,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const spread = spreadAroundTrend(readable.slice(-6))
   const variability = mainMedian && mainMedian > 0 && spread !== null ? spread / mainMedian : null
   // Isometrics swing day to day; past ~22% deviation the signal is mostly noise.
-  const noisy = variability !== null && variability > 0.22 && recentBests.length >= 3
+  const noisy = variability !== null && variability > NOISY_SPREAD && recentBests.length >= 3
   const trendPerWeek = slopePerWeek(readable.slice(-6))
   // A floor is still evidence the key hold was trained.
   const latestKey = series.points[series.points.length - 1]

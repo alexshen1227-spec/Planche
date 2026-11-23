@@ -14,6 +14,7 @@ import { adaptiveTarget, workingTargetSec } from '../lib/workingTarget'
 import {
   capacityAdjustBlocks,
   estimateMinutes,
+  droppedWorkNames,
   fitToBudget,
   hasEquipmentFor,
   joinWords,
@@ -602,10 +603,7 @@ export function skillSession(
   sized.notes.forEach((note, i) => {
     if (present.has(sized.about[i]) && !lightIds.has(sized.about[i])) adjustments.push(note)
   })
-  const droppedNames = [...new Set(fit.dropped)]
-    .filter((id) => !present.has(id))
-    .map((id) => EXERCISE_BY_ID[id]?.name.toLowerCase())
-    .filter((name): name is string => Boolean(name))
+  const droppedNames = droppedWorkNames(fit.dropped, fitted)
   if (droppedNames.length) {
     adjustments.push(
       options.part

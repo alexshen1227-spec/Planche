@@ -931,6 +931,24 @@ export function painSafeRecoveryWorkout(regions: BodyRegion[] = []): Workout {
   }
 }
 
+/**
+ * The work a budget left out, named as the athlete reads it. A movement whose
+ * main sets went but whose warm-up primer stays is named as its sets: "Left out
+ * to fit 25 minutes: … planche lean" once sat above a warm-up that still held an
+ * 8-second primer lean.
+ */
+export function droppedWorkNames(dropped: readonly string[], fitted: readonly Block[]): string[] {
+  const present = new Set(fitted.filter((b) => b.section !== 'warmup').map((b) => b.exerciseId))
+  const primed = new Set(fitted.filter((b) => b.section === 'warmup').map((b) => b.exerciseId))
+  return [...new Set(dropped)]
+    .filter((id) => !present.has(id))
+    .map((id) => {
+      const name = EXERCISE_BY_ID[id]?.name.toLowerCase()
+      return name && primed.has(id) ? `${name} sets (the warm-up primer stays)` : name
+    })
+    .filter((name): name is string => Boolean(name))
+}
+
 export function joinWords(words: string[]): string {
   if (words.length <= 1) return words[0] ?? ''
   return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`
@@ -1767,10 +1785,7 @@ export function todaysSession(
   sized.notes.forEach((note, i) => {
     if (present.has(sized.about[i]) && !lightIds.has(sized.about[i])) adjustments.push(note)
   })
-  const droppedNames = [...new Set(fit.dropped)]
-    .filter((id) => !present.has(id))
-    .map((id) => EXERCISE_BY_ID[id]?.name.toLowerCase())
-    .filter((name): name is string => Boolean(name))
+  const droppedNames = droppedWorkNames(fit.dropped, fitted)
   if (droppedNames.length) {
     adjustments.push(
       options.part
