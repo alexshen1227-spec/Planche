@@ -7,9 +7,12 @@ import { skillHoldSecOf } from '../lib/progressTotals'
 import {
   countedNote,
   creditedWhileHolding,
+  FIRST_HOLD_HEADING,
+  FIRST_HOLD_NOTE,
   holdTotalCaption,
   offerWalkMeasure,
   ratedSetLabel,
+  splitRecords,
   stopAllowanceFor,
   summaryLastSet,
 } from '../lib/sessionSummary'
@@ -2847,6 +2850,7 @@ export function SessionPlayer({
 
   function celebrate() {
     if (!events || !savedSession) return null
+    const { records, firsts } = splitRecords(events.prs)
     // Every step this session opened, on whichever road. One session can open
     // a step on two skills; the first is the hero and the rest follow it.
     const opened = (
@@ -2934,10 +2938,10 @@ export function SessionPlayer({
             </ul>
           </div>
         ) : null}
-        {events.prs.length > 0 ? (
+        {records.length > 0 ? (
           <div className="mt-4 rounded-inner border border-line bg-surface p-4 text-left">
             <div className="mb-2 text-footnote font-semibold uppercase tracking-wide text-ink3">New records</div>
-            {events.prs.map((p) => {
+            {records.map((p) => {
               const ex = EXERCISE_BY_ID[p.exerciseId]
               return (
                 <div key={`${p.exerciseId}-${p.surface ?? 'overall'}`} className="flex items-baseline justify-between py-1 text-body">
@@ -2956,6 +2960,31 @@ export function SessionPlayer({
                 </div>
               )
             })}
+          </div>
+        ) : null}
+        {firsts.length > 0 ? (
+          <div className="mt-4 rounded-inner border border-line bg-surface p-4 text-left">
+            <div className="mb-2 text-footnote font-semibold uppercase tracking-wide text-ink3">{FIRST_HOLD_HEADING}</div>
+            {firsts.map((p) => {
+              const ex = EXERCISE_BY_ID[p.exerciseId]
+              return (
+                <div key={`${p.exerciseId}-${p.surface ?? 'overall'}`} className="flex items-baseline justify-between py-1 text-body">
+                  <span className="text-ink">
+                    {ex?.name ?? p.exerciseId}
+                    {p.surface ? <span className="ml-1 text-caption text-ink3">· {surfaceLabel(p.surface)}</span> : null}
+                  </span>
+                  <span className="font-semibold text-accent-text tnum">
+                    {ex?.type === 'hold' ? fmtHold(p.value) : `${p.value} reps`}
+                    {p.previous !== undefined ? (
+                      <span className="ml-1.5 font-normal text-ink3">
+                        was {ex?.type === 'hold' ? fmtHold(p.previous) : p.previous}
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              )
+            })}
+            <p className="mt-1 text-caption text-ink3">{FIRST_HOLD_NOTE}</p>
           </div>
         ) : null}
         {events.achievements.length > 0 ? (

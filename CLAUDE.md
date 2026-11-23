@@ -1092,6 +1092,41 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     ~21 muscles stay under their weekly floor with two short gym days (the
     summary says so); the long-head triceps slot rarely fits a 20-minute
     pressing day.
+  - Eighth review round (58 UX, partial / 55 logic; the loop had the
+    planche at 207 of the control's 208 key sets). **Time away per skill**:
+    `Signals.gapDays` (the skill's own days since it trained;
+    `skillRestDays` once trained, else `restDays`) drives `longGap` and
+    `gapReturn`, and a one-skill gap ignores "trained elsewhere"
+    (`gapPerSkill.test`). The parent note reads `conservative`. A key hold
+    under `FAR_UNDER_SHARE` (0.5) of its target is not praised, and a step's
+    first hold is "First hold logged", not a record (`splitRecords`,
+    `lowHold.test`). Train withdraws "instead of the gym" once a skill
+    session is saved on a gym day (`offersCalisthenicsInstead`). Gym:
+    `LoadSuggestion.repsToMoveUp` is shown and pre-filled when held back;
+    `stepDownKg` steps off the real load before rounding (a unit switch is
+    one step down, not two); under 18 a step over `YOUTH_LARGE_STEP_SHARE`
+    (0.25) of the load is earned with hi+2 reps or two rated top sessions
+    (`gym/review8.test`). Copy: a wall-only wait says where to tick it
+    (`onlyWallMissing`), the streak says what it counts (`streakText`).
+    Not done: the dropped-names list still names a movement kept as a
+    warm-up primer — the fix changes `ladderDay.golden.json` and waits for
+    a deliberate regeneration.
+    Planner: **one joint memory for the line-up** — `lineup.ts`
+    `standingNiggle` steers by the latest niggle until a later check-in (not
+    only today's), the planner carries `DayCtx.standing`, and `reportLine`
+    says who changes what (the lifts keep their 72 h union); `WeekPlanCard`
+    reads the same memory. **Order between lower skills**: a pressing opener
+    (HSPU) may open a push day (`openerFamily`), and `rankPass` moves a part
+    to a higher-ranked skill with fewer full parts, under every rest rule and
+    the planche's dose — for planche > HSPU > lever the HSPU's pressing
+    shares the planche's rest days, so the lever can still get more
+    (measured, not forced). **A focus is its focus**: `viable` needs two
+    movements of the focus's own muscles (`ownMovements`, no core). Family
+    and exposure lines appear only when today trains that family hard and
+    the count matches the week. `LEG_DAY_EVERY_DAYS` stays 10 (7 cost the
+    planche 0.921 → 0.895 at 72 h and the lever its pull days). Pinned in
+    `plan/round7.test.ts`; the eval asserts at most 2 weeks where the second
+    skill has fewer full parts than the third.
   - Skill days are requests (`{source: 'auto', skills: [skill]}`); a ladder
     day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
     pins every session built without it — regenerate only for an intended

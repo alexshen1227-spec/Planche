@@ -18,6 +18,7 @@ import { diagnosePlateau, type PlateauVerdict } from './plateau'
 import { adaptiveTarget, workingTarget } from './workingTarget'
 import { settled, toldHold } from './bridge'
 import { emphasisFromGaps } from './assessment'
+import { conservative } from './gym/draft'
 import {
   MAX_WEEKLY_LOAD_RAMP,
   readCapabilityJump,
@@ -919,13 +920,23 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // three-month-old results. Silence in the log is not observed rest: it can be
   // a break, an injury, or training the app never saw. The check-in asks which,
   // and an unanswered question stays unknown rather than becoming either.
-  const longGap = sig.totalSessions > 0 && sig.restDays >= LONG_GAP_DAYS
+  //
+  // The gap is this skill's own (`gapDays`): the planche trained yesterday says
+  // nothing about a front lever left alone for a month, and that lever was
+  // handed a re-test and an unlock attempt off 28-day-old logs.
+  const gapDays = sig.gapDays
+  const longGap = sig.totalSessions > 0 && gapDays >= LONG_GAP_DAYS
+  // The check-in's answer is about the whole athlete. When the athlete trained
+  // yesterday and only this skill has been away, "trained elsewhere" would
+  // excuse exactly the gap that is real, so the cautious reading stands.
+  const skillAwayOnly = longGap && sig.restDays < LONG_GAP_DAYS
   const answeredGap = freshCheckIn?.gap
   const gap: CoachPlan['gap'] = !longGap
     ? 'none'
-    : answeredGap === 'break' || answeredGap === 'trained-elsewhere'
+    : answeredGap === 'break' || (answeredGap === 'trained-elsewhere' && !skillAwayOnly)
       ? answeredGap
       : 'unknown'
+  const awayWords = skillAwayOnly ? `Your ${holdName} has had no work for ${gapDays} days` : null
 
   // ——— Recovery state sets the day's character ———
   // Judged on training LOAD, not on whether any session existed: a ten-minute
@@ -937,11 +948,13 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   } else if (longGap) {
     dayType = 'build'
     dayReason =
-      gap === 'break'
-        ? `Back after about ${sig.restDays} days away — today re-establishes your current working level rather than testing it: nothing maximal, and no target above the base you last trained at. Everything you earned before still stands.`
+      awayWords
+        ? `${awayWords}, though you trained other things since — today re-establishes your current working level rather than testing it: nothing maximal, and no target above the base you last trained at. Everything you earned before still stands.`
+        : gap === 'break'
+        ? `Back after about ${gapDays} days away — today re-establishes your current working level rather than testing it: nothing maximal, and no target above the base you last trained at. Everything you earned before still stands.`
         : gap === 'trained-elsewhere'
-          ? `Nothing logged here for ${sig.restDays} days, but you kept training elsewhere — an ordinary build session today, with nothing maximal and no unlock attempt queued off results this old.`
-          : `Nothing logged for ${sig.restDays} days. That could be a break or training the app could not see, so today is a build day rather than a push day: nothing maximal, no harder strategy, and no target above the base you last trained at. Old results are not treated as today's capacity.`
+          ? `Nothing logged here for ${gapDays} days, but you kept training elsewhere — an ordinary build session today, with nothing maximal and no unlock attempt queued off results this old.`
+          : `Nothing logged for ${gapDays} days. That could be a break or training the app could not see, so today is a build day rather than a push day: nothing maximal, no harder strategy, and no target above the base you last trained at. Old results are not treated as today's capacity.`
   } else if (sig.daysSinceLoaded === 0) {
     dayType = 'technique'
     dayReason = 'Second loaded session today — skill work only. One hard session a day is this app’s ceiling: a design choice, not a measured limit.'
@@ -1445,8 +1458,11 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const painRegions = sig.lastCheckIn?.regions ?? []
   const fromSetup = sig.lastCheckIn?.source === 'onboarding'
   const profileAge = state.profile.birthYear ? new Date(now).getFullYear() - state.profile.birthYear : null
+  // The youth rule the whole app uses (`conservative`: only the birth year is
+  // known, so a year difference of 18 may still be a 17-year-old, and an
+  // unknown age is treated as young). The note is worded as a condition.
   const youthNote =
-    profileAge !== null && profileAge < 18
+    conservative(state.profile, now)
       ? ' If you are under 18, tell a parent, guardian or coach as well.'
       : ''
   if (checkInFresh && joints === 'pain') {
@@ -1697,7 +1713,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       gapBaseCapSec = lastBase?.baseTargetSec ?? null
     }
     decisions.push({
-      text: `First session back after ${sig.restDays} days without a log: a build day with nothing maximal, no strategy that lengthens holds${
+      text: `First session back after ${gapDays} days without ${skillAwayOnly ? `any ${holdName} work` : 'a log'}: a build day with nothing maximal, no strategy that lengthens holds${
         gapBaseCapSec !== null ? `, and a base target no higher than the ${gapBaseCapSec}s you last trained at` : ''
       }. That is this app’s cautious rule — no source measured how long a layoff erodes a hold. If this session goes well, the next one is back to normal.`,
       kind: 'warn',
@@ -1733,7 +1749,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   } else if (gap === 'unknown') {
     decisions.push({
-      text: `Your targets come from sessions ${sig.restDays} days ago. Treat the first sets as a check of where you are today rather than a promise of the old numbers.`,
+      text: `Your targets come from sessions ${gapDays} days ago. Treat the first sets as a check of where you are today rather than a promise of the old numbers.`,
       kind: 'info',
     })
   }
@@ -1880,7 +1896,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const today = workingTarget(state, state.stepId, finalTarget, now)
   // The first session back from a gap is built under the base cap, so the
   // seconds quoted here are the capped ones.
-  const gapCap = gapReturn ? { gapReturn: { days: sig.restDays, baseCapSec: gapBaseCapSec } } : { gapReturn: null }
+  const gapCap = gapReturn ? { gapReturn: { days: gapDays, baseCapSec: gapBaseCapSec } } : { gapReturn: null }
   const todaySec = cappedTarget(today.sec, cappedBase(adaptiveTarget(state, state.stepId, now), gapCap), { ...gapCap, targetFactor: finalTarget })
   const lastSec = sig.lastWorkingTarget
   // A rise this size is a measurement, not the nudge: weeks of holds stopped
@@ -2185,7 +2201,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     loadPermission,
     challengeAllowed,
     gap,
-    gapReturn: gapReturn ? { days: sig.restDays, baseCapSec: gapBaseCapSec } : null,
+    gapReturn: gapReturn ? { days: gapDays, baseCapSec: gapBaseCapSec } : null,
     openConcern,
     askCheckIn,
     decisions: finalDecisions,
@@ -2195,6 +2211,9 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
 }
 
 // ————————————————————————————— The debrief —————————————————————————————
+
+/** A best key hold under this share of its target is a low reading, never praised. */
+const FAR_UNDER_SHARE = 0.5
 
 /**
  * What the coach noticed about a session the athlete just finished — ANY
@@ -2399,8 +2418,20 @@ export function debriefSession(
     }
   }
 
+  // Only the step's own hold speaks to its bar. Any main-section hold used
+  // to — a wrist routine's plank was reported against the advanced tuck's
+  // unlock, and called a PR whether or not it was one.
+  const keyHolds = session.sets.filter(
+    (x) => x.section === 'main' && x.kind === 'hold' && x.value > 0 && x.exerciseId === step.keyExerciseId,
+  )
+  const best = keyHolds.reduce((b, x) => Math.max(b, x.value), 0)
+  // A hold far under what it was asked for is a low reading, not progress:
+  // four timer holds of 5.8s counted 0.8s after the 5s walk-back and were
+  // met with "keep stacking sessions like this one".
+  const askedSec = keyHolds.reduce((m, x) => Math.max(m, x.target ?? 0), 0)
+  const farUnder = best > 0 && askedSec > 0 && best < askedSec * FAR_UNDER_SHARE
   // If nothing needed saying, say the good thing rather than nothing.
-  if (out.length === 0 && rated.length >= 2 && clean === rated.length) {
+  if (out.length === 0 && !farUnder && rated.length >= 2 && clean === rated.length) {
     out.push({
       text: 'Every rated set held clean. Pair the unlock-level hold with a passing filmed check and that is mastery.',
       kind: 'good',
@@ -2412,17 +2443,15 @@ export function debriefSession(
   // session produces no bullets is the one worth explaining: nothing was
   // rated, so none of it can count toward the next step.
   if (out.length === 0) {
-    // Only the step's own hold speaks to its bar. Any main-section hold used
-    // to — a wrist routine's plank was reported against the advanced tuck's
-    // unlock, and called a PR whether or not it was one.
-    const keyHolds = session.sets.filter(
-      (x) => x.section === 'main' && x.kind === 'hold' && x.value > 0 && x.exerciseId === step.keyExerciseId,
-    )
-    const best = keyHolds.reduce((b, x) => Math.max(b, x.value), 0)
     // A minimum dose sets no records (engine), so it never claims one here.
     const wasPr =
       session.workoutKind !== 'micro' && best > 0 && best > (prev.prs[step.keyExerciseId]?.value ?? 0)
-    if (best > 0 && rated.length === 0) {
+    if (farUnder) {
+      out.push({
+        text: `Your best key hold counted ${round1(best)}s against a target of ${round1(askedSec)}s — well short of what was asked, so today shows a low reading, not progress. If the stopwatch ran while you walked back to the phone, or you stopped early, that is the gap; log it as it was and the next target is read from what counted.`,
+        kind: 'info',
+      })
+    } else if (best > 0 && rated.length === 0) {
       out.push({
         text: `Best hold today ${round1(best)}s${wasPr ? ' — a PR,' : ','} but nothing was rated, so it cannot count toward the ${step.unlockSec}s unlock. A filmed set you confirm as Clean is what moves the road.`,
         kind: 'info',

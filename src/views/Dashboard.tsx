@@ -36,7 +36,7 @@ import { WeekPlanCard } from '../components/WeekPlanCard'
 import { INSTALL_STEPS, installState } from '../lib/install'
 import { WalkBackCalibrator } from '../components/WalkBackCalibrator'
 import { walkMeasureDue } from '../lib/sessionTiming'
-import { kitStatusLine, skillChipLabel } from '../components/weekPlanCopy'
+import { kitStatusLine, skillChipLabel, streakText } from '../components/weekPlanCopy'
 import { coachTodayLabel } from '../lib/coachLabel'
 import { recordNote } from '../lib/sessionSummary'
 import { AFTER_OPENER_WARM_UP_MIN, atActivePlace, planToday } from '../lib/plan/planner'
@@ -275,6 +275,7 @@ export function Dashboard({
   const thisWeek = tw.days
   const goal = state.settings.weeklyGoal
   const streak = weekStreak(state)
+  const streakWords = streakText(streak, state.settings.weeklyGoal)
   const tut = totalHoldSec(state)
   const todaysLatest = useMemo(
     () =>
@@ -428,8 +429,9 @@ export function Dashboard({
         {streak.weeks > 0 || whole.sessions.length > 0 ? (
           <div className="flex min-h-11 items-center gap-2 rounded-full border border-line bg-surface px-4 text-footnote font-medium text-ink2">
             <Icon name="flame" size={16} className={streak.weeks > 0 ? 'text-accent-text' : 'text-ink3'} />
-            <span className="tnum">
-              {streak.weeks}-week streak
+            <span className="tnum" title={streakWords.note}>
+              {streakWords.main}
+              <span className="ml-1.5 hidden font-normal text-ink3 sm:inline">· {streakWords.note}</span>
             </span>
           </div>
         ) : null}

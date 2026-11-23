@@ -257,6 +257,8 @@ export interface LoadSuggestion {
   /** One line on why, in the athlete's terms. */
   why: string
   kind: 'increase' | 'repeat' | 'decrease' | 'from-estimate' | 'first-time' | 'bodyweight' | 'at-top-weight'
+  /** Set when the next step is held back: the reps every set needs at this load first. The screen shows and pre-fills it. */
+  repsToMoveUp?: number
 }
 
 /**
@@ -266,6 +268,23 @@ export interface LoadSuggestion {
 /** The heaviest load on this unit's grid that is at most one step above the true last load (a jump under 18 never exceeds it). */
 export function youthCeiling(lastKg: number, stepKg: number, topKg?: number): number {
   const grid = Math.floor((lastKg + stepKg) / stepKg + 1e-9) * stepKg
+  return topKg !== undefined ? Math.min(grid, topKg) : grid
+}
+
+/**
+ * A step this large (more than a quarter of the load) is earned with reps past the range before an under-18 takes it.
+ * The app's own rule on top of double progression (CONSENSUS); the share is a design choice, not a measured one:
+ * a 5 kg step on a 15 kg machine is a third of the load, a 2.5 kg dumbbell step on 10 kg is exactly a quarter and stays allowed.
+ */
+export const YOUTH_LARGE_STEP_SHARE = 0.25
+/** Reps past the top of the range a large youth step asks for first (the same two as a retry after a failed step). */
+export const YOUTH_LARGE_STEP_EXTRA_REPS = 2
+
+/** One step down taken from the load that was really lifted, then up to the grid: never more than one step of this unit below it. */
+export function stepDownKg(kg: number, stepKg: number, topKg?: number): number {
+  if (!(stepKg > 0)) return Math.max(0, kg)
+  const lowered = Math.max(0, kg - stepKg)
+  const grid = Math.ceil(lowered / stepKg - 1e-9) * stepKg
   return topKg !== undefined ? Math.min(grid, topKg) : grid
 }
 
@@ -367,7 +386,7 @@ export function suggestLoad(input: {
   if (away && step > 0 && kg > 0) {
     return {
       ...base,
-      kg: roundToStep(Math.max(0, reach(kg) - step), step, top),
+      kg: stepDownKg(kg, step, top),
       kind: 'decrease',
       why: `First time in ${weeksAway} weeks: a step lighter, then build back.`,
     }
@@ -378,7 +397,20 @@ export function suggestLoad(input: {
   // progression, CONSENSUS; the extra bar is the app's own rule, not a measured one).
   const failedSteps = wantsUp ? failedStepsAbove(sessions, exerciseId, location?.id, kg, last.session, lo, keep) : 0
   const retryBar = hi + FAILED_STEP_EXTRA_REPS * Math.min(failedSteps, FAILED_STEP_CAP)
-  const heldBack = failedSteps > 0 && !atLoad.every((s) => s.reps >= retryBar)
+  // Under 18 a step that is a large share of the load is earned with reps first, however the equipment is graded.
+  const youthNext = youth && wantsUp && kg > 0 ? youthCeiling(kg, step, top) : 0
+  const bigYouthStep = youthNext > kg && (youthNext - kg) / kg > YOUTH_LARGE_STEP_SHARE + 1e-9
+  const bigBar = bigYouthStep ? hi + YOUTH_LARGE_STEP_EXTRA_REPS : hi
+  // ...or by the same load at the top of the range at the target effort in two sessions running (the load held until it is easy).
+  const topTwice = (() => {
+    if (!bigYouthStep || !allTop) return false
+    const before = lastPerformance(sessions, exerciseId, location?.id, last.session.startedAt, keep)
+    const prior = before?.sets.filter((s) => (s.kg ?? 0) === kg) ?? []
+    return prior.length >= 2 && prior.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
+  })()
+  const moveUpBar = Math.max(failedSteps > 0 ? retryBar : hi, bigBar)
+  const bigHeld = bigYouthStep && !topTwice
+  const heldBack = (failedSteps > 0 || bigHeld) && !atLoad.every((s) => s.reps >= moveUpBar)
   if ((allTop || unratedTwice) && step > 0 && !heldBack) {
     const here = reach(kg)
     const next = roundToStep(here + step, step, top)
@@ -405,10 +437,10 @@ export function suggestLoad(input: {
     }
   }
   if (anyShort && grinding && step > 0) {
-    return { ...base, kg: roundToStep(Math.max(0, reach(kg) - step), step, top), kind: 'decrease', why: `Last time fell short of ${lo} reps at a near-max effort: one step lighter, then build back.` }
+    return { ...base, kg: stepDownKg(kg, step, top), kind: 'decrease', why: `Last time fell short of ${lo} reps at a near-max effort: one step lighter, then build back.` }
   }
   if (failing && step > 0 && kg > 0) {
-    return { ...base, kg: roundToStep(Math.max(0, reach(kg) - step), step, top), kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step lighter, then build back.` }
+    return { ...base, kg: stepDownKg(kg, step, top), kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step lighter, then build back.` }
   }
   const repeatKg = reach(kg)
   const reps = atLoad.map((s) => s.reps).join(', ')
@@ -417,7 +449,11 @@ export function suggestLoad(input: {
       ...base,
       kg: repeatKg,
       kind: 'repeat',
-      why: `Every set reached ${hi}, but a heavier weight than this fell short of ${lo} reps lately: stay here until every set reaches ${retryBar} reps, then try the step again (the app's own rule on top of double progression, a coaching convention).`,
+      repsToMoveUp: moveUpBar,
+      why:
+        failedSteps > 0
+          ? `Every set reached ${hi}, but a heavier weight than this fell short of ${lo} reps lately: stay here until every set reaches ${moveUpBar} reps, then try the step again (the app's own rule on top of double progression, a coaching convention).`
+          : `Every set reached ${hi}, but the next step here is more than a quarter of this weight: stay until every set reaches ${moveUpBar} reps, or every set reaches ${hi} again next time, then step up (the app's own rule for under 18s on top of double progression, a coaching convention; the quarter is a design choice).`,
     }
   }
   // This place's steps may not reach last time's exact load (a unit change, other plates): say so.

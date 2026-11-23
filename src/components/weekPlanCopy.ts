@@ -135,12 +135,13 @@ export function todayLine({ today, next, hasPlan, active, minutes, sessionSkills
   if (leftOut.length) {
     // The line-up leaves a planned skill out for two reasons only, and gives
     // both in these words: no room in the time, or a short dose withheld from
-    // a skill that loads what was flagged today.
+    // a skill that loads a flagged joint (`standingNiggle`: flagged today, or
+    // earlier with no check-in since).
     const flagged = leftOut.some((skill) => sore.some((region) => SKILLS[skill].loads.includes(region)))
     lines.push(
       `${capitalised(skillWords(leftOut))} ${leftOut.length === 1 ? 'is' : 'are'} left out of today's session: a ${minutes}-minute session has room for ${roomIn(
         minutes,
-      )}${flagged ? ', and a short dose is not given to a skill that loads a joint you flagged today' : ''}.`,
+      )}${flagged ? ', and a short dose is not given to a skill that loads a joint you flagged and have not cleared' : ''}.`,
     )
   }
   return lines.join(' ')
@@ -163,6 +164,18 @@ export function placesWithKit(skill: SkillId, own: EquipmentId[], places: readon
 }
 
 /**
+ * Whether the only thing a skill waits for is a clear wall — the handstand
+ * with a bar, barbell, dumbbells and machines at a gym and no wall ticked read
+ * "waiting for kit" with nothing saying which kit or where.
+ */
+export function onlyWallMissing(missing: readonly (readonly EquipmentId[])[]): boolean {
+  return missing.length > 0 && missing.every((options) => options.length === 1 && options[0] === 'wall')
+}
+
+/** Says where to tick it. It never says the athlete has one: the app cannot know. */
+export const WALL_TICK_HINT = 'Tick ‘Clear wall’ under a place that has one (Settings → Equipment, or a place’s own kit) — most gyms and many homes do.'
+
+/**
  * What to say about a skill the athlete's own kit cannot train: where it does
  * train, or what it is waiting for. "Front lever is waiting for kit" once sat
  * on Home beside a Gym A that has a pull-up bar.
@@ -176,6 +189,7 @@ export function kitStatusLine(skill: SkillId, own: EquipmentId[], places: readon
     const where = at.length === 1 ? at[0] : `${at.slice(0, -1).join(', ')} and ${at[at.length - 1]}`
     return { kind: 'at-places', text: `${name} trains at ${where} — ${kitNeedsPhrase(missing)} is there. At home it waits for that kit.` }
   }
+  if (onlyWallMissing(missing)) return { kind: 'waiting', text: `${name} is waiting for a clear wall. ${WALL_TICK_HINT}` }
   return { kind: 'waiting', text: `${name} is waiting for kit. ${SKILLS[skill].requiresNote ?? `It needs ${kitNeedsPhrase(missing)}.`}` }
 }
 
@@ -194,4 +208,20 @@ export function skillDayKitNote(skill: SkillId, needs: string, own: EquipmentId[
 /** A skill chip's spoken name: "Planche" and its "main" badge need a break between them for a screen reader. */
 export function skillChipLabel(skill: SkillId, isMain: boolean): string {
   return isMain ? `${SKILLS[skill].name}, main skill` : SKILLS[skill].name
+}
+
+/**
+ * What the streak counts, said beside the number: "0-week streak" sat next to
+ * "trained today ✓" with nothing to say it counts weeks that met the goal, and
+ * that this week is still open. A zero is "no streak yet", never a failure.
+ */
+export function streakText(streak: { weeks: number; currentMet: boolean }, goal: number): { main: string; note: string } {
+  const sessions = `${goal} session${goal === 1 ? '' : 's'}`
+  if (streak.weeks > 0) {
+    return {
+      main: `${streak.weeks}-week streak`,
+      note: `Weeks that met your goal of ${sessions}${streak.currentMet ? '' : ' — this week is still open'}`,
+    }
+  }
+  return { main: 'No streak yet', note: `It counts weeks that met your goal of ${sessions}; this week is still open` }
 }

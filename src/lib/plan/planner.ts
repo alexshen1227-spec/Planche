@@ -2,7 +2,7 @@ import { MUSCLE_BY_ID, MUSCLES, type Joint, type Muscle } from '../../data/gym/c
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { STEP_BY_ID } from '../../data/progressions'
 import { kitNeedsPhrase } from '../../data/equipment'
-import { missingKit, skillOfExercise } from '../../data/skills'
+import { missingKit, skillOfExercise, SKILLS } from '../../data/skills'
 import { finalizeWorkout, withRequestKit } from '../../data/workouts'
 import type { AppState, BodyRegion, EquipmentId, LineupRole, Session, SkillId, WorkoutRequest } from '../../types'
 import { forecastUnlock, goalOutlook } from '../forecast'
@@ -315,9 +315,11 @@ function openerSkill(state: AppState, focus: GymFocus, location: GymLocation, da
  */
 function openerVerdict(state: AppState, focus: GymFocus, location: GymLocation, day: OpenerDay): { skill?: SkillId; why?: string } {
   const families = focusFamilies(focus)
+  // The handstand's push-up ladder is pressing (round seven): it can open a push day, in the athlete's order, under the
+  // push family's rest rule and sore joints. Never an upper day — that day's opener counts for its pulling too.
   const candidates = trainedSkills(state).filter((s) => {
-    const f = skillFamily(s)
-    return f !== 'balance' && families.includes(f)
+    const f = openerFamily(s, focus)
+    return f !== undefined && families.includes(f)
   })
   if (!candidates.length) return {}
   const goals = state.gym?.prefs?.goals ?? defaultPrefs(0).goals
@@ -329,7 +331,7 @@ function openerVerdict(state: AppState, focus: GymFocus, location: GymLocation, 
   const kit = kitAt(state, location)
   let why: string | undefined
   for (const s of candidates) {
-    const f = skillFamily(s) as Straight
+    const f = openerFamily(s, focus)!
     const sore = FAMILY_JOINTS[f].filter((j) => day.sore.includes(j))
     const missing = missingKit(s, kit)
     const rest = day.blocked(f)
@@ -341,6 +343,13 @@ function openerVerdict(state: AppState, focus: GymFocus, location: GymLocation, 
         : rest
   }
   return why ? { why } : {}
+}
+
+/** The family a skill opens a gym day of this focus for: its straight-arm family, or push for a pressing skill on a push day. */
+function openerFamily(skill: SkillId, focus: GymFocus): Straight | undefined {
+  const f = skillFamily(skill)
+  if (f !== 'balance') return f
+  return focus === 'push' && PRESS_SKILLS.has(skill) ? 'push' : undefined
 }
 
 /** What the session a skill request builds holds, read as a logged one is. */
@@ -605,7 +614,9 @@ export function gymToday(state: AppState, opts: { now: number; minutes: number; 
   let opener = plan.skill?.opener ? plan.skill : undefined
   let noOpener: string | undefined
   if (opener) {
-    const f = skillFamily(opener.skills[0]) as Straight
+    // A balance skill opens only for its pressing (`openerFamily`): the push family's.
+    const own = skillFamily(opener.skills[0])
+    const f: Straight = own === 'balance' ? 'push' : own
     // Once an opener (or any session of its skill) is done today it is not offered again: a light one — under three
     // main sets, so no hard session — was, and starting the lifts ran the skill session a second time.
     if (logged[f].some((e) => e.at >= t0 && e.at <= now) || doneToday(opener.skills[0])) {
@@ -1061,6 +1072,12 @@ interface DayCtx {
   avoidJoints: Joint[]
   /** The latest report, older than 72 hours, that the skill side still treats as current (`standingReport`). */
   held?: Answer
+  /**
+   * The latest report while it is not "all good", however old (`standingReport`): what the skill side — the coach's
+   * open concern and the line-up's niggle steering (`standingNiggle`) — still reads. A later all-good check-in ends it;
+   * the lifts keep their 72-hour union.
+   */
+  standing?: Answer
   /** Joints the gym's lifts keep out: `avoidJoints`, and the held report's. */
   liftJoints: Joint[]
   pain: boolean
@@ -1336,6 +1353,7 @@ function dayContexts(state: AppState, base: AppState, prefs: TrainingPrefs, own:
       reports,
       avoidJoints,
       ...(held ? { held } : {}),
+      ...(standing ? { standing } : {}),
       liftJoints,
       pain,
       niggle,
@@ -1671,7 +1689,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     return last === undefined ? Infinity : Math.round((days[i].start - startOfDay(last)) / DAY)
   }
   /** The skill a gym day of a family opens with: its highest priority (`openerSkill` picks the same one when it is clear). */
-  const openerOf = (f: Straight) => skills.find((s) => skillFamily(s) === f)
+  const openerOf = (f: Straight) => skills.find((s) => skillFamily(s) === f) ?? (f === 'push' ? skills.find((s) => PRESS_SKILLS.has(s)) : undefined)
   /** Whether a decided day gives a skill a full part: it leads or partners a calisthenics day, or opens a gym day planned for its family. */
   const fullOn = (sl: SkillSlot | undefined, skill: SkillId) =>
     Boolean(sl) && (sl!.parts.some((p) => p.skill === skill && (p.role === 'lead' || p.role === 'partner')) || (sl!.kind === 'gym' && sl!.hint !== undefined && openerOf(sl!.hint) === skill))
@@ -2073,7 +2091,73 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
       }
     }
   }
+  rankPass()
   return slots
+
+  /**
+   * The athlete's order between the other skills (round seven): a skill ranked above another gets at least as many
+   * full parts — lead, partner or opener — in a calendar week, wherever the rest rules and kit allow. While the lower
+   * one has more, one of its lead or partner parts on a calisthenics day goes to the higher one: the same line-up
+   * without it, the lead keeping its dose on the first priority's days, the higher one's family clear of its rest
+   * rule against every day planned so far (and under its weekly sessions beside the first priority), and its pressing
+   * kept off a day the push family rests. Where none can move — a gym day the lower one opens for a family the higher
+   * one's work cannot use — the lower one keeps it: taking it away would train nobody. With the planche, then the
+   * handstand, then the front lever, the lever got 15 full parts in ten weeks against the handstand's 19 when the
+   * lever was second, and 16 against 21 when it was third: the order changed almost nothing.
+   */
+  function rankPass() {
+    const others = skills.slice(1)
+    if (others.length < 2) return
+    const loggedCount = (skill: SkillId, week: number) =>
+      state.sessions.filter((x) => x.startedAt >= week && x.startedAt < today && x.startedAt < addDays(week, 7) && fullPartIn(x, skill)).length
+    for (const wk of [...new Set(days.map((d) => d.week))]) {
+      const inWeek = days.filter((d) => d.week === wk).map((d) => d.index)
+      const count = (skill: SkillId) => (wk === thisWeek ? loggedCount(skill, wk) : 0) + inWeek.filter((j) => fullOn(slots[j], skill)).length
+      for (let a = 0; a < others.length; a++) {
+        for (let b = a + 1; b < others.length; b++) {
+          const hi = others[a]
+          const lo = others[b]
+          for (let guard = 0; guard < inWeek.length && count(lo) > count(hi); guard++) {
+            if (!moveOne(inWeek, hi, lo)) break
+          }
+        }
+      }
+    }
+  }
+
+  /** Gives one of `lo`'s lead or partner parts in these days to `hi`, when the rules allow it; whether one moved. */
+  function moveOne(inWeek: number[], hi: SkillId, lo: SkillId): boolean {
+    const fam = skillFamily(hi)
+    for (const i of inWeek) {
+      const sl = slots[i]
+      const d = days[i]
+      if (!sl || sl.kind !== 'calisthenics' || d.assigned || sl.painSafe || (i === 0 && ctx.todayKind)) continue
+      if (!sl.parts.some((p) => p.skill === lo && (p.role === 'lead' || p.role === 'partner')) || sl.skills.includes(hi)) continue
+      const view = sl.placeId && places.gymCal ? places.gymCal : places.cal(i)
+      if (!trains(view, hi)) continue
+      if (fam !== 'balance') {
+        if (conflict(fam, i)) continue
+        const sessions = (d.week === thisWeek ? done[fam] : 0) + planned[fam].filter((x) => x.i !== i && days[x.i].week === d.week && !x.press).length
+        if (sl.exposure && fam !== lead && sessions >= target(fam)) continue
+      }
+      const list = trainedSkills(view).filter((x) => x === hi || (sl.skills.includes(x) && x !== lo))
+      const trial = lineupParts(view, d, list, d.minutes, { exposure: sl.exposure, since: sinceFull(i) })
+      if (!trial.length || trial[0].skill !== (sl.parts[0].skill === lo ? hi : sl.parts[0].skill)) continue
+      const part = trial.find((p) => p.skill === hi)
+      if (!part || (part.role !== 'lead' && part.role !== 'partner')) continue
+      // Beside the first priority, a straight-arm partner short of a hard session is practice: it does not move.
+      if (sl.exposure && fam !== 'balance' && fam !== lead && !part.hard) continue
+      const session = builtSkill(view, trial.map((p) => p.skill), d.minutes, d.at)
+      const families = new Set(trial.filter((p) => p.hard).map((p) => skillFamily(p.skill) as Straight))
+      const presses = pressesHard(session, families)
+      if (presses && (conflict('push', i) || sl.blocked.push)) continue
+      if (sl.exposure && !keepsDose(view, trial.map((p) => p.skill), d.minutes, d.at)) continue
+      slots[i] = { ...sl, skills: trial.map((p) => p.skill), parts: trial, families, presses, credit: session.credit }
+      record(i)
+      return true
+    }
+    return false
+  }
 }
 
 interface Path {
@@ -2395,6 +2479,10 @@ function allocate(
         : open
             .filter((f) => familyFree(f) && (f !== 'athletic' || (p.athletic < ctx.athleticWanted && p.foci[p.foci.length - 1] !== 'athletic')))
             .map((f) => ({ f, light: f === 'full' && !pushFree(p) }))
+            // A full-body day that presses lightly is built with the pressing pair spared: it counts only while that
+            // build still holds two movements for its own muscles (round seven) — at home, beside a planche day, one
+            // push-up and four core movements once made a Saturday's hour.
+            .filter((c) => !c.light || ctx.viable(d, ctx.gymMinutes(i, c.f), c.f, lightSpare))
       /**
        * Whether a focus cannot fill its day: half or more of the muscles it is for (`focusMain`) are ones the week as
        * planned — this path's days and every skill day — takes past the steer's line, so the steer would spare them and
@@ -2656,7 +2744,7 @@ export function planWeekAhead(
   const viable = (d: DayCtx, minutes: number, focus: GymFocus, spare: Muscle[] = []): boolean => {
     if (!placeAt(d.index) || minutes < MIN_GYM_MINUTES) return false
     const plan = buildAt(d, minutes, focus, spare)
-    return plan.fits && plan.items.length >= 2
+    return plan.fits && ownMovements(plan.items, focus) >= 2
   }
   /** What the session a focus builds on a day does to each muscle, set by set (`gymSetLoading`): a full-body day's two squat and two hinge sets are four glute sets. */
   const liftCredit = (d: DayCtx, minutes: number, focus: GymFocus, spare: Muscle[] = [], priority: Muscle[] = []): Credit => {
@@ -3362,14 +3450,19 @@ function kindReason(slot: SkillSlot, d: DayCtx, skills: SkillId[], extra: DayExt
     case 'gym-unfit':
       return `No gym session fits today${at}${d.liftJoints.length ? ` with your ${d.liftJoints.join(' and ')} kept out` : ''}: fewer than two movements are left, so today is calisthenics.`
     case 'gym-blocked':
-      return `No gym session fits today’s rules${at} — rest rules, sore joints and what the place has leave fewer than two movements — ${slot.kind === 'calisthenics' ? 'so today is calisthenics' : 'and no skill work fits beside them, so nothing is planned today'}.`
+      return `No gym session fits today’s rules${at} — rest rules, sore joints and what the place has leave no focus two movements for its own muscles — ${slot.kind === 'calisthenics' ? 'so today is calisthenics' : 'and no skill work fits beside them, so nothing is planned today'}.`
     case 'family':
-      return slot.urgent ? `Calisthenics today: ${familyWeek(skills, slot.urgent, extra)}.` : undefined
+      // Only while today's session is a hard session of the family, so the week's count holds today (round seven): a
+      // 20-minute handstand Monday once said "front lever gets 1 session this week", and another day "0 sessions".
+      return slot.urgent && slot.families.has(slot.urgent) && extra.sessions[slot.urgent] >= 1 ? `Calisthenics today: ${familyWeek(skills, slot.urgent, extra)}.` : share()
     case 'family-opener':
       return slot.hint && slot.opener
         ? `A gym day that opens with the ${skillName(slot.opener)}: ${familyWeek(skills, slot.hint, extra)}, and the opener is one of them.`
         : share()
     case 'exposure':
+      // The pain-safe session trains none of the line-up: its own line says why, and "0 sessions this week, and today is
+      // one of them" said the opposite (round seven).
+      if (slot.painSafe || !slot.families.has(skillFamily(skills[0]) as Straight)) return undefined
       return `Calisthenics today: ${familyWeek(skills, skillFamily(skills[0]) as Straight, extra)}, and today is one of them.`
     case 'exposure-opener':
       return slot.opener
@@ -3403,6 +3496,62 @@ function kindReason(slot: SkillSlot, d: DayCtx, skills: SkillId[], extra: DayExt
   }
 }
 
+/**
+ * The day's line about a joint report in the last 72 hours, naming only what changes and who changes it (round
+ * seven). The lifts read every report of those 72 hours (`avoidJoints`); the skill side reads the standing report
+ * alone (`DayCtx.standing`): standing pain makes the skill session the pain-safe one, a standing niggle orders the
+ * line-up round it (`standingNiggle`), and a later all-good check-in ends both. Pain on Monday and "all good" on
+ * Tuesday once read "today leaves out anything that loads it" over a planche, handstand and front-lever session,
+ * and a Monday wrist niggle "today steers round it" over a planche day with handstand push-ups beside it.
+ */
+function reportLine(d: DayCtx, slot: SkillSlot, recent: Answer): string {
+  const care = 'Never train through pain — if it keeps coming back, tell a parent, coach or physio.'
+  const where = d.avoidJoints.join(' and ')
+  const on = ` on ${dayName(recent.at)}`
+  const lifts = slot.kind === 'gym'
+  const skillWork = slot.kind === 'calisthenics' || Boolean(slot.opener)
+  const standing = d.standing
+  // Pain the skill side still holds: the skill session is the pain-safe one, and the lifts leave the joint out.
+  if (d.pain || recent.joints === 'pain') {
+    const when = d.pain ? '' : on
+    if (!where) return `You reported pain${when}: ${d.pain ? 'today stays light. ' : ''}The plan cannot tell which movements load that spot, so stop anything that hurts it. ${care}`
+    if (standing?.joints === 'pain' || !skillWork) {
+      const who = skillWork ? 'today leaves' : 'the lifts leave'
+      return `You reported pain in ${where}${when}: ${who} out anything that loads it${d.pain ? (skillWork ? ' and stays light' : ' and stay light') : ''}. ${care}`
+    }
+    const skills = standing ? `your latest report since is a niggle, which the skills are planned round` : 'your check-in since said all good, so the skills train'
+    return `You reported pain in ${where}${when}: ${lifts ? `the lifts leave out anything that loads it${d.pain ? ' and stay light' : ''}, and ` : ''}${skills} — stop anything that hurts. ${care}`
+  }
+  if (!where) return 'You mentioned a niggle: the plan cannot tell which movements load that spot, so stop anything that makes it worse.'
+  const liftWords = lifts ? `the lifts leave the ${where} out` : ''
+  if (!skillWork) return `You mentioned a niggle in ${where}${on}: ${liftWords}.`
+  if (!standing) return `You mentioned a niggle in ${where}${on}; your check-in since said all good, so the skills train as usual${lifts ? `, and ${liftWords}` : ''}.`
+  const regions = (standing.regions ?? []).filter((r) => r !== 'other' && r !== 'elbow')
+  const loads = (s: SkillId) => regions.some((r) => SKILLS[s].loads.includes(r))
+  const loading = slot.skills.filter(loads)
+  const spared = slot.skills.filter((s) => !loads(s))
+  const skillWords = !regions.length
+    ? 'the skills do not change for it — stop anything that makes it worse'
+    : !loading.length
+      ? `today's ${slot.skills.length === 1 ? 'skill leaves' : 'skills leave'} it alone`
+      : spared.length
+        ? `the ${joinNames(spared.map(skillName))} ${slot.skills[0] === spared[0] ? 'leads' : 'trains'} today and ${spared.length === 1 ? 'leaves' : 'leave'} it alone; the ${joinNames(loading.map(skillName))} still ${loading.length === 1 ? 'loads' : 'load'} it, so stop anything that makes it worse`
+        : `every skill today loads it, so stop anything that makes it worse — the check-in before the session asks how it is now`
+  return `You mentioned a niggle in ${where}${on}: ${skillWords}${lifts ? `, and ${liftWords}` : ''}.`
+}
+
+/**
+ * Movements of a built gym session that train its focus's own muscles as a prime mover. A focus counts on a day only with two of them (round seven): at
+ * home with no bar, three Saturdays were hour-long "pull" days of dead bugs, V-ups, hollow holds and planks — nine
+ * sets of core — under "Back and biceps were last trained 9 days ago — today's gym session goes there."
+ */
+export function ownMovements(items: readonly { exerciseId: string }[], focus: GymFocus): number {
+  // The planner's own muscles for the focus (`FOCUS_MUSCLES`): no core on any, side delts on a push day — a push day
+  // steered off the triceps (`spare`) is still chest and shoulders.
+  const own = FOCUS_MUSCLES[focus]
+  return items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId]?.primary.some((m) => own.includes(m))).length
+}
+
 /** One day's plan and its reasons, from the week's decisions for it. */
 function assembleDay(
   state: AppState,
@@ -3431,23 +3580,7 @@ function assembleDay(
   }
   const reasons: string[] = []
   const recent = d.reports[d.reports.length - 1]
-  if (recent) {
-    const where = d.avoidJoints.join(' and ')
-    // Pain somewhere the plan has no joint for ("other") leaves nothing out: say only what is true.
-    reasons.push(
-      d.pain
-        ? where
-          ? `You reported pain in ${where}: today leaves out anything that loads it and stays light. Never train through pain — if it keeps coming back, tell a parent, coach or physio.`
-          : 'You reported pain: today stays light. The plan cannot tell which movements load that spot, so stop anything that hurts it. Never train through pain — if it keeps coming back, tell a parent, coach or physio.'
-        : recent.joints === 'pain'
-          ? where
-            ? `You reported pain in ${where} on ${dayName(recent.at)}: today leaves out anything that loads it. Never train through pain — if it keeps coming back, tell a parent, coach or physio.`
-            : `You reported pain on ${dayName(recent.at)}: the plan cannot tell which movements load that spot, so stop anything that hurts it.`
-          : where
-            ? `You mentioned a niggle in ${where}: today steers round it.`
-            : 'You mentioned a niggle: the plan cannot tell which movements load that spot, so stop anything that makes it worse.',
-    )
-  }
+  if (recent) reasons.push(reportLine(d, slot, recent))
   // Older than three days, and still the latest report: the skill side treats it as current, and so do the lifts.
   if (d.held && slot.kind === 'gym') {
     const joints = jointsOf([d.held]).map((j) => j.replace('-', ' '))

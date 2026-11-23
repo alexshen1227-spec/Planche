@@ -181,6 +181,15 @@ describe('the whole athlete: the planche first, then the rest (round five)', () 
     expect(lever.filter((p) => p.retest).length, 'lever sessions with a re-test').toBeGreaterThanOrEqual(1)
   })
 
+  it('keeps the athlete’s order between the other skills wherever the rules allow (round seven)', () => {
+    run()
+    // Full parts — led, partnered or opened — of the second skill (the lever here) against the third.
+    const full = (week: DayRun[], skill: SkillId) =>
+      week.reduce((n, d) => n + d.skill.reduce((m, s) => m + s.lineup.filter((e) => e.skill === skill && (e.role === 'lead' || e.role === 'partner')).length, 0), 0)
+    const behind = weeksOf(mixed).filter((week) => full(week, 'frontlever') < full(week, 'handstand'))
+    expect(behind.length, 'weeks the second skill had fewer full parts than the third').toBeLessThanOrEqual(2) // measured 2 (3 before round seven)
+  })
+
   it('keeps the handstand in the week', () => {
     run()
     // Measured: in 24 sessions over ten weeks, as a partner or balance practice.

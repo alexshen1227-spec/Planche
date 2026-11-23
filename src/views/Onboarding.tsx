@@ -6,6 +6,7 @@ import { readImportFile, validateImport } from '../lib/exportImport'
 import { pushToast } from '../lib/toast'
 import { ALL_STEPS, STEPS, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
+import { onlyWallMissing, WALL_TICK_HINT } from '../components/weekPlanCopy'
 import { EQUIPMENT_OPTIONS, equipmentPhrase, kitNeedsPhrase } from '../data/equipment'
 import { APP_NAME, APP_TAGLINE } from '../data/app'
 import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
@@ -327,7 +328,11 @@ export function Onboarding() {
         trainable.length
           ? ` and ${waitingSkills.length === 1 ? 'joins' : 'join'} your sessions once you have it`
           : ', so until you have it your sessions are support work only'
-      } — your plan below says what ${waitingSkills.length === 1 ? 'it needs' : 'each needs'}.`
+      } — ${
+        kitStanding.waiting.every((entry) => onlyWallMissing(entry.missing))
+          ? WALL_TICK_HINT
+          : `your plan below says what ${waitingSkills.length === 1 ? 'it needs' : 'each needs'}.`
+      }`
     : ''
   /** Skills home lacks the kit for that a place already added has it for: they train there. */
   const placeNote = kitStanding.atPlaces.length

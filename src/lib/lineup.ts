@@ -2,7 +2,7 @@ import type { AppState, Block, BodyRegion, CheckIn, LineupRole, SetLog, SkillId,
 import { skillOfStep } from '../data/progressions'
 import { missingKit, skillOfExercise, SKILLS } from '../data/skills'
 import { fullParts, roomIn, shortDoses } from './sessionRoom'
-import { niggleRegionsToday } from './signals'
+import { readinessTimeline } from './signals'
 import { activeSkills, focusSkill, wholeState } from './skills'
 import { todaysDay, WEEKDAY_NAMES } from './weekPlan'
 
@@ -161,20 +161,52 @@ function joinNames(skills: SkillId[]): string {
 
 const capitalised = (text: string) => `${text[0]?.toUpperCase() ?? ''}${text.slice(1)}`
 
-/** What a niggle named today means for who leads: the regions, and which skills load them. */
+/** What the standing niggle means for who leads: the regions, which skills load them, and when it was named. */
 interface Sore {
   regions: BodyRegion[]
+  /** The niggle was named today: the coach's niggle rails ease the session (an older one only asks at the check-in). */
+  fresh: boolean
   loads: (skill: SkillId) => boolean
   /** "wrist", "wrist and shoulder". */
   words: string
+  /** "today", "on Monday": when the athlete named it. */
+  when: string
 }
 
+/**
+ * The niggle the skill side still steers round: the latest joint report at or
+ * before `now`, while it is a niggle — however old, until a later check-in or
+ * report supersedes it. It is the memory the coach's open-concern rail and the
+ * lifts read (`soreJoints`'s standing report), so the line-up, the coach and
+ * the lifts agree on one report. A later "all good" ends it here; the lifts
+ * keep their 72-hour union. Pain is not here: it takes loaded work off
+ * altogether, so there is nothing left to steer. Neither is the elbow, which
+ * does the same on its own. Read from today's report only, a Monday wrist
+ * niggle with no check-in since left Wednesday's session led by the planche
+ * with handstand push-ups beside it, the front lever — the one skill here
+ * that spares the wrist — cut to a short dose, under a reason that said the
+ * day steered round the wrist.
+ */
+export function standingNiggle(state: AppState, now = Date.now(), freshCheckIn?: CheckIn): { regions: BodyRegion[]; at?: number } {
+  let latest: ReturnType<typeof readinessTimeline>[number] | undefined
+  for (const answer of readinessTimeline(state, now, freshCheckIn)) if (answer.at <= now && (!latest || answer.at >= latest.at)) latest = answer
+  if (!latest || latest.joints !== 'niggle') return { regions: [] }
+  return { regions: (latest.regions ?? []).filter((region) => region !== 'other' && region !== 'elbow'), at: latest.at }
+}
+
+/** "eased like the rest of the session", only while the coach's niggle rails ease it: a niggle named today. */
+const easedWords = (sore: Sore, lead = ', ') => (sore.fresh ? `${lead}eased like the rest of the session` : '')
+
 function soreToday(state: AppState, now: number, freshCheckIn?: CheckIn): Sore {
-  const regions = niggleRegionsToday(state, now, freshCheckIn)
+  const { regions, at } = standingNiggle(state, now, freshCheckIn)
+  const day = (t: number) => new Date(t).setHours(0, 0, 0, 0)
+  const days = at === undefined ? 0 : Math.round((day(now) - day(at)) / 86_400_000)
   return {
     regions,
     loads: (skill) => regions.some((region) => SKILLS[skill].loads.includes(region)),
     words: regions.map((region) => region.replace('-', ' ')).join(' and '),
+    fresh: at === undefined || days <= 0,
+    when: at === undefined || days <= 0 ? 'today' : days < 7 ? `on ${WEEKDAY_NAMES[new Date(at).getDay() as keyof typeof WEEKDAY_NAMES]}` : 'in your last joint report',
   }
 }
 
@@ -193,7 +225,7 @@ function niggleOrder(skills: SkillId[], sore: Sore): SkillId[] {
 
 /** Why the first skill does not lead today, in the lead's reason. */
 function movedLeadWords(first: SkillId, lead: SkillId, sore: Sore): string {
-  return `the ${SKILLS[first].holdName} loads the ${sore.words} you flagged today, and the ${SKILLS[lead].holdName} leaves it alone`
+  return `the ${SKILLS[first].holdName} loads the ${sore.words} you flagged ${sore.when}, and the ${SKILLS[lead].holdName} leaves it alone`
 }
 
 /**
@@ -276,7 +308,7 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
         role: 'partner',
         reason: `${SKILLS[partnerSkill].name} is ${moved && partnerSkill === day.skills[0] ? 'first' : 'the second skill'} in your plan for ${dayName}: ${
           moved && partnerSkill === day.skills[0]
-            ? `today it is a full part after the ${SKILLS[first].holdName}, eased like the rest of the session.`
+            ? `today it is a full part after the ${SKILLS[first].holdName}${easedWords(sore)}.`
             : `a full part after the ${SKILLS[first].holdName}.`
         }`,
       })
@@ -436,8 +468,8 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
       role: 'partner',
       reason: `${def.name} is today's second skill: it ${when}${
         partner.complements ? `, and its ${def.words.strength} pairs with the ${leadDef.holdName}'s ${leadDef.words.strength}` : ''
-      }.${steered ? ` It also keeps the second part off the ${soreWords} you flagged today.` : ''}${
-        eased ? ` It is your first priority, and goes second today for the ${soreWords} you flagged — eased like the rest of the session.` : ''
+      }.${steered ? ` It also keeps the second part off the ${soreWords} you flagged ${sore.when}.` : ''}${
+        eased ? ` It is your first priority, and goes second today for the ${soreWords} you flagged ${sore.when}${easedWords(sore, ' — ')}.` : ''
       }`,
     })
     chosen.push(partner.skill)
@@ -493,7 +525,7 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
       parts.push(
         `${capitalised(joinNames(forSore))} ${forSore.length === 1 ? 'sits' : 'sit'} this one out: ${
           forSore.length === 1 ? 'it loads' : 'they load'
-        } the ${soreWords} you flagged today.`,
+        } the ${soreWords} you flagged ${sore.when}.`,
       )
     }
     if (forRoom.length) {
@@ -538,7 +570,7 @@ export function lineupFor(stateIn: AppState, request: WorkoutRequest, now = Date
           ? `You chose a ${SKILLS[skill].name.toLowerCase()} session.`
           : `You chose ${joinNames(asked)} for this session.${
               moved && i === 0 ? ` ${capitalised(movedLeadWords(asked[0], skill, sore))}, so it goes first today.` : ''
-            }${moved && skill === asked[0] ? ` It goes after the ${SKILLS[ordered[0]].holdName} today, eased like the rest of the session.` : ''}`,
+            }${moved && skill === asked[0] ? ` It goes after the ${SKILLS[ordered[0]].holdName} today${easedWords(sore)}.` : ''}`,
     }))
   }
   return todaysLineup(state, now, request.minutes, freshCheckIn)

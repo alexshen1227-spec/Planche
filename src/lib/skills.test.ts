@@ -1538,9 +1538,14 @@ describe('the line-up', () => {
     expect(workout.blocks.some((b) => b.skill === 'handstand')).toBe(false)
     // A report made a minute ago is "today", however it reached the plan.
     expect(challengeBlockedReason(plan)).toBe('you flagged a joint today')
-    // Yesterday's is not today's: the line-up is the athlete's order again.
+    // Yesterday's is not today's — but with no check-in since, it still stands (round seven): the line-up reads the
+    // report the coach's open concern and the lifts read (`standingNiggle`), and says when it was flagged. A later
+    // all-good check-in gives the athlete's order back.
     expect(niggleRegionsToday(flagged, T0 + DAY)).toEqual([])
-    expect(todaysLineup(flagged, T0 + DAY, 45)[1].skill).toBe('handstand')
+    expect(todaysLineup(flagged, T0 + DAY, 45)[0].skill).toBe('frontlever')
+    expect(todaysLineup(flagged, T0 + DAY, 45)[0].reason).not.toMatch(/flagged today/)
+    const cleared = reducer(flagged, { type: 'RECORD_SYMPTOM', event: { at: T0 + DAY - 3_600_000, joints: 'good', source: 'check-in' } })
+    expect(todaysLineup(cleared, T0 + DAY, 45)[1].skill).toBe('handstand')
     // An elbow or pain takes the load off altogether, so there is nothing to steer.
     const elbow = reducer(state, { type: 'RECORD_SYMPTOM', event: { at: T0 - 60_000, joints: 'niggle', regions: ['elbow'], source: 'check-in' } })
     expect(niggleRegionsToday(elbow, T0)).toEqual([])

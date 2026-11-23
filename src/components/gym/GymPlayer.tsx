@@ -7,7 +7,7 @@ import { pushToast } from '../../lib/toast'
 import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
 import { alternativesFor, availableAt } from '../../lib/gym/availability'
 import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../lib/gym/builder'
-import { conservative, dayOfItem, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
+import { addedSetReps, conservative, dayOfItem, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
 import { allowsUnloaded, countUnit, countWord, gymRecords, isUnloadedSet, lastPerformance, plyoGate, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GoalWeights, GymLocation, Rating } from '../../lib/gym/types'
 import { displayLoad, formatLoad, stepKgFor, toKg, unitFor } from '../../lib/gym/units'
@@ -330,7 +330,11 @@ export function GymPlayer({
                       {rating(ex.id) === 'love' ? <span className="ml-2 text-caption font-medium text-accent-text">Favourite</span> : null}
                     </h3>
                     <p className="mt-0.5 text-footnote text-ink2">
-                      {item.sets.length} × {item.plan.range[0]}–{item.plan.range[1]} {countUnit(ex) === 'seconds' ? 'seconds' : 'reps'} · stop about RPE {item.plan.targetRpe}
+                      {item.sets.length} ×{' '}
+                      {item.suggestion?.repsToMoveUp !== undefined
+                        ? `${item.suggestion.repsToMoveUp} reps to move up · ${item.plan.range[0]}–${item.plan.range[1]} is the range`
+                        : `${item.plan.range[0]}–${item.plan.range[1]} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`}{' '}
+                      · stop about RPE {item.plan.targetRpe}
                       {best ? ` · est. max ${formatLoad(best.kg, item.unit)}` : ''}
                     </p>
                     {item.suggestion ? <p className="mt-1 text-caption text-ink3">{item.suggestion.why}</p> : null}
@@ -466,7 +470,7 @@ export function GymPlayer({
                     onClick={() =>
                       update((d) => {
                         const last = d.items[i].sets[d.items[i].sets.length - 1]
-                        d.items[i].sets.push({ ...(last?.load !== undefined ? { load: last.load } : {}), reps: last?.reps ?? item.plan.range[1], done: false })
+                        d.items[i].sets.push({ ...(last?.load !== undefined ? { load: last.load } : {}), reps: addedSetReps(last?.reps, item.plan, item.suggestion), done: false })
                         return d
                       })
                     }

@@ -374,6 +374,16 @@ export interface Signals {
    * all one skill it is `restDays`, day for day.
    */
   skillRestDays: number
+  /**
+   * Days since THIS skill was last trained — what the time-away rail reads.
+   * `restDays` is the whole athlete's: a front lever untouched for 28 days
+   * read "1 day away" because the planche was trained yesterday, and was
+   * handed a re-test and an unlock attempt off month-old logs. It is
+   * `skillRestDays` once the skill has been trained, and `restDays` for a skill
+   * with no work of its own on record (nothing old to distrust; for a
+   * planche-only athlete, day for day `restDays`).
+   */
+  gapDays: number
   lastRpe?: number
   /**
    * Days since the last hard session, or `NEVER_DAYS` when none has ever been
@@ -1061,6 +1071,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   return {
     restDays,
     skillRestDays,
+    gapDays: lastLoadOfSkill ? skillRestDays : restDays,
     lastRpe: last?.rpe,
     daysSinceLoaded,
     hasLoadedSession: lastLoaded !== undefined,

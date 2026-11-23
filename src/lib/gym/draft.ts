@@ -90,8 +90,15 @@ export function dayOfItem(old: DraftItem, youth: boolean): { emphasis?: 'strengt
 /** Reps to pre-fill: the bottom of the range, or one more than last time when repeating a load. */
 export function prefillReps(plan: RepPlan, suggestion: LoadSuggestion | undefined, lastReps?: number): number {
   const [lo, hi] = plan.range
+  // A lift held back shows the bar it has to clear, and the screen starts there.
+  if (suggestion?.repsToMoveUp !== undefined) return suggestion.repsToMoveUp
   if (suggestion?.kind === 'repeat' && lastReps !== undefined) return Math.min(hi, Math.max(lo, lastReps + 1))
   return lo
+}
+
+/** Reps for a set added to a block: the last set's, else the bar a held-back lift must clear, else the top of the range. */
+export function addedSetReps(lastReps: number | undefined, plan: RepPlan, suggestion: LoadSuggestion | undefined): number {
+  return lastReps ?? suggestion?.repsToMoveUp ?? plan.range[1]
 }
 
 const KEY = 'planchelab.gymDraft'

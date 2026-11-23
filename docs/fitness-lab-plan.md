@@ -258,6 +258,23 @@ Open, in order of value (none blocks using the app):
   short gym days (now said, not hidden); the long-head triceps slot on
   20-minute pressing days; nothing verified on a physical phone.
 
+## Round nine (2026-11-23): seventh strict review
+
+- Fresh reviewers on `dbea218`: 58/100 UX (it ran out of budget before the
+  gym half) and 55/100 logic. The logic loop had the planche at 207 of the
+  control's 208 key sets, the front lever tuck → advanced tuck in 9 weeks and
+  the HSPU ladder up to deficit wall HSPU. Fixed: the line-up's joint memory
+  (a niggle steers until a check-in clears it) and honest joint lines; the
+  time-away rail per skill; a focus must train its own muscles; the order
+  between lower skills where the rest rules allow; near-zero holds neither
+  praised nor called records; no second planche session offered after the
+  opener; the retry bar shown in the gym player; unit-switch step-downs; a
+  youth rule for large relative jumps. Still open: for planche > HSPU >
+  lever the HSPU's pressing shares the planche's rest days, so the lever can
+  get more full parts; weekly legs would cost the planche (measured); the
+  dropped-names copy waits for a deliberate golden regeneration; the live
+  set counter did not reproduce.
+
 ## Log
 
 - 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the

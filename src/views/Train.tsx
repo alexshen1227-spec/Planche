@@ -43,10 +43,11 @@ import { useToday } from '../lib/useToday'
 import { ASSIST_LABEL } from '../components/SetupRow'
 import { WeekPlanCard } from '../components/WeekPlanCard'
 import { skillDayKitNote } from '../components/weekPlanCopy'
+import type { TodayPlan } from '../lib/plan/planner'
 import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
-import { rememberNextBlock } from '../lib/plan/nextBlock'
+import { rememberNextBlock, useDayMarks, type DayMarks } from '../lib/plan/nextBlock'
 import { insideRestRule, placeKit } from '../lib/plan/planner'
-import { atPlanPlace, calisthenicsCardLabel, calisthenicsRequest, withRestFlag } from '../lib/plan/screens'
+import { atPlanPlace, calisthenicsCardLabel, calisthenicsRequest, dayStage, homeToday, trainedToday, withRestFlag } from '../lib/plan/screens'
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { becamePainSafe, maxTestOffered } from '../lib/plan/screens'
 import { Button, SegmentedControl } from '../components/ds'
@@ -57,6 +58,27 @@ const SECTION_LABEL: Record<Section, string> = {
   strength: 'Strength',
   core: 'Core',
   cooldown: 'Cooldown',
+}
+
+/**
+ * Whether the hero card may offer a whole calisthenics session as the day's.
+ * On a gym day it is only an alternative to the gym, and once a skill session
+ * is saved today — the opener — the day is the lifts: a second full planche
+ * session (~45 min, 28 sets) was offered right after the opener while Home
+ * said "go to the lifts". Read from the same day stage Home reads.
+ */
+export function offersCalisthenicsInstead(
+  state: Parameters<typeof dayStage>[0],
+  plan: TodayPlan,
+  now: number,
+  marks: DayMarks,
+): boolean {
+  if (dayStage(state, plan, now, marks) === 'lifts-next') return false
+  if (homeToday(plan) === 'gym') {
+    const done = trainedToday(state, now)
+    if (done && done.skill) return false
+  }
+  return true
 }
 
 function WorkoutTarget({ workout }: { workout: Workout }) {
@@ -108,6 +130,9 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   // A skill picked here still outranks the plan, but a pick inside the athlete's rest rule says so.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const restNotes = useMemo(() => new Map(activeSkills(state).map((skill) => [skill, insideRestRule(state, [skill], Date.now())])), [state, todayKey, clock])
+  const marks = useDayMarks(todayKey)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const offerHero = useMemo(() => offersCalisthenicsInstead(state, dayPlan, Date.now(), marks), [state, dayPlan, todayKey, clock, marks])
   const recommended: WorkoutRequest = useMemo(
     () =>
       // Only a calisthenics day's own block is today's calisthenics session: on a
@@ -215,6 +240,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
 
       {/* Recommended */}
       <div className="mt-5 grid gap-3 lg:grid-cols-3">
+        {offerHero ? (
         <button
           onClick={() => setPreviewRequest(recommended)}
           className={`card-int card-sheen group relative overflow-hidden rounded-card border border-accent/25 bg-surface p-6 text-left shadow-card hover:border-accent/50 ${showTest ? 'lg:col-span-2' : 'lg:col-span-3'}`}
@@ -253,6 +279,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
             </div>
           </div>
         </button>
+        ) : null}
         {showTest ? (
         <div className="card-int group rounded-card border border-line bg-surface p-6 text-left shadow-card">
           <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wider text-ink3">

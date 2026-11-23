@@ -170,3 +170,20 @@ export function offerWalkMeasure(logs: readonly SetLog[], opts: { walkBackSec?: 
     }) ?? null
   )
 }
+
+/**
+ * What a saved session's "records" list really holds. A record needs something
+ * to beat: the first hold ever logged at a step has no `previous`, and showing
+ * it as a beaten record put "NEW RECORDS Advanced Tuck Planche 0.8s" on the
+ * summary of four 5.8s timer holds. Those are the first hold logged, said so.
+ * The engine's records are untouched: this is how they are presented.
+ */
+export function splitRecords<T extends { previous?: number }>(prs: readonly T[]): { records: T[]; firsts: T[] } {
+  const records: T[] = []
+  const firsts: T[] = []
+  for (const p of prs) (p.previous === undefined ? firsts : records).push(p)
+  return { records, firsts }
+}
+
+export const FIRST_HOLD_HEADING = 'First hold logged'
+export const FIRST_HOLD_NOTE = 'Nothing to beat yet — this is the first one on record, not a record.'

@@ -268,15 +268,15 @@ describe('3. a coarse machine step does not oscillate', () => {
       exercises: [{ exerciseId: leg, repRange: [10, 15], targetRpe: 8, sets: [1, 2, 3].map(() => ({ kg, reps, rpe })) }],
     }) as unknown as GymSession
   const plan = repPlanFor(ex(leg))
-  const suggest = (sessions: GymSession[], when = NOW) => suggestLoad({ exerciseId: leg, location: GYM, sessions, plan, youth: true, now: when })
+  const suggest = (sessions: GymSession[], when = NOW, youth = true) => suggestLoad({ exerciseId: leg, location: GYM, sessions, plan, youth, now: when })
 
   /** An athlete: strength `s0` (a one-rep-max-like number) growing `growth` a session, who stops `past` reps beyond the top of the range. */
-  function simulate(n: number, s0: number, growth: number, past: number) {
+  function simulate(n: number, s0: number, growth: number, past: number, youth = true) {
     const sessions: GymSession[] = []
     const loads: number[] = []
     let s = s0
     for (let i = 0; i < n; i++) {
-      const sug = suggest(sessions, at(i) + 1000)
+      const sug = suggest(sessions, at(i) + 1000, youth)
       const kg = sug.kg ?? 15
       const toFailure = Math.max(0, Math.floor(30 * (s / kg - 1)))
       let reps = Math.min(15 + past, toFailure - 2)
@@ -294,7 +294,7 @@ describe('3. a coarse machine step does not oscillate', () => {
   const changes = (l: number[]) => l.slice(1).filter((x, i) => x !== l[i]).length
 
   it('the old rhythm (15, 20, 15, 20…) is gone for an athlete who cannot hold the heavier step: ten sessions settle', () => {
-    const loads = simulate(10, 23.5, 0, 0)
+    const loads = simulate(10, 23.5, 0, 0, false)
     expect(loads.slice(0, 3)).toEqual([15, 20, 15])
     expect(loads.slice(3)).toEqual([15, 15, 15, 15, 15, 15, 15])
     expect(changes(loads)).toBeLessThanOrEqual(2)
@@ -336,13 +336,13 @@ describe('3. a coarse machine step does not oscillate', () => {
     const recent = [failed, session(1, 15, 15, 8)]
     expect(suggest(recent, at(2)).kg).toBe(15)
     const late = [failed, { ...session(1, 15, 15, 8), startedAt: failed.startedAt + 60 * DAY }]
-    expect(suggest(late, late[1].startedAt + DAY).kg).toBe(20)
+    expect(suggest(late, late[1].startedAt + DAY, false).kg).toBe(20)
     const handled = [failed, session(1, 20, 12, 8), session(2, 15, 15, 8)]
-    expect(suggest(handled, at(3)).kg).toBe(20)
+    expect(suggest(handled, at(3), false).kg).toBe(20)
   })
 
   it('does not change a lift that never failed a step', () => {
-    const first = suggest([session(0, 15, 15, 8)], at(1))
+    const first = suggest([session(0, 15, 15, 8)], at(1), false)
     expect(first.kg).toBe(20)
     expect(first.kind).toBe('increase')
   })

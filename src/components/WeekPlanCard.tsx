@@ -3,7 +3,7 @@ import type { SkillId } from '../types'
 import { useStore } from '../lib/store'
 import { SKILLS } from '../data/skills'
 import { activeSkills, wholeState } from '../lib/skills'
-import { niggleRegionsToday } from '../lib/signals'
+import { standingNiggle } from '../lib/lineup'
 import { useToday } from '../lib/useToday'
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { describeDay, nextPlannedDay, todaysDay, weekOutline, WEEKDAY_NAMES, WEEKDAY_SHORT, type WeekOutlineDay } from '../lib/weekPlan'
@@ -52,7 +52,8 @@ export function WeekPlanCard({
       week: weekOutline(state, now),
       today: todaysDay(state, now),
       next: nextPlannedDay(state, now),
-      sore: niggleRegionsToday(state, now),
+      // The line-up's own memory: a niggle flagged today, or earlier with no check-in since.
+      sore: standingNiggle(state, now).regions,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, todayKey, clock])

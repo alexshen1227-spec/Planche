@@ -3,7 +3,7 @@ import type { SkillId } from '../types'
 import { reducer } from '../lib/store'
 import { startingState } from '../lib/skillLoop'
 import { coverageNotes, planCoverage, todaysDay, type DayReading } from '../lib/weekPlan'
-import { coverageSummary, kitStatusLine, placesWithKit, skillChipLabel, skillDayKitNote, skillWords, todayLine, unavailableClause, type TodayLineInput } from './weekPlanCopy'
+import { coverageSummary, kitStatusLine, onlyWallMissing, streakText, placesWithKit, skillChipLabel, skillDayKitNote, skillWords, todayLine, unavailableClause, type TodayLineInput } from './weekPlanCopy'
 
 const TWO: SkillId[] = ['planche', 'frontlever']
 const said = (input: Partial<TodayLineInput> & Pick<TodayLineInput, 'today'>) =>
@@ -34,7 +34,7 @@ describe('what the week card says about today', () => {
     const three: DayReading = { kind: 'skills', weekday: 3, skills: ['frontlever', 'planche', 'handstand'], unavailable: [] }
     const flagged = said({ today: three, sessionSkills: ['frontlever', 'planche'], sore: ['wrist'], active: [...TWO, 'handstand'] })
     expect(flagged).toMatch(/Handstand push-up is left out of today's session/)
-    expect(flagged).toMatch(/a short dose is not given to a skill that loads a joint you flagged today\.$/)
+    expect(flagged).toMatch(/a short dose is not given to a skill that loads a joint you flagged and have not cleared\.$/)
     // The same squeeze with nothing flagged does not blame a joint.
     expect(said({ today: three, sessionSkills: ['frontlever', 'planche'], minutes: 26 })).not.toMatch(/flagged/)
   })
@@ -143,5 +143,45 @@ describe('kit at a place (fifth review)', () => {
   it('gives the skill chip a spoken break before its main badge', () => {
     expect(skillChipLabel('planche', true)).toBe('Planche, main skill')
     expect(skillChipLabel('frontlever', false)).toBe('Front lever')
+  })
+})
+
+describe('a skill waiting only for a wall says which kit to tick (ninth review)', () => {
+  const home = ['floor', 'parallettes'] as never
+  const gym = { name: 'Gym', equipment: ['pullup-bar', 'barbell', 'dumbbells', 'cables', 'machines'] }
+  it('names the wall and where to tick it, without claiming the athlete has one', () => {
+    const s = kitStatusLine('handstand', home, [{ name: 'Home', equipment: [] }, gym])
+    expect(s.kind).toBe('waiting')
+    const text = 'text' in s ? s.text : ''
+    expect(text).toMatch(/Clear wall/)
+    expect(text).toMatch(/Tick/)
+    expect(text).not.toMatch(/you have a wall|your wall/i)
+  })
+  it('a skill that waits for other kit as well is not told it only needs a wall', () => {
+    expect(onlyWallMissing([['wall']])).toBe(true)
+    expect(onlyWallMissing([['wall'], ['pullup-bar']] as never)).toBe(false)
+    expect(onlyWallMissing([])).toBe(false)
+    expect(onlyWallMissing([['wall', 'box']] as never)).toBe(false)
+    const s = kitStatusLine('frontlever', home, [{ name: 'Home', equipment: [] }])
+    expect('text' in s && s.text).not.toMatch(/Clear wall/)
+  })
+  it('once a place has the wall the skill trains there', () => {
+    expect(kitStatusLine('handstand', home, [{ name: 'Gym', equipment: [...gym.equipment, 'wall'] }]).kind).toBe('at-places')
+  })
+})
+
+describe('the streak says what it counts', () => {
+  it('a zero is "no streak yet" with the goal and the open week, not "0-week streak"', () => {
+    const z = streakText({ weeks: 0, currentMet: false }, 3)
+    expect(z.main).toBe('No streak yet')
+    expect(z.main).not.toMatch(/0-week/)
+    expect(z.note).toMatch(/3 sessions/)
+    expect(z.note).toMatch(/still open/)
+  })
+  it('a running streak counts weeks that met the goal, and says whether this week is open', () => {
+    expect(streakText({ weeks: 2, currentMet: false }, 1).note).toMatch(/1 session[^s]|1 session$/)
+    expect(streakText({ weeks: 2, currentMet: false }, 3).note).toMatch(/still open/)
+    expect(streakText({ weeks: 3, currentMet: true }, 3)).toMatchObject({ main: '3-week streak' })
+    expect(streakText({ weeks: 3, currentMet: true }, 3).note).not.toMatch(/still open/)
   })
 })

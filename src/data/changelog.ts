@@ -19,6 +19,24 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-23',
+    title: 'What you tell the app reaches every part of the plan',
+    area: 'coach',
+    notes: [
+      'A niggle you flagged now keeps steering which skill leads until a check-in says it is fine — it once counted only on the day you flagged it — and each line says what it changes: the lifts, the skills, or both.',
+      'Your second skill gets at least as many full sessions as your third wherever the rest rules allow, and handstand push-ups can open a push gym day. With the planche first, handstand push-ups share its rest days, so the front lever can still train more often in some weeks.',
+      'A gym day named for a focus now has at least two movements for that focus: a home with no bar no longer gets a “pull” day made of core work.',
+      'Lines about how many sessions a skill gets this week now match the week shown, and a pain-safe day no longer claims to count as one.',
+      'A skill coming back after two weeks or more without its own work gets the cautious first session back too — nothing maximal, no re-test, no unlock attempt — even when your other skills trained yesterday. It once looked only at the last session of any skill.',
+      'A hold far under its target is no longer praised, and the first hold you ever log at a step shows as “First hold logged” rather than a record: there was nothing to beat.',
+      'After a gym day’s skill opener is saved, Train no longer offers a full calisthenics session instead of the gym — the lifts are what is left.',
+      'When a weight is held back after a step up fell short, the gym player now shows the reps that move it up (“17 reps to move up · 10–15 is the range”) and starts the sets there.',
+      'Under 18, a jump of more than a quarter of the weight is earned first: two more reps than the top of the range in every set, or the top of the range at the asked effort two sessions running. The app’s own rule on top of double progression.',
+      'Switching a place to pounds no longer makes a step down two steps: the step is taken off the weight, then rounded to the new plates.',
+      'A skill waiting only for a wall says so and where to tick it, the streak says what it counts, and the note about telling a parent uses the same age rule as the rest of the app.',
+    ],
+  },
+  {
+    date: '2026-11-23',
     title: 'Every skill has its week, and gym days use their time',
     area: 'coach',
     notes: [
