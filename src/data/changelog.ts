@@ -19,6 +19,21 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-23',
+    title: 'Your history is safer, and every lift says what comes next',
+    area: 'app',
+    notes: [
+      'If your phone’s storage fills up, the app now says so once and keeps its second copy up to date — and the next time it opens it keeps the newer of the two. A full disk once made it overwrite the only up-to-date copy.',
+      'A session left unfinished is never deleted for its age: it waits for you to resume or save it, however old, and says how old it is.',
+      'Setup finished in one tab can no longer be undone by another tab, and running setup again keeps your history, measurements and profile.',
+      'If a newer version of the app saved your data, an older copy left open stops saving and asks you to refresh, rather than stripping what the newer one saved. A phone clock set wrong can no longer change your birth year.',
+      'Streak badges are judged by the goal you had that week, so changing your goal no longer takes earned badges away, and the weekly goal counts gym days and skill days alike everywhere — the plateau check included.',
+      'After a gym session each lift says what the next one asks of it — “Next time: 7 kg × 10–15”, or the reps it needs to move up — and the saved session shows your effort on each set and your note.',
+      'A saved gym session no longer shows as still open. Start says plainly when it would resume an older session, and warns if that session loads a joint you just reported. A set you added is never dropped at finish.',
+      'Gym records the app cannot read are kept and reported rather than dropped, and an import names everything it will replace, gym sessions and places included.',
+    ],
+  },
+  {
+    date: '2026-11-23',
     title: 'What you tell the app reaches every part of the plan',
     area: 'coach',
     notes: [

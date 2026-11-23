@@ -1,8 +1,117 @@
-import type { AppState, Session, TrainingSurface } from '../types'
+import type { AppState, Session, Settings, TrainingSurface } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { addDays, CLOCK_SKEW_MS, weekStart } from './time'
+import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
 import { progressionCredit } from './progression'
-import { isSkillHold } from './skills'
+import { isSkillHold, wholeState } from './skills'
+
+/** One change of weekly goal: from `at` on (the week it falls in included), the goal was `goal`. */
+export interface GoalChange {
+  goal: number
+  at: number
+}
+
+declare module '../types' {
+  interface Settings {
+    /**
+     * Every weekly-goal change, oldest first. The first entry (at 0) is the goal
+     * before any change was recorded. Each finished week is judged by the goal
+     * in force in it: `goalBefore` remembered one earlier goal, so a second
+     * change re-judged every older week against the middle goal, and the next
+     * replay took back streak badges that had been earned.
+     */
+    goalHistory?: GoalChange[]
+  }
+}
+
+/** Every weekly-goal change is kept, up to this many (the oldest go first). */
+export const MAX_GOAL_HISTORY = 100
+
+const goalNumber = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) ? Math.min(14, Math.max(1, Math.round(v))) : undefined
+
+/**
+ * The goal history as stored, or as an older save implies it: `goalBefore`
+ * says the goal before its change, and the current goal since.
+ */
+export function goalHistoryOf(settings: Pick<Settings, 'weeklyGoal' | 'goalBefore' | 'goalHistory'>): GoalChange[] {
+  if (settings.goalHistory?.length) return settings.goalHistory
+  const before = settings.goalBefore
+  return before
+    ? [
+        { goal: before.goal, at: 0 },
+        { goal: settings.weeklyGoal, at: before.until },
+      ]
+    : [{ goal: settings.weeklyGoal, at: 0 }]
+}
+
+/** A stored goal history, validated: whole goals 1-14 at real times, oldest first, each change once. */
+export function sanitizeGoalHistory(raw: unknown): GoalChange[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const seen = new Set<string>()
+  const out: GoalChange[] = []
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue
+    const goal = goalNumber((item as GoalChange).goal)
+    const at = (item as GoalChange).at
+    if (goal === undefined || typeof at !== 'number' || !Number.isFinite(at) || at < 0 || at > 8.64e15) continue
+    const key = `${at}:${goal}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ goal, at })
+  }
+  out.sort((a, b) => a.at - b.at || a.goal - b.goal)
+  return out.length ? out.slice(-MAX_GOAL_HISTORY) : undefined
+}
+
+/** The history after the goal changes to `goal` at `at`. */
+export function goalHistoryWith(settings: Settings, goal: number, at: number): GoalChange[] {
+  return [...goalHistoryOf(settings), { goal, at }].slice(-MAX_GOAL_HISTORY)
+}
+
+/**
+ * Two tabs' histories as one: every change either side made, by its time.
+ * Returns `mine` itself when the other side adds nothing, so a merge that
+ * changed nothing stays the same object.
+ */
+export function mergeGoalHistory(mine: GoalChange[] | undefined, theirs: GoalChange[] | undefined): GoalChange[] | undefined {
+  if (!theirs?.length) return mine
+  if (!mine?.length) return theirs
+  const known = new Set(mine.map((c) => `${c.at}:${c.goal}`))
+  if (theirs.every((c) => known.has(`${c.at}:${c.goal}`))) return mine
+  return sanitizeGoalHistory([...mine, ...theirs])
+}
+
+/**
+ * The goal a week was trained under: the last change made before the week
+ * ended that takes effect by its start, so a change mid-week holds that week
+ * to the new goal (as it always has) and leaves earlier weeks alone. The
+ * newest change's goal is the current one, `weeklyGoal`.
+ */
+export function goalForWeek(settings: Settings, weekStartsAt: number): number {
+  const history = goalHistoryOf(settings)
+  let index = -1
+  for (let i = 0; i < history.length; i++) if (weekStart(history[i].at) <= weekStartsAt) index = i
+  if (index === -1) return history[0]?.goal ?? settings.weeklyGoal
+  return index === history.length - 1 ? settings.weeklyGoal : history[index].goal
+}
+
+/**
+ * The days of the week holding `ts` that count toward the weekly goal: a skill
+ * session (a minimum dose aside) or a gym session, by local calendar day, and
+ * never one dated past `now`. One count for the streak, the badges and Home —
+ * Home once counted gym days and the streak only skill sessions, so a week
+ * shown as 3/3 broke the streak.
+ */
+export function goalDaysInWeekOf(state: AppState, ts: number, now = Date.now()): Map<string, 'calisthenics' | 'gym'> {
+  const whole = wholeState(state)
+  const start = weekStart(ts)
+  const end = addDays(start, 7)
+  const counts = (t: number) => t >= start && t < end && t <= now + CLOCK_SKEW_MS
+  const kinds = new Map<string, 'calisthenics' | 'gym'>()
+  for (const s of whole.sessions) if (s.workoutKind !== 'micro' && counts(s.startedAt)) kinds.set(dayKey(s.startedAt), 'calisthenics')
+  for (const s of whole.gym?.sessions ?? []) if (counts(s.startedAt)) kinds.set(dayKey(s.startedAt), 'gym')
+  return kinds
+}
 
 export function totalHoldSec(state: AppState): number {
   let t = 0
@@ -30,18 +139,17 @@ export function sessionsInWeekOf(state: AppState, ts: number, now = Date.now()):
  * Consecutive fully-completed weeks (before the current one) that met the
  * weekly goal. The current week is reported separately so the UI can show
  * "streak alive if you finish this week".
+ *
+ * A week meets its goal by its training days (`goalDaysInWeekOf`), judged
+ * against the goal in force that week (`goalForWeek`).
  */
 export function weekStreak(state: AppState, now = Date.now()): { weeks: number; currentMet: boolean } {
-  const goal = state.settings.weeklyGoal
-  // A week is judged against the goal it was trained under: weeks that ended
-  // before the goal last changed keep the goal they had (`Settings.goalBefore`).
-  const before = state.settings.goalBefore
-  const changedIn = before ? weekStart(before.until) : Number.NEGATIVE_INFINITY
-  const goalFor = (weekStartsAt: number) => (before && weekStartsAt < changedIn ? before.goal : goal)
-  const currentMet = sessionsInWeekOf(state, now, now).length >= goalFor(weekStart(now))
+  const settings = state.settings
+  const met = (weekStartsAt: number) => goalDaysInWeekOf(state, weekStartsAt, now).size >= goalForWeek(settings, weekStartsAt)
+  const currentMet = met(weekStart(now))
   let weeks = 0
   let cursor = addDays(weekStart(now), -7)
-  while (sessionsInWeekOf(state, cursor, now).length >= goalFor(cursor)) {
+  while (met(cursor)) {
     weeks += 1
     cursor = addDays(cursor, -7)
     if (weeks > 520) break

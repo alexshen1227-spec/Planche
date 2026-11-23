@@ -275,6 +275,23 @@ Open, in order of value (none blocks using the app):
   dropped-names copy waits for a deliberate golden regeneration; the live
   set counter did not reproduce.
 
+## Round ten (2026-11-23): eighth review, split by area
+
+- On `ab673a5` the review was split: a gym-only UX reviewer (41/100 — no
+  "next time" per lift after saving, a saved draft still shown as open, a
+  started session that was not the previewed one, effort and notes missing
+  from the detail) and a data-integrity reviewer (36/100 — the IndexedDB
+  mirror overwritten in exactly the failures it exists for, unfinished
+  sessions deleted after 18 h, onboarding undone by a second tab, an older
+  build stripping newer fields, badges revoked after two goal changes, the
+  weekly goal counted two ways, a clock that rewrote birth years). All
+  blocker and major findings fixed and pinned (CLAUDE.md "Ninth review
+  round"). Still open: on three training days the first-priority rule gives
+  the planche all three and the gym one short block (a product call for the
+  athlete); the minor merge findings (whole-session last-writer-wins on the
+  skill side, setup tombstones, clock moved backwards) and the single
+  quarantine slot.
+
 ## Log
 
 - 2026-11-22 ~01:00 PST — independent bug review of lib/gym, lib/plan and the

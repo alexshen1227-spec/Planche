@@ -5,6 +5,7 @@ import { pushToast } from '../../lib/toast'
 import { buildGymSession, FOCUS_LABEL, type GymFocus, type PlannedExercise } from '../../lib/gym/builder'
 import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
+import { draftConflictLine, draftContents, EXTRA_SESSION_LINE, leftOutLine, openDraftFor, resumeLine } from '../../lib/gym/sessionLines'
 import { conservative, loadDraft, prefillReps, previousSets, type GymDraft } from '../../lib/gym/draft'
 import { AFTER_OPENER_WARM_UP_MIN, gymToday, MIN_GYM_MINUTES, planToday, skillFamily, skillRequest, soreJoints } from '../../lib/plan/planner'
 import { dayStage, gymPlaceLine, gymPreset, openerLine, resolveGymPlace, steerInput, type GymPreset } from '../../lib/plan/screens'
@@ -83,6 +84,18 @@ export function GymHub({
   const [openSessionId, setOpenSessionId] = useState<string | null>(null)
   const [running, setRunning] = useState<GymDraft | null>(null)
   const [resumable, setResumable] = useState<GymDraft | null>(() => loadDraft())
+  // What is open is whatever storage holds now: read again when the player closes (a saved session clears it) and when
+  // another tab changes it. It was read once at mount, so a finished session was still "open" beside "today: done".
+  useEffect(() => {
+    setResumable(openDraftFor(loadDraft(), running))
+  }, [running])
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === null || e.key === 'planchelab.gymDraft') setResumable(openDraftFor(loadDraft(), running))
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [running])
   // Where the lifts are built: where the plan has them (the gym, even with Home set as the place now) unless the
   // athlete said today that they are somewhere else. Home being active is not a pick.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -191,7 +204,9 @@ export function GymHub({
     if (loadDraft()) {
       setPending(null)
       setResumable(loadDraft())
-      pushToast('A gym session is still open — resume it or discard it first.', 'info')
+      const open = loadDraft()
+      const warn = open ? draftConflictLine(open, joints) : null
+      pushToast(warn ?? 'A gym session is still open — it resumes first. Resume it or discard it to start the new plan.', 'info')
       return
     }
     const regions = joints.map((j) => JOINT_REGION[j]).filter((r): r is BodyRegion => Boolean(r))
@@ -335,6 +350,16 @@ export function GymHub({
           <p className="mt-1 text-footnote text-ink2">
             {resumable.name}, started {dayLabel(resumable.startedAt)} — nothing logged in it was lost.
           </p>
+          <ul className="mt-2 list-disc pl-5 text-footnote text-ink2">
+            {draftContents(resumable).map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          {draftConflictLine(resumable, sore.joints) ? (
+            <p className="mt-2 rounded-control bg-raised p-3 text-footnote text-ink" role="alert">
+              {draftConflictLine(resumable, sore.joints)}
+            </p>
+          ) : null}
           <div className="mt-3 flex gap-2">
             <Button
               className="flex-1"
@@ -343,10 +368,11 @@ export function GymHub({
                 setResumable(null)
               }}
             >
-              Resume
+              Resume {resumable.name}
             </Button>
             <Button
               variant="secondary"
+              aria-label={`Discard the open ${resumable.name} session`}
               onClick={() => {
                 setResumable(null)
                 try {
@@ -356,7 +382,7 @@ export function GymHub({
                 }
               }}
             >
-              Discard
+              Discard it
             </Button>
           </div>
         </Card>
@@ -404,12 +430,13 @@ export function GymHub({
             <p className="text-footnote text-ink2">
               <span className="font-semibold text-ink">Today: done</span> — today’s main session is in, and nothing more is planned.
             </p>
-            <button onClick={() => setAgain(true)} className="mt-1 min-h-11 text-footnote font-medium text-accent-text">
+            <button onClick={() => setAgain(true)} aria-label="Train again: an extra gym session today" className="mt-1 min-h-11 text-footnote font-medium text-accent-text">
               Train again
             </button>
           </div>
         ) : (
         <>
+        {finished && again ? <p className="mt-3 rounded-control bg-raised p-3 text-footnote text-ink2">{EXTRA_SESSION_LINE}</p> : null}
         {sore.joints.length ? (
           <p className="mt-3 rounded-control bg-raised p-3 text-footnote text-ink2">
             Keeping load off your {sore.joints.map((j) => j.replace('-', ' ')).join(' and ')} — you reported {sore.joints.length > 1 ? 'them' : 'it'}{' '}
@@ -442,7 +469,11 @@ export function GymHub({
               </span>
               <span className="block text-caption text-ink2">Skill work first, while you are fresh; the lifts follow on when it is saved.</span>
             </span>
-            <Button variant="ghost" onClick={() => setSkipOpener(!skipOpener)}>
+            <Button
+              variant="ghost"
+              aria-label={`${skipOpener ? 'Add' : 'Skip'} the ${SKILL_NAME[offeredOpener.skills[0]]} skill opener`}
+              onClick={() => setSkipOpener(!skipOpener)}
+            >
               {skipOpener ? 'Add it' : 'Skip it'}
             </Button>
           </div>
@@ -483,23 +514,43 @@ export function GymHub({
                 : `Nothing to program for this focus with what ${location.name} has. Add equipment, pick another focus, or start an empty session.`}
           </p>
         )}
-        {plan?.dropped.length ? (
-          <p className="mt-2 text-caption text-ink3">Left out to fit {minutes} minutes: {plan.dropped.join(', ')}.</p>
-        ) : null}
+        {plan?.dropped.length ? <p className="mt-2 text-caption text-ink3">{leftOutLine(plan.dropped, liftMinutes, opener?.minutes)}</p> : null}
         {plan?.notes.map((n) => (
           <p key={n} className="mt-2 text-caption text-ink2">
             {n}
           </p>
         ))}
         {plan && plan.items.length ? <p className="mt-1 text-caption text-ink3">About {plan.estimatedMin} minutes with warm-up and rests.</p> : null}
+        {resumable ? (
+          <div className="mt-4 space-y-2">
+            <p className="rounded-control bg-raised p-3 text-footnote text-ink2">{resumeLine(resumable)}</p>
+            <ul className="list-disc pl-5 text-footnote text-ink2">
+              {draftContents(resumable).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <Button
+              size="lg"
+              full
+              aria-label={`Resume the open ${resumable.name} session, not the plan above`}
+              onClick={() => {
+                setRunning(resumable)
+                setResumable(null)
+              }}
+            >
+              Resume {resumable.name}
+            </Button>
+          </div>
+        ) : (
         <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
-          <Button size="lg" disabled={!plan?.items.length || Boolean(resumable)} onClick={() => setPending({ empty: false })}>
+          <Button size="lg" disabled={!plan?.items.length} onClick={() => setPending({ empty: false })}>
             Start session
           </Button>
-          <Button size="lg" variant="secondary" disabled={Boolean(resumable)} onClick={() => setPending({ empty: true })}>
+          <Button size="lg" variant="secondary" onClick={() => setPending({ empty: true })}>
             Empty
           </Button>
         </div>
+        )}
         </>
         )}
         {youth ? (

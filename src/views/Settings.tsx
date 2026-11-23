@@ -4,6 +4,7 @@ import type { AppState, EquipmentId, Settings as SettingsShape, Tab, TrainingSur
 import {
   clearQuarantine,
   eraseRecoveryCopies,
+  forgetUnfinishedWork,
   normalizeStateWithReport,
   quarantinedData,
   rebuildDerivedState,
@@ -17,7 +18,7 @@ import { activeSkills, stepOfSkill } from '../lib/skills'
 import { AddSkill } from '../components/AddSkill'
 import { APP_NAME } from '../data/app'
 import { defaultSurface, EQUIPMENT_OPTIONS, kitNeedsPhrase, TRAINING_SURFACES } from '../data/equipment'
-import { exportCsv, exportData, readImportFile, validateImport } from '../lib/exportImport'
+import { dataOnDevice, exportCsv, exportData, readImportFile, validateImport } from '../lib/exportImport'
 import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
 import { INSTALL_STEPS, installState } from '../lib/install'
 import { listClips, clearAllClips, CLIP_RETENTION_DAYS } from '../lib/clips'
@@ -417,6 +418,9 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         return
       }
       setPendingImport(null)
+      // An unfinished session belongs to the data that was replaced: resumed,
+      // it would save the old history's sets into the imported one.
+      forgetUnfinishedWork()
       // The previous history's clips would otherwise surface under the
       // imported sessions.
       const cleared = await clearAllClips()
@@ -1420,6 +1424,19 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
               </span>{' '}
               on this device, along with every record, achievement and saved form clip. There is no undo.
             </p>
+            {(() => {
+              const here = dataOnDevice(state)
+              const parts = [
+                here.gymSessions ? `${here.gymSessions} gym session${here.gymSessions === 1 ? '' : 's'}` : null,
+                here.places ? `${here.places} place${here.places === 1 ? '' : 's'} with their kit` : null,
+                here.activities ? `${here.activities} logged activit${here.activities === 1 ? 'y' : 'ies'}` : null,
+              ].filter((part): part is string => part !== null)
+              return parts.length ? (
+                <p className="mt-1.5 text-body leading-relaxed text-ink2">
+                  The gym side is replaced too: <span className="font-semibold text-ink">{parts.join(', ')}</span>.
+                </p>
+              ) : null
+            })()}
             {reportHasLosses(pendingImport.report) || pendingImport.report.futureSessions > 0 ? (
               <div className="mt-3 rounded-control border border-accent/30 bg-accent-soft px-3.5 py-3 text-footnote leading-relaxed text-ink">
                 <div className="font-semibold">Not everything in the file can be imported as it is:</div>
@@ -1455,6 +1472,13 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
                       {pendingImport.report.repairedSets} set{pendingImport.report.repairedSets === 1 ? '' : 's'} kept as
                       history with a field repaired — {pendingImport.report.repairedSets === 1 ? 'it' : 'they'} will not
                       count toward unlocking
+                    </li>
+                  ) : null}
+                  {pendingImport.report.gymLosses.length ? (
+                    <li>
+                      {pendingImport.report.gymLosses.length} gym record
+                      {pendingImport.report.gymLosses.length === 1 ? '' : 's'} left out or repaired (
+                      {[...new Set(pendingImport.report.gymLosses)].slice(0, 4).join('; ')})
                     </li>
                   ) : null}
                   {pendingImport.report.futureSessions ? (

@@ -1,4 +1,4 @@
-import { mergeGym, reduceGym, sanitizeGym, type GymOp } from './gym/state'
+import { mergeGym, reduceGym, sanitizeGymReport, type GymOp } from './gym/state'
 import {
   createContext,
   useCallback,
@@ -47,6 +47,7 @@ import { pushToast } from './toast'
 import { CLOCK_SKEW_MS, weekStart } from './time'
 import { plannedTrainingDays, sanitizeWeekPlan } from './weekPlan'
 import { WALK_BACK_MAX_SEC, WALK_BACK_MIN_SEC } from './sessionTiming'
+import { goalHistoryOf, goalHistoryWith, mergeGoalHistory, sanitizeGoalHistory } from './stats'
 import { activeSkills, addTrack, trackOf, trackedSkills, withTrack } from './skills'
 
 const STORAGE_KEY = 'planchelab.v1'
@@ -60,6 +61,16 @@ const BACKUP_KEY = 'planchelab.prev'
  */
 export const QUARANTINE_KEY = 'planchelab.quarantine'
 const DRAFT_KEY = 'planchelab.draft'
+/**
+ * Unfinished work kept outside the main state: the skill session in progress,
+ * the gym session in progress, and the note of what follows today's opener.
+ * Each belongs to one dataset, so a reset or an import takes them with it.
+ */
+const UNFINISHED_WORK_KEYS = [DRAFT_KEY, 'planchelab.gymDraft', 'planchelab.nextBlock']
+/** How long a burst of changes waits before the mirror is written. */
+const MIRROR_DEBOUNCE_MS = 1500
+/** A birth year past this is not a year; before it, the stored year is kept whatever the clock says. */
+const MAX_BIRTH_YEAR = 2200
 
 /** JavaScript's Date range. A "finite" 1e20 is not a moment in time. */
 const MAX_TIME = 8.64e15
@@ -449,6 +460,8 @@ export interface NormalizeReport {
   droppedSets: { reason: string; count: number }[]
   /** Kept sets with a field that had to be repaired; they no longer qualify. */
   repairedSets: number
+  /** What the gym side dropped or repaired, one plain line each. */
+  gymLosses: string[]
 }
 
 export function emptyReport(): NormalizeReport {
@@ -463,6 +476,7 @@ export function emptyReport(): NormalizeReport {
     setsKept: 0,
     droppedSets: [],
     repairedSets: 0,
+    gymLosses: [],
   }
 }
 
@@ -473,7 +487,8 @@ export function reportHasLosses(report: NormalizeReport): boolean {
     report.conflictingSessions > 0 ||
     report.duplicateSessions > 0 ||
     report.droppedSets.length > 0 ||
-    report.repairedSets > 0
+    report.repairedSets > 0 ||
+    report.gymLosses.length > 0
   )
 }
 
@@ -619,8 +634,21 @@ function sanitizeSessions(
     const setReport = emptyReport()
     if (Array.isArray(c.sets)) {
       setReport.setsIn += c.sets.length
+      // A set is found by its time (edits, clips, form checks), so a set saved
+      // without one gets a time of its own: unique in the session and the same
+      // on every load. Every such set once took the session's start, and
+      // re-timing one of them re-timed them all.
+      const hasTime = (x: unknown) => typeof x === 'object' && x !== null && isTime((x as SetLog).at)
+      const taken = new Set<number>(c.sets.filter(hasTime).map((x) => (x as SetLog).at))
+      let free = startedAt
       for (const rawSet of c.sets) {
-        const set = sanitizeSet(rawSet, startedAt, setReport)
+        let fallback = startedAt
+        if (!hasTime(rawSet)) {
+          while (taken.has(free)) free += 1
+          fallback = free
+          taken.add(free)
+        }
+        const set = sanitizeSet(rawSet, fallback, setReport)
         if (set) sets.push(set)
       }
     }
@@ -819,12 +847,23 @@ export function normalizeStateWithReport(
         : undefined
 
   const rawSettings = (typeof r.settings === 'object' && r.settings !== null ? r.settings : {}) as Partial<Settings>
+  const weeklyGoal = clampNum(rawSettings.weeklyGoal, 1, 14, DEFAULT_SETTINGS.weeklyGoal)
+  const goalBefore = (() => {
+    const raw = rawSettings.goalBefore as { goal?: unknown; until?: unknown } | undefined
+    return raw && typeof raw === 'object' && typeof raw.goal === 'number' && Number.isFinite(raw.goal) && typeof raw.until === 'number' && Number.isFinite(raw.until)
+      ? { goal: Math.min(14, Math.max(1, Math.round(raw.goal))), until: raw.until }
+      : undefined
+  })()
+  // Every goal change, so each finished week keeps the goal it was trained
+  // under. A save from before the history implies one from `goalBefore`.
+  const goalHistory =
+    sanitizeGoalHistory(rawSettings.goalHistory) ?? (goalBefore ? goalHistoryOf({ weeklyGoal, goalBefore }) : undefined)
   const settings: Settings = {
     ...DEFAULT_SETTINGS,
     ...rawSettings,
     // Numeric settings come from an editable file; a zero or NaN here would
     // stall loops and divide-by-zero their way across the whole UI.
-    weeklyGoal: clampNum(rawSettings.weeklyGoal, 1, 14, DEFAULT_SETTINGS.weeklyGoal),
+    weeklyGoal,
     sessionMinutes: clampNum(rawSettings.sessionMinutes, 5, 120, DEFAULT_SETTINGS.sessionMinutes),
     restMainSec: clampNum(rawSettings.restMainSec, 15, 600, DEFAULT_SETTINGS.restMainSec),
     restAccessorySec: clampNum(rawSettings.restAccessorySec, 10, 600, DEFAULT_SETTINGS.restAccessorySec),
@@ -864,12 +903,8 @@ export function normalizeStateWithReport(
         : undefined,
     // Validated day by day; an unknown skill or weekday is dropped, not kept.
     weekPlan: sanitizeWeekPlan(rawSettings.weekPlan),
-    goalBefore: (() => {
-      const raw = rawSettings.goalBefore as { goal?: unknown; until?: unknown } | undefined
-      return raw && typeof raw === 'object' && typeof raw.goal === 'number' && Number.isFinite(raw.goal) && typeof raw.until === 'number' && Number.isFinite(raw.until)
-        ? { goal: Math.min(14, Math.max(1, Math.round(raw.goal))), until: raw.until }
-        : undefined
-    })(),
+    goalBefore,
+    goalHistory,
   }
   // One-time migration: anyone still carrying the old optimistic default gets
   // the realistic one. Deliberate choices made after this are left alone.
@@ -896,7 +931,7 @@ export function normalizeStateWithReport(
         ? 'parallettes'
         : 'floor'
 
-  const startedAt = isTime(r.startedAt) ? r.startedAt : Date.now()
+  const startedAt = isTime(r.startedAt) ? r.startedAt : now
   const tracks = sanitizeTracks(r.tracks, startedAt)
   // The skills trained, in the athlete's order. Only skills with a road here
   // can be listed: a name with no track behind it would train from nowhere.
@@ -916,7 +951,10 @@ export function normalizeStateWithReport(
   const sessions = sanitizeSessions(r.sessions, report, new Set(tombstones), now)
   const legacyEpoch = `legacy-${typeof r.startedAt === 'number' ? Math.round(r.startedAt) : 0}`
 
-  const gym = sanitizeGym(r.gym)
+  // The gym side reports what it could not keep, so those losses are
+  // quarantined like the skill side's instead of vanishing.
+  const { gym, losses: gymLosses } = sanitizeGymReport(r.gym)
+  report.gymLosses = gymLosses
   const state: AppState = {
     version: CURRENT_STATE_VERSION,
     onboarded: Boolean(r.onboarded),
@@ -984,7 +1022,10 @@ export function normalizeStateWithReport(
       equipment,
       heightCm: clampOptional(rawProfile.heightCm, 100, 250),
       injuryNote: typeof rawProfile.injuryNote === 'string' ? rawProfile.injuryNote : undefined,
-      birthYear: clampOptional(rawProfile.birthYear, 1920, new Date().getFullYear()),
+      // Never bounded by this device's clock: a phone that booted in 2001 once
+      // rewrote 2010 to 2001 for good, and a teenager read as 25 from then on.
+      // The stored year is kept; the youth rules read it against `now`.
+      birthYear: clampOptional(rawProfile.birthYear, 1920, MAX_BIRTH_YEAR),
       trainingAgeMonths: clampOptional(rawProfile.trainingAgeMonths, 0, 1200),
       preferredSurface,
       goalStepId: isStepOf(rawProfile.goalStepId, 'planche') ? rawProfile.goalStepId : 'straddle',
@@ -1034,6 +1075,34 @@ interface LoadResult {
   /** Primary storage held something that could not be read at all. */
   failed?: string
   rawBytes?: number
+  /** Primary storage was written by a newer version of the app: shown, never written over. */
+  newer?: boolean
+}
+
+/**
+ * Whether saved data comes from a newer version of the app than this one.
+ * This build cannot know that version's fields, so normalizing would strip
+ * them, and writing the result back would lose them for good.
+ */
+export function isNewerSave(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null) return false
+  const version = Number((raw as { version?: unknown }).version)
+  return Number.isFinite(version) && version > CURRENT_STATE_VERSION
+}
+
+/** Training worth protecting: a finished setup, or anything logged. */
+function hasSubstance(state: AppState): boolean {
+  return state.onboarded || state.sessions.length > 0 || (state.gym?.sessions.length ?? 0) > 0
+}
+
+/** Logged training: skill sessions, gym sessions or body measurements. */
+function hasHistory(state: AppState): boolean {
+  return state.sessions.length > 0 || (state.gym?.sessions.length ?? 0) > 0 || state.measurements.length > 0
+}
+
+/** How much a dataset holds, for deciding between two unrelated ones: history, then setup, then nothing. */
+function substanceRank(state: AppState): number {
+  return state.sessions.length > 0 || (state.gym?.sessions.length ?? 0) > 0 ? 2 : state.onboarded ? 1 : 0
 }
 
 function quarantine(raw: string, reason: string) {
@@ -1077,6 +1146,12 @@ function loadState(): LoadResult {
   if (!raw) return { state: initialState(), empty: true }
   try {
     const parsed = JSON.parse(raw)
+    if (isNewerSave(parsed)) {
+      // Shown as far as this version can read it; nothing is written, so the
+      // newer version's fields stay on disk. No snapshot or quarantine either:
+      // nothing here is about to change.
+      return { state: normalizeState(parsed), empty: false, newer: true }
+    }
     const { state: normalized, report } = normalizeStateWithReport(parsed)
     const next = reconcileAchievements(normalized)
 
@@ -1130,14 +1205,33 @@ export function previousBackup(): { json: string; sessions: number } | null {
  */
 export async function eraseRecoveryCopies(): Promise<{ failed: string[] }> {
   const failed: string[] = []
-  for (const key of [BACKUP_KEY, QUARANTINE_KEY, DRAFT_KEY]) {
+  for (const key of [BACKUP_KEY, QUARANTINE_KEY]) {
     try {
       localStorage.removeItem(key)
     } catch {
       failed.push(key)
     }
   }
+  failed.push(...forgetUnfinishedWork().failed)
   if (!(await clearMirror())) failed.push('on-device backup')
+  return { failed }
+}
+
+/**
+ * Drop the unfinished skill session, the unfinished gym session and the note
+ * of what follows today's opener. They belong to the dataset that was there:
+ * after a reset or an import, a resumed draft would save the old dataset's
+ * work into the new one. Returns the keys that could not be removed.
+ */
+export function forgetUnfinishedWork(): { failed: string[] } {
+  const failed: string[] = []
+  for (const key of UNFINISHED_WORK_KEYS) {
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      failed.push(key)
+    }
+  }
   return { failed }
 }
 
@@ -1314,7 +1408,13 @@ function goalChange(state: AppState, goal: number, at = Date.now()): Partial<Set
   if (!Number.isFinite(goal) || goal === state.settings.weeklyGoal) return {}
   const prior = state.settings.goalBefore
   const sameWeek = prior !== undefined && weekStart(prior.until) === weekStart(at)
-  return { weeklyGoal: goal, goalBefore: { goal: sameWeek ? prior.goal : state.settings.weeklyGoal, until: at } }
+  return {
+    weeklyGoal: goal,
+    // Kept for older builds, which read only this.
+    goalBefore: { goal: sameWeek ? prior.goal : state.settings.weeklyGoal, until: at },
+    // What the streak reads: every change, so no finished week is re-judged.
+    goalHistory: goalHistoryWith(state.settings, goal, at),
+  }
 }
 
 function stamp(state: AppState, keys: string[], at = Date.now()): Record<string, number> {
@@ -1378,6 +1478,13 @@ export function mergeExternalState(local: AppState, incoming: AppState): AppStat
     if (localIsStale && !incomingIsStale) return adopt()
     // A tab still holding a dataset this one replaced must not merge back in.
     if (incomingIsStale && !localIsStale) return keep()
+    // Unrelated datasets: one with history outranks one with only a setup,
+    // which outranks an untouched placeholder. The empty state a tab shows
+    // while it boots once won on epoch order alone and replaced a full
+    // history. (A reset is not this case: it retires the old epoch above.)
+    const localRank = substanceRank(local)
+    const incomingRank = substanceRank(incoming)
+    if (localRank !== incomingRank) return incomingRank > localRank ? adopt() : keep()
     // Two replacements raced. Any consistent rule converges; the epoch order is
     // one every tab computes identically, so they cannot ping-pong forever.
     return incomingEpoch > localEpoch ? adopt() : keep()
@@ -1406,12 +1513,26 @@ export function mergeExternalState(local: AppState, incoming: AppState): AppStat
   let fieldsChanged = false
   const settings = { ...local.settings }
   for (const key of Object.keys(incoming.settings) as (keyof Settings)[]) {
+    if (key === 'goalHistory') continue
     if (newer(`settings.${key}`) && settings[key] !== incoming.settings[key]) {
       ;(settings as Record<string, unknown>)[key] = incoming.settings[key]
       fieldTimes[`settings.${key}`] = it[`settings.${key}`]
       fieldsChanged = true
     }
   }
+  // Every goal change either tab made, by its time: the newer list alone
+  // would drop the other tab's change and re-judge the weeks it covered.
+  const goalHistory = mergeGoalHistory(local.settings.goalHistory, incoming.settings.goalHistory)
+  if (goalHistory !== local.settings.goalHistory) {
+    settings.goalHistory = goalHistory
+    fieldsChanged = true
+  }
+  // Finishing setup is one-way, and the dataset began when either tab first
+  // had it: a tab still on the welcome screen once wrote `onboarded: false`
+  // over a setup finished in another.
+  const onboarded = local.onboarded || incoming.onboarded
+  const startedAt = Math.min(local.startedAt, incoming.startedAt)
+  if (onboarded !== local.onboarded || startedAt !== local.startedAt) fieldsChanged = true
   const profile = { ...local.profile }
   for (const key of new Set([...Object.keys(incoming.profile), ...Object.keys(local.profile)]) as Set<keyof Profile>) {
     if (newer(`profile.${key}`) && JSON.stringify(profile[key]) !== JSON.stringify(incoming.profile[key])) {
@@ -1509,6 +1630,8 @@ export function mergeExternalState(local: AppState, incoming: AppState): AppStat
   const merged: AppState = {
     ...local,
     ...stepFields,
+    onboarded,
+    startedAt,
     name,
     settings,
     profile,
@@ -1529,10 +1652,109 @@ export function mergeExternalState(local: AppState, incoming: AppState): AppStat
     : merged
 }
 
+/**
+ * Setup finished again over a history (a tab that showed the welcome screen
+ * over saved training, say). Finishing it once replaced the measurements, the
+ * kit, the birth year, the start date and the placements — an athlete placed
+ * at tuck went back to foundations. Now it marks setup finished and fills in
+ * only what was never given: logged history, placements and any answer the
+ * athlete already gave stay as they are, kit is only ever added, and a
+ * measurement is added beside the others.
+ */
+function completeOnboardingOverHistory(
+  state: AppState,
+  action: Extract<Action, { type: 'COMPLETE_ONBOARDING' }>,
+): AppState {
+  const times = state.fieldTimes ?? {}
+  const given = (key: string) => times[key] !== undefined
+  const applied: string[] = []
+  const profile: Profile = { ...state.profile }
+  const write = profile as unknown as Record<string, unknown>
+  for (const [key, value] of Object.entries(action.profile)) {
+    if (value === undefined || key === 'skills') continue
+    if (key === 'equipment') {
+      const union = [...new Set([...state.profile.equipment, ...(Array.isArray(value) ? value : [])])]
+      if (union.length !== state.profile.equipment.length) {
+        profile.equipment = union
+        applied.push('profile.equipment')
+      }
+      continue
+    }
+    if (write[key] !== undefined && given(`profile.${key}`)) continue
+    if (JSON.stringify(write[key]) === JSON.stringify(value)) continue
+    write[key] = value
+    applied.push(`profile.${key}`)
+  }
+  if (action.heightCm !== undefined && profile.heightCm === undefined) {
+    profile.heightCm = action.heightCm
+    applied.push('profile.heightCm')
+  }
+  const chosen = [...new Set((action.skills ?? ['planche']).filter((id) => SKILL_ID_SET.has(id)))]
+  const skills = state.profile.skills?.length && given('profile.skills') ? state.profile.skills : chosen.length ? chosen : ['planche' as SkillId]
+  if (JSON.stringify(skills) !== JSON.stringify(state.profile.skills)) {
+    profile.skills = skills
+    applied.push('profile.skills')
+  }
+  const settings: Settings = { ...state.settings }
+  if (!given('settings.weeklyGoal')) Object.assign(settings, goalChange(state, action.weeklyGoal))
+  if (!given('settings.units')) settings.units = action.units
+  if (action.sessionMinutes !== undefined && Number.isFinite(action.sessionMinutes) && !given('settings.sessionMinutes')) {
+    settings.sessionMinutes = Math.min(120, Math.max(5, Math.round(action.sessionMinutes)))
+  }
+  for (const key of ['weeklyGoal', 'goalBefore', 'goalHistory', 'units', 'sessionMinutes'] as const) {
+    if (settings[key] !== state.settings[key]) applied.push(`settings.${key}`)
+  }
+  const name = state.name.trim() ? state.name : action.name
+  if (name !== state.name) applied.push('name')
+  const at = Date.now()
+  const measurement: Measurement | undefined =
+    action.weightKg !== undefined || action.heightCm !== undefined
+      ? { at, weightKg: action.weightKg, heightCm: action.heightCm }
+      : undefined
+  let next: AppState = {
+    ...state,
+    onboarded: true,
+    name,
+    ...(state.assessment || !action.assessment ? {} : { assessment: action.assessment }),
+    profile,
+    settings,
+    measurements: measurement ? [...state.measurements, measurement].sort((a, b) => a.at - b.at) : state.measurements,
+    fieldTimes: stamp(state, applied, at),
+  }
+  // A road the athlete had not started is placed as answered; a road already
+  // walked keeps its place (`addTrack` leaves an existing track alone).
+  for (const skill of skills) {
+    if (skill === 'planche') continue
+    const placement = action.placements?.[skill]
+    if (next.tracks?.[skill]) continue
+    next = addTrack(next, skill, at, placement?.stepId, placement?.assessment)
+    if (placement?.goalStepId && isStepOf(placement.goalStepId, skill)) {
+      next = withTrack(next, skill, { goalStepId: placement.goalStepId })
+    }
+    next = { ...next, fieldTimes: stamp(next, [stepField(skill)], at) }
+  }
+  for (const event of action.symptoms ?? []) next = appendSymptom(next, event)
+  return next
+}
+
 function reduceAction(state: AppState, action: Action): AppState {
   switch (action.type) {
-    case 'SAVE_SESSION':
-      return applySession(state, action.session).next
+    case 'SAVE_SESSION': {
+      const incoming = action.session
+      // A deleted session stays deleted. Saved again (a resumed draft, a second
+      // tap), it came back in memory and vanished again on the next load.
+      if ((state.deletedSessionIds ?? []).includes(incoming.id)) return state
+      // One session per id: the same save twice is one session, and a later
+      // save of it replaces the earlier one. Two copies once counted twice for
+      // the goal and the load until a reload set one aside as conflicting.
+      const existing = state.sessions.find((s) => s.id === incoming.id)
+      if (existing) {
+        if (JSON.stringify(existing) === JSON.stringify(incoming)) return state
+        const sessions = state.sessions.map((s) => (s.id === incoming.id ? incoming : s))
+        return rebuildDerivedState({ ...state, sessions }, sessions)
+      }
+      return applySession(state, incoming).next
+    }
     case 'DELETE_SESSION': {
       const deletedSessionIds = [...new Set([...(state.deletedSessionIds ?? []), action.id])].slice(-MAX_TOMBSTONES)
       return rebuildDerivedState(
@@ -1609,6 +1831,7 @@ function reduceAction(state: AppState, action: Action): AppState {
       }
     }
     case 'COMPLETE_ONBOARDING': {
+      if (hasHistory(state)) return completeOnboardingOverHistory(state, action)
       // The top-level step is the planche's; an athlete who did not choose the
       // planche keeps it at its first step, untrained and out of the way.
       const target = isStepOf(action.stepId, 'planche') ? STEP_BY_ID[action.stepId] : STEP_BY_ID.foundations
@@ -1677,7 +1900,13 @@ function reduceAction(state: AppState, action: Action): AppState {
       return {
         ...state,
         measurements: [...state.measurements, entry],
-        profile: entry.heightCm !== undefined ? { ...state.profile, heightCm: entry.heightCm } : state.profile,
+        ...(entry.heightCm !== undefined
+          ? {
+              profile: { ...state.profile, heightCm: entry.heightCm },
+              // Stamped like any profile edit, or two tabs never agree on the height.
+              fieldTimes: stamp(state, ['profile.heightCm'], entry.at),
+            }
+          : {}),
       }
     }
     case 'SNOOZE_MEASURE':
@@ -1802,6 +2031,8 @@ export interface PersistStatus {
   /** The second on-device copy (IndexedDB). */
   mirror: 'ok' | 'failed' | 'pending' | 'idle'
   error?: string
+  /** Writes are held because a newer version of the app saved this data: refreshing is the fix (`App`'s banner says so). */
+  newer?: true
 }
 
 interface StoreValue {
@@ -1822,6 +2053,27 @@ const StoreCtx = createContext<StoreValue | null>(null)
 /** How long boot waits for the mirror before showing an editable UI anyway. */
 const MIRROR_BOOT_WAIT_MS = 1500
 
+/** Whether a failed write was the browser running out of room for this site. */
+function isQuotaError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  const e = err as { name?: unknown; code?: unknown }
+  return e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014
+}
+
+/**
+ * Keep a copy that is about to be written over, in the quarantine slot. An
+ * earlier copy already kept there is never replaced: false means this one
+ * could not be kept.
+ */
+function setAside(raw: string, reason: string): boolean {
+  const kept = quarantinedData()
+  if (kept) return kept.raw === raw
+  return quarantine(raw, reason)
+}
+
+const NEWER_VERSION_NOTICE =
+  'Your data was saved by a newer version of Fitness Lab. This copy of the app is older, so it is not saving anything: refresh the page to update it.'
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [load] = useState(loadState)
   const [state, dispatch] = useReducer(reducer, load.state)
@@ -1829,7 +2081,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   stateRef.current = state
   const mirrorTimer = useRef<number | undefined>(undefined)
   const pendingMirror = useRef<string | null>(null)
-  const [persist, setPersist] = useState<PersistStatus>({ primary: load.failed ? 'held' : 'ok', mirror: 'idle' })
+  // The mirror can hold work the primary copy never got (a full disk fails
+  // the primary write), so nothing is written to it until the boot read has
+  // looked. The first write after a stale boot once replaced three sessions
+  // with one.
+  const mirrorOpen = useRef(false)
+  // A failed save is said once a session, not on every write.
+  const storageWarned = useRef(false)
+  // A newer version's data is never written over: its fields would be lost.
+  const [newerHeld, setNewerHeld] = useState(Boolean(load.newer))
+  const newerRef = useRef(Boolean(load.newer))
+  const [persist, setPersist] = useState<PersistStatus>({ primary: load.failed || load.newer ? 'held' : 'ok', mirror: 'idle' })
   const [boot, setBoot] = useState<BootInfo>(() =>
     load.failed
       ? { phase: 'checking-backup', failure: { reason: load.failed, bytes: load.rawBytes ?? 0 } }
@@ -1839,10 +2101,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
   // While the saved data is unreadable and unresolved, nothing may overwrite
   // it — not even the empty placeholder state the app is showing.
-  const holdWrites = boot.phase === 'unreadable' || (boot.phase === 'checking-backup' && Boolean(load.failed))
+  const holdWrites = newerHeld || boot.phase === 'unreadable' || (boot.phase === 'checking-backup' && Boolean(load.failed))
+  const holdRef = useRef(holdWrites)
+  holdRef.current = holdWrites
+
+  const holdForNewer = useCallback(() => {
+    if (newerRef.current) return
+    newerRef.current = true
+    holdRef.current = true
+    window.clearTimeout(mirrorTimer.current)
+    pendingMirror.current = null
+    setNewerHeld(true)
+    pushToast(NEWER_VERSION_NOTICE, 'danger')
+  }, [])
+
+  // Said once, even where effects run twice (StrictMode in development).
+  const newerAnnounced = useRef(false)
+  useEffect(() => {
+    if (!load.newer || newerAnnounced.current) return
+    newerAnnounced.current = true
+    pushToast(NEWER_VERSION_NOTICE, 'danger')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const flushMirror = useCallback(() => {
     window.clearTimeout(mirrorTimer.current)
+    // Never before the boot read has looked, and never while writes are held.
+    if (!mirrorOpen.current || holdRef.current) return
     const json = pendingMirror.current
     if (json === null) return
     pendingMirror.current = null
@@ -1866,17 +2151,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // Storage full, evicted, or private mode. Keep going: the mirror is the
         // recovery copy for exactly this failure — but say so, because silence
         // here is how an athlete closes the app believing a session was saved.
-        setPersist((p) => ({
-          ...p,
-          primary: 'failed',
-          error: err instanceof Error ? err.name || err.message : 'storage unavailable',
-        }))
+        const full = isQuotaError(err)
+        setPersist((p) => ({ ...p, primary: 'failed', error: full ? 'storage is full' : 'storage unavailable' }))
+        if (!storageWarned.current) {
+          storageWarned.current = true
+          pushToast(
+            full
+              ? 'Storage on this device is full, so your latest changes may not be kept. Export a backup now (Settings → Data), then free up some space.'
+              : 'This browser is not letting Fitness Lab save, so your latest changes may not be kept. Export a backup now (Settings → Data).',
+            'danger',
+          )
+        }
       }
       // Not reported as 'pending' in React state: toggling it on every change
       // would re-render every store consumer twice per write for no benefit.
       pendingMirror.current = json
       window.clearTimeout(mirrorTimer.current)
-      mirrorTimer.current = window.setTimeout(flushMirror, 1500)
+      mirrorTimer.current = window.setTimeout(flushMirror, MIRROR_DEBOUNCE_MS)
     },
     [flushMirror],
   )
@@ -1910,68 +2201,154 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== STORAGE_KEY || !event.newValue) return
       try {
-        const incoming = normalizeState(JSON.parse(event.newValue))
-        dispatch({ type: 'MERGE_EXTERNAL', incoming })
+        const parsed = JSON.parse(event.newValue)
+        // A newer version is open elsewhere: merging would strip its fields
+        // and the next write would put the stripped copy back.
+        if (isNewerSave(parsed)) {
+          holdForNewer()
+          return
+        }
+        if (newerRef.current) return
+        dispatch({ type: 'MERGE_EXTERNAL', incoming: normalizeState(parsed) })
       } catch {
         /* ignore an incomplete/corrupt external write */
       }
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
-  }, [])
+  }, [holdForNewer])
 
+  // Boot reads the mirror every time, before anything is written to it.
   // Primary copy missing or unreadable: look for the mirror before handing the
   // athlete an editable app. A restore that arrives *after* they have started
   // using it must not overwrite what they did — that is the late-mirror race
-  // that replaced fresh onboarding choices with an older recovered state.
+  // that replaced fresh onboarding choices with an older recovered state — and
+  // the copy it found is kept aside rather than lost to the next mirror write.
+  // Primary copy read fine: the mirror can still be newer (a full disk fails
+  // the primary write and only the mirror gets the session), so it is merged
+  // in; the merge keeps the newer of everything and honours deletions.
   useEffect(() => {
-    if (boot.phase !== 'checking-backup') return
+    let cancelled = false
+    const checking = boot.phase === 'checking-backup'
     const bootRev = stateRef.current.rev ?? 0
     let settled = false
     const finishWithoutRestore = () => {
-      if (settled) return
+      if (settled || !checking) return
       settled = true
       setBoot((b) => (load.failed ? { ...b, phase: 'unreadable' } : { phase: 'ready' }))
     }
-    const timer = window.setTimeout(finishWithoutRestore, MIRROR_BOOT_WAIT_MS)
+    const timer = checking ? window.setTimeout(finishWithoutRestore, MIRROR_BOOT_WAIT_MS) : undefined
+    /**
+     * The boot read is done, so the mirror may be written from now on. A merge
+     * or restore drops the write queued from the stale state (the next state's
+     * write queues its own); `keepClosed` leaves the mirror as it is.
+     */
+    const openMirror = (dropPending: boolean, keepClosed = false) => {
+      if (keepClosed || newerRef.current) return
+      if (dropPending) pendingMirror.current = null
+      mirrorOpen.current = true
+      if (pendingMirror.current !== null) {
+        window.clearTimeout(mirrorTimer.current)
+        mirrorTimer.current = window.setTimeout(flushMirror, MIRROR_DEBOUNCE_MS)
+      }
+    }
     void readMirror().then((raw) => {
-      let recovered: AppState | null = null
+      if (cancelled) return
+      let parsed: unknown = null
       if (raw) {
         try {
-          const candidate = normalizeState(JSON.parse(raw))
-          if (candidate.onboarded || candidate.sessions.length > 0) recovered = candidate
+          parsed = JSON.parse(raw)
         } catch {
-          recovered = null
+          parsed = null
         }
       }
-      if (!recovered) {
+      if (isNewerSave(parsed)) {
+        // A newer version wrote the mirror; this one must not write over it.
+        holdForNewer()
         window.clearTimeout(timer)
         finishWithoutRestore()
         return
       }
-      if ((stateRef.current.rev ?? 0) !== bootRev) {
-        // The athlete has already acted. Their newer state wins; the older
-        // copy is offered, not imposed.
-        pushToast(
-          'An older on-device backup was found after you had started. Your current data was kept — export it before restoring anything else.',
-          'info',
-          8000,
-        )
+      let recovered: AppState | null = null
+      if (raw && parsed) {
+        try {
+          const candidate = normalizeState(parsed)
+          if (hasSubstance(candidate)) recovered = candidate
+        } catch {
+          recovered = null
+        }
+      }
+      if (!raw || !recovered || newerRef.current) {
+        window.clearTimeout(timer)
+        finishWithoutRestore()
+        openMirror(false)
         return
       }
-      window.clearTimeout(timer)
-      settled = true
-      dispatch({ type: 'REPLACE', state: recovered, reason: 'restore' })
-      setBoot({ phase: 'ready' })
+      if (checking) {
+        if ((stateRef.current.rev ?? 0) !== bootRev) {
+          // The athlete has already acted. Their newer state wins; the older
+          // copy is offered, not imposed — and kept, because the next mirror
+          // write would otherwise be the end of it.
+          const kept = setAside(raw, 'An on-device backup found after you had started; your newer data was kept.')
+          pushToast(
+            kept
+              ? 'An older on-device backup was found after you had started. Your current data was kept, and the backup is kept aside in Settings → Data.'
+              : 'An older on-device backup was found after you had started. Your current data was kept — export it before restoring anything else.',
+            'info',
+            8000,
+          )
+          openMirror(false, !kept)
+          return
+        }
+        window.clearTimeout(timer)
+        settled = true
+        dispatch({ type: 'REPLACE', state: recovered, reason: 'restore' })
+        setBoot({ phase: 'ready' })
+        pushToast(
+          load.failed
+            ? 'Your saved data could not be read, so the on-device backup was restored. The unreadable copy is kept aside in Settings → Data.'
+            : 'Restored your data from the on-device backup.',
+          'success',
+          6000,
+        )
+        openMirror(true)
+        return
+      }
+      const local = stateRef.current
+      const merged = mergeExternalState(local, recovered)
+      if (merged === local) {
+        openMirror(false)
+        return
+      }
+      if (local.epoch !== recovered.epoch && merged.epoch !== recovered.epoch) {
+        // A different dataset, and this one stays. One this browser replaced on
+        // purpose (a reset, an import) is let go; any other is kept aside first.
+        const retired = recovered.epoch !== undefined && (local.retiredEpochs ?? []).includes(recovered.epoch)
+        const kept = retired || setAside(raw, 'A different on-device backup was found; the data in this browser was kept.')
+        if (!retired) {
+          pushToast(
+            kept
+              ? 'A different on-device backup was found. The data in this browser was kept, and the backup is kept aside in Settings → Data.'
+              : 'A different on-device backup was found. The data in this browser was kept — export it before restoring anything else.',
+            'info',
+            8000,
+          )
+        }
+        openMirror(false, !kept)
+        return
+      }
+      dispatch({ type: 'MERGE_EXTERNAL', incoming: recovered })
       pushToast(
-        load.failed
-          ? 'Your saved data could not be read, so the on-device backup was restored. The unreadable copy is kept aside in Settings → Data.'
-          : 'Restored your data from the on-device backup.',
+        'Changes that had not reached this browser’s main storage were found in the on-device backup and put back.',
         'success',
         6000,
       )
+      openMirror(true)
     })
-    return () => window.clearTimeout(timer)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -2015,8 +2392,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [writeNow, flushMirror])
 
   const value = useMemo(
-    () => ({ state, dispatch, getState, persist, boot, startFresh, retrySave }),
-    [state, getState, persist, boot, startFresh, retrySave],
+    () => ({ state, dispatch, getState, persist: newerHeld ? { ...persist, newer: true as const } : persist, boot, startFresh, retrySave }),
+    [state, getState, persist, newerHeld, boot, startFresh, retrySave],
   )
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>
 }

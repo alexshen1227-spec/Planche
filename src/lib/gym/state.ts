@@ -258,13 +258,41 @@ export function maxCountFor(exerciseId: string | undefined): number {
   return exerciseId !== undefined && GYM_EXERCISE_BY_ID[exerciseId]?.count === 'seconds' ? 3600 : 1000
 }
 
-function sanitizeSet(raw: unknown, exerciseId?: string): GymSet | null {
-  if (typeof raw !== 'object' || raw === null) return null
+type Lose = (what: string) => void
+const noLoss: Lose = () => undefined
+
+/** The gym state as stored: the active place carries the time it was chosen (merged by time). */
+export type StampedGym = GymState & { activeLocationAt?: number }
+
+const shownKg = (v: unknown) => (typeof v === 'number' ? String(v) : JSON.stringify(v))
+
+function sanitizeSet(raw: unknown, exerciseId?: string, lose: Lose = noLoss, where = 'a set'): GymSet | null {
+  if (typeof raw !== 'object' || raw === null) {
+    lose(`${where}: not a set, left out`)
+    return null
+  }
   const r = raw as Record<string, unknown>
   const reps = typeof r.reps === 'number' && Number.isFinite(r.reps) ? Math.round(r.reps) : NaN
-  if (!(reps >= 0 && reps <= maxCountFor(exerciseId)) || !isTime(r.at)) return null
-  const kg = typeof r.kg === 'number' && Number.isFinite(r.kg) && r.kg > 0 && r.kg < 1000 ? r.kg : undefined
+  if (!(reps >= 0 && reps <= maxCountFor(exerciseId)) || !isTime(r.at)) {
+    lose(`${where}: reps or time unreadable (${JSON.stringify(r.reps)} reps), set left out`)
+    return null
+  }
+  if (typeof r.reps === 'number' && r.reps !== reps) lose(`${where}: ${r.reps} reps rounded to ${reps}`)
+  // A load the app cannot believe is kept and reported, never turned into a bodyweight set: that would
+  // erase a heavy lift from the athlete's records without a word. Only a load with no meaning at all
+  // (negative, not a number) takes the set with it, and says so.
+  let kg: number | undefined
+  if (r.kg !== undefined && r.kg !== null && r.kg !== 0) {
+    if (typeof r.kg === 'number' && Number.isFinite(r.kg) && r.kg > 0) {
+      kg = r.kg
+      if (r.kg >= 1000) lose(`${where}: a load of ${shownKg(r.kg)} kg is not believable; kept as it was saved`)
+    } else {
+      lose(`${where}: the load ${shownKg(r.kg)} cannot be read, so the set was left out`)
+      return null
+    }
+  }
   const rpe = typeof r.rpe === 'number' && r.rpe >= 1 && r.rpe <= 10 ? Math.round(r.rpe * 2) / 2 : undefined
+  if (r.rpe !== undefined && rpe === undefined) lose(`${where}: effort ${JSON.stringify(r.rpe)} unreadable, left blank`)
   return {
     reps,
     at: r.at,
@@ -276,32 +304,55 @@ function sanitizeSet(raw: unknown, exerciseId?: string): GymSet | null {
   }
 }
 
-function sanitizeLog(raw: unknown): GymExerciseLog | null {
-  if (typeof raw !== 'object' || raw === null) return null
+/** Is this movement in the catalogue? A log of one that is not is kept under its id and shown that way. */
+export const isKnownExercise = (id: string): boolean => id in GYM_EXERCISE_BY_ID
+
+function sanitizeLog(raw: unknown, lose: Lose = noLoss, where = 'an exercise'): GymExerciseLog | null {
+  if (typeof raw !== 'object' || raw === null) {
+    lose(`${where}: not an exercise log, left out`)
+    return null
+  }
   const r = raw as Record<string, unknown>
-  if (typeof r.exerciseId !== 'string' || !(r.exerciseId in GYM_EXERCISE_BY_ID)) return null
-  const sets = Array.isArray(r.sets) ? r.sets.map((x) => sanitizeSet(x, r.exerciseId as string)).filter((s): s is GymSet => s !== null) : []
+  if (typeof r.exerciseId !== 'string' || !r.exerciseId) {
+    lose(`${where}: no exercise id, left out`)
+    return null
+  }
+  const id = r.exerciseId
+  if (!isKnownExercise(id)) lose(`${where}: "${id}" is no longer in the catalogue; its sets are kept under that name`)
+  const sets = Array.isArray(r.sets)
+    ? r.sets.map((x, i) => sanitizeSet(x, id, lose, `${where} (${id}) set ${i + 1}`)).filter((s): s is GymSet => s !== null)
+    : []
   const range =
     Array.isArray(r.repRange) && r.repRange.length === 2 && r.repRange.every((n) => typeof n === 'number' && n > 0 && n < 100)
       ? ([r.repRange[0], r.repRange[1]] as [number, number])
       : undefined
+  if (r.repRange !== undefined && !range) lose(`${where} (${id}): rep range unreadable, dropped`)
+  if (typeof r.note === 'string' && r.note.length > 500) lose(`${where} (${id}): note cut to 500 characters`)
   return {
-    exerciseId: r.exerciseId,
+    exerciseId: id,
     sets,
-    ...(typeof r.swappedFrom === 'string' && r.swappedFrom in GYM_EXERCISE_BY_ID ? { swappedFrom: r.swappedFrom } : {}),
+    ...(typeof r.swappedFrom === 'string' && r.swappedFrom ? { swappedFrom: r.swappedFrom } : {}),
     ...(range ? { repRange: range } : {}),
     ...(typeof r.targetRpe === 'number' && r.targetRpe >= 5 && r.targetRpe <= 10 ? { targetRpe: r.targetRpe } : {}),
     ...(typeof r.note === 'string' && r.note ? { note: r.note.slice(0, 500) } : {}),
   }
 }
 
-function sanitizeSession(raw: unknown): GymSession | null {
-  if (typeof raw !== 'object' || raw === null) return null
+function sanitizeSession(raw: unknown, lose: Lose = noLoss): GymSession | null {
+  if (typeof raw !== 'object' || raw === null) {
+    lose('a gym session: not readable, left out')
+    return null
+  }
   const r = raw as Record<string, unknown>
-  if (typeof r.id !== 'string' || !r.id || !isTime(r.startedAt)) return null
+  if (typeof r.id !== 'string' || !r.id || !isTime(r.startedAt)) {
+    lose('a gym session with no id or start time, left out')
+    return null
+  }
+  const where = `session ${r.id}`
   const exercises = Array.isArray(r.exercises)
-    ? r.exercises.map(sanitizeLog).filter((l): l is GymExerciseLog => l !== null)
+    ? r.exercises.map((e, i) => sanitizeLog(e, lose, `${where} exercise ${i + 1}`)).filter((l): l is GymExerciseLog => l !== null)
     : []
+  if (!(isTime(r.endedAt) && r.endedAt >= r.startedAt)) lose(`${where}: end time unreadable, read as its start`)
   return {
     id: r.id,
     locationId: typeof r.locationId === 'string' ? r.locationId : 'home',
@@ -317,26 +368,54 @@ function sanitizeSession(raw: unknown): GymSession | null {
 
 /** Anything unreadable is dropped, never guessed; absent stays absent. */
 export function sanitizeGym(raw: unknown): GymState | undefined {
-  if (typeof raw !== 'object' || raw === null) return undefined
-  const r = raw as Record<string, unknown>
+  return sanitizeGymReport(raw).gym
+}
+
+/**
+ * `sanitizeGym` that also says what it dropped or repaired, one plain line each, so a caller can quarantine the
+ * original instead of losing it silently. A clean read has no losses.
+ */
+export function sanitizeGymReport(raw: unknown): { gym: GymState | undefined; losses: string[] } {
+  const losses: string[] = []
+  const lose: Lose = (what) => {
+    if (losses.length < 200) losses.push(what)
+  }
+  if (typeof raw !== 'object' || raw === null) {
+    if (raw !== undefined && raw !== null) lose('gym data: not readable, left out')
+    return { gym: undefined, losses }
+  }
+  return { gym: readGym(raw as Record<string, unknown>, lose), losses }
+}
+
+function readGym(r: Record<string, unknown>, lose: Lose): StampedGym {
   const locations = Array.isArray(r.locations)
-    ? r.locations.map(sanitizeLocation).filter((l): l is GymLocation => l !== null)
+    ? r.locations
+        .map((l) => {
+          const out = sanitizeLocation(l)
+          if (!out) lose('a gym place: not readable, left out')
+          return out
+        })
+        .filter((l): l is GymLocation => l !== null)
     : []
   const uniqueLocations = [...new Map(locations.map((l) => [l.id, l])).values()]
+  if (uniqueLocations.length < locations.length) lose('a gym place saved twice: one copy kept')
   const sessions = Array.isArray(r.sessions)
-    ? r.sessions.map(sanitizeSession).filter((s): s is GymSession => s !== null)
+    ? r.sessions.map((s) => sanitizeSession(s, lose)).filter((s): s is GymSession => s !== null)
     : []
   const uniqueSessions = [...new Map(sessions.map((s) => [s.id, s])).values()].sort((a, b) => a.startedAt - b.startedAt)
+  if (uniqueSessions.length < sessions.length) lose('a gym session saved twice: one copy kept')
   const ratings: Record<string, Rating> = {}
   if (typeof r.ratings === 'object' && r.ratings !== null) {
     for (const [id, v] of Object.entries(r.ratings as Record<string, unknown>)) {
       if (id in GYM_EXERCISE_BY_ID && RATINGS.includes(v as Rating)) ratings[id] = v as Rating
+      else lose(`the rating of "${id}" is not readable or the movement is no longer in the catalogue, left out`)
     }
   }
   const favoriteAt: Record<string, string> = {}
   if (typeof r.favoriteAt === 'object' && r.favoriteAt !== null) {
     for (const [id, v] of Object.entries(r.favoriteAt as Record<string, unknown>)) {
       if (id in GYM_EXERCISE_BY_ID && typeof v === 'string' && uniqueLocations.some((l) => l.id === v)) favoriteAt[id] = v
+      else lose(`the favourite place of "${id}" is not readable, left out`)
     }
   }
   const ratingAtTime = sanitizeTimes(r.ratingAtTime)
@@ -346,11 +425,12 @@ export function sanitizeGym(raw: unknown): GymState | undefined {
   const deletedSessionIds = ids(r.deletedSessionIds)
   const deletedLocationIds = ids(r.deletedLocationIds)
   const prefs = sanitizePrefs(r.prefs)
-  const activities = Array.isArray(r.activities)
-    ? [...new Map(r.activities.map(sanitizeActivity).filter((a): a is OutsideActivity => a !== null).map((a) => [a.id, a])).values()].sort(
-        (a, b) => a.at - b.at,
-      )
-    : []
+  if (r.prefs !== undefined && !prefs) lose('training preferences: not readable, left out')
+  const activityRows = Array.isArray(r.activities) ? r.activities.map(sanitizeActivity) : []
+  if (activityRows.some((a) => a === null)) lose('an outside activity: not readable, left out')
+  const activities = [...new Map(activityRows.filter((a): a is OutsideActivity => a !== null).map((a) => [a.id, a])).values()].sort(
+    (a, b) => a.at - b.at,
+  )
   const deletedActivityIds = ids(r.deletedActivityIds)
   const active =
     typeof r.activeLocationId === 'string' && uniqueLocations.some((l) => l.id === r.activeLocationId)
@@ -359,6 +439,7 @@ export function sanitizeGym(raw: unknown): GymState | undefined {
   return {
     locations: uniqueLocations,
     ...(active ? { activeLocationId: active } : {}),
+    ...(active && isTime(r.activeLocationAt) ? { activeLocationAt: r.activeLocationAt } : {}),
     sessions: uniqueSessions,
     ...(deletedSessionIds.length ? { deletedSessionIds } : {}),
     ...(deletedLocationIds.length ? { deletedLocationIds } : {}),
@@ -438,7 +519,9 @@ const sessionStamp = (s: GymSession) => s.updatedAt ?? s.endedAt
  * edited on both, deletions honoured on both sides, preferences from whichever
  * side changed them last. Returns `local` itself when nothing differs.
  */
-export function mergeGym(local: GymState | undefined, incoming: GymState | undefined): GymState | undefined {
+export function mergeGym(localIn: GymState | undefined, incomingIn: GymState | undefined): GymState | undefined {
+  const local = localIn as StampedGym | undefined
+  const incoming = incomingIn as StampedGym | undefined
   if (!incoming) return local
   if (!local) return incoming
   const deadSessions = [...new Set([...(local.deletedSessionIds ?? []), ...(incoming.deletedSessionIds ?? [])])].slice(-MAX_TOMBSTONES)
@@ -496,12 +579,7 @@ export function mergeGym(local: GymState | undefined, incoming: GymState | undef
   const prefs = mergePrefs(local.prefs, incoming.prefs)
   const merged: GymState = {
     locations: [...locations.values()],
-    activeLocationId:
-      local.activeLocationId && locations.has(local.activeLocationId)
-        ? local.activeLocationId
-        : incoming.activeLocationId && locations.has(incoming.activeLocationId)
-          ? incoming.activeLocationId
-          : [...locations.keys()][0],
+    ...activeChoice(local, incoming, locations),
     sessions: [...sessions.values()].sort((a, b) => a.startedAt - b.startedAt),
     ...(deadSessions.length ? { deletedSessionIds: deadSessions } : {}),
     ...(deadLocationIds.length ? { deletedLocationIds: deadLocationIds } : {}),
@@ -579,6 +657,26 @@ function mergeLocation(a: StampedLocation, b: StampedLocation): GymLocation {
   }
 }
 
+/**
+ * The active place, merged by the time it was chosen (later wins, a tie keeps local; a save with no time reads
+ * as 0). A choice of a place that no longer exists loses to the other side's, then to the first place left.
+ */
+export function activeChoice(
+  local: StampedGym,
+  incoming: StampedGym,
+  locations: { has(id: string): boolean; keys(): IterableIterator<string> },
+): { activeLocationId: string | undefined; activeLocationAt?: number } {
+  const usable = (g: StampedGym) => g.activeLocationId !== undefined && locations.has(g.activeLocationId)
+  const later = (incoming.activeLocationAt ?? 0) > (local.activeLocationAt ?? 0)
+  const order = later ? [incoming, local] : [local, incoming]
+  const from = order.find(usable)
+  const at = Math.max(local.activeLocationAt ?? 0, incoming.activeLocationAt ?? 0)
+  return {
+    activeLocationId: from?.activeLocationId ?? [...locations.keys()][0],
+    ...(at > 0 ? { activeLocationAt: at } : {}),
+  }
+}
+
 /** JSON with keys sorted, so two equal states compare equal whatever order built them. */
 function stableJson(v: unknown): string {
   return JSON.stringify(v, (_key, value: unknown) =>
@@ -607,6 +705,16 @@ export type GymOp =
 /** The gym reducer. Pure; `now` stamps what it changes. */
 export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.now()): GymState | undefined {
   if (action.op === 'init') return gym ?? action.gym
+  if (!gym && action.op === 'saveSession') {
+    // A finished session must never vanish because the gym side was never opened: the first save makes it.
+    const base = defaultGym([], 'kg', now)
+    const place = action.session.locationId
+    const seeded =
+      place === base.locations[0].id
+        ? base
+        : { ...base, locations: [{ ...base.locations[0], id: place, name: 'Gym' }], activeLocationId: place }
+    return reduceGym(seeded, action, now)
+  }
   if (!gym) return gym
   switch (action.op) {
     case 'saveSession': {
@@ -665,6 +773,7 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
         ...gym,
         locations,
         activeLocationId: gym.activeLocationId === action.id ? locations[0]?.id : gym.activeLocationId,
+        ...(gym.activeLocationId === action.id ? { activeLocationAt: now } : {}),
         deletedLocationIds: [...(gym.deletedLocationIds ?? []), action.id].slice(-MAX_TOMBSTONES),
         favoriteAt,
         favoriteAtTime,
@@ -672,7 +781,9 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
       }
     }
     case 'setActiveLocation':
-      return gym.locations.some((l) => l.id === action.id) ? { ...gym, activeLocationId: action.id } : gym
+      return gym.locations.some((l) => l.id === action.id) && gym.activeLocationId !== action.id
+        ? ({ ...gym, activeLocationId: action.id, activeLocationAt: now } as StampedGym)
+        : gym
     case 'rate': {
       const ratings = { ...gym.ratings }
       if (action.rating) ratings[action.exerciseId] = action.rating

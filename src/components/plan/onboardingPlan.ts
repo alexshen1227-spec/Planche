@@ -12,7 +12,7 @@ export interface ScheduleSummary {
   days: number
   /** The typical minutes on a training day (median, to the nearest 5), or undefined with no training day. */
   typicalMinutes: number | undefined
-  /** `settings.weeklyGoal`: one session a training day, 1–7. */
+  /** `settings.weeklyGoal`: one main session a training day, 1–7 — skill and gym days alike, as the streak counts them. */
   weeklyGoal: number
   /** `settings.sessionMinutes`: the typical day, kept inside the 15–60 range the app offers. */
   sessionMinutes: number

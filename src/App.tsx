@@ -190,6 +190,26 @@ function UpdateBanner({ defer = false }: { defer?: boolean }) {
  */
 function PersistenceBanner() {
   const { state, persist, dispatch, retrySave } = useStore()
+  // A newer version saved this data: this older copy holds every write so it never strips the newer fields.
+  // Only a refresh fixes it, and a toast alone was easy to miss.
+  if (persist.newer) {
+    return (
+      <div className="fixed inset-x-0 top-0 z-[70] flex justify-center px-3 pt-[max(env(safe-area-inset-top),8px)]">
+        <div
+          role="alert"
+          className="flex max-w-xl flex-wrap items-center gap-2 rounded-inner border border-danger/40 bg-danger-soft px-4 py-2.5 shadow-pop"
+        >
+          <Icon name="info" size={16} className="shrink-0 text-danger-text" />
+          <span className="min-w-0 flex-1 text-footnote leading-snug text-ink">
+            A newer version of Fitness Lab saved your data, so this older copy is not saving anything. Refresh to update it.
+          </span>
+          <button onClick={() => window.location.reload()} className="rounded-lg bg-danger-solid px-3 py-1.5 text-footnote font-semibold text-white">
+            Refresh
+          </button>
+        </div>
+      </div>
+    )
+  }
   if (persist.primary !== 'failed') return null
   return (
     <div className="fixed inset-x-0 top-0 z-[70] flex justify-center px-3 pt-[max(env(safe-area-inset-top),8px)]">

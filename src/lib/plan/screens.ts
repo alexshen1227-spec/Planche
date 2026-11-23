@@ -4,7 +4,8 @@ import type { GymFocus } from '../gym/builder'
 import type { GymLocation } from '../gym/types'
 import { STEP_BY_ID, stepAfter } from '../../data/progressions'
 import { qualifyingProgress } from '../progression'
-import { addDays, dayKey, weekStart } from '../time'
+import { addDays, weekStart } from '../time'
+import { goalDaysInWeekOf } from '../stats'
 import { missingKit } from '../../data/skills'
 import { readDayMarks, type DayMarks } from './nextBlock'
 import { atActivePlace, gymPlaceOf, insideRestRule, MIN_SKILL_MINUTES, placeKit, planToday, skillFamily, type SkillBlock, type TodayPlan } from './planner'
@@ -33,10 +34,10 @@ export function trainingWeek(state: AppState, now = Date.now()): TrainingWeek {
   const from = weekStart(now)
   const to = Math.min(addDays(from, 7), now + 1)
   const inWeek = (t: number) => t >= from && t < to
-  const kinds = new Map<string, 'calisthenics' | 'gym'>()
-  for (const s of state.sessions) if (s.workoutKind !== 'micro' && inWeek(s.startedAt)) kinds.set(dayKey(s.startedAt), 'calisthenics')
+  // The days the weekly goal is judged by, counted the one way the streak and
+  // the badges count them (`goalDaysInWeekOf`).
+  const kinds = goalDaysInWeekOf(state, now, now)
   const gym = (state.gym?.sessions ?? []).filter((s) => inWeek(s.startedAt))
-  for (const s of gym) kinds.set(dayKey(s.startedAt), 'gym')
   const values = [...kinds.values()]
   return {
     days: kinds.size,

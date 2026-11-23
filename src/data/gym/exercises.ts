@@ -157,7 +157,10 @@ export const GYM_EXERCISES: GymExercise[] = [
   x('assisted-pull-up', 'Assisted pull-up', 'vertical-pull', ['lats', 'biceps'], ['upper-back'], [['assisted-pullup', 'band']], 'machine', true, ['elbows', 'shoulders'], 'Use the least help that still gives clean reps.', { stepFrom: 'assisted-pullup', carries: ['frontlever'], assisted: true }),
   // Straight-arm pulls (front lever carry-over)
   x('straight-arm-pulldown', 'Straight-arm pulldown', 'straight-arm-pull', ['lats'], ['triceps-long', 'abs'], [['cable', 'band']], 'cable', false, ['shoulders', 'elbows'], 'Arms locked, sweep the bar to the thighs — the front lever’s pulling pattern.', { carries: ['frontlever'] }),
-  x('db-pullover', 'Dumbbell pullover', 'straight-arm-pull', ['lats'], ['chest', 'triceps-long'], [['dumbbells'], ['bench', 'incline-bench']], 'dumbbell', false, ['shoulders'], 'Arms nearly straight, ribs down, only as far back as the shoulders allow.', { carries: ['frontlever'] }),
+  // Joint tags (INFERENCE, from the mechanics, not from a trial): a loaded wrist curl works the forearm flexors, which
+  // attach at the inner elbow, and a near-straight-arm pullover holds the elbow under load in a lengthened position.
+  // Both are tagged elbows, so a reported elbow keeps them out. A reverse wrist curl is not in the catalogue.
+  x('db-pullover', 'Dumbbell pullover', 'straight-arm-pull', ['lats'], ['chest', 'triceps-long'], [['dumbbells'], ['bench', 'incline-bench']], 'dumbbell', false, ['shoulders', 'elbows'], 'Arms nearly straight, ribs down, only as far back as the shoulders allow.', { carries: ['frontlever'] }),
   // Rows
   x('barbell-row', 'Barbell row', 'horizontal-pull', ['upper-back', 'lats', 'rear-delts'], ['biceps', 'lower-back'], [['barbell']], 'barbell', true, ['lower-back', 'elbows'], 'Hinge to about 45°, bar to the lower ribs, back flat.', { technical: true, carries: ['frontlever'] }),
   x('db-row', 'One-arm dumbbell row', 'horizontal-pull', ['lats', 'upper-back'], ['rear-delts', 'biceps'], [['dumbbells'], ['bench', 'incline-bench']], 'dumbbell', true, ['elbows', 'wrists'], 'Pull the elbow toward the hip.', { unilateral: true, carries: ['frontlever'] }),
@@ -246,7 +249,7 @@ export const GYM_EXERCISES: GymExercise[] = [
   x('bayesian-curl', 'Bayesian cable curl', 'biceps', ['biceps'], [], [['cable']], 'cable', false, ['elbows', 'shoulders', 'wrists'], 'Facing away from the cable, arm behind the body; the curl starts from a long stretch.', { unilateral: true }),
   x('concentration-curl', 'Concentration curl', 'biceps', ['biceps'], [], [['dumbbells'], ['bench', 'incline-bench']], 'dumbbell', false, ['elbows', 'wrists'], 'Elbow against the inner thigh, curl slowly and squeeze at the top.', { unilateral: true }),
   x('reverse-curl', 'Reverse curl', 'biceps', ['forearms', 'biceps'], [], [['barbell', 'ez-bar', 'dumbbells']], 'barbell', false, ['elbows', 'wrists'], 'Palms down, elbows still; the forearms work as much as the biceps.', { stepFrom: 'ez-bar' }),
-  x('wrist-curl', 'Wrist curl', 'biceps', ['forearms'], [], [['dumbbells', 'barbell', 'ez-bar']], 'dumbbell', false, ['wrists'], 'Forearms on a bench or thigh, curl the weight with the wrist only.'),
+  x('wrist-curl', 'Wrist curl', 'biceps', ['forearms'], [], [['dumbbells', 'barbell', 'ez-bar']], 'dumbbell', false, ['wrists', 'elbows'], 'Forearms on a bench or thigh, curl the weight with the wrist only.'),
   x('drag-curl', 'Drag curl', 'biceps', ['biceps'], ['forearms'], [['barbell', 'ez-bar']], 'barbell', false, ['elbows', 'wrists'], 'The bar slides up the body with the elbows pulled back; no swing.', { stepFrom: 'ez-bar' }),
   x('ring-curl', 'Ring curl', 'biceps', ['biceps'], ['forearms', 'abs'], [['rings']], 'bodyweight', false, ['elbows', 'shoulders', 'wrists'], 'Lean back under the rings, elbows high and forward, curl the hands to the forehead.', { carries: ['frontlever'] }),
   // ---- Vertical pulls ----
@@ -261,7 +264,7 @@ export const GYM_EXERCISES: GymExercise[] = [
   x('scapular-pull-up', 'Scapular pull-up', 'vertical-pull', ['lats', 'upper-back'], ['forearms'], [['pullup-bar', 'rings']], 'bodyweight', false, ['shoulders'], 'Arms stay straight; only the shoulder blades pull down and the body rises a few centimetres.', { carries: ['frontlever', 'flag'] }),
   x('negative-pull-up', 'Slow negative pull-up', 'vertical-pull', ['lats', 'biceps'], ['upper-back', 'forearms'], [['pullup-bar', 'rings'], ['box', 'bench']], 'bodyweight', true, ['elbows', 'shoulders'], 'Step up to the top, lower for five slow seconds; a way to build the first pull-up.', { carries: ['frontlever'] }),
   // ---- Straight-arm pulls ----
-  x('barbell-pullover', 'Barbell pullover', 'straight-arm-pull', ['lats'], ['chest', 'triceps-long'], [['barbell', 'ez-bar'], ['bench']], 'barbell', false, ['shoulders'], 'Arms nearly straight, a light bar, only as far back as the shoulders and ribs allow.', { stepFrom: 'ez-bar', carries: ['frontlever'] }),
+  x('barbell-pullover', 'Barbell pullover', 'straight-arm-pull', ['lats'], ['chest', 'triceps-long'], [['barbell', 'ez-bar'], ['bench']], 'barbell', false, ['shoulders', 'elbows'], 'Arms nearly straight, a light bar, only as far back as the shoulders and ribs allow.', { stepFrom: 'ez-bar', carries: ['frontlever'] }),
   x('kneeling-rope-pullover', 'Kneeling cable pullover', 'straight-arm-pull', ['lats'], ['abs', 'triceps-long'], [['cable']], 'cable', false, ['shoulders'], 'Kneel facing the stack, rope overhead, sweep to the thighs with straight arms.', { carries: ['frontlever'] }),
   x('single-arm-straight-pulldown', 'Single-arm straight-arm pulldown', 'straight-arm-pull', ['lats'], ['triceps-long'], [['cable', 'band']], 'cable', false, ['shoulders', 'elbows'], 'One arm at a time, arm locked, sweep from overhead to the hip.', { unilateral: true, carries: ['frontlever'] }),
   // ---- Rows ----

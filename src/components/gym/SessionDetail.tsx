@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { allowsUnloaded, countUnit, countWord } from '../../lib/gym/progression'
 import { doubtedLoad, maxCountFor } from '../../lib/gym/state'
+import { conservative } from '../../lib/gym/draft'
+import { effortLabel, exerciseTitle, nextTimeLines } from '../../lib/gym/sessionLines'
 import type { GymSession, GymSet } from '../../lib/gym/types'
 import { displayLoad, formatLoad, toKg } from '../../lib/gym/units'
 import { useStore } from '../../lib/store'
@@ -22,19 +24,30 @@ export function SessionDetail({ session, onClose }: { session: GymSession; onClo
   const gym = state.gym
   const [confirming, setConfirming] = useState(false)
   const [editing, setEditing] = useState<{ ei: number; si: number } | null>(null)
-  const unit = gym?.locations.find((l) => l.id === session.locationId)?.unit ?? 'kg'
+  const place = gym?.locations.find((l) => l.id === session.locationId)
+  const unit = place?.unit ?? 'kg'
+  // Next time for each lift, from the rule the builder uses on the history as it stands now.
+  const next = nextTimeLines(session, gym?.sessions ?? [], place, conservative(state.profile), Date.now())
+  const nextOf = (id: string) => next.find((n) => n.exerciseId === id)
 
   return (
     <div className="space-y-4">
       <div>
         <h2 className="font-display text-title2 font-semibold">{session.name}</h2>
         <p className="text-footnote text-ink3">{when(session.startedAt)}</p>
+        {session.notes ? (
+          <p className="mt-2 rounded-control bg-raised p-3 text-footnote text-ink2">
+            <span className="font-semibold text-ink">Your note: </span>
+            {session.notes}
+          </p>
+        ) : null}
       </div>
       {session.exercises.map((log, ei) => {
         const ex = GYM_EXERCISE_BY_ID[log.exerciseId]
         return (
           <section key={`${log.exerciseId}-${ei}`}>
-            <h3 className="text-body font-semibold">{ex?.name ?? log.exerciseId}</h3>
+            <h3 className="text-body font-semibold">{exerciseTitle(log.exerciseId)}</h3>
+            {log.note ? <p className="text-footnote text-ink2">Note: {log.note}</p> : null}
             <ul className="mt-1 divide-y divide-line">
               {log.sets.map((set, si) => (
                 <li key={si} className="py-1">
@@ -59,6 +72,7 @@ export function SessionDetail({ session, onClose }: { session: GymSession; onClo
                       <span className="text-footnote tnum text-ink2">
                         {set.warmup ? 'Warm-up · ' : ''}
                         {countUnit(ex) === 'seconds' ? `${countWord(ex, set.reps)}${set.kg ? ` × ${formatLoad(set.kg, set.unit ?? unit)}` : ''}` : `${set.reps} × ${formatLoad(set.kg, set.unit ?? unit)}`}
+                        {effortLabel(set.rpe) ? ` · ${effortLabel(set.rpe)}` : ''}
                       </span>
                       <button
                         onClick={() => setEditing({ ei, si })}
@@ -72,6 +86,16 @@ export function SessionDetail({ session, onClose }: { session: GymSession; onClo
                 </li>
               ))}
             </ul>
+            {nextOf(log.exerciseId) ? (
+              <div className="mt-1 rounded-control bg-raised p-3">
+                {nextOf(log.exerciseId)!.superseded ? (
+                  <p className="text-footnote text-ink2">A later session trained this lift, so its own “next time” is the one to follow. As of now:</p>
+                ) : null}
+                <p className="text-footnote font-semibold text-ink">{nextOf(log.exerciseId)!.text}</p>
+                <p className="text-caption text-ink3">{nextOf(log.exerciseId)!.why}</p>
+                {nextOf(log.exerciseId)!.maxNote ? <p className="text-caption text-ink3">{nextOf(log.exerciseId)!.maxNote}</p> : null}
+              </div>
+            ) : null}
           </section>
         )
       })}

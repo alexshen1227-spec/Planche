@@ -1127,6 +1127,30 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     planche 0.921 → 0.895 at 72 h and the lever its pull days). Pinned in
     `plan/round7.test.ts`; the eval asserts at most 2 weeks where the second
     skill has fewer full parts than the third.
+  - Ninth review round, by area (gym-only UX 41, data integrity 36). **The
+    recovery copy is recovery**: boot always reads the IndexedDB mirror and
+    merges it in (`mergeExternalState`), nothing is mirrored before that
+    read (`mirrorOpen`), a failed primary write says so once, and a late or
+    different mirror is set aside in quarantine. A draft with logged sets is
+    never deleted for its age (`MAX_EMPTY_DRAFT_AGE_MS` is for empty ones).
+    Same-epoch merges OR `onboarded` and keep the earlier `startedAt`;
+    `COMPLETE_ONBOARDING` over history fills only unstamped fields
+    (`completeOnboardingOverHistory`). A save from a newer `version` holds
+    every write (`isNewerSave`, `PersistStatus.newer`, App's banner).
+    Unrelated epochs: history beats setup beats a placeholder
+    (`substanceRank`). Birth years clamp to 1920–2200, never to the device
+    year. `settings.goalHistory` (declared in `stats.ts`) judges each week by
+    its own goal (`goalForWeek`); the goal counts training days of every kind
+    (`goalDaysInWeekOf`; the plateau's frequency cause reads
+    `trainingDaysPerWeek`). Gym: `sanitizeGymReport` reports losses into
+    quarantine and keeps unknown exercise ids; a save with no gym state
+    creates it; `activeLocationAt` merges by time; `nextTimeLines` and
+    `noMaxReason` (`gym/sessionLines.ts`) show each lift's next session at
+    finish and in the detail, with effort and notes; `openDraftFor` keeps the
+    open-session card true and Start says it resumes; `finishBlocker` refuses
+    to finish over a pending ask. Pinned in `dataSafety.data8.test.ts`,
+    `dataSafetyBoot.test.ts` (jsdom), `gym/review9*.test.ts(x)` and
+    `diagnoseFrequency.test.ts`.
   - Skill days are requests (`{source: 'auto', skills: [skill]}`); a ladder
     day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
     pins every session built without it — regenerate only for an intended

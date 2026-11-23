@@ -1,4 +1,5 @@
 import type { CheckIn, SetLog, Settings, Workout } from '../types'
+import { pushToast } from './toast'
 
 /**
  * Crash-proof live-session storage.
@@ -10,8 +11,13 @@ import type { CheckIn, SetLog, Settings, Workout } from '../types'
  */
 
 const KEY = 'planchelab.draft'
-/** Older than this and it is yesterday's session, not an interruption. */
-const MAX_AGE_MS = 18 * 3_600_000
+/**
+ * Older than this, a draft with nothing logged (a hold that was running when
+ * the page went away) is yesterday's session, not an interruption. A draft
+ * with logged sets never expires: those sets are the athlete's work, and the
+ * 18 hours once deleted them — sets and all — without a word.
+ */
+export const MAX_EMPTY_DRAFT_AGE_MS = 18 * 3_600_000
 
 export interface SessionDraft {
   v: 1 | 2
@@ -85,7 +91,7 @@ export function saveDraft(input: DraftInput): void {
   }
 }
 
-export function loadDraft(): SessionDraft | null {
+export function loadDraft(now = Date.now()): SessionDraft | null {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return null
@@ -99,14 +105,49 @@ export function loadDraft(): SessionDraft | null {
       clearDraft()
       return null
     }
-    if (Date.now() - d.savedAt > MAX_AGE_MS) {
+    if (d.logs.length === 0 && now - d.savedAt > MAX_EMPTY_DRAFT_AGE_MS) {
       clearDraft()
       return null
     }
+    // An old one is offered like any other, and the athlete is told how old.
+    announceOldDraft(d, now)
     return d
   } catch {
     return null
   }
+}
+
+const DAY_MS = 86_400_000
+
+/** Local calendar days between two moments (0 = the same day). */
+function calendarDaysBetween(from: number, to: number): number {
+  const a = new Date(from)
+  const b = new Date(to)
+  const dayA = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime()
+  const dayB = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime()
+  return Math.round((dayB - dayA) / DAY_MS)
+}
+
+/**
+ * What to tell the athlete about an unfinished session past the interruption
+ * window, or null while it is still a recent interruption.
+ */
+export function oldDraftNotice(draft: Pick<SessionDraft, 'savedAt' | 'logs'>, now = Date.now()): string | null {
+  if (!Number.isFinite(draft.savedAt) || now - draft.savedAt <= MAX_EMPTY_DRAFT_AGE_MS) return null
+  const days = calendarDaysBetween(draft.savedAt, now)
+  const when = days <= 0 ? 'earlier today' : days === 1 ? 'yesterday' : `${days} days ago`
+  const sets = draft.logs.length
+  return `This unfinished session is from ${when}, with ${sets} ${sets === 1 ? 'set' : 'sets'} logged. Finish it to save those sets, or end it without saving.`
+}
+
+/** The draft last announced, so reading it again in the same visit says nothing more. */
+let announced: number | undefined
+
+function announceOldDraft(draft: SessionDraft, now: number) {
+  const text = oldDraftNotice(draft, now)
+  if (!text || announced === draft.savedAt) return
+  announced = draft.savedAt
+  pushToast(text, 'info', 10_000)
 }
 
 export function clearDraft(): void {

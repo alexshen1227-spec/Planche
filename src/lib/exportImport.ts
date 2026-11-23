@@ -40,10 +40,30 @@ export function readImportFile(file: File): Promise<unknown> {
   })
 }
 
+/** Why a file was refused, so a caller can act on the reason rather than the wording. */
+export type ImportRefusal = 'not-backup' | 'incomplete' | 'newer-version'
+
+export class ImportError extends Error {
+  readonly reason: ImportRefusal
+  constructor(reason: ImportRefusal, message: string) {
+    super(message)
+    this.name = 'ImportError'
+    this.reason = reason
+  }
+}
+
 /** Reject unrelated JSON before any existing history or clips are touched. */
 export function validateImport(raw: unknown): asserts raw is AppState {
-  if (typeof raw !== 'object' || raw === null) throw new Error('That JSON is not a Fitness Lab backup.')
+  if (typeof raw !== 'object' || raw === null) throw new ImportError('not-backup', 'That JSON is not a Fitness Lab backup.')
   const candidate = raw as Partial<AppState>
+  // A newer version's backup is a real backup this version cannot read in
+  // full; calling it incomplete sent athletes looking for a better file.
+  if (Number.isInteger(Number(candidate.version)) && Number(candidate.version) > CURRENT_STATE_VERSION) {
+    throw new ImportError(
+      'newer-version',
+      'This backup was made by a newer version of Fitness Lab. Refresh the app to update it, then import the file again.',
+    )
+  }
   if (
     !Number.isInteger(Number(candidate.version)) ||
     Number(candidate.version) < 1 ||
@@ -54,7 +74,24 @@ export function validateImport(raw: unknown): asserts raw is AppState {
     candidate.settings === null ||
     typeof candidate.stepId !== 'string'
   ) {
-    throw new Error('That JSON is not a complete Fitness Lab backup.')
+    throw new ImportError('incomplete', 'That JSON is not a complete Fitness Lab backup.')
+  }
+}
+
+/** What an import would replace on this device, counted the way the dialog names it. */
+export interface ReplacedData {
+  sessions: number
+  gymSessions: number
+  places: number
+  activities: number
+}
+
+export function dataOnDevice(state: AppState): ReplacedData {
+  return {
+    sessions: state.sessions.length,
+    gymSessions: state.gym?.sessions.length ?? 0,
+    places: state.gym?.locations.length ?? 0,
+    activities: state.gym?.activities?.length ?? 0,
   }
 }
 

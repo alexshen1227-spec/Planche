@@ -169,7 +169,8 @@ describe('gym state', () => {
     expect(g.locations.map((l) => l.id)).toEqual(['a', 'home'])
     expect(g.locations[1].equipment).toEqual(['parallettes'])
     expect(g.sessions.map((s) => s.id)).toEqual(['s1', 's3'])
-    expect(g.sessions[1].exercises).toEqual([])
+    // A log of a movement the catalogue does not have is kept under its id (review 9), never dropped.
+    expect(g.sessions[1].exercises).toEqual([{ exerciseId: 'not-real', sets: [] }])
     expect(g.ratings).toEqual({ 'bench-press': 'love' })
     expect(g.favoriteAt).toEqual({ 'bench-press': 'a' })
   })

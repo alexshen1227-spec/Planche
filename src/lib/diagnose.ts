@@ -5,6 +5,30 @@ import { forecastUnlock, MIN_FORECAST_POINTS, mostlyFloors, qualifyingSeries } f
 import { readSignals } from './signals'
 import { diagnosePlateau, PLATEAU_MIN_DAYS, type PlateauVerdict } from './plateau'
 import { fmtWeight } from './units'
+import { wholeState } from './skills'
+import { dayKey } from './time'
+
+const WEEK_MS = 7 * 86_400_000
+
+/**
+ * Training days a week, skill and gym alike — what the weekly goal counts — over
+ * the last four weeks, divided by the time actually trained (at least a week),
+ * like `sessionsPerWeek`. The frequency cause once compared one skill's
+ * sessions with a goal that counts gym days too, so an athlete keeping a goal
+ * of four with two skill days and two gym days read "training less than you
+ * planned".
+ */
+export function trainingDaysPerWeek(state: AppState, now: number): number {
+  const whole = wholeState(state)
+  const times = [
+    ...whole.sessions.filter((s) => s.workoutKind !== 'micro').map((s) => s.startedAt),
+    ...(whole.gym?.sessions ?? []).map((s) => s.startedAt),
+  ].filter((t) => t <= now)
+  if (!times.length) return 0
+  const days = new Set(times.filter((t) => t > now - 4 * WEEK_MS).map((t) => dayKey(t)))
+  const weeks = Math.min(4, Math.max(1, (now - Math.min(...times)) / WEEK_MS))
+  return days.size / weeks
+}
 
 /**
  * "Why am I stuck?" on the Progress screen.
@@ -126,11 +150,12 @@ export function diagnose(state: AppState, now = Date.now(), plateau?: PlateauVer
     })
   }
 
-  if (named !== 'under-stimulated' && sig.sessionsPerWeek < state.settings.weeklyGoal * 0.7 && state.sessions.length >= 6) {
+  const trainingDays = trainingDaysPerWeek(state, now)
+  if (named !== 'under-stimulated' && trainingDays < state.settings.weeklyGoal * 0.7 && state.sessions.length >= 6) {
     causes.push({
       id: 'frequency',
       title: 'Training less than you planned',
-      detail: `You have averaged ${sig.sessionsPerWeek.toFixed(1)} sessions a week against a goal of ${state.settings.weeklyGoal}.`,
+      detail: `You have averaged ${trainingDays.toFixed(1)} training days a week against a goal of ${state.settings.weeklyGoal}.`,
       fix: 'Coaches generally favour frequent, shorter sessions for a skill — a short session you do beats a long one you keep skipping. Try the 15-minute version on busy days.',
       severity: 'medium',
     })

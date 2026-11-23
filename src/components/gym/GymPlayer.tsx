@@ -14,6 +14,7 @@ import { displayLoad, formatLoad, stepKgFor, toKg, unitFor } from '../../lib/gym
 import { doubtedLoad } from '../../lib/gym/state'
 import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
 import { Icon } from '../Icon'
+import { finishBlocker, nextTimeLines, unfinishedLine } from '../../lib/gym/sessionLines'
 import { askStillApplies, parseTypedLoad, type LoadAsk } from '../../lib/gym/loadAsk'
 import { BadgeGlyph, Button, CountUp, RingTimer, Sheet, SwipeRow } from '../ds'
 
@@ -260,12 +261,23 @@ export function GymPlayer({
   const summary = useMemo(() => {
     if (!finishing) return null
     const session = sessionFromDraft(draft, Date.now())
-    return { maxes: session.exercises.length ? newMaxes(session) : [] }
+    return {
+      maxes: session.exercises.length ? newMaxes(session) : [],
+      // What to aim for next time, lift by lift, from the rule the builder uses.
+      next: nextTimeLines(session, [...gym.sessions, session], location, youth),
+    }
     // Computed when the sheet opens; the draft cannot change underneath it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finishing])
 
+  const blocker = finishBlocker({ needLoad: !!needLoad, doubt: !!doubt })
   const save = () => {
+    // A question still waiting on an answer holds a set that is not saved: it is answered or closed first.
+    if (blocker) {
+      setFinishing(false)
+      pushToast(blocker, 'info')
+      return
+    }
     const built = sessionFromDraft(draft, Date.now())
     const session = notes.trim() ? { ...built, notes: notes.trim().slice(0, 2000) } : built
     if (!session.exercises.length) {
@@ -311,7 +323,17 @@ export function GymPlayer({
             {location.name} · {mmss(elapsed)} · {doneSets}/{plannedSets} sets
           </p>
         </div>
-        <Button onClick={() => setFinishing(true)}>Finish</Button>
+        <Button
+          onClick={() => {
+            if (blocker) {
+              pushToast(blocker, 'info')
+              return
+            }
+            setFinishing(true)
+          }}
+        >
+          Finish
+        </Button>
       </header>
 
       <main className="flex-1 overflow-y-auto px-4 pb-40 pt-3">
@@ -724,6 +746,11 @@ export function GymPlayer({
 
       <Sheet open={finishing} onClose={() => setFinishing(false)} title="Finish this session?">
         <p className="text-body text-ink2">Only finished sets are saved.</p>
+        {unfinishedLine(draft) ? (
+          <p className="mt-2 rounded-control bg-raised p-3 text-footnote text-ink2" role="status">
+            {unfinishedLine(draft)}
+          </p>
+        ) : null}
         <div className="mt-4 grid grid-cols-2 gap-4 rounded-inner bg-raised p-4">
           <div>
             <div className="text-footnote font-medium text-ink3">Sets done</div>
@@ -748,6 +775,21 @@ export function GymPlayer({
                     <CountUp value={m.value} decimals={Number.isInteger(m.value) ? 0 : 1} />
                     <span className="ml-1 text-footnote font-normal text-ink3">{m.unit}</span>
                   </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {summary && summary.next.length ? (
+          <div className="mt-3 rounded-inner bg-raised p-4">
+            <div className="text-footnote font-semibold text-ink2">Next time</div>
+            <ul className="mt-2 space-y-2">
+              {summary.next.map((n) => (
+                <li key={n.exerciseId}>
+                  <span className="block text-footnote font-medium text-ink">{n.name}</span>
+                  <span className="block text-footnote text-ink2">{n.text}</span>
+                  <span className="block text-caption text-ink3">{n.why}</span>
+                  {n.maxNote ? <span className="block text-caption text-ink3">{n.maxNote}</span> : null}
                 </li>
               ))}
             </ul>
