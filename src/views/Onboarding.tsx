@@ -24,6 +24,7 @@ import { Icon } from '../components/Icon'
 import { PressMilestonePicker } from '../components/PressMilestone'
 import { Figure } from '../components/Figure'
 import { LocationEditor } from '../components/gym/LocationEditor'
+import { GYM_EQUIPMENT_BY_ID, locationEquipmentLabel } from '../data/gym/catalog'
 import { AgeAndSafety } from '../components/plan/FitnessSetup'
 import { GoalsEditor, MusclesEditor, ScheduleEditor } from '../components/plan/PlanSettings'
 import {
@@ -33,8 +34,8 @@ import {
 } from '../components/plan/onboardingPlan'
 import { conservative } from '../lib/gym/draft'
 import { availableAt } from '../lib/gym/availability'
-import { defaultGym, homeLocation, newLocation } from '../lib/gym/state'
-import { loadSetupDraft, newSetupDraft, saveSetupDraft, type SetupDraft, type SetupStage } from '../lib/onboardingDraft'
+import { defaultGym, newLocation } from '../lib/gym/state'
+import { loadSetupDraft, newSetupDraft, saveSetupDraft, setupHome, type SetupDraft, type SetupStage } from '../lib/onboardingDraft'
 
 /**
  * Onboarding, in the order the answers actually matter.
@@ -263,8 +264,9 @@ export function Onboarding() {
    */
   const trainable = skills.filter((skill) => !waitingSkills.includes(skill))
   const lead: SkillId = trainable[0] ?? focus
-  /** The gym sessions will be built for, when one added here has gym kit and Home has none. */
-  const startingGym = gyms.find((place) => place.id === activeLocationFor(homeLocation(equipment.length ? equipment : ['floor']), gyms))
+  const home = setupHome(setup)
+  const homeWeights = home.equipment.filter((id) => Object.hasOwn(GYM_EQUIPMENT_BY_ID, id))
+  const startingPlace = gyms.find((place) => place.id === activeLocationFor(home, gyms)) ?? home
   /** The week asked for, read as the two numbers the app keeps: a weekly goal and a typical session. */
   const schedule = summariseSchedule(prefs.minutesByDay)
   const named = (skill: SkillId) => SKILLS[skill].name.toLowerCase()
@@ -400,11 +402,10 @@ export function Onboarding() {
     // carries the kit above), then which one is in use, then the plan itself.
     // Everything lands in this one handler, so Today's first render already has
     // `gym.prefs` and shows no "Set up Fitness Lab" card.
-    const gymUnit = units === 'imperial' ? 'lb' : 'kg'
-    dispatch({ type: 'GYM', op: { op: 'init', gym: defaultGym(homeKit, gymUnit) } })
+    dispatch({ type: 'GYM', op: { op: 'init', gym: defaultGym(homeKit, home.unit) } })
+    if (setup.home) dispatch({ type: 'GYM', op: { op: 'saveLocation', location: home } })
     for (const place of gyms) dispatch({ type: 'GYM', op: { op: 'saveLocation', location: place } })
-    const active = activeLocationFor(homeLocation(homeKit, gymUnit), gyms)
-    if (active !== 'home') dispatch({ type: 'GYM', op: { op: 'setActiveLocation', id: active } })
+    if (startingPlace.id !== 'home') dispatch({ type: 'GYM', op: { op: 'setActiveLocation', id: startingPlace.id } })
     const { updatedAt: _stamp, ...planPrefs } = prefs
     void _stamp
     dispatch({ type: 'GYM', op: { op: 'setPrefs', prefs: planPrefs } })
@@ -949,7 +950,7 @@ export function Onboarding() {
         {stage === 'places' && editing ? (
           <div className="animate-rise">
             <h1 ref={headingRef} tabIndex={-1} className="sr-only">
-              {editing.isNew ? 'Add a gym' : 'Edit a gym'}
+              {editing.location.id === 'home' ? 'Edit home equipment' : editing.isNew ? 'Add a gym' : 'Edit a gym'}
             </h1>
             <button onClick={() => edit('editing', null)} className={`${backBtn} -ml-3`}>
               Cancel
@@ -957,8 +958,13 @@ export function Onboarding() {
             <LocationEditor
               location={editing.location}
               onDraftChange={(location) => edit('editing', { ...editing, location })}
-              canDelete={!editing.isNew}
+              canDelete={!editing.isNew && editing.location.id !== 'home'}
               onSave={(saved) => {
+                if (saved.id === 'home') {
+                  setSetup((previous) => ({ ...previous, home: saved, editing: null,
+                    equipment: EQUIPMENT_OPTIONS.filter((item) => saved.equipment.includes(item.id)).map((item) => item.id) }))
+                  return
+                }
                 edit('gyms', (current) =>
                   editing.isNew ? [...current, saved] : current.map((place) => (place.id === saved.id ? saved : place)),
                 )
@@ -991,7 +997,11 @@ export function Onboarding() {
                   <button
                     key={u}
                     aria-pressed={units === u}
-                    onClick={() => edit('units', u)}
+                    onClick={() => setSetup((previous) => {
+                      const unit = u === 'imperial' ? 'lb' : 'kg'
+                      const useDefault = previous.home?.unit === (previous.units === 'imperial' ? 'lb' : 'kg')
+                      return { ...previous, units: u, ...(previous.home && useDefault ? { home: { ...previous.home, unit } } : {}) }
+                    })}
                     className={`min-h-11 px-4 text-footnote font-medium transition ${
                       units === u ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                     }`}
@@ -1061,6 +1071,12 @@ export function Onboarding() {
                   ))}
                 </div>
               ) : null}
+              <Button variant="secondary" full className="mt-3" onClick={() => edit('editing', { location: home, isNew: false })}>
+                Edit home weights and equipment
+              </Button>
+              <p className="mt-1.5 text-caption leading-relaxed text-ink3">
+                {homeWeights.length ? homeWeights.map(locationEquipmentLabel).join(' · ') : 'Add dumbbells, a bench or machines and set the weights you have.'}
+              </p>
             </div>
 
             <div className="mt-3 rounded-inner border border-line bg-surface p-4">
@@ -1098,9 +1114,7 @@ export function Onboarding() {
                 <Icon name="plus" size={15} /> Add a gym
               </Button>
               <p className="mt-2 text-caption leading-relaxed text-ink3">
-                {startingGym
-                  ? `Gym sessions will be built for ${startingGym.name}, since Home has no gym equipment. You can switch places on the Gym tab.`
-                  : 'A gym that has gym equipment becomes the place sessions are built for, because Home has none. You can switch on the Gym tab.'}
+                Your plan starts at {startingPlace.name}. You can choose a different place for each training day.
               </p>
             </div>
 
@@ -1125,7 +1139,7 @@ export function Onboarding() {
               come from this week, so there is nothing else to set.
             </p>
             <div className="mt-6 space-y-6">
-              <ScheduleEditor prefs={prefs} setPrefs={(value) => edit('prefs', value)} locations={[homeLocation(equipment), ...gyms]} />
+              <ScheduleEditor prefs={prefs} setPrefs={(value) => edit('prefs', value)} locations={[home, ...gyms]} />
             </div>
             <div className="mt-5 rounded-inner border border-line bg-surface p-4" role="status">
               {schedule.days === 0 ? (

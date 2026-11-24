@@ -2,7 +2,7 @@ import { SKILL_IDS, type EquipmentId, type SkillId, type StepId, type Units } fr
 import { EQUIPMENT_OPTIONS } from '../data/equipment'
 import { SKILLS, isRepGoal } from '../data/skills'
 import { startingMinutesByDay } from '../components/plan/onboardingPlan'
-import { defaultPrefs, sanitizeLocation, sanitizePrefs } from './gym/state'
+import { defaultPrefs, homeLocation, sanitizeLocation, sanitizePrefs } from './gym/state'
 import type { GymLocation, TrainingPrefs } from './gym/types'
 import { nextInterviewItem, type InterviewAnswers } from './placement'
 import { SETUP_DRAFT_KEY } from './store'
@@ -23,6 +23,7 @@ export interface SetupDraft {
   manual: StepsBySkill
   manualIndex: number
   prefs: TrainingPrefs
+  home?: GymLocation
   gyms: GymLocation[]
   editing: { location: GymLocation; isNew: boolean } | null
   birthYear: string
@@ -35,6 +36,13 @@ export interface SetupDraft {
   heightIn: string
   equipment: EquipmentId[]
   injuryNote: string
+}
+
+export function setupHome(draft: Pick<SetupDraft, 'equipment' | 'units' | 'home'>): GymLocation {
+  const kit: EquipmentId[] = draft.equipment.length ? draft.equipment : ['floor']
+  if (!draft.home) return homeLocation(kit, draft.units === 'imperial' ? 'lb' : 'kg')
+  const weights = draft.home.equipment.filter((id) => !EQUIPMENT_OPTIONS.some((item) => item.id === id))
+  return { ...draft.home, equipment: [...kit, ...weights] }
 }
 
 export function newSetupDraft(): SetupDraft {
@@ -115,7 +123,9 @@ export function loadSetupDraft(epoch: string | undefined): SetupDraft | null {
     }
     const edit = record(d.editing)
     const place = stage === 'places' ? sanitizeLocation(edit.location) : null
-    const editing = place && place.id !== 'home' && (edit.isNew === true) !== gyms.some((g) => g.id === place.id)
+    const home = sanitizeLocation(d.home)
+    const existing = place?.id === 'home' || gyms.some((g) => g.id === place?.id)
+    const editing = place && (edit.isNew === true) !== existing
       ? { location: { ...place, name: stringOf(record(edit.location).name, 40) }, isNew: edit.isNew === true }
       : null
     const equipment = Array.isArray(d.equipment)
@@ -126,7 +136,7 @@ export function loadSetupDraft(epoch: string | undefined): SetupDraft | null {
       ...(wristReport ? { wristReport } : {}),
       manual: skillSteps(d.manual),
       manualIndex: typeof d.manualIndex === 'number' && Number.isInteger(d.manualIndex) ? Math.max(0, Math.min(d.manualIndex, skills.length - 1)) : 0,
-      prefs, gyms, editing, birthYear: stringOf(d.birthYear, 8), ageDeclined: d.ageDeclined === true,
+      prefs, gyms, editing, ...(home?.id === 'home' ? { home } : {}), birthYear: stringOf(d.birthYear, 8), ageDeclined: d.ageDeclined === true,
       bodyweightReminders: d.bodyweightReminders === true, units: d.units === 'imperial' ? 'imperial' : 'metric',
       weight: stringOf(d.weight, 32), heightCm: stringOf(d.heightCm, 32), heightFt: stringOf(d.heightFt, 32),
       heightIn: stringOf(d.heightIn, 32), equipment, injuryNote: stringOf(d.injuryNote, 2000),
