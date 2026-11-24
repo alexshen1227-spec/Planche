@@ -7,6 +7,8 @@ import { weekForChoice } from './currentWeek'
 import { volumeTarget } from './load'
 import { OPENER_MINUTES } from './planner'
 import type { TodayChoice } from './todayChoice'
+import { dayStage, remainingLifts, type GymPreset } from './screens'
+import { peekNextBlock } from './nextBlock'
 
 export interface WeekOption {
   gymDate?: string
@@ -51,9 +53,14 @@ export function compareLiftingDays(state: AppState, choice: TodayChoice, now: nu
       }
       practiceDays[skill] = dates.size
     }
-    const gymDays = new Set([...gymLog.map((s) => dayKey(s.startedAt)), ...days.filter((d) => d.plan.gym).map((d) => d.day)]).size
-    const liftingVisits = days.flatMap((d) => d.plan.gym && !trained.has(d.day) ?
-      [{ day: d.day, place: gym.locations.find((place) => place.id === d.plan.gym!.placeId)?.name }] : [])
+    const today = dayKey(now)
+    const liftingVisits = week.days.filter((d) => d.at < end).flatMap((d) => {
+      const stage = d.day === today ? dayStage(state, d.plan, now) : undefined
+      if (stage === 'done' || stage === 'skill-partial' || (stage !== 'lifts-next' && trained.has(d.day))) return []
+      const block = stage === 'lifts-next' ? remainingLifts(d.plan, peekNextBlock<GymPreset>(now), choice.placeId) : d.plan.gym
+      return block ? [{ day: d.day, place: gym.locations.find((place) => place.id === block.placeId)?.name }] : []
+    })
+    const gymDays = new Set([...gymLog.map((s) => dayKey(s.startedAt)), ...liftingVisits.map((d) => d.day)]).size
     const selected = gymDate && days.some((d) => d.day === gymDate && d.plan.gym) ? gymDate : undefined
     return { gymDate: selected, muscleSets: week.weekTotal, practiceDays, remainingSkillSets, gymDays, liftingVisits }
   }

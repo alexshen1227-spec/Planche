@@ -354,12 +354,12 @@ export const HARD_GYM_FAMILY_SETS = 4
 export const LIGHT_PRESS_SPARE: readonly Muscle[] = ['front-delts', 'triceps']
 
 /** A gym session's working sets of each family's movements, as `familyEvents` counts them. */
-export function familyWorkingSets(exercises: readonly { exerciseId: string; sets: readonly { warmup?: boolean; reps: number }[] }[]): Record<'push' | 'pull', number> {
+export function familyWorkingSets(exercises: readonly { exerciseId: string; sets: readonly { warmup?: boolean; reps: number; at?: number }[] }[], before = Infinity): Record<'push' | 'pull', number> {
   const count = { push: 0, pull: 0 }
   for (const log of exercises) {
     const pattern = GYM_EXERCISE_BY_ID[log.exerciseId]?.pattern
     if (!pattern) continue
-    const working = log.sets.filter((x) => !x.warmup && x.reps > 0).length
+    const working = log.sets.filter((x) => !x.warmup && x.reps > 0 && (x.at ?? 0) <= before).length
     for (const f of ['push', 'pull'] as const) if (FAMILY_PATTERNS[f].has(pattern)) count[f] += working
   }
   return count
@@ -408,7 +408,7 @@ export function familyEvents(state: Pick<AppState, 'sessions' | 'gym'>, now: num
   }
   for (const s of state.gym?.sessions ?? []) {
     if (s.startedAt > now) continue
-    const count = familyWorkingSets(s.exercises)
+    const count = familyWorkingSets(s.exercises, now)
     for (const f of ['push', 'pull'] as const) if (count[f] >= HARD_GYM_FAMILY_SETS) out[f].push({ at: s.startedAt, gym: true })
   }
   for (const f of ['push', 'pull'] as const) out[f].sort((a, b) => a.at - b.at)

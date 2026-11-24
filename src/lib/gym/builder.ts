@@ -38,7 +38,7 @@ const SLOTS: Record<Exclude<GymFocus, 'athletic'>, Pattern[][]> = {
   ],
   lower: [['squat'], ['hinge'], ['lunge'], ['knee-flexion'], ['knee-extension'], ['calf'], ['core-flexion', 'core-anti-rotation']],
   push: [['horizontal-press', 'incline-press'], ['vertical-press'], ['incline-press', 'dip'], ['lateral-raise'], ['triceps'], ['chest-fly']],
-  pull: [['vertical-pull'], ['horizontal-pull'], ['straight-arm-pull'], ['rear-delt'], ['biceps'], ['core-flexion'], ['shrug']],
+  pull: [['vertical-pull'], ['horizontal-pull'], ['straight-arm-pull'], ['rear-delt'], ['biceps'], ['core-flexion']],
 }
 
 /**
@@ -68,6 +68,7 @@ const PRESSING_PATTERNS: ReadonlySet<Pattern> = new Set<Pattern>(['horizontal-pr
 
 /** Movements that pull (a pull skill's family). */
 const PULLING_PATTERNS: ReadonlySet<Pattern> = new Set<Pattern>(['vertical-pull', 'horizontal-pull', 'straight-arm-pull'])
+const UPPER_ISOLATION = new Set<Pattern>(['lateral-raise', 'rear-delt', 'biceps', 'triceps', 'chest-fly', 'shrug'])
 
 /** With time for two lifts, alternate knee/hip work and pressing/pulling using
  * the athlete's actual recent working sets. Missing kit leaves the other
@@ -281,8 +282,9 @@ export function planGymExercises(input: GymSessionInput) {
   const musclesOff = new Set(input.musclesOff ?? [])
   const priority = new Set(input.priority ?? [])
   const requested = new Set(input.athletePriority ?? [])
-  const weeklyAccessories = minutes >= 35
-    ? [...priority].filter((m) => !requested.has(m) && (m === 'chest' || m === 'lats' || m === 'side-delts')) : []
+  const combinedGoals = (input.goals?.skills ?? 0) > 0 && (input.goals?.physique ?? 0) >= 3
+  const weeklyAccessories = minutes >= 35 || combinedGoals
+    ? [...priority].filter((m) => !requested.has(m) && (m === 'chest' || m === 'lats' || m === 'side-delts' || (combinedGoals && (m === 'hamstrings' || m === 'quads')))) : []
   const priorityExercises = new Set([...requested, ...weeklyAccessories])
   // A muscle the athlete asked for is not spared: a movement built on a priority muscle keeps its slot whatever
   // the week's steer says about the other muscles it leans on, and a muscle on both lists counts as priority.
@@ -430,6 +432,28 @@ export function planGymExercises(input: GymSessionInput) {
       !here.some((ex) => PULLING_PATTERNS.has(ex.pattern) && usable(ex))))
     const slots: Pattern[][] = brief && (focus === 'full' || focus === 'lower' || focus === 'upper')
       ? briefSlots(focus, sessions, now) : [...SLOTS[focus]]
+    const splitPriority = (split: 'upper' | 'lower') => here.some((ex) =>
+      fitsGymFocus(split, ex) && !ex.pattern.startsWith('core') && ex.primary.some((m) => requested.has(m)) && usable(ex))
+    const shortMixed = focus === 'full' && combinedGoals && minutes <= 25 && splitPriority('upper') && splitPriority('lower')
+    if (shortMixed) {
+      // On the only short lifting visit of a skill week, leave room for an upper
+      // priority and both leg actions. The priority pass supplies the upper lift.
+      slots.splice(0, slots.length, ['squat', 'lunge', 'knee-extension'], ['knee-flexion', 'hinge'])
+    }
+    // On a brief leg visit, buy knee and hip sets before an unrequested calf or trunk accessory.
+    const shortLegs = combinedGoals && focus === 'lower' && minutes <= 25 && !requested.has('calves') && !requested.has('abs')
+    if (shortLegs) slots.splice(2, slots.length - 2, here.some((e) => e.pattern === 'knee-extension' && usable(e)) ? ['knee-extension'] : ['lunge'])
+    // A hinge and a knee curl give a hamstring priority two distinct movements on
+    // a full-body visit. A longer session can also carry a second chest exercise.
+    if (focus === 'full' && combinedGoals && minutes >= 35) {
+      if (requested.has('hamstrings')) slots.push(['knee-flexion'])
+      if (requested.has('chest') || requested.has('chest-upper')) slots.push(['chest-fly', 'incline-press'])
+    }
+    const calfAngles = !introductory && combinedGoals && requested.has('calves') && (focus === 'lower' || focus === 'full') && minutes >= 45
+    if (calfAngles) {
+      if (!slots.some((slot) => slot.includes('calf'))) slots.push(['calf'])
+      slots.push(['calf'])
+    }
     // A short upper session still gets a press and a pull. When the week
     // needs more back work, fit the row before a second pressing angle.
     if (!brief && focus === 'upper' && priority.has('lats') && !priority.has('chest') && !requested.has('chest-upper')) {
@@ -451,9 +475,9 @@ export function planGymExercises(input: GymSessionInput) {
     for (const slot of slots) {
       const wantsExplosive = slot.includes('jump') || slot.includes('throw')
       // Avoided means avoided: a slot nothing else can fill is left out.
-      const fit = here.filter(
-        (e) => slot.includes(e.pattern) && !used.has(movement(e)) && (wantsExplosive ? e.explosive : !e.explosive) && usable(e),
-      )
+      const firstCalf = calfAngles && slot.includes('calf') && items.find((it) => GYM_EXERCISE_BY_ID[it.exerciseId].pattern === 'calf')
+      const fit = here.filter((e) => slot.includes(e.pattern) && !used.has(movement(e)) && (wantsExplosive ? e.explosive : !e.explosive) && usable(e) &&
+        (!firstCalf || e.id.startsWith('seated-') !== firstCalf.exerciseId.startsWith('seated-')))
       // A muscle the week has plenty of steers the slot to a movement not built on it. When every movement of the
       // slot is, the slot goes — unless it is what the day is named for: then the movement that leans on the spare
       // muscles least goes in, at two sets.
@@ -512,7 +536,7 @@ export function planGymExercises(input: GymSessionInput) {
       used.add(movement(pick))
       const extraLateral = lateralAccessory && pick.pattern === 'lateral-raise'
       const limitAccessory = extraLateral && !fullPriorityDose
-      const item = makeItem(pick, wantsExplosive, spared || limitAccessory ? 2 : undefined)
+      const item = makeItem(pick, wantsExplosive, spared || limitAccessory ? 2 : shortLegs && !items.length ? 4 : undefined)
       if (spared && recentPress && PRESSING_PATTERNS.has(pick.pattern)) item.sets = 1
       items.push(item)
       if (spared || limitAccessory) steered.add(pick.id)
@@ -524,7 +548,7 @@ export function planGymExercises(input: GymSessionInput) {
         let candidates = items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes(muscle))
         if (!candidates.length && !musclesOff.has(muscle)) {
           // Fill a missing priority with an isolation move that belongs on this day.
-          const options = here.filter((e) => !used.has(movement(e)) && !e.compound && !e.explosive && !e.dose &&
+          const options = here.filter((e) => !used.has(movement(e)) && (!e.compound || (shortMixed && requested.has(muscle))) && !e.explosive && !e.dose &&
             e.primary.includes(muscle) && usable(e) && !spareIn(e) && !technicalPenalty(e))
           const best = options.sort((a, b) => scoreOf(a) - scoreOf(b) || a.primary.length - b.primary.length)[0]
           if (best) {
@@ -536,13 +560,25 @@ export function planGymExercises(input: GymSessionInput) {
           }
         }
         const isolation = candidates.find((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.length === 1)
-        const best = muscle === 'quads' && (focus === 'lower' || focus === 'full') ? candidates[0] : isolation ?? candidates[0]
+        const useFirst = (muscle === 'quads' || (combinedGoals && muscle === 'chest')) && (focus === 'lower' || focus === 'full')
+        const best = useFirst ? candidates[0] : isolation ?? candidates[0]
         if (best) protectSets.add(best.exerciseId)
+        if (calfAngles && muscle === 'calves') for (const it of candidates) protectSets.add(it.exerciseId)
       }
       for (const group of NAMED_PATTERNS[focus]) {
         const inGroup = items.filter((it) => group.includes(GYM_EXERCISE_BY_ID[it.exerciseId].pattern))
         const first = inGroup.find((it) => protectSets.has(it.exerciseId)) ?? inGroup[0]
         if (first) anchors.add(first.exerciseId)
+      }
+      // A short full-body block can pair a leg compound with the requested upper
+      // movement. Requiring two upper compounds first would spend the whole visit.
+      if (focus === 'full' && minutes <= 25 && combinedGoals && requested.size > 1) {
+        const isLeg = (id: string) => fitsGymFocus('lower', GYM_EXERCISE_BY_ID[id]) &&
+          !GYM_EXERCISE_BY_ID[id].pattern.startsWith('core')
+        const direct = [...protectSets].filter((id) => GYM_EXERCISE_BY_ID[id].primary.some((m) => requested.has(m)))
+        if (direct.some(isLeg) && direct.some((id) => !isLeg(id))) {
+          for (const id of anchors) if (!isLeg(id) && !direct.includes(id)) anchors.delete(id)
+        }
       }
       const rank = (id: string) => {
         const ex = GYM_EXERCISE_BY_ID[id]
@@ -569,7 +605,7 @@ export function planGymExercises(input: GymSessionInput) {
     // allowance to change equipment, rerack weights and record the workout.
     const lastRest = items.at(-1)?.restSec ?? 0
     const finalRest = minutes >= 15 && minutes < 20 ? lastRest / 60 :
-      fullPriorityDose && warm <= 2 && minutes <= 30 ? Math.max(0, lastRest - 30) / 60 : 0
+      combinedGoals && minutes <= 30 ? Math.max(0, lastRest - 30) / 60 : 0
     let saved = 0
     if (pair) {
       const [a, b] = pair
@@ -596,7 +632,9 @@ export function planGymExercises(input: GymSessionInput) {
     if (trimPriority && focus !== 'athletic') {
       for (let i = items.length - 1; i > 0 && items.length > 3 && total() > minutes; i--) {
         const ex = GYM_EXERCISE_BY_ID[items[i].exerciseId]
-        if (protectSets.has(ex.id) || anchors.has(ex.id) || ex.primary.some((m) => requested.has(m)) ||
+        const solePriority = ex.primary.some((m) => requested.has(m) &&
+          !items.some((it, j) => j !== i && GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes(m)))
+        if (protectSets.has(ex.id) || anchors.has(ex.id) || solePriority ||
           (focus === 'lower' && ['hinge', 'knee-flexion'].includes(ex.pattern))) continue
         if (ex.compound && !items.slice(0, i).some((other) => {
           const earlier = GYM_EXERCISE_BY_ID[other.exerciseId]
@@ -635,6 +673,18 @@ export function planGymExercises(input: GymSessionInput) {
     dropped.unshift(GYM_EXERCISE_BY_ID[gone.exerciseId].name)
     trimmed = true
   }
+  if (combinedGoals && trimmed && !introductory && factor >= 1 && total() <= minutes) {
+    // Dropping the final movement can free several minutes after sets have already
+    // been reduced. Spend those minutes on the athlete's selected lifts first.
+    for (const item of items) {
+      const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
+      if (ex.dose || ex.explosive || spareIn(ex) || !protectSets.has(ex.id) || !ex.primary.some((m) => requested.has(m))) continue
+      while (item.sets < 4) {
+        item.sets++
+        if (total() > minutes) { item.sets--; break }
+      }
+    }
+  }
   const fits = items.length === 0 || total() <= minutes
   if (!fits) {
     for (const it of items) dropped.unshift(GYM_EXERCISE_BY_ID[it.exerciseId].name)
@@ -647,6 +697,7 @@ export function planGymExercises(input: GymSessionInput) {
   // named for, and a short day, which has no such room, builds exactly what it always did.
   if (focus !== 'athletic' && !introductory && fits && items.length && !trimmed) {
     const slotPatterns = new Set<Pattern>(SLOTS[focus].flat())
+    if (focus === 'pull' || focus === 'upper') slotPatterns.add('shrug')
     const main = new Set<Muscle>(FOCUS_MAIN[focus])
     const credit = new Map<Muscle, number>()
     const addCredit = (ex: GymExercise, sets: number) => {
@@ -655,6 +706,12 @@ export function planGymExercises(input: GymSessionInput) {
     }
     for (const it of items) addCredit(GYM_EXERCISE_BY_ID[it.exerciseId], it.sets)
     const added: GymExercise[] = []
+    const differentAccessory = (ex: GymExercise) => {
+      if (!UPPER_ISOLATION.has(ex.pattern)) return true
+      const chosen = ex.primary.some((m) => requested.has(m) || (!input.athletePriority && priority.has(m)))
+      const count = items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].pattern === ex.pattern).length
+      return count < (chosen ? 2 : 1)
+    }
     // A harder day (factor above 1) keeps room above the usual ceiling for its extra sets.
     const ceiling = Math.round(FILL_SESSION_SETS * Math.max(1, factor))
     for (;;) {
@@ -666,6 +723,7 @@ export function planGymExercises(input: GymSessionInput) {
           (e) =>
             !used.has(movement(e)) &&
             slotPatterns.has(e.pattern) &&
+            differentAccessory(e) &&
             !e.explosive &&
             (![PRESSING_PATTERNS, PULLING_PATTERNS].some((f) => f.has(e.pattern)) || FILL_FAMILIES[focus].some((f) => f.has(e.pattern))) &&
             usable(e) &&
@@ -683,7 +741,8 @@ export function planGymExercises(input: GymSessionInput) {
       for (const { e } of candidates) {
         const want = 3 + (isPriority(e) ? 1 : 0)
         const rest = restFor(e, makeItem(e, false, 2).plan)
-        const sets = [...new Set([want, 3, 2])].find((n) => n <= want && setsSoFar + n <= ceiling && blockMinutes(n, rest, e.dose?.workSec) <= room)
+        const muscleRoom = Math.min(...e.primary.map((m) => FILL_MUSCLE_SETS - (credit.get(m) ?? 0)))
+        const sets = [...new Set([want, 3, 2])].find((n) => n <= want && n <= muscleRoom && setsSoFar + n <= ceiling && blockMinutes(n, rest, e.dose?.workSec) <= room)
         if (sets === undefined) continue
         used.add(movement(e))
         items.push(makeItem(e, false, sets))

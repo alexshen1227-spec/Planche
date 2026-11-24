@@ -5,6 +5,36 @@ import { addDays, dayKey, weekStart } from '../time'
 import { volumeTarget } from './load'
 import type { WeekAhead } from './planner'
 
+/** A skill-heavy week can already exceed one chosen muscle's band while leaving
+ * another below it. Price a shared visit and keep it only when its actual lifts
+ * improve that week and each skill keeps up to two real practices. */
+export function fitPriorityLegs(state: AppState, week: WeekAhead, now: number, build: (day: string, skill: SkillId) => WeekAhead): WeekAhead {
+  const prefs = state.gym?.prefs
+  const skills = state.profile.skills ?? []
+  if (!prefs || skills.length < 2 || prefs.goals.physique < Math.max(3, prefs.goals.skills) || prefs.extraGymDate) return week
+  const priority = prefs.musclesPriority.filter((m) => !prefs.musclesOff.includes(m))
+  const below = priority.filter((m) => ['quads', 'hamstrings', 'glutes', 'calves'].includes(m) && (week.weekTotal[m] ?? 0) + 2 <= volumeTarget(m, prefs)[0])
+  const above = priority.filter((m) => (week.weekSources.skill[m] ?? 0) > 0 && (week.weekTotal[m] ?? 0) > volumeTarget(m, prefs)[1])
+  if (!below.length || !above.length) return week
+  const end = addDays(weekStart(now), 7)
+  const days = (w: WeekAhead) => w.days.filter((d) => d.at < end && !d.plan.rest)
+  const practice = (w: WeekAhead, skill: SkillId) => days(w).filter((d) => d.skillWorkingSets?.[skill]).length
+  const trained = new Set([...state.sessions, ...state.gym!.sessions].filter((s) => s.startedAt <= now).map((s) => dayKey(s.startedAt)))
+  const need = (w: WeekAhead) => below.reduce((n, m) => n + Math.max(0, volumeTarget(m, prefs)[0] - (w.weekTotal[m] ?? 0)), 0)
+  const excess = (w: WeekAhead) => above.reduce((n, m) => n + Math.max(0, (w.weekTotal[m] ?? 0) - volumeTarget(m, prefs)[1]), 0)
+  const options = days(week).filter((d) => d.kind === 'calisthenics' && (d.plan.skill?.skills.length ?? 0) >= 2 &&
+    !d.plan.skill?.painSafe && !trained.has(d.day)).reverse()
+  for (const day of options) {
+    const [skill] = [...day.plan.skill!.skills].sort((a, b) => practice(week, a) - practice(week, b))
+    const option = build(day.day, skill)
+    if (need(option) + 2 > need(week) || excess(option) >= excess(week) ||
+      skills.some((s) => practice(option, s) < Math.min(2, practice(week, s)))) continue
+    if (priority.some((m) => (option.weekTotal[m] ?? 0) < Math.min(week.weekTotal[m] ?? 0, volumeTarget(m, prefs)[0]))) continue
+    return option
+  }
+  return week
+}
+
 /** Compare real schedules at the athlete's assigned places while keeping each practice dose and the weekly frequency. */
 export function fitLiftingPlace(state: AppState, week: WeekAhead, now: number, build: (day: string) => WeekAhead): WeekAhead {
   const gym = state.gym

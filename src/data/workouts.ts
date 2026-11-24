@@ -29,7 +29,8 @@ import { adaptiveTarget, workingTargetSec } from '../lib/workingTarget'
 import { skillView, wholeState } from '../lib/skills'
 import { lineupFor, type LineupEntry } from '../lib/lineup'
 import { atPlanPlace } from '../lib/plan/trainingPlace'
-import { holdRestWindow } from '../lib/plan/restWindow'
+import { holdRestWindow, recentGymWork } from '../lib/plan/restWindow'
+import { equivalentGymExercise } from './gym/exercises'
 
 const DAY = 86_400_000
 
@@ -2413,6 +2414,36 @@ export function finalizeFromPlan(
     workout = coachSession()
   }
 
+  if (request.source === 'auto' && request.focus !== 'ladder' && whole.gym?.sessions.length) {
+    const support = (b: Block) => {
+      if (b.section !== 'strength' || b.light) return undefined
+      const pattern = equivalentGymExercise(b.exerciseId)?.pattern
+      if (pattern && ['horizontal-press', 'incline-press', 'vertical-press', 'dip'].includes(pattern)) return 'push' as const
+      if (pattern && ['horizontal-pull', 'vertical-pull', 'straight-arm-pull'].includes(pattern)) return 'pull' as const
+      if (b.role === 'press' || b.role === 'pressing') return (b.skill ?? lead) === 'frontlever' || (b.skill ?? lead) === 'flag' ? 'pull' as const : 'push' as const
+    }
+    if (workout.blocks.some(support)) {
+      const recent = recentGymWork(whole, now)
+      const resting = new Set<'push' | 'pull'>()
+      const blocks = workout.blocks.filter((b) => {
+        const f = support(b)
+        if (!f || !recent[f]) return true
+        resting.add(f)
+        return false
+      })
+      if (resting.size && blocks.some((b) => b.section === 'main')) {
+        const removed = workout.blocks.filter((b) => !blocks.some((kept) => kept.exerciseId === b.exerciseId)).map((b) => EXERCISE_BY_ID[b.exerciseId]?.name)
+        const notes = workout.adjustments?.filter((line) => !removed.some((name) => name && line.startsWith(name + ' set to ')))
+        workout = { ...workout, blocks, adjustments: notes, minutes: estimateMinutes(blocks, state.settings.stopLatencySec, state.settings.phoneWithinReach) }
+        for (const f of resting) {
+          const last = recent[f]!
+          const day = new Date(last.at).toLocaleDateString(undefined, { weekday: 'long' })
+          const movement = f === 'push' ? 'pressing' : 'pulling'
+          adjustments.push(`You logged ${last.sets} ${movement} sets on ${day}. Today keeps the skill practice and leaves out the extra ${movement} work.`)
+        }
+      }
+    }
+  }
   const all = [...(workout.adjustments ?? []), ...adjustments]
   // A template is not any one skill's session; everything else is the lead's.
   const recorded = workout.kind === 'template' ? workout : recordFor(workout, lead)

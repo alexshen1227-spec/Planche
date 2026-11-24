@@ -62,18 +62,14 @@ export function GymHub({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const sore = useMemo(() => soreJoints(state, Date.now()), [state, todayKey, clock])
   // The whole session's minutes, an opener included (a gym day's total).
-  const [minutes, setMinutes] = useState(() => Math.max(MIN_GYM_MINUTES, choice.minutes ?? (today.minutes > 0 ? today.minutes : 45)))
-  // A later "I have X minutes" on any screen moves them too: they were read once, when the tab opened.
-  useEffect(() => {
-    if (choice.minutes !== undefined) setMinutes(Math.max(MIN_GYM_MINUTES, choice.minutes))
-  }, [choice.minutes])
+  const minutes = Math.max(MIN_GYM_MINUTES, choice.minutes ?? (today.minutes > 0 ? today.minutes : 45))
   // A tab left open past midnight starts the new day at that day's minutes, not yesterday's pick.
   const minutesDay = useRef(todayKey)
   useEffect(() => {
     if (minutesDay.current === todayKey) return
     minutesDay.current = todayKey
-    setMinutes(Math.max(MIN_GYM_MINUTES, choice.minutes ?? (today.minutes > 0 ? today.minutes : 45)))
     setAgain(false)
+    setEditingLifts(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [todayKey])
   // Today's main session done: nothing more is recommended here, only a quiet way to train again.
@@ -89,8 +85,8 @@ export function GymHub({
   const [pending, setPending] = useState<{ empty: boolean; preset?: GymPreset; resumeSessionId?: string } | null>(null)
   const remaining = liftsNext && !editingLifts ? remainingLifts(today, remembered, choice.placeId) : null
   const block = pending?.preset ?? preset ?? remaining
-  const [skipOpener, setSkipOpener] = useState(false)
-  const [focus, setFocus] = useState<GymFocus | 'auto'>('auto')
+  const skipOpener = choice.skipOpener
+  const focus = choice.gymFocus ?? 'auto'
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   const [historyOf, setHistoryOf] = useState<string | null>(null)
   const [guideId, setGuideId] = useState<string | null>(null)
@@ -125,14 +121,17 @@ export function GymHub({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [state, gym, location, minutes, todayKey, clock],
   )
-  const coach = useMemo(
+  const withOpener = useMemo(
     () => (focus === 'auto' ? auto : gym && location ? gymToday(state, { now: Date.now(), minutes, focus, location }) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [auto, state, gym, location, minutes, focus, todayKey, clock],
   )
+  const coach = useMemo(() => skipOpener && gym && location
+    ? gymToday(state, { now: Date.now(), minutes, focus, location, skipOpener: true }) : withOpener,
+    [withOpener, skipOpener, state, gym, minutes, focus, location])
   const resolvedFocus: GymFocus | undefined = block?.focus ?? coach?.focus
   const limits = block ?? coach
-  const offeredOpener = startWorkout && !liftsNext && !block ? coach?.opener : undefined
+  const offeredOpener = startWorkout && !liftsNext && !block ? withOpener?.opener : undefined
   const opener = skipOpener ? undefined : offeredOpener
   const liftMinutes = block?.minutes ?? minutes - (opener?.minutes ?? 0)
   const warmUpMin = block?.warmUpMin ?? (opener || liftsNext ? AFTER_OPENER_WARM_UP_MIN : undefined)
@@ -475,8 +474,7 @@ export function GymHub({
           <div className="mt-3 flex items-center justify-between gap-2 rounded-inner bg-raised px-3">
             <span className="text-footnote font-semibold">{FOCUS_LABEL[remaining.focus]} · {remaining.minutes} min</span>
             <Button variant="ghost" onClick={() => {
-              setMinutes(remaining.minutes)
-              setFocus(remaining.focus)
+              setChoice({ ...choice, kind: 'gym', minutes: remaining.minutes, gymFocus: remaining.focus, skipOpener: true })
               setEditingLifts(true)
             }}>Change lifts</Button>
           </div>
@@ -484,7 +482,7 @@ export function GymHub({
         <p className="mt-3 text-caption font-medium text-ink3">Time</p>
         <div className="mt-1 flex flex-wrap gap-2">
           {[...new Set([...MINUTES, minutes])].sort((a, b) => a - b).map((m) => (
-            <ToggleChip key={m} active={minutes === m} onClick={() => setMinutes(m)}>
+            <ToggleChip key={m} active={minutes === m} onClick={() => setChoice({ ...choice, kind: 'gym', minutes: m })}>
               {m} min
             </ToggleChip>
           ))}
@@ -492,7 +490,7 @@ export function GymHub({
         <p className="mt-3 text-caption font-medium text-ink3">Focus</p>
         <div className="mt-1 flex flex-wrap gap-2">
           {FOCI.map((f) => (
-            <ToggleChip key={f} active={focus === f} onClick={() => setFocus(f)}>
+            <ToggleChip key={f} active={focus === f} onClick={() => setChoice({ ...choice, kind: 'gym', gymFocus: f === 'auto' ? undefined : f })}>
               {f === 'auto' ? (autoFocus ? `Auto (${FOCUS_LABEL[autoFocus]})` : 'Auto') : FOCUS_LABEL[f]}
             </ToggleChip>
           ))}
@@ -509,7 +507,7 @@ export function GymHub({
             <Button
               variant="ghost"
               aria-label={`${skipOpener ? 'Add' : 'Skip'} the ${SKILL_NAME[offeredOpener.skills[0]]} skill opener`}
-              onClick={() => setSkipOpener(!skipOpener)}
+              onClick={() => setChoice({ ...choice, kind: 'gym', skipOpener: skipOpener ? undefined : true })}
             >
               {skipOpener ? 'Add it' : 'Skip it'}
             </Button>

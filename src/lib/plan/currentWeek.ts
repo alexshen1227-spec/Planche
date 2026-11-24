@@ -9,13 +9,15 @@ import { planClockTick } from './usePlanClock'
 const current = new WeakMap<AppState, { key: string; week: WeekAhead }>()
 
 export function weekForChoice(state: AppState, choice: TodayChoice, now = Date.now()): WeekAhead {
-  const key = JSON.stringify([dayKey(now), planClockTick(now), choice.minutes, choice.kind, choice.placeId])
+  const key = JSON.stringify([dayKey(now), planClockTick(now), choice.minutes, choice.kind, choice.placeId, choice.gymFocus, choice.skipOpener])
   const cached = current.get(state)
   if (cached?.key === key) return cached.week
   const place = state.gym?.locations.find((location) => location.id === choice.placeId)
   const week = planWeekAhead(state, now, {
     todayMinutes: choice.minutes,
     todayKind: choice.kind,
+    todayFocus: choice.gymFocus,
+    todaySkipOpener: choice.skipOpener,
     todayPlace: place,
   })
   current.set(state, { key, week })

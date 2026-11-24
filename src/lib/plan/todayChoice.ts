@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { dayKey } from '../time'
+import { FOCUS_LABEL, type GymFocus } from '../gym/focus'
 
 /**
  * Today's choice — "Rather do the gym today?" and "I have X min" — kept for
@@ -11,6 +12,8 @@ import { dayKey } from '../time'
 export interface TodayChoice {
   kind?: 'calisthenics' | 'gym'
   minutes?: number
+  gymFocus?: GymFocus
+  skipOpener?: true
   /** The place the athlete said they are at today, when it is not where the plan had the day (an explicit pick, never the place the app happens to be set to). */
   placeId?: string
 }
@@ -18,11 +21,13 @@ export interface TodayChoice {
 const KEY = 'planchelab.todayChoice'
 const EVENT = 'planchelab:todaychoice'
 
-function clean(x: { kind?: unknown; minutes?: unknown; placeId?: unknown }): TodayChoice {
+function clean(x: { kind?: unknown; minutes?: unknown; placeId?: unknown; gymFocus?: unknown; skipOpener?: unknown }): TodayChoice {
   const minutes = typeof x.minutes === 'number' && Number.isFinite(x.minutes) && x.minutes >= 5 && x.minutes <= 240 ? Math.round(x.minutes) : undefined
   return {
     ...(x.kind === 'calisthenics' || x.kind === 'gym' ? { kind: x.kind } : {}),
     ...(minutes !== undefined ? { minutes } : {}),
+    ...(x.kind === 'gym' && typeof x.gymFocus === 'string' && Object.hasOwn(FOCUS_LABEL, x.gymFocus) ? { gymFocus: x.gymFocus as GymFocus } : {}),
+    ...(x.kind === 'gym' && x.skipOpener === true ? { skipOpener: true } : {}),
     ...(typeof x.placeId === 'string' && x.placeId && x.placeId.length <= 80 ? { placeId: x.placeId } : {}),
   }
 }
@@ -70,7 +75,8 @@ export function useTodayChoice(todayKey: string): [TodayChoice, (next: TodayChoi
     const sync = () =>
       setChoice((cur) => {
         const next = readTodayChoice()
-        return next.kind === cur.kind && next.minutes === cur.minutes && next.placeId === cur.placeId ? cur : next
+        return next.kind === cur.kind && next.minutes === cur.minutes && next.placeId === cur.placeId &&
+          next.gymFocus === cur.gymFocus && next.skipOpener === cur.skipOpener ? cur : next
       })
     sync()
     window.addEventListener(EVENT, sync)

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { GYM_EQUIPMENT } from '../../data/gym/catalog'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import { finalizeWorkout } from '../../data/workouts'
 import { planWeekAhead } from '../plan/planner'
+import { calisthenicsRequest } from '../plan/screens'
+import { volumeTarget } from '../plan/load'
 import { makeAthlete } from '../plan/wholeAthleteLoop'
 import { addDays } from '../time'
 import { availableAt, searchExercises } from './availability'
@@ -31,6 +34,55 @@ describe('lifting splits and portable starting doses', () => {
       if (focus === 'pull') expect(plan.items.flatMap((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary)).not.toEqual(expect.arrayContaining(['chest']))
       expect(plan.estimatedMin).toBeLessThanOrEqual(minutes)
     }
+    for (const id of ['db-pullover', 'barbell-pullover', 'ez-pullover']) {
+      expect(fitsGymFocus('pull', GYM_EXERCISE_BY_ID[id])).toBe(false)
+      expect(fitsGymFocus('upper', GYM_EXERCISE_BY_ID[id])).toBe(true)
+    }
+  })
+
+  it('fits two practices of each skill and two separated quad exposures into four visits with equal lat and quad goals', () => {
+    const state = makeAthlete({ skills: ['frontlever', 'handstand'], active: 'home', birthYear: 1994,
+      steps: { frontlever: 'fl-tuck', handstand: 'hs-wall' }, kit: ['floor', 'band', 'pullup-bar', 'wall'],
+      prefs: { goals: { physique: 5, skills: 4, strength: 3, power: 0, endurance: 0 },
+        minutesByDay: [0, 60, 60, 45, 0, 60, 0], placeByDay: [null, 'home', 'gym', null, null, 'gym', null], musclesPriority: ['lats', 'quads'] } })
+    state.gym!.locations[0].equipment.push('bench', 'dumbbells')
+    state.gym!.locations[1].equipment.push('wall')
+    const answers = { wrist: 2, pushups: 12, hollow: 35, pullups: 7, experience: 12, 'level:frontlever': 1, 'level:handstand': 1 }
+    for (const [skill, step] of [['frontlever', 'fl-tuck'], ['handstand', 'hs-wall']] as const) {
+      state.tracks![skill]!.assessment = { at: now - 1, answers, placedStepId: step, confidence: 'moderate', gapIds: [] }
+    }
+    const week = planWeekAhead(state, now)
+    for (const skill of ['frontlever', 'handstand'] as const) expect(week.days.filter((d) => d.skillWorkingSets?.[skill]).length).toBeGreaterThanOrEqual(2)
+    for (const m of ['quads', 'lats'] as const) {
+      const [low, high] = volumeTarget(m, state.gym!.prefs!)
+      expect(week.weekTotal[m], m).toBeGreaterThanOrEqual(low)
+      expect(week.weekTotal[m], m).toBeLessThanOrEqual(high)
+    }
+    const quadVisits = week.remainingLifts.filter((d) => d.items.some((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes('quads')))
+    expect(quadVisits.length).toBeGreaterThanOrEqual(2)
+    expect(quadVisits[1].at - quadVisits[0].at).toBeGreaterThanOrEqual(2 * 86_400_000)
+  })
+
+  it('uses the recommended home kit and drops only extra pressing after actual bench work on a custom day', () => {
+    const state = makeAthlete({ skills: ['frontlever', 'handstand'], active: 'gym', birthYear: 1994,
+      kit: ['floor', 'wall', 'pullup-bar'], steps: { frontlever: 'fl-tuck', handstand: 'hs-wall' } })
+    const yesterday = addDays(now, -1)
+    const bench = logs('custom', 'gym', 'db-bench-press', yesterday, [10, 10, 10, 10], 8)
+    bench.name = 'Lower'
+    bench.exercises.push({ exerciseId: 'leg-extension', sets: [{ at: yesterday, reps: 12 }] })
+    state.gym!.sessions = [bench]
+    const request = calisthenicsRequest(state, { minutes: 45, skills: ['frontlever', 'handstand'], hard: [], placeId: 'home' })
+    expect(request.placeId).toBe('home')
+    expect(request.kit).toContain('wall')
+    const workout = finalizeWorkout(state, request, undefined, now)
+    expect(workout.blocks.some((b) => b.exerciseId === 'tuck-front-lever' && b.section === 'main')).toBe(true)
+    expect(workout.blocks.some((b) => b.exerciseId === 'wall-handstand' && b.section === 'main')).toBe(true)
+    expect(workout.blocks.some((b) => b.exerciseId === 'pike-pushup')).toBe(false)
+    expect(workout.adjustments?.join(' ')).toContain('4 pressing sets')
+    expect(workout.adjustments?.join(' ')).not.toContain('Pike Push-Up set to')
+    const fresh = finalizeWorkout({ ...state, gym: { ...state.gym!, sessions: [] } }, request, undefined, now)
+    expect(fresh.blocks.some((b) => b.exerciseId === 'pike-pushup')).toBe(true)
+    expect(workout.blocks.filter((b) => b.exerciseId === 'pullup')).toEqual(fresh.blocks.filter((b) => b.exerciseId === 'pullup'))
   })
 
   it('reads a short off-plan workout across Sunday and Monday, excluding warm-ups and zero reps', () => {

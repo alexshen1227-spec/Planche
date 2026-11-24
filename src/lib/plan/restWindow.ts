@@ -1,5 +1,5 @@
 import type { AppState, SkillId } from '../../types'
-import { familyEvents } from './load'
+import { familyEvents, familyWorkingSets, HARD_GYM_FAMILY_SETS } from './load'
 import { defaultPrefs } from '../gym/state'
 
 const HOUR = 3_600_000
@@ -58,4 +58,25 @@ export function holdRestWindow(state: AppState, skill: SkillId, now: number) {
   const hit = familyEvents(state, now)[family].filter((e) => insideRest(now, e.at, ruleHours * HOUR)).at(-1)
   if (!hit) return undefined
   return { hours: Math.max(1, Math.round((now - hit.at) / HOUR)), ruleHours }
+}
+
+/** Actual compound lifting in the recovery window, including two short visits on the same day. */
+export function recentGymWork(state: AppState, now: number): Partial<Record<'push' | 'pull', { sets: number; at: number }>> {
+  const rule = (state.gym?.prefs?.straightArmRestHours ?? 48) * HOUR
+  const days = new Map<number, { push: number; pull: number; at: number }>()
+  for (const session of state.gym?.sessions ?? []) {
+    if (session.startedAt > now || !insideRest(now, session.startedAt, rule)) continue
+    const date = startOfDay(session.startedAt)
+    const entry = days.get(date) ?? { push: 0, pull: 0, at: 0 }
+    const working = familyWorkingSets(session.exercises, now)
+    entry.push += working.push
+    entry.pull += working.pull
+    entry.at = Math.max(entry.at, session.startedAt)
+    days.set(date, entry)
+  }
+  const result: Partial<Record<'push' | 'pull', { sets: number; at: number }>> = {}
+  for (const day of days.values()) for (const f of ['push', 'pull'] as const) {
+    if (day[f] >= HARD_GYM_FAMILY_SETS && day.at > (result[f]?.at ?? 0)) result[f] = { sets: day[f], at: day.at }
+  }
+  return result
 }

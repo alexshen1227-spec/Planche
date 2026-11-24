@@ -20,11 +20,13 @@ function exerciseFamily(ex: Pick<GymExercise, 'pattern' | 'primary'>): Family | 
   return ex.pattern === 'throw' && ex.primary.includes('chest') ? 'push' : families[ex.pattern]
 }
 
-/** A named split may include trunk work. Assisting muscles do not change a lift's main job. */
-export function fitsGymFocus(focus: GymFocus, ex: Pick<GymExercise, 'pattern' | 'primary' | 'explosive'>): boolean {
+/** Free-weight pullovers deliberately train the chest as well as the lats. Keep them
+ * available on upper and full-body days, and let a strict Pull day use a row or pulldown. */
+export function fitsGymFocus(focus: GymFocus, ex: Pick<GymExercise, 'pattern' | 'primary' | 'explosive'> & Partial<Pick<GymExercise, 'secondary'>>): boolean {
   if (focus === 'full') return true
   if (focus === 'athletic') return Boolean(ex.explosive || ['carry', 'jump', 'throw', 'drill', 'sprint', 'squat', 'hinge'].includes(ex.pattern))
   if (ex.pattern === 'core-flexion' || ex.pattern === 'core-anti-rotation') return true
+  if (focus === 'pull' && ex.pattern === 'straight-arm-pull' && ex.secondary?.includes('chest')) return false
   const family = exerciseFamily(ex)
   return focus === 'upper' ? family === 'pull' || family === 'push' : family === focus
 }

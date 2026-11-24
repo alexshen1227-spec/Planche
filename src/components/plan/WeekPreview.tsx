@@ -11,8 +11,9 @@ import { WeekPlanComparison } from './WeekPlanComparison'
 import type { SkillId } from '../../types'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
 import { recordedTrainingDay, skillDayWords, skillWeekLines } from '../../lib/plan/skillWeek'
-import { useDayMarks } from '../../lib/plan/nextBlock'
-import { dayStage } from '../../lib/plan/screens'
+import { useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
+import { dayStage, remainingLifts, type GymPreset } from '../../lib/plan/screens'
+import { latestSkillPartial } from '../../lib/skillSession'
 
 const SHORT: Record<SkillId, string> = {
   planche: 'Planche',
@@ -56,15 +57,19 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
   const [choice] = useTodayChoice(todayKey)
   const week = given ?? weekForChoice(state, choice)
   const [picked, setPicked] = useState(0)
+  const today = week.days[0]
+  const stage = today?.day === todayKey ? dayStage(state, today.plan, Date.now(), marks) : undefined
+  const saved = useNextBlock<GymPreset>(todayKey)
+  const nextLifts = stage === 'lifts-next' ? remainingLifts(today.plan, saved, choice.placeId) : null
+  const partialRounds = stage === 'skill-partial' ? latestSkillPartial(state.sessions)?.remaining?.blocks.reduce((n, b) => n + b.sets, 0) : undefined
   const recorded = useMemo(() => {
-    const now = Date.now()
-    const today = week.days[0]
-    return today?.day === todayKey && dayStage(state, today.plan, now, marks) === 'done'
-      ? recordedTrainingDay(state, now) : undefined
-  }, [week, state, todayKey, tick, marks])
+    return stage === 'done' || stage === 'lifts-next' || stage === 'skill-partial'
+      ? recordedTrainingDay(state, Date.now()) : undefined
+  }, [stage, state, todayKey, tick])
   const bySkill = useMemo(() => skillWeekLines(week, state, recorded), [week, state, recorded])
   const activityKinds = [...new Set(recorded?.visits.map((v) => v.kind === 'gym' ? 'Gym' : 'Skills'))]
-  const loggedLabel = activityKinds.join(' + ') || 'Day ended'
+  const loggedLabel = stage === 'lifts-next' ? 'Lifts next' : stage === 'skill-partial' ? 'Skill workout paused' : activityKinds.join(' + ') || 'Day ended'
+  const loggedHeading = activityKinds.length ? 'Logged' : 'Ended'
   const selected = week.days[Math.min(picked, week.days.length - 1)]
   const locationId = selected?.plan.gym?.placeId ?? selected?.plan.skill?.placeId
   const location = state.gym?.locations.find((place) => place.id === locationId)
@@ -90,13 +95,13 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
               <button
                 onClick={() => setPicked(i)}
                 aria-pressed={picked === i}
-                aria-label={`${i === 0 ? 'Today' : new Date(at).toLocaleDateString(undefined, { weekday: 'long' })}: ${logged ? `Logged · ${loggedLabel}` : dayWords(d)}${sportLabel ? `, ${sportLabel}` : ''} — show details`}
+                aria-label={`${i === 0 ? 'Today' : new Date(at).toLocaleDateString(undefined, { weekday: 'long' })}: ${logged ? `${loggedHeading} · ${loggedLabel}` : dayWords(d)}${sportLabel ? `, ${sportLabel}` : ''} — show details`}
                 className={`relative flex min-h-[104px] w-full flex-col items-stretch gap-1 rounded-control border p-1.5 text-center ${
                   picked === i ? 'border-accent' : i === 0 ? 'border-line-strong' : 'border-line'
                 } ${plan.rest ? 'bg-raised' : 'bg-surface'}`}
               >
                 <span className="text-caption font-semibold text-ink3">{label}</span>
-                {logged ? <span className="my-auto text-caption font-semibold text-ink"><span className="block text-[10px] uppercase text-accent-text">Logged</span>{loggedLabel}</span> : null}
+                {logged ? <span className="my-auto text-caption font-semibold text-ink"><span className="block text-[10px] uppercase text-accent-text">{loggedHeading}</span>{loggedLabel}</span> : null}
                 {!logged && plan.rest ? <span className="my-auto text-caption text-ink3">Rest</span> : null}
                 {!logged && plan.kind === 'calisthenics' && skills.length ? (
                   <span className="rounded-md bg-accent-soft px-1 py-0.5 text-caption font-medium leading-tight text-accent-text">
@@ -130,6 +135,8 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
                 {v.name}{v.places.length > 0 && ` at ${v.places.join(' / ')}`} · {v.sets} working {v.sets === 1 ? 'set' : 'sets'}{v.partial && ' · partial workout'}
               </li>)}
             </ul> : <p className="text-caption text-ink2">No workout logged today.</p>}
+            {stage === 'lifts-next' && <p className="mt-2 text-caption font-semibold text-ink">Lifts still to do{nextLifts ? ` · ${FOCUS_LABEL[nextLifts.focus]} · ${nextLifts.minutes} min` : ''}</p>}
+            {partialRounds !== undefined && <p className="mt-2 text-caption font-semibold text-ink">{partialRounds} skill {partialRounds === 1 ? 'set' : 'sets'} left in the saved workout.</p>}
           </> : <>
           <p className="text-caption font-semibold text-ink2">
             {picked === 0 ? 'Today' : new Date(selected.at).toLocaleDateString(undefined, { weekday: 'long' })} · {dayWords(selected)}

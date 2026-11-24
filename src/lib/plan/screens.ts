@@ -320,7 +320,8 @@ export function gymPlaceLine(choice: GymPlaceChoice | undefined): string | null 
 export function calisthenicsRequest(state: AppState, block: SkillBlock, pickedId?: string): WorkoutRequest {
   const base = skillRequest(block)
   const picked = state.gym?.locations.find((l) => l.id === pickedId)
-  const kit: EquipmentId[] | undefined = picked ? hereKit(state, picked) : block.kit?.length ? block.kit : placeKit(state)
+  const planned = state.gym?.locations.find((l) => l.id === block.placeId)
+  const kit: EquipmentId[] | undefined = picked ? hereKit(state, picked) : block.kit?.length ? block.kit : planned ? hereKit(state, planned) : placeKit(state)
   const placeId = picked?.id ?? block.placeId ?? state.gym?.activeLocationId
   return { ...base, ...(kit?.length ? { kit } : {}), ...(placeId ? { placeId } : {}) }
 }
