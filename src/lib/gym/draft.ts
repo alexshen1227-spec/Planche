@@ -148,12 +148,16 @@ export function loadDraft(epoch?: string): GymDraft | null {
 
 function remainingLift(item: DraftItem, sets: DraftSet[]): RemainingLift {
   const trial = item.suggestion?.floorPushupTrial ?? item.suggestion?.pullupTrial
+  const s = item.suggestion
   return {
     exerciseId: item.exerciseId, repRange: item.plan.range, targetRpe: item.plan.targetRpe,
     restSec: item.restSec, unit: item.unit, swappedFrom: item.swappedFrom,
     ...(item.pairedWith ? { pairedWith: item.pairedWith } : {}),
     sets: sets.map(({ reps, load, warmup }) => ({ reps, load, warmup })),
     ...(trial ? { trialReps: trial } : {}), ...(item.suggestion?.easierId ? { easierId: item.suggestion.easierId } : {}),
+    ...(s && (s.kind === 'at-minimum-weight' || s.kind === 'at-top-weight') ? { rackTarget: {
+      kind: s.kind, reps: s.targetReps, why: s.why, chooseAlternative: s.chooseAlternative,
+    } } : {}),
   }
 }
 
@@ -259,7 +263,10 @@ export function resumePartial(session: GymSession, avoid: Joint[] = [], location
       exerciseId: it.exerciseId, plan: { range: it.repRange, targetRpe: it.targetRpe }, restSec: it.restSec, unit: it.unit,
       ...(it.pairedWith && !avoidJoints.length && (plan.volumeFactor ?? 1) >= 1 ? { pairedWith: it.pairedWith } : {}),
       sets: it.sets.map((s) => ({ ...s, done: false })), swappedFrom: it.swappedFrom,
-      ...(it.trialReps || it.easierId ? { suggestion: {
+      ...(it.rackTarget ? { suggestion: {
+        kind: it.rackTarget.kind, reps: it.repRange, targetRpe: it.targetRpe, why: it.rackTarget.why,
+        targetReps: it.rackTarget.reps, chooseAlternative: it.rackTarget.chooseAlternative, easierId: it.easierId,
+      } } : it.trialReps || it.easierId ? { suggestion: {
         kind: 'bodyweight', reps: it.repRange, targetRpe: it.targetRpe, why: '', easierId: it.easierId,
         ...(it.trialReps && (preparesFor(it.exerciseId) === 'push-up' ? { floorPushupTrial: it.trialReps } : { pullupTrial: it.trialReps })),
       } } : {}),

@@ -13,7 +13,7 @@ import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../li
 import { addedSetReps, conservative, dayOfItem, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
 import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, isUnloadedSet, lastPerformance, plyoGate, prescribedCount, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GoalWeights, GymLocation, Rating } from '../../lib/gym/types'
-import { displayLoad, entryLoad, formatLoad, stepKgFor, takesAddedLoad, toKg, unitFor, unloadedLabel } from '../../lib/gym/units'
+import { displayLoad, entryLoad, formatLoad, minKgFor, stepKgFor, takesAddedLoad, toKg, unitFor, unloadedLabel } from '../../lib/gym/units'
 import { continueGymSession, doubtedLoad, newGymSessionId } from '../../lib/gym/state'
 import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
 import { Icon } from '../Icon'
@@ -539,6 +539,9 @@ export function GymPlayer({
                     {easier && gym.ratings[easier.id] !== 'avoid' && fitsToday(easier) && item.sets.some((s) => !s.done) &&
                       <button type="button" className="min-h-11 text-left text-footnote font-semibold text-accent-text" onClick={() => swapTo(i, easier.id)}>
                         Use {easier.name.toLowerCase()} for remaining sets</button>}
+                    {item.suggestion?.chooseAlternative && item.sets.some((s) => !s.done) &&
+                      <button type="button" className="block min-h-11 text-left text-footnote font-semibold text-accent-text"
+                        onClick={() => openSheet({ kind: 'swap', item: i })}>Choose a different lift</button>}
                     {item.swappedFrom ? (
                       <p className="mt-1 text-caption text-ink3">In place of {GYM_EXERCISE_BY_ID[item.swappedFrom]?.name}.</p>
                     ) : null}
@@ -597,7 +600,8 @@ export function GymPlayer({
                         ) : null}
                         {ex.load !== 'bodyweight' || addedLoad || s.load !== undefined ? (
                           <Stepper
-                            value={s.load ?? 0}
+                            value={s.load ?? (addedLoad ? 0 : undefined)}
+                            first={entryLoad(minKgFor(ex, location) ?? step, item.unit)}
                             unit={item.unit}
                             step={stepDisplay || 1}
                             label={`${ex.name}, set ${j + 1} ${ex.assisted ? 'assistance' : addedLoad ? 'added load' : 'load'}`}
@@ -625,7 +629,7 @@ export function GymPlayer({
                           label={`${ex.name}, set ${j + 1} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`}
                           onChange={(v) =>
                             update((d) => {
-                              d.items[i].sets[j].reps = Math.max(0, Math.round(v))
+                              d.items[i].sets[j].reps = Math.max(0, Math.round(v ?? 0))
                               return d
                             })
                           }
@@ -1048,24 +1052,28 @@ export function GymPlayer({
 
 function Stepper({
   value,
+  first,
   unit,
   step,
   label,
   onChange,
 }: {
-  value: number
+  value: number | undefined
+  first?: number
   unit: string
   step: number
   label: string
-  onChange: (v: number) => void
+  onChange: (v: number | undefined) => void
 }) {
   const [typed, setTyped] = useState<string | null>(null)
   const isCount = unit === 'reps' || unit === 'sec'
-  const nudge = (by: number) => onChange(Math.max(0, Number((value + by).toFixed(3))))
+  const display = value === undefined ? '' : String(value)
+  const nudge = (by: number) => onChange(value === undefined ? first || step : Math.max(0, Number((value + by).toFixed(3))))
   return (
     <div className="flex flex-1 items-center justify-center gap-1" role="group" aria-label={label}>
       <button
         onClick={() => nudge(-step)}
+        disabled={!value}
         className="ds-press flex h-11 w-11 items-center justify-center rounded-control text-ink2 hover:bg-surface"
         aria-label={`Less ${unit}, ${label}`}
       >
@@ -1073,9 +1081,10 @@ function Stepper({
       </button>
       <input
         inputMode={isCount ? 'numeric' : 'decimal'}
-        value={typed ?? String(value)}
+        value={typed ?? display}
+        placeholder={isCount ? undefined : '—'}
         onFocus={(e) => {
-          setTyped(String(value))
+          setTyped(display)
           e.target.select()
         }}
         onBlur={() => setTyped(null)}
@@ -1085,14 +1094,15 @@ function Stepper({
           const v = Number(raw.replace(',', '.'))
           if (v >= 1000) return
           setTyped(raw)
-          if (Number.isFinite(v)) onChange(v)
+          if (!raw) onChange(undefined)
+          else if (Number.isFinite(v)) onChange(v)
         }}
         className="h-11 w-14 rounded-lg bg-surface text-center text-title3 font-semibold tnum"
         aria-label={label}
       />
       <button
         onClick={() => nudge(step)}
-        disabled={value + step >= 1000}
+        disabled={(value ?? 0) + step >= 1000}
         className="ds-press flex h-11 w-11 items-center justify-center rounded-control text-ink2 hover:bg-surface"
         aria-label={`More ${unit}, ${label}`}
       >

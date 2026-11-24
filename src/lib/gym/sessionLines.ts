@@ -157,12 +157,13 @@ export function nextTimeLines(
     const word = countUnit(ex) === 'seconds' ? ' s' : ''
     const hasLoad = s.kg !== undefined && s.kg > 0
     const text =
-      hasLoad && s.repsToMoveUp !== undefined
+      s.chooseAlternative ? 'Next time: choose an easier variation or use lighter equipment'
+        : hasLoad && s.repsToMoveUp !== undefined
         ? `Repeat ${formatLoad(s.kg, unit)}: every set needs ${s.repsToMoveUp} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`
         : hasLoad && s.nearestTo !== undefined
           ? `Nearest load here: ${formatLoad(s.kg, unit)} × ${lo}–${hi}${word} (not a step up; no ${formatLoad(s.nearestTo, unit)} here)`
           : hasLoad
-          ? `Next time: ${formatLoad(s.kg, unit)} × ${lo}–${hi}${word}`
+          ? `Next time: ${formatLoad(s.kg, unit)} × ${s.targetReps ?? `${lo}–${hi}`}${word}`
           : s.kind === 'bodyweight' || s.kg === 0
             ? `Next time: ${ex.assisted ? 'no help' : unloadedLabel(ex).toLowerCase()} × ${s.targetReps !== undefined ? `${s.targetReps} reps` : `${lo}–${hi}${word}`}`
             : `Next time: no load suggested yet`

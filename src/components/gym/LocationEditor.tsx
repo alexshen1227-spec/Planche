@@ -19,11 +19,12 @@ const GROUPS: { title: string; ids: LocationEquipment[] }[] = [
   { title: 'Other', ids: GYM_EQUIPMENT.filter((e) => (e.kind === 'accessory' || e.kind === 'space') && e.id !== 'plates' && e.id !== 'dip-belt').map((e) => e.id) },
 ]
 
-function LoadField({ label, name, unit, kg, maxKg, placeholder, onChange }: {
+function LoadField({ label, name, unit, kg, minKg, maxKg, placeholder, onChange }: {
   label: string
   name: string
   unit: Unit
   kg?: number
+  minKg?: number
   maxKg: number
   placeholder: string
   onChange: (value: number | undefined) => void
@@ -31,7 +32,7 @@ function LoadField({ label, name, unit, kg, maxKg, placeholder, onChange }: {
   return (
     <label className="block min-w-0">
       <span className="text-caption text-ink3">{label} ({unit})</span>
-      <input key={unit} type="number" inputMode="decimal" step="any" min="0.001" max={fromKg(maxKg, unit)}
+      <input key={unit} type="number" inputMode="decimal" step="any" min={minKg === undefined ? 0.001 : fromKg(minKg, unit)} max={fromKg(maxKg, unit)}
         defaultValue={kg === undefined ? '' : entryLoad(kg, unit)} aria-label={name} placeholder={placeholder}
         onChange={(event) => {
           const input = event.currentTarget
@@ -66,7 +67,7 @@ export function LocationEditor({
   const toggle = (id: LocationEquipment) =>
     setDraft({ ...draft, equipment: has.has(id) ? draft.equipment.filter((e) => e !== id) : [...draft.equipment, id] })
   const gear = (id: GymEquipmentId) => draft.gear?.[id] ?? {}
-  const setGear = (id: GymEquipmentId, patch: { unit?: Unit; maxKg?: number; stepKg?: number }) =>
+  const setGear = (id: GymEquipmentId, patch: { unit?: Unit; minKg?: number; maxKg?: number; stepKg?: number }) =>
     setDraft({ ...draft, gear: { ...draft.gear, [id]: { ...draft.gear?.[id], ...patch } } })
   const count = availableAt(draft).length
   const loadable = GYM_EQUIPMENT.filter((item) => has.has(item.id) && item.step)
@@ -81,9 +82,14 @@ export function LocationEditor({
         <SegmentedControl label={label + ' unit'} value={unit} onChange={(unit) => setGear(id, { unit })}
           options={[{ value: 'kg' as Unit, label: 'kg' }, { value: 'lb' as Unit, label: 'lb' }]} />
         <div className="grid gap-3 sm:grid-cols-2">
+          {(item.hasMax || ['barbell', 'ez-bar', 'trap-bar'].includes(id)) && (
+            <LoadField label={item.hasMax ? (id === 'dumbbells' ? 'Lightest single dumbbell' : 'Lightest single kettlebell') : 'Empty bar weight'}
+              name={`Lightest ${label.toLowerCase()} in ${unit}`} unit={unit} kg={config.minKg} maxKg={config.maxKg ?? 999.99}
+              placeholder="Not set" onChange={(minKg) => setGear(id, { minKg })} />
+          )}
           {item.hasMax ? (
             <LoadField label={id === 'dumbbells' ? 'Heaviest single dumbbell' : 'Heaviest single kettlebell'}
-              name={`Heaviest ${label.toLowerCase()} in ${unit}`} unit={unit} kg={config.maxKg} maxKg={999.99}
+              name={`Heaviest ${label.toLowerCase()} in ${unit}`} unit={unit} kg={config.maxKg} minKg={config.minKg} maxKg={999.99}
               placeholder="Not set" onChange={(maxKg) => setGear(id, { maxKg })} />
           ) : null}
           <LoadField label="Smallest weight increase" name={`${label} weight increment in ${unit}`}

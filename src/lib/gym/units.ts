@@ -62,9 +62,18 @@ export function maxKgFor(exercise: GymExercise, location: GymLocation | undefine
   return location?.gear?.[exercise.stepFrom]?.maxKg
 }
 
+/** A stated starting weight anchors this rack's increments, including the empty bar. */
+export function minKgFor(exercise: GymExercise, location: GymLocation | undefined): number | undefined {
+  if (!exercise.stepFrom || exercise.load === 'bodyweight' || exercise.assisted) return undefined
+  const gear = location?.gear?.[exercise.stepFrom]
+  if (gear?.minKg !== undefined && gear.minKg > 0) return gear.minKg
+  // Even a rack containing just a single weight can list an increment larger than it.
+  return gear?.maxKg !== undefined && gear.maxKg < stepKgFor(exercise, location) ? gear.maxKg : undefined
+}
+
 /** Round to a reachable load: the nearest step, never below zero, never past the top weight. */
-export function roundToStep(kg: number, stepKg: number, maxKg?: number): number {
+export function roundToStep(kg: number, stepKg: number, maxKg?: number, minKg = 0): number {
   const step = stepKg > 0 ? stepKg : 0.25
-  const limit = maxKg !== undefined ? Math.floor(maxKg / step + 1e-9) : Infinity
-  return Math.max(0, Math.min(Math.round(kg / step), limit)) * step
+  const limit = maxKg !== undefined ? Math.floor((maxKg - minKg) / step + 1e-9) : Infinity
+  return minKg + Math.max(0, Math.min(Math.round((kg - minKg) / step), limit)) * step
 }

@@ -255,6 +255,7 @@ export function sanitizeLocation(raw: unknown): GymLocation | null {
       const entry: NonNullable<GymLocation['gear']>[GymEquipmentId] = {}
       if (isUnit(v.unit)) entry.unit = v.unit
       if (typeof v.maxKg === 'number' && v.maxKg > 0 && v.maxKg < 1000) entry.maxKg = v.maxKg
+      if (typeof v.minKg === 'number' && v.minKg > 0 && v.minKg < 1000 && (entry.maxKg === undefined || v.minKg <= entry.maxKg)) entry.minKg = v.minKg
       if (typeof v.stepKg === 'number' && v.stepKg > 0 && v.stepKg <= 50) entry.stepKg = v.stepKg
       if (Object.keys(entry).length) gear[id as GymEquipmentId] = entry
     }
@@ -408,12 +409,21 @@ function sanitizeRemainder(raw: unknown, lose: Lose, where: string): GymRemainde
       }
       sets.push({ reps: set.reps, ...(set.load !== undefined ? { load: set.load } : {}), ...(set.warmup === true ? { warmup: true } : {}) })
     }
+    const rack = it.rackTarget
+    const rackTarget: RemainingLift['rackTarget'] = rack && ['at-top-weight', 'at-minimum-weight'].includes(rack.kind) &&
+      typeof rack.why === 'string' ? {
+        kind: rack.kind, why: rack.why.slice(0, 500),
+        ...(Number.isInteger(rack.reps) && rack.reps > 0 && rack.reps <= maxCountFor(it.exerciseId) ? { reps: rack.reps } : {}),
+        ...(rack.kind === 'at-minimum-weight' && rack.chooseAlternative === true ? { chooseAlternative: true } : {}),
+      } : undefined
     if (sets.length) items.push({
       exerciseId: it.exerciseId, sets, unit: it.unit, restSec: clamp(it.restSec, 0, 1800, 90),
+      ...(rackTarget ? { rackTarget } : {}),
       ...(typeof it.pairedWith === 'string' && canPairExercises(it.exerciseId, it.pairedWith) ? { pairedWith: it.pairedWith } : {}),
       repRange: plan.repRange, targetRpe: plan.targetRpe, ...(plan.swappedFrom ? { swappedFrom: plan.swappedFrom } : {}),
       ...(preparesFor(it.exerciseId) && Number.isInteger(it.trialReps) && it.trialReps >= 1 && it.trialReps <= 4 ? { trialReps: it.trialReps } : {}),
-      ...(typeof it.easierId === 'string' && (preparesFor(it.easierId) === it.exerciseId || (it.exerciseId === 'pull-up' && it.easierId === 'assisted-pull-up')) ? { easierId: it.easierId } : {}),
+      ...(typeof it.easierId === 'string' && (preparesFor(it.easierId) === it.exerciseId || (it.exerciseId === 'pull-up' && it.easierId === 'assisted-pull-up') ||
+        (rackTarget?.kind === 'at-minimum-weight' && it.exerciseId === 'db-lateral-raise' && it.easierId === 'bent-arm-db-lateral-raise')) ? { easierId: it.easierId } : {}),
     })
   }
   if (!items.length) return undefined

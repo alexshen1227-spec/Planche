@@ -54,7 +54,7 @@ export function CheckInForm({
   const [gap, setGap] = useState<CheckIn['gap'] | null>(null)
 
   const JOINTS: { id: CheckIn['joints']; label: string; hint: string }[] = [
-    { id: 'good', label: 'All good', hint: 'Wrists, elbows and shoulders feel normal' },
+    { id: 'good', label: 'All good', hint: 'My joints feel comfortable today' },
     { id: 'niggle', label: 'A bit off', hint: 'Slight ache or stiffness, no real pain' },
     { id: 'pain', label: 'Painful', hint: 'Sharp or persistent joint pain' },
   ]
@@ -134,7 +134,7 @@ export function CheckInForm({
 
       <div className="mt-4">
         <div className="text-[13px] font-semibold text-ink" id="ci-joints">
-          Wrists, elbows and shoulders
+          How do your joints feel?
         </div>
         <div className="mt-2 space-y-2" role="group" aria-labelledby="ci-joints">
           {JOINTS.map((j) => (

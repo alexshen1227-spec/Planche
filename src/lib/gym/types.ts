@@ -12,7 +12,7 @@ export interface GymLocation {
    * Per-equipment detail: its own unit (a kg gym with lb dumbbells), its top
    * weight (dumbbells run out), and its smallest step — all in kg.
    */
-  gear?: Partial<Record<GymEquipmentId, { unit?: Unit; maxKg?: number; stepKg?: number }>>
+  gear?: Partial<Record<GymEquipmentId, { unit?: Unit; minKg?: number; maxKg?: number; stepKg?: number }>>
   /** Exercises that are hard to do here (always busy, awkward machine): offered last. */
   hardHere?: string[]
   /**
@@ -68,6 +68,7 @@ export interface RemainingLift {
   sets: { reps: number; load?: number; warmup?: boolean }[]
   swappedFrom?: string
   trialReps?: number
+  rackTarget?: { kind: 'at-minimum-weight' | 'at-top-weight'; reps?: number; why: string; chooseAlternative?: boolean }
   easierId?: string
 }
 

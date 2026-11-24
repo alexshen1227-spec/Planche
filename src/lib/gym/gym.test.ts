@@ -9,6 +9,8 @@ import { defaultGym, mergeGym, newLocation, reduceGym, sanitizeGym } from './sta
 import type { GymLocation, GymSession, GymSet } from './types'
 import { displayLoad, fromKg, maxKgFor, roundToStep, stepKgFor, toKg, unitFor } from './units'
 import { initialState, mergeExternalState, normalizeState, reducer } from '../store'
+import { prefillReps } from './draft'
+import { nextTimeLines } from './sessionLines'
 
 const T0 = Date.UTC(2026, 10, 2, 17)
 const DAY = 86_400_000
@@ -35,6 +37,44 @@ const session = (id: string, locationId: string, at: number, exerciseId: string,
   endedAt: at + 3600_000,
   name,
   exercises: [{ exerciseId, sets }],
+})
+
+it('carries earned reps forward at a fixed rack and offers an actionable swap below its lightest weight', () => {
+  const rack = { ...gymA, gear: { dumbbells: { stepKg: 2, maxKg: 2 } } }
+  const log: GymSession[] = []
+  const plan = { range: [6, 10] as [number, number], targetRpe: 8 }
+  for (const [i, n] of [10, 11, 12, 13, 14, 15, 15].entries()) {
+    const t = T0 + i * DAY
+    const visit = session(String(i), rack.id, t, 'goblet-squat', [set(2, n, 6), set(2, n, 6)])
+    visit.exercises[0].repRange = plan.range
+    visit.exercises[0].targetRpe = 8
+    log.push(visit)
+    const next = suggestLoad({ exerciseId: 'goblet-squat', location: rack, sessions: log, plan })
+    expect(next.kg).toBe(2)
+    expect(prefillReps(plan, next)).toBe(Math.min(n + 1, 15))
+    expect(nextTimeLines(visit, log, rack, false)[0].text).toContain(`2 kg × ${next.targetReps}`)
+  }
+  const grind = session('hard', rack.id, T0, 'db-lateral-raise', Array.from({ length: 4 }, () => set(2, 4, 10)))
+  for (const youth of [true, false]) {
+    const s = suggestLoad({ exerciseId: 'db-lateral-raise', location: rack, sessions: [grind], plan, youth })
+    expect(s).toMatchObject({ kind: 'at-minimum-weight', chooseAlternative: true, easierId: 'bent-arm-db-lateral-raise' })
+    expect(s.kg).toBeUndefined()
+  }
+})
+
+it('uses a stated empty bar and the increments above it, including a change of gym or time away', () => {
+  const location = { ...gymA, gear: { barbell: { minKg: 15, stepKg: 4, maxKg: 31 } } }
+  const exerciseId = 'barbell-curl'
+  const plan = { range: [8, 12] as [number, number], targetRpe: 8 }
+  const visit = (kg: number, reps: number, effort: number, place = location.id) =>
+    session('bar', place, T0, exerciseId, [set(kg, reps, effort), set(kg, reps, effort)])
+  const next = (last: GymSession, days = 1) => suggestLoad({ exerciseId, location, plan, sessions: [last], now: T0 + days * DAY })
+  expect(next(visit(15, 12, 8)).kg).toBe(19)
+  expect(next(visit(19, 5, 10)).kg).toBe(15)
+  expect(next(visit(15, 7, 10))).toMatchObject({ kg: 15, targetReps: 5 })
+  expect(next(visit(15, 4, 10)).chooseAlternative).toBe(true)
+  expect(next(visit(3, 8, 8, 'another')).kg).toBeUndefined()
+  expect(next(visit(15, 9, 8), 100)).toMatchObject({ kg: 15, targetReps: 7 })
 })
 
 it('earns a load increase only after all prescribed working sets of that lift are completed', () => {

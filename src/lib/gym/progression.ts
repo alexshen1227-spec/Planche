@@ -5,7 +5,7 @@ import {
   type GymExercise,
   type IntensityTier,
 } from '../../data/gym/exercises'
-import { formatLoad, maxKgFor, roundToStep, stepKgFor, takesAddedLoad, unitFor, unloadedLabel } from './units'
+import { formatLoad, maxKgFor, minKgFor, roundToStep, stepKgFor, takesAddedLoad, unitFor, unloadedLabel } from './units'
 import type { GymLocation, GymSession, GymSet } from './types'
 import { addDays, dayKey } from '../time'
 
@@ -317,8 +317,9 @@ export interface LoadSuggestion {
   kg?: number
   /** Reps to aim for. */
   reps: [number, number]
-  /** Starting reps per set when bodyweight history gives a more useful target than the generic range. */
+  /** Starting count when the athlete's history gives a more useful target than the generic range. */
   targetReps?: number
+  chooseAlternative?: boolean
   /** The athlete may log this many clean floor push-ups in place of one easier set. */
   floorPushupTrial?: number
   pullupTrial?: number
@@ -327,7 +328,7 @@ export interface LoadSuggestion {
   targetRpe: number
   /** One line on why, in the athlete's terms. */
   why: string
-  kind: 'increase' | 'repeat' | 'decrease' | 'from-estimate' | 'first-time' | 'bodyweight' | 'at-top-weight'
+  kind: 'increase' | 'repeat' | 'decrease' | 'from-estimate' | 'first-time' | 'bodyweight' | 'at-top-weight' | 'at-minimum-weight'
   /** Set when the next step is held back: the reps every set needs at this load first. The screen shows and pre-fills it. */
   repsToMoveUp?: number
   /** Set when the load is only the nearest this place can make to last time's (kg): the screen says so, never "up". */
@@ -346,9 +347,9 @@ export function prescribedCount(plan: RepPlan, suggestion?: LoadSuggestion): str
  * age only ever makes it more careful — one step at a time, never two.
  */
 /** The heaviest load on this unit's grid that is at most one step above the true last load (a jump under 18 never exceeds it). */
-export function youthCeiling(lastKg: number, stepKg: number, topKg?: number): number {
-  const grid = Math.floor((lastKg + stepKg) / stepKg + 1e-9) * stepKg
-  return roundToStep(grid, stepKg, topKg)
+export function youthCeiling(lastKg: number, stepKg: number, topKg?: number, minKg = 0): number {
+  const grid = minKg + Math.floor((lastKg + stepKg - minKg) / stepKg + 1e-9) * stepKg
+  return grid < minKg ? 0 : roundToStep(grid, stepKg, topKg, minKg)
 }
 
 /**
@@ -361,11 +362,11 @@ export const YOUTH_LARGE_STEP_SHARE = 0.25
 export const YOUTH_LARGE_STEP_EXTRA_REPS = 2
 
 /** One step down taken from the load that was really lifted, then up to the grid: never more than one step of this unit below it. */
-export function stepDownKg(kg: number, stepKg: number, topKg?: number): number {
+export function stepDownKg(kg: number, stepKg: number, topKg?: number, minKg = 0): number {
   if (!(stepKg > 0)) return Math.max(0, kg)
-  const lowered = Math.max(0, kg - stepKg)
-  const grid = Math.ceil(lowered / stepKg - 1e-9) * stepKg
-  return roundToStep(grid, stepKg, topKg)
+  const lowered = Math.max(minKg, kg - stepKg)
+  const grid = minKg + Math.ceil((lowered - minKg) / stepKg - 1e-9) * stepKg
+  return roundToStep(grid, stepKg, topKg, minKg)
 }
 
 export function suggestLoad(input: {
@@ -387,23 +388,34 @@ export function suggestLoad(input: {
   const last = lastPerformance(sessions, exerciseId, location?.id, now, keep)
   const step = stepKgFor(ex, location)
   const top = maxKgFor(ex, location)
+  const min = minKgFor(ex, location)
+  const external = ex.load !== 'bodyweight' && !ex.assisted
+  const easier = exerciseId === 'db-lateral-raise' ? 'bent-arm-db-lateral-raise' : undefined
+  const changeLift = (why: string): LoadSuggestion => ({
+    ...base, kind: 'at-minimum-weight', chooseAlternative: true, ...(easier ? { easierId: easier } : {}),
+    why: `${why} Choose an easier variation or enter a lighter weight if you have one.`,
+  })
   if (!last) {
     const shared = sharedEstimate(sessions, exerciseId, now)
     if (shared !== null) {
-      let kg = roundToStep(loadForReps(shared, hi, plan.targetRpe), step, top)
+      const estimate = loadForReps(shared, hi, plan.targetRpe)
+      let kg = roundToStep(estimate, step, top, min)
       // Under 18 a new place never asks for more than one step past what was really lifted last (the youth rule).
       const elsewhereLast = lastPerformance(sessions, exerciseId, undefined, now, keep)
       if (youth && elsewhereLast && step > 0) {
         const lifted = workingLoad(elsewhereLast.sets.map((x) => x.kg ?? 0), 'heaviest')
-        if (lifted > 0) kg = Math.min(kg, youthCeiling(lifted, step, top))
+        if (lifted > 0) kg = Math.min(kg, youthCeiling(lifted, step, top, min))
       }
+      if (external && (kg <= 0 || (min !== undefined && estimate < min))) return changeLift('Your starting estimate from the other gym is below the first available weight here.')
       // Time away follows the lift, not the place: a new gym does not forget it.
       const elsewhere = lastPerformance(sessions, exerciseId, undefined, now, keep)
       const awayDays = elsewhere && Number.isFinite(now) ? (now - elsewhere.session.startedAt) / 86_400_000 : 0
       if (awayDays > STEP_DOWN_DAYS && step > 0 && kg > 0) {
+        const lower = stepDownKg(kg, step, top, min)
+        if (external && (lower <= 0 || lower >= kg)) return changeLift('Your return session calls for a lighter weight than this rack can supply.')
         return {
           ...base,
-          kg: roundToStep(Math.max(0, kg - step), step, top),
+          kg: lower,
           kind: 'decrease',
           why: `First time here, and first time in ${Math.round(awayDays / 7)} weeks: a step under your estimate from elsewhere, then build back.`,
         }
@@ -468,12 +480,13 @@ export function suggestLoad(input: {
   const reach = (v: number) => {
     // A logged 12.5 kg dumbbell is on this rack even if our default step
     // guesses 2 kg. A changed unit or a new equipment maximum still applies.
-    const observed = location?.id === last.session.locationId && (top === undefined || v <= top + 0.001) &&
+    const observed = location?.id === last.session.locationId && (top === undefined || v <= top + 0.001) && (min === undefined || v >= min - 0.001) &&
       working.some((s) => s.kg === v && s.unit === unit)
-    return observed ? v : roundToStep(v > 0 ? Math.max(v, step) : 0, step, top)
+    return observed ? v : roundToStep(v > 0 ? Math.max(v, min ?? step) : 0, step, top, min)
   }
   const incompleteWhy = unfinished ? `${unfinished} planned ${unfinished === 1 ? 'set of this lift was' : 'sets of this lift were'} unfinished. Repeat the prescription at the same load.` : undefined
   if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, top, reach, { stale, away, weeksAway, incompleteWhy })
+  if (external && min !== undefined && kg < min - 0.001) return changeLift('Your last working weight is lighter than the first weight listed here.')
   if (ex.load === 'bodyweight' && !(kg > 0)) {
     if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan, working.map((s) => s.reps)) }
     const reps = atLoad.map((s) => s.reps).sort((a, b) => a - b)
@@ -485,22 +498,57 @@ export function suggestLoad(input: {
     if (allTop) why += ' When every set feels controlled, try a harder variation.'
     return { ...base, kind: 'bodyweight', targetReps, why }
   }
+  let lower = stepDownKg(kg, step, top, min)
+  if (external && lower <= 0 && kg > 0 && location) {
+    // A pair actually used here is stronger evidence than a guessed rack increment.
+    for (const visit of sessions) {
+      if (visit.locationId !== location.id || visit.startedAt >= now) continue
+      for (const log of visit.exercises) {
+        if (log.exerciseId !== exerciseId) continue
+        for (const set of log.sets) {
+          if (set.unit === unit && set.reps > 0 && set.kg !== undefined && set.kg > lower && set.kg < kg &&
+              (top === undefined || set.kg <= top)) lower = set.kg
+        }
+      }
+    }
+  }
+  const atMinimum = external && step > 0 && kg > 0 && (lower <= 0 || lower >= kg - 0.001)
+  const lowestReps = Math.min(...atLoad.map((set) => set.reps))
+  if (atMinimum && (away || anyShort)) {
+    const reserve = Math.max(1, Math.round(10 - plan.targetRpe))
+    const controlled = atLoad.every((set) => set.rpe !== undefined && set.rpe <= plan.targetRpe)
+    const target = grinding || failing || away ? lowestReps - reserve : lowestReps + (controlled && !unfinished && !stale ? 1 : 0)
+    const why = `The next lighter weight is unavailable here. Your shortest set at ${formatLoad(kg, unit)} was ${lowestReps} reps.`
+    if (target < Math.min(lo, youth ? YOUTH_REP_FLOOR : 5)) return changeLift(why)
+    const targetReps = Math.max(1, Math.min(lo, target))
+    return { ...base, kind: 'at-minimum-weight', kg, targetReps, ...(easier ? { easierId: easier } : {}),
+      why: `${why} Aim for ${targetReps} with reps in reserve. Switch exercises if that feels too hard.` }
+  }
   if (away && step > 0 && kg > 0) {
     return {
       ...base,
-      kg: stepDownKg(kg, step, top),
+      kg: lower,
       kind: 'decrease',
       why: `First time in ${weeksAway} weeks: a step lighter, then build back.`,
     }
   }
   const wantsUp = (allTop || unratedTwice) && step > 0
+  const here = reach(kg)
+  const next = roundToStep(here + step, step, top, min)
+  if (step > 0 && next <= here && lowestReps >= hi) {
+    const ceiling = hi + 5
+    const targetReps = Math.max(lo, Math.min(ceiling, lowestReps + (wantsUp ? 1 : grinding ? -1 : 0)))
+    const cue = targetReps === ceiling ? 'When this stays comfortable, try a harder variation.' : 'Keep the same weight and leave reps in reserve.'
+    return { ...base, kg: here, targetReps, kind: 'at-top-weight',
+      why: `This is the heaviest weight here. Aim for ${targetReps} reps per set. ${incompleteWhy ?? cue}` }
+  }
   // A step that fell short lately is not tried again on the same evidence: the sets that earned it last time did
   // not hold at the heavier load. Reps past the top of the range are the proof that there is room (double
   // progression, CONSENSUS; the extra bar is the app's own rule, not a measured one).
   const failedSteps = wantsUp ? failedStepsAbove(sessions, exerciseId, location?.id, kg, last.session, lo, keep) : 0
   const retryBar = hi + FAILED_STEP_EXTRA_REPS * Math.min(failedSteps, FAILED_STEP_CAP)
   // Under 18 a step that is a large share of the load is earned with reps first, however the equipment is graded.
-  const youthNext = youth && wantsUp && kg > 0 ? youthCeiling(kg, step, top) : 0
+  const youthNext = youth && wantsUp && kg > 0 ? youthCeiling(kg, step, top, min) : 0
   const bigYouthStep = youthNext > kg && (youthNext - kg) / kg > YOUTH_LARGE_STEP_SHARE + 1e-9
   const bigBar = bigYouthStep ? hi + YOUTH_LARGE_STEP_EXTRA_REPS : hi
   // ...or by the same load at the top of the range at the target effort in two sessions running (the load held until it is easy).
@@ -514,18 +562,13 @@ export function suggestLoad(input: {
   const bigHeld = bigYouthStep && !topTwice
   const heldBack = (failedSteps > 0 || bigHeld) && !atLoad.every((s) => s.reps >= moveUpBar)
   if ((allTop || unratedTwice) && step > 0 && !heldBack) {
-    const here = reach(kg)
-    const next = roundToStep(here + step, step, top)
-    if (next <= here) {
-      return { ...base, kg: here, kind: 'at-top-weight', why: `Every set reached ${hi} — and that is the heaviest weight here. Add reps, a pause, or a harder variation.` }
-    }
     // Sets that blew well past the range at an easy effort earn two steps —
     // for an adult. Under 18 a jump is always the smallest step there is.
     const easy = !unratedTwice && atLoad.every((s) => s.reps >= hi + 3 && s.rpe !== undefined && s.rpe <= 7)
-    const twoSteps = !youth && easy && failedSteps === 0 ? roundToStep(here + 2 * step, step, top) : next
+    const twoSteps = !youth && easy && failedSteps === 0 ? roundToStep(here + 2 * step, step, top, min) : next
     // Under 18 a jump is one step of the unit in use from the load that was really lifted: rounding that load to
     // the grid first (20 kg is 44.1 lb, which became 45) and adding a step landed 2.68 kg up against a 2.27 kg step.
-    const jump = youth ? Math.min(twoSteps, youthCeiling(kg, step, top)) : twoSteps
+    const jump = youth ? Math.min(twoSteps, youthCeiling(kg, step, top, min)) : twoSteps
     // Only a real step is "up one step". When the grid has nothing between last time's load and one step above it
     // but a load barely heavier (22.5 kg dumbbells at a place now counted in pounds: 50 lb is +0.18 kg), it is the
     // nearest load, not a step — said as such below.
@@ -548,10 +591,10 @@ export function suggestLoad(input: {
     }
   }
   if (anyShort && grinding && step > 0) {
-    return { ...base, kg: stepDownKg(kg, step, top), kind: 'decrease', why: `Last time fell short of ${lo} reps at a near-max effort: one step lighter, then build back.` }
+    return { ...base, kg: lower, kind: 'decrease', why: `Last time fell short of ${lo} reps at a near-max effort: one step lighter, then build back.` }
   }
   if (failing && step > 0 && kg > 0) {
-    return { ...base, kg: stepDownKg(kg, step, top), kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step lighter, then build back.` }
+    return { ...base, kg: lower, kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step lighter, then build back.` }
   }
   const repeatKg = reach(kg)
   const reps = atLoad.map((s) => s.reps).join(', ')

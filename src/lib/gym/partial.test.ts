@@ -15,6 +15,19 @@ const draft: GymDraft = {
   ],
 }
 
+it('restores the fixed-rack rep target and the offered easier movement after an import', () => {
+  const open = structuredClone(draft)
+  open.items[0].suggestion = { kind: 'at-top-weight', kg: 2, reps: [6, 10], targetRpe: 7, targetReps: 11, why: 'Use the same weight for 11.' }
+  open.items[1].suggestion = { kind: 'at-minimum-weight', reps: [12, 15], targetRpe: 8, chooseAlternative: true,
+    easierId: 'bent-arm-db-lateral-raise', why: 'Choose an easier movement.' }
+  const saved = sessionFromDraft(open, start + 2000)
+  const { gym, losses } = sanitizeGymReport({ ...defaultGym(['floor']), sessions: [saved] })
+  expect(losses).toEqual([])
+  const resumed = resumePartial(gym!.sessions[0])!
+  expect(resumed.items[0].suggestion).toMatchObject({ targetReps: 11, kind: 'at-top-weight' })
+  expect(resumed.items[1].suggestion).toMatchObject({ chooseAlternative: true, easierId: 'bent-arm-db-lateral-raise' })
+})
+
 it('budgets one alternating pair at the same station and carries a timed recovery through a saved partial', () => {
   const gym = defaultGym(['floor', 'pullup-bar'], 'kg', start)
   gym.locations[0].equipment.push('dumbbells', 'incline-bench')
