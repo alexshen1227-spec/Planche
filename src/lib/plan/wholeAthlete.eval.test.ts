@@ -102,6 +102,31 @@ it('builds toward both chosen muscles on three long visits while keeping introdu
 })
 
 describe('one skill and whole-body training on three days', () => {
+  it('trains an elbow-flexed pull and the legs on the last gym visit after handstand and lower-body work', () => {
+    const monday = new Date(2026, 10, 23, 10)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(monday)
+    try {
+      const state = makeAthlete({ skills: ['handstand'], steps: { handstand: 'hs-wall' }, active: 'gym', birthYear: 1997,
+        kit: ['floor', 'wall', 'box', 'band'], prefs: { minutesByDay: [0, 45, 0, 30, 0, 60, 0],
+          placeByDay: [null, 'gym', null, 'home', null, 'gym', null], musclesPriority: ['side-delts', 'lats', 'quads'],
+          goals: { strength: 2, physique: 5, skills: 5, power: 0, endurance: 0 } } })
+      state.gym!.locations[1] = { ...GYM_PLACE, equipment: ['wall', 'box', 'dumbbells', 'incline-bench', 'lat-pulldown', 'leg-press', 'leg-curl', 'cable', 'cable-row'] }
+      state.settings.weeklyGoal = 3
+      state.profile.trainingAgeMonths = 3
+      const track = state.tracks!.handstand!
+      track.repGoal = 'wall-hspu'
+      track.assessment = { at: +monday, placedStepId: 'hs-wall', confidence: 'moderate', gapIds: [],
+        answers: { wrist: 2, pushups: 12, hollow: 35, 'level:handstand': 1, 'ladder:hspu': 0, experience: 3 } }
+      const { days, state: done } = runLoop(state, { from: monday, hour: 10, days: 5,
+        truthStart: { 'wall-handstand': 22 }, setClock: (at) => vi.setSystemTime(at) })
+      expect(days.filter((d) => d.skill.some((s) => s.parts.handstand?.key))).toHaveLength(2)
+      expect(days[4].gym?.items.some((it) => it.sets >= 2 && ['horizontal-pull', 'vertical-pull'].includes(GYM_EXERCISE_BY_ID[it.id].pattern))).toBe(true)
+      const sets = setsPerMuscle(done.sessions, done.gym!.sessions, weekStart(+monday), addDays(+monday, 5))
+      for (const muscle of ['lats', 'upper-back', 'quads', 'hamstrings'] as const) expect(sets[muscle]).toBeGreaterThanOrEqual(4)
+    } finally { restoreClock() }
+  })
+
   it('starts a brief shared handstand session with the assigned press and keeps the warm-up and balance hold', () => {
     const now = new Date(2026, 10, 13, 8).getTime()
     const state = makeAthlete({ skills: ['handstand'], birthYear: 1995, steps: { handstand: 'hs-wall' }, kit: ['wall', 'floor', 'box'] })

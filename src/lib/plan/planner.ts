@@ -2316,6 +2316,7 @@ interface GymCtx {
   gymMinutes: (i: number, focus: GymFocus) => number
   /** The muscle credit of the session a focus builds on a day, set by set: what the two-days-running rule reads. */
   lifts: (d: DayCtx, minutes: number, focus: GymFocus, spare?: Muscle[]) => Credit
+  compoundSets: (d: DayCtx, minutes: number, focus: GymFocus, group: Straight) => number
   /** The muscle credit of a day's opener at a focus, from the session it builds. */
   openerCredit: (i: number, focus: GymFocus) => Credit
   /**
@@ -2550,8 +2551,14 @@ function allocate(
     // unless the day was chosen to open with a family's skill, which its focus must train.
     if (i === ctx.nextGymDay && ctx.staleGroup && !slot.hint) {
       const group = ctx.staleGroup
-      const trainsGroup = (f: GymFocus) => TRAINS[group].includes(f) &&
-        FOCUS_MUSCLES[group].some((m) => !d.off.has(m) && (ctx.lifts(d, ctx.gymMinutes(i, f), f)[m] ?? 0) >= 1)
+      const trainsGroup = (f: GymFocus) => {
+        const minutes = ctx.gymMinutes(i, f)
+        if (f === 'full' && group !== 'lower' && slot.legDay && ctx.physique >= 3 &&
+            (!ctx.shared[group] || ctx.clear(group, i)) && !d.sportRest[group]) {
+          return ctx.compoundSets(d, minutes, f, group) >= 2
+        }
+        return TRAINS[group].includes(f) && FOCUS_MUSCLES[group].some((m) => !d.off.has(m) && (ctx.lifts(d, minutes, f)[m] ?? 0) >= 1)
+      }
       const trains = open.filter(trainsGroup)
       if (trains.length) {
         open.splice(0, open.length, ...trains)
@@ -3268,6 +3275,10 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       return slots[i].gymMin - (skill ? openerTime(i, skill) : 0)
     },
     lifts: liftCredit,
+    compoundSets: (d, minutes, focus, group) => buildAt(d, minutes, focus).items.reduce((sets, item) => {
+      const pattern = GYM_EXERCISE_BY_ID[item.exerciseId].pattern
+      return sets + (NAMED_PATTERNS[group].some((options) => options.includes(pattern)) ? item.sets : 0)
+    }, 0),
     openerCredit: (i, focus) => {
       const skill = opener(i, focus)
       const at = placeAt(i)
