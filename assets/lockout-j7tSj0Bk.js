@@ -1,0 +1,1 @@
+const n=173,i=160;function o(t){return t===void 0||!Number.isFinite(t)?180:Math.min(180,Math.max(160,t))}let e;function u(t){e=t!==void 0&&Number.isFinite(t)?o(t):void 0}function c(){return e??173}export{i as M,n as U,c,o as l,u as s};
