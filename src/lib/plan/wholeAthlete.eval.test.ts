@@ -11,6 +11,7 @@ import { skillView, stepOfSkill } from '../skills'
 import { compareLiftingDays } from './weekComparison'
 import { weekForChoice } from './currentWeek'
 import { setLiftingWeekday } from '../gym/state'
+import { placementRecord } from '../placement'
 import { addDays, dayKey, weekStart } from '../time'
 import { familyWorkingSets, HARD_GYM_FAMILY_SETS, setsPerMuscle } from './load'
 import type { Muscle } from '../../data/gym/catalog'
@@ -188,6 +189,39 @@ describe('one skill and whole-body training on three days', () => {
       expect(sets['side-delts'] ?? 0).toBeGreaterThanOrEqual(3)
       expect(sets.quads ?? 0).toBeGreaterThanOrEqual(2)
       expect(sets.hamstrings ?? 0).toBeGreaterThanOrEqual(4)
+    }
+  })
+
+  it.each([false, true])('keeps an equipped Friday Lower and its lever practice for three weeks (short openers %s)', (shortSkillOpeners) => {
+    const from = new Date(2026, 10, 23, 17)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(from)
+    try {
+      const state = makeAthlete({ skills: ['frontlever', 'handstand'], active: 'home', birthYear: 1993,
+        steps: { frontlever: 'fl-tuck', handstand: 'hs-wall' }, kit: ['floor', 'wall', 'band', 'pullup-bar', 'box', 'parallettes'],
+        prefs: { goals: { skills: 5, physique: 5, strength: 2, endurance: 0, power: 0 }, minutesByDay: [0, 45, 0, 60, 0, 45, 0],
+          placeByDay: [null, 'home', null, 'gym', null, 'gym', null], gymWeekdays: [3, 5],
+          focusByDay: [null, null, null, 'push', null, 'lower', null], musclesPriority: ['chest', 'hamstrings'], straightArmRestHours: 48,
+          ...(shortSkillOpeners ? { shortSkillOpeners: true } : {}) } })
+      state.settings.weeklyGoal = 3
+      state.gym!.locations[1] = { ...GYM_PLACE, equipment: ['floor', 'wall', 'pullup-bar', 'dumbbells', 'bench', 'incline-bench', 'cable', 'leg-press', 'leg-curl'] }
+      const answers = { wrist: 2, pushups: 12, hollow: 35, pullups: 7, experience: 12, 'level:frontlever': 1, 'level:handstand': 1, 'ladder:hspu': 2 }
+      for (const skill of ['frontlever', 'handstand'] as const) state.tracks![skill]!.assessment = placementRecord(skill, answers, +from)
+      state.tracks!.handstand!.repGoal = 'wall-hspu'
+      const out = runLoop(state, { from, days: 21, perSet: 0.07, truthStart: { 'tuck-front-lever': 12, 'wall-handstand': 20 }, setClock: vi.setSystemTime })
+      for (const week of weeksOf(out)) {
+        const friday = week.find((d) => new Date(d.at).getDay() === 5)!
+        expect(friday.gym?.focus).toBe('lower')
+        expect(friday.skill[0]?.parts.frontlever?.key).toBeGreaterThanOrEqual(2)
+        expect(friday.skill[0].minutes + friday.gym!.estimatedMin).toBeLessThanOrEqual(45)
+        for (const s of ['frontlever', 'handstand'] as const) expect(week.filter((d) => d.skill.some((b) => b.parts[s]?.key)).length).toBeGreaterThanOrEqual(2)
+        const start = weekStart(friday.at)
+        const volume = setsPerMuscle(out.state.sessions, out.state.gym!.sessions, start, addDays(start, 7))
+        for (const m of ['quads', 'hamstrings'] as const) expect(volume[m] ?? 0, m).toBeGreaterThanOrEqual(2)
+      }
+    } finally {
+      if (process.env.FAKE_NOW) vi.setSystemTime(new Date(process.env.FAKE_NOW))
+      else vi.useRealTimers()
     }
   })
 

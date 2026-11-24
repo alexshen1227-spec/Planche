@@ -2963,7 +2963,8 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   const singleSkillWeek = skills.length === 1 && prefs.goals.skills > 0 && prefs.goals.physique >= 3 &&
     prefs.minutesByDay.filter((m) => m > 0).length <= 3
   // Confirming the recommended visit preserves its opener and the rest of the week.
-  if ((canShareBalance || singleSkillWeek || balancedSkillWeek) && opts.todayKind === 'gym' && !opts.coverLegWeeks && opts.todayWhy !== 'followed') {
+  const confirmsWeeklySplit = opts.todayFocus && opts.todayFocus === prefs.focusByDay?.[weekdayOf(now)]
+  if ((canShareBalance || singleSkillWeek || balancedSkillWeek || confirmsWeeklySplit) && opts.todayKind === 'gym' && !opts.coverLegWeeks && opts.todayWhy !== 'followed') {
     const recommended = planWeekAhead(state, now, { ...opts, todayKind: undefined, todayWhy: undefined, todayFocus: undefined })
     const gym = recommended.days[0].plan.gym
     if (gym && (!opts.todayFocus || opts.todayFocus === gym.focus)) return recommended
@@ -3390,6 +3391,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       slot.why = slot.reservedOpener ? 'skill-practice' : 'sets'
     }
     if (!f) continue
+    if (slot.legDay && (f === 'push' || f === 'pull' || f === 'upper')) slot.why = 'reserved-lifts'
     slot.legDay = undefined
     slot.wholeBody = undefined
     const promised = slot.reservedOpener?.skill ?? (slot.hint ? skills.find((s) => skillFamily(s) === slot.hint) : slot.exposure ? skills[0] : undefined)
@@ -3421,9 +3423,13 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       // The same skill block can precede a genuine full-body workout on a week
       // that also prioritizes legs. Charge both blocks to the same visit.
       const hint = slots[i].hint
-      const openerFocus = focus === 'full' && hint && g.physique >= 3 && g.skills > 0 &&
+      // A saved lower-body split can host the promised lever or planche practice.
+      // Check the skill's family for recovery and the actual split for lifting time.
+      const sharesRequested = slots[i].exposure && (focus === 'lower' || focus === 'full') && preferredFocus(d) === focus
+      const sharesPriorities = focus === 'full' && g.physique >= 3 && g.skills > 0 &&
         prefs.musclesPriority.some((m) => FOCUS_SHARE.lower[m] && m !== 'abs') &&
-        prefs.musclesPriority.some((m) => FOCUS_SHARE.upper[m]) ? hint : focus
+        prefs.musclesPriority.some((m) => FOCUS_SHARE.upper[m])
+      const openerFocus = hint && (sharesRequested || sharesPriorities) ? hint : focus
       const resting = (family: string) => opts.restOpeners?.includes(`${i}:${family}`)
       const skill = (reserved && !resting(skillFamily(reserved)) ? reserved : undefined) ?? (
         at && slots[i].kind === 'gym'
