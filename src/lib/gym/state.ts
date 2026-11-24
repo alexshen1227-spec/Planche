@@ -75,6 +75,7 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
     : base.minutesByDay
   const places = Array.isArray(r.placeByDay) && r.placeByDay.length === 7
     ? r.placeByDay.map((id) => typeof id === 'string' && id.trim() ? id : null) : []
+  const gymWeekdays = Array.isArray(r.gymWeekdays) ? [...new Set(r.gymWeekdays.filter((d): d is number => Number.isInteger(d) && d >= 0 && d < 7))].sort() : []
   return {
     goals: {
       strength: clamp(g.strength, 0, 5, base.goals.strength),
@@ -89,6 +90,7 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
     minutesByDay: minutes,
     ...(places.some(Boolean) ? { placeByDay: places } : {}),
     ...(typeof r.extraGymDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.extraGymDate) ? { extraGymDate: r.extraGymDate } : {}),
+    ...(gymWeekdays.length ? { gymWeekdays } : {}),
     straightArmRestHours: Math.round(clamp(r.straightArmRestHours, 24, 96, 48)),
     ...(r.season === 'in' ? { season: 'in' as const } : {}),
     ...(sportSchedule.length ? { sportSchedule } : {}),
@@ -98,7 +100,14 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
 }
 
 /** Every setting a training-prefs edit can change on its own (all but the stamps). */
-const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'minutesByDay', 'placeByDay', 'extraGymDate', 'straightArmRestHours', 'season', 'sportSchedule'] as const
+const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'minutesByDay', 'placeByDay', 'extraGymDate', 'gymWeekdays', 'straightArmRestHours', 'season', 'sportSchedule'] as const
+
+export function setLiftingWeekday(prefs: TrainingPrefs, weekday: number, enabled: boolean): TrainingPrefs {
+  const days = new Set(prefs.gymWeekdays)
+  if (enabled) days.add(weekday)
+  else days.delete(weekday)
+  return { ...prefs, gymWeekdays: days.size ? [...days].sort() : undefined }
+}
 
 function sanitizeFieldTimes(raw: unknown): Record<string, number> | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined

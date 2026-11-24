@@ -150,6 +150,8 @@ export interface TrainingPrefs {
   placeByDay?: (string | null)[]
   /** A single calendar date the athlete chose for lifting from the weekly comparison. */
   extraGymDate?: string
+  /** Weekdays the athlete wants to keep for lifting when training is possible, Sunday first. */
+  gymWeekdays?: number[]
   /** Hours between hard straight-arm sessions of the same family. */
   straightArmRestHours: number
   /**

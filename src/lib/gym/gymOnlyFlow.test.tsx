@@ -19,6 +19,8 @@ import { GymPlayer } from '../../components/gym/GymPlayer'
 import { PartialWorkout } from '../../components/gym/PartialWorkout'
 import { WeekVolume } from '../../components/plan/WeekVolume'
 import { PlanSettings } from '../../components/plan/PlanSettings'
+import { WeekPreview } from '../../components/plan/WeekPreview'
+import { makeAthlete } from '../plan/wholeAthleteLoop'
 
 afterEach(() => {
   cleanup()
@@ -115,6 +117,35 @@ it('saves separate training locations for weekdays and resets one weekday to aut
   choose('Tuesday', '')
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
   expect(JSON.parse(localStorage.getItem('planchelab.v1')!).gym.prefs.placeByDay).toEqual([null, null, null, null, null, null, 'club'])
+})
+
+it('compares actual skills and lifts from the week view, saves the recurring option and removes it in schedule settings', () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(2026, 8, 7, 17))
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  try {
+    const athlete = makeAthlete({ skills: ['frontlever', 'handstand'], birthYear: 1994, active: 'home', kit: ['floor', 'wall', 'pullup-bar', 'rings'],
+      steps: { frontlever: 'fl-advtuck', handstand: 'hs-float' }, prefs: { goals: { skills: 4, physique: 5, strength: 3, power: 0, endurance: 0 },
+        musclesPriority: ['chest-upper', 'side-delts', 'calves'], minutesByDay: [0, 45, 75, 0, 45, 0, 75], placeByDay: [null, 'home', 'gym', null, 'home', null, 'gym'],
+        sportSchedule: [{ weekday: 3, kind: 'climb', minutes: 75, rpe: 8, upperPull: true, legs: false }] } })
+    localStorage.setItem('planchelab.v1', JSON.stringify(athlete))
+    const view = render(<StoreProvider><WeekPreview /></StoreProvider>)
+    fireEvent.click(screen.getByRole('button', { name: 'Compare skill and lifting days' }))
+    expect(screen.getByRole('rowheader', { name: 'Front lever working sets left' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Keep Saturdays for lifting' }))
+    const stored = () => JSON.parse(localStorage.getItem('planchelab.v1')!).gym.prefs
+    expect(stored().gymWeekdays).toEqual([6])
+    expect(stored().extraGymDate).toBeUndefined()
+    view.unmount()
+    render(<StoreProvider><PlanSettings onDone={() => {}} /></StoreProvider>)
+    fireEvent.click(screen.getByRole('button', { name: /^Saturday: 75 minutes/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Keep Saturdays for lifting' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(stored().gymWeekdays).toBeUndefined()
+  } finally {
+    if (process.env.FAKE_NOW) vi.setSystemTime(new Date(process.env.FAKE_NOW))
+    else vi.useRealTimers()
+  }
 })
 
 it('opens a priority muscle’s breakdown and identifies which logged sets came from assisting on a lift', () => {

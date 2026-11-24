@@ -8,6 +8,7 @@ import { readSignals } from '../signals'
 import { skillView, stepOfSkill } from '../skills'
 import { compareLiftingDays } from './weekComparison'
 import { weekForChoice } from './currentWeek'
+import { setLiftingWeekday } from '../gym/state'
 import { addDays, dayKey, weekStart } from '../time'
 import { familyWorkingSets, HARD_GYM_FAMILY_SETS, setsPerMuscle } from './load'
 import { exposureDays, exposuresOf, GYM_PLACE, keySets, mainSets, makeAthlete, runLoop, SPORT_WEEK, weeksOf, type AthleteCfg, type DayRun, type LoopOpts, type LoopOut } from './wholeAthleteLoop'
@@ -240,6 +241,28 @@ describe('mixed handstand and front lever weeks', () => {
     const updated = { ...state, gym: { ...state.gym, prefs: { ...prefs, extraGymDate: next.gymDate } } }
     expect(weekForChoice(updated, {}, now).weekTotal).toEqual(next.muscleSets)
     expect(prefs.minutesByDay.reduce((a, b) => a + b)).toBe(135)
+  })
+  it('keeps a chosen gym weekday across two locations and prices the remaining progression sets for both skills', () => {
+    const cfg: AthleteCfg = { skills: ['frontlever', 'handstand'], active: 'home', birthYear: 1994,
+      kit: ['floor', 'wall', 'pullup-bar', 'rings'], steps: { frontlever: 'fl-advtuck', handstand: 'hs-float' },
+      prefs: { goals: { skills: 4, physique: 5, strength: 3, endurance: 0, power: 0 }, musclesPriority: ['chest-upper', 'side-delts', 'calves'],
+        minutesByDay: [0, 45, 75, 0, 45, 0, 75], placeByDay: [null, 'home', 'gym', null, 'home', null, 'gym'],
+        sportSchedule: [{ weekday: 3, kind: 'climb', minutes: 75, rpe: 8, legs: false, upperPull: true, hour: 17 }] } }
+    const state = makeAthlete(cfg)
+    const now = new Date(2026, 9, 5, 17).getTime()
+    const { current, alternative } = compareLiftingDays(state, {}, now)!
+    expect(alternative?.gymDate).toBe('2026-10-10')
+    expect(alternative?.remainingSkillSets).toEqual(current.remainingSkillSets)
+    expect(current.remainingSkillSets.frontlever).toBeGreaterThan(0)
+    expect(current.remainingSkillSets.handstand).toBeGreaterThan(0)
+    cfg.prefs = setLiftingWeekday(state.gym!.prefs!, 6, true)
+    const out = season(cfg, 28)
+    for (const week of weeksOf(out)) {
+      const saturday = week.find((d) => new Date(d.at).getDay() === 6)!
+      expect(saturday.plan.gym?.placeId).toBe('gym')
+      expect(keySets(week, 'frontlever')).toBeGreaterThan(0)
+      expect(keySets(week, 'handstand')).toBeGreaterThan(0)
+    }
   })
   it('keeps the first-ranked handstand ahead of a second-ranked lever when physique is the highest goal', () => {
     const cfg = handstandAthlete(false)

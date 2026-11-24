@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent } from 'react'
 import { MUSCLE_GROUPS, MUSCLES, type Muscle } from '../../data/gym/catalog'
 import { ALL_STEPS } from '../../data/progressions'
-import { cycleMuscleState, defaultPrefs } from '../../lib/gym/state'
+import { cycleMuscleState, defaultPrefs, setLiftingWeekday } from '../../lib/gym/state'
 import type { GoalWeights, GymLocation, SkillGoal, SportSlot, TrainingPrefs } from '../../lib/gym/types'
 import { SPORT_KINDS } from '../../lib/plan/sport'
 import { SportAreas } from './SportAreas'
@@ -412,6 +412,12 @@ export function ScheduleEditor({ prefs, setPrefs, locations = [] }: Edit & { loc
                 {locations.map((place) => <option key={place.id} value={place.id}>{place.name}</option>)}
               </select>
             </label>}
+            {pickedMinutes > 0 && (prefs.gymWeekdays?.includes(picked) || (prefs.goals.skills > 0 && Math.max(prefs.goals.strength, prefs.goals.physique, prefs.goals.power, prefs.goals.endurance) > 0)) &&
+              <label className="mt-2 flex min-h-11 items-center gap-2 text-footnote font-medium">
+                <input type="checkbox" className="size-5 accent-accent" checked={prefs.gymWeekdays?.includes(picked) ?? false}
+                  onChange={(e) => { const checked = e.currentTarget.checked; setPrefs((p) => setLiftingWeekday(p, picked, checked)) }} />
+                Keep {FULL_DAYS[picked]}s for lifting
+              </label>}
           </div>
         )}
       </section>

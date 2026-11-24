@@ -7,6 +7,7 @@ import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useStore } from '../../lib/store'
 import { useToday } from '../../lib/useToday'
 import { SportOnDate } from './SportOnDate'
+import { WeekPlanComparison } from './WeekPlanComparison'
 import type { SkillId } from '../../types'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
 import { skillDayWords, skillWeekLines } from '../../lib/plan/skillWeek'
@@ -122,6 +123,7 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
             ))}
           </ul>
           <SportOnDate key={selected.day} at={selected.at} />
+          {state.gym?.prefs?.gymWeekdays?.includes(new Date(selected.at).getDay()) && <p className="mt-2 text-caption font-semibold text-ink2">You usually lift on this weekday.</p>}
         </div>
       ) : null}
       {bySkill.length ? (
@@ -135,9 +137,10 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
                 <span className="font-semibold text-ink">{line.name}</span>
                 {line.days.length ? (
                   <ul className="mt-0.5 space-y-0.5" aria-label={`${line.name} days this week`}>
-                    {line.days.map((d) => (
-                      <li key={d.day}>{skillDayWords(d)}</li>
-                    ))}
+                    {line.days.map((d) => {
+                      const sets = week.days[d.index].skillWorkingSets?.[line.skill]
+                      return <li key={d.day}>{skillDayWords(d)}{sets !== undefined && ` · ${sets} progression ${sets === 1 ? 'set' : 'sets'}`}</li>
+                    })}
                   </ul>
                 ) : (
                   <span className="mt-0.5 block">No day this week in your plan. {line.reason?.text}</span>
@@ -150,6 +153,7 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
           </p>
         </div>
       ) : null}
+      <WeekPlanComparison />
       <p className="mt-1.5 text-caption text-ink3">
         A plan, not a promise — each day is planned again from what you actually did. Each day says its kind — Skills (calisthenics)
         or Gym, with any skill that goes first; which is which follows your goals (the app’s own split). Spreading weekly sets, two-day gaps

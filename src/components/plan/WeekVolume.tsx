@@ -11,9 +11,7 @@ import { useToday } from '../../lib/useToday'
 import { weekForChoice } from '../../lib/plan/currentWeek'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
-import { compareLiftingDays } from '../../lib/plan/weekComparison'
-import { SKILLS } from '../../data/skills'
-import { pushToast } from '../../lib/toast'
+import { WeekPlanComparison } from './WeekPlanComparison'
 import { Sheet } from '../ds'
 import { PlanSettings } from './PlanSettings'
 
@@ -28,7 +26,6 @@ const STATUS: Record<VolumeStatus, { label: string; tone: string }> = {
 export function WeekVolume() {
   const { state, dispatch, getState } = useStore()
   const [editing, setEditing] = useState(false)
-  const [comparing, setComparing] = useState(false)
   const [detail, setDetail] = useState<Muscle | null>(null)
   const today = useToday()
   usePlanClock()
@@ -43,7 +40,6 @@ export function WeekVolume() {
     gap: volumeTarget(muscle, prefs)[0] - (planned[muscle] ?? 0),
   })).filter(({ gap }) => gap > 0).sort((a, b) => b.gap - a.gap)
   const largest = shortfalls[0]
-  const comparison = useMemo(() => comparing ? compareLiftingDays(state, choice, Date.now()) : undefined, [comparing, state, choice, today])
   const dateLabel = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
   const weekday = (at: number) => new Date(at).toLocaleDateString(undefined, { weekday: 'long' })
   const upcoming = week?.remainingLifts ?? []
@@ -101,7 +97,7 @@ export function WeekVolume() {
                 : upcoming.length ? `${upcoming.length} lifting ${upcoming.length === 1 ? 'session remains' : 'sessions remain'} this week.` : 'There are no more lifting sessions scheduled this week.'}</p>
               <div className="flex flex-wrap gap-x-4">
                 <button type="button" className="ds-press min-h-11 text-footnote font-semibold text-accent-text" onClick={() => setDetail(largest.muscle)}>See planned {MUSCLE_BY_ID[largest.muscle].label.toLowerCase()} work</button>
-                {prefs.goals.skills > 0 && <button type="button" className="ds-press min-h-11 text-footnote font-semibold text-accent-text" onClick={() => setComparing(true)}>Compare plans in my available time</button>}
+                {prefs.goals.skills > 0 && <WeekPlanComparison />}
                 <button type="button" className="ds-press min-h-11 text-footnote font-semibold text-accent-text" onClick={() => setEditing(true)}>Review goals and schedule</button>
               </div>
             </div>
@@ -181,30 +177,6 @@ export function WeekVolume() {
           <p className="mt-2 text-footnote text-ink2">A gym set counts once for a primary muscle and half for an assisting muscle. Skill work estimates this muscle’s contribution from the exercise, effort and completed holds or reps.</p>
           <p className="mt-2 text-footnote text-ink2">The week plan combines your log with scheduled work. {volumeTarget(detail, prefs)[1] > 0
             ? `Your full-week coaching range is ${volumeTarget(detail, prefs).join('–')} set equivalents.` : 'You have switched off the weekly target for this muscle.'}</p>
-        </div>}
-      </Sheet>
-      <Sheet open={comparing} onClose={() => setComparing(false)} label="Compare weekly plans">
-        {comparing && comparison && <div className="p-5">
-          <h2 className="pr-9 font-display text-title2 font-semibold">Compare weekly plans</h2>
-          {comparison.alternative ? <>
-            <p className="mt-2 text-footnote text-ink2">Use {dateLabel(comparison.alternative.gymDate!)} for lifting within your available minutes. These estimates include the training you have logged this week.</p>
-            <table className="mt-4 w-full text-left text-footnote tnum">
-              <thead><tr className="border-b border-line"><th scope="col" className="py-2">Training</th><th scope="col" className="text-right">Current</th><th scope="col" className="text-right">Alternative</th></tr></thead>
-              <tbody>{[
-                ...comparison.muscles.map((m) => [MUSCLE_BY_ID[m].label + ' sets', comparison.current.muscleSets[m] ?? 0, comparison.alternative!.muscleSets[m] ?? 0] as const),
-                ...comparison.skills.map((s) => [SKILLS[s].name + ' days', comparison.current.practiceDays[s] ?? 0, comparison.alternative!.practiceDays[s] ?? 0] as const),
-                ['Lifting days', comparison.current.gymDays, comparison.alternative.gymDays] as const,
-              ].map(([label, a, b]) => <tr key={label} className="border-b border-line"><th scope="row" className="py-2 pr-1 font-medium">{label}</th><td className="text-right">{Math.round(a * 2) / 2}</td><td className="text-right">{Math.round(b * 2) / 2}</td></tr>)}</tbody>
-            </table>
-            <button type="button" className="mt-4 min-h-11 rounded-control bg-accent px-4 font-semibold text-on-accent" onClick={() => {
-              const latest = getState().gym?.prefs
-              if (!latest || !comparison.alternative) return
-              dispatch({ type: 'GYM', op: { op: 'setPrefs', prefs: { ...latest, extraGymDate: comparison.alternative.gymDate } } })
-              setComparing(false)
-              pushToast('Lifting day selected. Your week has been recalculated.', 'success')
-            }}>Use this lifting day</button>
-          </> : <p className="mt-3 text-footnote text-ink2">The remaining training days do not fit an extra lifting day that improves your priority sets and keeps your first skill in practice. You can review available time and muscle priorities in your schedule.</p>}
-          <button type="button" className="mt-2 block min-h-11 text-footnote font-semibold text-accent-text" onClick={() => setComparing(false)}>Keep my current plan</button>
         </div>}
       </Sheet>
       <Sheet open={editing} onClose={() => setEditing(false)} label="Goals and schedule">

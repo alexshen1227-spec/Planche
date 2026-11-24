@@ -1151,6 +1151,7 @@ type KindWhy =
   | 'rotate-skills'
 
 interface SkillSlot {
+  workingSets?: Partial<Record<SkillId, number>>
   /** A practice block that shares the day with lifting independently of the lifting focus. */
   reservedOpener?: { skill: SkillId; minutes: number }
   /** The day's one main session. */
@@ -1870,7 +1871,8 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     const gymHere = Boolean(gymPlace) && d.minutes >= MIN_GYM_MINUTES && ctx.gymFits(d, d.minutes)
     const gymOK = ctx.wantsGym && gymHere
     const skillsWanted = g.skills > 0 || Boolean(d.assigned) || !ctx.wantsGym
-    const reservedLifts = !d.assigned && state.gym?.prefs?.extraGymDate === dayKey(d.start) && !(i === 0 && ctx.todayKind)
+    const chosenLifts = state.gym?.prefs?.extraGymDate === d.key || Boolean(ctx.wantsGym && state.gym?.prefs?.gymWeekdays?.includes(weekdayOf(d.start)))
+    const reservedLifts = chosenLifts && !d.assigned && !(i === 0 && ctx.todayKind)
     const forced = reservedLifts ? 'gym' : i === 0 ? ctx.todayKind : undefined
     let kind: 'calisthenics' | 'gym' | undefined
     let why: KindWhy
@@ -2101,6 +2103,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
       noSkillFits: g.skills > 0 && !d.assigned && allowed.length === 0 && gymOnly.length === 0,
       ...(noKit ? { noKit: true } : {}),
       credit: session?.credit ?? {},
+      workingSets: session?.key,
     }
   }
   const record = (i: number) => {
@@ -2186,7 +2189,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
         if (presses && conflict('push', i)) continue
         for (const f of ['push', 'pull'] as const) planned[f] = planned[f].filter((e) => e.i !== i)
         slots[i] = { ...sl, why: 'rotate-skills', exposure: undefined, urgent: undefined, hint: undefined,
-          placeId: view === places.gymCal ? places.gym?.id : undefined, skills: [skill], parts, families, presses, credit: built.credit }
+          placeId: view === places.gymCal ? places.gym?.id : undefined, skills: [skill], parts, families, presses, credit: built.credit, workingSets: built.key }
         record(i)
         break
       }
@@ -2205,7 +2208,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
       if (!keepsDose(view, trial.map((p) => p.skill), d.minutes, d.at)) continue
       const session = builtSkill(view, trial.map((p) => p.skill), d.minutes, d.at)
       const families = new Set(trial.filter((p) => p.hard).map((p) => skillFamily(p.skill) as Straight))
-      slots[i] = { ...sl, skills: trial.map((p) => p.skill), parts: trial, families, presses: pressesHard(session, families), credit: session.credit }
+      slots[i] = { ...sl, skills: trial.map((p) => p.skill), parts: trial, families, presses: pressesHard(session, families), credit: session.credit, workingSets: session.key }
       record(i)
       break
     }
@@ -2241,7 +2244,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
           const presses = pressesHard(session, families)
           if (presses && sl.blocked.push) continue
           if (sl.exposure && !keepsDose(gymView, trial.map((p) => p.skill), d.minutes, d.at)) continue
-          slots[i] = { ...sl, placeId: gymId, skills: trial.map((p) => p.skill), parts: trial, families, presses, credit: session.credit }
+          slots[i] = { ...sl, placeId: gymId, skills: trial.map((p) => p.skill), parts: trial, families, presses, credit: session.credit, workingSets: session.key }
           record(i)
           break
         }
@@ -2315,7 +2318,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
       const presses = pressesHard(session, families)
       if (presses && (conflict('push', i) || sl.blocked.push)) continue
       if (sl.exposure && !keepsDose(view, trial.map((p) => p.skill), d.minutes, d.at)) continue
-      slots[i] = { ...sl, ...(view !== current && places.gym ? { placeId: places.gym.id } : {}), skills: trial.map((p) => p.skill), parts: trial, families, presses, credit: session.credit }
+      slots[i] = { ...sl, ...(view !== current && places.gym ? { placeId: places.gym.id } : {}), skills: trial.map((p) => p.skill), parts: trial, families, presses, credit: session.credit, workingSets: session.key }
       record(i)
       return true
     }
@@ -2803,6 +2806,8 @@ export interface WeekDayPlan {
   day: string
   at: number
   plan: TodayPlan
+  /** Planned sets of each current progression exercise, excluding warm-ups and attempts. */
+  skillWorkingSets?: Partial<Record<SkillId, number>>
   /** The day's one main session (the same as `plan.kind`). */
   kind: DayKind
   /** Short lines for the week view: why this day looks the way it does. */
@@ -3434,6 +3439,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       families: new Set(block.hard),
       presses: pressesHard(session, new Set(block.hard)),
       credit: session.credit,
+      workingSets: session.key,
     }
   })
   // A gym day the gym could not fill under its rules (rest rules, the day before, what the place has) is
@@ -3489,6 +3495,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
           presses: pressesHard(session, lostFamilies),
           ...(session?.painSafe ? { painSafe: true } : {}),
           credit: session?.credit ?? {},
+          workingSets: session?.key,
         }
       : { ...slot, kind: 'rest', why: 'gym-blocked', alternative: undefined, gymMin: 0 }
   }
@@ -3780,6 +3787,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       at: d.at,
       kind: plan.kind,
       plan,
+      ...(plan.skill && !plan.skill.painSafe && slot.workingSets ? { skillWorkingSets: slot.workingSets } : {}),
       // What a day serves never names a muscle its lifts lean away from (`spare`): the two lines once disagreed.
       why: whyFor(d, slot, plan, servesOf(d.index).filter((m) => !(plan.gym?.spare ?? []).includes(m)), prefs, skills, notes.short, kinds, state.settings.weeklyGoal, sessionsIn(d.week)),
       ...(d.sport.length ? { sport: d.sport[d.sport.length - 1] } : {}),
@@ -4000,7 +4008,7 @@ function kindReason(slot: SkillSlot, d: DayCtx, skills: SkillId[], extra: DayExt
       return slot.opener ? `Start with the ${skillName(slot.opener)}, your first priority. The lifts fit in the time left after this practice.`
         : 'Today gives your skill a practice session alongside this week’s gym work.'
     case 'reserved-lifts':
-      return 'You chose this date for lifting when you compared weekly plans.'
+      return 'You set this day aside for lifting.'
     case 'rotate-skills':
       return 'There is time for one skill today. Your first skill had recent practice, so this session goes to the one that has waited longest.'
     case 'sets':
@@ -4327,7 +4335,7 @@ function kindShort(slot: SkillSlot, skills: SkillId[], week: { cal: number; gym:
     case 'sport':
       return 'Calisthenics: sport keeps legs out of the gym today.'
     case 'reserved-lifts':
-      return 'Gym on the date you chose in your weekly comparison.'
+      return 'Gym on your chosen lifting day.'
     case 'sets':
       return 'Gym: the muscles need it for this week’s sets.'
     case 'legs':

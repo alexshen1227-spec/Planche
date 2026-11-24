@@ -11,6 +11,7 @@ export interface WeekOption {
   gymDate?: string
   muscleSets: Partial<Record<Muscle, number>>
   practiceDays: Partial<Record<SkillId, number>>
+  remainingSkillSets: Partial<Record<SkillId, number>>
   gymDays: number
 }
 
@@ -26,6 +27,8 @@ export function compareLiftingDays(state: AppState, choice: TodayChoice, now: nu
   const end = addDays(start, 7)
   const logged = state.sessions.filter((s) => s.startedAt >= start && s.startedAt <= now && s.workoutKind !== 'micro')
   const gymLog = gym.sessions.filter((s) => s.startedAt >= start && s.startedAt <= now)
+  const done = new Set([...gymLog, ...logged.filter((s) => s.completion !== 'partial')].map((s) => dayKey(s.startedAt)))
+  const skillLogged = new Set(state.sessions.filter((s) => s.startedAt >= start && s.startedAt <= now).map((s) => dayKey(s.startedAt)))
   const practiced = (skill: SkillId) => logged.filter((s) => s.sets.some((set) =>
     set.section === 'main' && set.value > 0 && skillOfExercise(set.exerciseId) === skill)).map((s) => dayKey(s.startedAt))
   const snapshot = (gymDate?: string): WeekOption => {
@@ -33,26 +36,31 @@ export function compareLiftingDays(state: AppState, choice: TodayChoice, now: nu
     const week = weekForChoice(athlete, choice, now)
     const days = week.days.filter((d) => d.at < end && !d.plan.rest)
     const practiceDays: WeekOption['practiceDays'] = {}
+    const remainingSkillSets: WeekOption['remainingSkillSets'] = {}
     for (const skill of skills) {
       const dates = new Set(practiced(skill))
       for (const d of days) {
-        const trained = gymLog.some((s) => dayKey(s.startedAt) === d.day) || logged.some((s) => dayKey(s.startedAt) === d.day && s.completion !== 'partial')
+        const trained = done.has(d.day)
         if (!trained && !d.plan.skill?.painSafe && d.plan.skill?.skills.includes(skill)) dates.add(d.day)
+        if (!trained && !d.plan.skill?.painSafe && !skillLogged.has(d.day)) {
+          remainingSkillSets[skill] = (remainingSkillSets[skill] ?? 0) + (d.skillWorkingSets?.[skill] ?? 0)
+        }
       }
       practiceDays[skill] = dates.size
     }
     const gymDays = new Set([...gymLog.map((s) => dayKey(s.startedAt)), ...days.filter((d) => d.plan.gym).map((d) => d.day)]).size
     const selected = gymDate && days.some((d) => d.day === gymDate && d.plan.gym) ? gymDate : undefined
-    return { gymDate: selected, muscleSets: week.weekTotal, practiceDays, gymDays }
+    return { gymDate: selected, muscleSets: week.weekTotal, practiceDays, remainingSkillSets, gymDays }
   }
   const current = snapshot(prefs.extraGymDate)
   const funded = (option: WeekOption) => muscles.reduce((n, m) => n + Math.min(option.muscleSets[m] ?? 0, volumeTarget(m, prefs)[0]), 0)
   const retained = (option: WeekOption) => skills.filter((s) => (current.practiceDays[s] ?? 0) > 0 && (option.practiceDays[s] ?? 0) > 0).length
+  const lostWork = (option: WeekOption) => skills.reduce((n, s) => n + Math.max(0, (current.remainingSkillSets[s] ?? 0) - (option.remainingSkillSets[s] ?? 0)), 0)
   const trained = new Set([...logged, ...gymLog].map((s) => dayKey(s.startedAt)))
   const candidates = weekForChoice(state, choice, now).days.filter((day) =>
     day.at < end && !trained.has(day.day) && day.kind === 'calisthenics' && !day.plan.skill?.painSafe)
   const options = candidates.map((d) => snapshot(d.day))
     .filter((o) => o.gymDate && o.gymDays > current.gymDays && funded(o) > funded(current) && (!current.practiceDays[skills[0]] || o.practiceDays[skills[0]]))
-    .sort((a, b) => retained(b) - retained(a) || funded(b) - funded(a))
+    .sort((a, b) => retained(b) - retained(a) || lostWork(a) - lostWork(b) || funded(b) - funded(a))
   return { current, alternative: options[0] as WeekOption | undefined, skills, muscles }
 }
