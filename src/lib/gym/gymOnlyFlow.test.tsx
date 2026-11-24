@@ -2,7 +2,9 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { initialState, StoreProvider, useStore } from '../store'
+import { initialState, SETUP_DRAFT_KEY, StoreProvider, useStore } from '../store'
+import { loadSetupDraft, newSetupDraft, saveSetupDraft } from '../onboardingDraft'
+import { nextInterviewItem } from '../placement'
 import { Onboarding } from '../../views/Onboarding'
 import { Dashboard } from '../../views/Dashboard'
 import { Train } from '../../views/Train'
@@ -46,6 +48,61 @@ it('confirms the imported workout count after restoring a backup on the welcome 
   expect(await screen.findByText('Backup restored — 1 session.')).toBeTruthy()
   expect(screen.queryByText(/backup could not be applied/i)).toBeNull()
   expect(JSON.parse(localStorage.getItem('planchelab.v1')!).gym.sessions[0].id).toBe('my-squat')
+})
+
+it('restores an unfinished gym editor, then finishes setup with the saved name, unit and equipment', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  localStorage.setItem('planchelab.v1', JSON.stringify(initialState()))
+  const mount = () => render(<StoreProvider><FirstRun /></StoreProvider>)
+  const click = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }))
+  const first = mount()
+  fireEvent.change(screen.getByLabelText(/what should we call you/i), { target: { value: 'Quinn' } })
+  click(/let's go/i)
+  fireEvent.click(screen.getByRole('radio', { name: 'Calisthenics skills: off' }))
+  click(/continue/i)
+  click(/add a gym/i)
+  fireEvent.change(screen.getByLabelText('Name of this place'), { target: { value: 'Track gym' } })
+  const weightUnit = () => within(screen.getByRole('radiogroup', { name: 'Unit' })).getByRole('radio', { name: 'lb' })
+  fireEvent.click(weightUnit())
+  click('Dumbbells')
+  first.unmount()
+  mount()
+  expect(screen.getByDisplayValue('Track gym')).toBeTruthy()
+  expect(weightUnit().getAttribute('aria-checked')).toBe('true')
+  expect(screen.getByRole('button', { name: 'Dumbbells' }).getAttribute('aria-pressed')).toBe('true')
+  click('Save')
+  click(/continue/i)
+  click(/continue/i)
+  click(/skip.*every muscle normal/i)
+  click(/prefer not to say/i)
+  click(/start training/i)
+  const finished = JSON.parse(localStorage.getItem('planchelab.v1')!)
+  expect(finished.name).toBe('Quinn')
+  expect(finished.gym.locations).toContainEqual(expect.objectContaining({ name: 'Track gym', unit: 'lb', equipment: ['dumbbells'] }))
+  expect(localStorage.getItem(SETUP_DRAFT_KEY)).toBeNull()
+})
+
+it('resumes the actual skill interview question and rejects obsolete or unreadable setup data', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const athlete = initialState()
+  const epoch = athlete.epoch!
+  localStorage.setItem('planchelab.v1', JSON.stringify(athlete))
+  const draft = newSetupDraft()
+  draft.stage = 'interview'
+  draft.skills = ['handstand', 'frontlever']
+  const first = nextInterviewItem(draft.skills, {})!
+  draft.answers = { [first.id]: first.options[0].value, 'level:flag': 999 }
+  const next = nextInterviewItem(draft.skills, draft.answers)!
+  saveSetupDraft(epoch, draft)
+  expect(loadSetupDraft('different-athlete')).toBeNull()
+  expect(loadSetupDraft(epoch)?.answers).toEqual({ [first.id]: first.options[0].value })
+  const ui = render(<StoreProvider><FirstRun /></StoreProvider>)
+  expect(screen.getByRole('heading', { name: next.question })).toBeTruthy()
+  ui.unmount()
+  localStorage.setItem(SETUP_DRAFT_KEY, '{broken')
+  expect(loadSetupDraft(epoch)).toBeNull()
+  render(<StoreProvider><FirstRun /></StoreProvider>)
+  expect(screen.getByRole('button', { name: /let's go/i })).toBeTruthy()
 })
 
 it('shows an opted-in gym-only athlete their recorded bodyweight and comparable bodyweight sets on Progress', () => {

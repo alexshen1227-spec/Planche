@@ -23,21 +23,25 @@ const GROUPS: { title: string; ids: LocationEquipment[] }[] = [
 export function LocationEditor({
   location,
   canDelete,
+  onDraftChange,
   onSave,
   onDelete,
 }: {
   location: GymLocation
   canDelete: boolean
+  onDraftChange?: (location: GymLocation) => void
   onSave: (location: GymLocation) => void
   onDelete: () => void
 }) {
-  const [draft, setDraft] = useState<GymLocation>(location)
+  const [local, setLocal] = useState(location)
+  const draft = onDraftChange ? location : local
+  const setDraft = onDraftChange ?? setLocal
   const has = new Set(draft.equipment)
   const toggle = (id: LocationEquipment) =>
-    setDraft((d) => ({ ...d, equipment: has.has(id) ? d.equipment.filter((e) => e !== id) : [...d.equipment, id] }))
+    setDraft({ ...draft, equipment: has.has(id) ? draft.equipment.filter((e) => e !== id) : [...draft.equipment, id] })
   const gear = (id: GymEquipmentId) => draft.gear?.[id] ?? {}
   const setGear = (id: GymEquipmentId, patch: { unit?: Unit; maxKg?: number }) =>
-    setDraft((d) => ({ ...d, gear: { ...d.gear, [id]: { ...d.gear?.[id], ...patch } } }))
+    setDraft({ ...draft, gear: { ...draft.gear, [id]: { ...draft.gear?.[id], ...patch } } })
   const count = availableAt(draft).length
 
   return (

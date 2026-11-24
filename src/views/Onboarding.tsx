@@ -1,7 +1,7 @@
 import { Button } from '../components/ds'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type SetStateAction } from 'react'
 import { flushSync } from 'react-dom'
-import type { AssessmentRecord, Profile, EquipmentId, SkillId, StepId, Units } from '../types'
+import type { AssessmentRecord, Profile, EquipmentId, SkillId, StepId } from '../types'
 import { normalizeStateWithReport, rebuildDerivedState, reportHasLosses, useStore } from '../lib/store'
 import { readImportFile, validateImport } from '../lib/exportImport'
 import { pushToast } from '../lib/toast'
@@ -19,7 +19,6 @@ import {
   nextInterviewItem,
   placementRecord,
   placeSkill,
-  type InterviewAnswers,
 } from '../lib/placement'
 import { Icon } from '../components/Icon'
 import { PressMilestonePicker } from '../components/PressMilestone'
@@ -30,13 +29,12 @@ import { GoalsEditor, MusclesEditor, ScheduleEditor } from '../components/plan/P
 import {
   activeLocationFor,
   parseBirthYear,
-  startingMinutesByDay,
   summariseSchedule,
 } from '../components/plan/onboardingPlan'
 import { conservative } from '../lib/gym/draft'
 import { availableAt } from '../lib/gym/availability'
-import { defaultGym, defaultPrefs, homeLocation, newLocation } from '../lib/gym/state'
-import type { GymLocation, TrainingPrefs } from '../lib/gym/types'
+import { defaultGym, homeLocation, newLocation } from '../lib/gym/state'
+import { loadSetupDraft, newSetupDraft, saveSetupDraft, type SetupDraft, type SetupStage } from '../lib/onboardingDraft'
 
 /**
  * Onboarding, in the order the answers actually matter.
@@ -70,21 +68,9 @@ const GOAL_BLURB: Record<string, string> = {
  * destination and placement) → places and equipment → schedule and time →
  * muscle preferences → age and safety.
  */
-type Stage =
-  | 'welcome'
-  | 'goals'
-  | 'skills'
-  | 'goal'
-  | 'interview'
-  | 'result'
-  | 'places'
-  | 'schedule'
-  | 'muscles'
-  | 'safety'
-
 /** The progress the athlete sees: seven sections, the skills one spanning four screens. */
 const SECTIONS = ['Welcome', 'Goals', 'Skills', 'Places', 'Schedule', 'Muscles', 'Age and safety'] as const
-const SECTION_OF: Record<Stage, number> = {
+const SECTION_OF: Record<SetupStage, number> = {
   welcome: 0,
   goals: 1,
   skills: 2,
@@ -194,37 +180,29 @@ export function Onboarding() {
       setRestoring(false)
     }
   }
-  const [stage, setStage] = useState<Stage>('welcome')
-  const [name, setName] = useState('')
-  /** The skills chosen, in the order they were picked: the first is the focus. */
-  const [skills, setSkills] = useState<SkillId[]>([])
-  const [goals, setGoals] = useState<Partial<Record<SkillId, StepId>>>({})
-  const [pressGoals, setPressGoals] = useState<Partial<Record<SkillId, string>>>({})
-  const [answers, setAnswers] = useState<InterviewAnswers>({})
-  const [skippedInterview, setSkippedInterview] = useState(false)
-  const [manual, setManual] = useState<Partial<Record<SkillId, StepId>>>({})
-  /** Which skill the manual picker is on, when the interview was skipped. */
-  const [manualIndex, setManualIndex] = useState(0)
-  /** Goal weights, muscles and the week: what Fitness Lab's setup writes to `gym.prefs`. */
-  const [prefs, setPrefs] = useState<TrainingPrefs>(() => ({
-    ...defaultPrefs(),
-    // Worked out when the first run opens, so today is a training day even in a tab left open overnight.
-    minutesByDay: startingMinutesByDay(),
-  }))
-  /** Gyms added here; Home is always the first place and takes the kit ticked below. */
-  const [gyms, setGyms] = useState<GymLocation[]>([])
+  const [opening] = useState(() => {
+    const epoch = getState().epoch
+    const saved = loadSetupDraft(epoch)
+    return { epoch, draft: saved ?? newSetupDraft(), restored: Boolean(saved) }
+  })
+  const [setup, setSetup] = useState(opening.draft)
+  const [draftFailed, setDraftFailed] = useState(false)
+  const {
+    stage, name, skills, goals, pressGoals, answers, skippedInterview, manual, manualIndex, prefs, gyms, editing,
+    birthYear, ageDeclined, bodyweightReminders, units, weight, heightCm, heightFt, heightIn, equipment, injuryNote,
+  } = setup
   const gymOnly = prefs.goals.skills === 0
-  const [editing, setEditing] = useState<{ location: GymLocation; isNew: boolean } | null>(null)
-  const [birthYear, setBirthYear] = useState('')
-  const [ageDeclined, setAgeDeclined] = useState(false)
-  const [bodyweightReminders, setBodyweightReminders] = useState(false)
-  const [units, setUnits] = useState<Units>('metric')
-  const [weight, setWeight] = useState('')
-  const [heightCm, setHeightCm] = useState('')
-  const [heightFt, setHeightFt] = useState('')
-  const [heightIn, setHeightIn] = useState('')
-  const [equipment, setEquipment] = useState<EquipmentId[]>(['floor'])
-  const [injuryNote, setInjuryNote] = useState('')
+  function edit<K extends keyof SetupDraft>(field: K, change: SetStateAction<SetupDraft[K]>) {
+    setSetup((previous) => ({
+      ...previous,
+      [field]: typeof change === 'function' ? change(previous[field]) : change,
+    }))
+  }
+  useEffect(() => {
+    const { epoch, onboarded } = getState()
+    if (setup === opening.draft || !epoch || epoch !== opening.epoch || onboarded) return
+    setDraftFailed(!saveSetupDraft(epoch, setup))
+  }, [getState, opening, setup])
   const [measurementError, setMeasurementError] = useState<string | null>(null)
 
   // Each stage is a page, and so is each interview question. Focus has to
@@ -351,6 +329,7 @@ export function Onboarding() {
   }
 
   const finish = () => {
+    if (!ageAnswered) return
     const problem = measurementProblem()
     if (problem) {
       setMeasurementError(problem)
@@ -464,6 +443,13 @@ export function Onboarding() {
           <div className="mt-2 text-center text-caption font-medium text-ink3 tnum" aria-hidden="true">
             {progressText}
           </div>
+          {draftFailed ? (
+            <p role="status" className="mt-2 text-center text-footnote text-danger-text">
+              This browser could not save setup. Keep this tab open to finish.
+            </p>
+          ) : opening.restored && stage === opening.draft.stage ? (
+            <p className="mt-2 text-center text-footnote text-ink2">Your setup was restored on this device.</p>
+          ) : null}
         </div>
         {/* Carries the question, not only the stage: the whole ladder lives
             inside one stage, so a region that only said "Step 3 of 7" went
@@ -498,13 +484,14 @@ export function Onboarding() {
               <input
                 id="ob-name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                maxLength={100}
+                onChange={(e) => edit('name', e.target.value)}
                 placeholder="Your name"
                 className="mt-1.5 w-full rounded-inner border border-line bg-surface px-4 py-3.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
               />
             </div>
             <Button
-              onClick={() => setStage('goals')}
+              onClick={() => edit('stage', 'goals')}
               className={`${primaryBtn} mx-auto mt-6 w-full max-w-sm`}
             >
               Let's go <Icon name="arrowR" size={17} />
@@ -540,18 +527,18 @@ export function Onboarding() {
               how a day is shared between them. You can change them any time in Goals and schedule.
             </p>
             <div className="mt-6">
-              <GoalsEditor prefs={prefs} setPrefs={setPrefs} />
+              <GoalsEditor prefs={prefs} setPrefs={(value) => edit('prefs', value)} />
             </div>
             <div className={actionRow}>
-              <button onClick={() => setStage('welcome')} className={backBtn}>
+              <button onClick={() => edit('stage', 'welcome')} className={backBtn}>
                 Back
               </button>
               <Button onClick={() => {
                 if (gymOnly) {
-                  setSkills([])
-                  setAnswers({})
+                  edit('skills', [])
+                  edit('answers', {})
                 }
-                setStage(gymOnly ? 'places' : 'skills')
+                edit('stage', gymOnly ? 'places' : 'skills')
               }} className={primaryBtn}>
                 Continue <Icon name="arrowR" size={16} />
               </Button>
@@ -578,12 +565,12 @@ export function Onboarding() {
                     aria-pressed={active}
                     aria-label={`${def.name}${active ? `, ${ORDINAL[position]} priority` : ''}: ${def.tagline}`}
                     onClick={() => {
-                      setSkills((current) => (active ? current.filter((id) => id !== def.id) : [...current, def.id]))
+                      edit('skills', (current) => (active ? current.filter((id) => id !== def.id) : [...current, def.id]))
                       // Answers given for a different set of skills place a
                       // different athlete: start the interview over.
-                      setAnswers({})
-                      setSkippedInterview(false)
-                      setManualIndex(0)
+                      edit('answers', {})
+                      edit('skippedInterview', false)
+                      edit('manualIndex', 0)
                     }}
                     className={`flex w-full items-center gap-4 rounded-inner border p-4 text-left transition ${
                       active ? 'border-accent bg-accent-soft shadow-card' : 'border-line bg-surface hover:border-line-strong'
@@ -616,11 +603,11 @@ export function Onboarding() {
                   : `Your skill priorities, in order: ${skillNames(skills)}.`}
             </p>
             <div className={actionRow}>
-              <button onClick={() => setStage('goals')} className={backBtn}>
+              <button onClick={() => edit('stage', 'goals')} className={backBtn}>
                 Back
               </button>
               <Button
-                onClick={() => setStage('goal')}
+                onClick={() => edit('stage', 'goal')}
                 disabled={skills.length === 0}
                 className={`${primaryBtn} disabled:opacity-50`}
               >
@@ -650,7 +637,7 @@ export function Onboarding() {
                     key={id}
                     aria-pressed={active}
                     aria-label={`${step.name}: ${GOAL_BLURB[id] ?? step.tagline}`}
-                    onClick={() => setGoals((current) => ({ ...current, [focus]: id }))}
+                    onClick={() => edit('goals', (current) => ({ ...current, [focus]: id }))}
                     className={`flex w-full items-center gap-4 rounded-inner border p-4 text-left transition ${
                       active ? 'border-accent bg-accent-soft shadow-card' : 'border-line bg-surface hover:border-line-strong'
                     }`}
@@ -672,12 +659,12 @@ export function Onboarding() {
               })}
             </div>
             {pressLadder && <PressMilestonePicker ladder={pressLadder} value={pressGoals[focus]}
-              onChange={(id) => setPressGoals((current) => ({ ...current, [focus]: id }))} />}
+              onChange={(id) => edit('pressGoals', (current) => ({ ...current, [focus]: id }))} />}
             <div className={actionRow}>
-              <button onClick={() => setStage('skills')} className={backBtn}>
+              <button onClick={() => edit('stage', 'skills')} className={backBtn}>
                 Back
               </button>
-              <Button onClick={() => setStage('interview')} className={primaryBtn}>
+              <Button onClick={() => edit('stage', 'interview')} className={primaryBtn}>
                 Continue <Icon name="arrowR" size={16} />
               </Button>
             </div>
@@ -693,19 +680,19 @@ export function Onboarding() {
               skill={skills[manualIndex] ?? focus}
               several={skills.length > 1}
               placement={placedFor(skills[manualIndex] ?? focus)}
-              onPick={(id) => setManual((current) => ({ ...current, [skills[manualIndex] ?? focus]: id }))}
+              onPick={(id) => edit('manual', (current) => ({ ...current, [skills[manualIndex] ?? focus]: id }))}
               onBack={() => {
                 if (manualIndex > 0) {
-                  setManualIndex(manualIndex - 1)
+                  edit('manualIndex', manualIndex - 1)
                   return
                 }
-                setSkippedInterview(false)
-                setAnswers({})
-                setStage('goal')
+                edit('skippedInterview', false)
+                edit('answers', {})
+                edit('stage', 'goal')
               }}
               onContinue={() => {
-                if (manualIndex < skills.length - 1) setManualIndex(manualIndex + 1)
-                else setStage('result')
+                if (manualIndex < skills.length - 1) edit('manualIndex', manualIndex + 1)
+                else edit('stage', 'result')
               }}
               primaryBtn={primaryBtn}
               backBtn={backBtn}
@@ -755,8 +742,8 @@ export function Onboarding() {
                       // unnecessary, and that is knowable synchronously from
                       // the answer just given.
                       const next = pruneBlockedAnswers({ ...answers, [currentItem.id]: opt.value })
-                      setAnswers(next)
-                      if (nextInterviewItem(skills, next) === null) setStage('result')
+                      edit('answers', next)
+                      if (nextInterviewItem(skills, next) === null) edit('stage', 'result')
                     }}
                     className="flex w-full items-center justify-between gap-3 rounded-inner border border-line bg-surface p-4 text-left transition hover:border-accent hover:bg-accent-soft"
                   >
@@ -773,12 +760,12 @@ export function Onboarding() {
                   onClick={() => {
                     const asked = Object.keys(answers)
                     if (asked.length === 0) {
-                      setStage('goal')
+                      edit('stage', 'goal')
                       return
                     }
                     const next = { ...answers }
                     delete next[asked[asked.length - 1]]
-                    setAnswers(next)
+                    edit('answers', next)
                   }}
                   className="ds-press min-h-11 rounded-control border border-line bg-surface px-4 text-footnote font-medium text-ink2 hover:text-ink"
                 >
@@ -786,9 +773,9 @@ export function Onboarding() {
                 </button>
                 <button
                   onClick={() => {
-                    setSkippedInterview(true)
-                    setManualIndex(0)
-                    setAnswers({})
+                    edit('skippedInterview', true)
+                    edit('manualIndex', 0)
+                    edit('answers', {})
                   }}
                   className="min-h-11 px-1 text-footnote font-medium text-ink3 underline underline-offset-4 hover:text-ink"
                 >
@@ -931,18 +918,18 @@ export function Onboarding() {
                     if (asked.length > 0) {
                       const next = { ...answers }
                       delete next[asked[asked.length - 1]]
-                      setAnswers(next)
+                      edit('answers', next)
                     }
                   } else {
-                    setManualIndex(Math.max(0, skills.length - 1))
+                    edit('manualIndex', Math.max(0, skills.length - 1))
                   }
-                  setStage('interview')
+                  edit('stage', 'interview')
                 }}
                 className={backBtn}
               >
                 Back
               </button>
-              <Button onClick={() => setStage('places')} className={primaryBtn}>
+              <Button onClick={() => edit('stage', 'places')} className={primaryBtn}>
                 Looks right <Icon name="arrowR" size={16} />
               </Button>
             </div>
@@ -954,21 +941,22 @@ export function Onboarding() {
             <h1 ref={headingRef} tabIndex={-1} className="sr-only">
               {editing.isNew ? 'Add a gym' : 'Edit a gym'}
             </h1>
-            <button onClick={() => setEditing(null)} className={`${backBtn} -ml-3`}>
+            <button onClick={() => edit('editing', null)} className={`${backBtn} -ml-3`}>
               Cancel
             </button>
             <LocationEditor
               location={editing.location}
+              onDraftChange={(location) => edit('editing', { ...editing, location })}
               canDelete={!editing.isNew}
               onSave={(saved) => {
-                setGyms((current) =>
+                edit('gyms', (current) =>
                   editing.isNew ? [...current, saved] : current.map((place) => (place.id === saved.id ? saved : place)),
                 )
-                setEditing(null)
+                edit('editing', null)
               }}
               onDelete={() => {
-                setGyms((current) => current.filter((place) => place.id !== editing.location.id))
-                setEditing(null)
+                edit('gyms', (current) => current.filter((place) => place.id !== editing.location.id))
+                edit('editing', null)
               }}
             />
           </div>
@@ -993,7 +981,7 @@ export function Onboarding() {
                   <button
                     key={u}
                     aria-pressed={units === u}
-                    onClick={() => setUnits(u)}
+                    onClick={() => edit('units', u)}
                     className={`min-h-11 px-4 text-footnote font-medium transition ${
                       units === u ? 'bg-accent text-on-accent' : 'bg-surface text-ink2 hover:text-ink'
                     }`}
@@ -1015,7 +1003,7 @@ export function Onboarding() {
                     <button
                       key={eq.id}
                       aria-pressed={on}
-                      onClick={() => setEquipment((v) => (on ? v.filter((x) => x !== eq.id) : [...v, eq.id]))}
+                      onClick={() => edit('equipment', (v) => (on ? v.filter((x) => x !== eq.id) : [...v, eq.id]))}
                       className={`min-h-11 rounded-full border px-3.5 text-footnote font-medium transition ${
                         on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2'
                       }`}
@@ -1052,7 +1040,7 @@ export function Onboarding() {
                         {missing.flat().map((id) => (
                           <button
                             key={id}
-                            onClick={() => setEquipment((v) => (v.includes(id) ? v : [...v, id]))}
+                            onClick={() => edit('equipment', (v) => (v.includes(id) ? v : [...v, id]))}
                             className="min-h-11 rounded-lg border border-line bg-surface px-2.5 py-1 text-left text-caption font-semibold text-ink hover:border-line-strong"
                           >
                             I have {equipmentPhrase(id)}
@@ -1072,7 +1060,7 @@ export function Onboarding() {
                   {gyms.map((place) => (
                     <li key={place.id}>
                       <button
-                        onClick={() => setEditing({ location: place, isNew: false })}
+                        onClick={() => edit('editing', { location: place, isNew: false })}
                         className="ds-press flex min-h-14 w-full items-center justify-between rounded-inner border border-line px-4 text-left"
                       >
                         <span>
@@ -1095,7 +1083,7 @@ export function Onboarding() {
                 variant="secondary"
                 full
                 className="mt-3"
-                onClick={() => setEditing({ location: newLocation('Gym', units === 'imperial' ? 'lb' : 'kg'), isNew: true })}
+                onClick={() => edit('editing', { location: newLocation('Gym', units === 'imperial' ? 'lb' : 'kg'), isNew: true })}
               >
                 <Icon name="plus" size={15} /> Add a gym
               </Button>
@@ -1107,10 +1095,10 @@ export function Onboarding() {
             </div>
 
             <div className={actionRow}>
-              <button onClick={() => setStage(gymOnly ? 'goals' : 'result')} className={backBtn}>
+              <button onClick={() => edit('stage', gymOnly ? 'goals' : 'result')} className={backBtn}>
                 Back
               </button>
-              <Button onClick={() => setStage('schedule')} className={primaryBtn}>
+              <Button onClick={() => edit('stage', 'schedule')} className={primaryBtn}>
                 Continue <Icon name="arrowR" size={16} />
               </Button>
             </div>
@@ -1127,7 +1115,7 @@ export function Onboarding() {
               come from this week, so there is nothing else to set.
             </p>
             <div className="mt-6 space-y-6">
-              <ScheduleEditor prefs={prefs} setPrefs={setPrefs} />
+              <ScheduleEditor prefs={prefs} setPrefs={(value) => edit('prefs', value)} />
             </div>
             <div className="mt-5 rounded-inner border border-line bg-surface p-4" role="status">
               {schedule.days === 0 ? (
@@ -1150,10 +1138,10 @@ export function Onboarding() {
               )}
             </div>
             <div className={actionRow}>
-              <button onClick={() => setStage('places')} className={backBtn}>
+              <button onClick={() => edit('stage', 'places')} className={backBtn}>
                 Back
               </button>
-              <Button onClick={() => setStage('muscles')} disabled={schedule.days === 0} className={`${primaryBtn} disabled:opacity-50`}>
+              <Button onClick={() => edit('stage', 'muscles')} disabled={schedule.days === 0} className={`${primaryBtn} disabled:opacity-50`}>
                 Continue <Icon name="arrowR" size={16} />
               </Button>
             </div>
@@ -1169,13 +1157,13 @@ export function Onboarding() {
               Optional. Leave everything on normal and the gym spreads the work evenly.
             </p>
             <div className="mt-6">
-              <MusclesEditor prefs={prefs} setPrefs={setPrefs} />
+              <MusclesEditor prefs={prefs} setPrefs={(value) => edit('prefs', value)} />
             </div>
             <div className="text-center">
               <button
                 onClick={() => {
-                  setPrefs((p) => ({ ...p, musclesOff: [], musclesPriority: [] }))
-                  setStage('safety')
+                  edit('prefs', (p) => ({ ...p, musclesOff: [], musclesPriority: [] }))
+                  edit('stage', 'safety')
                 }}
                 className="min-h-11 px-3 text-footnote font-medium text-ink3 underline underline-offset-4 hover:text-ink"
               >
@@ -1183,10 +1171,10 @@ export function Onboarding() {
               </button>
             </div>
             <div className={actionRow}>
-              <button onClick={() => setStage('schedule')} className={backBtn}>
+              <button onClick={() => edit('stage', 'schedule')} className={backBtn}>
                 Back
               </button>
-              <Button onClick={() => setStage('safety')} className={primaryBtn}>
+              <Button onClick={() => edit('stage', 'safety')} className={primaryBtn}>
                 Continue <Icon name="arrowR" size={16} />
               </Button>
             </div>
@@ -1204,13 +1192,13 @@ export function Onboarding() {
             <div className="mt-6">
               <AgeAndSafety
                 birthYear={birthYear}
-                setBirthYear={setBirthYear}
+                setBirthYear={(value) => edit('birthYear', value)}
                 careful={careful}
                 ageKnown={year !== undefined}
                 bodyweight={bodyweightReminders}
-                setBodyweight={setBodyweightReminders}
+                setBodyweight={(value) => edit('bodyweightReminders', value)}
                 declined={ageDeclined}
-                onDecline={setAgeDeclined}
+                onDecline={(value) => edit('ageDeclined', value)}
               />
             </div>
 
@@ -1218,8 +1206,9 @@ export function Onboarding() {
               <span className="text-footnote font-medium text-ink2">Anything currently sore or injured?</span>
               <input
                 value={injuryNote}
+                maxLength={2000}
                 aria-label="Anything currently sore or injured?"
-                onChange={(e) => setInjuryNote(e.target.value)}
+                onChange={(e) => edit('injuryNote', e.target.value)}
                 placeholder="e.g. left wrist a bit cranky — or leave blank"
                 className="mt-1.5 w-full rounded-control border border-line bg-raised px-3 py-2.5 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
               />
@@ -1243,7 +1232,7 @@ export function Onboarding() {
                   <span className="text-footnote font-medium text-ink2">Bodyweight ({units === 'metric' ? 'kg' : 'lb'})</span>
                   <input
                     value={weight}
-                    onChange={(e) => setWeight(e.target.value)}
+                    onChange={(e) => edit('weight', e.target.value)}
                     inputMode="decimal"
                     placeholder={units === 'metric' ? '70' : '155'}
                     className="mt-1.5 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
@@ -1256,7 +1245,7 @@ export function Onboarding() {
                   {units === 'metric' ? (
                     <input
                       value={heightCm}
-                      onChange={(e) => setHeightCm(e.target.value)}
+                      onChange={(e) => edit('heightCm', e.target.value)}
                       inputMode="decimal"
                       placeholder="175"
                       aria-labelledby="ob-height"
@@ -1266,7 +1255,7 @@ export function Onboarding() {
                     <div className="mt-1.5 flex gap-2">
                       <input
                         value={heightFt}
-                        onChange={(e) => setHeightFt(e.target.value)}
+                        onChange={(e) => edit('heightFt', e.target.value)}
                         inputMode="numeric"
                         placeholder="5"
                         aria-label="Height, feet"
@@ -1274,7 +1263,7 @@ export function Onboarding() {
                       />
                       <input
                         value={heightIn}
-                        onChange={(e) => setHeightIn(e.target.value)}
+                        onChange={(e) => edit('heightIn', e.target.value)}
                         inputMode="numeric"
                         placeholder="9"
                         aria-label="Height, inches"
@@ -1343,7 +1332,7 @@ export function Onboarding() {
               </p>
             ) : null}
             <div className={actionRow}>
-              <button onClick={() => setStage('muscles')} className={backBtn}>
+              <button onClick={() => edit('stage', 'muscles')} className={backBtn}>
                 Back
               </button>
               <Button onClick={finish} disabled={!ageAnswered} className={primaryBtn}>

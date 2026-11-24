@@ -214,7 +214,8 @@ export function GymPlayer({
         }
         s.at = at
         d.effortFor = { item: i, set: j }
-        d.rest = { until: at + secs * 1000, total: secs }
+        const moreSets = d.items.some((block) => !block.held && block.sets.some((set) => !set.done))
+        d.rest = moreSets ? { until: at + secs * 1000, total: secs } : undefined
       }
       return d
     })

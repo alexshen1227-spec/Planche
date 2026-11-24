@@ -63,12 +63,13 @@ const BACKUP_KEY = 'planchelab.prev'
  */
 export const QUARANTINE_KEY = 'planchelab.quarantine'
 const DRAFT_KEY = 'planchelab.draft'
+export const SETUP_DRAFT_KEY = 'planchelab.setupDraft'
 /**
  * Unfinished work kept outside the main state: the skill session in progress,
  * the gym session in progress, and the note of what follows today's opener.
  * Each belongs to one dataset, so a reset or an import takes them with it.
  */
-const UNFINISHED_WORK_KEYS = [DRAFT_KEY, 'planchelab.gymDraft', 'planchelab.nextBlock', 'planchelab.dayMarks', 'planchelab.todayChoice']
+const UNFINISHED_WORK_KEYS = [DRAFT_KEY, SETUP_DRAFT_KEY, 'planchelab.gymDraft', 'planchelab.nextBlock', 'planchelab.dayMarks', 'planchelab.todayChoice']
 /** How long a burst of changes waits before the mirror is written. */
 const MIRROR_DEBOUNCE_MS = 1500
 /** A birth year past this is not a year; before it, the stored year is kept whatever the clock says. */
@@ -2121,6 +2122,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const mirrorOpen = useRef(false)
   // A failed save is said once a session, not on every write.
   const storageWarned = useRef(false)
+  const completedSetupEpoch = useRef<string | null>(null)
   // A newer version's data is never written over: its fields would be lost.
   const [newerHeld, setNewerHeld] = useState(Boolean(load.newer))
   const newerRef = useRef(Boolean(load.newer))
@@ -2179,6 +2181,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       try {
         localStorage.setItem(STORAGE_KEY, json)
+        if (current.onboarded && current.epoch && completedSetupEpoch.current !== current.epoch) {
+          // Only retire the unfinished setup once the completed profile is on disk.
+          try {
+            localStorage.removeItem(SETUP_DRAFT_KEY)
+            completedSetupEpoch.current = current.epoch
+          } catch { /* The completed profile is already saved. */ }
+        }
         setPersist((p) => (p.primary === 'ok' && !p.error ? p : { ...p, primary: 'ok', error: undefined }))
       } catch (err) {
         // Storage full, evicted, or private mode. Keep going: the mirror is the

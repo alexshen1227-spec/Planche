@@ -48,7 +48,7 @@ export function defaultPrefs(now = Date.now()): TrainingPrefs {
   }
 }
 
-function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
+export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
   const r = raw as Record<string, unknown>
   const g = (typeof r.goals === 'object' && r.goals !== null ? r.goals : {}) as Record<string, unknown>
@@ -204,7 +204,7 @@ function sanitizeTimes(raw: unknown): Record<string, number> {
   return out
 }
 
-function sanitizeLocation(raw: unknown): GymLocation | null {
+export function sanitizeLocation(raw: unknown): GymLocation | null {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
   if (typeof r.id !== 'string' || !r.id) return null

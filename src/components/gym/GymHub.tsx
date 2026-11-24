@@ -29,7 +29,7 @@ import { bodyweightCapacity } from '../../lib/gym/bodyweight'
 import { GymHistory } from './GymHistory'
 import { GymExerciseGuide } from './ExerciseGuide'
 
-const MINUTES = [20, 30, 45, 60, 75, 90]
+const MINUTES = [15, 20, 30, 45, 60, 75, 90]
 const SKILL_NAME: Record<SkillId, string> = { planche: 'planche', frontlever: 'front lever', handstand: 'handstand', ninety: '90° hold', flag: 'human flag' }
 const FOCI: (GymFocus | 'auto')[] = ['auto', 'full', 'upper', 'lower', 'push', 'pull', 'athletic']
 

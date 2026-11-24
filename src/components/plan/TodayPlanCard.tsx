@@ -33,7 +33,7 @@ import { WeekPreview } from './WeekPreview'
 
 export type { GymEntry, GymPreset }
 
-const QUICK = [20, 30, 45, 60, 90]
+const QUICK = [15, 20, 30, 45, 60, 90]
 const READINESS_LABEL: Record<ReadinessLevel, string> = { light: 'Light day', normal: 'Normal day', push: 'Push day' }
 
 /**

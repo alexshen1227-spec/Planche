@@ -684,7 +684,8 @@ export function totalSetsOf(blocks: readonly Block[]): number {
  * worked by section, so at a thirty-minute budget it deleted the pressing
  * work at almost every step while keeping a second core exercise.
  *
- * Warm-up and cooldown are never trimmed. Unilateral blocks lose sets in pairs
+ * Warm-up stays intact. A 15–17 minute practice may keep just one cooldown.
+ * Unilateral blocks lose sets in pairs
  * so a side never goes untrained. Returns what was dropped so the session can
  * say so instead of quietly being smaller.
  */
@@ -774,6 +775,16 @@ export function fitToBudget(
     () => dropLast((b) => roleOf(b) === 'bridge'),
     () => shaveLast((b) => b.section === 'main' && roleOf(b) !== 'attempt' && roleOf(b) !== 'bridge', 3),
   ]
+  if (budgetMin >= 15 && budgetMin < 18) {
+    // Keep the preparation and the rest between efforts, including for younger
+    // athletes. A brief practice can give up a second stretch, a reach at the
+    // next shape, then one working set (or a left/right pair).
+    steps.push(
+      () => out.filter((b) => b.section === 'cooldown').length > 1 && dropLast((b) => b.section === 'cooldown'),
+      () => dropLast((b) => b.section === 'main' && roleOf(b) === 'attempt' && out.some((key) => key.role === 'skill')),
+      () => shaveLast((b) => b.section === 'main' && roleOf(b) === 'skill', 2),
+    )
+  }
   for (let guard = 0; guard < 80 && over(); guard++) {
     if (!steps.some((step) => step())) break
   }

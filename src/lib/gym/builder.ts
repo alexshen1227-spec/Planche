@@ -508,8 +508,13 @@ export function planGymExercises(input: GymSessionInput) {
   // cannot fit even alone is reported, never built on invented minutes.
   const dropped: string[] = []
   const warm = input.warmUpMin !== undefined ? Math.max(0, input.warmUpMin) : focus === 'athletic' ? ATHLETIC_WARM_UP_MIN : WARM_UP_MIN
-  const total = () =>
-    warm + items.reduce((m, it) => m + blockMinutes(it.sets, it.restSec, GYM_EXERCISE_BY_ID[it.exerciseId].dose?.workSec), 0)
+  const total = () => {
+    const blocks = items.reduce((m, it) => m + blockMinutes(it.sets, it.restSec, GYM_EXERCISE_BY_ID[it.exerciseId].dose?.workSec), 0)
+    // A brief visit finishes at its last set. Longer visits keep the usual
+    // allowance to change equipment, rerack weights and record the workout.
+    const finalRest = minutes >= 15 && minutes < 20 ? (items.at(-1)?.restSec ?? 0) / 60 : 0
+    return warm + blocks - finalRest
+  }
   let trimmed = false
   for (const trimPriority of requested.size ? [false, true] : [false]) {
     if (trimPriority && focus !== 'athletic') {

@@ -109,11 +109,11 @@ describe('sessions fit the minutes they are given', () => {
   const places = [everything(), gymA, home, { ...gymA, id: 'z', hardHere: ['back-squat', 'bench-press'] }, { id: 'bare', name: 'Bare', unit: 'kg', equipment: [], updatedAt: T0 } as GymLocation]
   const foci: GymFocus[] = ['full', 'upper', 'lower', 'push', 'pull', 'athletic']
   const minutesList = [5, 7, 10, 15, 20, 25, 30, 45, 60, 90]
-  const spent = (plan: ReturnType<typeof buildGymSession>) =>
+  const spent = (plan: ReturnType<typeof buildGymSession>, minutes: number) =>
     plan.items.reduce((m, it) => {
       const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
       return m + (it.sets * ((ex.dose?.workSec ?? 40) + it.restSec)) / 60
-    }, plan.focus === 'athletic' ? 2 : 6)
+    }, plan.focus === 'athletic' ? 2 : 6) - (minutes >= 15 && minutes < 20 ? (plan.items.at(-1)?.restSec ?? 0) / 60 : 0)
   it('never builds more than the minutes asked, across places, lengths, foci and athletes', () => {
     let built = 0
     for (const location of places)
@@ -133,7 +133,7 @@ describe('sessions fit the minutes they are given', () => {
               })
               if (!plan.items.length) continue
               built++
-              expect(spent(plan), `${location.id} ${minutes} ${focus}`).toBeLessThanOrEqual(minutes + 1e-9)
+              expect(spent(plan, minutes), `${location.id} ${minutes} ${focus}`).toBeLessThanOrEqual(minutes + 1e-9)
               expect(plan.estimatedMin).toBeLessThanOrEqual(minutes)
               expect(plan.fits).toBe(true)
             }

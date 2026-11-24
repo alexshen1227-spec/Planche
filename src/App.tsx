@@ -15,10 +15,7 @@ import { syncMilestonePins } from './lib/highlights'
 import { exportData } from './lib/exportImport'
 import { Icon, type IconName } from './components/Icon'
 import { Toasts } from './components/Toasts'
-import { Dashboard } from './views/Dashboard'
-import { Train } from './views/Train'
-import { Path } from './views/Path'
-import { SessionPlayer, type CheckInContext } from './views/SessionPlayer'
+import type { CheckInContext } from './views/SessionPlayer'
 import { APP_NAME } from './data/app'
 import { setAthleteLockout } from './lib/lockout'
 import { legacyOpenerLifts, readDayMarks } from './lib/plan/nextBlock'
@@ -39,37 +36,27 @@ const DevLab = lazy(() => import('./views/DevLab'))
  */
 const Updates = lazy(() => import('./views/Updates').then((m) => ({ default: m.Updates })))
 
-/**
- * Screens that are not on the path to training, loaded on demand: onboarding
- * runs once per install, and Learn, Progress and Settings are visited, not
- * lived in. Home, Train, Path and the session player stay in the main bundle
- * so the gym-floor path — open the app, start, hold — never waits on a chunk.
- * Tab changes run in a transition, so the current screen stays up while a
- * chunk loads, and the chunks are fetched once the app is idle anyway.
- */
-const loadLibrary = () => import('./views/Library')
-const loadStats = () => import('./views/Stats')
-const loadSettings = () => import('./views/Settings')
-const Library = lazy(() => loadLibrary().then((m) => ({ default: m.Library })))
-const Stats = lazy(() => loadStats().then((m) => ({ default: m.Stats })))
-const Settings = lazy(() => loadSettings().then((m) => ({ default: m.Settings })))
+// The service worker keeps these screens available offline. Only download and
+// evaluate the screen an athlete opens, warming a tab when they focus or touch it.
+const routes = {
+  home: () => import('./views/Dashboard').then((m) => ({ default: m.Dashboard })),
+  train: () => import('./views/Train').then((m) => ({ default: m.Train })),
+  path: () => import('./views/Path').then((m) => ({ default: m.Path })),
+  library: () => import('./views/Library').then((m) => ({ default: m.Library })),
+  stats: () => import('./views/Stats').then((m) => ({ default: m.Stats })),
+  settings: () => import('./views/Settings').then((m) => ({ default: m.Settings })),
+}
+const Dashboard = lazy(routes.home)
+const Train = lazy(routes.train)
+const Path = lazy(routes.path)
+const Library = lazy(routes.library)
+const Stats = lazy(routes.stats)
+const Settings = lazy(routes.settings)
+const SessionPlayer = lazy(() => import('./views/SessionPlayer').then((m) => ({ default: m.SessionPlayer })))
 const Onboarding = lazy(() => import('./views/Onboarding').then((m) => ({ default: m.Onboarding })))
 
-function usePrefetchScreens(enabled: boolean) {
-  useEffect(() => {
-    if (!enabled) return
-    const fetchAll = () => {
-      void loadLibrary()
-      void loadStats()
-      void loadSettings()
-    }
-    if (typeof window.requestIdleCallback === 'function') {
-      const id = window.requestIdleCallback(fetchAll, { timeout: 4000 })
-      return () => window.cancelIdleCallback(id)
-    }
-    const t = window.setTimeout(fetchAll, 1500)
-    return () => window.clearTimeout(t)
-  }, [enabled])
+function warmTab(next: Tab) {
+  if (next !== 'updates') void routes[next]().catch(() => undefined)
 }
 
 function useDevLabRoute(): boolean {
@@ -388,7 +375,6 @@ export default function App() {
       setGymEntry(null)
     }
   }, [state.onboarded])
-  usePrefetchScreens(state.onboarded && boot.phase === 'ready' && !devLab)
   // An interrupted session (phone slept, tab discarded) is picked back up
   // automatically on the next load instead of being silently lost.
   const [resumeDraft] = useState(() => loadDraft())
@@ -502,7 +488,7 @@ export default function App() {
     return (
       <AppShell>
         <Suspense fallback={<BootSplash />}>
-          <Onboarding />
+          <Onboarding key={state.epoch} />
         </Suspense>
       </AppShell>
     )
@@ -539,6 +525,8 @@ export default function App() {
             {navigation.map((n) => (
               <button
                 key={n.tab}
+                onFocus={() => warmTab(n.tab)}
+                onPointerEnter={() => warmTab(n.tab)}
                 onClick={() => setTab(n.tab)}
                 aria-label={n.label}
                 aria-current={navTab === n.tab ? 'page' : undefined}
@@ -572,7 +560,7 @@ export default function App() {
             <span className="font-display text-title3 font-bold text-ink">{APP_NAME}</span>
           </div>
 
-          <Suspense fallback={<div className="p-6 text-footnote text-ink3">Loading…</div>}>
+          <Suspense fallback={<div role="status" className="p-6 text-footnote text-ink3">Opening your training…</div>}>
           {tab === 'home' ? (
             <Dashboard
               startWorkout={startWorkout}
@@ -607,6 +595,8 @@ export default function App() {
           {navigation.map((n) => (
             <button
               key={n.tab}
+              onFocus={() => warmTab(n.tab)}
+              onPointerDown={() => warmTab(n.tab)}
               onClick={() => setTab(n.tab)}
               aria-label={n.label}
               aria-current={navTab === n.tab ? 'page' : undefined}
@@ -625,6 +615,7 @@ export default function App() {
 
       <MeasurePrompt open={showMeasure && !activeWorkout} onClose={() => setShowMeasure(false)} />
       {activeWorkout ? (
+        <Suspense fallback={<div role="status" className="fixed inset-0 z-50 grid place-items-center bg-bg px-5 text-body text-ink2">Opening your session…</div>}>
         <SessionPlayer
           workout={activeWorkout}
           resumeFrom={resuming ? resumeDraft : null}
@@ -663,6 +654,7 @@ export default function App() {
             setTab('stats')
           }}
         />
+        </Suspense>
       ) : null}
     </div>
     </AppShell>

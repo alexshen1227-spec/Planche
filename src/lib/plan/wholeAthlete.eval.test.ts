@@ -92,6 +92,19 @@ describe('one skill and whole-body training on three days', () => {
       expect(week.filter((d) => d.skill.some((s) => (s.parts[lead]?.key ?? 0) > 0)).length).toBeGreaterThanOrEqual(2)
     }
   })
+  it('uses three 15-minute visits for real handstand practice and lifts within the available time', () => {
+    for (const birthYear of [1993, 2012]) {
+      const out = season({ skills: ['handstand'], birthYear, steps: { handstand: 'hs-wall' }, kit: ['floor', 'wall'],
+        prefs: { minutesByDay: [0, 15, 0, 15, 0, 15, 0], goals: { physique: 5, strength: 3, skills: 3, power: 0, endurance: 0 } } }, 35)
+      for (const week of weeksOf(out)) {
+        expect(week.filter((day) => day.skill.length || day.gym)).toHaveLength(3)
+        expect(keySets(week, 'handstand')).toBeGreaterThanOrEqual(2)
+        expect(week.some((day) => day.gym?.items.some((item) => item.sets >= 2))).toBe(true)
+        for (const day of week) for (const session of day.skill) expect(session.minutes).toBeLessThanOrEqual(15)
+      }
+    }
+  })
+
   it('keeps knee and hip work in default planche weeks while retaining all three skill practices', () => {
     const out = season({ skills: ['planche'], birthYear: 1993, steps: { planche: 'lean' }, prefs: { minutesByDay: threeDays } }, 28)
     for (const week of weeksOf(out)) {

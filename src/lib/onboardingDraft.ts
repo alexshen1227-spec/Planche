@@ -1,0 +1,136 @@
+import { SKILL_IDS, type EquipmentId, type SkillId, type StepId, type Units } from '../types'
+import { EQUIPMENT_OPTIONS } from '../data/equipment'
+import { SKILLS, isRepGoal } from '../data/skills'
+import { startingMinutesByDay } from '../components/plan/onboardingPlan'
+import { defaultPrefs, sanitizeLocation, sanitizePrefs } from './gym/state'
+import type { GymLocation, TrainingPrefs } from './gym/types'
+import { nextInterviewItem, type InterviewAnswers } from './placement'
+import { SETUP_DRAFT_KEY } from './store'
+
+const STAGES = ['welcome', 'goals', 'skills', 'goal', 'interview', 'result', 'places', 'schedule', 'muscles', 'safety'] as const
+export type SetupStage = typeof STAGES[number]
+type StepsBySkill = Partial<Record<SkillId, StepId>>
+
+export interface SetupDraft {
+  stage: SetupStage
+  name: string
+  skills: SkillId[]
+  goals: StepsBySkill
+  pressGoals: Partial<Record<SkillId, string>>
+  answers: InterviewAnswers
+  skippedInterview: boolean
+  manual: StepsBySkill
+  manualIndex: number
+  prefs: TrainingPrefs
+  gyms: GymLocation[]
+  editing: { location: GymLocation; isNew: boolean } | null
+  birthYear: string
+  ageDeclined: boolean
+  bodyweightReminders: boolean
+  units: Units
+  weight: string
+  heightCm: string
+  heightFt: string
+  heightIn: string
+  equipment: EquipmentId[]
+  injuryNote: string
+}
+
+export function newSetupDraft(): SetupDraft {
+  return {
+    stage: 'welcome', name: '', skills: [], goals: {}, pressGoals: {}, answers: {},
+    skippedInterview: false, manual: {}, manualIndex: 0,
+    prefs: { ...defaultPrefs(), minutesByDay: startingMinutesByDay() },
+    gyms: [], editing: null, birthYear: '', ageDeclined: false, bodyweightReminders: false,
+    units: 'metric', weight: '', heightCm: '', heightFt: '', heightIn: '', equipment: ['floor'], injuryNote: '',
+  }
+}
+
+const record = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
+const stringOf = (v: unknown, max: number) => typeof v === 'string' ? v.slice(0, max) : ''
+
+function skillSteps(value: unknown): StepsBySkill {
+  const fields = record(value)
+  const result: StepsBySkill = {}
+  for (const skill of SKILL_IDS) {
+    const step = SKILLS[skill].steps.find((item) => item.id === fields[skill])
+    if (step) result[skill] = step.id
+  }
+  return result
+}
+
+/** Only answers reachable through the current interview can place an athlete. */
+function readAnswers(skills: SkillId[], value: unknown): InterviewAnswers {
+  const fields = record(value)
+  const answers: InterviewAnswers = {}
+  if (!skills.length) return answers
+  let question = nextInterviewItem(skills, answers)
+  while (question) {
+    const answer = fields[question.id]
+    if (typeof answer !== 'number' || !question.options.some((opt) => opt.value === answer)) break
+    answers[question.id] = answer
+    question = nextInterviewItem(skills, answers)
+  }
+  return answers
+}
+
+export function loadSetupDraft(epoch: string | undefined): SetupDraft | null {
+  if (!epoch) return null
+  try {
+    const json = localStorage.getItem(SETUP_DRAFT_KEY)
+    if (!json) return null
+    const envelope = record(JSON.parse(json))
+    if (envelope.v !== 1 || envelope.epoch !== epoch) return null
+    const d = record(envelope.draft)
+    let stage = STAGES.find((value) => value === d.stage)
+    if (!stage) return null
+    const base = newSetupDraft()
+    const prefs = sanitizePrefs(d.prefs) ?? base.prefs
+    const skills = Array.isArray(d.skills) ? [...new Set(d.skills.filter((id): id is SkillId => SKILL_IDS.includes(id)))] : []
+    const answers = readAnswers(skills, d.answers)
+    const skippedInterview = d.skippedInterview === true
+    if (prefs.goals.skills === 0 && ['skills', 'goal', 'interview', 'result'].includes(stage)) stage = 'places'
+    if (prefs.goals.skills > 0 && !skills.length && !['welcome', 'goals'].includes(stage)) stage = 'skills'
+    if (!skippedInterview && skills.length) {
+      if (stage === 'result' && nextInterviewItem(skills, answers)) stage = 'interview'
+      else if (stage === 'interview' && !nextInterviewItem(skills, answers)) stage = 'result'
+    }
+    const pressGoals: SetupDraft['pressGoals'] = {}
+    for (const skill of SKILL_IDS) {
+      const id = record(d.pressGoals)[skill]
+      if (isRepGoal(skill, id)) pressGoals[skill] = id
+    }
+    const gyms: GymLocation[] = []
+    if (Array.isArray(d.gyms)) {
+      for (const item of d.gyms) {
+        const place = sanitizeLocation(item)
+        if (place && place.id !== 'home' && !gyms.some((g) => g.id === place.id)) gyms.push(place)
+      }
+    }
+    const edit = record(d.editing)
+    const place = stage === 'places' ? sanitizeLocation(edit.location) : null
+    const editing = place && place.id !== 'home' && (edit.isNew === true) !== gyms.some((g) => g.id === place.id)
+      ? { location: { ...place, name: stringOf(record(edit.location).name, 40) }, isNew: edit.isNew === true }
+      : null
+    const equipment = Array.isArray(d.equipment)
+      ? [...new Set(d.equipment.filter((id): id is EquipmentId => EQUIPMENT_OPTIONS.some((o) => o.id === id)))]
+      : base.equipment
+    return {
+      stage, name: stringOf(d.name, 100), skills, goals: skillSteps(d.goals), pressGoals, answers, skippedInterview,
+      manual: skillSteps(d.manual),
+      manualIndex: typeof d.manualIndex === 'number' && Number.isInteger(d.manualIndex) ? Math.max(0, Math.min(d.manualIndex, skills.length - 1)) : 0,
+      prefs, gyms, editing, birthYear: stringOf(d.birthYear, 8), ageDeclined: d.ageDeclined === true,
+      bodyweightReminders: d.bodyweightReminders === true, units: d.units === 'imperial' ? 'imperial' : 'metric',
+      weight: stringOf(d.weight, 32), heightCm: stringOf(d.heightCm, 32), heightFt: stringOf(d.heightFt, 32),
+      heightIn: stringOf(d.heightIn, 32), equipment, injuryNote: stringOf(d.injuryNote, 2000),
+    }
+  } catch { return null }
+}
+
+export function saveSetupDraft(epoch: string, draft: SetupDraft): boolean {
+  try {
+    localStorage.setItem(SETUP_DRAFT_KEY, JSON.stringify({ v: 1, epoch, draft }))
+    return true
+  } catch { return false }
+}

@@ -529,7 +529,7 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
     })),
   })
 
-  it('hard sessions of a family the rest rule apart, every day within its minutes, two movements a gym block, assigned days as written', () => {
+  it('spaces hard sessions, fits each day, keeps enough lifts for its length, and respects assigned days', () => {
     const stats = { pressing: 0, athletes: 0, days: 0, cal: 0, gym: 0, openers: 0, kitless: 0, light: 0 }
     const calendarApart = (a: number, b: number) => {
       const d0 = (t: number) => new Date(new Date(t).toDateString()).getTime()
@@ -691,7 +691,8 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
             favoriteAt: s.gym!.favoriteAt,
             now: d.at,
           })
-          expect(b.fits && b.items.length >= 2, `${who} ${d.day} ${p.gym.focus} ${p.gym.minutes}m at ${loc.name} builds ${b.items.length}`).toBe(true)
+          const minimum = p.gym.minutes < 20 && !p.skill ? 1 : 2
+          expect(b.fits && b.items.length >= minimum, `${who} ${d.day} ${p.gym.focus} ${p.gym.minutes}m at ${loc.name} builds ${b.items.length}`).toBe(true)
           used += b.estimatedMin
           for (const it of b.items) if (PRESS.has(GYM_EXERCISE_BY_ID[it.exerciseId].pattern)) pressing += it.sets
           // A light pressing day (round 5b) presses under the heavy-pressing line, whatever it is built from.
@@ -901,13 +902,13 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
     expect(new Set(gymOpener(s, 'push', gymA, MON, 60)!.kit)).toEqual(new Set(['floor', 'parallettes', 'rings', ...gymA.equipment]))
     // The first priority's opener is the long one from 45 minutes (round five); another skill's keeps 18 under an hour.
     expect(gymOpener(s, 'push', gymA, MON, 45)?.minutes).toBe(openerMinutesFor(true, 45))
-    expect(gymOpener(s, 'pull', gymA, MON, 45)?.minutes).toBe(MIN_SKILL_MINUTES[1])
+    expect(gymOpener(s, 'pull', gymA, MON, 45)?.minutes).toBe(18)
     expect(op(s, 'pull')).toBe('frontlever')
     expect(op(s, 'upper')).toBe('planche')
     for (const focus of ['lower', 'full', 'athletic'] as GymFocus[]) expect(op(s, focus), focus).toBeUndefined()
     // Room for both blocks: the opener and the smallest gym block.
-    expect(op(s, 'push', MIN_SKILL_MINUTES[1] + MIN_GYM_MINUTES)).toBe('planche')
-    expect(op(s, 'push', MIN_SKILL_MINUTES[1] + MIN_GYM_MINUTES - 1)).toBeUndefined()
+    expect(op(s, 'push', 38)).toBe('planche')
+    expect(op(s, 'push', 37)).toBeUndefined()
     // Pain shuts every opener; a sore joint shuts the families that load it.
     expect(op({ ...s, symptoms: [symptom('wrist', 'pain')] }, 'pull')).toBeUndefined()
     const elbow = { ...s, symptoms: [symptom('elbow', 'niggle')] }

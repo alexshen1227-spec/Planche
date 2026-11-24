@@ -93,25 +93,12 @@ const sessionSets = (minutes: number, factor: number) => (Math.max(0, minutes - 
 export const FAMILY_SESSIONS_LEAD = 3
 export const FAMILY_SESSIONS_OTHER = 2
 
-/**
- * The smallest skill block the session builder keeps to, by how many skills
- * the block holds — measured, not chosen (2026-11-22: `finalizeWorkout` over
- * thirteen athletes, one to five skills, steps from foundations to advanced
- * tuck, both ages, budgets from 10 to 90 minutes). One skill never built under
- * 16 minutes and kept to every budget from 18; two built 21–23 minutes under
- * 25 and kept to every budget from 25; a third gets no work below 30
- * (`shortDoses`). A block is never planned smaller: the session it starts
- * would run past the day's minutes.
- */
-export const MIN_SKILL_MINUTES = { 1: 18, 2: 25, 3: 30 } as const
-/** The smallest gym block planned: a warm-up and two movements. */
-export const MIN_GYM_MINUTES = 20
-/**
- * A gym day's skill opener: one skill's ordinary session at the smallest size
- * the builder keeps to (`MIN_SKILL_MINUTES[1]`), so the gym stays the main
- * session of the day.
- */
-export const OPENER_MINUTES = MIN_SKILL_MINUTES[1]
+// A standalone 15-minute visit can be a single skill practice or a short
+// lifting session. Combined days reserve a full lifting block after the opener.
+export const MIN_SKILL_MINUTES = { 1: 15, 2: 25, 3: 30 } as const
+export const MIN_GYM_MINUTES = 15
+const MIN_LIFTS_AFTER_OPENER = 20
+export const OPENER_MINUTES = 18
 /** From this many minutes in the day, the opener is `LONG_OPENER_MINUTES`. */
 export const LONG_OPENER_FROM = 60
 /** A long day's opener: at 18 minutes a 60-minute day's opener was a warm-up, four short holds and a cooldown. */
@@ -127,9 +114,9 @@ export function openerMinutes(dayMinutes: number): number {
 
 /**
  * From this many minutes in a day the first priority's opener is
- * `LONG_OPENER_MINUTES`: the lifts still keep `MIN_GYM_MINUTES` beside it.
+ * `LONG_OPENER_MINUTES`: the lifts still keep their full block beside it.
  */
-export const FIRST_OPENER_FROM = LONG_OPENER_MINUTES + MIN_GYM_MINUTES
+export const FIRST_OPENER_FROM = LONG_OPENER_MINUTES + MIN_LIFTS_AFTER_OPENER
 
 /**
  * A gym day's opener, by whose it is. The athlete's first priority gets the
@@ -330,8 +317,8 @@ function openerVerdict(state: AppState, focus: GymFocus, location: GymLocation, 
   const goals = state.gym?.prefs?.goals ?? defaultPrefs(0).goals
   if (goals.skills <= 0) return { why: 'Skills are not among your goals, so the lifts start the session.' }
   if (day.pain) return { why: 'You reported pain, so no skill work goes first today.' }
-  if (day.minutes < OPENER_MINUTES + MIN_GYM_MINUTES) {
-    return { why: `${day.minutes} minutes has no room for skill work first: an opener and the lifts take ${OPENER_MINUTES + MIN_GYM_MINUTES} minutes or more.` }
+  if (day.minutes < OPENER_MINUTES + MIN_LIFTS_AFTER_OPENER) {
+    return { why: `${day.minutes} minutes has no room for skill work first: an opener and the lifts take ${OPENER_MINUTES + MIN_LIFTS_AFTER_OPENER} minutes or more.` }
   }
   const kit = kitAt(state, location)
   let why: string | undefined
@@ -1511,6 +1498,9 @@ function exposureParts(state: AppState, at: number, parts: Part[], minutes: numb
  */
 function lineupParts(state: AppState, d: DayCtx, allowed: SkillId[], minutes: number, opts: LineupOpts = {}): Part[] {
   if (d.sportRest.push || d.sportRest.pull) allowed = allowed.filter((skill) => !sportRestsSkill(d, skill))
+  if (minutes < OPENER_MINUTES) {
+    allowed = allowed.filter((s) => builtSkill(state, [s], minutes, d.at, placeKit(state)).minutes <= minutes)
+  }
   if (!allowed.length || roomFor(minutes) === 0) return []
   const order = trainedSkills(state)
   if (roomFor(minutes) === 1 && !d.assigned) {
@@ -1591,7 +1581,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
   const lead = skillFamily(first)
   const shortWeek = prefs.minutesByDay.filter((m) => m >= MIN_SKILL_MINUTES[1]).length <= 3
   const gymFirst = ctx.wantsGym && g.skills > 0 && Math.max(g.strength, g.physique, g.power, g.endurance) >= g.skills + 2 &&
-    prefs.minutesByDay.some((m) => m >= OPENER_MINUTES + MIN_GYM_MINUTES)
+    prefs.minutesByDay.some((m) => m >= OPENER_MINUTES + MIN_LIFTS_AFTER_OPENER)
   const skillDays = Math.max(1, Math.ceil(prefs.minutesByDay.filter((m) => m >= MIN_SKILL_MINUTES[1]).length * ctx.share))
   const target = (f: Straight) => (f === lead ? FAMILY_SESSIONS_LEAD : FAMILY_SESSIONS_OTHER)
   // Whether each skill's session at its current step reaches the hard count at all (with the kit it has anywhere).
@@ -1851,9 +1841,11 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     // min" while the session it started was "waiting for kit".
     const pool = (d.assigned ?? skills.filter((s) => skillFamily(s) === 'balance' || !blocked[skillFamily(s) as Straight]))
       .filter((s) => !sportRestsSkill(d, s))
-    const allowed = pool.filter((s) => trains(view, s))
+    const fitsSkill = (athlete: AppState, s: SkillId) => d.minutes >= OPENER_MINUTES ||
+      builtSkill(athlete, [s], d.minutes, d.at, placeKit(athlete)).minutes <= d.minutes
+    const allowed = pool.filter((s) => trains(view, s) && fitsSkill(view, s))
     // Skills free today that only the gym's kit holds: a calisthenics day for one of them is planned there.
-    const gymOnly = canMove(i) && places.gymCal && !d.assigned ? pool.filter((s) => !trains(view, s) && trains(places.gymCal!, s)) : []
+    const gymOnly = canMove(i) && places.gymCal && !d.assigned ? pool.filter((s) => !trains(view, s) && trains(places.gymCal!, s) && fitsSkill(places.gymCal!, s)) : []
     const calOK = (allowed.length > 0 || gymOnly.length > 0) && d.minutes >= MIN_SKILL_MINUTES[1]
     // A place where a gym block builds; the gym goals decide whether the coach uses it, and an athlete's own pick
     // ("Rather do the gym", the Gym tab) needs only the place.
@@ -1942,7 +1934,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
       if (lastPractice) {
         kind = 'calisthenics'
         why = 'skill-practice'
-      } else if (gymFirst && !exposure && !d.assigned && d.minutes >= OPENER_MINUTES + MIN_GYM_MINUTES && !d.pain) {
+      } else if (gymFirst && !exposure && !d.assigned && d.minutes >= OPENER_MINUTES + MIN_LIFTS_AFTER_OPENER && !d.pain) {
         // When gym training leads, use a second skill as an opener where it fits.
         // A full skill day still stands when its main hold needs more than an opener.
         kind = 'gym'
@@ -2903,7 +2895,9 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   const here = todayKit ? withRequestKit(base, { source: 'auto', kit: todayKit }) : base
   const places: Places = {
     fixedToday: Boolean(opts.todayPlace && opts.todayPlace.id !== place?.id),
-    cal: (i) => (i === 0 ? here : base),
+    // Today's recorded work can change the next warm-up. On a brief future
+    // visit that can be the difference between two working holds and three.
+    cal: (i) => i === 0 ? here : days[i].minutes < OPENER_MINUTES ? state : base,
     ...(place && hasGymKit(place) ? { gymCal: withRequestKit(base, { source: 'auto', kit: kitAt(base, place) }), gym: place } : {}),
   }
   const youth = conservative(state.profile, now)
@@ -2946,9 +2940,10 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     return built.get(key)!
   }
   const viable = (d: DayCtx, minutes: number, focus: GymFocus, spare: Muscle[] = []): boolean => {
-    if (!placeAt(d.index) || minutes < MIN_GYM_MINUTES) return false
+    const minimum = minutes < d.minutes ? MIN_LIFTS_AFTER_OPENER : MIN_GYM_MINUTES
+    if (!placeAt(d.index) || minutes < minimum) return false
     const plan = buildAt(d, minutes, focus, spare)
-    return plan.fits && ownMovements(plan.items, focus) >= 2
+    return plan.fits && ownMovements(plan.items, focus) >= (minutes < MIN_LIFTS_AFTER_OPENER ? 1 : 2)
   }
   /** What the session a focus builds on a day does to each muscle, set by set (`gymSetLoading`): a full-body day's two squat and two hinge sets are four glute sets. */
   const credits = new WeakMap<ReturnType<typeof buildAt>, Credit>()
@@ -3023,7 +3018,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       if (missingKit('handstand', kit).length) continue
       const full = builtSkill(base, ['handstand'], d.minutes, d.at, kit)
       const minutes = Math.max(MIN_SKILL_MINUTES[1], full.minutes)
-      if (full.painSafe || d.minutes - minutes < MIN_GYM_MINUTES || !full.key.handstand) continue
+      if (full.painSafe || d.minutes - minutes < MIN_LIFTS_AFTER_OPENER || !full.key.handstand) continue
       const opener = builtSkill(base, ['handstand'], minutes, d.at, kit, true)
       if (opener.key.handstand !== full.key.handstand || opener.rest.push !== full.rest.push ||
           (opener.credit['front-delts'] ?? 0) < (full.credit['front-delts'] ?? 0)) continue
@@ -3060,7 +3055,8 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   const selectedSkills = g.skills > 0 || days.some((d) => d.assigned?.length)
   const sharesRecovery = (fam: Straight) => (selectedSkills && skills.some((s) => skillFamily(s) === fam)) ||
     slots.some((s) => s.families.has(fam) || s.hint === fam || (fam === 'push' && s.presses)) ||
-    logged[fam].some((e) => !e.gym && e.at < now && insideRest(now, e.at, restMs))
+    logged[fam].some((e) => e.at < now && insideRest(now, e.at, restMs) &&
+      (!e.gym || state.profile.skills?.some((s) => skillFamily(s) === fam)))
   const shared = { push: sharesRecovery('push'), pull: sharesRecovery('pull') }
   // The days that hold hard sessions of a family: the calisthenics days while the gym is planned, then every day's.
   let familySlots = slots
@@ -3155,7 +3151,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     const slot = slots[d.index]
     const location = placeAt(d.index)
     if (slot.why !== 'leg-coverage' || slot.reservedOpener || !location || d.assigned || d.pain || d.niggle || d.held ||
-        d.minutes < OPENER_MINUTES + MIN_GYM_MINUTES || (d.index === 0 && opts.todayFocus)) continue
+        d.minutes < OPENER_MINUTES + MIN_LIFTS_AFTER_OPENER || (d.index === 0 && opts.todayFocus)) continue
     const kit = kitAt(base, location)
     const scheduled = (s: SkillId) => slots.some((sl, j) => days[j].week === d.week &&
       (sl.skills.includes(s) || sl.reservedOpener?.skill === s || (sl.hint && skills.find((sk) => skillFamily(sk) === sl.hint) === s)))
@@ -3840,7 +3836,7 @@ function kindReason(slot: SkillSlot, d: DayCtx, skills: SkillId[], extra: DayExt
     case 'no-skill-goal':
       return slot.kind === 'gym' ? 'Skills are not among your goals, so training days go to the gym.' : undefined
     case 'gym-unfit':
-      return `No gym session fits today${at}${d.liftJoints.length ? ` with your ${d.liftJoints.join(' and ')} kept out` : ''}: fewer than two movements are left, so today is calisthenics.`
+      return `No gym session fits today${at}${d.liftJoints.length ? ` with your ${d.liftJoints.join(' and ')} kept out` : ''}: ${d.minutes < MIN_LIFTS_AFTER_OPENER ? 'no suitable lift fits the time' : 'fewer than two suitable movements fit'}, so today is calisthenics.`
     case 'gym-blocked':
       return `No gym session fits today’s rules${at}. The planner checked your equipment, recent training and joint limits. ${slot.kind === 'calisthenics' ? 'Your skill session fits today.' : 'Today is a recovery day.'}`
     case 'family':
@@ -4192,7 +4188,7 @@ function kindShort(slot: SkillSlot, skills: SkillId[], week: { cal: number; gym:
       return slot.kind === 'gym' ? 'No skill work fits the rest rules: a gym day.' : undefined
     case 'gym-unfit':
     case 'gym-blocked':
-      return slot.kind === 'calisthenics' ? 'No gym session fits today: calisthenics.' : 'No gym session fits today: under two movements.'
+      return slot.kind === 'calisthenics' ? 'No gym session fits today: calisthenics.' : 'No suitable lifting session fits today.'
     case 'family':
       return slot.urgent
         ? sessions[slot.urgent] >= familyTarget(skills, slot.urgent)

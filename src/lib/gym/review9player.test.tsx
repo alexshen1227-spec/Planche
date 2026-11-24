@@ -71,7 +71,7 @@ it.each(['weighted-pull-up', 'weighted-dip', 'weighted-push-up'])('logs a first 
 
 it('recovers the remaining rest, unanswered effort and typed notes when the phone reloads', async () => {
   const { GymPlayer } = await import('../../components/gym/GymPlayer')
-  const start = { ...draft, startedAt: Date.now(), items: [{ ...draft.items[0], sets: [{ reps: 10, load: 25, done: false }] }] }
+  const start = { ...draft, startedAt: Date.now(), items: [{ ...draft.items[0], sets: [{ reps: 10, load: 25, done: false }, { reps: 10, load: 25, done: false }] }] }
   const mount = (d: GymDraft) => render(<GymPlayer draft={d} location={gym.locations[0]} onClose={() => undefined} />)
   const first = mount(start)
   fireEvent.click(screen.getByLabelText('Complete set 1'))

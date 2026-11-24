@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-24',
+    title: 'Train on a 15-minute schedule',
+    area: 'training',
+    notes: [
+      'A 15-minute day can now hold a skill practice or a short lifting session. The plan checks the actual workout against the clock, including warm-up and recovery between sets.',
+      'Setup remembers your place, skill answers and partially entered gym equipment on this device. You can close the tab and pick up where you left off.',
+      'Home, Train and the workout player load as you open them. The installed app keeps those screens available offline.',
+    ],
+  },
+  {
+    date: '2026-11-24',
     title: 'Train the whole body alongside your skill',
     area: 'training',
     notes: [
