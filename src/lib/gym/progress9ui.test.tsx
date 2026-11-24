@@ -45,15 +45,22 @@ describe('progress9: the gym player names what it asks for and keeps focus', () 
     expect(screen.queryAllByLabelText(/^Set 1 load$/).length).toBe(0)
   })
 
-  it('completing a set moves focus to the next set instead of dropping it to the page', async () => {
+  it('moves keyboard focus from set completion to effort, then to the next set or Finish', async () => {
     const { GymPlayer } = await import('../../components/gym/GymPlayer')
     render(<GymPlayer draft={draft} location={gym.locations[0]} onClose={() => undefined} />)
-    fireEvent.click(screen.getByLabelText('Complete set 1'))
+    fireEvent.click(screen.getByLabelText('Complete set 1 of Leg curl'))
+    expect(document.activeElement?.closest('[data-effort]')).toBe(screen.getByRole('group', { name: 'Effort for Leg curl, set 1' }))
+    fireEvent.click(screen.getByRole('button', { name: '7' }))
     await act(async () => {
       await new Promise((r) => setTimeout(r, 50))
     })
     const active = document.activeElement as HTMLElement
     expect(active).not.toBe(document.body)
     expect(active.closest('[data-set="0-1"]')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Undo set 1 of Leg curl' })).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Complete set 2 of Leg curl'))
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }))
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Finish' }))
   })
 })

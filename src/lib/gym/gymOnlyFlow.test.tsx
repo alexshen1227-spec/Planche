@@ -81,7 +81,7 @@ it('stops a live gym session, restores the joint report, and saves only the comp
     render(<StoreProvider><GymPlayer draft={d} location={place} onClose={() => {}} /></StoreProvider>)
   const click = (label: string) => fireEvent.click(screen.getByRole('button', { name: label }))
   const first = player(draft)
-  click('Complete set 1')
+  click('Complete set 1 of Incline dumbbell press')
   click('Something hurts')
   click('Pain')
   click('Shoulder')
@@ -291,9 +291,9 @@ it('lets a gym-only athlete log a first set, reload Home and finish the original
   expect(screen.queryByRole('button', { name: /rather do calisthenics/i })).toBeNull()
   fireEvent.click(within(screen.getByRole('region', { name: 'Today’s session' })).getByRole('button'))
   click(/nothing hurts.*start/i)
-  const firstSet = screen.getAllByLabelText('Complete set 1')[0]
+  const firstSet = screen.getAllByLabelText(/^Complete set 1 of /)[0]
   fireEvent.click(firstSet)
-  expect(screen.getByRole('group', { name: 'How hard was that set?' })).toBeTruthy()
+  expect(screen.getByRole('group', { name: /^Effort for .+, set 1$/ })).toBeTruthy()
   click('8')
   click('Finish')
   click('Save session')

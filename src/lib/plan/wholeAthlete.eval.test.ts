@@ -160,16 +160,16 @@ describe('one skill and whole-body training on three days', () => {
     }
   })
 
-  it('fits presses and direct knee and hip work into six weeks of 15-minute home lifting', () => {
+  it.each([15, 19, 20, 21, 25])('fits presses and knee and hip work into six weeks of %i-minute home lifting', (minutes) => {
     const place = { ...GYM_PLACE, equipment: ['floor', 'wall'] as typeof GYM_PLACE.equipment }
     const out = season({ skills: [], birthYear: 1993, active: 'home', kit: ['floor', 'wall'],
-      prefs: { minutesByDay: [0, 15, 0, 15, 0, 15, 0], goals: { skills: 0, physique: 5, strength: 2, power: 0, endurance: 0 } } }, 42, {}, place)
+      prefs: { minutesByDay: [0, minutes, 0, minutes, 0, minutes, 0], goals: { skills: 0, physique: 5, strength: 2, power: 0, endurance: 0 } } }, 42, {}, place)
     for (const week of weeksOf(out)) {
       const start = weekStart(week[0].at)
       const sets = setsPerMuscle([], out.state.gym!.sessions, start, addDays(start, 7))
       expect(week.filter((d) => d.gym)).toHaveLength(3)
       for (const muscle of ['chest', 'quads', 'hamstrings'] as const) expect(sets[muscle] ?? 0, muscle).toBeGreaterThanOrEqual(2)
-      for (const day of week) if (day.gym) expect(day.gym.estimatedMin).toBeLessThanOrEqual(15)
+      for (const day of week) if (day.gym) expect(day.gym.estimatedMin).toBeLessThanOrEqual(minutes)
     }
   })
 

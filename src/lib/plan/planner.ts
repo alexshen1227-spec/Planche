@@ -3365,29 +3365,28 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   // Keep a week that already covers the lower body. Only split off a skill
   // day if the actual gym allocation would otherwise leave the legs out.
   const wantsLegs = g.physique > 0 && (g.physique >= Math.max(g.skills, g.strength, g.power, g.endurance) || prefs.musclesPriority.some((m) => LEG_MUSCLES.includes(m)))
-  const briefGymWeek = prefs.minutesByDay.every((m) => m < MIN_LIFTS_AFTER_OPENER)
-  if (!opts.coverLegWeeks && (g.skills > 0 || briefGymWeek) && gymWanted && !legsOff && targets.quads[0] > 0 && wantsLegs) {
+  if (!opts.coverLegWeeks && gymWanted && !legsOff && wantsLegs && (targets.quads[0] > 0 || targets.hamstrings[0] > 0)) {
     const uncovered = [...new Set(days.map((d) => d.week))].filter((wk) => {
-      if (!briefGymWeek && legsLast !== undefined && weekStart(legsLast) === wk) return false
       const training = days.filter((d) => d.week === wk && !d.restDay && d.minutes >= MIN_GYM_MINUTES)
       if (training.length + (wk === thisWeek ? before.cal + before.gym : 0) < 2) return false
-      if (briefGymWeek) {
-        // One brief squat session covers the knees but can leave the
-        // hamstrings idle. Count the actual lifts across all visits.
-        const legSets = setsPerMuscle([], gymSessions, wk, Math.min(today, addDays(wk, 7)))
-        for (const d of training) {
-          const focus = focusOf(d.index)
-          if (focus && slots[d.index].kind === 'gym') addCredit(legSets, liftCredit(d, ctx.gymMinutes(d.index, focus), focus))
-        }
-        if ((legSets.quads ?? 0) >= 2 && (prefs.musclesOff.includes('hamstrings') || (legSets.hamstrings ?? 0) >= 2)) return false
-      } else if (training.some((d) => {
+      // A mixed week with a full lower-body visit already serves the legs.
+      // Reallocating that week a second time can cost the first skill its practice.
+      if (g.skills > 0 && training.some((d) => d.minutes >= MIN_SKILL_MINUTES[2] + MIN_LIFTS_AFTER_OPENER) &&
+          ((legsLast !== undefined && weekStart(legsLast) === wk) || training.some((d) => {
+            const focus = slots[d.index].kind === 'gym' ? focusOf(d.index) : null
+            if (focus === 'lower') return true
+            if (focus !== 'full' && focus !== 'athletic') return false
+            const work = liftCredit(d, ctx.gymMinutes(d.index, focus), focus)
+            return (work.quads ?? 0) >= 2 && (work.hamstrings ?? 0) >= 1
+          }))) return false
+      // A session labelled “full body” may only fit a squat and a press.
+      // Check the sets across the entire week at every visit length.
+      const legSets = setsPerMuscle([], gymSessions, wk, Math.min(today, addDays(wk, 7)))
+      for (const d of training) {
         const focus = focusOf(d.index)
-        if (!focus || slots[d.index].kind !== 'gym') return false
-        if (focus === 'lower') return true
-        if (focus !== 'full' && focus !== 'athletic') return false
-        const credit = liftCredit(d, ctx.gymMinutes(d.index, focus), focus, [])
-        return (credit.quads ?? 0) >= 2 && (credit.hamstrings ?? 0) >= 1
-      })) return false
+        if (focus && slots[d.index].kind === 'gym') addCredit(legSets, liftCredit(d, ctx.gymMinutes(d.index, focus), focus))
+      }
+      if ((['quads', 'hamstrings'] as const).every((m) => targets[m][0] === 0 || (legSets[m] ?? 0) >= 2)) return false
       return training.some((d) => !d.assigned && legsOpen(d))
     })
     if (uncovered.length) return planWeekAhead(state, now, { ...opts, coverLegWeeks: uncovered })

@@ -116,6 +116,7 @@ export function GymPlayer({
   const [reportOpen, setReportOpen] = useState(false)
   const finishing = finishOpen || Boolean(draft.stopReport)
   const [query, setQuery] = useState('')
+  const playerRef = useRef<HTMLDivElement | null>(null)
   const restEndedRef = useRef((initial.rest?.until ?? Infinity) <= Date.now())
   const [unlocked, setUnlocked] = useState<GymBadge[] | null>(null)
   const lastSheet = useRef(sheet)
@@ -145,6 +146,23 @@ export function GymPlayer({
   }, [now, rest])
 
   const update = (fn: (d: GymDraft) => GymDraft) => setDraft((d) => fn(structuredClone(d)))
+  useEffect(() => {
+    if (askRpe) playerRef.current?.querySelector<HTMLButtonElement>(`[data-set="${askRpe.item}-${askRpe.set}"] [data-effort] button`)?.focus()
+  }, [askRpe?.item, askRpe?.set])
+  const finishEffort = (i: number, j: number, rpe?: number) => {
+    update((d) => {
+      if (rpe !== undefined) d.items[i].sets[j].rpe = rpe
+      delete d.effortFor
+      return d
+    })
+    requestAnimationFrame(() => {
+      const rows = [...(playerRef.current?.querySelectorAll<HTMLElement>('[data-set]') ?? [])]
+      const current = rows.findIndex((row) => row.dataset.set === `${i}-${j}`)
+      const next = [...rows.slice(current + 1), ...rows.slice(0, current)].find((row) => row.hasAttribute('data-pending-set'))
+      const control = next?.querySelector<HTMLElement>('input') ?? playerRef.current?.querySelector<HTMLButtonElement>('[data-finish]')
+      control?.focus()
+    })
+  }
   const records = useMemo(() => gymRecords(gym.sessions, location.id), [gym.sessions, location.id])
 
   /** A load far above this lift's best, asked about before the set is logged: a slipped decimal once set records for good. */
@@ -226,12 +244,6 @@ export function GymPlayer({
     if (wasDone) return
     buzz(25)
     restEndedRef.current = false
-    // The completed button is replaced under the finger, which dropped focus to the page: it goes on to the next
-    // set's input, or back to this set's own button when it was the last.
-    requestAnimationFrame(() => {
-      const next = document.querySelector<HTMLElement>(`[data-set="${i}-${j + 1}"] input`) ?? document.querySelector<HTMLElement>(`[data-set="${i}-${j}"] button[aria-label^="Set"]`)
-      next?.focus()
-    })
   }
 
   const swapTo = (i: number, exerciseId: string) => {
@@ -383,7 +395,7 @@ export function GymPlayer({
   const rating = (id: string): Rating | undefined => gym.ratings[id]
 
   const body = (
-    <div className="fixed inset-0 z-50 flex flex-col bg-bg text-ink" role="dialog" aria-label="Gym session">
+    <div ref={playerRef} className="fixed inset-0 z-50 flex flex-col bg-bg text-ink" role="dialog" aria-label="Gym session">
       <header className="flex items-center gap-3 border-b border-line bg-surface px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
         <div className="min-w-0 flex-1">
           <p className="truncate text-title3 font-semibold">{draft.name}</p>
@@ -397,7 +409,7 @@ export function GymPlayer({
           setDoubt(null)
           setReportOpen(true)
         }}>Something hurts</Button>
-        <Button
+        <Button data-finish
           onClick={() => {
             if (blocker) {
               pushToast(blocker, 'info')
@@ -473,7 +485,7 @@ export function GymPlayer({
 
                 <div className="mt-3 space-y-2">
                   {item.sets.map((s, j) => (
-                    <div key={j} data-set={`${i}-${j}`}>
+                    <div key={j} data-set={`${i}-${j}`} data-pending-set={!s.done && !item.held ? true : undefined}>
                       <SwipeRow
                         onComplete={s.done ? undefined : () => completeSet(i, j)}
                         onEdit={() => document.querySelector<HTMLInputElement>(`[data-set="${i}-${j}"] input`)?.focus()}
@@ -547,7 +559,7 @@ export function GymPlayer({
                         <button
                           onClick={() => completeSet(i, j)}
                           aria-pressed={s.done}
-                          aria-label={s.done ? `Set ${j + 1} done — tap to undo` : `Complete set ${j + 1}`}
+                          aria-label={`${s.done ? 'Undo' : 'Complete'} set ${j + 1} of ${ex.name}`}
                           className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-control ds-press ${
                             s.done ? 'bg-ok text-white' : 'border border-line-strong bg-surface text-ink3'
                           }`}
@@ -560,24 +572,18 @@ export function GymPlayer({
                         <p className="mt-0.5 pl-9 text-caption text-ink3">RPE {s.rpe}</p>
                       ) : null}
                       {askRpe && askRpe.item === i && askRpe.set === j ? (
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-1 sm:pl-8" role="group" aria-label="How hard was that set?">
+                        <div data-effort className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-1 sm:pl-8" role="group" aria-label={`Effort for ${ex.name}, set ${j + 1}`}>
                           <span className="mr-1 text-caption text-ink3">Effort</span>
                           {RPE_CHOICES.map((r) => (
                             <button
                               key={r}
-                              onClick={() => {
-                                update((d) => {
-                                  d.items[i].sets[j].rpe = r
-                                  delete d.effortFor
-                                  return d
-                                })
-                              }}
+                              onClick={() => finishEffort(i, j, r)}
                               className="h-11 min-w-11 rounded-lg border border-line bg-surface px-2 text-body font-semibold ds-press"
                             >
                               {r}
                             </button>
                           ))}
-                          <button onClick={() => setDraft((d) => ({ ...d, effortFor: undefined }))} className="h-11 px-2 text-caption text-ink3">
+                          <button onClick={() => finishEffort(i, j)} className="h-11 px-2 text-caption text-ink3">
                             Skip
                           </button>
                         </div>
@@ -846,7 +852,7 @@ export function GymPlayer({
       <Sheet open={reportOpen} onClose={() => setReportOpen(false)} title="Report pain or discomfort">
         {reportOpen && <JointReportFields onRecord={recordSymptom} onCancel={() => setReportOpen(false)} />}
       </Sheet>
-      <Sheet open={finishing} onClose={() => setFinishing(false)} title={draft.stopReport ? 'Training stopped' : 'Finish this session?'}>
+      <Sheet open={finishing} onClose={() => draft.stopReport ? onClose() : setFinishing(false)} title={draft.stopReport ? 'Training stopped' : 'Finish this session?'}>
         {draft.stopReport && <JointReportNotice recorded={draft.stopReport} onUndo={(report) => {
           if (!canEdit() || !draft.stopReport) return
           dispatch({ type: 'RECORD_SYMPTOM', event: { ...report, at: Math.max(Date.now(), draft.stopReport.at), source: 'attempt', correction: true, correctsAt: draft.stopReport.at } })

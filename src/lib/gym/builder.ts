@@ -423,7 +423,11 @@ export function planGymExercises(input: GymSessionInput) {
       }
     }
   } else {
-    const brief = minutes >= 15 && minutes < 20
+    // If four two-set compound blocks cannot fit, rotate the knee/hip and
+    // push/pull work across visits before spending time on a second angle.
+    const warmUp = Math.max(0, input.warmUpMin ?? WARM_UP_MIN)
+    const brief = minutes >= 15 && (minutes < 20 || (minutes - warmUp < 4 * blockMinutes(2, 120) &&
+      !here.some((ex) => PULLING_PATTERNS.has(ex.pattern) && usable(ex))))
     const slots: Pattern[][] = brief && (focus === 'full' || focus === 'lower' || focus === 'upper')
       ? briefSlots(focus, sessions, now) : [...SLOTS[focus]]
     // A short upper session still gets a press and a pull. When the week
