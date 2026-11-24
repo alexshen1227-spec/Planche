@@ -331,6 +331,8 @@ export function planGymExercises(input: GymSessionInput) {
   const used = new Set<string>()
   const movement = (e: GymExercise) => e.variantOf ?? e.id
   const items: Omit<PlannedExercise, 'suggestion'>[] = []
+  const warm = input.warmUpMin !== undefined ? Math.max(0, input.warmUpMin) : focus === 'athletic' ? ATHLETIC_WARM_UP_MIN : WARM_UP_MIN
+  let pair: [string, string] | undefined
   /** Movements whose dose is capped to keep the rest of the week's workouts available. */
   const steered = new Set<string>()
   const protectSets = new Set<string>()
@@ -604,12 +606,14 @@ export function planGymExercises(input: GymSessionInput) {
           for (const id of anchors) if (!isLeg(id) && !direct.includes(id) && id !== upperAnchor) anchors.delete(id)
         }
       }
+      // Use the week's extra priorities to break ties when movements compete for time.
+      const rankExtraPriority = split && (input.athletePriority === undefined || total() > minutes)
       const rank = (id: string) => {
         const ex = GYM_EXERCISE_BY_ID[id]
         if (ex.explosive || anchors.has(id) || (focus === 'lower' && ex.pattern === 'hinge')) return 0
         if (protectSets.has(id)) return ex.primary.some((m) => requested.has(m)) ? 1 : 2
         if (ex.primary.some((m) => requested.has(m))) return 3
-        return split && isPriority(ex) ? 4 : 5
+        return rankExtraPriority && isPriority(ex) ? 4 : 5
       }
       items.sort((a, b) => rank(a.exerciseId) - rank(b.exerciseId))
     }
@@ -622,9 +626,7 @@ export function planGymExercises(input: GymSessionInput) {
   // down to two; then give up the last slots, down to one block. A block that
   // cannot fit even alone is reported, never built on invented minutes.
   const dropped: string[] = []
-  const warm = input.warmUpMin !== undefined ? Math.max(0, input.warmUpMin) : focus === 'athletic' ? ATHLETIC_WARM_UP_MIN : WARM_UP_MIN
-  let pair: [string, string] | undefined
-  const total = () => {
+  function total() {
     const blocks = items.reduce((m, it) => m + blockMinutes(it.sets, it.restSec, GYM_EXERCISE_BY_ID[it.exerciseId].dose?.workSec), 0)
     // A brief visit finishes at its last set. Longer visits keep the usual
     // allowance to change equipment, rerack weights and record the workout.
@@ -836,7 +838,10 @@ export function planGymExercises(input: GymSessionInput) {
         }
       })
       if (cut >= 0) items[cut] = { ...items[cut], sets: items[cut].sets - 1 }
-      else if (items.length > 1) dropped.unshift(GYM_EXERCISE_BY_ID[items.splice(lowestPriorityIndex(), 1)[0].exerciseId].name)
+      else if (items.length > 1) {
+        const [removed] = items.splice(lowestPriorityIndex(), 1)
+        dropped.unshift(GYM_EXERCISE_BY_ID[removed.exerciseId].name)
+      }
       else break
     }
   } else if (items.length && factor > 1 && !introductory) {

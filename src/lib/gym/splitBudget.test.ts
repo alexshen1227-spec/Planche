@@ -39,6 +39,16 @@ it('trims Pull isolation work before either main pulling movement', () => {
   expect(lifts.map((e) => e.pattern)).not.toContain('rear-delt')
 })
 
+it('uses a weekly curl suggestion to choose which accessory fits a short Pull day', () => {
+  const accessories = (minutes: number) => {
+    const workout = buildGymSession({ location: home, focus: 'pull', minutes, sessions: [],
+      ...steerInput({ priority: ['biceps'] }) })
+    return exercises(workout).map((e) => e.pattern).filter((p) => p === 'biceps' || p === 'rear-delt')
+  }
+  expect(accessories(22)).toEqual(['biceps'])
+  expect(accessories(60).slice(0, 2)).toEqual(['rear-delt', 'biceps'])
+})
+
 it('keeps the main Push presses ahead of accessory priorities and excludes pulling muscles', () => {
   const workout = plan('push', ['side-delts', 'triceps', 'abs', 'lats', 'rear-delts'])
   const lifts = exercises(workout)
