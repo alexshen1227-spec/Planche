@@ -1,1 +1,0 @@
-import{j as e,I as s}from"./index-DdlBFsNj.js";function c({icon:n,size:t=40,earned:r=!0,className:a=""}){return e.jsx("span",{"aria-hidden":"true",className:`grid shrink-0 place-items-center rounded-control ${r?"bg-accent-soft text-accent-text":"bg-raised text-ink3"} ${a}`,style:{width:t,height:t},children:e.jsx(s,{name:n,size:Math.round(t*.52)})})}export{c as B};
