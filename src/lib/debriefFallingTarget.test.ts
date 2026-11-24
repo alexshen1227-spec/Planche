@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { AppState, Session, SetLog } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { initialState } from './store'
-import { debriefSession } from './coach'
+import { buildPlan, debriefSession } from './coach'
+import { barMet } from './progression'
 import { workingTargetSec } from './workingTarget'
 import { adaptiveTarget } from './workingTarget'
 
@@ -43,6 +44,25 @@ function targetLine(prev: AppState, session: Session): { before: number; after: 
 }
 
 describe('a falling target names its real reason', () => {
+  it('uses completed calls and the shorter sets without reporting camera or between-day evidence from one visit', () => {
+    const prev: AppState = { ...base(), stepId: 'hs-wall', baseStepId: 'hs-wall', unlocked: ['hs-wall'],
+      profile: { ...base().profile, skills: ['handstand'], equipment: ['wall', 'floor'] } }
+    const session: Session = { id: 'wall', startedAt: NOW, endedAt: NOW + 30 * 60_000, stepId: 'hs-wall', baseTargetSec: 20,
+      workoutKind: 'auto', workoutName: 'Handstand', plannedMainRounds: { 'wall-handstand': 6 },
+      sets: [20, 20, 20, 20, 19, 16].map((raw, i) => ({ exerciseId: 'wall-handstand', kind: 'hold', target: 20,
+        section: 'main', surface: 'floor', value: raw - 2.3, raw, at: NOW + i * 60_000, rpe: i < 3 ? 7 : 8,
+        ...(i < 4 ? { calledAtTarget: true } : {}), form: { confirmed: true, rating: i === 5 ? 'slipped' : 'clean' } })) }
+    const next = { ...prev, sessions: [session] }
+    const later = NOW + 2 * DAY
+    const after = adaptiveTarget(next, 'hs-wall', later)
+    expect(after).toBe(16)
+    const text = debriefSession(prev, next, session, { before: 20, after }).map((line) => line.text).join(' ')
+    expect(text).toMatch(/target call on 4 of 6 wall handstand holds/)
+    const plan = buildPlan(next, later)
+    expect(plan.signals.formDegrading).toBe(false)
+    expect(plan.limiter?.evidence ?? '').not.toMatch(/filmed|recording/)
+    expect(barMet(next, 'hs-wall')).toBe(false)
+  })
   const first = sessionAt('s1', 0, 14.7, 11)
 
   it('the review case: told 18, given 11, held 14.7 — the target falls, and the line says the setup answer is why', () => {

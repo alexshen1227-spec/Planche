@@ -8,7 +8,8 @@ import { buildGymSession } from '../gym/builder'
 import { conservative } from '../gym/draft'
 import { finalizeWorkout } from '../../data/workouts'
 import { AWAY_FACTOR, gymDaysAway, gymDeloadDue, gymToday, insideRestRule, openerMinutes, openerMinutesFor, planToday, skillRequest } from './planner'
-import { calisthenicsCardLabel, goalStanding, openerLine, stepPassed } from './screens'
+import { calisthenicsCardLabel, goalStanding, openerLine } from './screens'
+import { barMet } from '../progression'
 import { planClockTick, PLAN_CLOCK_MIN } from './usePlanClock'
 import { STEP_BY_ID } from '../../data/progressions'
 
@@ -230,13 +231,13 @@ describe('one thing said about today', () => {
   it('a goal that is the current step is reached only once that step is passed', () => {
     expect(goalStanding({ order: 4 }, { order: 4 }, false)).toBe('here')
     expect(goalStanding({ order: 4 }, { order: 4 }, true)).toBe('reached')
-    expect(goalStanding({ order: 5 }, { order: 4 }, false)).toBe('reached')
-    expect(goalStanding({ order: 3 }, { order: 4 }, true)).toBe('ahead')
-    // A brand-new athlete placed on their destination: not passed until the next step opens.
+    expect(goalStanding({ order: 5 }, { order: 4 }, false)).toBe('past')
+    expect(goalStanding({ order: 3 }, { order: 4 }, false)).toBe('ahead')
+    // A newly placed athlete can verify the goal even if a later step is already open.
     const placed = { ...initialState(), stepId: 'tuck', unlocked: ['foundations', 'lean', 'frog', 'tuck'] } as AppState
-    expect(stepPassed(placed, 'tuck')).toBe(false)
-    expect(goalStanding(STEP_BY_ID.tuck, STEP_BY_ID.tuck, stepPassed(placed, 'tuck'))).toBe('here')
-    expect(stepPassed({ ...placed, unlocked: [...placed.unlocked, 'advtuck'] } as AppState, 'tuck')).toBe(true)
+    expect(goalStanding(STEP_BY_ID.tuck, STEP_BY_ID.tuck, barMet(placed, 'tuck'))).toBe('here')
+    const moved = { ...placed, stepId: 'advtuck' as const, unlocked: [...placed.unlocked, 'advtuck' as const] }
+    expect(goalStanding(STEP_BY_ID.advtuck, STEP_BY_ID.tuck, barMet(moved, 'tuck'))).toBe('past')
   })
 
   it('re-plans on a coarse clock as well as the calendar day', () => {

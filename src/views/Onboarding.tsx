@@ -243,8 +243,7 @@ export function Onboarding() {
     skippedInterview ? (manual[skill] ?? SKILLS[skill].steps[0].id) : (placements[skill]?.stepId ?? SKILLS[skill].steps[0].id)
   const goalStepId = goalFor(focus)
   const pressLadder = SKILLS[focus].ladder
-  /** The destination that is kept: one the placement has already reached moves on, so the first screen never says "reached" at 0%. */
-  const settledGoal = (skill: SkillId) => goalPastPlacement(skill, placedFor(skill), goalFor(skill))
+  const settledGoal = (skill: SkillId) => goalPastPlacement(skill, placedFor(skill), goalFor(skill), goals[skill] !== undefined)
   const finalGoalFor = (skill: SkillId): StepId => settledGoal(skill).goal
   /** Chosen skills whose road cannot be trained with the kit ticked so far. */
   const kitGaps = skills
@@ -1319,7 +1318,7 @@ export function Onboarding() {
                           : missing
                           ? `Waiting for ${kitNeedsPhrase(missing)} at home — it joins your sessions once that is on your equipment list, or a place you add next has it.`
                           : stepsToGo === 0
-                            ? `Placed at your goal: ${to.name}`
+                            ? `Goal: verify ${to.unlockSec}s in ${to.name}`
                             : `Aiming at ${to.name} · ${stepsToGo} step${stepsToGo === 1 ? '' : 's'} to go`}
                       </div>
                     </div>

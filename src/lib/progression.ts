@@ -1088,7 +1088,8 @@ const CAPPED_FLOOR_DAYS = 14
  * out at a fraction of the last: a perfectly obedient simulated athlete went
  * from 5s to 1s in five sessions while getting stronger. Completing a target
  * is evidence it was within capacity, so the next base does not fall below
- * it. A miss is a real reading and lifts nothing; a max test re-anchors upward.
+ * it. When most clean sets reached their calls, a shorter set can anchor a
+ * more repeatable dose. A max test can re-anchor upward.
  */
 export function completedBaseTarget(
   state: Pick<AppState, 'sessions'>,
@@ -1113,7 +1114,23 @@ export function completedBaseTarget(
   // repeatable. A skipped warm-up does not undo the completed main sets.
   const base = latest.baseTargetSec
   const enough = prescribed !== undefined ? prescribed > 0 : latest.completion !== 'partial' && key.length >= 2
-  return enough && key.length && key.every((set) => capacityReading(set) >= Math.max(base, set.target) - 0.05) ? base : null
+  if (!enough || !key.length) return null
+  if (key.every((set) => capacityReading(set) >= Math.max(base, set.target) - 0.05)) return base
+  // A target met on four of six rounds is different from a measured maximum.
+  // Use a lower observed duration when most sets reached their call cleanly.
+  // Both sides must support the dose for a unilateral hold.
+  if (latest.completion === 'partial' || key.some((s) => !humanRating(s.form) || s.value <= 0 || (s.rpe ?? latest.rpe ?? 8) > 8)) return null
+  const sides = EXERCISE_BY_ID[exerciseId]?.perSide
+    ? [key.filter((s) => s.side === 'left'), key.filter((s) => s.side === 'right')] : [key]
+  let repeatable = base
+  for (const sets of sides) {
+    const reached = sets.filter((s) => humanRating(s.form) === 'clean' && stoppedAtTarget(s, stepId) &&
+      capacityReading(s) >= Math.max(base, s.target) - 0.05)
+    if (sets.length < 3 || reached.length * 3 < sets.length * 2) return null
+    const durations = sets.map(capacityReading).sort((a, b) => a - b)
+    repeatable = Math.min(repeatable, Math.floor(durations[Math.floor((durations.length - 1) / 4)]))
+  }
+  return repeatable > 0 ? repeatable : null
 }
 
 /** The surface a session's key-hold work was done on, when it is unambiguous. */

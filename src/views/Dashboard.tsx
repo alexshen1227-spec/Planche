@@ -21,7 +21,7 @@ import { weekStreak, totalHoldSec, sessionHighlight } from '../lib/stats'
 import { buildPlan, STRATEGY_BY_ID, coachConfidence } from '../lib/coach'
 import { CONFIDENCE_NOTE, describeForecast, forecastUnlock, goalOutlook } from '../lib/forecast'
 import { PLATEAU_LABEL, recentBreakthrough } from '../lib/plateau'
-import { bestHoldPractice, qualifyingProgress } from '../lib/progression'
+import { barMet, bestHoldPractice, qualifyingProgress } from '../lib/progression'
 import { addDays, dayKey, fmtDate, fmtDuration, fmtHold, weekStart } from '../lib/time'
 import { BackupButton } from '../components/BackupButton'
 import { useToday } from '../lib/useToday'
@@ -56,7 +56,6 @@ import {
   openerLine,
   resolveGymPlace,
   shortVersion,
-  stepPassed,
   trainingWeek,
 } from '../lib/plan/screens'
 import { usePlanClock } from '../lib/plan/usePlanClock'
@@ -240,7 +239,7 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
   const goalStep = STEP_BY_ID[state.profile.goalStepId ?? skillDef.defaultGoal] ?? road[road.length - 1]
   // A goal that is the step being trained is reached only once that step is passed: a new athlete placed on
   // their goal once read "goal reached" at 0%.
-  const standing = goalStanding(step, goalStep, stepPassed(state, step.id))
+  const standing = goalStanding(step, goalStep, barMet(state, goalStep.id))
   // A skill with a rep line moves on its own rungs: say where it is beside the hold's goal.
   const ladder = useMemo(() => (skillDef.ladder ? ladderStatus(whole, viewSkill) : null), [whole, viewSkill, skillDef.ladder])
   // Who trains today, and why — only worth a card when there is a choice. Read
@@ -499,7 +498,7 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
           <div className="min-w-0">
             <div className="text-caption font-semibold uppercase tracking-wider text-accent-text">
                 {several ? `${skillDef.name} · ` : ''}Step {step.order + 1} of {road.length} · current
-                {standing === 'ahead' ? ` · goal ${goalStep.name}` : standing === 'reached' ? ' · goal reached' : ' · goal: this step'}
+                {standing === 'here' ? ' · goal: this step' : standing === 'reached' ? ` · verified ${goalStep.name}` : ` · goal ${goalStep.name}`}
               </div>
             <div className="mt-1 font-display text-title2 font-bold leading-tight text-ink">{step.name}</div>
             <div className="mt-0.5 text-footnote text-ink2">{step.tagline}</div>

@@ -10,6 +10,7 @@ import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
 import {
   capacityReading,
   endedForNonCapacityReason,
+  humanRating,
   isBarAttempt,
   learningSeries,
   measuredMaxIn,
@@ -477,7 +478,7 @@ export interface Signals {
   formRatedCount: number
   /** The failure the athlete reports most often, if there is a clear one. */
   topFormIssue: { issue: string; count: number; of: number } | null
-  /** Seconds are climbing while form ratings are getting worse. */
+  /** The athlete rated fewer holds clean across later training days. */
   formDegrading: boolean
   /** Robust centre of camera-measured drift across recent filmed sets. */
   meanWobble: number | null
@@ -770,14 +771,15 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     accessoryTrend === 'flat' && trendPerWeek !== null && trendPerWeek <= 0.2 && pressPoints.length >= 3
 
   // ——— Form quality, the only non-numeric signal available ———
-  const ratedSets = sessions
-    .slice(-8)
-    .flatMap((s) =>
-      s.sets.filter(
-        (x) =>
-          x.exerciseId === keyId && x.form && x.form.confirmed !== false && x.section === 'main',
-      ),
-    )
+  const ratingsByDay = new Map<string, SetLog[]>()
+  for (const session of sessions.slice(-8)) {
+    const sets = session.sets.filter((set) => set.exerciseId === keyId && set.section === 'main' && humanRating(set.form))
+    if (!sets.length) continue
+    const day = dayKey(session.startedAt)
+    ratingsByDay.set(day, [...(ratingsByDay.get(day) ?? []), ...sets])
+  }
+  const ratedDays = [...ratingsByDay.values()]
+  const ratedSets = ratedDays.flat()
   const formCleanRate = ratedSets.length
     ? ratedSets.filter((x) => x.form!.rating === 'clean').length / ratedSets.length
     : null
@@ -894,12 +896,13 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     topUnseen && cameraSets.length >= 3 && topUnseen[1] / cameraSets.length >= 0.6
       ? { criterion: topUnseen[0], count: topUnseen[1], of: cameraSets.length }
       : null
-  // Chasing seconds while positions fall apart is the classic way to stall.
-  const half = Math.floor(ratedSets.length / 2)
+  // A last set that slipped is information about that workout. Compare separate
+  // training days before identifying a change across visits.
+  const half = Math.floor(ratedDays.length / 2)
   const cleanIn = (arr: typeof ratedSets) =>
-    arr.length ? arr.filter((x) => x.form!.rating === 'clean').length / arr.length : null
-  const earlyClean = half >= 2 ? cleanIn(ratedSets.slice(0, half)) : null
-  const lateClean = half >= 2 ? cleanIn(ratedSets.slice(half)) : null
+    arr.length >= 2 ? arr.filter((x) => x.form!.rating === 'clean').length / arr.length : null
+  const earlyClean = cleanIn(ratedDays.slice(0, half).flat())
+  const lateClean = cleanIn(ratedDays.slice(half).flat())
   const formDegrading =
     earlyClean !== null && lateClean !== null && lateClean < earlyClean - 0.25 && (trendPerWeek ?? 0) >= 0
 

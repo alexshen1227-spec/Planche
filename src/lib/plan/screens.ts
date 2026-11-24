@@ -1,10 +1,8 @@
-import type { AppState, EquipmentId, SkillId, StepId, Workout, WorkoutRequest } from '../../types'
+import type { AppState, EquipmentId, SkillId, Workout, WorkoutRequest } from '../../types'
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import type { GymFocus } from '../gym/builder'
 import type { GymLocation } from '../gym/types'
 import { latestPartialToday } from '../gym/draft'
-import { stepAfter } from '../../data/progressions'
-import { barMet } from '../progression'
 import { addDays, weekStart } from '../time'
 import { goalDaysInWeekOf } from '../stats'
 import { countsSkillDay, latestSkillPartial } from '../skillSession'
@@ -210,24 +208,18 @@ export function calisthenicsCardLabel(plan: TodayPlan): string {
 
 /**
  * Where the goal stands against the step being trained. A goal that is the
- * current step is reached only once that step is passed — its bar verified,
- * or a later step open: a brand-new athlete placed on their goal once read
- * "goal reached" at 0%.
+ * chosen step is reached by verifying its own hold, including when placement
+ * or a manual move has already opened a later step.
  */
-export function goalStanding(current: { order: number }, goal: { order: number }, passed: boolean): 'ahead' | 'here' | 'reached' {
+export function goalStanding(current: { order: number }, goal: { order: number }, verified: boolean): 'ahead' | 'here' | 'past' | 'reached' {
+  if (verified) return 'reached'
   if (goal.order > current.order) return 'ahead'
-  if (goal.order < current.order) return 'reached'
-  return passed ? 'reached' : 'here'
+  return goal.order < current.order ? 'past' : 'here'
 }
 
 /** Said when the goal is the step the athlete is on and not yet passed. */
-export const GOAL_HERE_TEXT = 'Your goal is the step you are on: hold it clean to complete it.'
+export const GOAL_HERE_TEXT = 'You’re practicing your goal. Verify the hold to complete it.'
 
-/** Whether a skill view is past a step: the step after it open, or — on the last step — its bar verified. */
-export function stepPassed(view: AppState, stepId: StepId): boolean {
-  const next = stepAfter(stepId)
-  return Boolean(next && view.unlocked.includes(next.id)) || barMet(view, stepId)
-}
 
 /**
  * A gym day's lifts as the screens hand them on: the plan's limits and where

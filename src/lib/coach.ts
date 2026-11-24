@@ -41,6 +41,7 @@ import {
 } from './signals'
 import {
   barMet,
+  capacityReading,
   humanRating,
   isBarAttempt,
   isQualifyingSet,
@@ -1123,7 +1124,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     targetIntent = 'steady'
     formRepairNeeded = true
     decisions.push({
-      text: 'Your holds are getting longer but your own form ratings are getting worse — that is a stall dressed up as progress. Backing the target off to rebuild the position.',
+      text: 'You rated fewer holds clean on your later training days. Today’s shorter holds give you room to finish each set in position.',
       kind: 'warn',
     })
   } else if (sig.formCleanRate !== null && sig.formRatedCount >= 3 && sig.formCleanRate < 0.5) {
@@ -1135,7 +1136,8 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   }
   const cameraConsensusReliable = sig.cameraAgreementRate === null || sig.cameraAgreementRate >= 0.6
-  if (cameraConsensusReliable && sig.meanCleanRatio !== null && sig.meanCleanRatio < 0.8) {
+  const cameraBreakdown = cameraConsensusReliable && sig.meanCleanRatio !== null && sig.meanCleanRatio < 0.8
+  if (cameraBreakdown && sig.meanCleanRatio !== null) {
     targetFactor = Math.min(targetFactor, 0.9)
     targetIntent = 'steady'
     formRepairNeeded = true
@@ -1174,7 +1176,9 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     if (!limiter) {
       limiter = {
         label: 'Hold durability',
-        evidence: 'Recent filmed holds are losing their clean position before the timer stops.',
+        evidence: cameraBreakdown ? 'Recent reviewed recordings show the position breaking before the timer stops.'
+          : sig.formDegrading ? 'Your clean ratings were less frequent on later training days.'
+          : `You rated ${Math.round((sig.formCleanRate ?? 0) * sig.formRatedCount)} of ${sig.formRatedCount} recent main holds clean.`,
         prescription: 'Shorter, repeatable main holds rebuild clean time before intensity returns.',
       }
     }
@@ -2325,9 +2329,9 @@ export function debriefSession(
     let why = ''
     if (!up) {
       const key = step?.keyExerciseId
-      const held = session.sets
-        .filter((x) => x.exerciseId === key && x.kind === 'hold' && x.section === 'main' && x.value > 0)
-        .reduce((best, x) => Math.max(best, x.value), 0)
+      const holds = session.sets.filter((x) => x.exerciseId === key && x.kind === 'hold' && x.section === 'main' && x.value > 0)
+      const held = holds.reduce((best, x) => Math.max(best, capacityReading(x)), 0)
+      const atCall = holds.filter((x) => x.calledAtTarget && x.target === targets.before && capacityReading(x) >= x.target - 0.05).length
       const name = (key && EXERCISE_BY_ID_COACH[key]?.name.toLowerCase()) || 'key hold'
       const estimated =
         step !== undefined &&
@@ -2347,7 +2351,9 @@ export function debriefSession(
       const told = step !== undefined && nextSeries && !nextSeries.transferred ? toldHold(next, step.id) : undefined
       const setupStands = told !== undefined && nextSeries !== undefined && !settled(nextSeries.points)
       why =
-        held >= targets.before && told !== undefined && setupStands && held < told
+        atCall > 0 && atCall < holds.length && holds.some((x) => capacityReading(x) < targets.before - 0.05)
+          ? `. You reached the ${targets.before}s target call on ${atCall} of ${holds.length} ${name} holds. Shorter sets also count toward the next working target.`
+          : held >= targets.before && told !== undefined && setupStands && held < told
           ? `: your best ${name} hold (${Math.round(held * 10) / 10}s) beat the ${targets.before}s target, but it came in under the ${told}s you gave at setup. Until this step has three logged sessions and one measured hold, that answer stands beside what you log, so the target settles near ${targets.after}s rather than following one hold.`
           : held > 0 && held < targets.before
           ? `: your ${name} holds came in under ${targets.before}s (best ${Math.round(held * 10) / 10}s), and the target follows what you hold.${

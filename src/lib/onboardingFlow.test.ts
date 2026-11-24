@@ -6,8 +6,10 @@ import { nextInterviewItem, type InterviewAnswers } from './placement'
 import type { SkillId } from '../types'
 
 describe('goalPastPlacement', () => {
-  it('moves a goal the placement has reached to the next step on the road', () => {
-    expect(goalPastPlacement('planche', 'straddle', 'straddle')).toEqual({ goal: 'full', moved: true })
+  it('keeps the chosen hold at placement and only advances an untouched default that lies behind', () => {
+    expect(goalPastPlacement('planche', 'straddle', 'straddle')).toEqual({ goal: 'straddle', moved: false })
+    expect(goalPastPlacement('handstand', 'hs-wall', 'hs-wall', true)).toEqual({ goal: 'hs-wall', moved: false })
+    expect(goalPastPlacement('planche', 'advtuck', 'tuck', true)).toEqual({ goal: 'tuck', moved: false })
     expect(goalPastPlacement('planche', 'advtuck', 'tuck')).toEqual({ goal: 'oneleg', moved: true })
   })
   it('keeps a goal still ahead of the placement', () => {
@@ -18,13 +20,14 @@ describe('goalPastPlacement', () => {
     const last = steps[steps.length - 1].id
     expect(goalPastPlacement('planche', last, last)).toEqual({ goal: last, moved: false })
   })
-  it('on every road lands strictly past the placement, or on the last step', () => {
+  it('keeps every explicit destination, and keeps a suggested goal at or ahead of placement', () => {
     for (const def of SKILL_LIST) {
       const steps = def.steps
       steps.forEach((placed, p) => {
         steps.forEach((goal, g) => {
           const out = steps.findIndex((s) => s.id === goalPastPlacement(def.id, placed.id, goal.id).goal)
-          expect(out).toBe(g > p ? g : Math.min(p + 1, steps.length - 1))
+          expect(out).toBe(g >= p ? g : Math.min(p + 1, steps.length - 1))
+          expect(goalPastPlacement(def.id, placed.id, goal.id, true).goal).toBe(goal.id)
         })
       })
     }

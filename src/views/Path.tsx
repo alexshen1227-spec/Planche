@@ -9,9 +9,9 @@ import { kitStatusLine } from '../components/weekPlanCopy'
 import { activeSkills, skillView, viewForStep } from '../lib/skills'
 import { ladderStatus, type LadderStatus } from '../lib/repLadder'
 import { goalChoices } from '../lib/placement'
-import { atPlanPlace, GOAL_HERE_TEXT, goalStanding, stepPassed } from '../lib/plan/screens'
+import { atPlanPlace, GOAL_HERE_TEXT, goalStanding } from '../lib/plan/screens'
 import { AddSkill } from '../components/AddSkill'
-import { bestHoldPractice, daysAtBar, qualifyingProgress } from '../lib/progression'
+import { barMet, bestHoldPractice, daysAtBar, qualifyingProgress } from '../lib/progression'
 import { maximalHoldBlockedReason } from '../data/workouts'
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { useTodayChoice } from '../lib/plan/todayChoice'
@@ -145,7 +145,7 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   const goalStep = STEP_BY_ID[goalStepId]
   const currentStep = STEP_BY_ID[state.stepId]
   // The goal on the step being trained is not reached until that step is passed (a placement once read as "reached").
-  const goalHere = Boolean(goalStep && currentStep) && goalStanding(currentStep, goalStep, stepPassed(state, state.stepId)) === 'here'
+  const standing = goalStep && currentStep ? goalStanding(currentStep, goalStep, barMet(state, goalStep.id)) : undefined
 
   return (
     <div className="animate-rise">
@@ -250,7 +250,8 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
             )
           })}
         </div>
-        {goalHere ? <p className="mt-2.5 text-footnote font-medium text-accent-text">{GOAL_HERE_TEXT}</p> : null}
+        {standing === 'here' ? <p className="mt-2.5 text-footnote font-medium text-accent-text">{GOAL_HERE_TEXT}</p> : null}
+        {standing === 'past' ? <Button variant="secondary" className="mt-2" onClick={() => setDetail(goalStep)}>Review your {goalStep.name} goal</Button> : null}
         {ladder ? (
           <>
             <PressMilestonePicker ladder={ladder.ladder} value={ladder.goal.rung.exerciseId}
@@ -448,6 +449,7 @@ function StepDetail({
   }, [state, whole, step.id, choice.placeId, today, clock])
   const unlocked = state.unlocked.includes(step.id)
   const isCurrent = state.stepId === step.id
+  const unverifiedGoal = state.profile.goalStepId === step.id && step.order < STEP_BY_ID[state.stepId].order && !barMet(state, step.id)
   const pr = state.prs[step.keyExerciseId]
   const keyEx = EXERCISE_BY_ID[step.keyExerciseId]
   const [skipStage, setSkipStage] = useState<0 | 1 | 2 | 3>(0)
@@ -561,7 +563,7 @@ function StepDetail({
       ) : null}
 
       <div className="mt-5 flex flex-wrap gap-2.5">
-        {isCurrent ? (
+        {isCurrent || unverifiedGoal ? (
           testBlocked ? (
             <p className="w-full rounded-control border border-line bg-raised px-4 py-3 text-footnote leading-relaxed text-ink2">
               No max test today — {testBlocked}. It comes back on a day you can test fresh.

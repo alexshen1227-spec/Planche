@@ -5,20 +5,19 @@ import { ASSESSMENT_ITEMS } from './assessment'
 import { nextInterviewItem, type InterviewAnswers } from './placement'
 
 /**
- * The destination to keep once the placement is known. A goal at or behind the
- * placed step is already reached: the first screen would read "goal reached" at
- * 0%. It moves to the next step on the road, or stays at the road's end when the
- * athlete is placed on the last step.
+ * Keep an athlete's chosen destination. If an untouched default is behind
+ * the starting step, suggest the next step. Placement alone verifies no hold.
  */
 export function goalPastPlacement(
   skill: SkillId,
   placed: StepId,
   goal: StepId,
+  chosen = false,
 ): { goal: StepId; moved: boolean } {
   const steps = SKILLS[skill].steps
   const placedAt = steps.findIndex((step) => step.id === placed)
   const goalAt = steps.findIndex((step) => step.id === goal)
-  if (placedAt < 0 || goalAt < 0 || goalAt > placedAt) return { goal, moved: false }
+  if (chosen || placedAt < 0 || goalAt < 0 || goalAt >= placedAt) return { goal, moved: false }
   const next = steps[Math.min(placedAt + 1, steps.length - 1)].id
   return { goal: next, moved: next !== goal }
 }
