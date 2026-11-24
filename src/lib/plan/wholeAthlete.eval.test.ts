@@ -105,6 +105,36 @@ describe('one skill and whole-body training on three days', () => {
     }
   })
 
+  it('gives the leading goal more visits in matched beginner handstand and physique weeks', () => {
+    const place = { ...GYM_PLACE, equipment: ['floor', 'wall'] as typeof GYM_PLACE.equipment }
+    for (const minutes of [15, 45]) {
+      for (const [skills, physique, practices] of [[5, 1, 2], [1, 5, 1]]) {
+        const out = season({ skills: ['handstand'], birthYear: 2012, active: 'home', kit: ['floor', 'wall'],
+          prefs: { minutesByDay: [0, minutes, 0, minutes, 0, minutes, 0], goals: { skills, physique, strength: 0, power: 0, endurance: 0 } } }, 42, {}, place)
+        for (const week of weeksOf(out)) {
+          const visits = week.filter((d) => d.skill.some((s) => (s.parts.handstand?.key ?? 0) > 0)).length
+          if (skills > physique) expect(visits).toBeGreaterThanOrEqual(practices)
+          else if (minutes === 15) expect(visits).toBe(practices)
+          expect(week.some((d) => d.gym)).toBe(true)
+          expect(week.flatMap((d) => d.plan.reasons).some((r) => r.includes('your sport leaves'))).toBe(false)
+        }
+      }
+    }
+  })
+
+  it('fits presses and direct knee and hip work into six weeks of 15-minute home lifting', () => {
+    const place = { ...GYM_PLACE, equipment: ['floor', 'wall'] as typeof GYM_PLACE.equipment }
+    const out = season({ skills: [], birthYear: 1993, active: 'home', kit: ['floor', 'wall'],
+      prefs: { minutesByDay: [0, 15, 0, 15, 0, 15, 0], goals: { skills: 0, physique: 5, strength: 2, power: 0, endurance: 0 } } }, 42, {}, place)
+    for (const week of weeksOf(out)) {
+      const start = weekStart(week[0].at)
+      const sets = setsPerMuscle([], out.state.gym!.sessions, start, addDays(start, 7))
+      expect(week.filter((d) => d.gym)).toHaveLength(3)
+      for (const muscle of ['chest', 'quads', 'hamstrings'] as const) expect(sets[muscle] ?? 0, muscle).toBeGreaterThanOrEqual(2)
+      for (const day of week) if (day.gym) expect(day.gym.estimatedMin).toBeLessThanOrEqual(15)
+    }
+  })
+
   it('keeps knee and hip work in default planche weeks while retaining all three skill practices', () => {
     const out = season({ skills: ['planche'], birthYear: 1993, steps: { planche: 'lean' }, prefs: { minutesByDay: threeDays } }, 28)
     for (const week of weeksOf(out)) {

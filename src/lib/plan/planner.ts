@@ -1579,10 +1579,13 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
   const done = hardCount(state.sessions, thisWeek, today)
   const first = skills[0]
   const lead = skillFamily(first)
-  const shortWeek = prefs.minutesByDay.filter((m) => m >= MIN_SKILL_MINUTES[1]).length <= 3
-  const gymFirst = ctx.wantsGym && g.skills > 0 && Math.max(g.strength, g.physique, g.power, g.endurance) >= g.skills + 2 &&
+  const trainingDays = prefs.minutesByDay.filter((m) => m >= MIN_SKILL_MINUTES[1]).length
+  const shortWeek = trainingDays <= 3
+  const gymGoal = Math.max(g.strength, g.physique, g.power, g.endurance)
+  const gymFirst = ctx.wantsGym && g.skills > 0 && gymGoal >= g.skills + 2 &&
     prefs.minutesByDay.some((m) => m >= OPENER_MINUTES + MIN_LIFTS_AFTER_OPENER)
-  const skillDays = Math.max(1, Math.ceil(prefs.minutesByDay.filter((m) => m >= MIN_SKILL_MINUTES[1]).length * ctx.share))
+  const skillDays = Math.max(1, Math.ceil(trainingDays * ctx.share))
+  const practiceDays = Math.max(1, Math.min(trainingDays - 1, Math.round(trainingDays * ctx.share)))
   const target = (f: Straight) => (f === lead ? FAMILY_SESSIONS_LEAD : FAMILY_SESSIONS_OTHER)
   // Whether each skill's session at its current step reaches the hard count at all (with the kit it has anywhere).
   const anyKit = [...new Set([...state.profile.equipment, ...(places.gymCal?.profile.equipment ?? [])])]
@@ -1931,7 +1934,14 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
         !slots.some((sl, j) => days[j].week === d.week && fullOn(sl, first)) &&
         !days.some((later) => later.index > i && later.week === d.week && !later.restDay && !later.assigned &&
           !lowerDays.has(later.index) && later.minutes >= MIN_SKILL_MINUTES[1] && !sportRestsSkill(later, first))
-      if (lastPractice) {
+      // A balance or foundations session can be productive without counting
+      // as hard straight-arm work. Protect the actual practice days the
+      // leading goal earns before the general muscle targets take the slots.
+      const primaryPractice = shortWeek && trainingDays > 1 && g.skills > gymGoal && (lead === 'balance' || !stepIsHard(first)) &&
+        !d.pain && !d.held && !d.niggle && (allowed.includes(first) || gymOnly.includes(first)) &&
+        (!legDay || t.gym > 0) && t.cal < practiceDays &&
+        (t.gym > 0 || days.some((later) => later.index > i && later.week === d.week && !later.assigned && !later.restDay && later.minutes >= MIN_GYM_MINUTES))
+      if (lastPractice || primaryPractice) {
         kind = 'calisthenics'
         why = 'skill-practice'
       } else if (gymFirst && !exposure && !d.assigned && d.minutes >= OPENER_MINUTES + MIN_LIFTS_AFTER_OPENER && !d.pain) {
@@ -2105,12 +2115,11 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
   if (ctx.coverLegWeeks?.length) {
     let last = ctx.legsLast
     for (const wk of ctx.coverLegWeeks) {
-      if (last !== undefined && weekStart(last) === wk) continue
       const training = days.filter((d) => d.week === wk && !d.restDay && d.minutes >= MIN_GYM_MINUTES)
       const trained = wk === thisWeek ? ctx.before.cal + ctx.before.gym : 0
       if (trained + training.length < 2) continue
       const options = training.filter((d) => !d.assigned && ctx.legsOpen(d)
-        && (last === undefined || apart(d.at, last) >= 2 * DAY)
+        && (last === undefined || startOfDay(d.at) >= addDays(startOfDay(last), 2))
         && (d.index !== 0 || (ctx.todayKind !== 'calisthenics' && !ctx.todayFocus)))
       const pick = options.filter((d) => !exposures.has(d.index)).at(-1) ?? options.at(-1)
       if (!pick) continue
@@ -2450,6 +2459,7 @@ export const FAR_OVER = 1.5
  * changes before then moves their sets.
  */
 const STEER_LINE = FAR_OVER - 0.2
+const BRIEF_SESSION_MUSCLES = new Set<Muscle>(['chest', 'lats', 'quads', 'hamstrings'])
 
 /**
  * The gym focus of each day in one calendar week, chosen together (a beam
@@ -2719,6 +2729,11 @@ function allocate(
           const h = have[m] ?? 0
           const met = Math.max(0, Math.min(lo, h + n) - Math.min(lo, h))
           need += w * met
+          // With only a few working sets available, a first dose of knee,
+          // hip, push or pull work matters more than a third pressing angle.
+          if (slot.gymMin < MIN_LIFTS_AFTER_OPENER && BRIEF_SESSION_MUSCLES.has(m)) {
+            need += 2 * w * Math.min(n, Math.max(0, Math.min(4, lo) - h))
+          }
           if (met >= 0.5) served.push([m, w * met])
           band += w * Math.max(0, Math.min(hi, h + n) - Math.max(lo, h))
           over += Math.max(0, h + n - hi) - Math.max(0, h - hi)
@@ -3293,12 +3308,22 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   // Keep a week that already covers the lower body. Only split off a skill
   // day if the actual gym allocation would otherwise leave the legs out.
   const wantsLegs = g.physique > 0 && (g.physique >= Math.max(g.skills, g.strength, g.power, g.endurance) || prefs.musclesPriority.some((m) => LEG_MUSCLES.includes(m)))
-  if (!opts.coverLegWeeks && g.skills > 0 && gymWanted && !legsOff && targets.quads[0] > 0 && wantsLegs) {
+  const briefGymWeek = prefs.minutesByDay.every((m) => m < MIN_LIFTS_AFTER_OPENER)
+  if (!opts.coverLegWeeks && (g.skills > 0 || briefGymWeek) && gymWanted && !legsOff && targets.quads[0] > 0 && wantsLegs) {
     const uncovered = [...new Set(days.map((d) => d.week))].filter((wk) => {
-      if (legsLast !== undefined && weekStart(legsLast) === wk) return false
+      if (!briefGymWeek && legsLast !== undefined && weekStart(legsLast) === wk) return false
       const training = days.filter((d) => d.week === wk && !d.restDay && d.minutes >= MIN_GYM_MINUTES)
       if (training.length + (wk === thisWeek ? before.cal + before.gym : 0) < 2) return false
-      if (training.some((d) => {
+      if (briefGymWeek) {
+        // One brief squat session covers the knees but can leave the
+        // hamstrings idle. Count the actual lifts across all visits.
+        const legSets = setsPerMuscle([], gymSessions, wk, Math.min(today, addDays(wk, 7)))
+        for (const d of training) {
+          const focus = focusOf(d.index)
+          if (focus && slots[d.index].kind === 'gym') addCredit(legSets, liftCredit(d, ctx.gymMinutes(d.index, focus), focus))
+        }
+        if ((legSets.quads ?? 0) >= 2 && (prefs.musclesOff.includes('hamstrings') || (legSets.hamstrings ?? 0) >= 2)) return false
+      } else if (training.some((d) => {
         const focus = focusOf(d.index)
         if (!focus || slots[d.index].kind !== 'gym') return false
         if (focus === 'lower') return true
@@ -3872,7 +3897,7 @@ function kindReason(slot: SkillSlot, d: DayCtx, skills: SkillId[], extra: DayExt
       return `${what} ${when}, so the gym would leave the legs out today: today is calisthenics, and the gym waits for fresher legs.`
     }
     case 'legs':
-      return 'A gym day for your legs: it is the last day this week your sport leaves them fresh, and they are under this week’s target (the app’s own rule around sport).'
+      return 'A gym day for your legs fits here. This is the last available session this week for lower-body work toward your target.'
     case 'leg-coverage':
       return slot.opener
         ? `This session pairs ${skillName(slot.opener)} practice with lower-body strength. Start with the skill while you are fresh.`
@@ -4212,7 +4237,7 @@ function kindShort(slot: SkillSlot, skills: SkillId[], week: { cal: number; gym:
     case 'sets':
       return 'Gym: the muscles need it for this week’s sets.'
     case 'legs':
-      return 'Gym: the week’s last day your sport leaves the legs fresh.'
+      return 'The last available lower-body session this week.'
     case 'leg-coverage':
       return 'Lower-body strength for your muscle goal.'
     case 'skill-practice':

@@ -142,6 +142,7 @@ export interface SkillRun {
 export interface GymRun {
   at: number
   focus: GymFocus
+  estimatedMin: number
   items: { id: string; sets: number; kg?: number; reps: number[] }[]
   /** Chest was under its weekly lower target when the day was planned. */
   chestUnder: boolean
@@ -341,6 +342,7 @@ export function runLoop(start: AppState, opts: LoopOpts): LoopOut {
     return {
       at: t,
       focus: g.focus,
+      estimatedMin: built.estimatedMin,
       items: exercises.map((e) => ({ id: e.exerciseId, sets: e.sets.length, ...(e.sets[0]?.kg !== undefined ? { kg: e.sets[0].kg } : {}), reps: e.sets.map((s) => s.reps) })),
       chestUnder,
       chestPress: exercises.some((e) => { const ex = GYM_EXERCISE_BY_ID[e.exerciseId]; return Boolean(ex) && (ex.pattern === 'horizontal-press' || ex.pattern === 'incline-press') && (ex.primary.includes('chest') || ex.primary.includes('chest-upper')) }),

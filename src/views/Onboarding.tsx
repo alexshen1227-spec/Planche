@@ -344,15 +344,16 @@ export function Onboarding() {
     // The wrist answer is a joint report, not just a placement input: it has
     // to reach the first session's safety rails. It used to shape only the
     // placement copy, so "it hurts" at setup was followed by loaded planche work.
-    const wristAnswer = skippedInterview ? undefined : answers.wrist
+    const wristAnswer = setup.wristReport?.answer ?? answers.wrist
     const reportedAt = Date.now()
+    const wristAt = setup.wristReport?.at ?? reportedAt
     dispatch({
       type: 'COMPLETE_ONBOARDING',
       symptoms:
         wristAnswer === 0
-          ? [{ at: reportedAt, joints: 'pain', regions: ['wrist'], source: 'onboarding' }]
+          ? [{ at: wristAt, joints: 'pain', regions: ['wrist'], source: 'onboarding' }]
           : wristAnswer === 1
-            ? [{ at: reportedAt, joints: 'niggle', regions: ['wrist'], source: 'onboarding' }]
+            ? [{ at: wristAt, joints: 'niggle', regions: ['wrist'], source: 'onboarding' }]
             : [],
       name: name.trim(),
       // The top-level step is the planche's; without the planche it rests at its first step.
@@ -742,6 +743,7 @@ export function Onboarding() {
                       // unnecessary, and that is knowable synchronously from
                       // the answer just given.
                       const next = pruneBlockedAnswers({ ...answers, [currentItem.id]: opt.value })
+                      if (currentItem.id === 'wrist') edit('wristReport', { answer: opt.value, at: Date.now() })
                       edit('answers', next)
                       if (nextInterviewItem(skills, next) === null) edit('stage', 'result')
                     }}
@@ -775,7 +777,7 @@ export function Onboarding() {
                   onClick={() => {
                     edit('skippedInterview', true)
                     edit('manualIndex', 0)
-                    edit('answers', {})
+                    edit('answers', answers.wrist === undefined ? {} : { wrist: answers.wrist })
                   }}
                   className="min-h-11 px-1 text-footnote font-medium text-ink3 underline underline-offset-4 hover:text-ink"
                 >
@@ -800,6 +802,11 @@ export function Onboarding() {
             >
               {skippedInterview ? 'Your starting point' : "Here's where you start"}
             </h1>
+            {skippedInterview && (setup.wristReport?.answer ?? answers.wrist ?? 2) < 2 && (
+              <p className="mt-3 rounded-inner border border-line p-3 text-footnote text-ink2">
+                Your wrist report will carry into training. Your first check-in can update how it feels.
+              </p>
+            )}
             {skills.map((skill, index) => {
               const def = SKILLS[skill]
               const stepId = placedFor(skill)

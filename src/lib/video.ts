@@ -10,6 +10,7 @@ export interface MovementVideo {
 
 /** Publisher demonstrations. A locally pinned clip takes precedence. */
 export const MOVEMENT_VIDEOS: Readonly<Record<string, MovementVideo | undefined>> = {
+  'wall-plank': { id: '67cBi4TwV9U', by: 'Tom Merrick', start: 632 },
   'wall-handstand': { id: 'Y3FSeSecjKA', by: 'GMB Fitness', start: 250 },
   'wall-float': { id: 'RLHiSB99sXE', by: 'CrossFit Invictus' },
   'handstand-bail': { id: 'ZzEP7XvkDDk', by: 'GMB Fitness' },

@@ -75,6 +75,33 @@ const PRESSING_PATTERNS: ReadonlySet<Pattern> = new Set<Pattern>(['horizontal-pr
 /** Movements that pull (a pull skill's family). */
 const PULLING_PATTERNS: ReadonlySet<Pattern> = new Set<Pattern>(['vertical-pull', 'horizontal-pull', 'straight-arm-pull'])
 
+/** With time for two lifts, alternate knee/hip work and pressing/pulling using
+ * the athlete's actual recent working sets. Missing kit leaves the other
+ * pattern available. A second angle of the same movement can wait. */
+function briefSlots(focus: 'full' | 'lower' | 'upper', sessions: GymSession[], now: number): Pattern[][] {
+  const trained = { quads: 0, hamstrings: 0, chest: 0, lats: 0 }
+  for (const session of sessions) {
+    if (session.startedAt >= now || session.startedAt < now - 7 * 86_400_000) continue
+    for (const row of session.exercises) {
+      const ex = GYM_EXERCISE_BY_ID[row.exerciseId]
+      if (!ex) continue
+      const sets = row.sets.filter((s) => !s.warmup && s.reps > 0 && s.at <= now).length
+      for (const muscle of ['quads', 'hamstrings', 'chest', 'lats'] as const) {
+        trained[muscle] += sets * (ex.primary.includes(muscle) ? 1 : ex.secondary.includes(muscle) ? 0.5 : 0)
+      }
+    }
+  }
+  const knee: Pattern[] = ['squat', 'lunge', 'knee-extension']
+  const hip: Pattern[] = ['hinge', 'knee-flexion']
+  const press: Pattern[] = ['horizontal-press', 'incline-press', 'dip']
+  const pull: Pattern[] = ['horizontal-pull', 'vertical-pull']
+  const lower = trained.quads <= trained.hamstrings ? [knee, hip] : [hip, knee]
+  const upper = trained.chest <= trained.lats ? [press, pull] : [pull, press]
+  if (focus === 'lower') return [...lower, ['calf'], ['core-flexion', 'core-anti-rotation']]
+  if (focus === 'upper') return [...upper, ['vertical-press'], ['rear-delt', 'lateral-raise'], ['biceps', 'triceps']]
+  return [lower[0], ...upper, lower[1], ['core-flexion', 'core-anti-rotation']]
+}
+
 /**
  * What a day adds with spare time. The planner counts a session's pressing or pulling sets as a hard session of
  * that family (the straight-arm rest rule), so time does not buy more of either family than the day is named for:
@@ -393,10 +420,12 @@ export function planGymExercises(input: GymSessionInput) {
       }
     }
   } else {
-    const slots: Pattern[][] = [...SLOTS[focus]]
+    const brief = minutes >= 15 && minutes < 20
+    const slots: Pattern[][] = brief && (focus === 'full' || focus === 'lower' || focus === 'upper')
+      ? briefSlots(focus, sessions, now) : [...SLOTS[focus]]
     // A short upper session still gets a press and a pull. When the week
     // needs more back work, fit the row before a second pressing angle.
-    if (focus === 'upper' && priority.has('lats') && !priority.has('chest') && !requested.has('chest-upper')) {
+    if (!brief && focus === 'upper' && priority.has('lats') && !priority.has('chest') && !requested.has('chest-upper')) {
       [slots[2], slots[3]] = [slots[3], slots[2]]
     }
     // A lateral raise can share a leg or pull day without turning it into hard pressing.
@@ -433,6 +462,9 @@ export function planGymExercises(input: GymSessionInput) {
             slot.indexOf(e.pattern) * 0.5 +
             (e.compound ? 0 : 0.25) -
             (isPriority(e) ? 1 : 0) +
+            // The brief knee or hip slot may be the week's only one.
+            (brief && slot.includes('knee-flexion') && !e.primary.includes('hamstrings') ? 1.5 : 0) +
+            (brief && slot.includes('squat') && !e.primary.includes('quads') && !e.primary.some((m) => requested.has(m)) ? 2 : 0) +
             // Without a tier ladder to climb, prefer the gentler jump or throw.
             (e.tier ? TIER_RANK[gateTier(e)!] * 0.25 : 0) +
             spareIn(e) * 0.5,

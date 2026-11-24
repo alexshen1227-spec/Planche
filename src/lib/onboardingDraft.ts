@@ -18,6 +18,7 @@ export interface SetupDraft {
   goals: StepsBySkill
   pressGoals: Partial<Record<SkillId, string>>
   answers: InterviewAnswers
+  wristReport?: { answer: number; at: number }
   skippedInterview: boolean
   manual: StepsBySkill
   manualIndex: number
@@ -89,6 +90,10 @@ export function loadSetupDraft(epoch: string | undefined): SetupDraft | null {
     const prefs = sanitizePrefs(d.prefs) ?? base.prefs
     const skills = Array.isArray(d.skills) ? [...new Set(d.skills.filter((id): id is SkillId => SKILL_IDS.includes(id)))] : []
     const answers = readAnswers(skills, d.answers)
+    const wrist = record(d.wristReport)
+    const wristReport = typeof wrist.answer === 'number' && [0, 1, 2].includes(wrist.answer) &&
+      typeof wrist.at === 'number' && Number.isFinite(wrist.at) && wrist.at > 0 && wrist.at <= Date.now()
+      ? { answer: wrist.answer, at: wrist.at } : undefined
     const skippedInterview = d.skippedInterview === true
     if (prefs.goals.skills === 0 && ['skills', 'goal', 'interview', 'result'].includes(stage)) stage = 'places'
     if (prefs.goals.skills > 0 && !skills.length && !['welcome', 'goals'].includes(stage)) stage = 'skills'
@@ -118,6 +123,7 @@ export function loadSetupDraft(epoch: string | undefined): SetupDraft | null {
       : base.equipment
     return {
       stage, name: stringOf(d.name, 100), skills, goals: skillSteps(d.goals), pressGoals, answers, skippedInterview,
+      ...(wristReport ? { wristReport } : {}),
       manual: skillSteps(d.manual),
       manualIndex: typeof d.manualIndex === 'number' && Number.isInteger(d.manualIndex) ? Math.max(0, Math.min(d.manualIndex, skills.length - 1)) : 0,
       prefs, gyms, editing, birthYear: stringOf(d.birthYear, 8), ageDeclined: d.ageDeclined === true,

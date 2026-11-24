@@ -113,6 +113,33 @@ it('resumes the actual skill interview question and rejects obsolete or unreadab
   expect(screen.getByRole('button', { name: /let's go/i })).toBeTruthy()
 })
 
+it('honors wrist pain when an athlete skips the remaining skill interview and finishes after a reload', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const athlete = initialState()
+  localStorage.setItem('planchelab.v1', JSON.stringify(athlete))
+  saveSetupDraft(athlete.epoch!, { ...newSetupDraft(), stage: 'interview', name: 'Kai', skills: ['frontlever', 'handstand'], equipment: ['floor', 'wall', 'pullup-bar'] })
+  const mount = () => render(<StoreProvider><FirstRun /></StoreProvider>)
+  const click = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }))
+  const ui = mount()
+  click(/no — it hurts/i)
+  const report = loadSetupDraft(athlete.epoch)?.wristReport
+  expect(report?.answer).toBe(0)
+  click(/skip.*pick my own level/i)
+  ui.unmount()
+  mount()
+  click(/continue/i)
+  click(/continue/i)
+  expect(screen.getByText(/wrist report will carry into training/i)).toBeTruthy()
+  click(/looks right/i)
+  click(/continue/i)
+  click(/continue/i)
+  click(/skip.*every muscle normal/i)
+  click(/prefer not to say/i)
+  click(/start training/i)
+  const saved = JSON.parse(localStorage.getItem('planchelab.v1')!)
+  expect(saved.symptoms).toEqual(expect.arrayContaining([expect.objectContaining({ at: report!.at, source: 'onboarding', joints: 'pain', regions: ['wrist'] })]))
+})
+
 it('shows an opted-in gym-only athlete their recorded bodyweight and comparable bodyweight sets on Progress', () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
