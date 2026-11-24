@@ -309,6 +309,8 @@ export interface LoadSuggestion {
   reps: [number, number]
   /** Starting reps per set when bodyweight history gives a more useful target than the generic range. */
   targetReps?: number
+  /** The athlete may log this many clean floor push-ups in place of one easier set. */
+  floorPushupTrial?: number
   targetRpe: number
   /** One line on why, in the athlete's terms. */
   why: string

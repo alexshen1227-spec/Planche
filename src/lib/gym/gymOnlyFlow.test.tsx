@@ -26,6 +26,37 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+it.each([0, 1])('saves %i actual floor push-up reps, preserves the easier sets and recovers the draft', (reps) => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const gym = defaultGym(['floor', 'wall'], 'kg')
+  localStorage.setItem('planchelab.v1', JSON.stringify({ ...initialState(), onboarded: true, gym }))
+  const item: DraftItem = { exerciseId: 'kneeling-push-up', restSec: 90, unit: 'kg', plan: { range: [8, 12], targetRpe: 7 },
+    suggestion: { kind: 'bodyweight', reps: [8, 12], targetRpe: 7, floorPushupTrial: 1, why: 'One optional floor set.' },
+    sets: [0, 1, 2].map(() => ({ done: false, reps: 12 })) }
+  const draft = { id: 'floor-trial', name: 'Upper body', startedAt: Date.now(), locationId: gym.locations[0].id, items: [item] }
+  const mount = (d: typeof draft | NonNullable<ReturnType<typeof loadDraft>>) =>
+    render(<StoreProvider><GymPlayer draft={d} location={gym.locations[0]} onClose={() => {}} /></StoreProvider>)
+  const first = mount(draft)
+  fireEvent.click(screen.getByRole('button', { name: 'Try a floor push-up' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Keep my planned sets' }))
+  expect(loadDraft()?.items[0].sets).toHaveLength(3)
+  fireEvent.click(screen.getByRole('button', { name: 'Try a floor push-up' }))
+  fireEvent.click(screen.getByRole('button', { name: `Log ${reps} floor push-up ${reps === 1 ? 'rep' : 'reps'}` }))
+  const active = loadDraft()!
+  expect(active.items[0]).toMatchObject({ exerciseId: 'push-up', sets: [{ reps, done: true }] })
+  expect(active.items[1].sets).toHaveLength(2)
+  first.unmount()
+  mount(active)
+  expect(screen.queryByRole('button', { name: 'Try a floor push-up' })).toBeNull()
+  if (reps) fireEvent.click(screen.getByRole('button', { name: '7' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Finish' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save session' }))
+  const saved = JSON.parse(localStorage.getItem('planchelab.v1')!).gym.sessions[0]
+  expect(saved.exercises).toMatchObject([{ exerciseId: 'push-up', sets: [{ reps }] }])
+  expect(saved.remaining.items[0]).toMatchObject({ exerciseId: 'kneeling-push-up' })
+  expect(saved.remaining.items[0].sets).toHaveLength(2)
+})
+
 it('saves separate training locations for weekdays and resets one weekday to automatic', () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
   const gym = defaultGym(['floor', 'wall'], 'kg')

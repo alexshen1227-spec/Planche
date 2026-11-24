@@ -8,6 +8,39 @@ import { allowsUnloaded } from './progression'
 import { defaultGym, homeLocation } from './state'
 import type { GymSession } from './types'
 
+it('offers a specific floor push-up trial after two easy preparation days and adapts to the actual result', () => {
+  const now = new Date(2026, 9, 16, 12).getTime()
+  const day = 86_400_000
+  const state = initialState()
+  const gym = defaultGym(['floor', 'wall'], 'kg', now)
+  const visit = (days: number, exerciseId: string, reps: number, rpe: number, n = 3): GymSession => {
+    const at = now - days * day
+    return { id: String(at) + exerciseId, locationId: gym.locations[0].id, startedAt: at, endedAt: at + 60_000,
+      name: 'Pressing', exercises: [{ exerciseId, repRange: [8, 12], sets: Array.from({ length: n }, () => ({ at, reps, rpe })) }] }
+  }
+  const prep = [visit(7, 'incline-push-up', 15, 6), visit(4, 'kneeling-push-up', 15, 6)]
+  const capacity = (sessions: GymSession[]) => bodyweightCapacity({ ...state, gym: { ...gym, sessions } }, now)
+  expect(capacity(prep.slice(1)).floorPushupTrial).toBeUndefined()
+  expect(capacity([prep[0], visit(4, 'kneeling-push-up', 15, 9)]).floorPushupTrial).toBeUndefined()
+  const initial = capacity(prep)
+  expect(initial.floorPushupTrial).toBe(1)
+  expect(readyForBodyweight('push-up', initial)).toBe(false)
+  const plan = buildGymSession({ location: gym.locations[0], minutes: 30, focus: 'upper', sessions: prep, capacity: initial, now })
+  expect(plan.items.filter((i) => i.suggestion.floorPushupTrial)).toHaveLength(1)
+  expect(plan.items.find((i) => i.suggestion.floorPushupTrial)?.suggestion.why).toContain('1 clean floor push-up')
+  expect(buildGymSession({ location: gym.locations[0], minutes: 30, focus: 'upper', sessions: prep, capacity: initial, avoidJoints: ['wrists'], now })
+    .items.some((i) => i.suggestion.floorPushupTrial)).toBe(false)
+  const missed = visit(3, 'push-up', 0, 8, 1)
+  expect(capacity([...prep, missed]).floorPushupTrial).toBeUndefined()
+  expect(capacity([...prep, missed, visit(2, 'kneeling-push-up', 15, 6), visit(1, 'incline-push-up', 15, 6)]).floorPushupTrial).toBe(1)
+  expect(capacity([...prep, visit(3, 'push-up', 1, 7, 1)]).floorPushupTrial).toBe(2)
+  expect(capacity([...prep, visit(3, 'push-up', 1, 9, 1)]).floorPushupTrial).toBe(1)
+  expect(capacity([...prep, visit(0, 'push-up', 1, 7, 1)]).floorPushupTrial).toBeUndefined()
+  const trained = capacity([...prep, visit(1, 'push-up', 4, 7, 1)])
+  expect(trained.floorPushupTrial).toBeUndefined()
+  expect(readyForBodyweight('push-up', trained)).toBe(true)
+})
+
 it('advances the introductory dose from manageable working sets and limits the first increase', () => {
   const now = Date.now()
   const state = initialState()

@@ -12,6 +12,8 @@ export type BodyweightCapacity = {
   introductoryEffort?: boolean
   buildUpSetLimit?: number
   tryPullup?: boolean
+  /** An optional single floor set replaces one easier set. It is never a full floor prescription. */
+  floorPushupTrial?: number
 }
 
 // These are starting gates for automated picks. An athlete can always add a movement manually.
@@ -34,12 +36,16 @@ const specificPrep: Record<string, { id: string; reps: number }> = {
   'elevated-pike-push-up': { id: 'pike-push-up', reps: 8 },
 }
 const skillTwins: Record<string, string> = { 'pike-pushup': 'pike-push-up', 'elevated-pike-pushup': 'elevated-pike-push-up', 'wall-hspu': 'wall-hspu' }
+export const isPushupPrep = (id: string) => id === 'incline-push-up' || id === 'kneeling-push-up'
 
 /** The most recent direct report or working session for each movement. Zero reps is evidence too. */
 export function bodyweightCapacity(state: AppState, now: number): BodyweightCapacity {
   const from = now - 84 * 86_400_000
+  const trialFrom = addDays(now, -28)
   const evidence = new Map<string, { at: number; reps: number }>()
   let assistedTrial: { at: number; ready: boolean } | undefined
+  const easyPushDays = new Map<string, number>()
+  let floor: { at: number; reps: number; rpe?: number } | undefined
   const record = (id: string, at: number, reps: number) => {
     if (at < from || at > now || !Number.isFinite(reps)) return
     const was = evidence.get(id)
@@ -73,6 +79,13 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
   for (const s of state.gym?.sessions ?? []) {
     if (s.startedAt < from || s.startedAt > now) continue
     for (const log of s.exercises) {
+      if (isPushupPrep(log.exerciseId)) {
+        const recent = log.sets.filter((x) => !x.warmup && x.at >= trialFrom && x.at <= now)
+        if (recent.length >= 2 && recent.every((x) => x.reps >= Math.max(8, log.repRange?.[1] ?? 12) && x.rpe !== undefined && x.rpe <= 7)) {
+          const at = Math.max(...recent.map((x) => x.at))
+          easyPushDays.set(dayKey(at), Math.max(at, easyPushDays.get(dayKey(at)) ?? 0))
+        }
+      }
       if (log.exerciseId === 'assisted-pull-up' && (!assistedTrial || s.startedAt >= assistedTrial.at)) {
         const sets = log.sets.filter((x) => !x.warmup && x.reps > 0)
         const top = log.repRange?.[1] ?? 10
@@ -83,6 +96,7 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
       }
       for (const x of log.sets) {
         if (x.warmup) continue
+        if (log.exerciseId === 'push-up' && x.at <= now && (!floor || x.at >= floor.at)) floor = x
         record(log.exerciseId, s.startedAt, x.reps)
         const base = baseOf[log.exerciseId]
         if (base) record(base, s.startedAt, x.reps)
@@ -126,8 +140,15 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
   }
   const tryPullup = assistedTrial?.ready && now - assistedTrial.at <= 28 * 86_400_000 &&
     assistedTrial.at > (evidence.get('pullups')?.at ?? 0) && !evidence.has('pull-up')
+  const recentFloor = floor && floor.at >= trialFrom ? floor : undefined
+  const afterMiss = recentFloor?.reps === 0 ? recentFloor.at : -Infinity
+  const easyVisits = [...easyPushDays.values()].filter((t) => t > afterMiss && dayKey(t) !== dayKey(now)).length
+  const floorReady = (evidence.get('push-up')?.reps ?? 0) >= 4 || (evidence.get('pushups')?.reps ?? 0) >= 5
+  const floorPushupTrial = !floorReady && easyVisits >= 2 && !(recentFloor && dayKey(recentFloor.at) === dayKey(now))
+    ? Math.max(1, Math.min(4, (recentFloor?.reps ?? 0) + (recentFloor?.rpe !== undefined && recentFloor.rpe <= 7 ? 1 : 0))) : undefined
   return {
     ...(tryPullup ? { tryPullup: true } : {}),
+    ...(floorPushupTrial ? { floorPushupTrial } : {}),
     introductory: introductoryVisitsLeft > 0,
     introductoryVisitsLeft,
     introductoryEffort: !established && visits.length < 6,

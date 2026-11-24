@@ -114,6 +114,7 @@ export function GymPlayer({
   const [sheet, setSheet] = useState<{ kind: 'swap' | 'add' | 'menu'; item?: number } | null>(null)
   const [finishOpen, setFinishing] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
+  const [trialFor, setTrialFor] = useState<number | null>(null)
   const finishing = finishOpen || Boolean(draft.stopReport)
   const [query, setQuery] = useState('')
   const playerRef = useRef<HTMLDivElement | null>(null)
@@ -279,6 +280,35 @@ export function GymPlayer({
   /** What today's plan kept out stays out of swaps and additions too. */
   const fitsToday = (e: GymExercise) =>
     canDoHere(e.id, location) && !jointsToRest(e.id).some((j) => draft.avoidJoints?.includes(j)) && !e.primary.some((m) => draft.musclesOff?.includes(m))
+
+  const showFloorTrial = (item: DraftItem) => item.suggestion?.floorPushupTrial && !item.held && !draft.stopReport &&
+    item.sets.filter((s) => !s.done && !s.warmup).length >= 2 && !draft.items.some((it) => it.exerciseId === 'push-up') &&
+    gym.ratings['push-up'] !== 'avoid' && fitsToday(GYM_EXERCISE_BY_ID['push-up'])
+  const prep = trialFor === null ? undefined : draft.items[trialFor]
+  const floorTarget = prep && showFloorTrial(prep) ? prep.suggestion?.floorPushupTrial : undefined
+  const recordFloorSet = (reps: number) => {
+    if (trialFor === null || !floorTarget || reps < 0 || reps > floorTarget || !canEdit()) return
+    const at = Date.now()
+    const i = trialFor
+    primeSignal()
+    update((d) => {
+      const fallback = d.items[i]
+      const next = fallback.sets.findIndex((s) => !s.done && !s.warmup)
+      if (d.stopReport || next < 0 || d.items.some((it) => it.exerciseId === 'push-up')) return d
+      fallback.sets.splice(next, 1)
+      // The trial uses one of the programmed sets. A zero records the
+      // attempt, and contributes no completed reps or working-set credit.
+      d.items.splice(i, 0, { exerciseId: 'push-up', swappedFrom: fallback.exerciseId, unit: fallback.unit,
+        plan: { range: [1, floorTarget], targetRpe: Math.min(7, fallback.plan.targetRpe) }, restSec: fallback.restSec,
+        sets: [{ done: true, at, reps }] })
+      d.effortFor = reps > 0 ? { item: i, set: 0 } : undefined
+      d.rest = { until: at + fallback.restSec * 1000, total: fallback.restSec }
+      return d
+    })
+    restEndedRef.current = false
+    setTrialFor(null)
+    buzz(25)
+  }
 
   const addExercise = (exerciseId: string) => {
     if (!fitsToday(GYM_EXERCISE_BY_ID[exerciseId])) return
@@ -469,7 +499,10 @@ export function GymPlayer({
                       {ex.load === 'dumbbell' || ex.load === 'kettlebell' ? ` · weight per ${ex.load}` : ''}
                       {best ? ` · est. max ${formatLoad(best.kg, item.unit)}${isFirstEstimate(rec) ? ` (${FIRST_ESTIMATE_NOTE})` : ''}` : ''}
                     </p>
-                    {item.suggestion ? <p className="mt-1 text-caption text-ink3">{item.suggestion.why}</p> : null}
+                    {item.suggestion ? <p className="mt-1 text-caption text-ink3">{item.suggestion.floorPushupTrial && draft.items.some((it) => it.exerciseId === 'push-up')
+                      ? 'Continue your remaining working sets here.' : item.suggestion.why}</p> : null}
+                    {showFloorTrial(item) ? <button type="button" className="min-h-11 text-left text-footnote font-semibold text-accent-text"
+                      onClick={() => setTrialFor(i)}>Try a floor push-up</button> : null}
                     {item.swappedFrom ? (
                       <p className="mt-1 text-caption text-ink3">In place of {GYM_EXERCISE_BY_ID[item.swappedFrom]?.name}.</p>
                     ) : null}
@@ -849,6 +882,18 @@ export function GymPlayer({
         </div>
       </Sheet>
 
+      <Sheet open={Boolean(floorTarget)} onClose={() => setTrialFor(null)} title="Try a floor push-up">
+        {prep && floorTarget && <div>
+          <p className="text-body text-ink2">Use one set to try up to {floorTarget} clean floor {floorTarget === 1 ? 'push-up' : 'push-ups'}. Keep your body straight and stop when a rep loses its shape. Your remaining sets use {GYM_EXERCISE_BY_ID[prep.exerciseId].name.toLowerCase()}.</p>
+          <p className="mt-3 text-footnote font-semibold">How many clean reps did you complete?</p>
+          <div className="mt-2 flex flex-wrap gap-2">{Array.from({ length: floorTarget + 1 }, (_, n) =>
+            <button type="button" key={n} onClick={() => recordFloorSet(n)}
+              aria-label={`Log ${n} floor push-up ${n === 1 ? 'rep' : 'reps'}`}
+              className="min-h-11 min-w-12 rounded-control border border-line bg-raised px-3 font-semibold tnum">{n}</button>)}</div>
+          <button type="button" onClick={() => setTrialFor(null)} className="mt-3 min-h-11 text-footnote font-semibold text-accent-text">Keep my planned sets</button>
+          <button type="button" onClick={() => { setTrialFor(null); setReportOpen(true) }} className="ml-4 min-h-11 text-footnote font-semibold text-accent-text">Something hurts</button>
+        </div>}
+      </Sheet>
       <Sheet open={reportOpen} onClose={() => setReportOpen(false)} title="Report pain or discomfort">
         {reportOpen && <JointReportFields onRecord={recordSymptom} onCancel={() => setReportOpen(false)} />}
       </Sheet>

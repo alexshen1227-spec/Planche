@@ -1,7 +1,7 @@
 import { type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
 import { athleticDomain, GYM_EXERCISE_BY_ID, jointsToRest, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
-import { availableAt, preferenceRank } from './availability'
-import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
+import { availableAt, canDoHere, preferenceRank } from './availability'
+import { isPushupPrep, readyForBodyweight, type BodyweightCapacity } from './bodyweight'
 import { gateTier, isHardBodyweight, liftTrend, plyoGate, repPlanFor, STALL_SESSIONS, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymSession, Rating } from './types'
 
@@ -716,6 +716,16 @@ export function buildGymSession(input: GymSessionInput): GymPlan {
   const trial = input.capacity?.tryPullup && items.find((item) => item.exerciseId === 'pull-up')
   if (trial) {
     trial.suggestion = { ...trial.suggestion, why: 'You reached your rep target on the machine with zero assistance. Try a controlled set on the bar, stop while your form is good, and use assistance for the remaining sets if needed.' }
+  }
+  const floor = GYM_EXERCISE_BY_ID['push-up']
+  const target = input.capacity?.floorPushupTrial
+  if (target && (input.volumeFactor ?? 1) >= 1 && input.ratings?.[floor.id] !== 'avoid' && canDoHere(floor.id, input.location) &&
+      !floor.stress.some((j) => input.avoidJoints?.includes(j)) && !floor.primary.some((m) => input.musclesOff?.includes(m))) {
+    const prep = items.find((it) => isPushupPrep(it.exerciseId) && it.sets >= 2)
+    if (prep && !items.some((it) => it.exerciseId === floor.id)) {
+      prep.suggestion = { ...prep.suggestion, floorPushupTrial: target,
+        why: `Your recent easier push-ups reached the top of the range with reps in reserve. You can try up to ${target} clean floor ${target === 1 ? 'push-up' : 'push-ups'} for one set, then return to ${GYM_EXERCISE_BY_ID[prep.exerciseId].name.toLowerCase()}.` }
+    }
   }
   return { ...session, items }
 }
