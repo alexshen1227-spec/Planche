@@ -3,7 +3,7 @@ import { skillHoldSecOf } from './progressTotals'
 import type { AppState, Session, Settings, TrainingSurface } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
-import { progressionCredit } from './progression'
+import { practiceHoldCredit, progressionCredit } from './progression'
 import { isSkillHold, wholeState } from './skills'
 
 /** One change of weekly goal: from `at` on (the week it falls in included), the goal was `goal`. */
@@ -195,21 +195,24 @@ export function bestSeries(
   state: AppState,
   exerciseId: string,
   surface?: TrainingSurface,
+  measure: 'verified' | 'practice' = 'verified',
 ): { at: number; value: number }[] {
   const out: { at: number; value: number }[] = []
   const exercise = EXERCISE_BY_ID[exerciseId]
   const progressionExercise = plotsProgressionCredit(exerciseId)
+  const credit = measure === 'practice' ? practiceHoldCredit : progressionCredit
   for (const s of [...state.sessions].sort((a, b) => a.startedAt - b.startedAt)) {
+    if (progressionExercise && s.workoutName === 'Quick Log') continue
     const sets = s.sets.filter((set) => set.exerciseId === exerciseId && (!surface || set.surface === surface))
     let value = 0
     if (!progressionExercise) {
       value = sets.reduce((best, set) => Math.max(best, set.value), 0)
     } else if (exercise?.perSide) {
       const side = (which: 'left' | 'right') =>
-        sets.filter((set) => set.side === which).reduce((best, set) => Math.max(best, progressionCredit(set, exerciseId)), 0)
+        sets.filter((set) => set.side === which).reduce((best, set) => Math.max(best, credit(set, exerciseId)), 0)
       value = Math.min(side('left'), side('right'))
     } else {
-      value = sets.reduce((best, set) => Math.max(best, progressionCredit(set, exerciseId)), 0)
+      value = sets.reduce((best, set) => Math.max(best, credit(set, exerciseId)), 0)
     }
     if (value > 0) out.push({ at: s.startedAt, value })
   }

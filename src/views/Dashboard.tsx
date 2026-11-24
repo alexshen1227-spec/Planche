@@ -22,7 +22,7 @@ import { weekStreak, totalHoldSec, sessionHighlight } from '../lib/stats'
 import { buildPlan, STRATEGY_BY_ID, coachConfidence } from '../lib/coach'
 import { CONFIDENCE_NOTE, describeForecast, forecastUnlock, goalOutlook } from '../lib/forecast'
 import { PLATEAU_LABEL, recentBreakthrough } from '../lib/plateau'
-import { qualifyingProgress } from '../lib/progression'
+import { bestHoldPractice, qualifyingProgress } from '../lib/progression'
 import { addDays, dayKey, fmtDate, fmtDuration, fmtHold, weekStart } from '../lib/time'
 import { BackupButton } from '../components/BackupButton'
 import { useToday } from '../lib/useToday'
@@ -226,6 +226,9 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
   const prBest = state.prs[step.keyExerciseId]?.value ?? 0
   const qualified = qualifyingProgress(state, state.stepId)
   const best = qualified.value
+  const practice = useMemo(() => bestHoldPractice(state, step.id), [state, step.id])
+  const showPractice = practice && practice.value > best && best < step.unlockSec
+  const practiceAtTarget = showPractice && practice.value >= step.unlockSec
   // A record that is a stopwatch hold read short of its timer: both numbers, and why.
   const bestNote = useMemo(() => {
     const sets = state.sessions.flatMap((x) => x.sets)
@@ -505,15 +508,24 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
           </div>
         </div>
         <div className="mt-4 flex items-center gap-4">
-          <ProgressRing value={unlockPct} size={64} stroke={6}>
-            <span className="font-display text-body font-bold text-ink tnum">{Math.round(unlockPct * 100)}%</span>
+          <ProgressRing value={showPractice ? practice.value / step.unlockSec : unlockPct} size={64} stroke={6}>
+            {showPractice ? <div className="text-center leading-tight">
+              <div className="font-display text-body font-bold text-ink tnum">{fmtHold(practice.value)}</div>
+              <div className="text-[10px] text-ink3">practice</div>
+            </div> : <span className="font-display text-body font-bold text-ink tnum">{Math.round(unlockPct * 100)}%</span>}
           </ProgressRing>
           <div className="min-w-0 flex-1">
             <div className="space-y-1">
+              {showPractice ? <div>
+                <div className="text-footnote font-semibold text-ink">{practiceAtTarget ? 'Hold target reached in practice' : 'Best hold you rated clean'}</div>
+                <button onClick={() => viewSession(practice.sessionId)} className="min-h-11 text-left text-footnote text-accent-text underline underline-offset-2">
+                  {fmtHold(practice.value)}{keyEx.perSide ? ' on both sides' : ''} · {fmtDate(practice.at)} · View session
+                </button>
+              </div> : null}
               <div className="text-footnote text-ink2">
                 {keyEx.name} verified best{' '}
                 <span className="font-semibold text-ink tnum">{best ? fmtHold(best) : '—'}</span>
-                {prBest > best ? <span className="text-ink3"> · PR {fmtHold(prBest)}</span> : null}
+                {prBest > (showPractice ? practice.value : best) ? <span className="text-ink3"> · PR {fmtHold(prBest)}</span> : null}
               </div>
               {bestNote ? <p className="text-caption leading-relaxed text-ink3">{bestNote}</p> : null}
               <div className="text-footnote text-ink2">
@@ -532,7 +544,9 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
               {next ? (
                 <div>
                   <div>
-                    {forecast.kind === 'ready' ? (
+                    {practiceAtTarget ? (
+                      <span className="text-footnote leading-relaxed text-ink2">You have held the target time. Film a fresh attempt and review its form to confirm this step.</span>
+                    ) : forecast.kind === 'ready' ? (
                       <span className="text-footnote font-medium text-accent-text">
                         Attempt ready — you have already held this bar. Test it.
                       </span>
@@ -607,7 +621,7 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
             <span className="text-footnote text-ink2">
               <span className="font-semibold text-ink">Today the coach recommends the gym</span> — {FOCUS_LABEL[dayPlan.gym.focus].toLowerCase()},{' '}
               {dayPlan.minutes} min
-              {dayPlan.skill?.opener ? `. ${openerLine(dayPlan.skill)}` : ''}.
+              {dayPlan.skill?.opener ? `. ${openerLine(dayPlan.skill).replace(/\.$/, '')}` : ''}.
               {gymPlaceLine(gymWhere) ? ` ${gymPlaceLine(gymWhere)}${gymPlaceLine(gymWhere)!.endsWith('.') ? '' : '.'}` : ''}
             </span>
             <Button variant="secondary" onClick={() => go('train')}>

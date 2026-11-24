@@ -6,6 +6,7 @@ import { STEP_BY_ID } from '../data/progressions'
 import { initialState, normalizeState, rebuildDerivedState, reconcileAchievements, skipToStep } from './store'
 import { applySession } from './engine'
 import {
+  bestHoldPractice,
   formEvidenceCoversArms,
   passesProgressionFormCheck,
   progressionCredit,
@@ -533,6 +534,21 @@ describe('progression safety', () => {
       workoutKind: 'template',
     })
     expect(applySession(owned, wristWork).next.stepId).toBe('lean')
+  })
+
+  it('recognizes a clean-rated practice target while keeping the filmed gate and its bilateral rule', () => {
+    const clean = { rating: 'clean' as const, confirmed: true }
+    const ordinary = log('ppp-hold', 21, { form: clean })
+    const history = { sessions: [session('foundations', [
+      ordinary, { ...ordinary, value: 30, assist: 'band' }, { ...ordinary, value: 40, endReason: 'timing' },
+      { ...ordinary, value: 50, form: { ...clean, confirmed: false } },
+    ])] }
+    expect(bestHoldPractice(history, 'foundations')?.value).toBe(21)
+    expect(qualifyingProgress(history, 'foundations').value).toBe(0)
+    const left = session('oneleg', [log('one-leg-planche', 14, { side: 'left', form: clean })])
+    const right = session('oneleg', [log('one-leg-planche', 11, { side: 'right', form: clean })])
+    expect(bestHoldPractice({ sessions: [left] }, 'oneleg')).toBeUndefined()
+    expect(bestHoldPractice({ sessions: [left, right] }, 'oneleg')).toMatchObject({ value: 11, sessionId: right.id })
   })
 
   it('uses the weaker side for a unilateral unlock', () => {

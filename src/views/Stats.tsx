@@ -463,6 +463,7 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewSkill])
   const [chartSurface, setChartSurface] = useState<TrainingSurface | 'all'>('all')
+  const [holdMeasure, setHoldMeasure] = useState<'practice' | 'verified' | null>(null)
   const [expanded, setExpanded] = useState<string | null>(focusSessionId)
   useEffect(() => {
     if (!focusSessionId) return
@@ -483,12 +484,15 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
   const [achievementFilter, setAchievementFilter] = useState<'all' | 'earned' | 'next' | 'locked'>('next')
 
   const chartIsPlanche = isSurfaceAware(EXERCISE_BY_ID[chartEx])
-  /** The line plots unlock credit, not the timer — every label must say so. */
-  const chartIsCredit = plotsProgressionCredit(chartEx)
-  const series = useMemo(
-    () => bestSeries(state, chartEx, chartIsPlanche && chartSurface !== 'all' ? chartSurface : undefined),
-    [state, chartEx, chartIsPlanche, chartSurface],
-  )
+  const gradedHold = plotsProgressionCredit(chartEx)
+  const surface = chartIsPlanche && chartSurface !== 'all' ? chartSurface : undefined
+  const verifiedSeries = useMemo(() => bestSeries(state, chartEx, surface), [state, chartEx, surface])
+  const practiceSeries = useMemo(() => gradedHold ? bestSeries(state, chartEx, surface, 'practice') : [],
+    [state, chartEx, surface, gradedHold])
+  const chartIsPractice = gradedHold && (holdMeasure === 'practice' || (holdMeasure === null && !verifiedSeries.length && practiceSeries.length > 0))
+  const chartIsCredit = gradedHold && !chartIsPractice
+  const series = chartIsPractice ? practiceSeries : verifiedSeries
+  const chartLabel = chartIsPractice ? 'Best clean-rated hold per session' : chartIsCredit ? 'Form-qualified credit per session' : 'Best hold per session'
   /**
    * Why the trend is empty, when it is not simply "you have not trained it".
    *
@@ -504,7 +508,7 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
     // own verified hold.
     if (series.length === 1) {
       const only = series[0]
-      return `One ${chartIsCredit ? 'form-qualified ' : ''}session so far: ${fmtHold(only.value)} on ${fmtDate(
+      return `One ${chartIsPractice ? 'clean-rated practice ' : chartIsCredit ? 'form-qualified ' : ''}session so far: ${fmtHold(only.value)} on ${fmtDate(
         only.at,
       )}. A trend needs a second one.`
     }
@@ -512,6 +516,7 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
       (n, session) => n + session.sets.filter((set) => set.exerciseId === chartEx && set.value > 0).length,
       0,
     )
+    if (chartIsPractice) return 'Rate a working hold Clean after training to start the practice trend. Each point shows your best unassisted hold that session.'
     if (logged === 0) return undefined
     if (!chartIsCredit) return undefined
     if (chartIsPlanche && chartSurface !== 'all') {
@@ -520,7 +525,7 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
     return `${logged} set${logged === 1 ? '' : 's'} of this hold logged, but none is form-qualified yet. This chart plots the credit that counts toward unlocking — sets you rated Clean that also passed a filmed check, up to the camera's clean window${
       EXERCISE_BY_ID[chartEx]?.perSide ? ', and the weaker side when both were trained' : ''
     }. Your records and totals still count everything.`
-  }, [series, state.sessions, chartEx, chartIsPlanche, chartIsCredit, chartSurface])
+  }, [series, state.sessions, chartEx, chartIsPlanche, chartIsCredit, chartIsPractice, chartSurface])
 
   const arms = useMemo(() => armStats(state), [state])
   const triedArms = useMemo(() => arms.filter((arm) => arm.attempts > 0).length, [arms])
@@ -707,7 +712,7 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="font-display text-title3 font-semibold text-ink">
-              {chartIsCredit ? 'Form-qualified credit per session' : 'Best hold per session'}
+              {chartLabel}
             </h3>
             <div className="text-footnote text-ink2">
               {EXERCISE_BY_ID[chartEx]?.name}
@@ -766,12 +771,24 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
             ))}
           </div>
         ) : null}
+        {gradedHold && (practiceSeries.length > 0 || holdMeasure !== null) ? (
+          <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Hold measurement">
+            {(['practice', 'verified'] as const).map((measure) => {
+              const selected = measure === 'practice' ? chartIsPractice : chartIsCredit
+              return <button type="button" key={measure} aria-pressed={selected}
+                onClick={() => setHoldMeasure(measure)}
+                className={`min-h-11 rounded-full border px-3 text-footnote font-medium ${selected ? 'border-transparent bg-accent text-on-accent' : 'border-line text-ink2'}`}>
+                {measure === 'practice' ? 'Clean-rated practice' : 'Filmed verification'}
+              </button>
+            })}
+          </div>
+        ) : null}
         <div className="mt-3">
           <HoldLineChart
             points={series}
             goal={chartStep?.unlockSec}
             emptyHint={chartEmptyHint}
-            label={chartIsCredit ? 'Form-qualified credit per session' : 'Best hold per session'}
+            label={chartLabel}
           />
         </div>
       </div>

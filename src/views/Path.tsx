@@ -11,7 +11,7 @@ import { ladderStatus, type LadderStatus } from '../lib/repLadder'
 import { goalChoices } from '../lib/placement'
 import { GOAL_HERE_TEXT, goalStanding, stepPassed } from '../lib/plan/screens'
 import { AddSkill } from '../components/AddSkill'
-import { daysAtBar } from '../lib/progression'
+import { bestHoldPractice, daysAtBar, qualifyingProgress } from '../lib/progression'
 import { challengeBlockedReason } from '../data/workouts'
 import { buildPlan } from '../lib/coach'
 import { fmtHold, fmtDate } from '../lib/time'
@@ -19,7 +19,6 @@ import { pushToast } from '../lib/toast'
 import { Icon } from '../components/Icon'
 import { Figure } from '../components/Figure'
 import { Modal } from '../components/ui'
-import { qualifyingProgress } from '../lib/progression'
 import { BridgeCard } from '../components/BridgeCard'
 import { twinOf } from '../data/pressing'
 import { readJourney, type JourneyStop } from '../lib/journey'
@@ -286,6 +285,7 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
           const unlocked = state.unlocked.includes(step.id)
           const isCurrent = state.stepId === step.id
           const best = qualifyingProgress(state, step.id).value
+          const practice = isCurrent ? bestHoldPractice(state, step.id) : undefined
           const done = unlocked && step.order < currentOrder && best >= step.unlockSec
           const available = unlocked && step.order < currentOrder && !done
           const pct = Math.min(1, best / step.unlockSec)
@@ -359,6 +359,9 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                   </div>
                   <div className="mt-0.5 line-clamp-2 text-footnote leading-snug text-ink2">{step.tagline}</div>
                   <div className="mt-2 space-y-1.5">
+                    {practice && practice.value > best ? <p className="text-caption font-semibold text-ink2">
+                      {fmtHold(practice.value)} in clean-rated practice{practice.value >= step.unlockSec ? ' · hold target reached' : ''}{keyEx.perSide ? ' · both sides' : ''}
+                    </p> : null}
                     <div className="h-1.5 w-full max-w-[220px] overflow-hidden rounded-full bg-line">
                       <div
                         className={`h-full rounded-full ${done || pct >= 1 ? 'bg-ok' : 'bg-accent'}`}

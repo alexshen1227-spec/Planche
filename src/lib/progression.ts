@@ -598,6 +598,40 @@ export function qualifyingSessionValue(session: Session, stepId: StepId): number
   return qualifyingProgress(state, stepId).value
 }
 
+/** An unassisted working hold the athlete rated clean. Where footage was
+ * assessed, use only the time its evidence supports. This is a practice mark. */
+export function practiceHoldCredit(set: SetLog, exerciseId: string): number {
+  if (set.exerciseId !== exerciseId || set.kind !== 'hold' || set.section !== 'main' || !(set.value > 0) ||
+    isAssisted(set) || set.repaired?.length || endedForNonCapacityReason(set) || humanRating(set.form) !== 'clean') return 0
+  const form = set.form!
+  if (form.auto || form.visualReviewPassed === true) return progressionCredit(set, exerciseId)
+  if (form.visualReviewPassed === false || form.flightConfirmed === false || form.armsConfirmed === false || form.variantConfirmed === false || form.issues?.length) return 0
+  return set.value
+}
+
+/** Like a verified best, a two-sided practice mark needs both sides. Keep
+ * the limiting set's date and session so the athlete can find the attempt. */
+export function bestHoldPractice(state: Pick<AppState, 'sessions'>, stepId: StepId) {
+  const id = STEP_BY_ID[stepId].keyExerciseId
+  const sided = EXERCISE_BY_ID[id]?.perSide
+  const best: Partial<Record<'left' | 'right' | 'both', { value: number; at: number; sessionId: string }>> = {}
+  for (const session of state.sessions) {
+    if (session.workoutName === 'Quick Log') continue
+    for (const set of session.sets) {
+      const side = sided ? set.side : 'both'
+      if (!side) continue
+      const value = practiceHoldCredit(set, id)
+      const prior = best[side]
+      if (value > 0 && (!prior || value > prior.value || (value === prior.value && set.at > prior.at))) {
+        best[side] = { value, at: set.at, sessionId: session.id }
+      }
+    }
+  }
+  if (!sided) return best.both
+  if (!best.left || !best.right) return undefined
+  return best.left.value < best.right.value ? best.left : best.right
+}
+
 /** Sessions closer together than this are the same day's practice, wherever the clock is. */
 const SEPARATE_DAYS_MS = 18 * 3_600_000
 
