@@ -41,7 +41,7 @@ import { sfx, speak, buzz } from '../lib/audio'
 import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
 import { clearDraft, restoredAttemptReport, restoredSessionSetup, saveDraft, type SessionDraft } from '../lib/draft'
-import { countsSkillDay, remainingSkillWork } from '../lib/skillSession'
+import { countsSkillDay, plannedMainRounds, remainingSkillWork } from '../lib/skillSession'
 import { rememberNextBlock } from '../lib/plan/nextBlock'
 import { useFormRecorder, type RecorderStatus } from '../lib/recorder'
 import { saveClip } from '../lib/clips'
@@ -62,7 +62,7 @@ import {
   stopSetupCredits,
 } from '../lib/sessionTiming'
 import { defaultSurface, surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
-import { recordForSurface } from '../lib/records'
+import { isRecordSet, recordForSurface, sideRecord } from '../lib/records'
 import { demoSearchUrl, movementVideo, youtubeId } from '../lib/video'
 import { MovementDemo } from '../components/MovementDemo'
 import { Icon } from '../components/Icon'
@@ -381,6 +381,8 @@ export function SessionPlayer({
    * rating or an "interrupted" end reason feeds straight back into it.
    */
   const [blockLogAts, setBlockLogAts] = useState<Record<number, number[]>>(() => resumeFrom?.blockLogAts ?? {})
+  const [skippedByBlock, setSkippedByBlock] = useState<Record<number, number>>(() => resumeFrom?.skippedByBlock ?? {})
+  const skippedRounds = Object.values(skippedByBlock).reduce((n, count) => n + count, 0)
   /** Move-on suggestions the athlete waved away, by block and set count. */
   const [keptGoing, setKeptGoing] = useState<Set<string>>(() => new Set())
   const [now, setNow] = useState(() => Date.now())
@@ -617,7 +619,7 @@ export function SessionPlayer({
   const bestBefore = useMemo(() => {
     if (!exercise) return undefined
     const surfaceAware = isSurfaceAware(exercise)
-    const stored = surfaceAware
+    const stored = perSide ? sideRecord(state.sessions, exercise.id, side, surfaceAware ? surface : undefined) : surfaceAware
       ? recordForSurface(state.prs[exercise.id], surface)?.value
       : state.prs[exercise.id]?.value
     // A warm-up primer is a deliberately easy hold, not a best to beat: as one
@@ -626,7 +628,7 @@ export function SessionPlayer({
     const thisSession = logs.reduce(
       (best, log) =>
         log.exerciseId === exercise.id &&
-        log.section !== 'warmup' &&
+        isRecordSet(log) && (!perSide || log.side === side) &&
         (!surfaceAware || log.surface === surface) &&
         log.value > best
           ? log.value
@@ -635,7 +637,7 @@ export function SessionPlayer({
     )
     if (stored === undefined && thisSession === 0) return undefined
     return Math.max(stored ?? 0, thisSession)
-  }, [exercise, state.prs, logs, surface])
+  }, [exercise, state.prs, state.sessions, logs, surface, perSide, side])
   const leadSec = leadInSecondsFor(exercise?.id)
   // A warm-up drill or a cool-down stretch is done at its prescribed count:
   // nothing comes off it (a stretch once logged 2.1s of 4.4s held).
@@ -736,6 +738,7 @@ export function SessionPlayer({
         ...(finishedEarly ? { finishedEarly: true } : {}),
         ...(attemptReport ? { attemptReport: { at: attemptReport.at, setAt: attemptReport.setAt, returnTo: attemptReport.returnTo } } : {}),
         ...(Object.keys(blockLogAts).length ? { blockLogAts } : {}),
+        ...(skippedRounds ? { skippedByBlock } : {}),
         rpe,
         notes,
       })
@@ -845,6 +848,8 @@ export function SessionPlayer({
     finishedEarly,
     attemptReport,
     blockLogAts,
+    skippedByBlock,
+    skippedRounds,
   ])
 
   // Say what was recovered, not that nothing was lost — an interrupted hold
@@ -1050,6 +1055,7 @@ export function SessionPlayer({
     (rounds: number) => {
       lastBeepRef.current = -1
       const b = workout.blocks[bi]
+      if (b) setSkippedByBlock((prev) => ({ ...prev, [bi]: Math.min(b.sets, (prev[bi] ?? 0) + rounds) }))
       if (b && si + rounds < b.sets) {
         setSi(si + rounds)
         setPhase('ready')
@@ -1557,7 +1563,7 @@ export function SessionPlayer({
     const endedAt = endedAtRef.current || savedAt
     const partial = finishedEarly || logs.length < totalSets || Boolean(workout.deferredBlocks?.length)
     const remaining = partial && !attemptReport && workout.kind !== 'micro'
-      ? remainingSkillWork({ ...workout, blocks: workout.blocks.map((b, i) => blockAt(i, logs) ?? b) }, logs, blockLogAts)
+      ? remainingSkillWork({ ...workout, blocks: workout.blocks.map((b, i) => blockAt(i, logs) ?? b) }, logs, blockLogAts, skippedByBlock, weakSideFirst)
       : undefined
     const lead: SkillId = workout.skills?.[0] ?? 'planche'
     // What each other skill was on, and what the coach gave it today.
@@ -1593,6 +1599,8 @@ export function SessionPlayer({
       completion: partial ? 'partial' : 'full',
       ...(remaining ? { remaining } : {}),
       plannedRounds: totalSets,
+      plannedMainRounds: plannedMainRounds(workout.blocks),
+      ...(skippedRounds ? { skippedRounds } : {}),
       ...(workout.baseTargetSec !== undefined ? { baseTargetSec: workout.baseTargetSec } : {}),
       // The top-level re-test flag is the planche's; another skill's is in its own notes.
       ...(workout.blocks.some((b) => b.retest && (b.skill ?? workout.skills?.[0] ?? 'planche') === 'planche')
@@ -1686,7 +1694,7 @@ export function SessionPlayer({
     if (attemptReport || painReportedIn(next, session)) return
     if (ev.unlockedStep) confetti(2)
     else if (ev.prs.length > 0 || rungs.length > 0) confetti(1)
-  }, [workout, state, logs, rpe, notes, dispatch, getState, onExit, checkIn, finishedEarly, totalSets, blockLogAts, blockAt, attemptReport])
+  }, [workout, state, logs, rpe, notes, dispatch, getState, onExit, checkIn, finishedEarly, totalSets, blockLogAts, blockAt, attemptReport, skippedByBlock, skippedRounds, weakSideFirst])
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -2161,7 +2169,7 @@ export function SessionPlayer({
           </div>
           {bestBefore ? (
             <div className="mt-1.5 text-footnote text-ink3 tnum">
-              {isSurfaceAware(exercise) ? `${surfaceLabel(surface)} ` : ''}best{' '}
+              {perSide ? `${side === 'left' ? 'Left' : 'Right'} side ` : ''}{isSurfaceAware(exercise) ? `${surfaceLabel(surface)} ` : ''}best{' '}
               {exercise.type === 'hold' ? fmtHold(bestBefore) : `${bestBefore} reps`}
             </div>
           ) : null}
@@ -2767,9 +2775,9 @@ export function SessionPlayer({
         </div>}
         {doneSets < totalSets ? (
           <p className="mx-auto mt-2 max-w-sm text-center text-footnote leading-relaxed text-ink3">
-            {doneSets} of {totalSets} planned rounds done. {attemptReport
+            {doneSets} of {totalSets} planned rounds done. {skippedRounds > 0 && `${skippedRounds} explicitly skipped. `}{attemptReport
               ? 'The remaining rounds have been dropped for this session.'
-              : 'Save the sets you logged. You can return to unfinished working rounds today.'}
+              : doneSets + skippedRounds < totalSets ? 'Save the sets you logged. You can return to unfinished working rounds today.' : 'Save the sets you logged.'}
           </p>
         ) : null}
         <div className="mt-4 grid grid-cols-3 gap-2.5">

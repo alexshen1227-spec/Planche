@@ -661,6 +661,9 @@ function sanitizeSessions(
     const checkIn = sanitizeCheckIn(c.checkIn)
     const endedAt = isTime(c.endedAt) && c.endedAt >= startedAt ? c.endedAt : startedAt
     const remaining = c.completion === 'partial' ? readSkillRemainder(c.remaining) : undefined
+    const mainRounds = c.plannedMainRounds && typeof c.plannedMainRounds === 'object' && !Array.isArray(c.plannedMainRounds)
+      ? Object.fromEntries(Object.entries(c.plannedMainRounds).filter(([id, n]) => Object.hasOwn(EXERCISE_BY_ID, id) && Number.isInteger(n) && n > 0 && n <= 500))
+      : {}
     const session: Session = {
       id: typeof c.id === 'string' && c.id ? c.id : newId(),
       startedAt,
@@ -681,6 +684,8 @@ function sanitizeSessions(
       ...(isTime(c.updatedAt) ? { updatedAt: c.updatedAt } : {}),
       ...(c.completion === 'full' || c.completion === 'partial' ? { completion: c.completion } : {}),
       ...(remaining ? { remaining } : {}),
+      ...(Object.keys(mainRounds).length ? { plannedMainRounds: mainRounds } : {}),
+      ...(typeof c.skippedRounds === 'number' && Number.isInteger(c.skippedRounds) && c.skippedRounds > 0 ? { skippedRounds: Math.min(500, c.skippedRounds) } : {}),
       ...(typeof c.plannedRounds === 'number' && Number.isInteger(c.plannedRounds) && c.plannedRounds >= 0
         ? { plannedRounds: Math.min(500, c.plannedRounds) }
         : {}),

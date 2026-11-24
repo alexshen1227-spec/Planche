@@ -437,6 +437,8 @@ export interface Signals {
 
   /** Fraction of last session's main sets that reached their target. */
   mainHitRate: number | null
+  /** The most recent unfinished prescription for this step, when its size is known. */
+  partialMainDose?: { completed: number; planned: number }
   /** The working target the hit rate was read against (its highest), in seconds. */
   lastWorkingTarget: number | null
   /** When the session that set `lastWorkingTarget` started. */
@@ -658,6 +660,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   // the target back", cutting the target it had just re-measured.
   let mainHitRate: number | null = null
   let mainSetCount = 0
+  let partialMainDose: { completed: number; planned: number } | undefined
   const workingSetsOf = (s: Session) =>
     unfinishedHoldSample(s, state.stepId) ? [] : keySetsOf(s, keyId, 'main').filter((set) =>
       !isBarAttempt(set, state.stepId) && !endedForNonCapacityReason(set))
@@ -674,7 +677,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
         s.workoutKind !== 'micro' &&
         now - s.startedAt <= 14 * DAY &&
         // A max test's sets all target the bar, so it has none and is passed.
-        workingSetsOf(s).length > 0,
+        (workingSetsOf(s).length > 0 || (s.completion === 'partial' && (s.plannedMainRounds?.[keyId] ?? 0) > 0)),
     )
   // The coach's own last working target: a template's fixed numbers (Setup
   // Practice's 6s, Quick Ten's 10s) are not one, and quoted as "the working
@@ -696,9 +699,16 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   if (lastRelevant) {
     const mains = workingSetsOf(lastRelevant)
     mainSetCount = mains.length
+    const attempted = keySetsOf(lastRelevant, keyId, 'main').filter((set) => !isBarAttempt(set, state.stepId)).length
+    if (lastRelevant.completion === 'partial') {
+      const pending = lastRelevant.remaining?.blocks.filter((b) => b.section === 'main' && b.exerciseId === keyId && !b.retest && b.role !== 'attempt' && b.role !== 'assisted')
+        .reduce((n, b) => n + b.sets, 0) ?? 0
+      const planned = lastRelevant.plannedMainRounds?.[keyId] ?? attempted + pending
+      if (planned > attempted) partialMainDose = { completed: attempted, planned }
+    }
     // A hold stopped at its target call reached the target, even when the fixed
     // walk-back allowance logs it a little under.
-    mainHitRate = mains.filter((s) => capacityReading(s) >= s.target).length / mains.length
+    if (mains.length) mainHitRate = mains.filter((s) => capacityReading(s) >= s.target).length / mains.length
   }
 
   // An outlier is a value far outside the robust range of the ones just
@@ -1096,6 +1106,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
     daysSinceCheckIn,
     persistentComplaint,
     mainHitRate,
+    ...(partialMainDose ? { partialMainDose } : {}),
     lastWorkingTarget,
     lastWorkingTargetAt,
     mainSetCount,

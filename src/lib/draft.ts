@@ -64,6 +64,7 @@ export interface SessionDraft {
    * same targets the athlete was being given.
    */
   blockLogAts?: Record<number, number[]>
+  skippedByBlock?: Record<number, number>
 }
 
 export type DraftInput = Omit<SessionDraft, 'v' | 'savedAt'>
@@ -119,7 +120,11 @@ export function loadDraft(now = Date.now()): SessionDraft | null {
     // someone back into a session they only opened and walked away from. An
     // interrupted first hold still counts as work worth recovering.
     const holdInFlight = d.wasHolding && d.holdElapsed > 1
-    if (d.logs.length === 0 && !holdInFlight && !d.attemptReport) {
+    if (d.skippedByBlock) {
+      d.skippedByBlock = Object.fromEntries(Object.entries(d.skippedByBlock).filter(([index, count]) =>
+        Number.isInteger(Number(index)) && Number.isInteger(count) && count > 0 && count <= (d.workout.blocks?.[Number(index)]?.sets ?? 0)))
+    }
+    if (d.logs.length === 0 && !holdInFlight && !d.attemptReport && !Object.keys(d.skippedByBlock ?? {}).length) {
       clearDraft()
       return null
     }

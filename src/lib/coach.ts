@@ -998,7 +998,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
       text: `Your last few holds swung ±${Math.round((sig.variability ?? 0) * 100)}% — that reads as measurement noise, not a trend. Holding targets steady until it settles.`,
       kind: 'warn',
     })
-  } else if (sig.mainHitRate !== null) {
+  } else if (sig.mainHitRate !== null && !sig.partialMainDose) {
     // Two sets is thin evidence; four is reasonable. Scale the size of the
     // change to how much data stands behind it rather than reacting fully to
     // a single lucky or unlucky session.
@@ -1867,6 +1867,24 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   }
 
   if (gapReturn && strategy === 'intensity') strategy = 'balanced'
+  if (sig.partialMainDose && loadPermission !== 'none') {
+    const { completed, planned } = sig.partialMainDose
+    if (completed / planned < 0.8) {
+      if (strategy === 'volume' || strategy === 'intensity' || strategy === 'density') {
+        strategy = 'balanced'
+        strategyOverrideReason = 'your last workout ended before most of its planned practice was established'
+      }
+      if (dayType === 'push') {
+        dayType = 'build'
+        dayReason = 'Build day with a repeatable dose after a partial workout.'
+      }
+      volumeFactor = Math.min(volumeFactor, 1)
+      targetFactor = Math.min(targetFactor, 1)
+      queueUnlockAttempt = false
+      suggestMaxTest = false
+    }
+    decisions.push({ text: `You logged ${completed} of ${planned} planned ${holdName} working rounds last time. Only the rounds you performed inform your targets.`, kind: 'info' })
+  }
   const shape = STRATEGY_BY_ID[strategy]
   // The first session back after pain never asks for more than the base
   // target, whatever shape the strategy has: the rail above capped the day's

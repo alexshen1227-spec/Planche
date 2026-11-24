@@ -720,6 +720,10 @@ export interface Session {
   remaining?: SkillRemainder
   /** Raw rounds the plan contained. */
   plannedRounds?: number
+  /** Main practice rounds by exercise, including later skips. */
+  plannedMainRounds?: Record<string, number>
+  /** Rounds explicitly skipped in the player. These are excluded from continuation. */
+  skippedRounds?: number
   /**
    * The key hold's base working target this session was built from. If its
    * key work was completed as prescribed, the next base does not fall below

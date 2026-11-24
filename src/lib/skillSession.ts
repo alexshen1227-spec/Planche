@@ -25,7 +25,8 @@ export function latestSkillPartial(sessions: Session[], now = Date.now()): Sessi
 }
 
 /** Map work to its block (the same hold can occur twice), including drafts made before the player kept block timestamps. */
-export function remainingSkillWork(workout: Workout, logs: SetLog[], byBlock: Record<number, number[]>): SkillRemainder | undefined {
+export function remainingSkillWork(workout: Workout, logs: SetLog[], byBlock: Record<number, number[]>,
+  skippedByBlock: Record<number, number> = {}, startingSide: 'left' | 'right' = 'left'): SkillRemainder | undefined {
   const assigned = new Set(Object.values(byBlock).flat())
   const unassigned = logs.filter((set) => !assigned.has(set.at))
   const byTime = new Map(logs.map((set) => [set.at, set]))
@@ -37,10 +38,14 @@ export function remainingSkillWork(workout: Workout, logs: SetLog[], byBlock: Re
       if (set.exerciseId === block.exerciseId && set.section === block.section) done.push(...unassigned.splice(n, 1))
       else n++
     }
-    const sets = block.sets - done.length
+    const skipped = skippedByBlock[i] ?? 0
+    const sets = block.sets - done.length - skipped
     if (sets < 1) return
-    const balance = done.reduce((n, set) => n + (set.side === 'left' ? 1 : set.side === 'right' ? -1 : 0), 0)
-    blocks.push({ ...block, sets, ...(balance ? { firstSide: balance > 0 ? 'right' : 'left' } : {}) })
+    if (EXERCISE_BY_ID[block.exerciseId]?.perSide) {
+      const first = block.firstSide ?? done.find((s) => s.side)?.side ?? startingSide
+      const firstSide = (done.length + skipped) % 2 === 0 ? first : first === 'left' ? 'right' : 'left'
+      blocks.push({ ...block, sets, firstSide })
+    } else blocks.push({ ...block, sets })
   })
   blocks.push(...(workout.deferredBlocks ?? []))
   if (!blocks.some((block) => isWorking(block.section))) return undefined
@@ -49,6 +54,17 @@ export function remainingSkillWork(workout: Workout, logs: SetLog[], byBlock: Re
   return { blocks, ...(workout.skills?.length ? { skills: workout.skills } : {}), ...(workout.lineup?.length ? { lineup: workout.lineup } : {}),
     ...(recovery ? { recovery: true } : {}), ...(req?.placeId ? { placeId: req.placeId } : {}), ...(req?.gymAfter && !recovery ? { gymAfter: req.gymAfter } : {}),
     ...(req?.focus ? { focus: req.focus } : {}) }
+}
+
+/** Keep the original denominator even after an athlete skips a block or
+ * continues a partial. Max attempts and diagnostic retests are separate. */
+export function plannedMainRounds(blocks: Block[]): Record<string, number> {
+  const rounds: Record<string, number> = {}
+  for (const b of blocks) {
+    if (b.section !== 'main' || b.retest || b.role === 'attempt' || b.role === 'assisted') continue
+    rounds[b.exerciseId] = (rounds[b.exerciseId] ?? 0) + b.sets
+  }
+  return rounds
 }
 
 const sections = new Set<Block['section']>(['warmup', 'main', 'strength', 'core', 'cooldown'])
@@ -105,10 +121,11 @@ export function continueSkillSession(previous: Session, part: Session): Session 
     if (role && (!roles[skill] || rank[role] > rank[roles[skill]!])) roles[skill] = role
   }
   const { remaining: _remaining, ...original } = previous
+  const skipped = (previous.skippedRounds ?? 0) + (part.skippedRounds ?? 0)
   return { ...original, sets: [...previous.sets, ...added], endedAt: Math.max(previous.endedAt + 1, part.endedAt),
     pausedMs: (previous.pausedMs ?? 0) + Math.max(0, part.startedAt - previous.endedAt) + (part.pausedMs ?? 0),
     savedAt: part.savedAt, updatedAt: Math.max(part.savedAt ?? part.endedAt, (previous.updatedAt ?? 0) + 1),
-    completion: part.completion, ...(part.remaining ? { remaining: part.remaining } : {}),
+    completion: skipped ? 'partial' : part.completion, ...(skipped ? { skippedRounds: skipped } : {}), ...(part.remaining ? { remaining: part.remaining } : {}),
     ...(Object.keys(roles).length ? { roles } : {}), ...(part.rpe !== undefined ? { rpe: part.rpe } : {}),
     ...(part.checkIn ? { checkIn: part.checkIn } : {}),
     ...(part.notes && part.notes !== previous.notes ? { notes: [previous.notes, part.notes].filter(Boolean).join('\n') } : {}) }

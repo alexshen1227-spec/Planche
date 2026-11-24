@@ -8,6 +8,10 @@ import { SessionPlayer } from './SessionPlayer'
 import { loadDraft } from '../lib/draft'
 import { peekNextBlock } from '../lib/plan/nextBlock'
 import { resumeSkillWorkout } from '../lib/resumeSkillWorkout'
+import { makeAthlete } from '../lib/plan/wholeAthleteLoop'
+import { skillView } from '../lib/skills'
+import { readSignals } from '../lib/signals'
+import { buildPlan } from '../lib/coach'
 
 /**
  * What the athlete hears during a hold, driven through the real player on a
@@ -137,6 +141,45 @@ it.each([false, true])('stops a front lever session after a joint report, includ
 })
 
 describe('what the athlete hears during a hold', () => {
+  it('preserves explicit skips and distinguishes one logged flag pair from eight prescribed rounds after a reload', () => {
+    const athlete = makeAthlete({ skills: ['flag'], steps: { flag: 'flag-tuck' }, kit: ['floor', 'pole'], active: 'home' })
+    localStorage.setItem('planchelab.v1', JSON.stringify(athlete))
+    const workout: Workout = { id: 'flag-opener', name: 'Flag practice', focus: '', minutes: 25, kind: 'auto', skills: ['flag'], blocks: [
+      { exerciseId: 'wrist-circles', section: 'warmup', sets: 1, target: { kind: 'reps', reps: 10 }, restSec: 15 },
+      { exerciseId: 'tuck-flag', section: 'main', role: 'skill', sets: 8, firstSide: 'left', target: { kind: 'hold', sec: 3 }, restSec: 45 },
+    ] }
+    const click = (name: RegExp | string) => fireEvent.click(screen.getByRole('button', { name }))
+    const ui = render(<StoreProvider><SessionPlayer workout={workout} onExit={() => {}} /></StoreProvider>)
+    click(/Begin session/)
+    click('Skip exercise')
+    const draft = loadDraft()!
+    expect(draft.skippedByBlock).toEqual({ 0: 1 })
+    ui.unmount()
+    render(<StoreProvider><SessionPlayer workout={workout} resumeFrom={draft} onExit={() => {}} /></StoreProvider>)
+    for (const side of ['Left', 'Right']) {
+      expect(screen.queryByText(/side best/i)).toBeNull()
+      click(/lead-in$/)
+      click('Skip lead-in')
+      holdFor(side === 'Left' ? 10 : 8)
+      click('Stop hold')
+      click('Skip rest')
+      act(() => { vi.advanceTimersByTime(100) })
+    }
+    expect(screen.getByText(/Left side best/i)).toBeTruthy()
+    click('Exit session')
+    click(/Finish early/)
+    click('Save session')
+    const saved: AppState = JSON.parse(localStorage.getItem('planchelab.v1')!)
+    expect(saved.sessions[0]).toMatchObject({ skippedRounds: 1, plannedMainRounds: { 'tuck-flag': 8 }, completion: 'partial' })
+    expect(saved.sessions[0].remaining?.blocks.map((b) => [b.exerciseId, b.sets, b.firstSide])).toEqual([['tuck-flag', 6, 'left']])
+    const flag = skillView(saved, 'flag')
+    const next = Date.now() + 3 * 86_400_000
+    expect(readSignals(flag, next).partialMainDose).toEqual({ completed: 2, planned: 8 })
+    const plan = buildPlan(flag, next)
+    expect(plan.decisions.map((d) => d.text).join(' ')).toMatch(/2 of 8 planned/)
+    expect(plan.decisions.map((d) => d.text).join(' ')).not.toMatch(/hit nearly every set/)
+    expect(['volume', 'density', 'intensity']).not.toContain(plan.strategy)
+  })
   it('resumes the eased target displayed before saving early', () => {
     const workout: Workout = { id: 'hangs', name: 'Active hangs', focus: '', minutes: 15, kind: 'auto', skills: ['frontlever'],
       blocks: [{ exerciseId: 'active-hang', sets: 4, target: { kind: 'hold', sec: 15 }, section: 'main', restSec: 60, role: 'skill' }] }
