@@ -179,7 +179,7 @@ export function GymPlayer({
   const records = useMemo(() => gymRecords(gym.sessions, location.id), [gym.sessions, location.id])
 
   /** A load far above this lift's best, asked about before the set is logged: a slipped decimal once set records for good. */
-  const [doubt, setDoubt] = useState<{ item: number; set: number; probably?: number; best: number } | null>(null)
+  const [doubt, setDoubt] = useState<{ item: number; set: number; load: number; probably?: number; best: number } | null>(null)
 
   /** A loaded lift completed with no weight on it: ask for the weight (or bodyweight, where the movement allows it). */
   const [needLoadAsk, setNeedLoad] = useState<LoadAsk | null>(null)
@@ -200,6 +200,42 @@ export function GymPlayer({
       setDoubt(null)
     }
     setSheet(next)
+  }
+
+  const checkLoad = (i: number, j: number, load: number | undefined) => {
+    const item = draft.items[i]
+    if (!load || GYM_EXERCISE_BY_ID[item.exerciseId].assisted ||
+        (item.suggestion?.kg !== undefined && load === entryLoad(item.suggestion.kg, item.unit)) ||
+        item.sets.some((s, k) => k !== j && s.done && !s.warmup && s.reps > 0 && s.load === load)) return false
+    const odd = doubtedLoad(gym.sessions, item.exerciseId, toKg(load, item.unit), undefined, location.id)
+    if (!odd) return false
+    setDoubt({ item: i, set: j, load, best: displayLoad(odd.bestKg, item.unit),
+      ...(odd.probablyKg !== undefined ? { probably: displayLoad(odd.probablyKg, item.unit) } : {}) })
+    return true
+  }
+
+  const changeLoad = (i: number, j: number, load: number | undefined, checked = false) => {
+    const item = draft.items[i]
+    if (item.sets[j].done) {
+      if (load === item.sets[j].load) return
+      const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
+      if ((recordsZeroLoad(ex) && load === undefined) || isUnloadedSet(ex, { kg: load })) {
+        pushToast('Enter the weight used for this completed set.', 'info')
+        return
+      }
+      if (!checked && checkLoad(i, j, load)) return
+    }
+    update((d) => {
+      const sets = d.items[i].sets
+      const was = sets[j].load
+      sets[j].load = load
+      sets[j].loadEdited = true
+      for (const later of sets.slice(j + 1)) {
+        if (!sets[j].warmup && !later.warmup && !later.done && !later.loadEdited &&
+          (later.load === undefined || later.load === 0 || later.load === was)) later.load = load
+      }
+      return d
+    })
   }
 
   const completeSet = (i: number, j: number, checked = false, unloadedOk = false, withLoad?: number) => {
@@ -224,20 +260,7 @@ export function GymPlayer({
       setNeedLoad({ item: i, set: j, exerciseId: item.exerciseId })
       return
     }
-    const expected = item.suggestion?.kg !== undefined && set.load === entryLoad(item.suggestion.kg, item.unit)
-    const alreadyConfirmed = item.sets.some((s) => s.done && !s.warmup && s.reps > 0 && s.load === set.load)
-    if (!checked && !expected && !alreadyConfirmed && !set.done && set.load !== undefined && set.load > 0 && !exercise.assisted) {
-      const odd = doubtedLoad(gym.sessions, item.exerciseId, toKg(set.load, item.unit), undefined, location.id)
-      if (odd) {
-        setDoubt({
-          item: i,
-          set: j,
-          best: displayLoad(odd.bestKg, item.unit),
-          ...(odd.probablyKg !== undefined ? { probably: displayLoad(odd.probablyKg, item.unit) } : {}),
-        })
-        return
-      }
-    }
+    if (!checked && !set.done && checkLoad(i, j, set.load)) return
     primeSignal()
     const wasDone = draft.items[i].sets[j].done
     const at = Date.now()
@@ -270,6 +293,14 @@ export function GymPlayer({
     if (wasDone) return
     buzz(25)
     restEndedRef.current = false
+  }
+
+  const confirmLoad = (load: number) => {
+    if (!doubt) return
+    const { item, set } = doubt
+    setDoubt(null)
+    changeLoad(item, set, load, true)
+    if (!draft.items[item].sets[set].done) completeSet(item, set, true, false, load)
   }
 
   const swapTo = (i: number, exerciseId: string) => {
@@ -637,22 +668,8 @@ export function GymPlayer({
                             unit={item.unit}
                             step={stepDisplay || 1}
                             label={`${ex.name}, set ${j + 1} ${ex.assisted ? 'assistance' : addedLoad ? 'added load' : 'load'}`}
-                            onChange={(v) =>
-                              update((d) => {
-                                const sets = d.items[i].sets
-                                const was = sets[j].load
-                                sets[j].load = v
-                                sets[j].loadEdited = true
-                                // Later sets not yet done follow the new load
-                                // unless they were given their own.
-                                for (let k = j + 1; k < sets.length; k++) {
-                                  const later = sets[k]
-                                  if (!sets[j].warmup && !later.warmup && !later.done && !later.loadEdited &&
-                                    (later.load === undefined || later.load === 0 || later.load === was)) later.load = v
-                                }
-                                return d
-                              })
-                            }
+                            commitOnBlur={s.done}
+                            onChange={(v) => changeLoad(i, j, v)}
                           />
                         ) : (
                           <span className="flex-1 text-center text-footnote text-ink3">{unloadedLabel(ex)}</span>
@@ -823,7 +840,7 @@ export function GymPlayer({
       <Sheet open={!!doubt} onClose={() => setDoubt(null)} label="Check this load">
         {doubt && draft.items[doubt.item] ? (
           <div className="space-y-3">
-            <h2 className="text-title3 font-semibold">Is {draft.items[doubt.item].sets[doubt.set].load} {draft.items[doubt.item].unit} right?</h2>
+            <h2 className="text-title3 font-semibold">Is {doubt.load} {draft.items[doubt.item].unit} right?</h2>
             <p className="text-footnote text-ink2">
               That is well above your best on {GYM_EXERCISE_BY_ID[draft.items[doubt.item].exerciseId]?.name.toLowerCase()} ({doubt.best}{' '}
               {draft.items[doubt.item].unit}). A typo here would set your records and your next loads, so it is worth a check.
@@ -832,15 +849,7 @@ export function GymPlayer({
               {doubt.probably !== undefined ? (
                 <Button
                   size="lg"
-                  onClick={() => {
-                    const { item, set, probably } = doubt
-                    update((d) => {
-                      d.items[item].sets[set].load = probably
-                      return d
-                    })
-                    setDoubt(null)
-                    completeSet(item, set, true)
-                  }}
+                  onClick={() => confirmLoad(doubt.probably!)}
                 >
                   I meant {doubt.probably} {draft.items[doubt.item].unit}
                 </Button>
@@ -848,13 +857,9 @@ export function GymPlayer({
               <Button
                 size="lg"
                 variant={doubt.probably !== undefined ? 'secondary' : 'primary'}
-                onClick={() => {
-                  const { item, set } = doubt
-                  setDoubt(null)
-                  completeSet(item, set, true)
-                }}
+                onClick={() => confirmLoad(doubt.load)}
               >
-                Yes, {draft.items[doubt.item].sets[doubt.set].load} {draft.items[doubt.item].unit} is right
+                Yes, {doubt.load} {draft.items[doubt.item].unit} is right
               </Button>
               <Button variant="ghost" onClick={() => setDoubt(null)}>
                 Let me change it
@@ -1094,6 +1099,7 @@ function Stepper({
   unit,
   step,
   label,
+  commitOnBlur,
   onChange,
 }: {
   value: number | undefined
@@ -1101,6 +1107,7 @@ function Stepper({
   unit: string
   step: number
   label: string
+  commitOnBlur?: boolean
   onChange: (v: number | undefined) => void
 }) {
   const [typed, setTyped] = useState<string | null>(null)
@@ -1125,13 +1132,21 @@ function Stepper({
           setTyped(display)
           e.target.select()
         }}
-        onBlur={() => setTyped(null)}
+        onBlur={() => {
+          if (commitOnBlur && typed !== null && typed !== display) {
+            const n = Number(typed.replace(',', '.'))
+            if (Number.isFinite(n)) onChange(typed === '' ? undefined : n)
+          }
+          setTyped(null)
+        }}
+        onKeyDown={(e) => { if (commitOnBlur && e.key === 'Enter') e.currentTarget.blur() }}
         onChange={(e) => {
           const raw = e.target.value
           if (!(isCount ? /^\d*$/ : /^\d*(?:[.,]\d{0,3})?$/).test(raw)) return
           const v = Number(raw.replace(',', '.'))
           if (v >= 1000) return
           setTyped(raw)
+          if (commitOnBlur) return
           if (!raw) onChange(undefined)
           else if (Number.isFinite(v)) onChange(v)
         }}

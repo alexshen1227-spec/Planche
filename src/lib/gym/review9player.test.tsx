@@ -27,6 +27,36 @@ afterEach(() => {
   dispatch.mockClear()
 })
 
+it('checks a large correction to an already logged set before changing the draft, records or next prescription', async () => {
+  const { GymPlayer } = await import('../../components/gym/GymPlayer')
+  const id = 'chest-supported-db-row'
+  gym.sessions = [{ id: 'previous-row', name: 'Pull', locationId: gym.locations[0].id, startedAt: T - 1, endedAt: T,
+    exercises: [{ exerciseId: id, sets: [{ at: T, reps: 10, kg: 20, rpe: 8 }] }] }]
+  try {
+    const done = { reps: 10, load: 20, done: true, rpe: 8, at: T }
+    const row = { ...draft.items[0], exerciseId: id, sets: [{ ...done }, { ...done, at: T + 10 }] }
+    render(<GymPlayer draft={{ ...draft, name: 'Pull', items: [row] }} location={gym.locations[0]} onClose={() => undefined} />)
+    const input = screen.getByRole('textbox', { name: 'Chest-supported dumbbell row, set 1 load' })
+    const edit = (value: string) => { fireEvent.focus(input); fireEvent.change(input, { target: { value } }); fireEvent.blur(input) }
+    edit('200')
+    expect(screen.getByRole('dialog', { name: 'Check this load' })).toBeTruthy()
+    expect(loadDraft()!.items[0].sets[0].load).toBe(20)
+    fireEvent.click(screen.getByText('Let me change it'))
+    expect(loadDraft()!.items[0].sets[0]).toEqual(done)
+    edit('200')
+    fireEvent.click(screen.getByText('I meant 20 kg'))
+    expect(loadDraft()!.items[0].sets[0]).toMatchObject(done)
+    edit('200')
+    fireEvent.click(screen.getByText('Yes, 200 kg is right'))
+    fireEvent.click(screen.getByText('Finish'))
+    fireEvent.click(screen.getByText('Save session'))
+    const saved = dispatch.mock.calls.map(([action]) => action.op?.session).find(Boolean)
+    expect(saved.exercises[0].sets).toEqual([{ at: T, reps: 10, kg: 200, unit: 'kg', rpe: 8 }, { at: T + 10, reps: 10, kg: 20, unit: 'kg', rpe: 8 }])
+  } finally {
+    gym.sessions = []
+  }
+})
+
 it('prefills later working sets with the reps and load just logged, including after reopening the workout', async () => {
   const { GymPlayer } = await import('../../components/gym/GymPlayer')
   const row = { ...draft.items[0], exerciseId: 'chest-supported-db-row', plan: { range: [6, 12] as [number, number], targetRpe: 8 },
