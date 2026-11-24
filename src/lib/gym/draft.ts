@@ -139,10 +139,16 @@ function restoreLegacyPrefills(item: DraftItem): DraftItem {
     }
     if (!last) return set
     const reps = prefillReps(item.plan, item.suggestion, item.previous?.[i]?.reps)
-    return { ...set,
-      ...(!set.repsEdited && set.reps === reps ? { reps: last.reps } : {}),
-      ...(!set.loadEdited && (set.load === undefined || set.load === suggested) ? { load: last.load } : {}),
+    const restored = { ...set }
+    if (!set.repsEdited) {
+      if (set.reps === reps) restored.reps = last.reps
+      else if (set.reps !== last.reps) restored.repsEdited = true
     }
+    if (!set.loadEdited) {
+      if (set.load === undefined || set.load === suggested) restored.load = last.load
+      else if (set.load !== last.load) restored.loadEdited = true
+    }
+    return restored
   }) }
 }
 
