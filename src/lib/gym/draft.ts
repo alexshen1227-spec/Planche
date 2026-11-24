@@ -126,6 +126,26 @@ export function addedSetReps(lastReps: number | undefined, plan: RepPlan, sugges
 
 const KEY = 'planchelab.gymDraft'
 
+/** Older players left their original suggestions in the rows after a completed set. */
+function restoreLegacyPrefills(item: DraftItem): DraftItem {
+  if (!Array.isArray(item.sets) || !Array.isArray(item.plan?.range) || !item.sets.some((s) => s.done && !s.warmup)) return item
+  const suggested = item.suggestion?.kg !== undefined ? entryLoad(item.suggestion.kg, item.unit) : undefined
+  let last: DraftSet | undefined
+  return { ...item, sets: item.sets.map((set, i) => {
+    if (set.warmup) return set
+    if (set.done) {
+      if (!last || (set.at ?? 0) >= (last.at ?? 0)) last = set
+      return set
+    }
+    if (!last) return set
+    const reps = prefillReps(item.plan, item.suggestion, item.previous?.[i]?.reps)
+    return { ...set,
+      ...(!set.repsEdited && set.reps === reps ? { reps: last.reps } : {}),
+      ...(!set.loadEdited && (set.load === undefined || set.load === suggested) ? { load: last.load } : {}),
+    }
+  }) }
+}
+
 export function saveDraft(draft: GymDraft | null): void {
   try {
     if (draft) localStorage.setItem(KEY, JSON.stringify(draft))
@@ -142,7 +162,9 @@ export function loadDraft(epoch?: string): GymDraft | null {
     const d = JSON.parse(raw) as GymDraft
     if (!d || typeof d.id !== 'string' || !Array.isArray(d.items)) return null
     if (d.epoch && epoch && d.epoch !== epoch) return null
-    return { ...d, items: d.items.filter((it) => it && typeof it.exerciseId === 'string' && it.exerciseId in GYM_EXERCISE_BY_ID) }
+    const items = d.items.filter((it) => it && typeof it.exerciseId === 'string' && it.exerciseId in GYM_EXERCISE_BY_ID)
+    const legacy = d.planRevision === undefined && !d.edited && !d.resumeFrom && !d.stopReport && (d.volumeFactor ?? 1) > 0.6
+    return { ...d, items: legacy ? items.map(restoreLegacyPrefills) : items }
   } catch {
     return null
   }

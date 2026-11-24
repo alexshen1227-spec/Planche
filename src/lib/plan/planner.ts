@@ -1937,7 +1937,16 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
         !d.pain && !d.held && !d.niggle && (allowed.includes(first) || gymOnly.includes(first)) &&
         (!legDay || t.gym > 0) && t.cal < practiceDays &&
         (t.gym > 0 || days.some((later) => later.index > i && later.week === d.week && !later.assigned && !later.restDay && later.minutes >= MIN_GYM_MINUTES))
-      if (lastPractice || primaryPractice) {
+      // Lifting reservations each have room for one opener. Preserve the last
+      // unreserved visit that can train the lead and an otherwise unpractised partner together.
+      const reserved = prefs.gymWeekdays ?? []
+      const lastMixedPractice = shortWeek && !chosenLifts && !d.pain && !d.niggle && !d.held && g.skills >= gymGoal &&
+        reserved.filter((wd) => prefs.minutesByDay[wd] >= MIN_GYM_MINUTES).length >= 2 && roomFor(d.minutes) >= 2 &&
+        allowed.includes(first) && allowed.some((s) => s !== first && !loggedFull(s, d.week) &&
+          !slots.some((sl, j) => days[j].week === d.week && fullOn(sl, s))) &&
+        !days.some((later) => later.index > i && later.week === d.week && !later.restDay && roomFor(later.minutes) >= 2 &&
+          !reserved.includes(weekdayOf(later.start)))
+      if (lastPractice || primaryPractice || lastMixedPractice) {
         kind = 'calisthenics'
         why = 'skill-practice'
       } else if (gymFirst && !exposure && !d.assigned && d.minutes >= OPENER_MINUTES + MIN_LIFTS_AFTER_OPENER && !d.pain) {

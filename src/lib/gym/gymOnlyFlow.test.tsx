@@ -95,6 +95,17 @@ it.each([false, true])('refreshes an old home Pull draft against the current 28-
   }
 })
 
+it('repairs untouched defaults on a pre-update session with a logged set and preserves manual back-offs', () => {
+  const at = Date.now() - 1000
+  const actual = { reps: 10, load: 24, done: true, at }
+  const old: DraftItem = { exerciseId: 'db-row', unit: 'kg', plan: { range: [6, 12], targetRpe: 8 }, restSec: 90,
+    suggestion: { kind: 'repeat', kg: 20, reps: [6, 12], targetRpe: 8, why: '' },
+    sets: [actual, { reps: 6, load: 20, done: false }, { reps: 8, load: 18, done: false },
+      { reps: 6, load: 20, repsEdited: true, loadEdited: true, done: false }, { reps: 6, load: 20, warmup: true, done: false }] }
+  saveDraft({ id: 'from-old-player', locationId: 'home', name: 'Pull', startedAt: at, items: [old] })
+  expect(loadDraft()!.items[0].sets).toEqual([actual, { reps: 10, load: 24, done: false }, ...old.sets.slice(2)])
+})
+
 it('alternates the two nominated lifts, keeps recovery across a reload, and restores straight sets after a hard effort', () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
   const gym = defaultGym(['floor'], 'kg'), place = gym.locations[0]

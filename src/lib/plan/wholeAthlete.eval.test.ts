@@ -248,6 +248,32 @@ describe('one skill and whole-body training on three days', () => {
     }
   })
 
+  it.each([45, 60])('keeps handstand in a front-lever week with two reserved lifting visits and %i minutes per day', (minutes) => {
+    const from = new Date(2026, 10, 2, 17)
+    const state = makeAthlete({ skills: ['frontlever', 'handstand'], steps: { frontlever: 'fl-tuck', handstand: 'hs-wall' },
+      birthYear: 1986, active: 'gym', kit: ['floor', 'wall', 'band', 'pullup-bar', 'box'],
+      prefs: { goals: { skills: 5, physique: 5, strength: 3, power: 0, endurance: 0 }, musclesPriority: ['lats', 'hamstrings'],
+        minutesByDay: [0, minutes, 0, minutes, 0, minutes, 0], placeByDay: [null, 'gym', null, 'gym', null, 'gym', null], straightArmRestHours: 48 } })
+    state.settings.weeklyGoal = 3
+    const gym = state.gym!
+    gym.locations[1] = { ...GYM_PLACE, equipment: [...GYM_PLACE.equipment, 'wall', 'floor'] }
+    gym.prefs = setLiftingWeekday(setLiftingWeekday(gym.prefs!, 3, true), 5, true)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(from)
+    try {
+      const trained = runLoop(state, { from, days: 28, hour: 17, perSet: 0.05,
+        truthStart: { 'tuck-front-lever': 11, 'wall-handstand': 25 }, setClock: vi.setSystemTime })
+      for (const week of weeksOf(trained)) {
+        expect(week.filter((d) => d.gym).map((d) => new Date(d.at).getDay())).toEqual(expect.arrayContaining([3, 5]))
+        expect(keySets(week, 'handstand')).toBeGreaterThanOrEqual(2)
+        expect(week.filter((d) => d.skill.some((s) => s.parts.frontlever?.key)).length).toBeGreaterThanOrEqual(2)
+        expect(keySets(week, 'frontlever')).toBeGreaterThanOrEqual(8)
+        const start = weekStart(week[0].at)
+        expect(setsPerMuscle(trained.state.sessions, trained.state.gym!.sessions, start, addDays(start, 7)).hamstrings).toBeGreaterThanOrEqual(4)
+      }
+    } finally { restoreClock() }
+  })
+
   it.each([
     [0, 60, 0, 0, 60, 0, 0],
     [0, 60, 0, 60, 0, 60, 0],
