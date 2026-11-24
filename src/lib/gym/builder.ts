@@ -1,7 +1,8 @@
 import { type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
 import { athleticDomain, GYM_EXERCISE_BY_ID, jointsToRest, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
 import { availableAt, canDoHere, preferenceRank } from './availability'
-import { isPushupPrep, readyForBodyweight, type BodyweightCapacity } from './bodyweight'
+import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
+import { preparesFor, unassistedDose, UNASSISTED_LIFTS } from './bodyweightSteps'
 import { gateTier, isHardBodyweight, liftTrend, plyoGate, repPlanFor, STALL_SESSIONS, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymSession, Rating } from './types'
 
@@ -122,6 +123,8 @@ export interface PlannedExercise {
   plan: RepPlan
   suggestion: LoadSuggestion
   restSec: number
+  /** This movement is being built up from a small number of unassisted reps. */
+  practice?: { easierId?: string }
 }
 
 export interface GymPlan {
@@ -716,6 +719,30 @@ export function planGymExercises(input: GymSessionInput) {
     }
     notes.push(`Your recent lifting supports up to ${buildUpLimit} working sets this visit. Completing that amount comfortably on two days helps build up the next sessions.`)
   }
+  for (const id of UNASSISTED_LIFTS) {
+    const item = items.find((it) => it.exerciseId === id)
+    if (!item) continue
+    const work = input.capacity?.unassistedWork?.[id]
+    const dose = work ? unassistedDose(work, item.sets, item.plan.range[0]) :
+      id === 'pull-up' && input.capacity?.tryPullup ? { sets: 1, reps: 1 } : undefined
+    if (!dose) continue
+    const easier = here.filter((ex) => (preparesFor(ex.id) === id || (id === 'pull-up' && ex.id === 'assisted-pull-up')) && usable(ex) && !spareIn(ex))
+      .sort((a, b) => scoreOf(a) - scoreOf(b) || (lastLogged.get(b.id) ?? 0) - (lastLogged.get(a.id) ?? 0))[0]
+    const backoffSets = item.sets - dose.sets
+    item.sets = dose.sets
+    item.plan = { range: [dose.reps, dose.reps], targetRpe: Math.min(7, item.plan.targetRpe) }
+    item.practice = { easierId: easier?.id }
+    if (easier && backoffSets > 0) {
+      const existing = items.find((it) => it.exerciseId === easier.id)
+      if (existing) existing.sets += backoffSets
+      else {
+        const backoff = makeItem(easier, false, backoffSets)
+        backoff.sets = backoffSets
+        backoff.restSec = Math.min(backoff.restSec, item.restSec)
+        items.splice(items.indexOf(item) + 1, 0, backoff)
+      }
+    }
+  }
   const setLimit = introductory ? 8 : capped ? buildUpLimit : undefined
   return { name: FOCUS_LABEL[focus], focus, items, dropped, estimatedMin: items.length ? Math.round(total()) : 0, fits, notes,
     ...(setLimit !== undefined ? { setLimit } : {}) }
@@ -728,19 +755,23 @@ export function buildGymSession(input: GymSessionInput): GymPlan {
     ...item,
     suggestion: suggestLoad({ exerciseId: item.exerciseId, location: input.location, sessions: input.sessions, plan: item.plan, youth: input.youth, now }),
   }))
-  const trial = input.capacity?.tryPullup && items.find((item) => item.exerciseId === 'pull-up')
-  if (trial) {
-    trial.suggestion = { ...trial.suggestion, why: 'You reached your rep target on the machine with zero assistance. Try a controlled set on the bar, stop while your form is good, and use assistance for the remaining sets if needed.' }
+  for (const item of items) if (item.practice) {
+    const reps = item.plan.range[0]
+    const firstPull = item.exerciseId === 'pull-up' && input.capacity?.tryPullup
+    const basis = firstPull ? 'Your last machine sets used zero assistance.' : 'Your recent unassisted sets guide this starting dose.'
+    item.suggestion = { ...item.suggestion, reps: item.plan.range, targetReps: reps, kind: 'bodyweight',
+      why: `${basis} Aim for ${reps} clean ${reps === 1 ? 'rep' : 'reps'} per set with a little in reserve.`, easierId: item.practice.easierId }
   }
-  const floor = GYM_EXERCISE_BY_ID['push-up']
-  const target = input.capacity?.floorPushupTrial
-  if (target && (input.volumeFactor ?? 1) >= 1 && input.ratings?.[floor.id] !== 'avoid' && canDoHere(floor.id, input.location) &&
-      !floor.stress.some((j) => input.avoidJoints?.includes(j)) && !floor.primary.some((m) => input.musclesOff?.includes(m))) {
-    const prep = items.find((it) => isPushupPrep(it.exerciseId) && it.sets >= 2)
-    if (prep && !items.some((it) => it.exerciseId === floor.id)) {
-      prep.suggestion = { ...prep.suggestion, floorPushupTrial: target,
-        why: `Your recent easier push-ups reached the top of the range with reps in reserve. You can try up to ${target} clean floor ${target === 1 ? 'push-up' : 'push-ups'} for one set, then return to ${GYM_EXERCISE_BY_ID[prep.exerciseId].name.toLowerCase()}.` }
-    }
+  for (const id of UNASSISTED_LIFTS) {
+    const target = id === 'push-up' ? input.capacity?.floorPushupTrial : input.capacity?.pullupTrial
+    const ex = GYM_EXERCISE_BY_ID[id]
+    if (!target || (input.volumeFactor ?? 1) < 1 || input.ratings?.[id] === 'avoid' || !canDoHere(id, input.location) ||
+        ex.stress.some((j) => input.avoidJoints?.includes(j)) || ex.primary.some((m) => input.musclesOff?.includes(m)) || items.some((it) => it.exerciseId === id)) continue
+    const prep = items.find((it) => preparesFor(it.exerciseId) === id && it.sets >= 2)
+    if (!prep) continue
+    const name = id === 'push-up' ? 'floor push-up' : 'unassisted pull-up'
+    prep.suggestion = { ...prep.suggestion, ...(id === 'push-up' ? { floorPushupTrial: target } : { pullupTrial: target }),
+      why: `Your recent preparation sets were manageable. You can try up to ${target} clean ${name}${target === 1 ? '' : 's'} for one set, then return to ${GYM_EXERCISE_BY_ID[prep.exerciseId].name.toLowerCase()}.` }
   }
   return { ...session, items }
 }

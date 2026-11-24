@@ -10,7 +10,7 @@ import { bodyweightCapacity } from '../../lib/gym/bodyweight'
 import { GymExerciseGuide } from './ExerciseGuide'
 import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../lib/gym/builder'
 import { addedSetReps, conservative, dayOfItem, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
-import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, isUnloadedSet, lastPerformance, plyoGate, repPlanFor, suggestLoad } from '../../lib/gym/progression'
+import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, isUnloadedSet, lastPerformance, plyoGate, prescribedCount, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GoalWeights, GymLocation, Rating } from '../../lib/gym/types'
 import { displayLoad, entryLoad, formatLoad, stepKgFor, takesAddedLoad, toKg, unitFor, unloadedLabel } from '../../lib/gym/units'
 import { continueGymSession, doubtedLoad, newGymSessionId } from '../../lib/gym/state'
@@ -265,7 +265,13 @@ export function GymPlayer({
         swappedFrom: old.swappedFrom ?? old.exerciseId,
       }
       // Sets already finished stay logged under the movement they were done on.
-      if (done.length) d.items.splice(i, 1, { ...old, sets: done }, fresh)
+      const matching = d.items.find((it, j) => j !== i && !it.held && it.exerciseId === exerciseId)
+      if (matching) {
+        matching.sets.push(...Array.from({ length: left }, () => ({ ...matching.sets.at(-1), done: false, at: undefined, rpe: undefined, warmup: false,
+          reps: prefillReps(matching.plan, matching.suggestion) })))
+        if (done.length) old.sets = done
+        else d.items.splice(i, 1)
+      } else if (done.length) d.items.splice(i, 1, { ...old, sets: done }, fresh)
       else d.items[i] = fresh
       delete d.effortFor
       return d
@@ -281,25 +287,31 @@ export function GymPlayer({
   const fitsToday = (e: GymExercise) =>
     canDoHere(e.id, location) && !jointsToRest(e.id).some((j) => draft.avoidJoints?.includes(j)) && !e.primary.some((m) => draft.musclesOff?.includes(m))
 
-  const showFloorTrial = (item: DraftItem) => item.suggestion?.floorPushupTrial && !item.held && !draft.stopReport &&
-    item.sets.filter((s) => !s.done && !s.warmup).length >= 2 && !draft.items.some((it) => it.exerciseId === 'push-up') &&
-    gym.ratings['push-up'] !== 'avoid' && fitsToday(GYM_EXERCISE_BY_ID['push-up'])
+  const availableTrial = (item: DraftItem) => {
+    const id = item.suggestion?.floorPushupTrial ? 'push-up' : item.suggestion?.pullupTrial ? 'pull-up' : undefined
+    if (!id || item.held || draft.stopReport || item.sets.filter((s) => !s.done && !s.warmup).length < 2 ||
+        draft.items.some((it) => it.exerciseId === id) || previous?.exercises.some((it) => it.exerciseId === id && it.sets.some((s) => !s.warmup)) ||
+        gym.ratings[id] === 'avoid' || !fitsToday(GYM_EXERCISE_BY_ID[id])) return undefined
+    return { id, target: (id === 'push-up' ? item.suggestion!.floorPushupTrial : item.suggestion!.pullupTrial)!,
+      name: id === 'push-up' ? 'floor push-up' : 'unassisted pull-up', title: id === 'push-up' ? 'Try a floor push-up' : 'Try an unassisted pull-up' }
+  }
   const prep = trialFor === null ? undefined : draft.items[trialFor]
-  const floorTarget = prep && showFloorTrial(prep) ? prep.suggestion?.floorPushupTrial : undefined
-  const recordFloorSet = (reps: number) => {
-    if (trialFor === null || !floorTarget || reps < 0 || reps > floorTarget || !canEdit()) return
+  const trial = prep && availableTrial(prep)
+  const recordTrial = (reps: number) => {
+    if (trialFor === null || !trial || reps < 0 || reps > trial.target || !canEdit()) return
     const at = Date.now()
     const i = trialFor
     primeSignal()
     update((d) => {
       const fallback = d.items[i]
       const next = fallback.sets.findIndex((s) => !s.done && !s.warmup)
-      if (d.stopReport || next < 0 || d.items.some((it) => it.exerciseId === 'push-up')) return d
+      if (d.stopReport || next < 0 || d.items.some((it) => it.exerciseId === trial.id)) return d
       fallback.sets.splice(next, 1)
+      if (fallback.suggestion) fallback.suggestion = { ...fallback.suggestion, floorPushupTrial: undefined, pullupTrial: undefined, why: 'Continue your remaining working sets here.' }
       // The trial uses one of the programmed sets. A zero records the
       // attempt, and contributes no completed reps or working-set credit.
-      d.items.splice(i, 0, { exerciseId: 'push-up', swappedFrom: fallback.exerciseId, unit: fallback.unit,
-        plan: { range: [1, floorTarget], targetRpe: Math.min(7, fallback.plan.targetRpe) }, restSec: fallback.restSec,
+      d.items.splice(i, 0, { exerciseId: trial.id, swappedFrom: fallback.exerciseId, unit: fallback.unit,
+        plan: { range: [1, trial.target], targetRpe: Math.min(7, fallback.plan.targetRpe) }, restSec: fallback.restSec,
         sets: [{ done: true, at, reps }] })
       d.effortFor = reps > 0 ? { item: i, set: 0 } : undefined
       d.rest = { until: at + fallback.restSec * 1000, total: fallback.restSec }
@@ -466,6 +478,9 @@ export function GymPlayer({
           {(draft.volumeFactor ?? 1) <= 0.6 && <p className="text-footnote text-ink2">Light session. Use a comfortable weight and keep several reps in reserve.</p>}
           {draft.items.map((item, i) => {
             const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
+            const option = availableTrial(item)
+            const easier = item.suggestion?.easierId && GYM_EXERCISE_BY_ID[item.suggestion.easierId]
+            const target = prescribedCount(item.plan, item.suggestion)
             if (item.held) return (
               <section key={`${item.exerciseId}-${i}`} className="rounded-card border border-line bg-surface p-4">
                 <h3 className="text-title3 font-semibold">{ex.name}</h3>
@@ -494,15 +509,17 @@ export function GymPlayer({
                       {item.sets.length} ×{' '}
                       {item.suggestion?.repsToMoveUp !== undefined
                         ? `${item.suggestion.repsToMoveUp} reps to move up · ${item.plan.range[0]}–${item.plan.range[1]} is the range`
-                        : `${item.plan.range[0]}–${item.plan.range[1]} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`}{' '}
+                        : `${target} ${countUnit(ex) === 'seconds' ? 'seconds' : target === '1' ? 'rep' : 'reps'}`}{' '}
                       · stop about RPE {item.plan.targetRpe}
                       {ex.load === 'dumbbell' || ex.load === 'kettlebell' ? ` · weight per ${ex.load}` : ''}
                       {best ? ` · est. max ${formatLoad(best.kg, item.unit)}${isFirstEstimate(rec) ? ` (${FIRST_ESTIMATE_NOTE})` : ''}` : ''}
                     </p>
-                    {item.suggestion ? <p className="mt-1 text-caption text-ink3">{item.suggestion.floorPushupTrial && draft.items.some((it) => it.exerciseId === 'push-up')
-                      ? 'Continue your remaining working sets here.' : item.suggestion.why}</p> : null}
-                    {showFloorTrial(item) ? <button type="button" className="min-h-11 text-left text-footnote font-semibold text-accent-text"
-                      onClick={() => setTrialFor(i)}>Try a floor push-up</button> : null}
+                    {item.suggestion?.why ? <p className="mt-1 text-caption text-ink3">{item.suggestion.why}</p> : null}
+                    {option && <button type="button" className="min-h-11 text-left text-footnote font-semibold text-accent-text"
+                      onClick={() => setTrialFor(i)}>{option.title}</button>}
+                    {easier && gym.ratings[easier.id] !== 'avoid' && fitsToday(easier) && item.sets.some((s) => !s.done) &&
+                      <button type="button" className="min-h-11 text-left text-footnote font-semibold text-accent-text" onClick={() => swapTo(i, easier.id)}>
+                        Use {easier.name.toLowerCase()} for remaining sets</button>}
                     {item.swappedFrom ? (
                       <p className="mt-1 text-caption text-ink3">In place of {GYM_EXERCISE_BY_ID[item.swappedFrom]?.name}.</p>
                     ) : null}
@@ -882,13 +899,13 @@ export function GymPlayer({
         </div>
       </Sheet>
 
-      <Sheet open={Boolean(floorTarget)} onClose={() => setTrialFor(null)} title="Try a floor push-up">
-        {prep && floorTarget && <div>
-          <p className="text-body text-ink2">Use one set to try up to {floorTarget} clean floor {floorTarget === 1 ? 'push-up' : 'push-ups'}. Keep your body straight and stop when a rep loses its shape. Your remaining sets use {GYM_EXERCISE_BY_ID[prep.exerciseId].name.toLowerCase()}.</p>
+      <Sheet open={Boolean(trial)} onClose={() => setTrialFor(null)} title={trial?.title}>
+        {prep && trial && <div>
+          <p className="text-body text-ink2">Use one set to try up to {trial.target} clean {trial.name}{trial.target === 1 ? '' : 's'}. {trial.id === 'push-up' ? 'Keep your body straight.' : 'Start from a controlled hang and pull without swinging.'} Stop when a rep loses its shape. Your remaining sets use {GYM_EXERCISE_BY_ID[prep.exerciseId].name.toLowerCase()}.</p>
           <p className="mt-3 text-footnote font-semibold">How many clean reps did you complete?</p>
-          <div className="mt-2 flex flex-wrap gap-2">{Array.from({ length: floorTarget + 1 }, (_, n) =>
-            <button type="button" key={n} onClick={() => recordFloorSet(n)}
-              aria-label={`Log ${n} floor push-up ${n === 1 ? 'rep' : 'reps'}`}
+          <div className="mt-2 flex flex-wrap gap-2">{Array.from({ length: trial.target + 1 }, (_, n) =>
+            <button type="button" key={n} onClick={() => recordTrial(n)}
+              aria-label={`Log ${n} ${trial.name} ${n === 1 ? 'rep' : 'reps'}`}
               className="min-h-11 min-w-12 rounded-control border border-line bg-raised px-3 font-semibold tnum">{n}</button>)}</div>
           <button type="button" onClick={() => setTrialFor(null)} className="mt-3 min-h-11 text-footnote font-semibold text-accent-text">Keep my planned sets</button>
           <button type="button" onClick={() => { setTrialFor(null); setReportOpen(true) }} className="ml-4 min-h-11 text-footnote font-semibold text-accent-text">Something hurts</button>

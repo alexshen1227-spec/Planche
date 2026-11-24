@@ -6,6 +6,7 @@ import { MUSCLES, type Joint, type Muscle } from '../../data/gym/catalog'
 import { SKILL_IDS, type SkillId, type StepId } from '../../types'
 import { STEP_BY_ID } from '../../data/progressions'
 import { SPORT_KINDS, sportStart } from '../plan/sport'
+import { preparesFor } from './bodyweightSteps'
 import type {
   ActivityKind,
   GymExerciseLog,
@@ -399,6 +400,8 @@ function sanitizeRemainder(raw: unknown, lose: Lose, where: string): GymRemainde
     if (sets.length) items.push({
       exerciseId: it.exerciseId, sets, unit: it.unit, restSec: clamp(it.restSec, 0, 1800, 90),
       repRange: plan.repRange, targetRpe: plan.targetRpe, ...(plan.swappedFrom ? { swappedFrom: plan.swappedFrom } : {}),
+      ...(preparesFor(it.exerciseId) && Number.isInteger(it.trialReps) && it.trialReps >= 1 && it.trialReps <= 4 ? { trialReps: it.trialReps } : {}),
+      ...(typeof it.easierId === 'string' && (preparesFor(it.easierId) === it.exerciseId || (it.exerciseId === 'pull-up' && it.easierId === 'assisted-pull-up')) ? { easierId: it.easierId } : {}),
     })
   }
   if (!items.length) return undefined

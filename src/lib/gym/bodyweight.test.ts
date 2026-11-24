@@ -4,6 +4,7 @@ import { initialState } from '../store'
 import { canDoHere } from './availability'
 import { bodyweightCapacity, readyForBodyweight } from './bodyweight'
 import { buildGymSession } from './builder'
+import { unassistedDose, unassistedSteps } from './bodyweightSteps'
 import { allowsUnloaded } from './progression'
 import { defaultGym, homeLocation } from './state'
 import type { GymSession } from './types'
@@ -39,6 +40,36 @@ it('offers a specific floor push-up trial after two easy preparation days and ad
   const trained = capacity([...prep, visit(1, 'push-up', 4, 7, 1)])
   expect(trained.floorPushupTrial).toBeUndefined()
   expect(readyForBodyweight('push-up', trained)).toBe(true)
+  const working = buildGymSession({ capacity: trained, sessions: [...prep, visit(1, 'push-up', 4, 7, 1)], location: gym.locations[0], minutes: 45, focus: 'push', now })
+  expect(working.items.find((i) => i.exerciseId === 'push-up')).toMatchObject({ sets: 2, plan: { range: [2, 2] }, suggestion: { targetReps: 2, easierId: expect.any(String) } })
+})
+
+it('earns an unassisted pull-up check from home equipment and uses the repeatable dose when a trial succeeds', () => {
+  const now = new Date(2026, 9, 16, 12).getTime()
+  const location = homeLocation(['pullup-bar', 'band'], 'kg')
+  const visit = (days: number, id: string, reps: number[], rpe: number): GymSession => {
+    const at = now - days * 86_400_000
+    return { id: id + days, name: 'Pull', locationId: location.id, startedAt: at, endedAt: at + 1000,
+      exercises: [{ exerciseId: id, repRange: [6, 10], sets: reps.map((n, i) => ({ at: at + i, reps: n, rpe })) }] }
+  }
+  const early = [visit(9, 'band-assisted-pull-up', [10, 10], 7), visit(7, 'negative-pull-up', [5, 5], 8)]
+  const steps = (logs: GymSession[]) => unassistedSteps(logs, { pushups: 0, pullups: 0 }, now)
+  expect(steps(early).trials['pull-up']).toBe(1)
+  expect(steps([early[0], visit(7, 'negative-pull-up', [5, 5], 9)]).trials['pull-up']).toBeUndefined()
+  const missed = visit(5, 'pull-up', [0], 8)
+  expect(steps([...early, missed]).trials['pull-up']).toBeUndefined()
+  expect(steps([...early, missed, visit(3, 'band-assisted-pull-up', [8, 8], 8), visit(1, 'negative-pull-up', [4, 4], 7)]).trials['pull-up']).toBe(1)
+  const gym = { ...defaultGym([], 'kg'), sessions: early }
+  const input = { capacity: bodyweightCapacity({ ...initialState(), gym }, now), sessions: early, location, minutes: 45, focus: 'pull' as const, now }
+  expect(buildGymSession(input).items.some((i) => i.suggestion.pullupTrial === 1)).toBe(true)
+  expect(buildGymSession({ ...input, avoidJoints: ['elbows'] }).items.some((i) => i.suggestion.pullupTrial)).toBe(false)
+  const work = steps([...early, visit(1, 'pull-up', [4], 7)]).practice['pull-up']!
+  expect(unassistedDose(work, 3, 6)).toEqual({ sets: 2, reps: 2 })
+  expect(unassistedDose({ ...work, reps: [2, 2] }, 3, 6)).toEqual({ sets: 2, reps: 3 })
+  expect(unassistedDose({ ...work, reps: [4, 4] }, 3, 6)).toEqual({ sets: 3, reps: 3 })
+  expect(unassistedDose({ ...work, reps: [4, 4] }, 2, 6)).toEqual({ sets: 2, reps: 5 })
+  expect(unassistedDose({ ...work, reps: [3, 3], manageable: false }, 3, 6)).toEqual({ sets: 2, reps: 3 })
+  expect(unassistedDose({ ...work, reps: [6, 6, 6] }, 3, 6)).toBeUndefined()
 })
 
 it('advances the introductory dose from manageable working sets and limits the first increase', () => {

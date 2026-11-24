@@ -64,6 +64,8 @@ export interface RemainingLift {
   /** Loads stay in the display unit specified on this lift. */
   sets: { reps: number; load?: number; warmup?: boolean }[]
   swappedFrom?: string
+  trialReps?: number
+  easierId?: string
 }
 
 export interface GymRemainder {

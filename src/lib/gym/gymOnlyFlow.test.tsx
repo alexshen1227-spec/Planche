@@ -10,9 +10,9 @@ import { Dashboard } from '../../views/Dashboard'
 import { Train } from '../../views/Train'
 import { Library } from '../../views/Library'
 import { Stats } from '../../views/Stats'
-import { defaultGym, defaultPrefs } from './state'
+import { defaultGym, defaultPrefs, sanitizeGym } from './state'
 import type { GymEntry } from '../plan/screens'
-import { loadDraft, saveDraft, sessionFromDraft, type DraftItem } from './draft'
+import { loadDraft, resumePartial, saveDraft, sessionFromDraft, type DraftItem } from './draft'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { Toasts } from '../../components/Toasts'
 import { GymPlayer } from '../../components/gym/GymPlayer'
@@ -26,35 +26,72 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it.each([0, 1])('saves %i actual floor push-up reps, preserves the easier sets and recovers the draft', (reps) => {
+it.each([['push-up', 0], ['push-up', 1], ['pull-up', 0], ['pull-up', 1]] as const)('saves the actual %s trial of %i reps, preserves the easier sets and recovers the draft', (id, reps) => {
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
-  const gym = defaultGym(['floor', 'wall'], 'kg')
+  const gym = defaultGym(['floor', 'wall', 'band', 'pullup-bar'], 'kg')
+  const push = id === 'push-up'
+  const prep = push ? 'kneeling-push-up' : 'band-assisted-pull-up'
+  const label = push ? 'Try a floor push-up' : 'Try an unassisted pull-up'
   localStorage.setItem('planchelab.v1', JSON.stringify({ ...initialState(), onboarded: true, gym }))
-  const item: DraftItem = { exerciseId: 'kneeling-push-up', restSec: 90, unit: 'kg', plan: { range: [8, 12], targetRpe: 7 },
-    suggestion: { kind: 'bodyweight', reps: [8, 12], targetRpe: 7, floorPushupTrial: 1, why: 'One optional floor set.' },
+  const item: DraftItem = { exerciseId: prep, restSec: 90, unit: 'kg', plan: { range: [8, 12], targetRpe: 7 },
+    suggestion: { kind: 'bodyweight', reps: [8, 12], targetRpe: 7, ...(push ? { floorPushupTrial: 1 } : { pullupTrial: 1 }), why: 'One optional set.' },
     sets: [0, 1, 2].map(() => ({ done: false, reps: 12 })) }
   const draft = { id: 'floor-trial', name: 'Upper body', startedAt: Date.now(), locationId: gym.locations[0].id, items: [item] }
   const mount = (d: typeof draft | NonNullable<ReturnType<typeof loadDraft>>) =>
     render(<StoreProvider><GymPlayer draft={d} location={gym.locations[0]} onClose={() => {}} /></StoreProvider>)
   const first = mount(draft)
-  fireEvent.click(screen.getByRole('button', { name: 'Try a floor push-up' }))
+  fireEvent.click(screen.getByRole('button', { name: label }))
   fireEvent.click(screen.getByRole('button', { name: 'Keep my planned sets' }))
   expect(loadDraft()?.items[0].sets).toHaveLength(3)
-  fireEvent.click(screen.getByRole('button', { name: 'Try a floor push-up' }))
-  fireEvent.click(screen.getByRole('button', { name: `Log ${reps} floor push-up ${reps === 1 ? 'rep' : 'reps'}` }))
+  fireEvent.click(screen.getByRole('button', { name: label }))
+  fireEvent.click(screen.getByRole('button', { name: `Log ${reps} ${push ? 'floor push-up' : 'unassisted pull-up'} ${reps === 1 ? 'rep' : 'reps'}` }))
   const active = loadDraft()!
-  expect(active.items[0]).toMatchObject({ exerciseId: 'push-up', sets: [{ reps, done: true }] })
+  expect(active.items[0]).toMatchObject({ exerciseId: id, sets: [{ reps, done: true }] })
   expect(active.items[1].sets).toHaveLength(2)
   first.unmount()
   mount(active)
-  expect(screen.queryByRole('button', { name: 'Try a floor push-up' })).toBeNull()
+  expect(screen.queryByRole('button', { name: label })).toBeNull()
   if (reps) fireEvent.click(screen.getByRole('button', { name: '7' }))
   fireEvent.click(screen.getByRole('button', { name: 'Finish' }))
   fireEvent.click(screen.getByRole('button', { name: 'Save session' }))
   const saved = JSON.parse(localStorage.getItem('planchelab.v1')!).gym.sessions[0]
-  expect(saved.exercises).toMatchObject([{ exerciseId: 'push-up', sets: [{ reps }] }])
-  expect(saved.remaining.items[0]).toMatchObject({ exerciseId: 'kneeling-push-up' })
+  expect(saved.exercises).toMatchObject([{ exerciseId: id, sets: [{ reps }] }])
+  expect(saved.remaining.items[0]).toMatchObject({ exerciseId: prep })
+  expect(saved.remaining.items[0].trialReps).toBeUndefined()
   expect(saved.remaining.items[0].sets).toHaveLength(2)
+})
+
+it('shows the earned two-by-two floor prescription and moves only unfinished sets into its easier block', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const gym = defaultGym(['floor'], 'kg')
+  localStorage.setItem('planchelab.v1', JSON.stringify({ ...initialState(), onboarded: true, gym }))
+  const place = gym.locations[0]
+  const floor: DraftItem = { exerciseId: 'push-up', restSec: 90, unit: 'kg', plan: { range: [2, 2], targetRpe: 7 },
+    suggestion: { kind: 'bodyweight', reps: [2, 2], targetReps: 2, targetRpe: 7, easierId: 'kneeling-push-up', why: 'Two clean reps per set.' },
+    sets: [{ reps: 2, done: true, rpe: 7, at: Date.now() }, { reps: 2, done: false }] }
+  const easier: DraftItem = { exerciseId: 'kneeling-push-up', restSec: 90, unit: 'kg', plan: { range: [8, 12], targetRpe: 7 }, sets: [{ reps: 8, done: false }] }
+  render(<StoreProvider><GymPlayer draft={{ id: 'split', name: 'Upper', startedAt: Date.now(), locationId: place.id, items: [floor, easier] }} location={place} onClose={() => {}} /></StoreProvider>)
+  expect(screen.getByText(/2 × 2 reps · stop about RPE 7/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /use kneeling push-up for remaining sets/i }))
+  const saved = loadDraft()!
+  expect(saved.items).toHaveLength(2)
+  expect(saved.items[0].sets).toMatchObject([{ done: true, reps: 2 }])
+  expect(saved.items[1].sets).toMatchObject([{ done: false, reps: 8 }, { done: false, reps: 8 }])
+})
+
+it('keeps an unused trial and its later easier option when a partial session is exported and resumed', () => {
+  const gym = defaultGym(['floor', 'wall', 'pullup-bar', 'band'], 'kg')
+  const place = gym.locations[0]
+  const at = Date.now()
+  const prep: DraftItem = { exerciseId: 'band-assisted-pull-up', unit: 'kg', restSec: 120, plan: { range: [8, 10], targetRpe: 7 },
+    suggestion: { kind: 'bodyweight', reps: [8, 10], targetRpe: 7, why: '', pullupTrial: 1 }, sets: [{ done: false, reps: 8 }, { done: false, reps: 8 }] }
+  const work: DraftItem = { exerciseId: 'push-up', unit: 'kg', restSec: 90, plan: { range: [2, 2], targetRpe: 7 },
+    suggestion: { kind: 'bodyweight', reps: [2, 2], targetRpe: 7, why: '', easierId: 'kneeling-push-up' }, sets: [{ done: true, reps: 2, at }, { done: false, reps: 2 }] }
+  const partial = sessionFromDraft({ name: 'Upper', id: 'continuation', startedAt: at, locationId: place.id, items: [work, prep] }, at + 100)
+  const restored = sanitizeGym(JSON.parse(JSON.stringify({ ...gym, sessions: [partial] })))!.sessions[0]
+  const draft = resumePartial(restored, [], place, at + 200)!
+  expect(draft.items.map((it) => it.suggestion?.easierId ?? it.suggestion?.pullupTrial)).toEqual(['kneeling-push-up', 1])
+  expect(draft.items[0].sets).toEqual([{ done: false, reps: 2 }])
 })
 
 it('saves separate training locations for weekdays and resets one weekday to automatic', () => {

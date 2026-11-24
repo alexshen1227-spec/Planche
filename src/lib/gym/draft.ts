@@ -4,6 +4,7 @@ import type { Joint, Muscle } from '../../data/gym/catalog'
 import { lastPerformance, repPlanFor, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymRemainder, GymSession, GymState, RemainingLift } from './types'
 import { canDoHere } from './availability'
+import { preparesFor } from './bodyweightSteps'
 import { dayKey } from '../time'
 import { entryLoad, toKg } from './units'
 import type { Unit } from '../../data/gym/catalog'
@@ -142,10 +143,12 @@ export function loadDraft(): GymDraft | null {
 }
 
 function remainingLift(item: DraftItem, sets: DraftSet[]): RemainingLift {
+  const trial = item.suggestion?.floorPushupTrial ?? item.suggestion?.pullupTrial
   return {
     exerciseId: item.exerciseId, repRange: item.plan.range, targetRpe: item.plan.targetRpe,
     restSec: item.restSec, unit: item.unit, swappedFrom: item.swappedFrom,
     sets: sets.map(({ reps, load, warmup }) => ({ reps, load, warmup })),
+    ...(trial ? { trialReps: trial } : {}), ...(item.suggestion?.easierId ? { easierId: item.suggestion.easierId } : {}),
   }
 }
 
@@ -244,6 +247,10 @@ export function resumePartial(session: GymSession, avoid: Joint[] = [], location
     items.push({
       exerciseId: it.exerciseId, plan: { range: it.repRange, targetRpe: it.targetRpe }, restSec: it.restSec, unit: it.unit,
       sets: it.sets.map((s) => ({ ...s, done: false })), swappedFrom: it.swappedFrom,
+      ...(it.trialReps || it.easierId ? { suggestion: {
+        kind: 'bodyweight', reps: it.repRange, targetRpe: it.targetRpe, why: '', easierId: it.easierId,
+        ...(it.trialReps && (preparesFor(it.exerciseId) === 'push-up' ? { floorPushupTrial: it.trialReps } : { pullupTrial: it.trialReps })),
+      } } : {}),
     })
   }
   if (!items.length) return null

@@ -311,6 +311,9 @@ export interface LoadSuggestion {
   targetReps?: number
   /** The athlete may log this many clean floor push-ups in place of one easier set. */
   floorPushupTrial?: number
+  pullupTrial?: number
+  /** An easier movement the athlete can use for the remaining unassisted sets. */
+  easierId?: string
   targetRpe: number
   /** One line on why, in the athlete's terms. */
   why: string
@@ -319,6 +322,13 @@ export interface LoadSuggestion {
   repsToMoveUp?: number
   /** Set when the load is only the nearest this place can make to last time's (kg): the screen says so, never "up". */
   nearestTo?: number
+}
+
+/** The target shown beside the set fields, including an earned bodyweight starting dose. */
+export function prescribedCount(plan: RepPlan, suggestion?: LoadSuggestion): string {
+  const target = suggestion?.repsToMoveUp ?? suggestion?.targetReps
+  if (target !== undefined) return String(target)
+  return plan.range[0] === plan.range[1] ? String(plan.range[0]) : plan.range.join('–')
 }
 
 /**
