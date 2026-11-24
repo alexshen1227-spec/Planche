@@ -145,6 +145,8 @@ export const PATTERN_LABEL: Record<Pattern, string> = {
 export type GymEquipmentId =
   | 'barbell'
   | 'squat-rack'
+  | 'bench-stands'
+  | 'seal-row-bench'
   | 'bench'
   | 'incline-bench'
   | 'dumbbells'
@@ -201,6 +203,8 @@ export interface GymEquipmentDef {
 export const GYM_EQUIPMENT: GymEquipmentDef[] = [
   { id: 'barbell', label: 'Barbell and plates', kind: 'free-weight', step: { kg: 2.5, lb: 5 } },
   { id: 'squat-rack', label: 'Squat rack', kind: 'bench' },
+  { id: 'bench-stands', label: 'Bench press bar supports', kind: 'bench' },
+  { id: 'seal-row-bench', label: 'Raised seal-row bench', kind: 'bench' },
   { id: 'bench', label: 'Flat bench', kind: 'bench' },
   { id: 'incline-bench', label: 'Adjustable bench', kind: 'bench' },
   { id: 'dumbbells', label: 'Dumbbells', kind: 'free-weight', step: { kg: 2, lb: 5 }, hasMax: true },

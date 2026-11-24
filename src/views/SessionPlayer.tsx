@@ -43,7 +43,7 @@ import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
 import { clearDraft, loadDraft, restoredAttemptReport, restoredSessionSetup, saveDraft, type SessionDraft } from '../lib/draft'
 import { countsSkillDay, plannedMainRounds, remainingSkillWork } from '../lib/skillSession'
-import { rememberNextBlock } from '../lib/plan/nextBlock'
+import { endTheDay, rememberNextBlock } from '../lib/plan/nextBlock'
 import { useFormRecorder, type RecorderStatus } from '../lib/recorder'
 import { saveClip } from '../lib/clips'
 import { isFilmable, warmDetector } from '../lib/poseForm'
@@ -2110,8 +2110,9 @@ export function SessionPlayer({
             ) : null}
             {/* The one action of this screen stays in thumb reach. */}
             <div className="sticky bottom-0 z-10 -mx-4 mt-4 bg-surface px-4 pb-[max(env(safe-area-inset-bottom),12px)] pt-3">
-              <Button size="lg" onClick={startSession} className="flex w-full items-center justify-center gap-2 ">
-                <Icon name="play" size={18} /> Begin session
+              {isPainSafe(workout) && <Button size="lg" className="mb-2 w-full" onClick={() => { if (canEdit()) { endTheDay(); discard() } }}>Rest today and close</Button>}
+              <Button size="lg" variant={isPainSafe(workout) ? 'secondary' : 'primary'} onClick={startSession} className="flex w-full items-center justify-center gap-2 ">
+                <Icon name="play" size={18} /> {isPainSafe(workout) ? 'Begin optional recovery' : 'Begin session'}
               </Button>
               <div className="mt-2 text-center text-footnote text-ink3">
                 Space = start / stop · S = skip rest · Esc = exit

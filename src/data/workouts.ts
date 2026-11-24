@@ -854,33 +854,6 @@ function scaleLeanPrimer(blocks: Block[], stepId: StepId, workingSec: number): v
   if (primer) primer.target = hold(clamp(Math.round(workingSec / 2), 2, 8))
 }
 
-/**
- * Which reported region makes a given movement a bad idea today.
- *
- * Only movements that genuinely load the region are listed. Being too eager
- * here is its own failure: strip everything and the session becomes an empty
- * screen, which teaches athletes to stop reporting pain at all.
- */
-const REGION_CONFLICTS: Record<BodyRegion, string[]> = {
-  // Anything that puts bodyweight through an extended wrist. Cat–Cow looks
-  // harmless but is on hands and knees — its own description says it loads the
-  // wrists, and a recovery session is exactly where that matters.
-  wrist: ['cat-cow'],
-  // The pain session promises "no loaded planche, pressing or wrist work";
-  // Cat–Cow is a straight-arm support on all fours, so an elbow session that
-  // kept it contradicted its own heading.
-  elbow: ['cat-cow'],
-  shoulder: ['jumping-jacks', 'cat-cow'],
-  // The default recovery block was three straight lumbar/hip-flexor exercises,
-  // handed to the one athlete who should not be doing any of them.
-  'lower-back': ['arch-hold', 'leg-lifts', 'hollow-hold'],
-  // Jumping jacks land on the knees; nothing else in a recovery block does.
-  knee: ['jumping-jacks'],
-  hip: ['leg-lifts'],
-  ankle: ['jumping-jacks'],
-  other: [],
-}
-
 const REGION_LABEL: Record<BodyRegion, string> = {
   wrist: 'wrist',
   elbow: 'elbow',
@@ -902,34 +875,19 @@ const REGION_LABEL: Record<BodyRegion, string> = {
  * avoid it and say so, instead of hoping they read the disclaimer.
  */
 export function painSafeRecoveryWorkout(regions: BodyRegion[] = []): Workout {
-  const avoid = new Set(regions.flatMap((r) => REGION_CONFLICTS[r] ?? []))
-  const candidates: Block[] = [
-    {
-      exerciseId: 'jumping-jacks',
-      sets: 2,
-      target: reps(20),
-      restSec: 30,
-      section: 'warmup',
-      note: 'Easy pace. Skip if the arm motion reproduces symptoms.',
-    },
-    { exerciseId: 'cat-cow', sets: 2, target: reps(8), restSec: 20, section: 'warmup' },
-    { exerciseId: 'hollow-hold', sets: 3, target: hold(20), restSec: 60, section: 'core' },
-    { exerciseId: 'leg-lifts', sets: 3, target: reps(8), restSec: 60, section: 'core' },
-    { exerciseId: 'arch-hold', sets: 2, target: hold(15), restSec: 45, section: 'core' },
-    { exerciseId: 'pancake-stretch', sets: 2, target: hold(30), restSec: 30, section: 'cooldown' },
-  ]
-  const blocks = candidates.filter((b) => !avoid.has(b.exerciseId))
+  const blocks: Block[] = []
+  const clear = (...areas: BodyRegion[]) => regions.length > 0 && !regions.includes('other') && areas.every((area) => !regions.includes(area))
+  if (clear('shoulder')) blocks.push({ exerciseId: 'supported-shoulder-roll', sets: 1, target: reps(5), restSec: 30, section: 'warmup',
+    note: 'Choose a seated or lying position you can reach comfortably. Leave your legs supported.' })
+  if (clear('hip', 'knee', 'ankle', 'lower-back')) {
+    blocks.push({ exerciseId: 'supported-heel-slide', sets: 1, target: reps(6), restSec: 30, section: 'warmup' })
+    if (clear('shoulder')) blocks.push({ exerciseId: 'hollow-hold', sets: 1, target: hold(8), restSec: 45, section: 'core',
+      note: 'Keep your arms resting by your sides. Skip the hold if getting down, getting up or holding the position is uncomfortable.' })
+  }
+  if (!blocks.length) blocks.push({ exerciseId: 'supported-rest', sets: 1, target: reps(3), restSec: 0, section: 'cooldown',
+    note: 'Three easy breaths if you want them. You can also finish here.' })
   const named = regions.filter((r) => r !== 'other').map((r) => REGION_LABEL[r])
-  const removed = candidates.length - blocks.length
-
-  const focus =
-    named.length > 0
-      ? `No loaded planche, pressing or wrist work. ${
-          removed > 0
-            ? `Movements that load your ${joinWords(named)} have been left out too. `
-            : ''
-        }Use only pain-free movement, and stop anything that reproduces symptoms.`
-      : 'No loaded planche, pressing or wrist work. Use only pain-free movement; stop anything that reproduces symptoms.'
+  const focus = `${named.length ? `You reported pain in your ${joinWords(named)}. ` : ''}Rest today, or choose the optional movement below if the setup and movement feel comfortable. Stop if anything hurts.`
 
   return {
     id: named.length ? `pain-safe-recovery-${[...regions].sort().join('-')}` : 'pain-safe-recovery',

@@ -1613,6 +1613,13 @@ describe('readiness rails', () => {
     const wrist = painSafeRecoveryWorkout(['wrist'])
     expect(wrist.blocks.map((b) => b.exerciseId)).not.toContain('cat-cow')
     expect(wrist.blocks.map((b) => b.exerciseId)).toContain('hollow-hold')
+    for (const region of ['hip', 'knee', 'ankle', 'lower-back'] as const) {
+      const recovery = painSafeRecoveryWorkout([region])
+      expect(recovery.blocks.map((b) => b.exerciseId)).toEqual(['supported-shoulder-roll'])
+      expect(recovery.focus).toContain('Rest today')
+      expect(painSafeRecoveryWorkout([region, 'shoulder']).blocks.map((b) => b.exerciseId)).toEqual(['supported-rest'])
+    }
+    expect(painSafeRecoveryWorkout(['other']).blocks.every((b) => b.section === 'cooldown')).toBe(true)
 
     // Every region combination still yields a usable session, never an empty
     // screen — an athlete handed nothing stops reporting pain at all.

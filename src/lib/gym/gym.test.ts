@@ -119,6 +119,20 @@ describe('availability and swaps', () => {
       expect(e.needs.every((g) => g.some((i) => ['floor', 'parallettes', 'pullup-bar'].includes(i))), e.id).toBe(true)
     }
   })
+
+  it('needs actual bar supports and a raised row bench, and distinguishes ring dips from dips on high bars', () => {
+    const garage: GymLocation = { ...home, equipment: ['floor', 'bench', 'incline-bench', 'barbell', 'parallettes', 'rings'] }
+    const presses = ['bench-press', 'close-grip-bench', 'incline-bench-press', 'barbell-incline-close-grip', 'jm-press']
+    for (const id of [...presses, 'seal-row', 'dip']) expect(canDoHere(id, garage), id).toBe(false)
+    expect(canDoHere('ring-dip', garage)).toBe(true)
+    for (const support of ['squat-rack', 'bench-stands'] as const) {
+      const equipped: GymLocation = { ...garage, equipment: [...garage.equipment, support, 'seal-row-bench', 'dip-bars'] }
+      for (const id of [...presses, 'seal-row', 'dip']) expect(canDoHere(id, equipped), id).toBe(true)
+    }
+    const session = buildGymSession({ location: garage, youth: true, minutes: 60, focus: 'full', priority: ['triceps'], sessions: [] })
+    expect(session.items.length).toBeGreaterThan(0)
+    expect(session.items.some((it) => [...presses, 'seal-row', 'dip', 'ring-dip'].includes(it.exerciseId))).toBe(false)
+  })
   it('offers the same movement first, never an avoided one, and anything hard here last', () => {
     const alts = alternativesFor('machine-chest-press', gymA, { 'bench-press': 'avoid' })
     expect(alts[0].pattern).toBe('horizontal-press')

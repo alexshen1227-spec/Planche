@@ -1,4 +1,5 @@
 import { countsSkillDay } from '../skillSession'
+import { workingGymSets } from '../progressTotals'
 import { MUSCLE_BY_ID, MUSCLES } from '../../data/gym/catalog'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { AppState } from '../../types'
@@ -48,14 +49,18 @@ export function gymBadges(state: Pick<AppState, 'sessions' | 'gym'>): GymBadge[]
   let firstStep: number | undefined
   const lastLoad = new Map<string, number>()
   for (const s of gym) {
+    const sessionLoads = new Map<string, number>()
     for (const log of s.exercises) {
       // An assisted lift gets easier as the help goes down: a bigger number is not a step up.
       if (GYM_EXERCISE_BY_ID[log.exerciseId]?.assisted) continue
       const key = `${s.locationId}:${log.exerciseId}`
-      const top = Math.max(0, ...log.sets.filter((x) => !x.warmup).map((x) => x.kg ?? 0))
+      const top = Math.max(0, ...log.sets.filter((x) => !x.warmup && x.reps > 0).map((x) => x.kg ?? 0))
+      if (top > 0) sessionLoads.set(key, Math.max(sessionLoads.get(key) ?? 0, top))
+    }
+    for (const [key, top] of sessionLoads) {
       const had = lastLoad.get(key)
       if (had !== undefined && top > had && firstStep === undefined) firstStep = s.endedAt
-      if (top > 0) lastLoad.set(key, top)
+      lastLoad.set(key, top)
     }
   }
   // Skills and the gym in the same calendar week.
@@ -120,7 +125,7 @@ export function weeklySummary(state: AppState, now = Date.now(), week?: WeekAhea
     (sum, s) => sum + s.sets.filter((x) => x.kind === 'hold' && (x.section === 'main' || x.section === 'strength')).reduce((a, x) => a + x.value, 0),
     0,
   )
-  const gymSets = gymWeek.reduce((n, s) => n + s.exercises.reduce((m, e) => m + e.sets.filter((x) => !x.warmup).length, 0), 0)
+  const gymSets = gymWeek.reduce((n, s) => n + workingGymSets(s), 0)
   const newMaxes = [...new Set(estimatedMaxGains(gym).filter((g) => g.at >= from && g.at < to).map((g) => g.exerciseId))]
   let streakWeeks = 0
   for (let w = 0; w < 104; w++) {

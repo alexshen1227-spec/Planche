@@ -27,7 +27,7 @@ const build = (focus: GymFocus, minutes: number, extra: Partial<Parameters<typeo
 const credit = (b: ReturnType<typeof buildGymSession>, m: string) =>
   b.items.reduce((n, i) => n + (ex(i.exerciseId).primary.includes(m as never) ? i.sets : ex(i.exerciseId).secondary.includes(m as never) ? i.sets / 2 : 0), 0)
 
-/** What the builder made before long days were filled: estimated minutes, then each movement and its sets. */
+/** Short-day reference prescriptions, including the available introductory alternatives to barbell bench variants. */
 const BEFORE: Record<string, string> = {
   'full|20|1|y': '17:goblet-squatx2,db-bench-pressx2',
   'full|20|1|a': '17:goblet-squatx2,db-bench-pressx2',
@@ -37,10 +37,10 @@ const BEFORE: Record<string, string> = {
   'full|30|1|a': '27:goblet-squatx2,db-bench-pressx2,pull-upx2,romanian-deadliftx2',
   'full|30|0.8|y': '22:goblet-squatx2,db-bench-pressx2,pull-upx1,romanian-deadliftx1',
   'full|30|0.8|a': '22:goblet-squatx2,db-bench-pressx2,pull-upx1,romanian-deadliftx1',
-  'full|45|1|y': '42:goblet-squatx2,db-bench-pressx2,pull-upx2,romanian-deadliftx2,db-rowx2,db-lateral-raisex2,close-grip-benchx2',
-  'full|45|1|a': '42:goblet-squatx2,db-bench-pressx2,pull-upx2,romanian-deadliftx2,db-rowx2,db-lateral-raisex2,close-grip-benchx2',
-  'full|45|0.8|y': '35:goblet-squatx2,db-bench-pressx2,pull-upx2,romanian-deadliftx2,db-rowx1,db-lateral-raisex1,close-grip-benchx1',
-  'full|45|0.8|a': '35:goblet-squatx2,db-bench-pressx2,pull-upx2,romanian-deadliftx2,db-rowx1,db-lateral-raisex1,close-grip-benchx1',
+  'full|45|1|y': '42:goblet-squatx2,db-bench-pressx2,pull-upx2,romanian-deadliftx2,db-rowx2,db-lateral-raisex2,diamond-push-upx2',
+  'full|45|1|a': '42:goblet-squatx2,db-bench-pressx2,pull-upx2,romanian-deadliftx2,db-rowx2,db-lateral-raisex2,diamond-push-upx2',
+  'full|45|0.8|y': '35:goblet-squatx2,db-bench-pressx2,pull-upx2,romanian-deadliftx2,db-rowx1,db-lateral-raisex1,diamond-push-upx1',
+  'full|45|0.8|a': '35:goblet-squatx2,db-bench-pressx2,pull-upx2,romanian-deadliftx2,db-rowx1,db-lateral-raisex1,diamond-push-upx1',
   'upper|20|1|y': '17:incline-db-pressx2,pull-upx2',
   'upper|20|1|a': '17:incline-db-pressx2,pull-upx2',
   'upper|20|0.8|y': '14:incline-db-pressx2,pull-upx1',
@@ -49,10 +49,10 @@ const BEFORE: Record<string, string> = {
   'upper|30|1|a': '27:incline-db-pressx2,pull-upx2,db-bench-pressx2,db-rowx2',
   'upper|30|0.8|y': '22:incline-db-pressx2,pull-upx2,db-bench-pressx1,db-rowx1',
   'upper|30|0.8|a': '22:incline-db-pressx2,pull-upx2,db-bench-pressx1,db-rowx1',
-  'upper|45|1|y': '44:incline-db-pressx2,pull-upx2,db-bench-pressx2,db-rowx2,db-lateral-raisex2,close-grip-benchx2,barbell-curlx2,face-pullx2',
-  'upper|45|1|a': '44:incline-db-pressx2,pull-upx2,db-bench-pressx2,db-rowx2,db-lateral-raisex2,close-grip-benchx2,barbell-curlx2,face-pullx2',
-  'upper|45|0.8|y': '38:incline-db-pressx2,pull-upx2,db-bench-pressx2,db-rowx2,db-lateral-raisex1,close-grip-benchx2,barbell-curlx1,face-pullx1',
-  'upper|45|0.8|a': '38:incline-db-pressx2,pull-upx2,db-bench-pressx2,db-rowx2,db-lateral-raisex1,close-grip-benchx2,barbell-curlx1,face-pullx1',
+  'upper|45|1|y': '44:incline-db-pressx2,pull-upx2,db-bench-pressx2,db-rowx2,db-lateral-raisex2,diamond-push-upx2,barbell-curlx2,face-pullx2',
+  'upper|45|1|a': '44:incline-db-pressx2,pull-upx2,db-bench-pressx2,db-rowx2,db-lateral-raisex2,diamond-push-upx2,barbell-curlx2,face-pullx2',
+  'upper|45|0.8|y': '38:incline-db-pressx2,pull-upx2,db-bench-pressx2,db-rowx2,db-lateral-raisex1,diamond-push-upx2,barbell-curlx1,face-pullx1',
+  'upper|45|0.8|a': '38:incline-db-pressx2,pull-upx2,db-bench-pressx2,db-rowx2,db-lateral-raisex1,diamond-push-upx2,barbell-curlx1,face-pullx1',
   'lower|20|1|y': '17:goblet-squatx2,romanian-deadliftx2',
   'lower|20|1|a': '17:goblet-squatx2,romanian-deadliftx2',
   'lower|20|0.8|y': '14:goblet-squatx2,romanian-deadliftx1',
@@ -66,25 +66,25 @@ const BEFORE: Record<string, string> = {
   'lower|45|0.8|y': '35:goblet-squatx2,romanian-deadliftx2,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex2,hanging-leg-raisex1',
   'lower|45|0.8|a': '35:goblet-squatx2,romanian-deadliftx2,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex2,hanging-leg-raisex1',
   'push|20|1|y': '17:db-bench-pressx2,db-shoulder-pressx2',
-  'push|20|1|y|s': '19:barbell-incline-close-gripx2,db-lateral-raisex2,low-high-cable-flyx2',
+  'push|20|1|y|s': '19:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx2',
   'push|20|1|a': '17:db-bench-pressx2,db-shoulder-pressx2',
-  'push|20|1|a|s': '19:barbell-incline-close-gripx2,db-lateral-raisex2,low-high-cable-flyx2',
+  'push|20|1|a|s': '19:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx2',
   'push|20|0.8|y': '14:db-bench-pressx2,db-shoulder-pressx1',
-  'push|20|0.8|y|s': '17:barbell-incline-close-gripx2,db-lateral-raisex2,low-high-cable-flyx1',
+  'push|20|0.8|y|s': '17:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx1',
   'push|20|0.8|a': '14:db-bench-pressx2,db-shoulder-pressx1',
-  'push|20|0.8|a|s': '17:barbell-incline-close-gripx2,db-lateral-raisex2,low-high-cable-flyx1',
+  'push|20|0.8|a|s': '17:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx1',
   'push|30|1|y': '26:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx2,db-lateral-raisex2',
-  'push|30|1|y|s': '23:barbell-incline-close-gripx2,db-lateral-raisex3,low-high-cable-flyx3',
+  'push|30|1|y|s': '23:cable-incline-pressx2,db-lateral-raisex3,low-high-cable-flyx3',
   'push|30|1|a': '26:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx2,db-lateral-raisex2',
-  'push|30|1|a|s': '23:barbell-incline-close-gripx2,db-lateral-raisex3,low-high-cable-flyx3',
+  'push|30|1|a|s': '23:cable-incline-pressx2,db-lateral-raisex3,low-high-cable-flyx3',
   'push|30|0.8|y': '21:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx1,db-lateral-raisex1',
-  'push|30|0.8|y|s': '19:barbell-incline-close-gripx2,db-lateral-raisex2,low-high-cable-flyx2',
+  'push|30|0.8|y|s': '19:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx2',
   'push|30|0.8|a': '21:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx1,db-lateral-raisex1',
-  'push|30|0.8|a|s': '19:barbell-incline-close-gripx2,db-lateral-raisex2,low-high-cable-flyx2',
-  'push|45|1|y': '43:db-bench-pressx3,db-shoulder-pressx3,incline-db-pressx3,db-lateral-raisex2,close-grip-benchx2,low-high-cable-flyx2',
-  'push|45|1|a': '43:db-bench-pressx3,db-shoulder-pressx3,incline-db-pressx3,db-lateral-raisex2,close-grip-benchx2,low-high-cable-flyx2',
-  'push|45|0.8|y': '35:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx2,db-lateral-raisex2,close-grip-benchx2,low-high-cable-flyx2',
-  'push|45|0.8|a': '35:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx2,db-lateral-raisex2,close-grip-benchx2,low-high-cable-flyx2',
+  'push|30|0.8|a|s': '19:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx2',
+  'push|45|1|y': '43:db-bench-pressx3,db-shoulder-pressx3,incline-db-pressx3,db-lateral-raisex2,diamond-push-upx2,low-high-cable-flyx2',
+  'push|45|1|a': '43:db-bench-pressx3,db-shoulder-pressx3,incline-db-pressx3,db-lateral-raisex2,diamond-push-upx2,low-high-cable-flyx2',
+  'push|45|0.8|y': '35:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx2,db-lateral-raisex2,diamond-push-upx2,low-high-cable-flyx2',
+  'push|45|0.8|a': '35:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx2,db-lateral-raisex2,diamond-push-upx2,low-high-cable-flyx2',
   'pull|20|1|y': '17:pull-upx2,db-rowx2',
   'pull|20|1|a': '17:pull-upx2,db-rowx2',
   'pull|20|0.8|y': '14:pull-upx2,db-rowx1',
@@ -116,7 +116,7 @@ const PULL = ['vertical-pull', 'horizontal-pull', 'straight-arm-pull']
 const LEGS = ['quads', 'hamstrings', 'glutes', 'calves'] as const
 
 describe('1. long days use their minutes', () => {
-  it('a short day builds exactly what it always built (20, 30 and 45 minutes, every focus, light and usual, under and over 18)', () => {
+  it('a short day fits the expected movements and sets (20, 30 and 45 minutes, every focus, light and usual, under and over 18)', () => {
     const seen: string[] = []
     for (const focus of ['full', 'upper', 'lower', 'push', 'pull', 'athletic'] as const) {
       for (const minutes of [20, 30, 45]) {

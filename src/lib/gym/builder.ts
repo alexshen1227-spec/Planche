@@ -1,4 +1,5 @@
 import { type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
+import { addDays } from '../time'
 import { athleticDomain, GYM_EXERCISE_BY_ID, jointsToRest, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
 import { availableAt, canDoHere, preferenceRank } from './availability'
 import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
@@ -451,6 +452,12 @@ export function planGymExercises(input: GymSessionInput) {
     if (goalEmphasis?.power && focus !== 'pull' && !musclesOff.has('quads')) slots.unshift(['jump', 'throw'])
     // What the day is named for, still to be filled: each group keeps one movement whatever the steer says.
     const named = NAMED_PATTERNS[focus].map((group) => [...group])
+    // If the skill plan already calls for light pressing and the athlete pressed
+    // yesterday, keep one practice set in a named pressing slot.
+    const yesterday = addDays(new Date(now).setHours(0, 0, 0, 0), -1)
+    const recentPress = lightPress && sessions.some((s) => s.startedAt >= yesterday && s.startedAt < now &&
+      s.exercises.some((log) => PRESSING_PATTERNS.has(GYM_EXERCISE_BY_ID[log.exerciseId]?.pattern) &&
+        log.sets.filter((set) => !set.warmup && set.reps > 0).length >= 2))
     const unfilled = (slot: Pattern[]) => named.some((group) => group.some((p) => slot.includes(p)) && !items.some((it) => group.includes(GYM_EXERCISE_BY_ID[it.exerciseId].pattern)))
     for (const slot of slots) {
       const wantsExplosive = slot.includes('jump') || slot.includes('throw')
@@ -507,7 +514,9 @@ export function planGymExercises(input: GymSessionInput) {
       const extraLateral = lateralAccessory && pick.pattern === 'lateral-raise'
       const extraQuad = quadAccessory && pick.pattern === 'knee-extension'
       const limitAccessory = extraLateral && !fullPriorityDose
-      items.push(makeItem(pick, wantsExplosive, spared || limitAccessory ? 2 : extraQuad ? 3 : undefined))
+      const item = makeItem(pick, wantsExplosive, spared || limitAccessory ? 2 : extraQuad ? 3 : undefined)
+      if (spared && recentPress && PRESSING_PATTERNS.has(pick.pattern)) item.sets = 1
+      items.push(item)
       if (spared || limitAccessory || extraQuad) steered.add(pick.id)
     }
     // Keep the first compound(s) that define the day, then protect a direct exercise

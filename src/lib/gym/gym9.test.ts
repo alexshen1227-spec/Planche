@@ -35,6 +35,16 @@ function withGym(sessions: GymSession[]): AppState {
 }
 
 describe('gym9: estimated maxes compare only what can be compared', () => {
+  it('requires a completed rep in a later workout to badge a heavier lift, and counts only productive sets in the week', () => {
+    const first = gs('A', 2, 'goblet-squat', [[2, 10, 7]])
+    first.exercises.push({ ...first.exercises[0], sets: [{ kg: 3, reps: 2, at: first.startedAt + 4000 }] })
+    const last = gs('A', 1, 'goblet-squat', [[4, 0, 10], [2, 10, 7]])
+    const saved = withGym([first, last])
+    expect(weeklySummary(saved, NOW).gymSets).toBe(3)
+    expect(gymBadges(saved).find((b) => b.id === 'gym-step')?.at).toBeUndefined()
+    last.exercises[0].sets[0].reps = 1
+    expect(gymBadges(saved).find((b) => b.id === 'gym-step')?.at).toBe(last.endedAt)
+  })
   const machine = [
     gs('A', 7, 'machine-chest-press', [[50, 8, 8], [50, 8, 8], [50, 8, 8]]),
     gs('B', 1, 'machine-chest-press', [[70, 8, 8], [70, 8, 8], [70, 8, 8]]),

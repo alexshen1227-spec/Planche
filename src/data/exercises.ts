@@ -622,6 +622,27 @@ const CORE_EXERCISES: Exercise[] = [
     muscles: ['Whole body', 'Cardiovascular'],
   },
   {
+    id: 'supported-shoulder-roll',
+    name: 'Supported Shoulder Roll', category: 'mobility', type: 'reps', difficulty: 1, equipment: ['Comfortable support'],
+    blurb: 'A small, easy shoulder movement with the rest of your body supported.',
+    howTo: ['Sit or lie in a comfortable position with your legs supported and arms resting.', 'Gently lift the shoulders a little, roll them back and let them settle. Use a small comfortable range.'],
+    cues: ['Let the hands rest', 'Keep the movement small'], mistakes: ['Forcing a larger circle'], muscles: ['Shoulder girdle'],
+  },
+  {
+    id: 'supported-heel-slide',
+    name: 'Supported Heel Slide', category: 'mobility', type: 'reps', difficulty: 1, equipment: ['Comfortable support'],
+    blurb: 'An easy leg movement while your upper body rests.',
+    howTo: ['Lie on your back with your head and arms supported comfortably.', 'Slide one heel toward you a short distance and let it slide back. Alternate legs, counting one slide at a time.'],
+    cues: ['Let the heel stay supported', 'Use an easy range'], mistakes: ['Pushing into discomfort'], muscles: ['Legs'],
+  },
+  {
+    id: 'supported-rest',
+    name: 'Comfortable Rest', category: 'general', type: 'reps', difficulty: 1, equipment: ['Comfortable support'],
+    blurb: 'Settle in a comfortable position and breathe normally.',
+    howTo: ['Choose a comfortable position that keeps pressure off the painful area.', 'Let your breathing stay easy. Finish whenever you like.'],
+    cues: ['Rest the arms and legs', 'Breathe naturally'], mistakes: ['Holding the breath'], muscles: [],
+  },
+  {
     id: 'arm-circles',
     name: 'Arm Circles',
     category: 'general',
