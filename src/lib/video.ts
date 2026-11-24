@@ -1,12 +1,42 @@
 import type { Exercise } from '../types'
 
-/**
- * Demo videos are deep links into a YouTube search rather than hardcoded
- * video ids: specific ids rot (deleted, renamed, made private) and there is
- * no way to keep them honest from inside a static app. A well-formed search
- * always resolves to current, real demonstrations — and users can pin their
- * own preferred video per exercise, which is stored locally and embedded.
- */
+export interface MovementVideo {
+  id: string
+  by: string
+  /** Start at the chapter where the instructor demonstrates this variation. */
+  start?: number
+}
+
+/** Publisher demonstrations. A locally pinned clip takes precedence. */
+export const MOVEMENT_VIDEOS: Readonly<Record<string, MovementVideo | undefined>> = {
+  'wall-handstand': { id: 'Y3FSeSecjKA', by: 'GMB Fitness', start: 250 },
+  'wall-float': { id: 'RLHiSB99sXE', by: 'CrossFit Invictus' },
+  'handstand-bail': { id: 'ZzEP7XvkDDk', by: 'GMB Fitness' },
+  'freestanding-handstand': { id: 'Y3FSeSecjKA', by: 'GMB Fitness' },
+  'pike-pushup': { id: 'DG-NcMnfZ_0', by: 'FitnessFAQs', start: 48 },
+  'wall-hspu-negative': { id: 'uZWjFe4fufA', by: 'FitnessFAQs' },
+  'wall-hspu': { id: 'hvoQiF0kBI8', by: 'CrossFit' },
+  'freestanding-hspu': { id: '2fY3DHUZLOs', by: 'FitnessFAQs' },
+  'ninety-pushup': { id: 'OvRvSQ8KQZE', by: 'FitnessFAQs', start: 305 },
+  'planche-lean': { id: '8mnNpNZ88Oo', by: 'GMB Fitness' },
+  'tuck-planche': { id: '8mnNpNZ88Oo', by: 'GMB Fitness' },
+  'straddle-planche': { id: '6snDOgFBBFA', by: 'GMB Fitness' },
+  'tuck-front-lever': { id: '_qNRNyI3qxM', by: 'GMB Fitness', start: 198 },
+  'adv-tuck-front-lever': { id: '_qNRNyI3qxM', by: 'GMB Fitness', start: 243 },
+  'straddle-front-lever': { id: '_qNRNyI3qxM', by: 'GMB Fitness', start: 281 },
+  'front-lever': { id: '_qNRNyI3qxM', by: 'GMB Fitness', start: 322 },
+  'tuck-flag': { id: '5PA4zMBwzZo', by: 'Barstarzz / Bodybuilding.com', start: 258 },
+  'straddle-flag': { id: '5PA4zMBwzZo', by: 'Barstarzz / Bodybuilding.com', start: 399 },
+  'human-flag': { id: 'Jjr2oEfHG7c', by: 'Gymless Fitness', start: 467 },
+  'db-bench-press': { id: 'U14BvBQNi2M', by: 'CrossFit' },
+  'goblet-squat': { id: 'qBZ9pJf7uHY', by: 'CrossFit Affiliate Programming' },
+  'lat-pulldown': { id: 'JGeRYIZdojU', by: 'PureGym' },
+  'db-rdl': { id: 'aa57T45iFSE', by: 'National Academy of Sports Medicine' },
+  'db-lateral-raise': { id: 'z-kOn7flIZg', by: 'PureGym' },
+  'cable-row': { id: 'lJoozxC0Rns', by: 'PureGym' },
+  'assisted-pull-up': { id: 'wFj808u2HWU', by: 'PureGym' },
+  'seated-leg-curl': { id: 'jq03iefZxjc', by: 'PartnerMD' },
+}
 /** Hand-tuned search phrases where the exercise name alone searches poorly. */
 const QUERY_OVERRIDES: Record<string, string> = {
   'wrist-circles': 'wrist warm up routine calisthenics before training',

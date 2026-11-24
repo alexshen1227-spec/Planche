@@ -39,6 +39,7 @@ import type {
 } from '../types'
 import { firstStep, roadOf, skillOfStep, STEP_BY_ID, stepsOf } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
+import { isRepGoal } from '../data/skills'
 import { ACHIEVEMENT_VERSION, REVALIDATED_ACHIEVEMENTS } from '../data/achievements'
 import { applySession } from './engine'
 import { configureAudio } from './audio'
@@ -768,6 +769,7 @@ function sanitizeTracks(raw: unknown, startedAt: number): AppState['tracks'] | u
       baseStepId: isStepOf(v.baseStepId, skill) ? v.baseStepId : stepId,
       unlocked,
       ...(isStepOf(v.goalStepId, skill) ? { goalStepId: v.goalStepId } : {}),
+      ...(isRepGoal(skill, v.repGoal) ? { repGoal: v.repGoal } : {}),
       ...(assessment ? { assessment } : {}),
       addedAt: isTime(v.addedAt) ? v.addedAt : startedAt,
     }
@@ -1371,6 +1373,7 @@ export type Action =
   | { type: 'SET_SKILLS'; skills: SkillId[] }
   /** The long-term destination on one road (the step's own skill). */
   | { type: 'SET_GOAL'; stepId: StepId }
+  | { type: 'SET_REP_GOAL'; skill: SkillId; exerciseId: string }
   | { type: 'SET_VIDEO'; exerciseId: string; url: string | null }
   | { type: 'LOG_MEASUREMENT'; weightKg?: number; heightCm?: number }
   | { type: 'SNOOZE_MEASURE' }
@@ -1424,7 +1427,9 @@ function goalChange(state: AppState, goal: number, at = Date.now()): Partial<Set
 
 function stamp(state: AppState, keys: string[], at = Date.now()): Record<string, number> {
   const times = { ...(state.fieldTimes ?? {}) }
-  for (const key of keys) times[key] = at
+  // Setup, edits and storage events can share a millisecond. A subsequent
+  // local write must still be newer than the version it changed.
+  for (const key of keys) times[key] = Math.min(MAX_TIME, Math.max(at, (times[key] ?? 0) + 1))
   return times
 }
 
@@ -1595,10 +1600,16 @@ export function mergeExternalState(local: AppState, incoming: AppState): AppStat
     const theirs = incoming.tracks?.[skill]
     if (!theirs) continue
     const key = stepField(skill)
-    if (!local.tracks?.[skill] || newer(key)) {
-      if (JSON.stringify(local.tracks?.[skill]) === JSON.stringify(theirs)) continue
-      tracks = { ...tracks, [skill]: theirs }
-      if (it[key] !== undefined) fieldTimes[key] = it[key]
+    const ours = local.tracks?.[skill]
+    const goalKey = `repGoal.${skill}`
+    const newerGoal = newer(goalKey)
+    if (!ours || newer(key) || newerGoal) {
+      const road = !ours || newer(key) ? theirs : ours
+      const repGoal = !ours || newerGoal ? theirs.repGoal : ours.repGoal
+      const merged = road.repGoal === repGoal ? road : { ...road, repGoal }
+      tracks = { ...tracks, [skill]: merged }
+      if ((!ours || newer(key)) && it[key] !== undefined) fieldTimes[key] = it[key]
+      if (newerGoal) fieldTimes[goalKey] = it[goalKey]
       tracksChanged = true
       fieldsChanged = true
     }
@@ -1833,6 +1844,16 @@ function reduceAction(state: AppState, action: Action): AppState {
       return {
         ...withTrack(state, skill, { goalStepId: action.stepId }),
         fieldTimes: stamp(state, [skill === 'planche' ? 'profile.goalStepId' : stepField(skill)]),
+      }
+    }
+    case 'SET_REP_GOAL': {
+      if (!isRepGoal(action.skill, action.exerciseId)) return state
+      const track = state.tracks?.[action.skill]
+      if (!track || track.repGoal === action.exerciseId) return state
+      return {
+        ...state,
+        tracks: { ...state.tracks, [action.skill]: { ...track, repGoal: action.exerciseId } },
+        fieldTimes: stamp(state, [`repGoal.${action.skill}`]),
       }
     }
     case 'COMPLETE_ONBOARDING': {

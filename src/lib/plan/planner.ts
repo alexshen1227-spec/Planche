@@ -554,10 +554,7 @@ export function gymToday(state: AppState, opts: { now: number; minutes: number; 
   const base = opts.location ? atPlace(state, opts.location) : state
   const picked = opts.focus && opts.focus !== 'auto' ? opts.focus : undefined
   const here = activePlace(base)
-  const options = { todayMinutes: opts.minutes, ...(here ? { todayPlace: here } : {}) }
-  const recommended = !picked ? planWeekAhead(base, now, options) : undefined
-  const week = recommended?.days[0].plan.gym ? recommended :
-    planWeekAhead(base, now, { ...options, todayKind: 'gym', ...(picked ? { todayFocus: picked } : {}) })
+  const week = planWeekAhead(base, now, { todayMinutes: opts.minutes, todayKind: 'gym', ...(picked ? { todayFocus: picked } : {}), ...(here ? { todayPlace: here } : {}) })
   const plan = week.days[0].plan
   const own = base.gym?.prefs
   const prefs = own ?? defaultPrefs(now)
@@ -2831,6 +2828,13 @@ export function planWeekAhead(
   const own = state.gym?.prefs
   const prefs: TrainingPrefs = own ?? defaultPrefs(now)
   const skills = trainedSkills(state)
+  const canShareBalance = skills[0] === 'handstand' && prefs.goals.skills > 0 && prefs.goals.physique >= 3 && prefs.goals.physique >= prefs.goals.skills
+  // Choosing the gym should preserve a full handstand practice that already
+  // shares today's gym session. Only this conversion happens after kind selection.
+  if (canShareBalance && opts.todayKind === 'gym' && !opts.todayFocus && !opts.coverLegWeeks && opts.todayWhy !== 'followed') {
+    const recommended = planWeekAhead(state, now, { ...opts, todayKind: undefined, todayWhy: undefined })
+    if (recommended.days[0].plan.gym) return recommended
+  }
   const today = startOfDay(now)
   const thisWeek = weekStart(now)
   const nextWeek = addDays(thisWeek, 7)
@@ -2965,7 +2969,7 @@ export function planWeekAhead(
   }
   // A handstand workout that finishes well inside the time available can share the day
   // with lifting. Compare the actual balance and pressing dose at the same place first.
-  if (skills[0] === 'handstand' && gymWanted && g.physique >= 3 && g.physique >= g.skills) {
+  if (canShareBalance && gymWanted) {
     for (const d of days) {
       const slot = slots[d.index]
       const location = placeAt(d.index)

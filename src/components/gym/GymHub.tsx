@@ -6,7 +6,7 @@ import { buildGymSession, FOCUS_LABEL, type GymFocus, type PlannedExercise } fro
 import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
 import { draftConflictLine, draftContents, EXTRA_SESSION_LINE, leftOutLine, openDraftFor, resumeLine } from '../../lib/gym/sessionLines'
-import { conservative, latestPartialToday, loadDraft, prefillReps, previousSets, resumePartial, type GymDraft } from '../../lib/gym/draft'
+import { adaptOpenDraft, conservative, latestPartialToday, loadDraft, prefillReps, previousSets, resumePartial, type GymDraft } from '../../lib/gym/draft'
 import { AFTER_OPENER_WARM_UP_MIN, gymToday, MIN_GYM_MINUTES, skillFamily, skillRequest, soreJoints } from '../../lib/plan/planner'
 import { weekForChoice } from '../../lib/plan/currentWeek'
 import { dayStage, gymPlaceLine, gymPreset, openerLine, resolveGymPlace, steerInput, type GymEntry, type GymPreset } from '../../lib/plan/screens'
@@ -214,15 +214,6 @@ export function GymHub({
   /** After the pain check: record what hurts, steer round it, and start. */
   const launch = (joints: Joint[], kind: 'none' | 'niggle' | 'pain') => {
     if (!pending) return
-    // An open session is never overwritten by a new one: resume or discard it first.
-    if (loadDraft()) {
-      setPending(null)
-      setResumable(loadDraft())
-      const open = loadDraft()
-      const warn = open ? draftConflictLine(open, joints) : null
-      pushToast(warn ?? 'A gym session is still open — it resumes first. Resume it or discard it to start the new plan.', 'info')
-      return
-    }
     const regions = joints.map((j) => JOINT_REGION[j]).filter((r): r is BodyRegion => Boolean(r))
     if (kind !== 'none' && joints.length) {
       dispatch({ type: 'RECORD_SYMPTOM', event: { at: Date.now(), joints: kind, regions: regions.length ? regions : ['other'], source: 'check-in' } })
@@ -233,6 +224,15 @@ export function GymHub({
       // to clear it from the gym.
       dispatch({ type: 'RECORD_SYMPTOM', event: { at: Date.now(), joints: 'good', source: 'check-in' } })
     }
+    const open = loadDraft()
+    const avoid = [...new Set([...sore.joints, ...joints])]
+    const light = kind === 'pain' || sore.pain
+    if (open) {
+      setRunning(adaptOpenDraft(open, avoid, light))
+      setPending(null)
+      setResumable(null)
+      return
+    }
     if (pending.resumeSessionId) {
       setPending(null)
       if (!source?.remaining || source.completion !== 'partial') {
@@ -240,8 +240,8 @@ export function GymHub({
         return
       }
       const originalPlace = gym.locations.find((l) => l.id === source.locationId)
-      const next = originalPlace && resumePartial(source, [...sore.joints, ...joints], originalPlace)
-      if (next) setRunning(next)
+      const next = originalPlace && resumePartial(source, avoid, originalPlace)
+      if (next) setRunning(adaptOpenDraft(next, avoid, light))
       else pushToast(originalPlace ? 'None of the remaining lifts fit this joint check and equipment. Your completed sets are in history.' : 'The original training place was removed. Your completed sets are in history.', 'info')
       return
     }
@@ -387,10 +387,7 @@ export function GymHub({
           <div className="mt-3 flex gap-2">
             <Button
               className="flex-1"
-              onClick={() => {
-                setRunning(resumable)
-                setResumable(null)
-              }}
+              onClick={() => setPending({ empty: false })}
             >
               Resume {resumable.name}
             </Button>
@@ -570,10 +567,7 @@ export function GymHub({
               size="lg"
               full
               aria-label={`Resume the open ${resumable.name} session, not the plan above`}
-              onClick={() => {
-                setRunning(resumable)
-                setResumable(null)
-              }}
+              onClick={() => setPending({ empty: false })}
             >
               Resume {resumable.name}
             </Button>

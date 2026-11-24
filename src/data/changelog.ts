@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-24',
+    title: 'Resume around sore joints and choose a pressing milestone',
+    area: 'training',
+    notes: [
+      'A new joint check also applies to an open gym workout. Completed sets stay logged, sore areas get a break and choosing a light day eases the remaining lifts.',
+      'Pick the pressing milestone you want alongside your balance or hold goal. Your road shows when you have logged a clean rep and reviewed it on film.',
+      'Open movement demonstrations from the workout or Learn. Key skill positions are also available as diagrams offline.',
+    ],
+  },
+  {
+    date: '2026-11-24',
     title: 'Make room for skills, lifting and sport',
     area: 'coach',
     notes: [

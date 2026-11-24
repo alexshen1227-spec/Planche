@@ -67,6 +67,8 @@ export interface LadderStatus {
   /** Index into `rungs` of the rung being trained. */
   index: number
   rung: RepRung
+  /** A first-rep milestone, independent of placement and of the hold destination. */
+  goal: { rung: RepRung; reviewed: boolean; logged: boolean }
   /** The next rung, when there is one. */
   next?: RepRung
   /** Most full reps shown with evidence on the current rung, in one set. */
@@ -160,12 +162,19 @@ export function ladderStatus(stateIn: AppState, skill: SkillId, now = Number.POS
   }
 
   const rung = rungs[index]
+  const goalRung = ladder.rungs.find((r) => r.exerciseId === trackOf(state, skill).repGoal) ?? ladder.rungs[ladder.rungs.length - 1]
+  const goal = { rung: goalRung, reviewed: false, logged: false }
   let verifiedBest = 0
   let loggedBest = 0
   for (const session of sessions) {
     for (const set of session.sets) {
-      if (set.exerciseId !== rung.exerciseId || set.kind !== 'reps') continue
+      if (set.kind !== 'reps' || (set.exerciseId !== rung.exerciseId && set.exerciseId !== goalRung.exerciseId)) continue
       if (set.section === 'warmup' || set.section === 'cooldown' || isAssisted(set)) continue
+      if (set.exerciseId === goalRung.exerciseId && set.value >= 1 && !set.repaired?.length) {
+        goal.logged = true
+        if (verifiedReps(set) >= 1) goal.reviewed = true
+      }
+      if (set.exerciseId !== rung.exerciseId) continue
       loggedBest = Math.max(loggedBest, set.value)
       verifiedBest = Math.max(verifiedBest, verifiedReps(set))
     }
@@ -175,6 +184,7 @@ export function ladderStatus(stateIn: AppState, skill: SkillId, now = Number.POS
     rungs,
     index,
     rung,
+    goal,
     ...(rungs[index + 1] ? { next: rungs[index + 1] } : {}),
     verifiedBest,
     loggedBest,

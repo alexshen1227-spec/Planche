@@ -81,7 +81,7 @@ import {
   wholeState,
 } from './skills'
 import { startingState } from './skillLoop'
-import { initialState, normalizeState, rebuildDerivedState, reducer } from './store'
+import { initialState, mergeExternalState, normalizeState, rebuildDerivedState, reducer } from './store'
 import { weekWork, workSets } from './volume'
 
 const DAY = 86_400_000
@@ -710,6 +710,24 @@ describe('the rep ladders', () => {
     ...extra,
   })
   const reviewed: SetLog['form'] = { rating: 'clean', confirmed: true, visualReviewPassed: true }
+
+  it('keeps a first-rep goal separate from the balance goal and checks it against the saved set', () => {
+    const base = startingState({ skills: ['handstand'], equipment: ['floor', 'wall'] })
+    expect(ladderStatus(base, 'handstand')!.goal.rung.exerciseId).toBe('freestanding-hspu')
+    const chosen = reducer(base, { type: 'SET_REP_GOAL', skill: 'handstand', exerciseId: 'wall-hspu' })
+    const other = reducer(base, { type: 'SET_GOAL', stepId: 'hs-float' })
+    for (const merged of [mergeExternalState(chosen, other), mergeExternalState(other, chosen)]) {
+      expect(normalizeState(merged).tracks!.handstand).toMatchObject({ goalStepId: 'hs-float', repGoal: 'wall-hspu' })
+    }
+    expect(reducer(chosen, { type: 'SET_REP_GOAL', skill: 'handstand', exerciseId: 'ninety-pushup' }).tracks).toEqual(chosen.tracks)
+    const log = sessionOf(chosen, T0, [rep('wall-hspu', 1, T0)])
+    const unreviewed = reducer(chosen, { type: 'SAVE_SESSION', session: log })
+    expect(ladderStatus(unreviewed, 'handstand')!.goal).toMatchObject({ logged: true, reviewed: false })
+    const proof = sessionOf(chosen, T0 + DAY, [rep('wall-hspu', 1, T0 + DAY, reviewed)])
+    const met = reducer(unreviewed, { type: 'SAVE_SESSION', session: proof })
+    expect(ladderStatus(met, 'handstand')!.goal.reviewed).toBe(true)
+    expect(ladderStatus(reducer(met, { type: 'DELETE_SESSION', id: proof.id }), 'handstand')!.goal.reviewed).toBe(false)
+  })
 
   it('credits only reps with evidence', () => {
     expect(verifiedReps(rep('pike-pushup', 8, 1, reviewed))).toBe(8)

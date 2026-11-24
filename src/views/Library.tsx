@@ -4,7 +4,8 @@ import type { Category, Exercise } from '../types'
 import { useStore } from '../lib/store'
 import { EXERCISES, CATEGORY_LABEL } from '../data/exercises'
 import { GUIDES, GUIDE_GROUPS, GLOSSARY, type Guide } from '../data/learn'
-import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
+import { demoSearchUrl, youtubeId } from '../lib/video'
+import { MovementDemo } from '../components/MovementDemo'
 import { pushToast } from '../lib/toast'
 import { fmtHold, fmtDate } from '../lib/time'
 import { Icon } from '../components/Icon'
@@ -237,7 +238,7 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
             href={demoSearchUrl(exercise)}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-footnote font-medium text-ink2 transition hover:text-ink"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-footnote font-medium text-ink2 transition hover:text-ink"
           >
             Find demos <Icon name="arrowR" size={13} />
           </a>
@@ -246,35 +247,27 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
               setDraft(pinned ?? '')
               setEditing((v) => !v)
             }}
-            className="rounded-lg border border-line bg-surface px-3 py-1.5 text-footnote font-medium text-ink2 transition hover:text-ink"
+            className="min-h-11 rounded-lg border border-line bg-surface px-3 py-1.5 text-footnote font-medium text-ink2 transition hover:text-ink"
           >
             {pinned ? 'Change' : 'Pin one'}
           </button>
         </div>
       </div>
 
-      {pinnedId && !editing ? (
-        <div className="mt-3">
-          <div className="relative w-full overflow-hidden rounded-control border border-line" style={{ paddingTop: '56.25%' }}>
-            <iframe
-              src={embedUrl(pinnedId)}
-              title={`${exercise.name} demo`}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              className="absolute inset-0 h-full w-full"
-            />
-          </div>
-          <button
+      {!editing ? (
+        <>
+          <MovementDemo name={exercise.name} exerciseId={exercise.id} pinnedUrl={pinned} />
+          {pinnedId && <button
             onClick={() => {
               dispatch({ type: 'SET_VIDEO', exerciseId: exercise.id, url: null })
               pushToast('Pinned video removed.', 'info')
             }}
-            className="mt-2 text-footnote font-medium text-ink3 hover:text-danger-text"
+            className="mt-2 min-h-11 text-footnote font-medium text-ink3 hover:text-danger-text"
           >
             Remove pinned video
-          </button>
-        </div>
-      ) : editing ? (
+          </button>}
+        </>
+      ) : (
         <div className="mt-3">
           <p className="text-footnote leading-relaxed text-ink2">
             Found a demo you like? Paste its YouTube link and it will play right here, every time.
@@ -284,6 +277,7 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && save()}
+              aria-label="YouTube demonstration link"
               placeholder="https://youtube.com/watch?v=…"
               className="min-w-0 flex-1 rounded-control border border-line bg-surface px-3 py-2 text-footnote text-ink outline-none placeholder:text-ink3 focus:border-accent"
             />
@@ -295,11 +289,6 @@ function VideoPanel({ exercise }: { exercise: Exercise }) {
             </Button>
           </div>
         </div>
-      ) : (
-        <p className="mt-2 text-footnote leading-relaxed text-ink2">
-          Opens a live search for current demonstrations of this movement — then pin your favourite so it plays here
-          from now on.
-        </p>
       )}
     </div>
   )

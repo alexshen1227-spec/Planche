@@ -138,6 +138,44 @@ export function loadDraft(): GymDraft | null {
   }
 }
 
+function remainingLift(item: DraftItem, sets: DraftSet[]): RemainingLift {
+  return {
+    exerciseId: item.exerciseId, repRange: item.plan.range, targetRpe: item.plan.targetRpe,
+    restSec: item.restSec, unit: item.unit, swappedFrom: item.swappedFrom,
+    sets: sets.map(({ reps, load, warmup }) => ({ reps, load, warmup })),
+  }
+}
+
+/** Recheck the unperformed part of an open workout without changing a single logged set. */
+export function adaptOpenDraft(draft: GymDraft, joints: Joint[], light: boolean): GymDraft {
+  const avoidJoints = [...new Set([...(draft.avoidJoints ?? []), ...joints])]
+  const factor = draft.volumeFactor ?? 1
+  const reduce = light && factor > 0.6
+  if (!avoidJoints.length && !reduce) return draft
+  const deferred = [...(draft.deferred ?? [])]
+  const items = draft.items.flatMap((item): DraftItem[] => {
+    const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
+    if (ex?.stress.some((j) => avoidJoints.includes(j))) {
+      const left = item.sets.filter((s) => !s.done)
+      if (left.length) deferred.push(remainingLift(item, left))
+      const done = item.sets.filter((s) => s.done)
+      return done.length ? [{ ...item, sets: done }] : []
+    }
+    if (!reduce || !item.sets.some((s) => !s.done)) return [item]
+    const working = item.sets.filter((s) => !s.warmup)
+    let left = Math.max(1, Math.round(working.length * 0.6 / factor)) - working.filter((s) => s.done).length
+    const sets = item.sets.flatMap((s) => {
+      if (s.done || s.warmup) return [s]
+      if (left-- <= 0) return []
+      // Choose a comfortable load at the easier target. An assistance setting has the opposite meaning.
+      return [{ ...s, reps: item.plan.range[0], load: ex?.assisted ? s.load : undefined }]
+    })
+    return [{ ...item, plan: { ...item.plan, targetRpe: Math.min(item.plan.targetRpe, 7) }, suggestion: undefined, sets }]
+  })
+  return { ...draft, items, deferred, avoidJoints, originalAvoidJoints: draft.originalAvoidJoints ?? draft.avoidJoints ?? [],
+    volumeFactor: reduce ? 0.6 : draft.volumeFactor, effortFor: undefined }
+}
+
 /** Finished sets only, loads back to kg. Planned sets never done make the session partial. */
 export function sessionFromDraft(draft: GymDraft, endedAt: number): GymSession {
   const remainingItems: RemainingLift[] = [...(draft.deferred ?? [])]
@@ -145,11 +183,7 @@ export function sessionFromDraft(draft: GymDraft, endedAt: number): GymSession {
     .map((item) => {
       const done = item.sets.filter((s) => s.done)
       const left = item.sets.filter((s) => !s.done)
-      if (left.length) remainingItems.push({
-        exerciseId: item.exerciseId, repRange: item.plan.range, targetRpe: item.plan.targetRpe,
-        restSec: item.restSec, unit: item.unit, swappedFrom: item.swappedFrom,
-        sets: left.map(({ reps, load, warmup }) => ({ reps, load, warmup })),
-      })
+      if (left.length) remainingItems.push(remainingLift(item, left))
       return {
         exerciseId: item.exerciseId,
         sets: done.map((s) => ({

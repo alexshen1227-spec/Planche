@@ -21,6 +21,7 @@ import {
   type InterviewAnswers,
 } from '../lib/placement'
 import { Icon } from '../components/Icon'
+import { PressMilestonePicker } from '../components/PressMilestone'
 import { Figure } from '../components/Figure'
 import { LocationEditor } from '../components/gym/LocationEditor'
 import { AgeAndSafety } from '../components/plan/FitnessSetup'
@@ -198,6 +199,7 @@ export function Onboarding() {
   /** The skills chosen, in the order they were picked: the first is the focus. */
   const [skills, setSkills] = useState<SkillId[]>([])
   const [goals, setGoals] = useState<Partial<Record<SkillId, StepId>>>({})
+  const [pressGoals, setPressGoals] = useState<Partial<Record<SkillId, string>>>({})
   const [answers, setAnswers] = useState<InterviewAnswers>({})
   const [skippedInterview, setSkippedInterview] = useState(false)
   const [manual, setManual] = useState<Partial<Record<SkillId, StepId>>>({})
@@ -258,6 +260,7 @@ export function Onboarding() {
   const placedFor = (skill: SkillId): StepId =>
     skippedInterview ? (manual[skill] ?? SKILLS[skill].steps[0].id) : (placements[skill]?.stepId ?? SKILLS[skill].steps[0].id)
   const goalStepId = goalFor(focus)
+  const pressLadder = SKILLS[focus].ladder
   /** The destination that is kept: one the placement has already reached moves on, so the first screen never says "reached" at 0%. */
   const settledGoal = (skill: SkillId) => goalPastPlacement(skill, placedFor(skill), goalFor(skill))
   const finalGoalFor = (skill: SkillId): StepId => settledGoal(skill).goal
@@ -406,6 +409,10 @@ export function Onboarding() {
         ...(year !== undefined ? { birthYear: year } : {}),
       },
     })
+    for (const skill of chosen) {
+      const exerciseId = pressGoals[skill]
+      if (exerciseId) dispatch({ type: 'SET_REP_GOAL', skill, exerciseId })
+    }
     // What Fitness Lab's setup writes, in its order: the places first (Home
     // carries the kit above), then which one is in use, then the plan itself.
     // Everything lands in this one handler, so Today's first render already has
@@ -633,6 +640,7 @@ export function Onboarding() {
                 ? `The destination on your main skill, ${SKILLS[focus].name.toLowerCase()} — not your starting point. Your other skills aim at the top of their roads until you say otherwise.`
                 : 'This sets your destination, not your starting point. You can change it any time.'}
             </p>
+            {pressLadder && <h2 className="mt-5 text-body font-semibold text-ink">{focus === 'handstand' ? 'Balance milestone' : 'Hold milestone'}</h2>}
             <div className="mt-6 space-y-2.5" role="group" aria-label="Training goal">
               {(focus === 'planche' ? GOAL_CHOICES : goalChoices(focus)).map((id) => {
                 const step = STEP_BY_ID[id]
@@ -663,6 +671,8 @@ export function Onboarding() {
                 )
               })}
             </div>
+            {pressLadder && <PressMilestonePicker ladder={pressLadder} value={pressGoals[focus]}
+              onChange={(id) => setPressGoals((current) => ({ ...current, [focus]: id }))} />}
             <div className={actionRow}>
               <button onClick={() => setStage('skills')} className={backBtn}>
                 Back

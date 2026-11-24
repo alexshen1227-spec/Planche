@@ -758,6 +758,8 @@ export interface SkillTrack {
   baseStepId: StepId
   unlocked: StepId[]
   goalStepId?: StepId
+  /** Exercise chosen for a first clean rep on this skill's pressing ladder. */
+  repGoal?: string
   /** The placement interview for this skill, when one was taken. */
   assessment?: AssessmentRecord
   /** When the athlete added the skill. */

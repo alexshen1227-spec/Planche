@@ -10,12 +10,26 @@ import { Library } from '../../views/Library'
 import { Stats } from '../../views/Stats'
 import { defaultGym, defaultPrefs } from './state'
 import type { GymEntry } from '../plan/screens'
+import { loadDraft, saveDraft, type DraftItem } from './draft'
+import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 
 afterEach(() => {
   cleanup()
   localStorage.clear()
   vi.unstubAllGlobals()
 })
+
+function FirstRun() {
+  const { state } = useStore()
+  const [train, setTrain] = useState(false)
+  const [entry, setEntry] = useState<GymEntry | null>(null)
+  if (!state.onboarded) return <Onboarding />
+  if (train) return <Train startWorkout={vi.fn()} entryPreset={entry} onEntryUsed={() => setEntry(null)} />
+  return <Dashboard go={vi.fn()} startWorkout={vi.fn()} viewSession={vi.fn()} startGym={(p) => {
+    setEntry(p)
+    setTrain(true)
+  }} />
+}
 
 it('shows an opted-in gym-only athlete their recorded bodyweight and comparable bodyweight sets on Progress', () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
@@ -49,23 +63,17 @@ it('finds prescribed gym movements in Learn and opens their equipment and techni
     const guide = screen.getByRole('dialog', { name: `${name} exercise guide` })
     expect(within(guide).getByText('Equipment')).toBeTruthy()
     expect(within(guide).getByText('Main muscles')).toBeTruthy()
+    if (name === 'Goblet squat') {
+      expect(guide.querySelector('iframe')).toBeNull()
+      fireEvent.click(within(guide).getByRole('button', { name: 'Play Goblet squat demonstration' }))
+      expect(within(guide).getByTitle('Goblet squat demonstration').getAttribute('src')).toContain('youtube-nocookie.com/embed/qBZ9pJf7uHY')
+    }
     fireEvent.click(within(guide).getByRole('button', { name: /close/i }))
   }
 })
 
 it('lets a gym-only athlete log a first set, reload Home and finish the original workout', () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
-  function FirstRun() {
-    const { state } = useStore()
-    const [train, setTrain] = useState(false)
-    const [entry, setEntry] = useState<GymEntry | null>(null)
-    if (!state.onboarded) return <Onboarding />
-    if (train) return <Train startWorkout={vi.fn()} entryPreset={entry} onEntryUsed={() => setEntry(null)} />
-    return <Dashboard go={vi.fn()} startWorkout={vi.fn()} viewSession={vi.fn()} startGym={(p) => {
-      setEntry(p)
-      setTrain(true)
-    }} />
-  }
   const click = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }))
   const mount = () => render(<StoreProvider><FirstRun /></StoreProvider>)
   const first = mount()
@@ -114,4 +122,49 @@ it('lets a gym-only athlete log a first set, reload Home and finish the original
   expect(stored()[0]).toMatchObject({ id: original.id, startedAt: original.startedAt, completion: 'full' })
   expect(stored()[0].remaining).toBeUndefined()
   expect(stored()[0].exercises[0].sets[0]).toEqual(original.exercises[0].sets[0])
+})
+
+it('keeps finished sets and applies a new pain check when Home reopens an unfinished gym workout', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const base = initialState()
+  const at = Date.now() - 180_000
+  const gym = defaultGym(['floor'])
+  const prefs = defaultPrefs(at)
+  prefs.minutesByDay = Array.from({ length: 7 }, (_, i) => i === new Date().getDay() ? 45 : 0)
+  localStorage.setItem('planchelab.v1', JSON.stringify({
+    ...base, onboarded: true, profile: { ...base.profile, birthYear: 1994 },
+    gym: { ...gym, prefs: { ...prefs, goals: { ...prefs.goals, skills: 0 } } },
+  }))
+  const squat = { reps: 8, load: 12, rpe: 7, at, done: true }
+  const press = { ...squat, load: 14, at: at + 60_000 }
+  const block = (exerciseId: string, logged?: typeof squat): DraftItem => ({
+    exerciseId, restSec: 90, unit: 'kg', plan: { range: [8, 12], targetRpe: 8 },
+    sets: [logged ?? { reps: 8, done: false }, { reps: 8, done: false }, { reps: 8, done: false }],
+  })
+  saveDraft({ id: 'open-work', startedAt: at, name: 'Full body', locationId: gym.locations[0].id, notes: 'Lunch break',
+    items: [block('goblet-squat', squat), block('db-bench-press', press), block('push-up')] })
+  render(<StoreProvider><FirstRun /></StoreProvider>)
+  fireEvent.click(within(screen.getByRole('region', { name: 'Today’s session' })).getByRole('button'))
+  fireEvent.click(screen.getByRole('button', { name: 'Shoulders' }))
+  fireEvent.click(screen.getByRole('button', { name: /it hurts.*keep off it/i }))
+  const player = within(screen.getByRole('dialog', { name: 'Gym session' }))
+  expect(player.getByText('Completed before this check-in')).toBeTruthy()
+  expect(JSON.parse(localStorage.getItem('planchelab.v1')!).symptoms).toEqual([expect.objectContaining({ joints: 'pain', regions: ['shoulder'] })])
+  const d = loadDraft()!
+  expect(d).toMatchObject({ id: 'open-work', notes: 'Lunch break', avoidJoints: ['shoulders'], volumeFactor: 0.6 })
+  const remaining = d.items.filter((item) => item.sets.some((s) => !s.done))
+  expect(remaining.every((it) => !GYM_EXERCISE_BY_ID[it.exerciseId].stress.includes('shoulders'))).toBe(true)
+  expect(remaining[0].sets).toHaveLength(2)
+  expect(d.items.flatMap((it) => it.sets.filter((s) => s.done))).toEqual([squat, press])
+  expect(d.deferred?.map((it) => it.exerciseId)).toContain('db-bench-press')
+  fireEvent.click(player.getByRole('button', { name: 'Add an exercise' }))
+  expect(screen.queryByRole('button', { name: /dumbbell bench press/i })).toBeNull()
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Exercise options' })).getByRole('button', { name: /close/i }))
+  fireEvent.click(player.getByRole('button', { name: 'Finish' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save session' }))
+  const saved = JSON.parse(localStorage.getItem('planchelab.v1')!).gym.sessions
+  expect(saved).toHaveLength(1)
+  expect(saved[0].exercises.map((it: { sets: unknown[] }) => it.sets)).toEqual([
+    [{ kg: 12, reps: 8, rpe: 7, unit: 'kg', at }], [{ kg: 14, reps: 8, rpe: 7, unit: 'kg', at: at + 60_000 }],
+  ])
 })

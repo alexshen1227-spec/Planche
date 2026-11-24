@@ -50,6 +50,7 @@ import { Icon } from '../components/Icon'
 import { BadgeGlyph } from '../components/ds/BadgeGlyph'
 import { Modal, SectionTitle } from '../components/ui'
 import { WeeklySummary } from '../components/plan/WeeklySummary'
+import { pressMilestoneProgress } from '../components/PressMilestone'
 import { gymBadges } from '../lib/plan/weekly'
 import { pushToast } from '../lib/toast'
 import type { Exercise, SkillId, TrainingSurface } from '../types'
@@ -93,6 +94,7 @@ function RepLadderProgress({ status, skillName }: { status: LadderStatus; skillN
     <section id="rep-ladder" className="scroll-mt-5">
       <SectionTitle>{ladder.name}</SectionTitle>
       <div className="rounded-card border border-line bg-surface p-4">
+        <p className="mb-3 text-footnote font-medium text-ink">{pressMilestoneProgress(status)}</p>
         <ol className="space-y-2">
           {rungs.map((rung, i) => (
             <li
@@ -106,7 +108,7 @@ function RepLadderProgress({ status, skillName }: { status: LadderStatus; skillN
                 {i === index ? <span className="ml-2 text-caption font-bold uppercase tracking-wide text-accent-text">now</span> : null}
                 {i < index ? <span className="ml-2 text-caption text-ink3">passed</span> : null}
               </span>
-              <span className="shrink-0 tnum text-ink3">{i === index ? `${verifiedBest} verified · ${loggedBest} logged` : `${rung.standardReps} to open the next`}</span>
+              <span className="shrink-0 tnum text-ink3">{i === index ? `${verifiedBest} verified · ${loggedBest} logged` : `${rung.standardReps} ${rung.standardReps === 1 ? 'rep' : 'reps'}`}</span>
             </li>
           ))}
         </ol>

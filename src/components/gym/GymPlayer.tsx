@@ -162,6 +162,7 @@ export function GymPlayer({
 
   const completeSet = (i: number, j: number, checked = false, unloadedOk = false, withLoad?: number) => {
     const item = draft.items[i]
+    if (!fitsToday(GYM_EXERCISE_BY_ID[item.exerciseId])) return
     let set = item.sets[j]
     // A weight typed in the set's box is the answer: it once could not be logged without the sheet in the way.
     if (!set.done && (set.load === undefined || set.load === 0)) {
@@ -228,6 +229,7 @@ export function GymPlayer({
 
   const swapTo = (i: number, exerciseId: string) => {
     const ex = GYM_EXERCISE_BY_ID[exerciseId]
+    if (!fitsToday(ex)) return
     update((d) => {
       const old = d.items[i]
       const done = old.sets.filter((s) => s.done)
@@ -260,6 +262,7 @@ export function GymPlayer({
     !e.stress.some((j) => draft.avoidJoints?.includes(j)) && !e.primary.some((m) => draft.musclesOff?.includes(m))
 
   const addExercise = (exerciseId: string) => {
+    if (!fitsToday(GYM_EXERCISE_BY_ID[exerciseId])) return
     update((d) => {
       const ex = GYM_EXERCISE_BY_ID[exerciseId]
       const factor = d.volumeFactor ?? 1
@@ -381,10 +384,26 @@ export function GymPlayer({
           {draft.resumeFrom !== undefined && <p className="rounded-control bg-raised p-3 text-footnote text-ink2" role="status">
             {stale ? 'Another tab changed the original workout. You can save the sets you do here separately.' :
               `${earlierSets} ${earlierSets === 1 ? 'set was' : 'sets were'} already saved. Continue with the remaining sets below.`}
-            {draft.deferred?.length ? ' Some lifts are held for another time by this joint or equipment check.' : ''}
           </p>}
+          {!!draft.deferred?.length && <p className="rounded-control bg-raised p-3 text-footnote text-ink2" role="status">
+            Held for this check-in: {[...new Set(draft.deferred.map((it) => GYM_EXERCISE_BY_ID[it.exerciseId]?.name ?? it.exerciseId))].join(', ')}.
+            {' '}{doneSets === plannedSets ? 'There are no remaining sets in today’s adjusted plan.' : 'Continue with the remaining movements below.'}
+            {doneSets > 0 ? ' You can finish and save the work you already did.' : ''}
+          </p>}
+          {(draft.volumeFactor ?? 1) <= 0.6 && <p className="text-footnote text-ink2">Light session. Use a comfortable weight and keep several reps in reserve.</p>}
           {draft.items.map((item, i) => {
             const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
+            if (!fitsToday(ex)) return (
+              <section key={`${item.exerciseId}-${i}`} className="rounded-card border border-line bg-surface p-4">
+                <h3 className="text-title3 font-semibold">{ex.name}</h3>
+                <p className="mt-1 text-footnote text-ink2">Completed before this check-in</p>
+                <ul className="mt-2 space-y-1 text-footnote text-ink2">
+                  {item.sets.filter((s) => s.done).map((s, j) => <li key={j}>
+                    Set {j + 1} · {s.reps} {countUnit(ex) === 'seconds' ? 'sec' : 'reps'}{s.load !== undefined ? ` · ${s.load} ${item.unit}` : ''}{s.rpe ? ` · RPE ${s.rpe}` : ''}
+                  </li>)}
+                </ul>
+              </section>
+            )
             const step = stepKgFor(ex, location)
             const stepDisplay = entryLoad(step, item.unit)
             const addedLoad = takesAddedLoad(ex, location)

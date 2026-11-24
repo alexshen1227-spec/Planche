@@ -62,7 +62,8 @@ import {
 } from '../lib/sessionTiming'
 import { defaultSurface, surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 import { recordForSurface } from '../lib/records'
-import { demoSearchUrl, youtubeId, embedUrl } from '../lib/video'
+import { demoSearchUrl, MOVEMENT_VIDEOS, youtubeId } from '../lib/video'
+import { MovementDemo } from '../components/MovementDemo'
 import { Icon } from '../components/Icon'
 import { BadgeGlyph } from '../components/ds/BadgeGlyph'
 import { Figure } from '../components/Figure'
@@ -3201,17 +3202,8 @@ function DemoHelp({ exercise, pinnedUrl }: { exercise: Exercise; pinnedUrl?: str
         <h2 className="font-display text-[21px] font-bold text-ink">{exercise.name}</h2>
         <p className="mt-1 text-body leading-relaxed text-ink2">{exercise.blurb}</p>
       </div>
-      {pinnedId ? (
-        <div className="relative mt-4 w-full overflow-hidden rounded-control border border-line" style={{ paddingTop: '56.25%' }}>
-          <iframe
-            src={embedUrl(pinnedId)}
-            title={`${exercise.name} demo`}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            className="absolute inset-0 h-full w-full"
-          />
-        </div>
-      ) : (
+      <MovementDemo exerciseId={exercise.id} name={exercise.name} pinnedUrl={pinnedUrl} />
+      {!pinnedId && !MOVEMENT_VIDEOS[exercise.id] && (
         <a
           href={demoSearchUrl(exercise)}
           target="_blank"
@@ -3245,9 +3237,6 @@ function DemoHelp({ exercise, pinnedUrl }: { exercise: Exercise; pinnedUrl?: str
           ))}
         </ul>
       </div>
-      <p className="mt-3 text-footnote text-ink3">
-        Tip: pin your favourite demo in the Learn tab and it will play here instead of a search.
-      </p>
     </div>
   )
 }

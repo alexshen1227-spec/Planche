@@ -25,6 +25,7 @@ import { twinOf } from '../data/pressing'
 import { readJourney, type JourneyStop } from '../lib/journey'
 import { ShareProgress } from '../components/ShareProgress'
 import { MilestoneClips } from '../components/MilestoneClips'
+import { PressMilestonePicker, pressMilestoneProgress } from '../components/PressMilestone'
 
 /** How long a step took, or how long it has been going — only when both ends have dates. */
 function stopLine(stop: JourneyStop | undefined, next: JourneyStop | undefined): string | null {
@@ -251,10 +252,11 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
         </div>
         {goalHere ? <p className="mt-2.5 text-footnote font-medium text-accent-text">{GOAL_HERE_TEXT}</p> : null}
         {ladder ? (
-          <p className="mt-2 text-footnote leading-relaxed text-ink2">
-            Beside the hold, the {ladder.ladder.name.toLowerCase()} moves on its own rungs: now{' '}
-            {EXERCISE_BY_ID[ladder.rung.exerciseId]?.name ?? ladder.rung.exerciseId}.
-          </p>
+          <>
+            <PressMilestonePicker ladder={ladder.ladder} value={ladder.goal.rung.exerciseId}
+              onChange={(exerciseId) => dispatch({ type: 'SET_REP_GOAL', skill: viewSkill, exerciseId })} />
+            <p className="mt-2 text-footnote leading-relaxed text-ink2" role="status">{pressMilestoneProgress(ladder)}</p>
+          </>
         ) : null}
       </div>
 

@@ -45,6 +45,7 @@ export function draftContents(draft: GymDraft): string[] {
 export function draftJointConflicts(draft: GymDraft, joints: Joint[]): { exerciseId: string; joints: Joint[] }[] {
   if (!joints.length) return []
   return draft.items.flatMap((it) => {
+    if (!it.sets.some((s) => !s.done)) return []
     const hit = (GYM_EXERCISE_BY_ID[it.exerciseId]?.stress ?? []).filter((j) => joints.includes(j))
     return hit.length ? [{ exerciseId: it.exerciseId, joints: hit }] : []
   })
@@ -57,7 +58,7 @@ export function draftConflictLine(draft: GymDraft, joints: Joint[]): string | nu
   const hits = draftJointConflicts(draft, joints)
   if (!hits.length) return null
   const names = hits.map((h) => exerciseTitle(h.exerciseId)).join(', ')
-  return `This open session holds work that loads your ${jointWords(hits.flatMap((h) => h.joints))}, which you just reported: ${names}. Discard it and start today’s plan, which keeps that joint out, or remove those lifts before you resume. Never train through pain.`
+  return `Your check-in will hold the remaining sets of ${names} to give your ${jointWords(hits.flatMap((h) => h.joints))} a break. The sets you finished stay logged.`
 }
 
 /** What starting does while a draft is open: it resumes that draft, so the screen says so. */

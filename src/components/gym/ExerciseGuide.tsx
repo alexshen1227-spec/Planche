@@ -2,6 +2,7 @@ import { MUSCLE_BY_ID, locationEquipmentLabel } from '../../data/gym/catalog'
 import type { GymExercise } from '../../data/gym/exercises'
 import { countUnit } from '../../lib/gym/progression'
 import { unloadedLabel } from '../../lib/gym/units'
+import { MovementDemo } from '../MovementDemo'
 
 export function GymExerciseGuide({ exercise }: { exercise: GymExercise }) {
   const e = exercise
@@ -22,6 +23,7 @@ export function GymExerciseGuide({ exercise }: { exercise: GymExercise }) {
         <dt className="text-ink3">Equipment</dt><dd>{equipment}</dd>
       </dl>
       <p>{tracking}{e.unilateral && ' Train both sides. Enter the reps or time completed on each side.'}</p>
+      <MovementDemo exerciseId={e.id} name={e.name} />
     </div>
   )
 }

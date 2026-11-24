@@ -23,6 +23,10 @@ export const SKILLS: Record<SkillId, SkillDef> = {
 /** The skills in their standard display order. */
 export const SKILL_LIST: SkillDef[] = SKILL_IDS.map((id) => SKILLS[id])
 
+export function isRepGoal(skill: SkillId, exerciseId: unknown): exerciseId is string {
+  return typeof exerciseId === 'string' && Boolean(SKILLS[skill]?.ladder?.rungs.some((rung) => rung.exerciseId === exerciseId))
+}
+
 /** The skill a step's road belongs to, as a definition. */
 export function skillForStep(stepId: StepId): SkillDef {
   return SKILLS[STEP_BY_ID[stepId]?.skill ?? 'planche']
