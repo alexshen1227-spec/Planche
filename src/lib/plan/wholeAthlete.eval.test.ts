@@ -258,6 +258,18 @@ describe('mixed handstand and front lever weeks', () => {
     expect(visits.filter((d) => d.skillWorkingSets?.handstand).length).toBeGreaterThanOrEqual(2)
     expect(week.weekTotal.quads).toBeGreaterThanOrEqual(8)
   })
+  it('uses the time left after lever practice for muscle work on a four-day split between home and the gym', () => {
+    const now = +new Date(2026, 7, 3, 10)
+    const state = makeAthlete({ skills: ['frontlever'], birthYear: 1995, active: 'gym', steps: { frontlever: 'fl-advtuck' },
+      kit: ['floor', 'band', 'box'], prefs: { goals: { skills: 5, physique: 5, strength: 3, endurance: 0, power: 0 },
+        minutesByDay: [0, 60, 30, 0, 60, 0, 60], placeByDay: [null, 'gym', 'home', null, 'gym', null, 'gym'] } })
+    const week = weekForChoice(state, {}, now)
+    const visits = week.days.filter((d) => d.day <= '2026-08-09' && d.kind !== 'rest')
+    expect(visits).toHaveLength(4)
+    expect(visits.filter((d) => d.plan.gym?.placeId === 'gym' && (d.skillWorkingSets?.frontlever ?? 0) >= 3)).toHaveLength(3)
+    expect(visits.find((d) => d.day === '2026-08-04')?.plan.gym?.placeId).toBe('home')
+    for (const m of ['chest', 'quads', 'hamstrings'] as const) expect(week.weekTotal[m]).toBeGreaterThanOrEqual(5)
+  })
   it('puts handstand practice into the actual weeks of a strength and power athlete with a Thursday game', () => {
     const cfg: AthleteCfg = { skills: ['handstand'], birthYear: 1997, steps: { handstand: 'hs-float' }, active: 'gym',
       prefs: { goals: { skills: 2, physique: 2, strength: 5, power: 5, endurance: 0 }, minutesByDay: [0, 65, 0, 65, 0, 65, 65],
