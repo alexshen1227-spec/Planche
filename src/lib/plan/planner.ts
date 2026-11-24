@@ -4182,7 +4182,10 @@ function assembleDay(
   if (slot.noKit && slot.kind !== 'calisthenics' && !d.assigned) {
     reasons.push('None of your skills can train with the kit you listed, so no calisthenics day is planned. Add the kit under Settings → Equipment.')
   } else if (slot.noSkillFits && slot.kind === 'rest' && !slot.tooShort) reasons.push('No skill work fits today’s rest rules, so the skills rest today.')
-  const base = { minutes: slot.kind === 'rest' ? 0 : d.minutes, rest: slot.kind === 'rest', kind: slot.kind, ...(slot.alternative ? { alternative: slot.alternative } : {}), ...(skillBlock ? { skill: skillBlock } : {}) }
+  const alternative = slot.alternative === slot.kind
+    ? slot.kind === 'gym' ? 'calisthenics' : 'gym'
+    : slot.alternative
+  const base = { minutes: slot.kind === 'rest' ? 0 : d.minutes, rest: slot.kind === 'rest', kind: slot.kind, ...(alternative ? { alternative } : {}), ...(skillBlock ? { skill: skillBlock } : {}) }
   // Readiness scales the gym block; a calisthenics day is the skill coach's call, from its own check-in.
   if (slot.kind !== 'gym' || slot.gymMin <= 0 || !wantsGym || !focus) return { ...base, reasons }
   // Speed and power work is done fresh for quality: a push day never adds to it.

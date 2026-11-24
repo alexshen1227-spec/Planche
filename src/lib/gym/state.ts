@@ -6,7 +6,7 @@ import { MUSCLES, type Joint, type Muscle } from '../../data/gym/catalog'
 import { SKILL_IDS, type SkillId, type StepId } from '../../types'
 import { STEP_BY_ID } from '../../data/progressions'
 import { SPORT_KINDS, sportStart } from '../plan/sport'
-import { preparesFor } from './bodyweightSteps'
+import { LEG_VARIATIONS, preparesFor } from './bodyweightSteps'
 import { canPairExercises, partnerIndex } from './pairedSets'
 import type {
   ActivityKind,
@@ -425,7 +425,10 @@ function sanitizeRemainder(raw: unknown, lose: Lose, where: string): GymRemainde
       ...(typeof it.pairedWith === 'string' && canPairExercises(it.exerciseId, it.pairedWith) ? { pairedWith: it.pairedWith } : {}),
       repRange: plan.repRange, targetRpe: plan.targetRpe, ...(plan.swappedFrom ? { swappedFrom: plan.swappedFrom } : {}),
       ...(preparesFor(it.exerciseId) && Number.isInteger(it.trialReps) && it.trialReps >= 1 && it.trialReps <= 4 ? { trialReps: it.trialReps } : {}),
-      ...(typeof it.easierId === 'string' && (preparesFor(it.easierId) === it.exerciseId || (it.exerciseId === 'pull-up' && it.easierId === 'assisted-pull-up') ||
+      ...(LEG_VARIATIONS[it.exerciseId]?.includes(it.variationTrial?.id) && Number.isInteger(it.variationTrial.reps) &&
+        it.variationTrial.reps >= 1 && it.variationTrial.reps <= 6 ? { variationTrial: { id: it.variationTrial.id, reps: it.variationTrial.reps } } : {}),
+      ...(typeof it.easierId === 'string' && (preparesFor(it.easierId) === it.exerciseId || LEG_VARIATIONS[it.easierId]?.includes(it.exerciseId) ||
+        (it.exerciseId === 'pull-up' && it.easierId === 'assisted-pull-up') ||
         (rackTarget?.kind === 'at-minimum-weight' && it.exerciseId === 'db-lateral-raise' && it.easierId === 'bent-arm-db-lateral-raise')) ? { easierId: it.easierId } : {}),
     })
   }

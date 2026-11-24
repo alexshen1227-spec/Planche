@@ -71,6 +71,7 @@ export interface RemainingLift {
   sets: { reps: number; load?: number; warmup?: boolean }[]
   swappedFrom?: string
   trialReps?: number
+  variationTrial?: { id: string; reps: number }
   rackTarget?: { kind: 'at-minimum-weight' | 'at-top-weight'; reps?: number; why: string; chooseAlternative?: boolean }
   easierId?: string
 }

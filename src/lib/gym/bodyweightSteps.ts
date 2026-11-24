@@ -1,8 +1,47 @@
 import { addDays, dayKey } from '../time'
 import type { GymSession, GymSet } from './types'
+import { unfinishedLiftSets } from './progression'
 
 export const UNASSISTED_LIFTS = ['push-up', 'pull-up'] as const
 export type UnassistedLift = (typeof UNASSISTED_LIFTS)[number]
+
+export const LEG_VARIATIONS: Partial<Record<string, string[]>> = {
+  'bodyweight-squat': ['bulgarian-split-squat', 'split-squat'],
+  'glute-bridge': ['single-leg-hip-thrust', 'single-leg-glute-bridge'],
+  'floor-calf-raise': ['single-leg-calf-raise', 'single-leg-floor-calf-raise'],
+}
+
+interface LegPractice {
+  baseReps?: number
+  working?: { id: string; reps: number; sets: number }
+}
+
+/** Learn from the latest visit to this place. A trial is one set on each leg. */
+export function legPracticeAt(sessions: GymSession[], locationId: string | undefined, now: number) {
+  const result = new Map<string, LegPractice>()
+  const from = addDays(now, -28)
+  for (const visit of sessions) {
+    if (visit.locationId !== locationId || visit.startedAt < from || visit.startedAt >= now) continue
+    for (const [base, variants] of Object.entries(LEG_VARIATIONS)) {
+      const relevant = visit.exercises.filter((log) => (log.exerciseId === base || variants?.includes(log.exerciseId)) &&
+        log.sets.some((s) => !s.warmup && s.at <= now))
+      if (!relevant.length) continue
+      const evidence: LegPractice = {}
+      for (const log of relevant) {
+        const sets = log.sets.filter((s) => !s.warmup && s.at <= now)
+        if (unfinishedLiftSets(visit, log.exerciseId) || sets.some((s) => s.kg || s.reps <= 0 || s.rpe === undefined || s.rpe > (log.targetRpe ?? 8))) continue
+        const reps = Math.min(...sets.map((s) => s.reps))
+        if (log.exerciseId === base) {
+          if (sets.length >= 2 && reps >= (log.repRange?.[1] ?? 15)) evidence.baseReps = reps
+        } else if (reps >= 3) {
+          evidence.working = { id: log.exerciseId, reps, sets: sets.length }
+        }
+      }
+      result.set(base, evidence)
+    }
+  }
+  return result
+}
 
 export const DRAGON_FLAG_STEPS = ['tuck-dragon-flag-lower', 'one-leg-dragon-flag-lower', 'dragon-flag']
 

@@ -342,6 +342,8 @@ export interface LoadSuggestion {
   /** The athlete may log this many clean floor push-ups in place of one easier set. */
   floorPushupTrial?: number
   pullupTrial?: number
+  /** One of the base movement's working sets can be used to try this variation on each side. */
+  variationTrial?: { id: string; reps: number }
   /** An easier movement the athlete can use for the remaining unassisted sets. */
   easierId?: string
   targetRpe: number

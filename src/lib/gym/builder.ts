@@ -3,7 +3,7 @@ import { addDays } from '../time'
 import { athleticDomain, GYM_EXERCISE_BY_ID, jointsToRest, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
 import { availableAt, canDoHere, preferenceRank } from './availability'
 import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
-import { preparesFor, unassistedDose, UNASSISTED_LIFTS } from './bodyweightSteps'
+import { legPracticeAt, LEG_VARIATIONS, preparesFor, unassistedDose, UNASSISTED_LIFTS } from './bodyweightSteps'
 import { canPairExercises, savedPairSeconds } from './pairedSets'
 import { gateTier, isHardBodyweight, liftTrend, plyoGate, repPlanFor, STALL_SESSIONS, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymSession, Rating } from './types'
@@ -320,6 +320,7 @@ export function planGymExercises(input: GymSessionInput) {
     // Speed and power work is built up to, never started at the top (see plyoGate).
     plyoGate(e, sessions, youth, now).allowed
   const focus = input.focus ?? nextFocus(sessions, now, input.musclesOff)
+  const legPractice = legPracticeAt(sessions, location?.id, now)
   const introductory = Boolean(input.capacity?.introductory && focus !== 'athletic')
   const fullPriorityDose = !introductory && factor >= 1 && (input.goals?.physique ?? 0) >= 3 &&
     (input.goals?.skills ?? 0) > 0 && requested.size > 0
@@ -495,11 +496,20 @@ export function planGymExercises(input: GymSessionInput) {
       const first = ranked[0]
       if (!first) continue
       let pick = first.e
+      const learned = legPractice.get(pick.id)?.working
+      if (learned && factor >= 1 && !wantsExplosive && ratings[pick.id] !== 'love') {
+        const variation = GYM_EXERCISE_BY_ID[learned.id]
+        if (canDoHere(variation.id, location) && usable(variation) && !used.has(movement(variation)) &&
+            !hardHere(variation) && spareIn(variation) <= spareIn(pick)) {
+          used.add(movement(pick))
+          pick = variation
+        }
+      }
       // A lift that has stopped progressing lends its slot to a variation of
       // the same movement for a while: a change of exercise is a common way to
       // restart progress (CONSENSUS). Only a close fit — never one that is
       // hard to do here, or coached-only under 18 — and never a favourite.
-      if (sessions.length > STALL_SESSIONS && !wantsExplosive && ratings[pick.id] !== 'love' && liftTrend(sessions, pick.id, now, location?.id).status === 'stalled') {
+      if (pick === first.e && sessions.length > STALL_SESSIONS && !wantsExplosive && ratings[pick.id] !== 'love' && liftTrend(sessions, pick.id, now, location?.id).status === 'stalled') {
         const alt = ranked.find(
           (r) => r.e.id !== first.e.id && r.e.pattern === first.e.pattern && r.score <= first.score + 1.5 && liftTrend(sessions, r.e.id, now, location?.id).status !== 'stalled',
         )
@@ -757,14 +767,17 @@ export function planGymExercises(input: GymSessionInput) {
     }
     notes.push(`Your recent lifting supports up to ${buildUpLimit} working sets this visit. Completing that amount comfortably on two days helps build up the next sessions.`)
   }
-  for (const id of UNASSISTED_LIFTS) {
+  const strongerLegWork = [...legPractice].flatMap(([base, practice]) => practice.working ? [{ base, ...practice.working }] : [])
+  for (const id of [...UNASSISTED_LIFTS, ...strongerLegWork.map((w) => w.id)]) {
     const item = items.find((it) => it.exerciseId === id)
     if (!item) continue
-    const work = input.capacity?.unassistedWork?.[id]
+    const leg = strongerLegWork.find((w) => w.id === id)
+    const work = id === 'push-up' || id === 'pull-up' ? input.capacity?.unassistedWork?.[id]
+      : leg ? { reps: Array<number>(leg.sets).fill(leg.reps), manageable: true, hard: false } : undefined
     const dose = work ? unassistedDose(work, item.sets, item.plan.range[0]) :
       id === 'pull-up' && input.capacity?.tryPullup ? { sets: 1, reps: 1 } : undefined
     if (!dose) continue
-    const easier = here.filter((ex) => (preparesFor(ex.id) === id || (id === 'pull-up' && ex.id === 'assisted-pull-up')) && usable(ex) && !spareIn(ex))
+    const easier = here.filter((ex) => (ex.id === leg?.base || preparesFor(ex.id) === id || (id === 'pull-up' && ex.id === 'assisted-pull-up')) && usable(ex) && !spareIn(ex))
       .sort((a, b) => scoreOf(a) - scoreOf(b) || (lastLogged.get(b.id) ?? 0) - (lastLogged.get(a.id) ?? 0))[0]
     const backoffSets = item.sets - dose.sets
     item.sets = dose.sets
@@ -819,6 +832,20 @@ export function buildGymSession(input: GymSessionInput): GymPlan {
     const name = id === 'push-up' ? 'floor push-up' : 'unassisted pull-up'
     prep.suggestion = { ...prep.suggestion, ...(id === 'push-up' ? { floorPushupTrial: target } : { pullupTrial: target }),
       why: `Your recent preparation sets were manageable. You can try up to ${target} clean ${name}${target === 1 ? '' : 's'} for one set, then return to ${GYM_EXERCISE_BY_ID[prep.exerciseId].name.toLowerCase()}.` }
+  }
+  if ((input.volumeFactor ?? 1) >= 1) {
+    const recent = legPracticeAt(input.sessions, input.location?.id, now)
+    for (const item of items) {
+      const practice = recent.get(item.exerciseId)
+      if (!practice?.baseReps || practice.working || item.sets < 2 || item.suggestion.kg) continue
+      const id = LEG_VARIATIONS[item.exerciseId]?.find((id) => canDoHere(id, input.location) &&
+        !items.some((it) => it.exerciseId === id) && !input.location?.hardHere?.includes(id) && input.ratings?.[id] !== 'avoid' &&
+        !jointsToRest(id).some((j) => input.avoidJoints?.includes(j)) && !GYM_EXERCISE_BY_ID[id].primary.some((m) => input.musclesOff?.includes(m)))
+      const reps = Math.min(practice.baseReps, 30)
+      item.suggestion = { ...item.suggestion, targetReps: reps,
+        why: `You completed at least ${practice.baseReps} controlled reps in each working set here.${id ? ` Try one set of ${GYM_EXERCISE_BY_ID[id].name.toLowerCase()} for up to 6 reps per side, or repeat your usual movement.` : ` Aim for ${reps} with the same control.`}`,
+        ...(id ? { variationTrial: { id, reps: 6 } } : {}) }
+    }
   }
   return { ...session, items }
 }

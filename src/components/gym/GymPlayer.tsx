@@ -299,12 +299,17 @@ export function GymPlayer({
     canDoHere(e.id, location) && !jointsToRest(e.id).some((j) => draft.avoidJoints?.includes(j)) && !e.primary.some((m) => draft.musclesOff?.includes(m))
 
   const availableTrial = (item: DraftItem) => {
-    const id = item.suggestion?.floorPushupTrial ? 'push-up' : item.suggestion?.pullupTrial ? 'pull-up' : undefined
-    if (!id || item.held || draft.stopReport || item.sets.filter((s) => !s.done && !s.warmup).length < 2 ||
+    const suggestion = item.suggestion
+    const variation = suggestion?.variationTrial
+    const id = variation?.id ?? (suggestion?.floorPushupTrial ? 'push-up' : suggestion?.pullupTrial ? 'pull-up' : undefined)
+    const target = variation?.reps ?? suggestion?.floorPushupTrial ?? suggestion?.pullupTrial
+    const ex = id ? GYM_EXERCISE_BY_ID[id] : undefined
+    if (!id || !ex || !target || (draft.volumeFactor ?? 1) < 1 || item.held || draft.stopReport || item.sets.filter((s) => !s.done && !s.warmup).length < 2 ||
         draft.items.some((it) => it.exerciseId === id) || previous?.exercises.some((it) => it.exerciseId === id && it.sets.some((s) => !s.warmup)) ||
-        gym.ratings[id] === 'avoid' || !fitsToday(GYM_EXERCISE_BY_ID[id])) return undefined
-    return { id, target: (id === 'push-up' ? item.suggestion!.floorPushupTrial : item.suggestion!.pullupTrial)!,
-      name: id === 'push-up' ? 'floor push-up' : 'unassisted pull-up', title: id === 'push-up' ? 'Try a floor push-up' : 'Try an unassisted pull-up' }
+        gym.ratings[id] === 'avoid' || !fitsToday(ex)) return undefined
+    const name = id === 'push-up' ? 'floor push-up' : id === 'pull-up' ? 'unassisted pull-up' : ex.name.toLowerCase()
+    const title = variation ? `Try ${name}` : id === 'push-up' ? 'Try a floor push-up' : 'Try an unassisted pull-up'
+    return { id, target, name, title, perSide: ex.unilateral, cue: ex.cue }
   }
   const prep = trialFor === null ? undefined : draft.items[trialFor]
   const trial = prep && availableTrial(prep)
@@ -318,7 +323,7 @@ export function GymPlayer({
       const next = fallback.sets.findIndex((s) => !s.done && !s.warmup)
       if (d.stopReport || next < 0 || d.items.some((it) => it.exerciseId === trial.id)) return d
       fallback.sets.splice(next, 1)
-      if (fallback.suggestion) fallback.suggestion = { ...fallback.suggestion, floorPushupTrial: undefined, pullupTrial: undefined, why: 'Continue your remaining working sets here.' }
+      if (fallback.suggestion) fallback.suggestion = { ...fallback.suggestion, floorPushupTrial: undefined, pullupTrial: undefined, variationTrial: undefined, why: 'Continue your remaining working sets here.' }
       // The trial uses one of the programmed sets. A zero records the
       // attempt, and contributes no completed reps or working-set credit.
       d.items.splice(i, 0, { exerciseId: trial.id, swappedFrom: fallback.exerciseId, unit: fallback.unit,
@@ -934,8 +939,8 @@ export function GymPlayer({
 
       <Sheet open={Boolean(trial)} onClose={() => setTrialFor(null)} title={trial?.title}>
         {prep && trial && <div>
-          <p className="text-body text-ink2">Use one set to try up to {trial.target} clean {trial.name}{trial.target === 1 ? '' : 's'}. {trial.id === 'push-up' ? 'Keep your body straight.' : 'Start from a controlled hang and pull without swinging.'} Stop when a rep loses its shape. Your remaining sets use {GYM_EXERCISE_BY_ID[prep.exerciseId].name.toLowerCase()}.</p>
-          <p className="mt-3 text-footnote font-semibold">How many clean reps did you complete?</p>
+          <p className="text-body text-ink2">Try one set of {trial.name} for up to {trial.target} clean reps{trial.perSide ? ' per side' : ''}. {trial.cue} Stop when a rep loses its shape. Your remaining sets use {GYM_EXERCISE_BY_ID[prep.exerciseId].name.toLowerCase()}.</p>
+          <p className="mt-3 text-footnote font-semibold">{trial.perSide ? 'How many clean reps did you complete on your weaker side?' : 'How many clean reps did you complete?'}</p>
           <div className="mt-2 flex flex-wrap gap-2">{Array.from({ length: trial.target + 1 }, (_, n) =>
             <button type="button" key={n} onClick={() => recordTrial(n)}
               aria-label={`Log ${n} ${trial.name} ${n === 1 ? 'rep' : 'reps'}`}

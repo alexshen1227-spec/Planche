@@ -4,10 +4,37 @@ import { initialState } from '../store'
 import { canDoHere } from './availability'
 import { bodyweightCapacity, readyForBodyweight } from './bodyweight'
 import { buildGymSession } from './builder'
-import { unassistedDose, unassistedSteps } from './bodyweightSteps'
+import { legPracticeAt, unassistedDose, unassistedSteps } from './bodyweightSteps'
 import { allowsUnloaded } from './progression'
 import { defaultGym, homeLocation } from './state'
 import type { GymSession } from './types'
+
+it('offers an available unilateral leg trial, keeps the earned base dose and learns from the weaker-side result', () => {
+  const now = +new Date(2026, 7, 11, 10)
+  const day = 86_400_000
+  const home = homeLocation(['floor', 'band', 'box'], 'kg', now)
+  const base = ['bodyweight-squat', 'glute-bridge', 'floor-calf-raise']
+  const at = now - 7 * day
+  const easy: GymSession = { id: 'easy', locationId: home.id, startedAt: at, endedAt: at + 1000, name: 'Legs',
+    exercises: base.map((exerciseId) => ({ exerciseId, repRange: [8, 15], plannedWorkingSets: 2, targetRpe: 7,
+      sets: [{ at, reps: 25, rpe: 6 }, { at: at + 500, reps: 25, rpe: 6 }] })) }
+  const input = { location: home, minutes: 45, focus: 'lower' as const, now, sessions: [easy] }
+  const slots = buildGymSession(input).items.filter((it) => it.suggestion.variationTrial)
+  expect(slots.map((it) => it.exerciseId).sort()).toEqual([...base].sort())
+  for (const it of slots) {
+    expect(it.suggestion.targetReps).toBe(25)
+    expect(canDoHere(it.suggestion.variationTrial!.id, home)).toBe(true)
+  }
+  const trial = slots.find((it) => it.exerciseId === 'glute-bridge')!.suggestion.variationTrial!
+  const played = now - day
+  const visit: GymSession = { ...easy, id: 'trial', startedAt: played, endedAt: played + 1000,
+    exercises: [{ exerciseId: trial.id, swappedFrom: 'glute-bridge', plannedWorkingSets: 1, sets: [{ reps: 6, rpe: 7, at: played }] }] }
+  const next = buildGymSession({ ...input, sessions: [easy, visit] }).items.find((it) => it.exerciseId === trial.id)
+  expect(next).toMatchObject({ sets: 2, plan: { range: [3, 3] }, practice: { easierId: 'glute-bridge' } })
+  expect(buildGymSession({ ...input, volumeFactor: 0.6 }).items.some((it) => it.suggestion.variationTrial)).toBe(false)
+  expect(legPracticeAt([easy], 'somewhere-else', now).size).toBe(0)
+  expect(legPracticeAt([{ ...easy, exercises: easy.exercises.map((e) => ({ ...e, plannedWorkingSets: 3 })) }], home.id, now).get('glute-bridge')?.baseReps).toBeUndefined()
+})
 
 it('offers a specific floor push-up trial after two easy preparation days and adapts to the actual result', () => {
   const now = new Date(2026, 9, 16, 12).getTime()
