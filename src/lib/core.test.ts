@@ -4,6 +4,7 @@ import { BODY_REGIONS } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { initialState, normalizeState, rebuildDerivedState, reconcileAchievements, skipToStep } from './store'
+import { defaultGym, defaultPrefs } from './gym/state'
 import { applySession } from './engine'
 import {
   bestHoldPractice,
@@ -1514,7 +1515,38 @@ describe('readiness rails', () => {
     const plan = buildPlan({ ...state(), sessions: [previous] }, now)
 
     expect(plan.warmup).toBe('extended')
-    expect(plan.decisions.map((decision) => decision.text).join(' ')).toContain('days off')
+    expect(plan.decisions.map((decision) => decision.text).join(' ')).toContain('last logged workout was 5 days ago')
+  })
+
+  it('distinguishes hard skill work, completed lifts and hard sport when describing recovery', () => {
+    const monday = +new Date(2026, 10, 30, 10)
+    const friday = monday - 3 * DAY
+    const wednesday = monday - 5 * DAY
+    const previous = session('foundations', [log('ppp-hold', 20, { at: wednesday })], { startedAt: wednesday })
+    const gym = defaultGym(['floor'], 'kg', wednesday)
+    gym.sessions = [{ id: 'lift', locationId: 'home', name: 'Lower body', startedAt: friday, endedAt: friday + 60_000,
+      exercises: [{ exerciseId: 'goblet-squat', sets: [
+        { reps: 10, kg: 16, at: friday }, { reps: 5, warmup: true, at: monday }, { reps: 0, at: monday }, { reps: 10, at: monday + DAY },
+      ] }] }]
+    const athlete = { ...state(), startedAt: wednesday, sessions: [previous], gym }
+    const plan = buildPlan(athlete, monday)
+    expect(plan.signals.restDays).toBe(3)
+    expect(plan.signals.skillRestDays).toBe(5)
+    expect(plan.dayReason).toContain('last hard skill session was 5 days ago')
+    expect(plan.dayReason).toContain('gym workout was 3 days ago')
+
+    const sunday = monday - DAY
+    const game = { kind: 'game' as const, legs: true, rpe: 8, minutes: 60 }
+    gym.prefs = { ...defaultPrefs(wednesday), sportSchedule: [{ ...game, weekday: 0, hour: 10 }] }
+    const scheduled = buildPlan(athlete, monday)
+    expect(scheduled.dayType).toBe('build')
+    expect(scheduled.dayReason).toMatch(/schedule shows.*yesterday/)
+    expect(scheduled.signals.restDays).toBe(3)
+    gym.activities = [{ ...game, id: 'game', at: sunday, updatedAt: sunday }]
+    const played = buildPlan(athlete, monday)
+    expect(played.signals.restDays).toBe(1)
+    expect(played.signals.daysSinceLoaded).toBe(5)
+    expect(played.dayReason).toMatch(/You logged.*yesterday/)
   })
 
   it('treats a timer target as missed when athlete and camera agree the clean time fell short', () => {

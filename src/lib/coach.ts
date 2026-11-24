@@ -19,6 +19,8 @@ import { adaptiveTarget, workingTarget } from './workingTarget'
 import { settled, toldHold } from './bridge'
 import { emphasisFromGaps } from './assessment'
 import { conservative } from './gym/draft'
+import { sportName } from './plan/sport'
+import { dayKey } from './time'
 import {
   MAX_WEEKLY_LOAD_RAMP,
   readCapabilityJump,
@@ -884,6 +886,10 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   const strengthWord = skillDef.words.strength
   const severalSkills = activeSkills(state).length > 1
   const loadedWork = severalSkills ? 'skill work' : `${holdName} work`
+  const other = sig.otherTraining
+  const otherSession = other && other.daysAgo < LONG_GAP_DAYS
+    ? ` Your last ${other.kind === 'lifting' ? 'gym workout' : `logged ${sportName(other.kind)}`} was ${daysAgoWords(other.daysAgo)}.`
+    : ''
 
   let strategy = pick.strategy
   let dayType: DayType = 'build'
@@ -928,7 +934,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
   // heavy template session counts even though the bandit never shaped it.
   if (sig.totalSessions === 0) {
     dayType = 'build'
-    dayReason = 'Baseline session — start controlled so the coach can learn your current capacity.'
+    dayReason = `Baseline session — start controlled so the coach can learn your current capacity.${otherSession}`
   } else if (longGap) {
     dayType = 'build'
     dayReason =
@@ -957,16 +963,19 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     dayReason = 'Your last hard session hit RPE 9+ — today is skill practice with light support work, so fatigue does not stack on fatigue.'
   } else if (sig.daysSinceLoaded >= 2) {
     dayType = 'push'
-    dayReason = !sig.hasLoadedSession
-      ? // daysSinceLoaded is a sentinel here, not a count. It once reached
-        // athletes as "No hard training in 99 days" two days after they trained.
-        'Nothing logged so far has reached a hard-training load — today pushes, so the coach can see where your limit actually sits.'
-      : sig.restDays < sig.daysSinceLoaded
-        ? `No hard training in ${sig.daysSinceLoaded} days (light work doesn't count against you) — you're fresh, so today pushes.`
-        : `${sig.daysSinceLoaded} rest day${sig.daysSinceLoaded > 1 ? 's' : ''} banked — you're fresh, so today pushes.`
+    const skillHistory = sig.hasLoadedSession
+      ? `Your last hard skill session was ${daysAgoWords(sig.daysSinceLoaded)}.`
+      : 'Your skill sessions so far have stayed below a hard-training load.'
+    dayReason = `${skillHistory}${otherSession} If the warm-up feels steady, work up to today’s harder sets.`
   } else if (sig.readinessLoad !== null && sig.readinessLoad < 0.6 && sig.daysSinceLoaded >= 1) {
     dayType = 'push'
-    dayReason = 'Your load has been light lately and yesterday was easy — fresh enough to push.'
+    dayReason = `Your recent skill load has been light.${otherSession} If the warm-up feels steady, work up to today’s harder sets.`
+  }
+  if (dayType === 'push' && sig.recentHardSport) {
+    const sport = sig.recentHardSport
+    const when = dayKey(sport.at) === dayKey(now) ? 'earlier today' : 'yesterday'
+    dayType = 'build'
+    dayReason = `${sport.scheduled ? 'Your schedule shows' : 'You logged'} a hard sport session ${when} (${sportName(sport.kind)}). Keep today’s skill sets at your usual working effort.`
   }
 
   // ——— Deload is scheduled, not earned ———
@@ -1362,7 +1371,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     })
   } else if (sig.totalSessions > 0 && sig.restDays >= 4) {
     warmup = 'extended'
-    decisions.push({ text: 'A few days off means cold tissue — longer warm-up before anything heavy.', kind: 'info' })
+    decisions.push({ text: `Your last logged workout was ${daysAgoWords(sig.restDays)}. Take a longer warm-up before heavy sets.`, kind: 'info' })
   } else if (dayType === 'technique' && sig.lastCheckIn?.joints === 'good') {
     warmup = 'short'
   }

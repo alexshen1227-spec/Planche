@@ -7,6 +7,8 @@ import { isSkillWork, straightArmFamily } from './skills'
 import { workSets } from './volume'
 import { defaultSurface } from '../data/equipment'
 import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
+import type { ActivityKind } from './gym/types'
+import { isHardSport, sportBetween, type SportEvent } from './plan/sport'
 import {
   capacityReading,
   endedForNonCapacityReason,
@@ -366,10 +368,13 @@ export function niggleRegionsToday(state: AppState, now = Date.now(), freshCheck
 
 export interface Signals {
   /**
-   * Days since the last logged session of any kind: the body's rest, which is
-   * what a long gap, a cold-tissue warm-up and the check-in cadence read.
+   * Calendar days since the latest skill session, working lift or logged sport.
    */
   restDays: number
+  /** The most recent gym or sport work logged since the last hard skill session. */
+  otherTraining?: { kind: 'lifting' | ActivityKind; daysAgo: number }
+  /** A hard sport session today or yesterday. A scheduled event retains its provenance. */
+  recentHardSport?: SportEvent
   /**
    * Days since the last session that loaded *this* skill: any of its own work
    * past the warm-up, three or more main or strength sets of another skill in
@@ -398,7 +403,7 @@ export interface Signals {
   gapDays: number
   lastRpe?: number
   /**
-   * Days since the last hard session, or `NEVER_DAYS` when none has ever been
+   * Days since the last hard skill session, or `NEVER_DAYS` when none has ever been
    * logged.
    *
    * The sentinel keeps every "long enough ago" comparison working without a
@@ -557,7 +562,21 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const daysBetween = (from: number) =>
     Math.max(0, Math.round((new Date(dayKey(now)).getTime() - new Date(dayKey(from)).getTime()) / DAY))
 
-  const restDays = last ? daysBetween(last.startedAt) : NEVER_DAYS
+  let other: { at: number; kind: 'lifting' | ActivityKind } | undefined
+  for (const session of state.gym?.sessions ?? []) {
+    if (session.startedAt > now + CLOCK_SKEW_MS) continue
+    for (const log of session.exercises) for (const set of log.sets) {
+      const at = set.at ?? session.startedAt
+      if (!set.warmup && set.reps > 0 && at <= now + CLOCK_SKEW_MS && (!other || at > other.at)) other = { at, kind: 'lifting' }
+    }
+  }
+  for (const a of state.gym?.activities ?? []) {
+    if (a.minutes > 0 && a.at <= now + CLOCK_SKEW_MS && (!other || a.at > other.at)) other = { at: a.at, kind: a.kind }
+  }
+  const lastTrainingAt = Math.max(last?.startedAt ?? -Infinity, other?.at ?? -Infinity)
+  const restDays = Number.isFinite(lastTrainingAt) ? daysBetween(lastTrainingAt) : NEVER_DAYS
+  const yesterday = new Date(addDays(now, -1)).setHours(0, 0, 0, 0)
+  const recentHardSport = sportBetween(state.gym, yesterday, now + 1).filter(isHardSport).at(-1)
   const viewedSkill = skillOfStep(state.stepId)
   const lastLoadOfSkill = [...sessions].reverse().find((s) => sessionLoadsSkill(s, viewedSkill))
   const skillRestDays = lastLoadOfSkill ? daysBetween(lastLoadOfSkill.startedAt) : NEVER_DAYS
@@ -1095,6 +1114,8 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
 
   return {
     restDays,
+    ...(other && other.at >= (lastLoaded?.startedAt ?? last?.startedAt ?? 0) ? { otherTraining: { kind: other.kind, daysAgo: daysBetween(other.at) } } : {}),
+    ...(recentHardSport ? { recentHardSport } : {}),
     skillRestDays,
     gapDays: lastLoadOfSkill ? skillRestDays : restDays,
     lastRpe: last?.rpe,
