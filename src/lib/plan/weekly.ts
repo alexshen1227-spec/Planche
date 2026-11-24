@@ -6,7 +6,7 @@ import { defaultPrefs } from '../gym/state'
 import type { GymSession } from '../gym/types'
 import { addDays, dayKey, weekStart } from '../time'
 import { setsPerMuscle, volumeStatus, volumeTarget } from './load'
-import { gymDeloadDue, planWeekAhead, PLANNABLE_MUSCLES, skillGoalPace } from './planner'
+import { gymDeloadDue, planWeekAhead, PLANNABLE_MUSCLES, skillGoalPace, type WeekAhead } from './planner'
 
 const DAY = 86_400_000
 
@@ -107,7 +107,7 @@ function trainingDays(state: Pick<AppState, 'sessions' | 'gym'>, from: number, t
   return days.size
 }
 
-export function weeklySummary(state: AppState, now = Date.now()): WeeklySummary {
+export function weeklySummary(state: AppState, now = Date.now(), week?: WeekAhead): WeeklySummary {
   const from = weekStart(now)
   const to = addDays(from, 7)
   const gym: GymSession[] = state.gym?.sessions ?? []
@@ -129,7 +129,7 @@ export function weeklySummary(state: AppState, now = Date.now()): WeeklySummary 
   }
   // Focus for next week, from the same numbers the plan uses.
   const prefs = state.gym?.prefs ?? defaultPrefs(now)
-  const sets = setsPerMuscle(state.sessions, gym, from, to)
+  const sets = setsPerMuscle(state.sessions, gym, from, now + 1)
   const under = MUSCLES.map((m) => ({ m: m.id, done: sets[m.id] ?? 0, target: volumeTarget(m.id, prefs) }))
     .filter((x) => volumeStatus(x.done, x.target) === 'under' && x.target[0] > 0)
     .sort((a, b) => a.done / a.target[0] - b.done / b.target[0])
@@ -141,9 +141,13 @@ export function weeklySummary(state: AppState, now = Date.now()): WeeklySummary 
   // plan names the muscles it steers toward from day one, so this card says the same instead of "nothing to compare".
   const judgeable = now - from >= 4 * DAY
   if (!logged) focus.push('Nothing logged this week yet, so no muscle has a count to judge — Today’s plan lists the muscles it is steering toward first.')
-  const priorityUnder = logged ? under.filter((x) => prefs.musclesPriority.includes(x.m)) : []
+  const projection = logged && judgeable && under.length ? week ?? planWeekAhead(state, now) : undefined
+  const priorityUnder = projection ? under.filter((x) => prefs.musclesPriority.includes(x.m) && (projection.weekTotal[x.m] ?? 0) < x.target[0]) : []
   if (priorityUnder.length) {
-    focus.push(`Your priority ${priorityUnder.length > 1 ? 'muscles' : 'muscle'} — ${priorityUnder.map((x) => MUSCLE_BY_ID[x.m].label.toLowerCase()).join(', ')} — ${priorityUnder.length > 1 ? 'are' : 'is'} short of target this week.`)
+    for (const x of priorityUnder.slice(0, 2)) {
+      const projected = Math.round((projection!.weekTotal[x.m] ?? 0) * 2) / 2
+      focus.push(`You logged ${x.done} estimated sets for ${MUSCLE_BY_ID[x.m].label.toLowerCase()}. Completing the week as planned brings that to ${projected}. Your coaching range is ${x.target[0]}–${x.target[1]}.`)
+    }
   }
   for (const goal of prefs.skillGoals) {
     const pace = skillGoalPace(state, goal, now)
@@ -156,11 +160,11 @@ export function weeklySummary(state: AppState, now = Date.now()): WeeklySummary 
   if (skill.length === 0 && prefs.goals.skills > 0 && now - from > 3 * DAY) focus.push('No skill session yet this week — coaches usually say regular practice matters for skills (a convention, not a measured rule), so plan one early next week.')
   const deload = gymDeloadDue(state, now)
   if (deload.due) focus.push('This is a lighter gym week — fewer sets, stopping further from failure (see Today’s reasons).')
-  if (logged && judgeable && !priorityUnder.length && under.length >= 4) {
+  if (projection && !priorityUnder.length && under.length >= 4) {
     // Only what the days left can reach is said to be steered toward: the week as planned (`planWeekAhead`'s
     // shortfall), and no muscle that no gym focus plans for. Twelve weeks once said so while 13–18 of 21 muscles
     // stayed under every week.
-    const short = new Set(planWeekAhead(state, now).shortfall)
+    const short = new Set(projection.shortfall)
     const uncovered = under.filter((x) => short.has(x.m) || !PLANNABLE_MUSCLES.has(x.m))
     const names = (xs: typeof under) => xs.map((x) => MUSCLE_BY_ID[x.m].label.toLowerCase())
     if (!uncovered.length) {

@@ -2,6 +2,7 @@ import { GYM_EXERCISE_BY_ID, GYM_EXERCISES, type GymExercise, type LocationEquip
 import { plyoGate } from './progression'
 import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
 import type { GymLocation, GymSession, Rating } from './types'
+import type { Muscle } from '../../data/gym/catalog'
 
 /** The floor is everywhere. */
 function equipmentAt(location: Pick<GymLocation, 'equipment'> | undefined): Set<LocationEquipment> {
@@ -33,6 +34,16 @@ export function availableAt(location: GymLocation | undefined): GymExercise[] {
   const exercises = GYM_EXERCISES.filter((e) => meetsNeeds(have, e.needs))
   catalogByKit.set(equipment, { key, exercises })
   return exercises.slice()
+}
+
+/** A specific example of the kit missing for a priority with no direct exercise at this place. */
+export function missingPriorityOption(muscle: Muscle, location: GymLocation): { exercise: GymExercise; needs: LocationEquipment[][] } | undefined {
+  if (availableAt(location).some((e) => e.primary.includes(muscle) && !e.explosive)) return undefined
+  const have = equipmentAt(location)
+  return GYM_EXERCISES.filter((e) => e.primary.includes(muscle) && !e.explosive && !e.technical)
+    .map((exercise) => ({ exercise, needs: exercise.needs.filter((group) => !group.some((item) => have.has(item))) }))
+    .filter((x) => x.needs.length)
+    .sort((a, b) => a.needs.length - b.needs.length || Number(b.needs.some((g) => g.includes('band'))) - Number(a.needs.some((g) => g.includes('band'))))[0]
 }
 
 const RATING_ORDER: Record<Rating | 'unrated', number> = { love: 0, fine: 1, unrated: 2, avoid: 3 }

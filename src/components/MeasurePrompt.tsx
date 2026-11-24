@@ -41,7 +41,8 @@ export function measurementDue(state: AppState, now = Date.now()): { weight: boo
   // Not on the way in: the onboarding step that offered these fields was
   // skipped seconds earlier, and a modal over the first look at the plan read
   // as the app ignoring that answer. Not before any training either.
-  const settledIn = state.sessions.length > 0 && now - state.startedAt >= SETTLE_IN_DAYS * DAY
+  const trained = state.sessions.length > 0 || (state.gym?.sessions.length ?? 0) > 0
+  const settledIn = trained && now - state.startedAt >= SETTLE_IN_DAYS * DAY
   // A growing athlete is not nudged about bodyweight on a schedule — it stays
   // one tap away in Settings, never a recurring prompt.
   // The gym's rule, so the two cannot disagree: under 18, or no age set, is
@@ -153,8 +154,9 @@ function MeasureForm({ onSaved, onDismiss }: { onSaved: () => void; onDismiss: (
         </div>
         <h2 className="mt-1 font-display text-[20px] font-bold text-ink">Where are you at?</h2>
         <p className="mt-1 text-[13.5px] leading-relaxed text-ink2">
-          These skills are strength against your own weight, so bodyweight helps you interpret the same hold over
-          time. Skip it any time — it is never a target, just context.
+          {state.gym?.prefs?.goals.skills === 0
+            ? 'Record an optional measurement alongside your training history.'
+            : 'Bodyweight gives context to holds and bodyweight exercises. Add a measurement when you want to track it.'}
         </p>
       </div>
 

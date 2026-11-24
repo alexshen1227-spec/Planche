@@ -34,8 +34,7 @@ import {
 import { diagnose } from '../lib/diagnose'
 import { PLATEAU_LABEL } from '../lib/plateau'
 import { PROGRESSION_STOP_LATENCY_SEC } from '../lib/sessionTiming'
-import { fmtWeight } from '../lib/units'
-import { lastOf } from '../components/MeasurePrompt'
+import { BodyweightHistory } from '../components/BodyweightHistory'
 import { fmtDate, fmtTime, fmtDuration, fmtHold, fmtClock } from '../lib/time'
 import { HoldLineChart, VolumeBarChart, TrainingHeatmap } from '../components/charts'
 import {
@@ -415,6 +414,7 @@ export function Stats(props: StatsProps = {}) {
         <h1 className="font-display text-title1 font-bold text-ink">Progress</h1>
         <WeeklySummary />
         <GymHistory />
+        <BodyweightHistory />
         <WeekVolume />
       </div>
     )
@@ -517,7 +517,6 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
   )
   const maxArmRate = useMemo(() => Math.max(0.001, ...arms.map((a) => Math.abs(a.secPerWeek ?? 0))), [arms])
   const diag = useMemo(() => diagnose(state, Date.now(), coachPick.plateau), [state, coachPick])
-  const weightNow = useMemo(() => lastOf(state, 'weightKg'), [state])
   const volume = useMemo(() => weeklyVolume(state, 12), [state])
   const sessions = useMemo(() => [...state.sessions].sort((a, b) => b.startedAt - a.startedAt), [state.sessions])
   // Skill and gym sessions together, so the list holds what "Sessions" counts.
@@ -856,21 +855,7 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
         ) : null}
       </div>
 
-      {/* Bodyweight */}
-      {weightNow ? (
-        <div className="mt-6 rounded-card border border-line bg-surface p-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="font-display text-title3 font-semibold text-ink">Bodyweight</h3>
-            <div className="text-footnote text-ink2 tnum">
-              Now {fmtWeight(weightNow.value, state.settings.units)}
-            </div>
-          </div>
-          <p className="mt-1 text-footnote leading-relaxed text-ink2">
-            Holding the same clean seconds at a heavier bodyweight can be useful strength-to-weight context. The
-            progression bar itself still uses form-qualified seconds.
-          </p>
-        </div>
-      ) : null}
+      <BodyweightHistory />
 
       {/* What the coach learned */}
       <div className="mt-6 rounded-card border border-line bg-surface p-4">

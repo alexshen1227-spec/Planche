@@ -295,7 +295,7 @@ export function planGymExercises(input: GymSessionInput) {
   }
   const used = new Set<string>()
   const items: Omit<PlannedExercise, 'suggestion'>[] = []
-  /** Movements kept for what the day is named for, though they lean on a spare muscle: never given a set more. */
+  /** Movements whose dose is capped to keep the rest of the week's workouts available. */
   const steered = new Set<string>()
   const protectSets = new Set<string>()
   const anchors = new Set<string>()
@@ -393,7 +393,8 @@ export function planGymExercises(input: GymSessionInput) {
   } else {
     const slots: Pattern[][] = [...SLOTS[focus]]
     // A lateral raise can share a leg or pull day without turning it into hard pressing.
-    if (requested.has('side-delts') && !slots.some((slot) => slot.includes('lateral-raise'))) slots.push(['lateral-raise'])
+    const lateralAccessory = requested.has('side-delts') && !slots.some((slot) => slot.includes('lateral-raise'))
+    if (lateralAccessory) slots.push(['lateral-raise'])
     const quadAccessory = requested.has('quads') && ['push', 'pull', 'upper'].includes(focus) && (input.goals?.skills ?? 0) > 0
     if (quadAccessory) slots.push(['knee-extension'])
     // Explosive work goes first, fresh, when power is a goal (and the legs are on).
@@ -450,8 +451,10 @@ export function planGymExercises(input: GymSessionInput) {
         }
       }
       used.add(pick.id)
-      items.push(makeItem(pick, wantsExplosive, spared ? 2 : quadAccessory && pick.pattern === 'knee-extension' ? 3 : undefined))
-      if (spared) steered.add(pick.id)
+      const extraLateral = lateralAccessory && pick.pattern === 'lateral-raise'
+      const extraQuad = quadAccessory && pick.pattern === 'knee-extension'
+      items.push(makeItem(pick, wantsExplosive, spared || extraLateral ? 2 : extraQuad ? 3 : undefined))
+      if (spared || extraLateral || extraQuad) steered.add(pick.id)
     }
     // Keep the first compound(s) that define the day, then protect a direct exercise
     // for each requested muscle before spending time on another angle of the same lift.

@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-23',
+    title: 'A week that follows the goals you set',
+    area: 'coach',
+    notes: [
+      'Giving the gym a clear lead shifts more of your available time to lifting. A higher skill priority protects more time for your main hold. Short shoulder accessories on leg days leave room to train again the next day.',
+      'Progress shows your logged sets, what the rest of the week actually plans for your chosen muscles and the coaching range. It also identifies missing equipment for a priority without a direct gym exercise.',
+      'Bodyweight reps, holds and machine assistance can now produce progress charts. Comparable sets are grouped by weight or by machine. Opted-in bodyweight measurements are available in gym-only Progress too.',
+    ],
+  },
+  {
+    date: '2026-11-23',
     title: 'Both skills and chosen muscles on short weeks',
     area: 'training',
     notes: [

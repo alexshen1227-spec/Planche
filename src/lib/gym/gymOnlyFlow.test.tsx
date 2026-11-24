@@ -2,17 +2,41 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { StoreProvider, useStore } from '../store'
+import { initialState, StoreProvider, useStore } from '../store'
 import { Onboarding } from '../../views/Onboarding'
 import { Dashboard } from '../../views/Dashboard'
 import { Train } from '../../views/Train'
 import { Library } from '../../views/Library'
+import { Stats } from '../../views/Stats'
+import { defaultGym, defaultPrefs } from './state'
 import type { GymPreset } from '../plan/screens'
 
 afterEach(() => {
   cleanup()
   localStorage.clear()
   vi.unstubAllGlobals()
+})
+
+it('shows an opted-in gym-only athlete their recorded bodyweight and comparable bodyweight sets on Progress', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const base = initialState()
+  const now = Date.now()
+  const dates = [now - 7 * 86_400_000, now]
+  const gym = defaultGym(['floor'])
+  const prefs = defaultPrefs(now)
+  localStorage.setItem('planchelab.v1', JSON.stringify({
+    ...base, onboarded: true, profile: { ...base.profile, birthYear: 1994 },
+    settings: { ...base.settings, trackBodyweight: true, units: 'metric' },
+    measurements: dates.map((at, i) => ({ at, weightKg: 72 + i })),
+    gym: { ...gym, prefs: { ...prefs, goals: { ...prefs.goals, skills: 0 } },
+      sessions: dates.map((at, i) => ({ id: `log-${i}`, locationId: gym.locations[0].id, name: 'Gym', startedAt: at - 3600, endedAt: at,
+        exercises: [{ exerciseId: 'split-squat', sets: [{ at, reps: 8 + i }] }] })) },
+  }))
+  render(<StoreProvider><Stats /></StoreProvider>)
+  expect(screen.getByText('73.0 kg', { selector: 'strong' })).toBeTruthy()
+  expect(screen.getByRole('img', { name: /Recorded bodyweight/ })).toBeTruthy()
+  expect(screen.getByRole('img', { name: /Most reps at bodyweight for .*split squat/i })).toBeTruthy()
 })
 
 it('finds prescribed gym movements in Learn and opens their equipment and technique guides', () => {

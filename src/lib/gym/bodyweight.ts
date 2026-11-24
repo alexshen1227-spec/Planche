@@ -2,7 +2,7 @@ import type { AppState } from '../../types'
 import { STEP_BY_ID } from '../../data/progressions'
 
 type Base = 'pushups' | 'pullups' | 'dips'
-export type BodyweightCapacity = { base: Partial<Record<Base, number>>; practiced: Map<string, number>; introductory?: boolean }
+export type BodyweightCapacity = { base: Partial<Record<Base, number>>; practiced: Map<string, number>; introductory?: boolean; introductoryVisitsLeft?: number }
 
 // These are starting gates for automated picks. An athlete can always add a movement manually.
 const gates = new Map<string, { base: Base; reps: number }>()
@@ -64,8 +64,10 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
   const visits = new Set((state.gym?.sessions ?? [])
     .filter((s) => s.startedAt <= now && s.exercises.some((e) => e.sets.some((x) => !x.warmup && x.reps > 0)))
     .map((s) => new Date(s.startedAt).toDateString()))
+  const introductoryVisitsLeft = established ? 0 : Math.max(0, 2 - visits.size)
   return {
-    introductory: !established && visits.size < 2,
+    introductory: introductoryVisitsLeft > 0,
+    introductoryVisitsLeft,
     base: { pushups: evidence.get('pushups')?.reps, pullups: evidence.get('pullups')?.reps, dips: evidence.get('dips')?.reps },
     practiced: new Map([...evidence].map(([id, e]) => [id, e.reps])),
   }

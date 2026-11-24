@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { activeLocation } from '../../lib/gym/draft'
-import { countUnit, estimateOneRepMax, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate } from '../../lib/gym/progression'
-import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
+import { countWord, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate } from '../../lib/gym/progression'
+import { formatLoad, unitFor } from '../../lib/gym/units'
 import { useStore } from '../../lib/store'
-import { HoldLineChart } from '../charts'
+import { liftSeries } from '../../lib/gym/performance'
+import { PerformanceChart, seriesMetric, seriesValue } from './PerformanceChart'
 import { EmptyState } from '../ds'
 
 /** Every session of one lift: where, what was lifted, and its estimated max over time. */
@@ -31,14 +32,10 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
   const rows = useMemo(() => machine ? allRows.filter(({ s }) => s.locationId === selected) : allRows, [allRows, machine, selected])
   const location = machine ? gym?.locations.find((l) => l.id === selected) : active
   const unit = ex ? unitFor(ex, location) : 'kg'
-  const points = useMemo(
-    () =>
-      rows
-        .map(({ s, sets }) => ({ at: s.startedAt, value: Math.max(0, ...sets.map((x) => estimateOneRepMax(x, exerciseId) ?? 0)) }))
-        .filter((p) => p.value > 0)
-        .reverse(),
-    [rows, exerciseId],
-  )
+  const series = useMemo(() => liftSeries(rows.map(({ s }) => s), exerciseId), [rows, exerciseId])
+  const primary = series[0]
+  const values = primary?.points.map((p) => p.value) ?? []
+  const best = primary?.kind === 'assistance' ? Math.min(...values) : Math.max(...values)
   const record = useMemo(() => gym ? gymRecords(gym.sessions, machine ? selected : undefined)[exerciseId] : undefined, [gym, exerciseId, machine, selected])
   if (!ex) return null
   if (!rows.length) {
@@ -72,37 +69,16 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
           <dd className="text-title2 font-semibold tnum">{rows.length}</dd>
         </div>
         <div className="rounded-inner bg-raised p-3">
-          <dt className="text-caption text-ink3">{countUnit(ex) === 'seconds' ? 'Longest' : 'Heaviest'}</dt>
-          <dd className="text-title3 font-semibold tnum">
-            {countUnit(ex) === 'seconds'
-              ? record?.longestHold
-                ? `${record.longestHold.sec} s`
-                : '—'
-              : record?.heaviest
-                ? formatLoad(record.heaviest.kg, unit)
-                : '—'}
-          </dd>
+          <dt className="text-caption text-ink3">{primary?.kind === 'estimate' ? 'Heaviest' : primary ? seriesMetric(primary, unit) : 'Best set'}</dt>
+          <dd className="text-title3 font-semibold tnum">{primary?.kind === 'estimate' && record?.heaviest ? formatLoad(record.heaviest.kg, unit) : primary ? seriesValue(primary, best, unit) : '—'}</dd>
         </div>
         <div className="rounded-inner bg-raised p-3">
-          <dt className="text-caption text-ink3">Est. max</dt>
-          <dd className="text-title3 font-semibold tnum">{record?.bestE1rm ? formatLoad(record.bestE1rm.kg, unit) : '—'}</dd>
-          {record?.bestE1rm && isFirstEstimate(record) ? <p className="text-caption text-ink3">{FIRST_ESTIMATE_NOTE}</p> : null}
+          <dt className="text-caption text-ink3">{primary?.kind === 'estimate' ? 'Est. max' : 'Latest comparable set'}</dt>
+          <dd className="text-title3 font-semibold tnum">{primary?.kind === 'estimate' && record?.bestE1rm ? formatLoad(record.bestE1rm.kg, unit) : primary ? seriesValue(primary, values[values.length - 1], unit) : '—'}</dd>
+          {primary?.kind === 'estimate' && record?.bestE1rm && isFirstEstimate(record) ? <p className="text-caption text-ink3">{FIRST_ESTIMATE_NOTE}</p> : null}
         </div>
       </dl>
-      {points.length >= 2 ? (
-        <HoldLineChart points={points} height={160} label={`Estimated max for ${ex.name}`} format={(v) => formatLoad(v, unit)}
-          axisFormat={(v) => String(Math.round(displayLoad(v, unit)))} />
-      ) : (
-        <p className="text-caption text-ink3">
-          {countUnit(ex) === 'seconds'
-            ? 'Holds have no estimated max: the longest hold is the record.'
-            : ex.assisted
-            ? 'The weight logged here is the help, so there is no estimated max: less help for the same reps is the progress.'
-            : ex.load === 'bodyweight'
-            ? 'Bodyweight sets have no estimated max; the most reps in a set is the record.'
-            : 'The estimated-max chart appears after two sessions with a loaded set of 12 reps or fewer.'}
-        </p>
-      )}
+      <PerformanceChart series={series} compact />
       <ol className="divide-y divide-line">
         {rows.map(({ s, sets }) => (
           <li key={s.id} className="py-2.5">
@@ -114,7 +90,7 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
             </div>
             <p className="mt-0.5 text-footnote tnum text-ink2">
               {sets
-                .map((x) => `${x.kg ? `${formatLoad(x.kg, x.unit ?? unit)} × ` : ''}${x.reps}${x.rpe !== undefined ? ` @${x.rpe}` : ''}`)
+                .map((x) => `${x.kg ? `${formatLoad(x.kg, x.unit ?? unit)} × ` : ''}${ex.count === 'contacts' ? `${x.reps} contacts` : countWord(ex, x.reps)}${x.rpe !== undefined ? ` @${x.rpe}` : ''}`)
                 .join(' · ')}
             </p>
           </li>

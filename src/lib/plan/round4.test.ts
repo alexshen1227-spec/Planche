@@ -243,14 +243,20 @@ describe('the week steers by weekly volume (round four)', () => {
         // more and trims isolation work first, and these weeks hold one or two upper-body gym days. What is pinned is
         // the decision below — every gym day that can train them asks for them (left open in the report).
       }
-      // The decision: while the week leaves side delts under target, every gym day whose focus trains them asks for them.
+      // A low logged total calls for a steer unless the actual lifts already cover the muscle.
       for (let i = 7; i < 28; i++) {
         const t = from + i * DAY
         const before = { ...s, sessions: s.sessions.filter((x) => x.startedAt < t), gym: { ...s.gym!, sessions: s.gym!.sessions.filter((x) => x.startedAt < t) } }
         const g = gymToday(before, { now: t, minutes: MINUTES[new Date(t).getDay()], focus: 'auto', location: gymA })
         if (!g.focus || !['push', 'upper', 'full'].includes(g.focus) || g.musclesOff.includes('side-delts')) continue
         const week = setsPerMuscle(before.sessions, before.gym!.sessions, at(2026, 10, 2 + 7 * Math.floor(i / 7), 0), t)
-        if ((week['side-delts'] ?? 0) < volumeTarget('side-delts', prefs)[0] / 2) expect(g.priority, dayKey(t)).toContain('side-delts')
+        if ((week['side-delts'] ?? 0) < volumeTarget('side-delts', prefs)[0] / 2 && !g.priority.includes('side-delts')) {
+          const minutes = MINUTES[new Date(t).getDay()]
+          const projected = planWeekAhead(before, t, { todayKind: 'gym', todayMinutes: minutes, todayPlace: gymA }).weekTotal['side-delts'] ?? 0
+          expect(projected, `${dayKey(t)} projected side-delt sets`).toBeGreaterThanOrEqual(volumeTarget('side-delts', prefs)[0] - 0.5)
+          const lifts = buildLifts(before, g, g.plan.gym?.minutes ?? minutes, t)
+          expect(lifts.items.some((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes('side-delts')), dayKey(t)).toBe(true)
+        }
       }
       // No hard dose of the same leg muscle on consecutive calendar days, a full-body day's leg work included.
       const byDay = new Map<string, Partial<Record<Muscle, number>>>()

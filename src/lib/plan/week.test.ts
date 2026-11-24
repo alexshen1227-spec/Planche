@@ -156,7 +156,7 @@ describe('the week plan', () => {
     const six = athlete(['planche'], { goals: { strength: 3, power: 0, physique: 2, skills: 0, endurance: 1 }, minutesByDay: [0, 60, 60, 60, 60, 60, 60] })
     const week = planWeekAhead(six, MON)
     for (const m of ['chest', 'front-delts', 'triceps', 'lats', 'upper-back', 'biceps', 'quads', 'glutes', 'hamstrings'] as const) {
-      expect(week.shortfall, `${m}: ${week.days.map((d) => d.plan.gym?.focus).join()}`).not.toContain(m)
+      expect(week.shortfall, `${m}: ${week.weekTotal[m] ?? 0} sets across ${week.days.map((d) => d.plan.gym?.focus).join()}`).not.toContain(m)
     }
     // Four of the days cannot do it: what is left short is said, and the big muscles are not first.
     const four = planWeekAhead(fourDays, MON)

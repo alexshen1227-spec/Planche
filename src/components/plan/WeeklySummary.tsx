@@ -1,48 +1,31 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
-import { activeLocation } from '../../lib/gym/draft'
-import { estimateOneRepMax, maxKey } from '../../lib/gym/progression'
-import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
+import { liftSeries } from '../../lib/gym/performance'
 import { gymBadges, weeklySummary } from '../../lib/plan/weekly'
 import { useStore } from '../../lib/store'
 import { fmtHold } from '../../lib/time'
 import { useToday } from '../../lib/useToday'
-import { HoldLineChart } from '../charts'
+import { weekForChoice } from '../../lib/plan/currentWeek'
+import { useTodayChoice } from '../../lib/plan/todayChoice'
+import { usePlanClock } from '../../lib/plan/usePlanClock'
+import { PerformanceChart } from '../gym/PerformanceChart'
 import { Icon } from '../Icon'
-import { Card, CardTitle, CountUp, EmptyState, Metric } from '../ds'
+import { Card, CardTitle, CountUp, Metric } from '../ds'
 
 /** The week in one place: skills and gym together, what moved, and what to focus on next. */
 export function WeeklySummary() {
   const { state } = useStore()
   const today = useToday()
-  const summary = useMemo(() => weeklySummary(state), [state, today])
+  const [choice] = useTodayChoice(today)
+  const tick = usePlanClock()
+  const summary = useMemo(() => {
+    const now = Date.now()
+    return weeklySummary(state, now, weekForChoice(state, choice, now))
+  }, [state, choice, today, tick])
   const badges = useMemo(() => gymBadges(state), [state, today])
-  const location = activeLocation(state.gym)
   const gymOnly = state.gym?.prefs?.goals.skills === 0
 
-  // Estimated max over time, per lift with at least two sessions of it.
-  const series = useMemo(() => {
-    const out = new Map<string, { key: string; id: string; placeId?: string; points: { at: number; value: number }[] }>()
-    for (const s of [...(state.gym?.sessions ?? [])].sort((a, b) => a.startedAt - b.startedAt)) {
-      const bests = new Map<string, number>()
-      for (const log of s.exercises) {
-        const best = Math.max(0, ...log.sets.filter((x) => !x.warmup).map((x) => estimateOneRepMax(x, log.exerciseId) ?? 0))
-        if (best > (bests.get(log.exerciseId) ?? 0)) bests.set(log.exerciseId, best)
-      }
-      for (const [id, value] of bests) {
-        const key = maxKey(id, s.locationId)
-        if (!out.has(key)) out.set(key, { key, id, placeId: key === id ? undefined : s.locationId, points: [] })
-        out.get(key)!.points.push({ at: s.startedAt, value })
-      }
-    }
-    return [...out.values()].filter((s) => s.points.length >= 2).sort((a, b) => b.points.length - a.points.length)
-  }, [state.gym?.sessions])
-  const [lift, setLift] = useState<string | null>(null)
-  const shown = series.find((s) => s.key === lift) ?? series[0]
-  const shownEx = shown ? GYM_EXERCISE_BY_ID[shown.id] : undefined
-  const place = (id?: string) => state.gym?.locations.find((l) => l.id === id)
-  const chartName = (s: (typeof series)[number]) => (GYM_EXERCISE_BY_ID[s.id]?.name ?? s.id) + (s.placeId ? ` · ${place(s.placeId)?.name ?? 'Previous gym'}` : '')
-  const unit = shownEx ? unitFor(shownEx, shown.placeId ? place(shown.placeId) : location) : 'kg'
+  const series = useMemo(() => liftSeries(state.gym?.sessions ?? []), [state.gym?.sessions])
   const earned = badges.filter((b) => b.at !== undefined)
 
   return (
@@ -87,34 +70,7 @@ export function WeeklySummary() {
         </div>
       ) : null}
 
-      {shown && shownEx ? (
-        <div>
-          <div className="flex items-baseline justify-between gap-2">
-            <h3 className="font-display text-body font-semibold">Estimated max — {chartName(shown)}</h3>
-            {series.length > 1 ? (
-              <select
-                value={shown.key}
-                onChange={(e) => setLift(e.target.value)}
-                className="min-h-11 max-w-[50%] rounded-control border border-line bg-raised px-2 text-footnote"
-                aria-label="Lift to chart"
-              >
-                {series.map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {chartName(s)}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-          </div>
-          <HoldLineChart points={shown.points} height={160} label={`Estimated max for ${chartName(shown)}`} format={(v) => formatLoad(v, unit)}
-          axisFormat={(v) => String(Math.round(displayLoad(v, unit)))} />
-          <p className="text-caption text-ink3">Estimated from your best set of 12 reps or fewer each session, adjusted for effort. Tap a point to read it.</p>
-        </div>
-      ) : (
-        <EmptyState icon="chart" title="No chart yet">
-          Log the same lift in two sessions and its estimated max appears here.
-        </EmptyState>
-      )}
+      <PerformanceChart series={series} />
 
       {earned.length ? (
         <div>

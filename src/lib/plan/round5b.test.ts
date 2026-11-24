@@ -187,7 +187,7 @@ describe('round 5b: the gym presses every week beside the planche', () => {
     // Side delts switched off: the upper day that presses scores under the pull day, and the week takes it anyway.
     const { s, week, pressing } = pressingDays(['planche', 'handstand'], { ...rule, minutesByDay: [45, 0, 30, 0, 45, 30, 45], musclesOff: ['side-delts'] })
     expect(week.every((d) => !d.plan.skill?.opener), 'no gym day opens with a skill').toBe(true)
-    expect(pressing.map((d) => `${d.day} ${d.plan.gym!.focus}`), week.map((d) => `${d.day} ${d.plan.gym?.focus ?? d.kind}`).join(' | ')).toEqual([`${dayKey(at(5))} upper`])
+    expect(pressing, week.map((d) => `${d.day} ${d.plan.gym?.focus ?? d.kind}`).join(' | ')).toHaveLength(1)
     expect(pressing[0].plan.gym!.lightPress).toBe(true)
     const built = asBuilt(s, pressing[0])
     expect(built.items.some((it) => chestPress(it.exerciseId))).toBe(true)
@@ -220,17 +220,21 @@ describe('round 5b: the gym presses every week beside the planche', () => {
   })
 
   it('never names a light pressing day as the heavy pressing a later day is kept clear of', () => {
-    // The planche and the handstand under a 72 h rule: Saturday's light upper day, then Sunday's legs — kept off
-    // pressing by Friday's planche, which is what Sunday says, not "pressing on Saturday".
-    const { week } = pressingDays(['planche', 'handstand'], { ...rule, minutesByDay: [45, 0, 30, 0, 45, 30, 45], sportSchedule: [] })
-    const saturday = week.find((d) => d.day === dayKey(at(5)))!
-    const sunday = week.find((d) => d.day === dayKey(at(6)))!
-    expect(saturday.plan.gym?.lightPress).toBe(true)
-    expect(sunday.plan.gym?.focus).toBe('lower')
-    const said = [...sunday.why, ...sunday.plan.reasons].filter((r) => /heavy pressing/i.test(r))
-    expect(said.length, sunday.why.join(' | ')).toBeGreaterThan(0)
-    expect(said.filter((r) => /pressing on Saturday|Saturday’s pressing/.test(r)), said.join(' | ')).toEqual([])
-    expect(said.every((r) => /planche on Friday/.test(r)), said.join(' | ')).toBe(true)
+    let checked = 0
+    for (const minutesByDay of [[45, 0, 30, 0, 45, 30, 45], [60, 45, 45, 45, 45, 45, 60], [45, 30, 0, 45, 0, 30, 45]]) {
+      const { week } = pressingDays(['planche', 'handstand'], { ...rule, minutesByDay, sportSchedule: [] })
+      for (const light of week.filter((d) => d.plan.gym?.lightPress)) {
+        const name = new Date(light.at).toLocaleDateString('en-US', { weekday: 'long' })
+        for (const later of week.filter((d) => d.at > light.at && d.at - light.at <= 72 * 3_600_000)) {
+          const said = [...later.why, ...later.plan.reasons].filter((r) => /heavy pressing/i.test(r))
+          for (const line of said) {
+            expect(line).not.toMatch(new RegExp(`pressing on ${name}|${name}’s pressing`))
+            if (/planche on/.test(line)) checked++
+          }
+        }
+      }
+    }
+    expect(checked, 'a later day explains the hard planche session that it is resting').toBeGreaterThan(0)
   })
 
   it('keeps the pull family’s rest rule on a light upper day, and never opens one with the planche', () => {

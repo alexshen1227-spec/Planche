@@ -99,7 +99,7 @@ export function repPlanFor(
  */
 export function estimateOneRepMax(set: Pick<GymSet, 'kg' | 'reps' | 'rpe'>, exerciseId?: string, opts: { effort?: boolean } = {}): number | null {
   const known = exerciseId !== undefined ? GYM_EXERCISE_BY_ID[exerciseId] : undefined
-  if (known?.assisted) return null
+  if (known?.assisted || known?.count || known?.distanceM || known?.dose) return null
   // Bodyweight is optional and usually unknown, so the added load alone says nothing about a max.
   if (known?.load === 'bodyweight') return null
   if (set.kg === undefined || !(set.kg > 0) || !(set.reps >= 1)) return null
@@ -628,15 +628,15 @@ export function gymRecords(sessions: GymSession[], locationId?: string): Record<
   const lastPlace = new Map<string, string>()
   for (const s of ordered) for (const log of s.exercises) if (log.sets.some((x) => !x.warmup && x.reps > 0)) lastPlace.set(log.exerciseId, s.locationId)
   for (const s of ordered) {
+    const estimated = new Set<string>()
     for (const log of s.exercises) {
       const rec = (out[log.exerciseId] ??= { exerciseId: log.exerciseId })
       const assisted = Boolean(GYM_EXERCISE_BY_ID[log.exerciseId]?.assisted)
       const sameBar = maxKey(log.exerciseId, s.locationId) === log.exerciseId || (locationId ?? lastPlace.get(log.exerciseId)) === s.locationId
-      let gaveEstimate = false
       for (const set of log.sets) {
         if (set.warmup || !(set.reps > 0)) continue
         const e = sameBar ? estimateOneRepMax(set, log.exerciseId) : null
-        if (e !== null) gaveEstimate = true
+        if (e !== null) estimated.add(log.exerciseId)
         if (e !== null && (!rec.bestE1rm || e > rec.bestE1rm.kg)) rec.bestE1rm = { kg: e, at: set.at, locationId: s.locationId, set }
         // The heaviest load follows the same rule as the estimate: a machine's weight stack is only comparable inside
         // one place, so another gym's machine never sets this one's heaviest.
@@ -648,8 +648,8 @@ export function gymRecords(sessions: GymSession[], locationId?: string): Record<
         }
         if (!rec.mostReps || set.reps > rec.mostReps.reps) rec.mostReps = { reps: set.reps, ...(set.kg ? { kg: set.kg } : {}), at: set.at }
       }
-      if (gaveEstimate) rec.e1rmSessions = (rec.e1rmSessions ?? 0) + 1
     }
+    for (const id of estimated) out[id].e1rmSessions = (out[id].e1rmSessions ?? 0) + 1
   }
   return out
 }

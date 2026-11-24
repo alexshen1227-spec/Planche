@@ -137,6 +137,35 @@ function expectWeeklyPressing(mixed: LoopOut, restHours: number): number {
 }
 
 describe('the whole athlete: the planche first, then the rest (round five)', () => {
+  it('keeps a gym-only athlete’s Tuesday usable after Monday’s priority work', () => {
+    const run = season({
+      skills: ['planche'], steps: { planche: 'foundations' }, active: 'home', birthYear: 1994,
+      prefs: { minutesByDay: [0, 60, 60, 0, 60, 0, 60], musclesPriority: ['quads', 'side-delts'],
+        goals: { skills: 0, physique: 5, strength: 2, endurance: 0, power: 0 } },
+    }, 28, { from: new Date(2026, 9, 26) })
+    for (const week of weeksOf(run)) {
+      expect(week.filter((d) => d.gym?.items.length).map((d) => new Date(d.at).getDay())).toEqual([1, 2, 4, 6])
+      expect(week.flatMap((d) => d.skill)).toHaveLength(0)
+    }
+  })
+
+  it('shifts real training time between skills and lifting when goal priorities reverse', () => {
+    const run = (skills: number, physique: number) => season({
+      skills: ['planche', 'frontlever'], steps: { planche: 'tuck', frontlever: 'fl-tuck' },
+      active: 'home', kit: ['floor', 'parallettes', 'wall'], birthYear: 1994,
+      prefs: { minutesByDay: [0, 60, 0, 60, 0, 60, 0], musclesPriority: ['quads', 'side-delts'],
+        goals: { skills, physique, strength: 2, endurance: 0, power: 0 } },
+    }, 28, { from: new Date(2026, 9, 26) })
+    const skillFirst = run(5, 1), gymFirst = run(1, 5)
+    const sets = (o: LoopOut) => o.days.flatMap((d) => d.gym?.items ?? []).reduce((n, it) => n + it.sets, 0)
+    expect(sets(gymFirst)).toBeGreaterThan(sets(skillFirst) * 1.15)
+    expect(keySets(skillFirst.days, 'planche')).toBeGreaterThan(keySets(gymFirst.days, 'planche'))
+    for (const o of [skillFirst, gymFirst]) {
+      expect(keySets(o.days, 'frontlever')).toBeGreaterThan(0)
+      expect(o.days.some((d) => d.gym?.focus === 'lower')).toBe(true)
+    }
+  })
+
   it.each([20, 45])('makes time for both skills and both chosen muscles across short %i-minute weeks', (minutes) => {
     const mixed = season({
       skills: ['planche', 'frontlever'], birthYear: 1995, active: 'gym', kit: ['floor', 'parallettes', 'pullup-bar'],

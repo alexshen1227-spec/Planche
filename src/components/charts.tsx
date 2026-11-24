@@ -137,7 +137,7 @@ export function HoldLineChart({
   const t0 = points[0].at
   const t1 = points[points.length - 1].at
   const span = Math.max(1, t1 - t0)
-  const maxV = Math.max(...points.map((p) => p.value), goal ?? 0) * 1.12
+  const maxV = Math.max(1, ...points.map((p) => p.value), goal ?? 0) * 1.12
   const x = (t: number) => pad.l + ((t - t0) / span) * iw
   const y = (v: number) => pad.t + ih - (v / maxV) * ih
   const ticks = niceTicks(maxV)
