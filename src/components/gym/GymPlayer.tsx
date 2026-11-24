@@ -214,8 +214,10 @@ export function GymPlayer({
       setNeedLoad({ item: i, set: j, exerciseId: item.exerciseId })
       return
     }
-    if (!checked && !set.done && set.load !== undefined && set.load > 0 && !GYM_EXERCISE_BY_ID[item.exerciseId]?.assisted) {
-      const odd = doubtedLoad(gym.sessions, item.exerciseId, toKg(set.load, item.unit))
+    const expected = item.suggestion?.kg !== undefined && set.load === entryLoad(item.suggestion.kg, item.unit)
+    const alreadyConfirmed = item.sets.some((s) => s.done && !s.warmup && s.reps > 0 && s.load === set.load)
+    if (!checked && !expected && !alreadyConfirmed && !set.done && set.load !== undefined && set.load > 0 && !exercise.assisted) {
+      const odd = doubtedLoad(gym.sessions, item.exerciseId, toKg(set.load, item.unit), undefined, location.id)
       if (odd) {
         setDoubt({
           item: i,

@@ -481,6 +481,7 @@ export function planGymExercises(input: GymSessionInput) {
             favouriteHere(e) - earnedTrial(e) +
             // Within a slot the earlier-listed pattern is the one the slot is for.
             slot.indexOf(e.pattern) * 0.5 +
+            (e.unilateral && fullPriorityDose && warmUp <= 2 && minutes <= 30 ? 0.35 : 0) +
             (e.compound ? 0 : 0.25) -
             (isPriority(e) ? 1 : 0) +
             // The brief knee or hip slot may be the week's only one.
@@ -543,7 +544,8 @@ export function planGymExercises(input: GymSessionInput) {
         if (best) protectSets.add(best.exerciseId)
       }
       for (const group of NAMED_PATTERNS[focus]) {
-        const first = items.find((it) => group.includes(GYM_EXERCISE_BY_ID[it.exerciseId].pattern))
+        const inGroup = items.filter((it) => group.includes(GYM_EXERCISE_BY_ID[it.exerciseId].pattern))
+        const first = inGroup.find((it) => protectSets.has(it.exerciseId)) ?? inGroup[0]
         if (first) anchors.add(first.exerciseId)
       }
       const rank = (id: string) => {
@@ -614,7 +616,7 @@ export function planGymExercises(input: GymSessionInput) {
         const ex = GYM_EXERCISE_BY_ID[items[i].exerciseId]
         if (protectSets.has(ex.id) !== trimPriority) continue
         if (Boolean(ex.compound) === compound && items[i].sets > 2) {
-          const setMinutes = blockMinutes(items[i].sets, items[i].restSec, ex.dose?.workSec) / items[i].sets
+          const setMinutes = blockMinutes(1, items[i].restSec, ex.dose?.workSec)
           const remove = priorityExercises.size ? Math.ceil((total() - minutes) / setMinutes) : items[i].sets
           items[i] = { ...items[i], sets: Math.max(2, items[i].sets - remove) }
           trimmed = true

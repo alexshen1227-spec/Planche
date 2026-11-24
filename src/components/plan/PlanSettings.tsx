@@ -5,7 +5,7 @@ import { cycleMuscleState, defaultPrefs, setLiftingWeekday } from '../../lib/gym
 import type { GoalWeights, GymLocation, SkillGoal, SportSlot, TrainingPrefs } from '../../lib/gym/types'
 import { SPORT_KINDS } from '../../lib/plan/sport'
 import { SportAreas } from './SportAreas'
-import { skillGoalPace } from '../../lib/plan/planner'
+import { OPENER_MINUTES, skillGoalPace } from '../../lib/plan/planner'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
 import type { SkillId } from '../../types'
@@ -422,6 +422,15 @@ export function ScheduleEditor({ prefs, setPrefs, locations = [] }: Edit & { loc
         )}
       </section>
 
+      {prefs.goals.skills > 0 && Math.max(prefs.goals.strength, prefs.goals.physique, prefs.goals.power, prefs.goals.endurance) > 0 && <section>
+        <h3 className="font-display text-title3 font-semibold">Skill practice before lifting</h3>
+        <label className="mt-1 flex min-h-11 items-center gap-2 text-footnote font-medium">
+          <input type="checkbox" className="size-5 accent-accent" checked={Boolean(prefs.shortSkillOpeners)}
+            onChange={(e) => { const short = e.currentTarget.checked; setPrefs((p) => ({ ...p, shortSkillOpeners: short || undefined })) }} />
+          Use shorter skill openers
+        </label>
+        <p className="text-caption text-ink2">Aim for {OPENER_MINUTES} minutes of warm-up and skill before lifting. A scheduled skill session can keep a longer block.</p>
+      </section>}
       {prefs.goals.skills > 0 && <section>
         <h3 className="font-display text-title3 font-semibold">Rest between hard straight-arm sessions</h3>
         <SegmentedControl

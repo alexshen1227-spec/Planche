@@ -6,7 +6,8 @@ import {
   type IntensityTier,
 } from '../../data/gym/exercises'
 import { formatLoad, maxKgFor, minKgFor, roundToStep, stepKgFor, takesAddedLoad, unitFor, unloadedLabel } from './units'
-import type { GymLocation, GymSession, GymSet } from './types'
+import type { GymSession, GymSet } from './types'
+import type { StampedLocation } from './state'
 import { addDays, dayKey } from '../time'
 
 /**
@@ -371,7 +372,7 @@ export function stepDownKg(kg: number, stepKg: number, topKg?: number, minKg = 0
 
 export function suggestLoad(input: {
   exerciseId: string
-  location: GymLocation | undefined
+  location: StampedLocation | undefined
   sessions: GymSession[]
   plan: RepPlan
   youth?: boolean
@@ -489,6 +490,31 @@ export function suggestLoad(input: {
   })()
   const failing = failedWithoutEffort(atLoad, lo)
   const unit = unitFor(ex, location)
+  // Two racks with the same nominal increment can include a half-size pair
+  // or an extra plate. Compare the next grid stop to weights used here since
+  // the equipment setup changed, across lifts using that same implement.
+  const adjacent = (value: number, up: boolean) => {
+    if (!(step > 0)) return value
+    const grid = up ? youthCeiling(value, step, top, min) : stepDownKg(value, step, top, min)
+    if (!location || !ex.stepFrom) return grid
+    const distance = (weight: number) => up ? weight - value : value - weight
+    let closest = grid
+    let gap = distance(grid) > 0.001 ? distance(grid) : Infinity
+    for (const visit of sessions) {
+      if (visit.locationId !== location.id || visit.startedAt >= now || visit.startedAt < (location.fieldTimes?.gear ?? 0)) continue
+      for (const row of visit.exercises) {
+        if (GYM_EXERCISE_BY_ID[row.exerciseId]?.stepFrom !== ex.stepFrom) continue
+        for (const set of row.sets) {
+          const weight = set.kg
+          if (weight === undefined || set.reps <= 0 || set.at > now || set.unit !== unit ||
+            weight < (min ?? 0) || (top !== undefined && weight > top)) continue
+          const diff = distance(weight)
+          if (diff > 0.001 && diff < gap) { closest = weight; gap = diff }
+        }
+      }
+    }
+    return closest
+  }
   const reach = (v: number) => {
     // A logged 12.5 kg dumbbell is on this rack even if our default step
     // guesses 2 kg. A changed unit or a new equipment maximum still applies.
@@ -497,7 +523,7 @@ export function suggestLoad(input: {
     return observed ? v : roundToStep(v > 0 ? Math.max(v, min ?? step) : 0, step, top, min)
   }
   const incompleteWhy = unfinished ? `${unfinished} planned ${unfinished === 1 ? 'set of this lift was' : 'sets of this lift were'} unfinished. Repeat the prescription at the same load.` : undefined
-  if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, top, reach, { stale, away, weeksAway, incompleteWhy })
+  if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, adjacent, reach, { stale, away, weeksAway, incompleteWhy })
   if (external && min !== undefined && kg < min - 0.001) return changeLift('Your last working weight is lighter than the first weight listed here.')
   if (ex.load === 'bodyweight' && !(kg > 0)) {
     if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan, working.map((s) => s.reps)) }
@@ -510,20 +536,7 @@ export function suggestLoad(input: {
     if (allTop) why += ' When every set feels controlled, try a harder variation.'
     return { ...base, kind: 'bodyweight', targetReps, why }
   }
-  let lower = stepDownKg(kg, step, top, min)
-  if (external && lower <= 0 && kg > 0 && location) {
-    // A pair actually used here is stronger evidence than a guessed rack increment.
-    for (const visit of sessions) {
-      if (visit.locationId !== location.id || visit.startedAt >= now) continue
-      for (const log of visit.exercises) {
-        if (log.exerciseId !== exerciseId) continue
-        for (const set of log.sets) {
-          if (set.unit === unit && set.reps > 0 && set.kg !== undefined && set.kg > lower && set.kg < kg &&
-              (top === undefined || set.kg <= top)) lower = set.kg
-        }
-      }
-    }
-  }
+  const lower = adjacent(kg, false)
   const atMinimum = external && step > 0 && kg > 0 && (lower <= 0 || lower >= kg - 0.001)
   const lowestReps = Math.min(...atLoad.map((set) => set.reps))
   if (atMinimum && (away || anyShort)) {
@@ -546,8 +559,8 @@ export function suggestLoad(input: {
   }
   const wantsUp = (allTop || unratedTwice) && step > 0
   const here = reach(kg)
-  const next = roundToStep(here + step, step, top, min)
-  if (step > 0 && next <= here && lowestReps >= hi) {
+  const next = adjacent(kg, true)
+  if (step > 0 && top !== undefined && next <= kg + 0.001 && lowestReps >= hi) {
     const ceiling = hi + 5
     const targetReps = Math.max(lo, Math.min(ceiling, lowestReps + (wantsUp ? 1 : grinding ? -1 : 0)))
     const cue = targetReps === ceiling ? 'When this stays comfortable, try a harder variation.' : 'Keep the same weight and leave reps in reserve.'
@@ -560,7 +573,7 @@ export function suggestLoad(input: {
   const failedSteps = wantsUp ? failedStepsAbove(sessions, exerciseId, location?.id, kg, last.session, lo, keep) : 0
   const retryBar = hi + FAILED_STEP_EXTRA_REPS * Math.min(failedSteps, FAILED_STEP_CAP)
   // Under 18 a step that is a large share of the load is earned with reps first, however the equipment is graded.
-  const youthNext = youth && wantsUp && kg > 0 ? youthCeiling(kg, step, top, min) : 0
+  const youthNext = youth && wantsUp && kg > 0 ? next : 0
   const bigYouthStep = youthNext > kg && (youthNext - kg) / kg > YOUTH_LARGE_STEP_SHARE + 1e-9
   const bigBar = bigYouthStep ? hi + YOUTH_LARGE_STEP_EXTRA_REPS : hi
   // ...or by the same load at the top of the range at the target effort in two sessions running (the load held until it is easy).
@@ -577,7 +590,7 @@ export function suggestLoad(input: {
     // Sets that blew well past the range at an easy effort earn two steps —
     // for an adult. Under 18 a jump is always the smallest step there is.
     const easy = atLoad.length >= 2 && !unratedTwice && atLoad.every((s) => s.reps >= hi + 3 && s.rpe !== undefined && s.rpe <= 7)
-    const twoSteps = !youth && easy && failedSteps === 0 ? roundToStep(here + 2 * step, step, top, min) : next
+    const twoSteps = !youth && easy && failedSteps === 0 ? adjacent(next, true) : next
     // Under 18 a jump is one step of the unit in use from the load that was really lifted: rounding that load to
     // the grid first (20 kg is 44.1 lb, which became 45) and adding a step landed 2.68 kg up against a 2.27 kg step.
     const jump = youth ? Math.min(twoSteps, youthCeiling(kg, step, top, min)) : twoSteps
@@ -653,14 +666,14 @@ function assistedSuggestion(
   hi: number,
   plan: RepPlan,
   step: number,
-  top: number | undefined,
+  adjacent: (kg: number, up: boolean) => number,
   repeatLoad: (value: number) => number,
   gap: { stale: boolean; away: boolean; weeksAway: number; incompleteWhy?: string },
 ): LoadSuggestion {
   const help = workingLoad(working.map((s) => s.kg ?? 0), 'lightest')
   const atHelp = working.filter((s) => (s.kg ?? 0) === help)
   if (gap.away && step > 0) {
-    return { ...base, kg: roundToStep(help + step, step, top), kind: 'decrease', why: `First time in ${gap.weeksAway} weeks: a step more help, then build back.` }
+    return { ...base, kg: adjacent(help, true), kind: 'decrease', why: `First time in ${gap.weeksAway} weeks: a step more help, then build back.` }
   }
   const allTop = !gap.stale && !gap.incompleteWhy && atHelp.length >= 2 && atHelp.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
   const anyShort = atHelp.some((s) => s.reps < lo)
@@ -670,7 +683,7 @@ function assistedSuggestion(
       return { ...base, kg: 0, kind: 'at-top-weight', why: `Every set reached ${hi} with no help: time for the unassisted version.` }
     }
     if (step <= 0) return { ...base, kg: help, kind: 'repeat', why: 'You reached the top of the range. Use a smaller amount of assistance when your machine allows it.' }
-    const next = Math.max(0, roundToStep(help - step, step, top))
+    const next = adjacent(help, false)
     return {
       ...base,
       kg: next,
@@ -682,10 +695,10 @@ function assistedSuggestion(
     }
   }
   if (anyShort && grinding && step > 0) {
-    return { ...base, kg: roundToStep(help + step, step, top), kind: 'decrease', why: `Last time fell short of ${lo} reps at a near-max effort: one step more help, then build back.` }
+    return { ...base, kg: adjacent(help, true), kind: 'decrease', why: `Last time fell short of ${lo} reps at a near-max effort: one step more help, then build back.` }
   }
   if (failedWithoutEffort(atHelp, lo) && step > 0) {
-    return { ...base, kg: roundToStep(help + step, step, top), kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step more help, then build back.` }
+    return { ...base, kg: adjacent(help, true), kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step more help, then build back.` }
   }
   return { ...base, kg: repeatLoad(help), kind: 'repeat', why: gap.incompleteWhy ?? `Aim to add a rep to last time’s ${atHelp.map((s) => s.reps).join(', ')} with this assistance.` }
 }

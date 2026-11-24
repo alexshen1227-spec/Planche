@@ -92,6 +92,7 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
     ...(places.some(Boolean) ? { placeByDay: places } : {}),
     ...(typeof r.extraGymDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.extraGymDate) ? { extraGymDate: r.extraGymDate } : {}),
     ...(gymWeekdays.length ? { gymWeekdays } : {}),
+    ...(r.shortSkillOpeners === true ? { shortSkillOpeners: true as const } : {}),
     straightArmRestHours: Math.round(clamp(r.straightArmRestHours, 24, 96, 48)),
     ...(r.season === 'in' ? { season: 'in' as const } : {}),
     ...(sportSchedule.length ? { sportSchedule } : {}),
@@ -101,7 +102,7 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
 }
 
 /** Every setting a training-prefs edit can change on its own (all but the stamps). */
-const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'minutesByDay', 'placeByDay', 'extraGymDate', 'gymWeekdays', 'straightArmRestHours', 'season', 'sportSchedule'] as const
+const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'minutesByDay', 'placeByDay', 'extraGymDate', 'gymWeekdays', 'shortSkillOpeners', 'straightArmRestHours', 'season', 'sportSchedule'] as const
 
 export function setLiftingWeekday(prefs: TrainingPrefs, weekday: number, enabled: boolean): TrainingPrefs {
   const days = new Set(prefs.gymWeekdays)
@@ -576,20 +577,22 @@ export function doubtedLoad(
   exerciseId: string,
   kg: number,
   exceptSessionId?: string,
+  locationId?: string,
 ): { bestKg: number; probablyKg?: number } | null {
   let best = 0
   for (const s of sessions) {
-    if (s.id === exceptSessionId) continue
+    if (s.id === exceptSessionId || (locationId && s.locationId !== locationId)) continue
     for (const log of s.exercises) {
       if (log.exerciseId !== exerciseId) continue
-      for (const set of log.sets) if (!set.warmup && set.kg !== undefined && set.kg > best) best = set.kg
+      for (const set of log.sets) if (!set.warmup && set.reps > 0 && set.kg !== undefined && set.kg > best) best = set.kg
     }
   }
   if (!(best > 0) || !(kg > best * IMPLAUSIBLE_LOAD_RATIO)) return null
   const tenth = Math.round((kg / 10) * 2) / 2
   const poundsAsKg = Math.round((kg / 2.2046) * 2) / 2
-  const fits = (v: number) => v > 0 && v <= best * IMPLAUSIBLE_LOAD_RATIO
-  const probablyKg = fits(tenth) ? tenth : fits(poundsAsKg) ? poundsAsKg : undefined
+  const fits = (v: number) => v >= best * 0.5 && v <= best * IMPLAUSIBLE_LOAD_RATIO
+  const probablyKg = kg >= best * 2 ? [tenth, poundsAsKg].filter(fits)
+    .sort((a, b) => Math.abs(a - best) - Math.abs(b - best))[0] : undefined
   return { bestKg: best, ...(probablyKg !== undefined ? { probablyKg } : {}) }
 }
 

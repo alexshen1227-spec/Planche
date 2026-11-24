@@ -5,6 +5,7 @@ import { activeSkills } from '../skills'
 import { addDays, dayKey, weekStart } from '../time'
 import { weekForChoice } from './currentWeek'
 import { volumeTarget } from './load'
+import { OPENER_MINUTES } from './planner'
 import type { TodayChoice } from './todayChoice'
 
 export interface WeekOption {
@@ -32,8 +33,9 @@ export function compareLiftingDays(state: AppState, choice: TodayChoice, now: nu
   const skillLogged = new Set(state.sessions.filter((s) => s.startedAt >= start && s.startedAt <= now).map((s) => dayKey(s.startedAt)))
   const practiced = (skill: SkillId) => logged.filter((s) => s.sets.some((set) =>
     set.section === 'main' && set.value > 0 && skillOfExercise(set.exerciseId) === skill)).map((s) => dayKey(s.startedAt))
-  const snapshot = (gymDate?: string): WeekOption => {
-    const athlete = gymDate === prefs.extraGymDate ? state : { ...state, gym: { ...gym, prefs: { ...prefs, extraGymDate: gymDate } } }
+  const snapshot = (gymDate?: string, shortSkillOpeners = prefs.shortSkillOpeners): WeekOption => {
+    const athlete = gymDate === prefs.extraGymDate && shortSkillOpeners === prefs.shortSkillOpeners ? state :
+      { ...state, gym: { ...gym, prefs: { ...prefs, extraGymDate: gymDate, shortSkillOpeners } } }
     const week = weekForChoice(athlete, choice, now)
     const days = week.days.filter((d) => d.at < end && !d.plan.rest)
     const practiceDays: WeekOption['practiceDays'] = {}
@@ -71,5 +73,10 @@ export function compareLiftingDays(state: AppState, choice: TodayChoice, now: nu
     .filter((o) => o.gymDate && (o.gymDays > current.gymDays || improvesAtSameFrequency(o)) && funded(o) > funded(current) &&
       (!current.practiceDays[skills[0]] || o.practiceDays[skills[0]]))
     .sort((a, b) => retained(b) - retained(a) || lostWork(a) - lostWork(b) || funded(b) - funded(a))
-  return { current, alternative: options[0] as WeekOption | undefined, skills, muscles }
+  const shorter = !prefs.shortSkillOpeners && weekForChoice(state, choice, now).days.some((d) =>
+    d.at < end && !trained.has(d.day) && d.plan.gym && d.plan.skill?.opener && d.plan.skill.minutes > OPENER_MINUTES)
+    ? snapshot(prefs.extraGymDate, true) : undefined
+  const compact = shorter && funded(shorter) >= funded(current) + 1 &&
+    skills.every((s) => (shorter.practiceDays[s] ?? 0) >= (current.practiceDays[s] ?? 0)) ? shorter : undefined
+  return { current, alternative: options[0] as WeekOption | undefined, compact, skills, muscles }
 }

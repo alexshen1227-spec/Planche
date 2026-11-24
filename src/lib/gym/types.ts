@@ -156,6 +156,8 @@ export interface TrainingPrefs {
   extraGymDate?: string
   /** Weekdays the athlete wants to keep for lifting when training is possible, Sunday first. */
   gymWeekdays?: number[]
+  /** Athlete chose a shorter skill block on combined lifting days. */
+  shortSkillOpeners?: true
   /** Hours between hard straight-arm sessions of the same family. */
   straightArmRestHours: number
   /**

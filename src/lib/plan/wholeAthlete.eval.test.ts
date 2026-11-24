@@ -252,6 +252,36 @@ describe('mixed handstand and front lever weeks', () => {
       expect(keySets(week, 'handstand')).toBeGreaterThan(0)
     }
   })
+  it('fits the 90-degree hold, legs and upper back into three shared visits and prices a shorter opener', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const now = new Date(2026, 10, 23, 10).getTime()
+    vi.setSystemTime(now)
+    try {
+      const state = makeAthlete({ skills: ['ninety'], steps: { ninety: 'n90-lean' }, kit: ['floor'], active: 'gym', birthYear: 1995,
+        prefs: { goals: { strength: 3, skills: 5, physique: 5, power: 2, endurance: 1 }, musclesPriority: ['upper-back', 'quads', 'hamstrings'],
+          minutesByDay: [0, 45, 0, 45, 0, 45, 0], placeByDay: [null, 'gym', null, 'gym', null, 'gym', null] } })
+      const gym = state.gym!
+      gym.locations[1] = { ...GYM_PLACE, equipment: ['floor', 'pullup-bar', 'wall', 'dumbbells', 'barbell', 'incline-bench', 'bench', 'squat-rack', 'cable-row', 'leg-press', 'leg-curl', 'track'] }
+      state.settings.weeklyGoal = 3
+      state.tracks!.ninety!.assessment = { at: now, answers: { wrist: 2, pushups: 12, hollow: 35, 'level:ninety': 0, 'ladder:ninety-pushup': 0, experience: 0 },
+        placedStepId: 'n90-lean', confidence: 'moderate', gapIds: [] }
+      const { current, compact } = compareLiftingDays(state, {}, now)!
+      expect(current.gymDays).toBe(3)
+      expect(current.practiceDays.ninety).toBe(3)
+      for (const muscle of gym.prefs!.musclesPriority) expect(current.muscleSets[muscle]).toBeGreaterThanOrEqual(6)
+      expect(compact?.practiceDays.ninety).toBe(3)
+      expect(compact!.remainingSkillSets.ninety).toBeLessThan(current.remainingSkillSets.ninety!)
+      expect(compact!.muscleSets.quads).toBeGreaterThan(current.muscleSets.quads!)
+      const shorter = { ...state, gym: { ...gym, prefs: { ...gym.prefs!, shortSkillOpeners: true as const } } }
+      const week = weekForChoice(shorter, {}, now)
+      expect(week.weekTotal).toEqual(compact!.muscleSets)
+      for (const visit of week.remainingLifts) {
+        const skill = week.days.find((d) => dayKey(d.at) === dayKey(visit.at))?.plan.skill
+        expect(skill?.skills).toEqual(['ninety'])
+        expect(visit.estimatedMin + skill!.minutes).toBeLessThanOrEqual(45)
+      }
+    } finally { restoreClock() }
+  })
   it('compares a real alternative in the same 135 minutes and application reproduces its muscle sets', () => {
     const cfg = handstandAthlete(false)
     cfg.skills = ['handstand', 'frontlever', 'planche']

@@ -205,7 +205,7 @@ function SetEditor({
         disabled={!valid || !loadOk}
         onClick={() => {
           if (typed === null || exercise?.assisted) return submit(typed)
-          const d = doubtedLoad(state.gym?.sessions ?? [], exerciseId, typed, session.id)
+          const d = doubtedLoad(state.gym?.sessions ?? [], exerciseId, typed, session.id, session.locationId)
           if (d) setDoubt({ ...d, typedKg: typed })
           else submit(typed)
         }}

@@ -39,6 +39,20 @@ const session = (id: string, locationId: string, at: number, exerciseId: string,
   exercises: [{ exerciseId, sets }],
 })
 
+it('takes the nearest heavier weight from an offset working load and respects actual weights on the same rack', () => {
+  const increase = (exerciseId: string, weight: number, earlier: GymSession[] = []) => {
+    const plan = repPlanFor(GYM_EXERCISE_BY_ID[exerciseId])
+    const work = [1, 2, 3].map(() => ({ ...set(weight, plan.range[1], 8), unit: 'kg' as const }))
+    const visit = session('earned', gymA.id, T0, exerciseId, work)
+    return suggestLoad({ exerciseId, location: gymA, sessions: [...earlier, visit], plan, now: T0 + DAY })
+  }
+  expect(increase('db-lateral-raise', 5)).toMatchObject({ kg: 6, kind: 'increase' })
+  expect(increase('lat-pulldown', 42.5)).toMatchObject({ kg: 45, kind: 'increase' })
+  const trial = { ...set(5.5, 10, 7, T0 - DAY), unit: 'kg' as const }
+  expect(increase('db-lateral-raise', 5, [session('pair', gymA.id, T0 - DAY, 'db-curl', [trial])]).kg).toBe(5.5)
+  expect(increase('db-lateral-raise', 5, [session('elsewhere', 'another-gym', T0 - DAY, 'db-curl', [trial])]).kg).toBe(6)
+})
+
 it('carries earned reps forward at a fixed rack and offers an actionable swap below its lightest weight', () => {
   const rack = { ...gymA, gear: { dumbbells: { stepKg: 2, maxKg: 2 } } }
   const log: GymSession[] = []
