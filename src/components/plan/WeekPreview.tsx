@@ -53,6 +53,8 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
   const [picked, setPicked] = useState(0)
   const bySkill = useMemo(() => skillWeekLines(week, state), [week, state])
   const selected = week.days[Math.min(picked, week.days.length - 1)]
+  const locationId = selected?.plan.gym?.placeId ?? selected?.plan.skill?.placeId
+  const location = state.gym?.locations.find((place) => place.id === locationId)
   return (
     <section aria-label="The week ahead">
       {hideTitle ? null : <h3 className="text-footnote font-semibold text-ink2">The week ahead</h3>}
@@ -107,6 +109,7 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
         <div className="mt-2 rounded-inner bg-raised p-3" aria-live="polite">
           <p className="text-caption font-semibold text-ink2">
             {picked === 0 ? 'Today' : new Date(selected.at).toLocaleDateString(undefined, { weekday: 'long' })} · {dayWords(selected)}
+            {location ? ` · ${location.name}` : ''}
             {selected.movedFrom ? ` · takes over ${selected.movedFrom}’s missed work` : ''}
           </p>
           <ul className="mt-1 space-y-1">

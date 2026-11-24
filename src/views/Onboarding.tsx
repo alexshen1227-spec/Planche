@@ -1122,7 +1122,7 @@ export function Onboarding() {
               come from this week, so there is nothing else to set.
             </p>
             <div className="mt-6 space-y-6">
-              <ScheduleEditor prefs={prefs} setPrefs={(value) => edit('prefs', value)} />
+              <ScheduleEditor prefs={prefs} setPrefs={(value) => edit('prefs', value)} locations={[homeLocation(equipment), ...gyms]} />
             </div>
             <div className="mt-5 rounded-inner border border-line bg-surface p-4" role="status">
               {schedule.days === 0 ? (

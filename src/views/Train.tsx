@@ -46,7 +46,7 @@ import { skillDayKitNote } from '../components/weekPlanCopy'
 import type { TodayPlan } from '../lib/plan/planner'
 import { useTodayChoice } from '../lib/plan/todayChoice'
 import { useDayMarks, type DayMarks } from '../lib/plan/nextBlock'
-import { insideRestRule, placeKit } from '../lib/plan/planner'
+import { insideRestRule } from '../lib/plan/planner'
 import { atPlanPlace, calisthenicsCardLabel, calisthenicsRequest, dayStage, homeToday, trainedToday, withRestFlag } from '../lib/plan/screens'
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { becamePainSafe, maxTestOffered } from '../lib/plan/screens'
@@ -152,13 +152,13 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   const finalized = useMemo(() => {
     const now = Date.now()
     // Built where the athlete is: the active place's kit beside their own (a lever day at a gym with a bar).
-    const build = (request: WorkoutRequest) => finalizeFromPlan(state, atPlanPlace(state, restFlagged(request, now)), plan, now).workout
+    const build = (request: WorkoutRequest) => finalizeFromPlan(state, atPlanPlace(state, restFlagged(request, now), choice.placeId, now), plan, now).workout
     return {
       today: build(recommended),
       templates: new Map(TEMPLATES.map((t) => [t.id, build({ source: 'template', templateId: t.id })])),
       build,
     }
-  }, [state, plan, recommended])
+  }, [state, plan, recommended, choice.placeId, todayKey])
   const today = finalized.today
   // What the recommended session trains once the rails have run — none of the
   // skills on a pain-safe day — for the week card's sentence about today.
@@ -192,7 +192,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   const skillDays = skills.flatMap((skill) => {
     const def = SKILLS[skill]
     // The kit where the athlete is: their own and the active place's (`placeKit`), as the session is built.
-    const needsList = missingKit(skill, placeKit(state) ?? state.profile.equipment)
+    const needsList = missingKit(skill, atPlanPlace(state, { source: 'auto' }, choice.placeId).kit ?? state.profile.equipment)
     const needs = needsList.length ? kitNeedsPhrase(needsList) : null
     const rest = restNotes.get(skill)?.text ?? null
     const days: { key: string; skill: SkillId; title: string; line: string; needs: string | null; rest: string | null; request: WorkoutRequest }[] = [
@@ -526,7 +526,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                 setPreviewRequest(null)
                 // The request, not this preview: the session is decided again
                 // at the moment it starts, with whatever is true then.
-                if (request) startWorkout(atPlanPlace(state, restFlagged(request, Date.now())))
+                if (request) startWorkout(atPlanPlace(state, restFlagged(request, Date.now()), choice.placeId))
               }}
               className="mt-5 flex w-full items-center justify-center gap-2 "
             >

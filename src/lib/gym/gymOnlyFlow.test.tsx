@@ -18,11 +18,35 @@ import { Toasts } from '../../components/Toasts'
 import { GymPlayer } from '../../components/gym/GymPlayer'
 import { PartialWorkout } from '../../components/gym/PartialWorkout'
 import { WeekVolume } from '../../components/plan/WeekVolume'
+import { PlanSettings } from '../../components/plan/PlanSettings'
 
 afterEach(() => {
   cleanup()
   localStorage.clear()
   vi.unstubAllGlobals()
+})
+
+it('saves separate training locations for weekdays and resets one weekday to automatic', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const gym = defaultGym(['floor', 'wall'], 'kg')
+  gym.locations.push({ ...gym.locations[0], id: 'club', name: 'Sports club', equipment: ['pullup-bar', 'dumbbells'] })
+  gym.prefs = { ...defaultPrefs(Date.now()), minutesByDay: [0, 0, 45, 0, 45, 0, 45] }
+  localStorage.setItem('planchelab.v1', JSON.stringify({ ...initialState(), onboarded: true, gym }))
+  const mount = () => render(<StoreProvider><PlanSettings onDone={() => {}} /></StoreProvider>)
+  const choose = (day: string, value: string) => {
+    fireEvent.click(screen.getByRole('button', { name: new RegExp('^' + day + ': 45 minutes') }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Training location on ' + day }), { target: { value } })
+  }
+  const ui = mount()
+  choose('Tuesday', 'home')
+  choose('Saturday', 'club')
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  ui.unmount()
+  mount()
+  expect(screen.getByRole('button', { name: /Saturday: 45 minutes at Sports club/ })).toBeTruthy()
+  choose('Tuesday', '')
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(JSON.parse(localStorage.getItem('planchelab.v1')!).gym.prefs.placeByDay).toEqual([null, null, null, null, null, null, 'club'])
 })
 
 it('opens a priority muscle’s breakdown and identifies which logged sets came from assisting on a lift', () => {

@@ -215,7 +215,7 @@ export function FitnessSetup({ onDone }: { onDone: () => void }) {
         </section>
       ) : null}
 
-      {step === 2 ? <ScheduleEditor prefs={prefs} setPrefs={setPrefs} /> : null}
+      {step === 2 ? <ScheduleEditor prefs={prefs} setPrefs={setPrefs} locations={gym?.locations} /> : null}
       {step === 3 ? <MusclesEditor prefs={prefs} setPrefs={setPrefs} /> : null}
 
       {step === 4 ? (

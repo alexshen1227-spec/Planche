@@ -9,7 +9,7 @@ import { goalDaysInWeekOf } from '../stats'
 import { countsSkillDay, latestSkillPartial } from '../skillSession'
 import { missingKit } from '../../data/skills'
 import { readDayMarks, type DayMarks } from './nextBlock'
-import { atActivePlace, gymPlaceOf, insideRestRule, kitAt, MIN_SKILL_MINUTES, placeKit, planToday, skillRequest, type SkillBlock, type TodayPlan } from './planner'
+import { atActivePlace, gymPlaceOf, insideRestRule, kitAt, MIN_SKILL_MINUTES, placeKit, planToday, skillRequest, weekdayPlace, type SkillBlock, type TodayPlan } from './planner'
 
 /**
  * Decisions the Home and Train screens make about today and this week, kept
@@ -135,15 +135,17 @@ export function shortVersion(
   opts: { now?: number; kind?: 'calisthenics' | 'gym'; placeId?: string } = {},
 ): { request: WorkoutRequest } | { reason: string } {
   const now = opts.now ?? Date.now()
-  const plan = planToday(state, { now, minutes: Math.max(minutes, MIN_SKILL_MINUTES[1]), ...(opts.kind ? { kind: opts.kind } : {}) })
+  const picked = state.gym?.locations.find((p) => p.id === opts.placeId)
+  const plan = planToday(state, { now, minutes: Math.max(minutes, MIN_SKILL_MINUTES[1]), location: picked, ...(opts.kind ? { kind: opts.kind } : {}) })
   if (plan.kind === 'calisthenics' && plan.skill && !plan.skill.opener) {
     // Built where the plan has it (a lever day at the gym with the bar), or where the athlete said they are.
     return { request: { ...calisthenicsRequest(state, plan.skill, opts.placeId), minutes } }
   }
   const skills = (state.profile.skills?.length ? state.profile.skills : ['planche']) as SkillId[]
   const pain = plan.reasons.some((r) => r.startsWith('You reported pain'))
-  const free = skills.filter((s) => !insideRestRule(state, [s], now) && missingKit(s, state.profile.equipment).length === 0)
-  if (free.length && !pain) return { request: atActivePlace(state, { source: 'auto', minutes, skills: free }) }
+  const request = atPlanPlace(state, { source: 'auto', minutes }, opts.placeId, now)
+  const free = skills.filter((s) => !insideRestRule(state, [s], now) && missingKit(s, request.kit ?? state.profile.equipment).length === 0)
+  if (free.length && !pain) return { request: { ...request, skills: free } }
   const rule = skills.map((s) => insideRestRule(state, [s], now)).find(Boolean)
   return {
     reason: rule
@@ -325,8 +327,10 @@ export function calisthenicsRequest(state: AppState, block: SkillBlock, pickedId
 }
 
 /** A request already built for a place keeps its kit; any other is built where the athlete is. */
-export function atPlanPlace(state: AppState, request: WorkoutRequest): WorkoutRequest {
-  return request.kit?.length ? request : atActivePlace(state, request)
+export function atPlanPlace(state: AppState, request: WorkoutRequest, pickedId?: string, now = Date.now()): WorkoutRequest {
+  if (request.kit?.length) return request
+  const selected = state.gym?.locations.find((p) => p.id === (pickedId ?? request.placeId)) ?? weekdayPlace(state, now)
+  return selected ? { ...request, placeId: selected.id, kit: [...new Set<EquipmentId>(['floor', ...kitAt(state, selected)])] } : atActivePlace(state, request)
 }
 
 /** Where a calisthenics day (or an opener) is planned, when the plan names a place; the athlete's own pick says where the plan had it. */

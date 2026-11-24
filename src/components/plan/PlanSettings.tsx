@@ -2,7 +2,7 @@ import { useState, type KeyboardEvent } from 'react'
 import { MUSCLE_GROUPS, MUSCLES, type Muscle } from '../../data/gym/catalog'
 import { ALL_STEPS } from '../../data/progressions'
 import { cycleMuscleState, defaultPrefs } from '../../lib/gym/state'
-import type { GoalWeights, SkillGoal, SportSlot, TrainingPrefs } from '../../lib/gym/types'
+import type { GoalWeights, GymLocation, SkillGoal, SportSlot, TrainingPrefs } from '../../lib/gym/types'
 import { SPORT_KINDS } from '../../lib/plan/sport'
 import { SportAreas } from './SportAreas'
 import { skillGoalPace } from '../../lib/plan/planner'
@@ -330,16 +330,17 @@ export function stepDayMinutes(minutes: number, direction: 1 | -1): number {
 
 const stepBtn = 'ds-press flex min-h-11 min-w-11 items-center justify-center rounded-control border border-line bg-surface text-title3 font-semibold text-ink disabled:opacity-40'
 
-export function ScheduleEditor({ prefs, setPrefs }: Edit) {
+export function ScheduleEditor({ prefs, setPrefs, locations = [] }: Edit & { locations?: GymLocation[] }) {
   const [picked, setPicked] = useState<number | null>(null)
   const setDay = (i: number, minutes: number) =>
     setPrefs((p) => ({ ...p, minutesByDay: p.minutesByDay.map((m, j) => (j === i ? minutes : m)) }))
   const pickedMinutes = picked === null ? 0 : (prefs.minutesByDay[picked] ?? 0)
+  const placeName = (i: number) => locations.find((place) => place.id === prefs.placeByDay?.[i])?.name
   return (
     <>
       <section>
         <h3 className="font-display text-title3 font-semibold">When you can train</h3>
-        <p className="mt-1 text-caption text-ink3">Minutes per day; 0 is a rest day. “I have X minutes” on the day still overrides it.</p>
+        <p className="mt-1 text-caption text-ink3">Choose a day to set your training time{locations.length > 1 ? ' and location' : ''}. You can change today’s plan at any time.</p>
         <ul className="mt-2 grid grid-cols-7 gap-1">
           {DAYS.map((d, i) => (
             <li key={d} className="flex flex-col items-center gap-1">
@@ -350,7 +351,7 @@ export function ScheduleEditor({ prefs, setPrefs }: Edit) {
                 className={`min-h-12 w-full rounded-control border text-body font-semibold tnum ${
                   picked === i ? 'border-accent bg-accent-soft' : prefs.minutesByDay[i] ? 'border-line bg-surface' : 'border-dashed border-line text-ink3'
                 }`}
-                aria-label={`${FULL_DAYS[i]}: ${prefs.minutesByDay[i] ? `${prefs.minutesByDay[i]} minutes` : 'rest'} — choose`}
+                aria-label={`${FULL_DAYS[i]}: ${prefs.minutesByDay[i] ? `${prefs.minutesByDay[i]} minutes${placeName(i) ? ` at ${placeName(i)}` : ''}` : 'rest'} — choose`}
               >
                 {prefs.minutesByDay[i] || 'Rest'}
               </button>
@@ -396,6 +397,21 @@ export function ScheduleEditor({ prefs, setPrefs }: Edit) {
                 </button>
               ))}
             </div>
+            {pickedMinutes > 0 && locations.length > 1 && <label className="mt-3 block text-footnote font-semibold">
+              Training location on {FULL_DAYS[picked]}
+              <select className="mt-1 block min-h-11 w-full rounded-control border border-line bg-surface px-3 text-body font-normal text-ink"
+                value={placeName(picked) ? prefs.placeByDay?.[picked] ?? '' : ''}
+                onChange={(e) => {
+                  const id = e.currentTarget.value || null
+                  setPrefs((p) => {
+                    const places = Array.from({ length: 7 }, (_, i) => i === picked ? id : p.placeByDay?.[i] ?? null)
+                    return { ...p, placeByDay: places.some(Boolean) ? places : undefined }
+                  })
+                }}>
+                <option value="">Automatic</option>
+                {locations.map((place) => <option key={place.id} value={place.id}>{place.name}</option>)}
+              </select>
+            </label>}
           </div>
         )}
       </section>
@@ -458,7 +474,7 @@ export function PlanSettings({ onDone }: { onDone: () => void }) {
       <GoalsEditor prefs={prefs} setPrefs={setPrefs} />
       {prefs.goals.skills > 0 && <SkillGoalsEditor prefs={prefs} setPrefs={setPrefs} />}
       <MusclesEditor prefs={prefs} setPrefs={setPrefs} />
-      <ScheduleEditor prefs={prefs} setPrefs={setPrefs} />
+      <ScheduleEditor prefs={prefs} setPrefs={setPrefs} locations={state.gym?.locations} />
       <Button size="lg" full onClick={save}>
         Save
       </Button>

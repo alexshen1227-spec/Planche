@@ -549,10 +549,11 @@ export interface GymToday {
  */
 export function gymToday(state: AppState, opts: { now: number; minutes: number; focus?: GymFocus | 'auto'; location?: GymLocation }): GymToday {
   const now = opts.now
-  const base = opts.location ? atPlace(state, opts.location) : state
+  const location = opts.location ?? weekdayPlace(state, now)
+  const base = location ? atPlace(state, location) : state
   const picked = opts.focus && opts.focus !== 'auto' ? opts.focus : undefined
   const here = activePlace(base)
-  const week = planWeekAhead(base, now, { todayMinutes: opts.minutes, todayKind: 'gym', ...(picked ? { todayFocus: picked } : {}), ...(here ? { todayPlace: here } : {}) })
+  const week = planWeekAhead(state, now, { todayMinutes: opts.minutes, todayKind: 'gym', ...(picked ? { todayFocus: picked } : {}), ...(here ? { todayPlace: here } : {}) })
   const plan = week.days[0].plan
   const own = base.gym?.prefs
   const prefs = own ?? defaultPrefs(now)
@@ -1556,8 +1557,8 @@ function fullPartIn(s: Session, skill: SkillId): boolean {
  * kit only the gym has is planned at the gym (`gymCal`), and says so.
  */
 interface Places {
-  /** An explicit choice for today rules out moving today's skill session to a different gym. */
-  fixedToday?: boolean
+  /** A chosen location rules out moving this day's training to another gym. */
+  fixed: (i: number) => boolean
   /** The view day `i`'s calisthenics session is built from. Today's leaves out today's own sessions (`asTodayBegan`). */
   cal: (i: number) => AppState
   /** The gym place's view (its kit and the athlete's portable kit), for a calisthenics day there. */
@@ -1597,7 +1598,8 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
   const practiceDays = Math.max(1, Math.min(trainingDays - 1, Math.round(trainingDays * ctx.share)))
   const target = (f: Straight) => (f === lead ? FAMILY_SESSIONS_LEAD : FAMILY_SESSIONS_OTHER)
   // Whether each skill's session at its current step reaches the hard count at all (with the kit it has anywhere).
-  const anyKit = [...new Set([...state.profile.equipment, ...(places.gymCal?.profile.equipment ?? [])])]
+  const anyKit = [...new Set([...state.profile.equipment, ...(places.gymCal?.profile.equipment ?? []),
+    ...days.flatMap((_, i) => places.fixed(i) ? places.cal(i).profile.equipment : [])])]
   const keyHard = new Map<SkillId, boolean>()
   const stepIsHard = (skill: SkillId) => {
     if (!keyHard.has(skill)) keyHard.set(skill, hardAtStep(state, skill, anyKit))
@@ -1630,7 +1632,9 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     if (!memo.has(skill)) memo.set(skill, canTrainAtHome(view, skill))
     return memo.get(skill)!
   }
-  const noKit = !skills.some((s) => days.some((_, i) => trains(places.cal(i), s)) || (places.gymCal ? trains(places.gymCal, s) : false))
+  const canMove = (i: number) => !places.fixed(i)
+  const available = (s: SkillId, i: number) => trains(places.cal(i), s) || Boolean(canMove(i) && places.gymCal && trains(places.gymCal, s))
+  const noKit = !skills.some((s) => days.some((d, i) => !d.restDay && available(s, i)))
   /**
    * Open days after `i` this week a family could still train hard, spaced by
    * the rest rule. Today is read from what came before it, so its choice holds
@@ -1649,6 +1653,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     for (let j = i + 1; j < days.length && days[j].week === days[i].week; j++) {
       const dj = days[j]
       if (dj.restDay || dj.assigned || dj.minutes < MIN_SKILL_MINUTES[1]) continue
+      if (places.fixed(j) && !skills.some((s) => skillFamily(s) === f && available(s, j))) continue
       // The first priority's days are its own: another family cannot lead one.
       if (f !== lead && exposures.has(j)) continue
       const clear = !planned[f].some((x) => x.i !== j && apart(days[x.i].at, dj.at) < ctx.restMs)
@@ -1790,8 +1795,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     return before + mine.length >= (sharedWeek ? 2 : 3) && taken === 0
   }
   /** Whether the first priority can train on day `i` at all: its kit at home that day, or at the gym. */
-  const canMove = (i: number) => i !== 0 || !places.fixedToday
-  const holdsFirst = (i: number) => trains(places.cal(i), first) || (canMove(i) && places.gymCal ? trains(places.gymCal, first) : false)
+  const holdsFirst = (i: number) => available(first, i)
   const reserveExposures = () => {
     if (lead === 'balance' || g.skills <= 0 || !stepIsHard(first)) return
     for (let i = 0; i < days.length; i++) {
@@ -2170,7 +2174,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
         const fam = skillFamily(skill)
         if (fam !== 'balance' && conflict(fam, i)) continue
         const home = places.cal(i)
-        const view = trains(home, skill) ? home : places.gymCal && trains(places.gymCal, skill) ? places.gymCal : undefined
+        const view = trains(home, skill) ? home : canMove(i) && places.gymCal && trains(places.gymCal, skill) ? places.gymCal : undefined
         if (!view) continue
         const parts = lineupParts(view, d, [skill], d.minutes)
         if (parts[0]?.skill !== skill) continue
@@ -2290,7 +2294,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
       if (!sl || sl.kind !== 'calisthenics' || d.assigned || sl.painSafe || (i === 0 && ctx.todayKind)) continue
       if (!fullOn(sl, lo) || fullOn(sl, hi)) continue
       const current = sl.placeId && places.gymCal ? places.gymCal : places.cal(i)
-      const view = trains(current, hi) ? current : !(i === 0 && places.fixedToday) && places.gymCal && trains(places.gymCal, hi) ? places.gymCal : undefined
+      const view = trains(current, hi) ? current : canMove(i) && places.gymCal && trains(places.gymCal, hi) ? places.gymCal : undefined
       if (!view || sl.parts.some((p) => p.skill !== lo && !trains(view, p.skill))) continue
       if (fam !== 'balance') {
         if (conflict(fam, i)) continue
@@ -2448,7 +2452,7 @@ const hasGymKit = (place: GymLocation) => place.equipment.some((e) => !SKILL_KIT
  * at home — push-ups and dips — and the front lever, whose bar is at the gym,
  * had no session in 28 days.
  */
-export function gymPlaceOf(state: AppState, now: number): GymLocation | undefined {
+function usualGymPlace(state: AppState, now: number): GymLocation | undefined {
   const gym = state.gym
   const active = activePlace(state)
   if (!gym || !active || hasGymKit(active)) return active
@@ -2457,6 +2461,15 @@ export function gymPlaceOf(state: AppState, now: number): GymLocation | undefine
   const since = now - 56 * DAY
   const used = (place: GymLocation) => gym.sessions.filter((s) => s.locationId === place.id && s.startedAt >= since && s.startedAt <= now).length
   return [...gyms].sort((a, b) => used(b) - used(a) || b.equipment.length - a.equipment.length)[0]
+}
+
+export function weekdayPlace(state: AppState, at: number): GymLocation | undefined {
+  const id = state.gym?.prefs?.placeByDay?.[new Date(at).getDay()]
+  return id ? state.gym?.locations.find((p) => p.id === id) : undefined
+}
+
+export function gymPlaceOf(state: AppState, now: number): GymLocation | undefined {
+  return weekdayPlace(state, now) ?? usualGymPlace(state, now)
 }
 
 const BEAM = 40
@@ -2909,26 +2922,32 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   let firstRegularDay = Infinity
   const active = activePlace(state)
   // Gym days are planned at the gym (`gymPlaceOf`), wherever the app is set now.
-  const place = gymPlaceOf(state, now)
-  /** Where day `i`'s gym block is planned: the gym, or today the place the Gym tab is at. */
-  const placeAt = (i: number) => (i === 0 && opts.todayPlace ? opts.todayPlace : place)
+  const place = usualGymPlace(state, now)
+  const fixedPlaces = days.map((d, i) => (i === 0 ? opts.todayPlace : undefined) ?? weekdayPlace(state, d.at))
+  const placeAt = (i: number) => fixedPlaces[i] ?? place
   // Calisthenics happens where the athlete is: today with the active place's kit beside the athlete's own, later
   // days at home. A front lever day with no bar at home was "waiting for kit" at a gym with one; planned a week
   // ahead from the gym, a lever day assumed the gym's bar on a day at home.
   // Unassigned skill sessions can train at home or move to the gym for its
   // equipment. An explicitly picked place fixes where today's session builds.
-  const skillPlaceToday = opts.todayPlace ?? (active?.id === 'home' ? active : undefined)
-  const oneSkillPlace = !opts.todayPlace && active && active.id !== 'home' && roomFor(days[0].minutes) === 1 ? active : undefined
+  const skillPlaceToday = fixedPlaces[0] ?? (active?.id === 'home' ? active : undefined)
+  const oneSkillPlace = !fixedPlaces[0] && active && active.id !== 'home' && roomFor(days[0].minutes) === 1 ? active : undefined
   // One skill can take its turn at either place. The chosen session below is
   // built using only the actual place's equipment.
   const todayKit = oneSkillPlace ? [...new Set([...base.profile.equipment, ...kitAt(base, oneSkillPlace)])]
     : skillPlaceToday ? hereKit(base, skillPlaceToday) : undefined
   const here = todayKit ? withRequestKit(base, { source: 'auto', kit: todayKit }) : base
+  const calViews = days.map((d, i) => {
+    const original = i !== 0 && d.minutes < OPENER_MINUTES ? state : base
+    const fixed = fixedPlaces[i]
+    return fixed ? withRequestKit(original, { source: 'auto', kit: ['floor', ...kitAt(original, fixed)] })
+      : i === 0 ? here : original
+  })
   const places: Places = {
-    fixedToday: Boolean(opts.todayPlace && opts.todayPlace.id !== place?.id),
+    fixed: (i) => Boolean(fixedPlaces[i]),
     // Today's recorded work can change the next warm-up. On a brief future
     // visit that can be the difference between two working holds and three.
-    cal: (i) => i === 0 ? here : days[i].minutes < OPENER_MINUTES ? state : base,
+    cal: (i) => calViews[i],
     ...(place && hasGymKit(place) ? { gymCal: withRequestKit(base, { source: 'auto', kit: kitAt(base, place) }), gym: place } : {}),
   }
   const youth = conservative(state.profile, now)
@@ -3178,7 +3197,10 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   for (const d of days) {
     const slot = slots[d.index]
     const location = placeAt(d.index)
-    if (slot.why !== 'leg-coverage' || slot.reservedOpener || !location || d.assigned || d.pain || d.niggle || d.held ||
+    // If the bar is only available on Saturday, a free wall on Tuesday
+    // may be the only opportunity for a second skill. Keep both visits.
+    const fixedGymVisit = slot.kind === 'gym' && weekdayPlace(state, d.at) && !slot.hint && !slot.exposure && g.skills > 0
+    if ((!fixedGymVisit && slot.why !== 'leg-coverage') || slot.reservedOpener || !location || d.assigned || d.pain || d.niggle || d.held ||
         d.minutes < OPENER_MINUTES + MIN_LIFTS_AFTER_OPENER || (d.index === 0 && opts.todayFocus)) continue
     const kit = kitAt(base, location)
     const scheduled = (s: SkillId) => slots.some((sl, j) => days[j].week === d.week &&
@@ -3192,7 +3214,8 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       const fam = skillFamily(skill) === 'pull' ? 'pull' : 'push'
       if (FAMILY_JOINTS[fam].some((j) => d.avoidJoints.includes(j)) || !openerClear(fam, d.index)) continue
       const minutes = openerMinutesOf(base, skill, d.minutes, d.at, location)
-      if (!viable(d, d.minutes - minutes, 'lower')) continue
+      if (!(slot.legDay ? viable(d, d.minutes - minutes, 'lower') :
+          FOCI.some((f) => f !== 'athletic' && openOn(d, f) && viable(d, d.minutes - minutes, f)))) continue
       const practice = builtSkill(base, [skill], minutes, d.at, kit, true)
       if (practice.painSafe || !practice.key[skill]) continue
       slot.reservedOpener = { skill, minutes }
@@ -3712,12 +3735,15 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     // The kit a calisthenics day is built with: today the athlete's and the active place's, a later day at home their
     // own — or the gym's, on a day planned there for kit only it has.
     const needsGym = oneSkillPlace && slot.skills.some((s) => !canTrainAtHome(base, s))
-    const calPlace = slot.placeId ? place : d.index === 0 && slot.kind === 'calisthenics' ? (needsGym ? oneSkillPlace : skillPlaceToday) : undefined
-    const calKit = calPlace ? hereKit(state, calPlace) : d.index === 0 ? base.profile.equipment : undefined
+    const fixed = fixedPlaces[d.index]
+    const calPlace = slot.kind === 'calisthenics' && fixed ? fixed : slot.placeId ? place :
+      d.index === 0 && slot.kind === 'calisthenics' ? (needsGym ? oneSkillPlace : skillPlaceToday) : undefined
+    const calKit = fixed && slot.kind === 'calisthenics' ? calViews[d.index].profile.equipment :
+      calPlace ? hereKit(state, calPlace) : d.index === 0 ? base.profile.equipment : undefined
     const at = placeAt(d.index)
     const steerDay = steer.get(d.index)
     const work = focus ? liftCredit(d, slot.gymMin, focus, [...(steerDay?.keepOut ?? []), ...lightSpareOf(d.index)], steerDay?.priority) : {}
-    const located = calPlace && calPlace.id !== 'home' && !slot.placeId ? { ...slot, placeId: calPlace.id } : slot
+    const located = calPlace && (fixed || calPlace.id !== 'home') && !slot.placeId ? { ...slot, placeId: calPlace.id } : slot
     const plan = assembleDay(state, prefs, d, located, focus, d.index === 0 ? weekSets : null, ctx.lastHit, skills, {
       ...((calPlace ?? at) ? { place: calPlace ?? at } : {}),
       ...(calKit ? { calKit } : {}),
@@ -3870,6 +3896,7 @@ const familyNames = (skills: SkillId[], f: Straight) => joinNames(skills.filter(
 const familyTarget = (skills: SkillId[], f: Straight) => (f === skillFamily(skills[0]) ? FAMILY_SESSIONS_LEAD : FAMILY_SESSIONS_OTHER)
 /** "3", "2½": sessions as they count toward a week. */
 const countWord = (n: number) => (Number.isInteger(n) ? String(n) : `${Math.floor(n)}½`)
+const sessionCount = (n: number) => `${countWord(n)} ${n === 1 ? 'session' : 'sessions'}`
 
 /**
  * What a family's weekly sessions are said to be, true to the week that is
@@ -3881,7 +3908,7 @@ const countWord = (n: number) => (Number.isInteger(n) ? String(n) : `${Math.floo
 function familyWeek(skills: SkillId[], f: Straight, extra: DayExtra): string {
   const names = familyNames(skills, f)
   const n = extra.sessions[f]
-  const sessions = `${countWord(n)} ${n === 1 ? 'session' : 'sessions'}`
+  const sessions = sessionCount(n)
   if (f === skillFamily(skills[0])) {
     if (extra.sharedSkillDay) return `the ${names} is your first skill and has ${sessions} this week, alongside a lower-body day for your muscle goal`
     return `the ${names} is your first priority, so it gets every session your ${extra.restH}h rest rule allows on your training days — ${sessions} this week (the app’s own rule; skill frequency is a coaching convention)`
@@ -4273,7 +4300,7 @@ function kindShort(slot: SkillSlot, skills: SkillId[], week: { cal: number; gym:
     case 'family-opener':
       return slot.opener ? `Gym, the ${skillName(slot.opener)} first: it counts toward this week’s sessions.` : share
     case 'exposure':
-      return `Your first-priority skill has ${countWord(sessions[skillFamily(skills[0]) as Straight])} sessions this week.`
+      return `Your first-priority skill has ${sessionCount(sessions[skillFamily(skills[0]) as Straight])} this week.`
     case 'exposure-opener':
       return slot.opener
         ? `Gym, the ${skillName(slot.opener)} first: one of its ${countWord(sessions[skillFamily(skills[0]) as Straight])} sessions this week${slot.half ? ', counted as half' : ''}.`
@@ -4410,8 +4437,8 @@ function whyFor(
  * skills and which gym focus, and why — today's slot of the week plan, planned
  * again from what actually happened. Pure: state and time in, plan out.
  */
-export function planToday(state: AppState, opts: { now?: number; minutes?: number; kind?: 'calisthenics' | 'gym' } = {}): TodayPlan {
-  return planWeekAhead(state, opts.now ?? Date.now(), { todayMinutes: opts.minutes, ...(opts.kind ? { todayKind: opts.kind } : {}) }).days[0].plan
+export function planToday(state: AppState, opts: { now?: number; minutes?: number; kind?: 'calisthenics' | 'gym'; location?: GymLocation } = {}): TodayPlan {
+  return planWeekAhead(state, opts.now ?? Date.now(), { todayMinutes: opts.minutes, todayPlace: opts.location, ...(opts.kind ? { todayKind: opts.kind } : {}) }).days[0].plan
 }
 
 export type GoalPace = { status: 'reached' | 'on-pace' | 'possible' | 'behind' | 'unknown'; text: string }

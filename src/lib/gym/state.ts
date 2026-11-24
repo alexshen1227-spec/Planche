@@ -70,6 +70,8 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
   const minutes = Array.isArray(r.minutesByDay) && r.minutesByDay.length === 7
     ? r.minutesByDay.map((m) => Math.round(clamp(m, 0, 240, 0)))
     : base.minutesByDay
+  const places = Array.isArray(r.placeByDay) && r.placeByDay.length === 7
+    ? r.placeByDay.map((id) => typeof id === 'string' && id.trim() ? id : null) : []
   return {
     goals: {
       strength: clamp(g.strength, 0, 5, base.goals.strength),
@@ -82,6 +84,7 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
     musclesOff: muscles(r.musclesOff),
     musclesPriority: muscles(r.musclesPriority),
     minutesByDay: minutes,
+    ...(places.some(Boolean) ? { placeByDay: places } : {}),
     ...(typeof r.extraGymDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.extraGymDate) ? { extraGymDate: r.extraGymDate } : {}),
     straightArmRestHours: Math.round(clamp(r.straightArmRestHours, 24, 96, 48)),
     ...(r.season === 'in' ? { season: 'in' as const } : {}),
@@ -92,7 +95,7 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
 }
 
 /** Every setting a training-prefs edit can change on its own (all but the stamps). */
-const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'minutesByDay', 'extraGymDate', 'straightArmRestHours', 'season', 'sportSchedule'] as const
+const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'minutesByDay', 'placeByDay', 'extraGymDate', 'straightArmRestHours', 'season', 'sportSchedule'] as const
 
 function sanitizeFieldTimes(raw: unknown): Record<string, number> | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined

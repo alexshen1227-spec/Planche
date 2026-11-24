@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { AppState, StepId } from '../../types'
 import { buildGymSession } from '../gym/builder'
 import { activeLocation } from '../gym/draft'
+import { addDays } from '../time'
+import { sanitizePrefs } from '../gym/state'
 import { atActivePlace, planWeekAhead, skillRequest, type SkillBlock } from './planner'
 import { atPlanPlace, calisthenicsPlaceLine, calisthenicsRequest, calisthenicsTitle, gymPlaceLine, gymPreset, openerLine, resolveGymPlace, shortVersion, steerInput } from './screens'
 import { choiceOptions, readTodayChoice, writeTodayChoice } from './todayChoice'
@@ -19,6 +21,46 @@ const homeAthlete = (): AppState =>
     active: 'home',
   })
 const homeOf = (s: AppState) => s.gym!.locations.find((l) => l.id !== GYM_PLACE.id)!
+
+describe('weekly locations and single-day switches', () => {
+  const s = makeAthlete({ skills: ['frontlever', 'handstand'], steps: { frontlever: 'fl-hang', handstand: 'hs-foundations' },
+    kit: ['floor', 'wall'], active: 'gym', birthYear: 1994, prefs: { goals: GOALS,
+      minutesByDay: [0, 0, 45, 0, 45, 0, 45], placeByDay: [null, null, 'home', null, 'home', null, GYM_PLACE.id] } })
+  it('keeps the lever at the Saturday bar and builds the home workouts with the home equipment', () => {
+    const week = planWeekAhead(s, MON)
+    for (const i of [1, 3, 5]) {
+      const plan = week.days[i].plan
+      expect(plan.rest).toBe(false)
+      expect(plan.gym?.placeId ?? plan.skill?.placeId).toBe(i === 5 ? GYM_PLACE.id : 'home')
+      if (i === 5) {
+        expect(plan.skill?.skills).toContain('frontlever')
+        expect(calisthenicsRequest(s, plan.skill!).kit).toContain('pullup-bar')
+      } else if (plan.skill) {
+        expect(plan.skill.skills).not.toContain('frontlever')
+        expect(calisthenicsRequest(s, plan.skill).kit).not.toContain('pullup-bar')
+      }
+    }
+    expect(week.days.some((d) => d.plan.skill?.placeId === 'home' && d.plan.skill.skills.includes('handstand'))).toBe(true)
+  })
+  it('changes only today when the athlete travels and falls back when a saved place is removed', () => {
+    const tue = addDays(MON, 1)
+    expect(resolveGymPlace(s, tue)?.place.id).toBe('home')
+    expect(resolveGymPlace(s, tue, { pickedId: GYM_PLACE.id })).toMatchObject({ planned: { id: 'home' }, place: { id: GYM_PLACE.id }, moved: true })
+    const travel = planWeekAhead(s, tue, { todayPlace: GYM_PLACE, todayKind: 'gym' })
+    expect(travel.days[0].plan.gym?.placeId).toBe(GYM_PLACE.id)
+    expect(travel.days[2].plan.gym?.placeId ?? travel.days[2].plan.skill?.placeId).toBe('home')
+    expect(atPlanPlace(s, { source: 'auto' }, undefined, tue).kit).not.toContain('pullup-bar')
+    expect(atPlanPlace(s, { source: 'auto' }, GYM_PLACE.id, tue).kit).toContain('pullup-bar')
+    const removed = { ...s, gym: { ...s.gym!, locations: [homeOf(s)], activeLocationId: 'home' } }
+    expect(resolveGymPlace(removed, addDays(MON, 5))?.place.id).toBe('home')
+    expect(planWeekAhead(removed, MON).days.some((d) => d.plan.skill?.skills.includes('frontlever'))).toBe(false)
+  })
+  it('preserves valid weekday choices on reload and reads older and malformed saves as automatic', () => {
+    expect(sanitizePrefs(JSON.parse(JSON.stringify(s.gym!.prefs!)))?.placeByDay).toEqual(s.gym!.prefs!.placeByDay)
+    expect(sanitizePrefs({})?.placeByDay).toBeUndefined()
+    expect(sanitizePrefs({ placeByDay: [false, 'home', null, 12, '', ' ', 'gym'] })?.placeByDay).toEqual([null, 'home', null, null, null, null, 'gym'])
+  })
+})
 
 describe('a gym day is built where the plan has it', () => {
   const s = homeAthlete()
