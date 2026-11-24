@@ -7,6 +7,7 @@ import {
 } from '../../data/gym/exercises'
 import { formatLoad, maxKgFor, roundToStep, stepKgFor, takesAddedLoad, unitFor, unloadedLabel } from './units'
 import type { GymLocation, GymSession, GymSet } from './types'
+import { addDays, dayKey } from '../time'
 
 /**
  * Double progression (CONSENSUS — the standard way gyms program it, not a
@@ -753,28 +754,34 @@ export function gateTier(ex: GymExercise): IntensityTier | null {
   return ex.maximal ? 'high' : (ex.tier ?? null)
 }
 
-/** How many distinct sessions logged something of each tier in a domain (any set with reps, warm-up flag or not). */
+/** Count recent, separate practice dates at the prescribed dose. A hard or partial attempt is still in history. */
 export function tierSessions(sessions: GymSession[], domain: AthleticDomain, now = Infinity): Record<IntensityTier, number> {
-  const counts: Record<IntensityTier, number> = { low: 0, medium: 0, high: 0 }
+  const dates = { low: new Set<string>(), medium: new Set<string>(), high: new Set<string>() }
+  const today = Number.isFinite(now) ? new Date(now).setHours(0, 0, 0, 0) : Infinity
+  const from = Number.isFinite(now) ? addDays(today, -84) : -Infinity
   for (const s of sessions) {
-    if (s.startedAt >= now) continue
-    const seen = new Set<IntensityTier>()
+    if (s.startedAt >= today || s.endedAt >= today || s.endedAt < from) continue
     for (const log of s.exercises) {
       const ex = GYM_EXERCISE_BY_ID[log.exerciseId]
-      if (!ex || athleticDomain(ex) !== domain || !ex.tier) continue
-      if (!log.sets.some((set) => set.reps > 0)) continue
-      seen.add(gateTier(ex)!)
+      if (!ex?.dose || athleticDomain(ex) !== domain || !ex.tier || unfinishedLiftSets(s, ex.id)) continue
+      const tier = gateTier(ex)!
+      // A medium coordination drill can prepare the warm-up. High-speed running needs actual runs.
+      if (domain === 'sprint' && tier === 'medium' && ex.pattern !== 'sprint') continue
+      const work = log.sets.filter((set) => !set.warmup && set.at >= from && set.at < today && set.at <= s.endedAt)
+      const effort = Math.min(8.5, ex.dose.rpe + 1)
+      if (work.length < 2 || !work.some((set) => set.rpe !== undefined) ||
+          work.some((set) => set.reps < ex.dose!.range[0] || (set.rpe !== undefined && set.rpe > effort))) continue
+      dates[tier].add(dayKey(Math.max(...work.map((set) => set.at))))
     }
-    for (const t of seen) counts[t]++
   }
-  return counts
+  return { low: dates.low.size, medium: dates.medium.size, high: dates.high.size }
 }
 
 /**
  * The highest tier of one domain this athlete may be given, from what they
  * have logged. Under 18: low always; medium after two sessions of low work;
  * high after two sessions of medium work (and some low). An adult starts at
- * medium, and gets high once any lower-tier session is on record. A coaching
+ * medium, and gets high after a completed medium-tier practice day. A coaching
  * ladder (CONSENSUS), not a measured threshold.
  */
 export function unlockedTier(sessions: GymSession[], domain: AthleticDomain, youth: boolean, now = Infinity): IntensityTier {
@@ -784,7 +791,7 @@ export function unlockedTier(sessions: GymSession[], domain: AthleticDomain, you
     if (c.low >= MIN_SESSIONS_YOUTH) return 'medium'
     return 'low'
   }
-  return c.low + c.medium >= MIN_SESSIONS_ADULT ? 'high' : 'medium'
+  return c.medium >= MIN_SESSIONS_ADULT ? 'high' : 'medium'
 }
 
 export interface PlyoGate {
@@ -804,9 +811,7 @@ export function plyoGate(ex: GymExercise, sessions: GymSession[], youth: boolean
   const n = youth ? MIN_SESSIONS_YOUTH : MIN_SESSIONS_ADULT
   return {
     allowed: false,
-    reason: `Not yet: do ${n} session${n === 1 ? '' : 's'} of ${need}-tier ${domain === 'sprint' ? 'running' : domain} work first. ${
-      youth ? 'Growing athletes build up through the lower tiers.' : 'Build up through the lower tiers first.'
-    }`,
+    reason: `Build up with ${need}-tier ${domain === 'sprint' ? 'running' : domain} work on ${n} earlier training ${n === 1 ? 'day' : 'days'} within 12 weeks. Complete at least two working sets at the prescribed count and log how hard they felt. Progress when the sets feel manageable.`,
   }
 }
 

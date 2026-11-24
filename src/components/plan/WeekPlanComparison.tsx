@@ -22,6 +22,10 @@ export function WeekPlanComparison() {
   const alternative = comparison?.alternative
   const day = alternative?.gymDate ? new Date(alternative.gymDate + 'T12:00') : undefined
   const weekday = day?.toLocaleDateString(undefined, { weekday: 'long' })
+  const to = alternative?.liftingVisits.find((visit) => visit.day === alternative.gymDate)
+  const from = comparison?.current.liftingVisits.find((visit) => !alternative?.liftingVisits.some((next) => next.day === visit.day))
+  const visitName = (visit: { day: string; place?: string }) => new Date(visit.day + 'T12:00').toLocaleDateString(undefined, { weekday: 'long' }) +
+    (visit.place ? ` at ${visit.place}` : '')
   const rows: [string, number, number][] = []
   if (comparison && alternative) {
     const current = comparison.current
@@ -44,7 +48,9 @@ export function WeekPlanComparison() {
     <button type="button" className="ds-press min-h-11 text-left text-footnote font-semibold text-accent-text" onClick={() => setOpen(true)}>Compare skill and lifting days</button>
     <Sheet open={open} onClose={() => setOpen(false)} title="Compare weekly plans">
       {alternative && day ? <>
-        <p className="text-footnote text-ink2">Use {day.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })} for lifting within your available time. These are estimates. Logging a workout can change the remaining days.</p>
+        <p className="text-footnote text-ink2">{to && from && alternative.gymDays === comparison?.current.gymDays ?
+          `Move lifting from ${visitName(from)} to ${visitName(to)}.` :
+          `Use ${day.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}${to?.place ? ' at ' + to.place : ''} for lifting within your available time.`} Logging a workout can change the estimates for the remaining days.</p>
         {prefs.extraGymDate && prefs.extraGymDate >= today && prefs.extraGymDate !== alternative.gymDate && <p className="mt-2 text-footnote text-ink2">This replaces the extra lifting date you chose earlier this week.</p>}
         <table className="mt-3 w-full text-left text-footnote tnum">
           <thead><tr className="border-b border-line"><th scope="col" className="py-2">Training</th><th scope="col" className="text-right">Current</th><th scope="col" className="text-right">With change</th></tr></thead>
@@ -56,7 +62,7 @@ export function WeekPlanComparison() {
           <Button onClick={() => save(false)}>Use this lifting day</Button>
           <Button variant="secondary" onClick={() => save(true)}>Keep {weekday}s for lifting</Button>
         </div>
-      </> : <p className="text-footnote text-ink2">An extra lifting day would need to improve your priority muscle work and keep your first skill in practice. None of the remaining skill days meets those conditions this week.</p>}
+      </> : <p className="text-footnote text-ink2">Your remaining days are already allocated. Moving or adding a lifting day would need to increase your priority muscle work and keep your first skill in practice.</p>}
       <button type="button" className="mt-2 min-h-11 text-footnote font-semibold text-accent-text" onClick={() => setOpen(false)}>Keep my current plan</button>
     </Sheet>
   </>

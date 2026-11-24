@@ -1,0 +1,51 @@
+import type { AppState, SkillId } from '../../types'
+import type { Muscle } from '../../data/gym/catalog'
+import { availableAt } from '../gym/availability'
+import { addDays, dayKey, weekStart } from '../time'
+import { volumeTarget } from './load'
+import type { WeekAhead } from './planner'
+
+/** Compare real schedules at the athlete's assigned places while keeping each practice dose and the weekly frequency. */
+export function fitLiftingPlace(state: AppState, week: WeekAhead, now: number, build: (day: string) => WeekAhead): WeekAhead {
+  const gym = state.gym
+  const prefs = gym?.prefs
+  if (!gym || !prefs?.goals.skills || !prefs.goals.physique || !prefs.placeByDay || prefs.extraGymDate && prefs.extraGymDate >= dayKey(now)) return week
+  const priority = prefs.musclesPriority.filter((m) => !prefs.musclesOff.includes(m))
+  if (!priority.length || new Set(prefs.placeByDay.filter(Boolean)).size < 2) return week
+  const end = addDays(weekStart(now), 7)
+  const remaining = (w: WeekAhead) => w.days.filter((d) => d.at < end && !d.plan.rest)
+  const days = remaining(week)
+  const lifts = days.filter((d) => d.plan.gym)
+  if (!lifts.length) return week
+  const completed = new Set([...state.sessions, ...gym.sessions].filter((s) => s.startedAt <= now).map((s) => dayKey(s.startedAt)))
+  const variety = new Map(gym.locations.map((place) => [place.id,
+    new Set(availableAt(place).filter((e) => !e.explosive && e.primary.some((m) => priority.includes(m)) &&
+      gym.ratings[e.id] !== 'avoid').map((e) => e.pattern + '/' + e.load)).size]))
+  const choices = days.filter((d) => {
+    const place = prefs.placeByDay?.[new Date(d.at).getDay()]
+    return place && d.kind === 'calisthenics' && !d.plan.skill?.painSafe && !completed.has(d.day) &&
+      lifts.some((other) => other.plan.gym?.placeId && (variety.get(other.plan.gym.placeId) ?? 0) < (variety.get(place) ?? 0))
+  })
+  const dose = (w: WeekAhead, skill: SkillId) => remaining(w).map((d) => d.skillWorkingSets?.[skill] ?? 0)
+  const cap = (w: WeekAhead, m: Muscle) => Math.min(w.weekTotal[m] ?? 0, volumeTarget(m, prefs)[0])
+  const score = (w: WeekAhead) => priority.reduce((n, m) => n + cap(w, m), 0)
+  let best = week
+  for (const day of choices) {
+    const option = build(day.day)
+    const next = remaining(option)
+    if (!next.some((d) => d.day === day.day && d.plan.gym) || next.filter((d) => d.plan.gym).length !== lifts.length ||
+        score(option) <= score(best) || priority.some((m) => cap(option, m) < cap(week, m) ||
+          (option.weekSources.direct[m] ?? 0) < (week.weekSources.direct[m] ?? 0))) continue
+    // A gain for a chosen muscle cannot remove the week's basic push, pull, knee or hip work.
+    if ((['chest', 'lats', 'quads', 'hamstrings'] as const).some((m) =>
+      (option.weekTotal[m] ?? 0) < Math.min(4, week.weekTotal[m] ?? 0))) continue
+    const skills = state.profile.skills?.length ? state.profile.skills : ['planche'] as const
+    const lostPractice = skills.some((s) => {
+      const before = dose(week, s), after = dose(option, s)
+      return after.filter(Boolean).length < before.filter(Boolean).length ||
+        after.reduce((n, sets) => n + sets, 0) < before.reduce((n, sets) => n + sets, 0)
+    })
+    if (!lostPractice && next.filter((d) => d.plan.gym?.focus === 'athletic').length >= lifts.filter((d) => d.plan.gym?.focus === 'athletic').length) best = option
+  }
+  return best
+}

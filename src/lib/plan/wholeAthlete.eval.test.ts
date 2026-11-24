@@ -224,6 +224,34 @@ const handstandAthlete = (fourDays: boolean): AthleteCfg => ({
 })
 
 describe('mixed handstand and front lever weeks', () => {
+  it('uses the better-equipped studio days while keeping two handstand practices in the same three visits', () => {
+    const now = new Date(2026, 10, 24, 18).getTime()
+    const state = makeAthlete({ skills: ['handstand'], birthYear: 1996, steps: { handstand: 'hs-wall' }, active: 'gym', kit: ['floor', 'wall'],
+      prefs: { minutesByDay: [0, 0, 45, 0, 45, 0, 75], placeByDay: [null, null, 'gym', null, 'home', null, 'gym'],
+        goals: { skills: 4, physique: 3, strength: 3, power: 2, endurance: 1 }, musclesPriority: ['chest', 'quads'] } })
+    const place = { ...handstandGym, equipment: ['wall', 'dumbbells', 'bench', 'cable', 'assisted-pullup', 'leg-press', 'leg-curl', 'track'] as typeof GYM_PLACE.equipment }
+    state.gym = { ...state.gym!, locations: [state.gym!.locations[0], place] }
+    state.settings = { ...state.settings, weeklyGoal: 3 }
+    state.profile = { ...state.profile, trainingAgeMonths: 12 }
+    state.tracks!.handstand!.assessment = { at: now - 60_000, placedStepId: 'hs-wall', confidence: 'moderate', gapIds: [],
+      answers: { pushups: 12, hollow: 35, wrist: 2, 'level:handstand': 1, 'ladder:hspu': 0, experience: 12 } }
+    const week = weekForChoice(state, {}, now)
+    const visits = week.days.filter((d) => d.day <= '2026-11-29' && (d.plan.skill || d.plan.gym))
+    expect(visits).toHaveLength(3)
+    expect(visits.filter((d) => d.plan.gym?.placeId === 'gym').length).toBeGreaterThanOrEqual(2)
+    expect(visits.filter((d) => d.skillWorkingSets?.handstand).length).toBeGreaterThanOrEqual(2)
+    expect(week.weekTotal.quads).toBeGreaterThanOrEqual(8)
+  })
+  it('puts handstand practice into the actual weeks of a strength and power athlete with a Thursday game', () => {
+    const cfg: AthleteCfg = { skills: ['handstand'], birthYear: 1997, steps: { handstand: 'hs-float' }, active: 'gym',
+      prefs: { goals: { skills: 2, physique: 2, strength: 5, power: 5, endurance: 0 }, minutesByDay: [0, 65, 0, 65, 0, 65, 65],
+        gymWeekdays: [1, 3, 6], sportSchedule: [{ weekday: 4, kind: 'game', minutes: 70, rpe: 8, legs: true, hour: 18 }] } }
+    const out = season(cfg, 56, { from: new Date(2027, 1, 15) }, handstandGym)
+    for (const week of weeksOf(out)) {
+      expect(week.filter((d) => d.gym).length).toBeGreaterThanOrEqual(3)
+      expect(keySets(week, 'handstand')).toBeGreaterThan(0)
+    }
+  })
   it('compares a real alternative in the same 135 minutes and application reproduces its muscle sets', () => {
     const cfg = handstandAthlete(false)
     cfg.skills = ['handstand', 'frontlever', 'planche']

@@ -413,8 +413,13 @@ describe('the exercise library', () => {
 
 describe('speed and power: the progression gate', () => {
   const logged = (id: string, n: number, exerciseId: string, start = 0) =>
-    Array.from({ length: n }, (_, i) => session(`${id}${i}`, 'all', T0 + (start + i) * DAY, exerciseId, [set(undefined, 8)], 'Speed & power'))
-  const NOW = T0 + 100 * DAY
+    Array.from({ length: n }, (_, i) => {
+      const at = T0 + (start + i) * DAY
+      const dose = GYM_EXERCISE_BY_ID[exerciseId].dose!
+      const work = Array.from({ length: dose.sets }, (_, index) => set(undefined, dose.range[0], dose.rpe, at + index * 60_000))
+      return session(`${id}${i}`, 'all', at, exerciseId, work, 'Speed & power')
+    })
+  const NOW = T0 + 36 * DAY
   const picks = (plan: ReturnType<typeof buildGymSession>) => plan.items.map((i) => ({ id: i.exerciseId, ex: GYM_EXERCISE_BY_ID[i.exerciseId] }))
   const high = (ex: (typeof GYM_EXERCISES)[number]) => gateTier(ex) === 'high'
   const rich = [
@@ -479,7 +484,26 @@ describe('speed and power: the progression gate', () => {
   it('lets an adult start at medium but not at the top', () => {
     expect(plyoGate(GYM_EXERCISE_BY_ID['box-jump'], [], false, NOW).allowed).toBe(true)
     expect(plyoGate(GYM_EXERCISE_BY_ID['flying-sprint'], [], false, NOW).allowed).toBe(false)
-    expect(plyoGate(GYM_EXERCISE_BY_ID['flying-sprint'], logged('a', 1, 'build-up-run'), false, NOW).allowed).toBe(true)
+    const flying = GYM_EXERCISE_BY_ID['flying-sprint']
+    expect(plyoGate(flying, logged('a', 1, 'build-up-run'), false, NOW).allowed).toBe(false)
+    expect(plyoGate(flying, logged('a', 1, 'acceleration-run'), false, NOW).allowed).toBe(true)
+  })
+  it('requires prior days of actual running before maximal sprinting', () => {
+    const flying = GYM_EXERCISE_BY_ID['flying-sprint']
+    const at = T0 + DAY
+    const march = session('march', 'all', T0, 'a-march', [set(undefined, 1, 10, T0)])
+    const run = logged('run', 1, 'acceleration-run')[0]
+    const allowed = (s: GymSession[], when = at) => plyoGate(flying, s, false, when).allowed
+    expect(allowed([march])).toBe(false)
+    expect(allowed(logged('skip', 1, 'b-skip'))).toBe(false)
+    expect(allowed([run], run.endedAt + 500)).toBe(false)
+    for (const edits of [{ warmup: true }, { rpe: 10 }, { rpe: undefined }, { reps: 0 }]) {
+      expect(allowed([{ ...run, exercises: run.exercises.map((e) => ({ ...e, sets: e.sets.map((s) => ({ ...s, ...edits })) })) }])).toBe(false)
+    }
+    expect(allowed([run])).toBe(true)
+    expect(allowed([run], T0 + 90 * DAY)).toBe(false)
+    const low = logged('two', 1, 'pogo-hop')[0]
+    expect(unlockedTier([low, { ...low, id: 'another' }], 'jump', true, at)).toBe('low')
   })
   it('keeps gated movements out of swap lists when the athlete is known', () => {
     const gated = alternativesFor('pogo-hop', everything(), {}, [], { youth: true, sessions: [], now: NOW })

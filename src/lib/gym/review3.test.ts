@@ -48,11 +48,16 @@ const session = (id: string, locationId: string, at: number, exerciseId: string,
 
 describe('the speed and power ladder is climbed from the bottom', () => {
   const logged = (id: string, n: number, exerciseId: string, start = 0) =>
-    Array.from({ length: n }, (_, i) => session(`${id}${i}`, 'all', T0 + (start + i) * DAY, exerciseId, [set(undefined, 5)], 'Speed & power'))
+    Array.from({ length: n }, (_, i) => {
+      const at = T0 + (start + i) * DAY
+      const dose = GYM_EXERCISE_BY_ID[exerciseId].dose!
+      const work = Array.from({ length: dose.sets }, (_, j) => set(undefined, dose.range[0], dose.rpe, at + j * 60_000))
+      return session(`${id}${i}`, 'all', at, exerciseId, work, 'Speed & power')
+    })
   // A young athlete with the medium tier behind them: the high tier is open.
   const unlocked = [...logged('l', 2, 'landing-stick'), ...logged('m', 2, 'jump-squat', 2)]
   const jumpOf = (sessions: GymSession[]) =>
-    buildGymSession({ location: everything(), minutes: 60, focus: 'athletic', sessions, youth: true, now: NOW })
+    buildGymSession({ location: everything(), minutes: 60, focus: 'athletic', sessions, youth: true, now: SOON })
       .items.map((i) => i.exerciseId)
       .find((id) => GYM_EXERCISE_BY_ID[id].pattern === 'jump')
 

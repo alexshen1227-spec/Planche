@@ -43,6 +43,7 @@ import {
   type FamilyEvent,
 } from './load'
 import { dayReadiness, MIN_RATED_SETS, READINESS_FACTOR, type DayReadiness } from './readiness'
+import { fitLiftingPlace } from './placeWeek'
 import { isHardForLegs, isHardSport, namedSport, sportBetween, sportName, type SportEvent } from './sport'
 
 export type { DayReadiness, ReadinessLevel } from './readiness'
@@ -1155,6 +1156,7 @@ type KindWhy =
   | 'leg-coverage'
   | 'skill-practice'
   | 'reserved-lifts'
+  | 'lifting-place'
   | 'rotate-skills'
 
 interface SkillSlot {
@@ -1414,6 +1416,7 @@ function dayContexts(state: AppState, base: AppState, prefs: TrainingPrefs, own:
 
 /** What the skill side of planning needs beside the days. */
 interface SkillCtx {
+  liftingPlaceDate?: string
   coverLegWeeks?: number[]
   restMs: number
   /** Whether the gym's goals train the legs: they are switched on and have a weekly target. */
@@ -1878,7 +1881,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     const gymHere = Boolean(gymPlace) && d.minutes >= MIN_GYM_MINUTES && ctx.gymFits(d, d.minutes)
     const gymOK = ctx.wantsGym && gymHere
     const skillsWanted = g.skills > 0 || Boolean(d.assigned) || !ctx.wantsGym
-    const chosenLifts = state.gym?.prefs?.extraGymDate === d.key || Boolean(ctx.wantsGym && state.gym?.prefs?.gymWeekdays?.includes(weekdayOf(d.start)))
+    const chosenLifts = ctx.liftingPlaceDate === d.key || state.gym?.prefs?.extraGymDate === d.key || Boolean(ctx.wantsGym && state.gym?.prefs?.gymWeekdays?.includes(weekdayOf(d.start)))
     const reservedLifts = chosenLifts && !d.assigned && !(i === 0 && ctx.todayKind)
     const forced = reservedLifts ? 'gym' : i === 0 ? ctx.todayKind : undefined
     let kind: 'calisthenics' | 'gym' | undefined
@@ -2017,7 +2020,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     // the coach makes: a family's skill first, when the family needs the session or its muscles need the gym.
     if (forced && kind !== forced && (forced === 'gym' ? gymHere : calOK)) {
       kind = forced
-      why = reservedLifts ? 'reserved-lifts' : ctx.todayWhy ?? 'picked'
+      why = ctx.liftingPlaceDate === d.key ? 'lifting-place' : reservedLifts ? 'reserved-lifts' : ctx.todayWhy ?? 'picked'
       urgent = undefined
       setsNeed = undefined
       hint =
@@ -2884,7 +2887,7 @@ function describe(plan: TodayPlan): string {
 
 /** Today's kind, picked by the athlete or read off what they logged today. */
 export type TodayKindPick = { todayKind?: 'calisthenics' | 'gym'; todayWhy?: 'picked' | 'followed' }
-type WeekOptions = TodayKindPick & { todayMinutes?: number; inner?: boolean; todayFocus?: GymFocus; todayPlace?: GymLocation; coverLegWeeks?: number[]; restOpeners?: string[] }
+type WeekOptions = TodayKindPick & { todayMinutes?: number; inner?: boolean; todayFocus?: GymFocus; todayPlace?: GymLocation; coverLegWeeks?: number[]; restOpeners?: string[]; liftingPlaceDate?: string }
 const weeksByState = new WeakMap<AppState, Map<string, WeekAhead>>()
 const pastPlans = new WeakMap<AppState, Map<number, TodayPlan>>()
 
@@ -2904,10 +2907,12 @@ export function planWeekAhead(
   if (opts.todayPlace && !state.gym?.locations.includes(opts.todayPlace)) return buildWeekAhead(state, now, opts)
   let cache = weeksByState.get(state)
   if (!cache) weeksByState.set(state, (cache = new Map()))
-  const key = JSON.stringify([now, opts.todayMinutes, opts.todayKind, opts.todayWhy, opts.todayFocus, opts.todayPlace?.id, opts.inner, opts.coverLegWeeks, opts.restOpeners])
+  const key = JSON.stringify([now, opts.todayMinutes, opts.todayKind, opts.todayWhy, opts.todayFocus, opts.todayPlace?.id, opts.inner, opts.coverLegWeeks, opts.restOpeners, opts.liftingPlaceDate])
   const cached = cache.get(key)
   if (cached) return cached
-  const week = buildWeekAhead(state, now, opts)
+  const baseline = buildWeekAhead(state, now, opts)
+  const week = opts.liftingPlaceDate || opts.coverLegWeeks || opts.restOpeners || opts.todayKind || opts.todayFocus ? baseline :
+    fitLiftingPlace(state, baseline, now, (day) => planWeekAhead(state, now, { ...opts, liftingPlaceDate: day }))
   if (cache.size >= 16) cache.delete(cache.keys().next().value!)
   cache.set(key, week)
   return week
@@ -3055,6 +3060,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     .reduce<number | undefined>((m, x) => (m === undefined || x.startedAt > m ? x.startedAt : m), undefined)
   const slots = planSkills(base, places, prefs, days, skills, {
     coverLegWeeks: opts.coverLegWeeks,
+    liftingPlaceDate: opts.liftingPlaceDate,
     restMs,
     logged,
     wantsGym: gymWanted && Boolean(place),
@@ -3165,7 +3171,9 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   // A hard pulling quota can book the lever twice even when the athlete ranked
   // handstand first. Use the duplicate opener for balance when both skills keep
   // a real session and the lifts still fit in the same time.
-  if (canShareBalance) {
+  const balanceWithLifting = skills.length === 1 && skills[0] === 'handstand' && g.skills > 0 &&
+    Math.max(g.strength, g.power) > g.skills
+  if (canShareBalance || balanceWithLifting) {
     const practices = (sl: SkillSlot, skill: SkillId) => sl.skills.includes(skill) || (sl.reservedOpener
       ? sl.reservedOpener.skill === skill : Boolean(sl.hint && skills.find((s) => skillFamily(s) === sl.hint) === skill))
     // Replace an extra secondary opener first. On an all-gym week a plain
@@ -3174,7 +3182,8 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     for (const d of byOpportunity) {
       const sl = slots[d.index]
       const place = placeAt(d.index)
-      if (!place || sl.kind !== 'gym' || !['family-opener', 'share', 'leg-coverage', 'legs', 'sets'].includes(sl.why ?? '') || sl.reservedOpener || d.assigned ||
+      if (!place || sl.kind !== 'gym' || !(['family-opener', 'share', 'leg-coverage', 'legs', 'sets'].includes(sl.why ?? '') ||
+          (balanceWithLifting && sl.why === 'reserved-lifts')) || sl.reservedOpener || d.assigned ||
           d.pain || d.niggle || d.held || d.sportRest.push || (d.index === 0 && opts.todayFocus) || !openerClear('push', d.index)) continue
       const other = skills.find((skill) => skillFamily(skill) === sl.hint)
       const count = (skill: SkillId) => slots.filter((s, j) => days[j].week === d.week && practices(s, skill)).length +
@@ -3184,7 +3193,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       if (other ? other === 'handstand' || firstDays >= 2 || count(other) <= Math.max(1, firstDays) : firstDays >= wanted) continue
       const kit = kitAt(base, place)
       if (missingKit('handstand', kit).length || FAMILY_JOINTS.push.some((joint) => d.avoidJoints.includes(joint))) continue
-      const minutes = openerMinutes(d.minutes)
+      const minutes = balanceWithLifting && !canShareBalance ? OPENER_MINUTES : openerMinutes(d.minutes)
       const practice = builtSkill(base, ['handstand'], minutes, d.at, kit, true)
       if (practice.painSafe || !practice.key.handstand || !FOCI.some((f) => f !== 'athletic' && openOn(d, f) && viable(d, d.minutes - minutes, f))) continue
       sl.reservedOpener = { skill: 'handstand', minutes }
@@ -4016,6 +4025,8 @@ function kindReason(slot: SkillSlot, d: DayCtx, skills: SkillId[], extra: DayExt
         : 'Today gives your skill a practice session alongside this week’s gym work.'
     case 'reserved-lifts':
       return 'You set this day aside for lifting.'
+    case 'lifting-place':
+      return 'Lifting here gives your priority muscles more work this week while keeping your skill practice and total lifting visits.'
     case 'rotate-skills':
       return 'There is time for one skill today. Your first skill had recent practice, so this session goes to the one that has waited longest.'
     case 'sets':
@@ -4343,6 +4354,8 @@ function kindShort(slot: SkillSlot, skills: SkillId[], week: { cal: number; gym:
       return 'Calisthenics: sport keeps legs out of the gym today.'
     case 'reserved-lifts':
       return 'Gym on your chosen lifting day.'
+    case 'lifting-place':
+      return 'The equipment here adds work for your priority muscles.'
     case 'sets':
       return 'Gym: the muscles need it for this week’s sets.'
     case 'legs':
