@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { dayKey } from '../time'
+import type { GymPreset } from './screens'
 
 /**
- * A mixed day as one flow: starting the skill block from the Today card
- * remembers the gym block that follows it; when that skill session is saved
- * and closed, the app opens the gym side and starts it. Kept for the tab's
- * lifetime only (sessionStorage), and for `NEXT_BLOCK_HOURS` after it was
- * remembered — not only the same calendar day, which lost a late opener's lifts.
+ * A saved skill opener hands its lifts to Home and Train. Older builds kept
+ * the preset in the tab when the opener started. New drafts carry it with
+ * the workout and publish it here only when that exact session is saved.
  */
 const KEY = 'planchelab.nextBlock'
 
@@ -14,38 +13,60 @@ export interface NextBlock<P> {
   day: string
   /** When it was remembered: an opener started at 23:30 still hands its lifts on after midnight. */
   at?: number
+  sessionId?: string
   preset: P
 }
 
 /** How long a remembered block waits: a session's length and more, so a late opener's lifts are not lost at midnight. */
 export const NEXT_BLOCK_HOURS = 8
 
-export function rememberNextBlock<P>(preset: P | null, now = Date.now()): void {
+export function rememberNextBlock<P>(preset: P | null, now = Date.now(), sessionId?: string): void {
+  const record = preset ? JSON.stringify({ day: dayKey(now), at: now, preset, sessionId } satisfies NextBlock<P>) : null
+  let durable = false
   try {
-    if (preset) {
-      sessionStorage.setItem(KEY, JSON.stringify({ day: dayKey(now), at: now, preset } satisfies NextBlock<P>))
-      // Remembering a block means a skill opener is running: the lifts are part of today until saved or ended.
-      markOpenerDay(now)
-    } else sessionStorage.removeItem(KEY)
-    notify()
+    if (record && sessionId) {
+      localStorage.setItem(KEY, record)
+      durable = true
+    } else localStorage.removeItem(KEY)
   } catch {
-    // Without storage the gym block simply waits on the Today card.
+    // The tab copy can still be available.
   }
+  try {
+    if (record && !durable) sessionStorage.setItem(KEY, record)
+    else sessionStorage.removeItem(KEY)
+  } catch {
+    // Storage may be unavailable in this tab.
+  }
+  notify()
 }
 
-/** The remembered block for today, if any; reading it does not clear it. */
-export function peekNextBlock<P>(now = Date.now()): P | null {
+function readBlock<P>(store: 'localStorage' | 'sessionStorage', now: number): NextBlock<P> | null {
   try {
-    const raw = sessionStorage.getItem(KEY)
+    const raw = globalThis[store]?.getItem(KEY)
     if (!raw) return null
     const next = JSON.parse(raw) as NextBlock<P>
     if (!next) return null
     // The same calendar day, or within a few hours of being remembered (an opener that ran past midnight).
-    const fresh = next.at !== undefined ? now >= next.at && now - next.at < NEXT_BLOCK_HOURS * 3_600_000 : next.day === dayKey(now)
-    return fresh ? next.preset : null
+    const recent = typeof next.at === 'number' && now >= next.at && now - next.at < NEXT_BLOCK_HOURS * 3_600_000
+    const sameDay = next.day === dayKey(now) && (next.at === undefined || now >= next.at)
+    return (recent || sameDay) && next.preset ? next : null
   } catch {
     return null
   }
+}
+
+function nextBlock<P>(now: number): NextBlock<P> | null {
+  return readBlock<P>('localStorage', now) ?? readBlock<P>('sessionStorage', now)
+}
+
+export function peekNextBlock<P>(now = Date.now()): P | null {
+  return nextBlock<P>(now)?.preset ?? null
+}
+
+/** Older, interrupted workouts stored their lifts separately in this tab. */
+export function legacyOpenerLifts(now = Date.now()): GymPreset | undefined {
+  const block = readBlock<GymPreset>('sessionStorage', now)
+  return block && !block.sessionId ? block.preset : undefined
 }
 
 /**
@@ -59,6 +80,8 @@ export function peekNextBlock<P>(now = Date.now()): P | null {
 export interface DayMarks {
   /** An opener was started today: the lifts are part of the day. */
   openerDay: boolean
+  /** Identifies a saved opener even when it started the night before. */
+  openerSessionId?: string
   /** The athlete said the day is over (the lifts skipped on purpose). */
   ended: boolean
 }
@@ -68,14 +91,16 @@ const MARKS_EVENT = 'planchelab:daymarks'
 const NO_MARKS: DayMarks = { openerDay: false, ended: false }
 
 export function readDayMarks(now = Date.now()): DayMarks {
+  const sessionId = nextBlock(now)?.sessionId
+  const opener = typeof sessionId === 'string' ? { openerDay: true, ended: false, openerSessionId: sessionId } : NO_MARKS
   try {
     const raw = globalThis.localStorage?.getItem(MARKS_KEY)
-    if (!raw) return NO_MARKS
+    if (!raw) return opener
     const x = JSON.parse(raw) as { day?: unknown; opener?: unknown; ended?: unknown } | null
-    if (!x || x.day !== dayKey(now)) return NO_MARKS
-    return { openerDay: x.opener === true, ended: x.ended === true }
+    if (!x || x.day !== dayKey(now)) return opener
+    return { ...opener, openerDay: opener.openerDay || x.opener === true, ended: x.ended === true }
   } catch {
-    return NO_MARKS
+    return opener
   }
 }
 
@@ -104,6 +129,7 @@ export function markOpenerDay(now = Date.now()): void {
 /** The athlete ends today without the rest of it. */
 export function endTheDay(now = Date.now()): void {
   writeDayMarks({ ...readDayMarks(now), ended: true }, now)
+  rememberNextBlock(null, now)
 }
 
 /** Every screen reading today's marks hears a change; a new day reads none. */
@@ -113,7 +139,7 @@ export function useDayMarks(todayKey: string): DayMarks {
     const sync = () =>
       setMarks((cur) => {
         const next = readDayMarks()
-        return next.openerDay === cur.openerDay && next.ended === cur.ended ? cur : next
+        return next.openerDay === cur.openerDay && next.ended === cur.ended && next.openerSessionId === cur.openerSessionId ? cur : next
       })
     sync()
     window.addEventListener(MARKS_EVENT, sync)
@@ -132,7 +158,11 @@ export function useNextBlock<P>(todayKey: string): P | null {
   useEffect(() => {
     const sync = () => bump((n) => n + 1)
     window.addEventListener(MARKS_EVENT, sync)
-    return () => window.removeEventListener(MARKS_EVENT, sync)
+    window.addEventListener('storage', sync)
+    return () => {
+      window.removeEventListener(MARKS_EVENT, sync)
+      window.removeEventListener('storage', sync)
+    }
   }, [todayKey])
   return peekNextBlock<P>()
 }

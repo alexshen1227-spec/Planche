@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { defaultGym } from './state'
-import type { GymDraft } from './draft'
+import { loadDraft, type GymDraft } from './draft'
 
 const T = Date.UTC(2026, 10, 2, 17)
 const gym = defaultGym([], 'kg', T)
@@ -22,7 +22,30 @@ const draft: GymDraft = {
 
 afterEach(() => {
   cleanup()
+  localStorage.clear()
   dispatch.mockClear()
+})
+
+it('recovers the remaining rest, unanswered effort and typed notes when the phone reloads', async () => {
+  const { GymPlayer } = await import('../../components/gym/GymPlayer')
+  const start = { ...draft, startedAt: Date.now(), items: [{ ...draft.items[0], sets: [{ reps: 10, load: 25, done: false }] }] }
+  const mount = (d: GymDraft) => render(<GymPlayer draft={d} location={gym.locations[0]} onClose={() => undefined} />)
+  const first = mount(start)
+  fireEvent.click(screen.getByLabelText('Complete set 1'))
+  fireEvent.click(screen.getByText('Finish'))
+  fireEvent.change(screen.getByLabelText('Notes (optional)'), { target: { value: 'Seat at 4' } })
+  const savedDraft = loadDraft()!
+  expect(savedDraft.rest!.until).toBeGreaterThan(Date.now())
+  first.unmount()
+  mount(savedDraft)
+  expect(screen.getByRole('group', { name: 'How hard was that set?' })).toBeTruthy()
+  expect(screen.getByLabelText('15 seconds more')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '8' }))
+  fireEvent.click(screen.getByText('Finish'))
+  expect((screen.getByLabelText('Notes (optional)') as HTMLTextAreaElement).value).toBe('Seat at 4')
+  fireEvent.click(screen.getByText('Save session'))
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ op: expect.objectContaining({ session: expect.objectContaining({ notes: 'Seat at 4' }) }) }))
+  expect(loadDraft()).toBeNull()
 })
 
 describe('8. a pending weight question holds Finish and Save', () => {

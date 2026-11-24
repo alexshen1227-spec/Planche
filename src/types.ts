@@ -531,6 +531,8 @@ export interface WorkoutRequest {
    * before.
    */
   insideRest?: { hours: number; ruleHours: number }
+  /** The lifts that follow this particular gym-day opener, including after a draft is resumed. */
+  gymAfter?: import('./lib/plan/screens').GymPreset
 }
 
 export interface Workout {

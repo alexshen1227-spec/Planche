@@ -41,6 +41,7 @@ import { sfx, speak, buzz } from '../lib/audio'
 import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
 import { clearDraft, restoredSessionSetup, saveDraft, type SessionDraft } from '../lib/draft'
+import { rememberNextBlock } from '../lib/plan/nextBlock'
 import { useFormRecorder, type RecorderStatus } from '../lib/recorder'
 import { saveClip } from '../lib/clips'
 import { isFilmable, warmDetector } from '../lib/poseForm'
@@ -333,7 +334,7 @@ export function SessionPlayer({
   onViewSession,
 }: {
   workout: Workout
-  onExit: () => void
+  onExit: (savedSessionId?: string) => void
   /** Open the saved session in History. */
   onViewSession?: (sessionId: string) => void
   resumeFrom?: SessionDraft | null
@@ -1501,7 +1502,7 @@ export function SessionPlayer({
 
   const requestExit = useCallback(() => {
     if (phase === 'celebrate') {
-      onExit()
+      onExit(savedSessionIdRef.current ?? undefined)
       return
     }
     // A countdown never runs on behind a dialog — it would start a hold, and
@@ -1629,6 +1630,7 @@ export function SessionPlayer({
     setRungsOpened(rungs)
     savedSessionIdRef.current = session.id
     dispatch({ type: 'SAVE_SESSION', session })
+    if (workout.request?.gymAfter) rememberNextBlock(workout.request.gymAfter, savedAt, session.id)
     clearDraft()
     setEvents(ev)
     setSavedSession(session)
@@ -3004,7 +3006,7 @@ export function SessionPlayer({
           </div>
         ) : null}
         <Button size="lg"
-          onClick={onExit}
+          onClick={() => onExit(savedSession.id)}
           className="mt-6 w-full "
         >
           Done

@@ -39,8 +39,9 @@ import { walkMeasureDue } from '../lib/sessionTiming'
 import { kitStatusLine, skillChipLabel, streakText } from '../components/weekPlanCopy'
 import { coachTodayLabel } from '../lib/coachLabel'
 import { recordNote } from '../lib/sessionSummary'
-import { AFTER_OPENER_WARM_UP_MIN, atActivePlace, planToday } from '../lib/plan/planner'
-import { endTheDay, rememberNextBlock, useDayMarks, useNextBlock } from '../lib/plan/nextBlock'
+import { AFTER_OPENER_WARM_UP_MIN, atActivePlace } from '../lib/plan/planner'
+import { weekForChoice } from '../lib/plan/currentWeek'
+import { endTheDay, useDayMarks, useNextBlock } from '../lib/plan/nextBlock'
 import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
 import {
   calisthenicsPlaceLine,
@@ -229,7 +230,7 @@ export function Dashboard({
   // Today's choice ("Rather do … today?", "I have X min", "Train anyway") is one for every screen.
   const [choice, setChoice] = useTodayChoice(today)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const dayPlan = useMemo(() => planToday(whole, choiceOptions(choice)), [whole, today, clock, choice.kind, choice.minutes])
+  const dayPlan = weekForChoice(whole, choice).days[0].plan
   const mode = homeToday(dayPlan)
   const recommended: WorkoutRequest = useMemo(
     () =>
@@ -398,8 +399,10 @@ export function Dashboard({
     const opener = dayPlan.skill?.opener ? dayPlan.skill : undefined
     const doneToday = whole.sessions.some((s) => dayKey(s.startedAt) === today) || (whole.gym?.sessions ?? []).some((s) => dayKey(s.startedAt) === today)
     if (g && opener && !doneToday) {
-      rememberNextBlock<GymPreset>(gymPreset(g, { placeId: gymWhere?.place.id ?? g.placeId, warmUpMin: AFTER_OPENER_WARM_UP_MIN }))
-      startWorkout(calisthenicsRequest(whole, opener, choice.placeId))
+      startWorkout({
+        ...calisthenicsRequest(whole, opener, choice.placeId),
+        gymAfter: gymPreset(g, { placeId: gymWhere?.place.id ?? g.placeId, warmUpMin: AFTER_OPENER_WARM_UP_MIN }),
+      })
     } else go('train')
   }
   const recentAchievements = useMemo(

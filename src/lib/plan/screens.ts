@@ -87,9 +87,18 @@ export type DayStage = 'open' | 'lifts-next' | 'done'
 export function dayStage(state: AppState, plan: Pick<TodayPlan, 'kind'> & { skill?: { opener?: boolean } }, now = Date.now(), marks: DayMarks = readDayMarks(now)): DayStage {
   if (marks.ended) return 'done'
   const done = trainedToday(state, now)
+  if (marks.openerSessionId) {
+    const opener = state.sessions.find((s) => s.id === marks.openerSessionId)
+    if (opener) {
+      const lifted = state.gym?.sessions.some((s) => s.startedAt >= opener.startedAt && s.startedAt <= now)
+      // Once yesterday's lifts were saved, today's plan starts normally.
+      if (!lifted) return 'lifts-next'
+      if (done && done.gym) return 'done'
+    }
+  }
   if (!done) return 'open'
   if (done.gym) return 'done'
-  const owesLifts = marks.openerDay || (plan.kind === 'gym' && Boolean(plan.skill?.opener))
+  const owesLifts = (!marks.openerSessionId && marks.openerDay) || (plan.kind === 'gym' && Boolean(plan.skill?.opener))
   if (owesLifts && done.skill) return 'lifts-next'
   return plan.kind === 'gym' ? 'open' : 'done'
 }

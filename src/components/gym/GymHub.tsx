@@ -7,11 +7,12 @@ import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
 import { draftConflictLine, draftContents, EXTRA_SESSION_LINE, leftOutLine, openDraftFor, resumeLine } from '../../lib/gym/sessionLines'
 import { conservative, loadDraft, prefillReps, previousSets, type GymDraft } from '../../lib/gym/draft'
-import { AFTER_OPENER_WARM_UP_MIN, gymToday, MIN_GYM_MINUTES, planToday, skillFamily, skillRequest, soreJoints } from '../../lib/plan/planner'
+import { AFTER_OPENER_WARM_UP_MIN, gymToday, MIN_GYM_MINUTES, skillFamily, skillRequest, soreJoints } from '../../lib/plan/planner'
+import { weekForChoice } from '../../lib/plan/currentWeek'
 import { dayStage, gymPlaceLine, gymPreset, openerLine, resolveGymPlace, steerInput, type GymPreset } from '../../lib/plan/screens'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
-import { rememberNextBlock, useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
-import { choiceOptions, useTodayChoice } from '../../lib/plan/todayChoice'
+import { useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
+import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useToday } from '../../lib/useToday'
 import type { AppState, SkillId, WorkoutRequest } from '../../types'
 import { countUnit, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, lastPerformance } from '../../lib/gym/progression'
@@ -48,7 +49,7 @@ export function GymHub({
   const clock = usePlanClock()
   const [choice, setChoice] = useTodayChoice(todayKey)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const today = useMemo(() => planToday(state, choiceOptions(choice)), [state, todayKey, clock, choice.kind, choice.minutes])
+  const today = weekForChoice(state, choice).days[0].plan
   // The pain memory applies whoever picks the focus: it once applied only to a
   // session started from the Today card, so an elbow report still got
   // barbell presses from an Upper body pick here.
@@ -225,8 +226,7 @@ export function GymHub({
     // skill loads, named just now leaves it out.
     const famJoints: Joint[] = opener ? (skillFamily(opener.skills[0]) === 'push' ? ['wrists', 'elbows', 'shoulders'] : ['elbows', 'shoulders']) : []
     if (!p && !pending.empty && opener && startWorkout && kind !== 'pain' && !joints.some((j) => famJoints.includes(j))) {
-      rememberNextBlock<GymPreset>(
-        gymPreset(
+      const gymAfter = gymPreset(
           {
             focus: resolvedFocus ?? 'full',
             minutes: liftMinutes,
@@ -237,11 +237,10 @@ export function GymHub({
             spare: coach?.spare,
           },
           { placeId: location.id, warmUpMin: AFTER_OPENER_WARM_UP_MIN },
-        ),
       )
       setPending(null)
       // The place's kit goes with it: a lever with no bar at home trains on the gym's.
-      startWorkout(skillRequest(opener))
+      startWorkout({ ...skillRequest(opener), gymAfter })
       return
     }
     // A joint named now that the planned lifts did not steer round (the lifts after an opener were planned before

@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppState, Session, Workout } from '../types'
 import { initialState, StoreProvider } from '../lib/store'
 import { SessionPlayer } from './SessionPlayer'
+import { dayStage } from '../lib/plan/screens'
+import { peekNextBlock, readDayMarks } from '../lib/plan/nextBlock'
 
 /**
  * The session screen's exit and save policies, driven through the real
@@ -56,10 +58,10 @@ const click = (name: RegExp | string, root: HTMLElement = player()) =>
     fireEvent.click(within(root).getByRole('button', { name }))
   })
 
-function mount(onExit = vi.fn()) {
+function mount(onExit = vi.fn(), sessionWorkout = workout) {
   render(
     <StoreProvider>
-      <SessionPlayer workout={workout} onExit={onExit} />
+      <SessionPlayer workout={sessionWorkout} onExit={onExit} />
     </StoreProvider>,
   )
   return onExit
@@ -97,6 +99,34 @@ afterEach(() => {
 })
 
 describe('leaving the session never silently discards work', () => {
+  const lifts = { focus: 'pull' as const, minutes: 25, placeId: 'gym-a', avoidJoints: [], musclesOff: [], volumeFactor: 1 }
+  const opener: Workout = { ...workout, request: { source: 'auto', gymAfter: lifts } }
+
+  it('keeps the exact lifts after saving across midnight and reopening the app', () => {
+    clock = new Date(2026, 9, 5, 23, 55).getTime()
+    const onExit = mount(vi.fn(), opener)
+    logOneSet()
+    clock += 10 * 60_000
+    click(/Exit session/)
+    click(/Finish early/, screen.getByRole('dialog', { name: /Leave training session/ }))
+    click(/^Save session$/)
+    sessionStorage.clear()
+    const [session] = saved()
+    expect(peekNextBlock(clock)).toEqual(lifts)
+    expect(dayStage({ ...seed(), sessions: [session] }, { kind: 'rest' }, clock, readDayMarks(clock))).toBe('lifts-next')
+    click(/^Done$/)
+    expect(onExit).toHaveBeenCalledWith(session.id)
+  })
+
+  it('discarding an opener does not hand off any lifts', () => {
+    mount(vi.fn(), opener)
+    logOneSet()
+    click(/Exit session/)
+    click(/Discard 1 set/, screen.getByRole('dialog', { name: /Leave training session/ }))
+    expect(peekNextBlock(clock)).toBeNull()
+    expect(readDayMarks(clock).openerDay).toBe(false)
+  })
+
   it('the header exit on an unsaved summary asks instead of discarding', () => {
     const onExit = mount()
     logOneSet()

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { FOCUS_LABEL } from '../../lib/gym/builder'
 import type { ActivityKind } from '../../lib/gym/types'
-import { planWeekAhead, type WeekAhead, type WeekDayPlan } from '../../lib/plan/planner'
-import { choiceOptions, useTodayChoice } from '../../lib/plan/todayChoice'
+import type { WeekAhead, WeekDayPlan } from '../../lib/plan/planner'
+import { weekForChoice } from '../../lib/plan/currentWeek'
+import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useStore } from '../../lib/store'
 import { useToday } from '../../lib/useToday'
 import type { SkillId } from '../../types'
@@ -45,18 +46,9 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
   // Today's choice and the calendar day: the same today as every other screen, re-planned after midnight,
   // and on the coarse clock for the rules that run in hours.
   const todayKey = useToday()
-  const clock = usePlanClock()
+  usePlanClock()
   const [choice] = useTodayChoice(todayKey)
-  const computed = useMemo(
-    () => {
-      if (given) return null
-      const c = choiceOptions(choice)
-      return planWeekAhead(state, Date.now(), { ...(c.minutes !== undefined ? { todayMinutes: c.minutes } : {}), ...(c.kind ? { todayKind: c.kind } : {}) })
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, given, todayKey, clock, choice.kind, choice.minutes],
-  )
-  const week = given ?? computed!
+  const week = given ?? weekForChoice(state, choice)
   const [picked, setPicked] = useState(0)
   const bySkill = useMemo(() => skillWeekLines(week, state), [week, state])
   const selected = week.days[Math.min(picked, week.days.length - 1)]

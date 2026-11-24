@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-23',
+    title: 'Pick up where you left off',
+    area: 'training',
+    notes: [
+      'Save a skill opener and the planned lifts wait on Home and Train, even if you finish after midnight or reopen the app. Discarding the opener leaves the day open.',
+      'Your gym rest timer, unanswered set effort and session notes survive a reload.',
+      'Home, Train and the week preview share the same plan when you change training places.',
+    ],
+  },
+  {
+    date: '2026-11-23',
     title: 'Smaller fixes',
     area: 'app',
     notes: [

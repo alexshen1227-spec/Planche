@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { FOCUS_LABEL } from '../../lib/gym/builder'
-import { AFTER_OPENER_WARM_UP_MIN, gymPlaceOf, planWeekAhead, type ReadinessLevel } from '../../lib/plan/planner'
+import { AFTER_OPENER_WARM_UP_MIN, type ReadinessLevel } from '../../lib/plan/planner'
+import { weekForChoice } from '../../lib/plan/currentWeek'
 import {
   calisthenicsPlaceLine,
   calisthenicsRequest,
@@ -13,7 +14,7 @@ import {
   type GymPreset,
 } from '../../lib/plan/screens'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
-import { endTheDay, rememberNextBlock, useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
+import { endTheDay, useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useStore } from '../../lib/store'
 import { useToday } from '../../lib/useToday'
@@ -49,25 +50,14 @@ export function TodayPlanCard({
   // "I have X minutes" and "Rather do … today?" are today's choice on every
   // screen (Home, Train, the Gym tab), for the calendar day it was made on.
   const todayKey = useToday()
-  const clock = usePlanClock()
+  usePlanClock()
   const [choice, setChoice] = useTodayChoice(todayKey)
   const override = choice.minutes
-  const todayKind = choice.kind
   const [sheet, setSheet] = useState<'settings' | 'activity' | 'setup' | null>(null)
   // Today is one slot of the week plan; "I have X minutes" and a picked kind re-plan the rest of the week around it.
   // Where the athlete said they are today, when that is not where the plan has the day: the plan is made there.
   const pickedId = choice.placeId
-  const week = useMemo(() => {
-    const now = Date.now()
-    const planned = gymPlaceOf(state, now)
-    const picked = pickedId && pickedId !== planned?.id ? state.gym?.locations.find((l) => l.id === pickedId) : undefined
-    return planWeekAhead(state, now, {
-      ...(override !== undefined ? { todayMinutes: override } : {}),
-      ...(todayKind ? { todayKind } : {}),
-      ...(picked ? { todayPlace: picked } : {}),
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, override, todayKind, pickedId, todayKey, clock])
+  const week = weekForChoice(state, choice)
   const plan = week.days[0].plan
   const lastSheet = useRef(sheet)
   if (sheet) lastSheet.current = sheet
@@ -111,15 +101,13 @@ export function TodayPlanCard({
       if (liftsPreset) onStartGym(liftsPreset)
       else onSwitch?.('gym')
     } else if (plan.kind === 'calisthenics' && plan.skill) {
-      rememberNextBlock(null)
       // Built where the plan has it (a lever day at the gym with the bar), or where the athlete said they are.
       startWorkout(calisthenicsRequest(state, plan.skill, pickedId))
     } else if (plan.kind === 'gym' && preset) {
       if (opener && !skillDone && !gymDone) {
         // The lifts follow on their own once the opener is saved.
-        rememberNextBlock<GymPreset>({ ...preset, warmUpMin: AFTER_OPENER_WARM_UP_MIN })
         // The place's kit goes with it: a lever with no bar at home trains on the gym's.
-        startWorkout(calisthenicsRequest(state, opener, pickedId))
+        startWorkout({ ...calisthenicsRequest(state, opener, pickedId), gymAfter: { ...preset, warmUpMin: AFTER_OPENER_WARM_UP_MIN } })
       } else onStartGym(preset)
     }
   }

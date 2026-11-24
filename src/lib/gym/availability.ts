@@ -3,11 +3,16 @@ import { plyoGate } from './progression'
 import type { GymLocation, GymSession, Rating } from './types'
 
 /** The floor is everywhere. */
-const ALWAYS: LocationEquipment[] = ['floor']
+function equipmentAt(location: Pick<GymLocation, 'equipment'> | undefined): Set<LocationEquipment> {
+  return new Set<LocationEquipment>(['floor', ...(location?.equipment ?? [])])
+}
+
+function meetsNeeds(have: Set<LocationEquipment>, needs: LocationEquipment[][]): boolean {
+  return needs.every((group) => group.some((item) => have.has(item)))
+}
 
 export function hasEquipment(location: Pick<GymLocation, 'equipment'> | undefined, needs: LocationEquipment[][]): boolean {
-  const have = new Set<LocationEquipment>([...ALWAYS, ...(location?.equipment ?? [])])
-  return needs.every((group) => group.some((item) => have.has(item)))
+  return meetsNeeds(equipmentAt(location), needs)
 }
 
 export function canDoHere(exerciseId: string, location: GymLocation | undefined): boolean {
@@ -16,7 +21,8 @@ export function canDoHere(exerciseId: string, location: GymLocation | undefined)
 }
 
 export function availableAt(location: GymLocation | undefined): GymExercise[] {
-  return GYM_EXERCISES.filter((e) => hasEquipment(location, e.needs))
+  const have = equipmentAt(location)
+  return GYM_EXERCISES.filter((e) => meetsNeeds(have, e.needs))
 }
 
 const RATING_ORDER: Record<Rating | 'unrated', number> = { love: 0, fine: 1, unrated: 2, avoid: 3 }

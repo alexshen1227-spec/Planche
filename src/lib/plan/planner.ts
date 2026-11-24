@@ -1520,6 +1520,8 @@ function fullPartIn(s: Session, skill: SkillId): boolean {
  * kit only the gym has is planned at the gym (`gymCal`), and says so.
  */
 interface Places {
+  /** An explicit choice for today rules out moving today's skill session to a different gym. */
+  fixedToday?: boolean
   /** The view day `i`'s calisthenics session is built from. Today's leaves out today's own sessions (`asTodayBegan`). */
   cal: (i: number) => AppState
   /** The gym place's view (its kit and the athlete's portable kit), for a calisthenics day there. */
@@ -1737,7 +1739,8 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     return before + mine.length >= 3 && taken === 0
   }
   /** Whether the first priority can train on day `i` at all: its kit at home that day, or at the gym. */
-  const holdsFirst = (i: number) => trains(places.cal(i), first) || (places.gymCal ? trains(places.gymCal, first) : false)
+  const canMove = (i: number) => i !== 0 || !places.fixedToday
+  const holdsFirst = (i: number) => trains(places.cal(i), first) || (canMove(i) && places.gymCal ? trains(places.gymCal, first) : false)
   const reserveExposures = () => {
     if (lead === 'balance' || g.skills <= 0 || !stepIsHard(first)) return
     for (let i = 0; i < days.length; i++) {
@@ -1799,7 +1802,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     const pool = d.assigned ?? skills.filter((s) => skillFamily(s) === 'balance' || !blocked[skillFamily(s) as Straight])
     const allowed = pool.filter((s) => trains(view, s))
     // Skills free today that only the gym's kit holds: a calisthenics day for one of them is planned there.
-    const gymOnly = places.gymCal && !d.assigned ? pool.filter((s) => !trains(view, s) && trains(places.gymCal!, s)) : []
+    const gymOnly = canMove(i) && places.gymCal && !d.assigned ? pool.filter((s) => !trains(view, s) && trains(places.gymCal!, s)) : []
     const calOK = (allowed.length > 0 || gymOnly.length > 0) && d.minutes >= MIN_SKILL_MINUTES[1]
     // A place where a gym block builds; the gym goals decide whether the coach uses it, and an athlete's own pick
     // ("Rather do the gym", the Gym tab) needs only the place.
@@ -2074,7 +2077,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
           const sl = slots[i]
           const d = days[i]
           if (!sl || sl.kind !== 'calisthenics' || d.assigned || sl.painSafe || roomFor(d.minutes) < 2 || sl.skills.includes(skill)) continue
-          if (trains(places.cal(i), skill) || !sl.parts.length || !trains(gymView, sl.parts[0].skill)) continue
+          if (!canMove(i) || trains(places.cal(i), skill) || !sl.parts.length || !trains(gymView, sl.parts[0].skill)) continue
           if (skillFamily(skill) !== 'balance' && sl.blocked[skillFamily(skill) as Straight]) continue
           const list = trainedSkills(gymView).filter((s) => sl.skills.includes(s) || s === skill)
           const trial = lineupParts(gymView, d, list, d.minutes, { exposure: sl.exposure, since: sinceFull(i) })
@@ -2701,8 +2704,10 @@ export function planWeekAhead(
   // Calisthenics happens where the athlete is: today with the active place's kit beside the athlete's own, later
   // days at home. A front lever day with no bar at home was "waiting for kit" at a gym with one; planned a week
   // ahead from the gym, a lever day assumed the gym's bar on a day at home.
-  const here = active ? withRequestKit(base, { source: 'auto', kit: hereKit(base, active) }) : base
+  const todayKit = opts.todayPlace ? kitAt(base, opts.todayPlace) : active ? hereKit(base, active) : undefined
+  const here = todayKit ? withRequestKit(base, { source: 'auto', kit: todayKit }) : base
   const places: Places = {
+    fixedToday: Boolean(opts.todayPlace && opts.todayPlace.id !== place?.id),
     cal: (i) => (i === 0 ? here : base),
     ...(place && hasGymKit(place) ? { gymCal: withRequestKit(base, { source: 'auto', kit: kitAt(base, place) }), gym: place } : {}),
   }
@@ -3264,7 +3269,7 @@ export function planWeekAhead(
     const kinds = kindsIn(d.week)
     // The kit a calisthenics day is built with: today the athlete's and the active place's, a later day at home their
     // own — or the gym's, on a day planned there for kit only it has.
-    const calKit = slot.placeId && place ? kitAt(state, place) : d.index === 0 && active ? hereKit(state, active) : undefined
+    const calKit = slot.placeId && place ? kitAt(state, place) : d.index === 0 ? todayKit : undefined
     const at = placeAt(d.index)
     const plan = assembleDay(state, prefs, d, slot, focus, d.index === 0 ? weekSets : null, ctx.lastHit, skills, {
       ...(at ? { place: at } : {}),

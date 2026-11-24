@@ -1,7 +1,7 @@
 import { GymHub } from '../components/gym/GymHub'
-import { planToday } from '../lib/plan/planner'
+import { weekForChoice } from '../lib/plan/currentWeek'
 import { TodayPlanCard, type GymPreset } from '../components/plan/TodayPlanCard'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { AssistType, Section, Session, SetLog, SkillId, TrainingSurface, Workout, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
 import {
@@ -44,8 +44,8 @@ import { ASSIST_LABEL } from '../components/SetupRow'
 import { WeekPlanCard } from '../components/WeekPlanCard'
 import { skillDayKitNote } from '../components/weekPlanCopy'
 import type { TodayPlan } from '../lib/plan/planner'
-import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
-import { rememberNextBlock, useDayMarks, type DayMarks } from '../lib/plan/nextBlock'
+import { useTodayChoice } from '../lib/plan/todayChoice'
+import { useDayMarks, type DayMarks } from '../lib/plan/nextBlock'
 import { insideRestRule, placeKit } from '../lib/plan/planner'
 import { atPlanPlace, calisthenicsCardLabel, calisthenicsRequest, dayStage, homeToday, trainedToday, withRestFlag } from '../lib/plan/screens'
 import { usePlanClock } from '../lib/plan/usePlanClock'
@@ -126,7 +126,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   // Today's choice ("Rather do … today?", "I have X min") is one for every screen.
   const [choice] = useTodayChoice(todayKey)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const dayPlan = useMemo(() => planToday(state, choiceOptions(choice)), [state, todayKey, clock, choice.kind, choice.minutes])
+  const dayPlan = weekForChoice(state, choice).days[0].plan
   // A skill picked here still outranks the plan, but a pick inside the athlete's rest rule says so.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const restNotes = useMemo(() => new Map(activeSkills(state).map((skill) => [skill, insideRestRule(state, [skill], Date.now())])), [state, todayKey, clock])
@@ -773,16 +773,7 @@ const TRAIN_MODE_KEY = 'planchelab.trainMode'
  * coach's session exactly as before; the gym side builds from the place the
  * athlete is at. Which one shows is remembered per device.
  */
-export function Train({
-  startWorkout,
-  nextGym = null,
-  onNextGymUsed,
-}: {
-  startWorkout: (request: WorkoutRequest) => void
-  /** The gym block of a mixed day, handed over when its skill session closes. */
-  nextGym?: GymPreset | null
-  onNextGymUsed?: () => void
-}) {
+export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest) => void }) {
   const [mode, setMode] = useState<'skills' | 'gym'>(() => {
     try {
       return localStorage.getItem(TRAIN_MODE_KEY) === 'gym' ? 'gym' : 'skills'
@@ -791,13 +782,6 @@ export function Train({
     }
   })
   const [gymPreset, setGymPreset] = useState<GymPreset | null>(null)
-  // A gym block handed over when a mixed day's skill session closes waits on the Today card ("Start the
-  // lifts"): it once opened the pain check by itself on arrival, before anything was tapped.
-  useEffect(() => {
-    if (!nextGym) return
-    rememberNextBlock<GymPreset>(nextGym)
-    onNextGymUsed?.()
-  }, [nextGym, onNextGymUsed])
   const choose = (m: 'skills' | 'gym') => {
     setMode(m)
     try {

@@ -102,20 +102,22 @@ export function GymPlayer({
   useInertBackground()
   const [draft, setDraft] = useState<GymDraft>(initial)
   const [now, setNow] = useState(() => Date.now())
-  const [rest, setRest] = useState<{ until: number; total: number } | null>(null)
-  const [askRpe, setAskRpe] = useState<{ item: number; set: number } | null>(null)
+  const rest = draft.rest
+  const askRpe = draft.effortFor
   const [sheet, setSheet] = useState<{ kind: 'swap' | 'add' | 'menu'; item?: number } | null>(null)
   const [finishing, setFinishing] = useState(false)
-  const [notes, setNotes] = useState('')
   const [query, setQuery] = useState('')
-  const restEndedRef = useRef(false)
+  const restEndedRef = useRef((initial.rest?.until ?? Infinity) <= Date.now())
   const [unlocked, setUnlocked] = useState<GymBadge[] | null>(null)
   const lastSheet = useRef(sheet)
   if (sheet) lastSheet.current = sheet
   const sh = sheet ?? lastSheet.current
 
   // Every change is mirrored, so a closed tab or a crash resumes here.
-  useEffect(() => saveDraft(draft), [draft])
+  const closedRef = useRef(false)
+  useEffect(() => {
+    if (!closedRef.current) saveDraft(draft)
+  }, [draft])
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 500)
     return () => {
@@ -124,11 +126,13 @@ export function GymPlayer({
     }
   }, [])
   useEffect(() => {
-    if (!rest || now < rest.until || restEndedRef.current) return
+    if (!rest || now < rest.until || closedRef.current) return
+    if (!restEndedRef.current) {
+      buzz([120, 80, 120])
+      signalTone()
+    }
     restEndedRef.current = true
-    buzz([120, 80, 120])
-    signalTone()
-    setRest(null)
+    setDraft((d) => ({ ...d, rest: undefined }))
   }, [now, rest])
 
   const update = (fn: (d: GymDraft) => GymDraft) => setDraft((d) => fn(structuredClone(d)))
@@ -184,18 +188,25 @@ export function GymPlayer({
     }
     primeSignal()
     const wasDone = draft.items[i].sets[j].done
+    const at = Date.now()
+    const secs = item.restSec
     update((d) => {
       const s = d.items[i].sets[j]
-      s.done = !s.done
-      s.at = Date.now()
+      s.done = !wasDone
+      if (wasDone) {
+        delete s.at
+        delete s.rpe
+        if (d.effortFor?.item === i && d.effortFor.set === j) delete d.effortFor
+      } else {
+        s.at = at
+        d.effortFor = { item: i, set: j }
+        d.rest = { until: at + secs * 1000, total: secs }
+      }
       return d
     })
     if (wasDone) return
     buzz(25)
-    setAskRpe({ item: i, set: j })
-    const secs = draft.items[i].restSec
     restEndedRef.current = false
-    setRest({ until: Date.now() + secs * 1000, total: secs })
     // The completed button is replaced under the finger, which dropped focus to the page: it goes on to the next
     // set's input, or back to this set's own button when it was the last.
     requestAnimationFrame(() => {
@@ -223,12 +234,12 @@ export function GymPlayer({
       // Sets already finished stay logged under the movement they were done on.
       if (done.length) d.items.splice(i, 1, { ...old, sets: done }, fresh)
       else d.items[i] = fresh
+      delete d.effortFor
       return d
     })
     // The old movement's questions go with it.
     setNeedLoad(null)
     setDoubt(null)
-    setAskRpe(null)
     setSheet(null)
     pushToast(`Swapped to ${ex.name}.`, 'info')
   }
@@ -277,14 +288,15 @@ export function GymPlayer({
 
   const blocker = finishBlocker({ needLoad: !!needLoad, doubt: !!doubt })
   const save = () => {
+    if (closedRef.current) return
     // A question still waiting on an answer holds a set that is not saved: it is answered or closed first.
     if (blocker) {
       setFinishing(false)
       pushToast(blocker, 'info')
       return
     }
-    const built = sessionFromDraft(draft, Date.now())
-    const session = notes.trim() ? { ...built, notes: notes.trim().slice(0, 2000) } : built
+    const session = sessionFromDraft(draft, Date.now())
+    closedRef.current = true
     if (!session.exercises.length) {
       saveDraft(null)
       onClose()
@@ -309,6 +321,7 @@ export function GymPlayer({
   }
 
   const discard = () => {
+    closedRef.current = true
     saveDraft(null)
     onClose()
   }
@@ -477,16 +490,16 @@ export function GymPlayer({
                               onClick={() => {
                                 update((d) => {
                                   d.items[i].sets[j].rpe = r
+                                  delete d.effortFor
                                   return d
                                 })
-                                setAskRpe(null)
                               }}
                               className="h-11 min-w-11 rounded-lg border border-line bg-surface px-2 text-body font-semibold ds-press"
                             >
                               {r}
                             </button>
                           ))}
-                          <button onClick={() => setAskRpe(null)} className="h-11 px-2 text-caption text-ink3">
+                          <button onClick={() => setDraft((d) => ({ ...d, effortFor: undefined }))} className="h-11 px-2 text-caption text-ink3">
                             Skip
                           </button>
                         </div>
@@ -544,13 +557,13 @@ export function GymPlayer({
               {/* On a phone the buttons need the room; the hint shows where there is space. */}
               <p className="hidden text-caption text-ink3 sm:block">Start the next set when you are ready.</p>
             </div>
-            <Button variant="secondary" aria-label="15 seconds less" onClick={() => setRest((r) => (r ? { ...r, until: r.until - 15_000 } : r))}>
+            <Button variant="secondary" aria-label="15 seconds less" onClick={() => setDraft((d) => d.rest ? { ...d, rest: { ...d.rest, until: d.rest.until - 15_000 } } : d)}>
               −15
             </Button>
-            <Button variant="secondary" aria-label="15 seconds more" onClick={() => setRest((r) => (r ? { ...r, until: r.until + 15_000, total: r.total + 15 } : r))}>
+            <Button variant="secondary" aria-label="15 seconds more" onClick={() => setDraft((d) => d.rest ? { ...d, rest: { until: d.rest.until + 15_000, total: d.rest.total + 15 } } : d)}>
               +15
             </Button>
-            <Button variant="ghost" className="min-w-12 shrink-0" onClick={() => setRest(null)}>
+            <Button variant="ghost" className="min-w-12 shrink-0" onClick={() => setDraft((d) => ({ ...d, rest: undefined }))}>
               Skip
             </Button>
           </div>
@@ -805,8 +818,11 @@ export function GymPlayer({
         <label className="mt-4 block">
           <span className="text-footnote font-medium text-ink2">Notes (optional)</span>
           <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            value={draft.notes ?? ''}
+            onChange={(e) => {
+              const notes = e.target.value
+              setDraft((d) => ({ ...d, notes }))
+            }}
             rows={2}
             maxLength={2000}
             placeholder="How it felt, a machine setting, anything to remember"

@@ -1,5 +1,5 @@
 import { Button } from './components/ds'
-import { lazy, startTransition, useCallback, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, startTransition, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import type { CheckIn, Tab, Workout, WorkoutRequest } from './types'
 import { quarantinedData, useStore } from './lib/store'
@@ -19,8 +19,7 @@ import { Path } from './views/Path'
 import { SessionPlayer, type CheckInContext } from './views/SessionPlayer'
 import { APP_NAME } from './data/app'
 import { setAthleteLockout } from './lib/lockout'
-import { peekNextBlock, rememberNextBlock } from './lib/plan/nextBlock'
-import type { GymPreset } from './components/plan/TodayPlanCard'
+import { legacyOpenerLifts } from './lib/plan/nextBlock'
 
 /**
  * A bench for the camera form judge, reached at #devlab.
@@ -367,9 +366,7 @@ function checkInContextFor(plan: CoachPlan): CheckInContext {
 }
 
 export default function App() {
-  const { state, dispatch, boot, getState } = useStore()
-  const [nextGym, setNextGym] = useState<GymPreset | null>(null)
-  const clearNextGym = useCallback(() => setNextGym(null), [])
+  const { state, dispatch, boot } = useStore()
   // The judge measures straight-arm bends from this athlete's own lockout.
   useEffect(() => setAthleteLockout(state.settings.lockoutDeg), [state.settings.lockoutDeg])
   const [tab, setTabNow] = useState<Tab>('home')
@@ -388,7 +385,12 @@ export default function App() {
   // An interrupted session (phone slept, tab discarded) is picked back up
   // automatically on the next load instead of being silently lost.
   const [resumeDraft] = useState(() => loadDraft())
-  const [activeWorkout, setActiveWorkout] = useState<Workout | null>(resumeDraft?.workout ?? null)
+  const [activeWorkout, setActiveWorkout] = useState<Workout | null>(() => {
+    const workout = resumeDraft?.workout
+    if (!workout) return null
+    const older = !workout.request?.gymAfter && legacyOpenerLifts()
+    return older ? { ...workout, request: { ...requestFor(workout), gymAfter: older } } : workout
+  })
   const [resuming, setResuming] = useState(resumeDraft !== null)
 
   const [askCheckIn, setAskCheckIn] = useState(false)
@@ -568,7 +570,7 @@ export default function App() {
               }}
             />
           ) : null}
-          {tab === 'train' ? <Train startWorkout={startWorkout} nextGym={nextGym} onNextGymUsed={clearNextGym} /> : null}
+          {tab === 'train' ? <Train startWorkout={startWorkout} /> : null}
           {tab === 'path' ? <Path startWorkout={startWorkout} /> : null}
           {tab === 'library' ? <Library /> : null}
           {tab === 'stats' ? <Stats focusSessionId={focusSessionId} onFocused={() => setFocusSessionId(null)} /> : null}
@@ -629,21 +631,11 @@ export default function App() {
             // stays a 15-minute version after the answer.
             setActiveWorkout(finalizeWorkout(state, requestFor(activeWorkout), c))
           }}
-          onExit={() => {
+          onExit={(savedSessionId) => {
             setResuming(false)
             setAskCheckIn(false)
             setActiveWorkout(null)
-            // A mixed day continues: a skill session saved today with a gym
-            // block waiting behind it opens the gym side (Train reads it).
-            const startOfToday = new Date()
-            startOfToday.setHours(0, 0, 0, 0)
-            const savedToday = getState().sessions.some((s) => s.startedAt >= startOfToday.getTime())
-            const next = savedToday ? peekNextBlock<GymPreset>() : null
-            rememberNextBlock(null)
-            if (next) {
-              setNextGym(next)
-              setTab('train')
-            }
+            if (savedSessionId && activeWorkout.request?.gymAfter) setTab('train')
           }}
           onViewSession={(sessionId) => {
             setResuming(false)

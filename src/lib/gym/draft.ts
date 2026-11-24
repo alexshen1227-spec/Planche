@@ -57,6 +57,10 @@ export interface GymDraft {
   locationId: string
   name: string
   items: DraftItem[]
+  /** Absolute end time so the timer keeps time while the phone sleeps. */
+  rest?: { until: number; total: number }
+  effortFor?: { item: number; set: number }
+  notes?: string
   /** What today's plan kept out — swaps and additions honour it too. */
   avoidJoints?: Joint[]
   musclesOff?: Muscle[]
@@ -152,6 +156,7 @@ export function sessionFromDraft(draft: GymDraft, endedAt: number): GymSession {
     startedAt: draft.startedAt,
     endedAt,
     name: draft.name,
+    ...(draft.notes?.trim() ? { notes: draft.notes.trim().slice(0, 2000) } : {}),
     exercises,
     completion: skipped ? 'partial' : 'full',
   }

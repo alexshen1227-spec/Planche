@@ -66,7 +66,7 @@ const DRAFT_KEY = 'planchelab.draft'
  * the gym session in progress, and the note of what follows today's opener.
  * Each belongs to one dataset, so a reset or an import takes them with it.
  */
-const UNFINISHED_WORK_KEYS = [DRAFT_KEY, 'planchelab.gymDraft', 'planchelab.nextBlock']
+const UNFINISHED_WORK_KEYS = [DRAFT_KEY, 'planchelab.gymDraft', 'planchelab.nextBlock', 'planchelab.dayMarks', 'planchelab.todayChoice']
 /** How long a burst of changes waits before the mirror is written. */
 const MIRROR_DEBOUNCE_MS = 1500
 /** A birth year past this is not a year; before it, the stored year is kept whatever the clock says. */
@@ -1231,6 +1231,11 @@ export function forgetUnfinishedWork(): { failed: string[] } {
     } catch {
       failed.push(key)
     }
+  }
+  try {
+    globalThis.sessionStorage?.removeItem('planchelab.nextBlock')
+  } catch {
+    failed.push('tab’s next gym block')
   }
   return { failed }
 }
