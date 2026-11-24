@@ -33,6 +33,7 @@ export type Muscle =
   | 'hamstrings'
   | 'adductors'
   | 'calves'
+  | 'tibialis-anterior'
 
 export type MuscleGroup = 'chest' | 'shoulders' | 'arms' | 'back' | 'core' | 'legs'
 
@@ -58,6 +59,7 @@ export const MUSCLES: { id: Muscle; label: string; group: MuscleGroup; sub?: Mus
   { id: 'hamstrings', label: 'Hamstrings', group: 'legs' },
   { id: 'adductors', label: 'Adductors', group: 'legs' },
   { id: 'calves', label: 'Calves', group: 'legs' },
+  { id: 'tibialis-anterior', label: 'Front of shins', group: 'legs' },
 ]
 
 export const MUSCLE_BY_ID = Object.fromEntries(MUSCLES.map((m) => [m.id, m])) as Record<Muscle, (typeof MUSCLES)[number]>
@@ -93,6 +95,7 @@ export type Pattern =
   | 'knee-extension'
   | 'knee-flexion'
   | 'calf'
+  | 'dorsiflexion'
   | 'core-flexion'
   | 'core-anti-rotation'
   | 'carry'
@@ -122,6 +125,7 @@ export const PATTERN_LABEL: Record<Pattern, string> = {
   'knee-extension': 'Knee extension',
   'knee-flexion': 'Knee flexion',
   calf: 'Calf',
+  dorsiflexion: 'Ankle dorsiflexion',
   'core-flexion': 'Core',
   'core-anti-rotation': 'Anti-rotation',
   carry: 'Carry',

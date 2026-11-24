@@ -35,11 +35,11 @@ export function skillHoldSecOf(sets: readonly SetLog[]): number {
 }
 
 export function workingSkillSets(session: Pick<Session, 'sets'>): number {
-  return session.sets.filter(isWorkingSkillSet).length
+  return session.sets.filter((set) => isWorkingSkillSet(set) && set.value > 0).length
 }
 
 export function workingGymSets(session: Pick<GymSession, 'exercises'>): number {
-  return session.exercises.reduce((n, exercise) => n + exercise.sets.filter((set) => !set.warmup).length, 0)
+  return session.exercises.reduce((n, exercise) => n + exercise.sets.filter((set) => !set.warmup && set.reps > 0).length, 0)
 }
 
 export interface ProgressTotals {

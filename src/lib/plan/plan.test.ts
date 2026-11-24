@@ -162,6 +162,17 @@ describe('the day plan', () => {
 })
 
 describe('weekly volume', () => {
+  it('counts toe raises for the front of the shin and heel raises for the calf', () => {
+    const sources = emptySetSources()
+    const log = gymSession(NOW, 'tibialis-raise', 3)
+    const shin = setsPerMuscle([], [log], NOW, NOW + DAY, sources)
+    expect(shin['tibialis-anterior']).toBe(3)
+    expect(shin.calves ?? 0).toBe(0)
+    expect(sources.direct['tibialis-anterior']).toBe(3)
+    const heel = setsPerMuscle([], [gymSession(NOW, 'floor-calf-raise', 3)], NOW, NOW + DAY)
+    expect(heel.calves).toBe(3)
+    expect(heel['tibialis-anterior'] ?? 0).toBe(0)
+  })
   it('attributes sets to the week they were completed, including a workout resumed after midnight', () => {
     const monday = weekStart(NOW)
     const gym = gymSession(monday - HOUR, 'incline-db-press', 1)

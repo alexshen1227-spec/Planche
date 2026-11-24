@@ -21,6 +21,9 @@ import { WeekVolume } from '../../components/plan/WeekVolume'
 import { PlanSettings } from '../../components/plan/PlanSettings'
 import { WeekPreview } from '../../components/plan/WeekPreview'
 import { makeAthlete } from '../plan/wholeAthleteLoop'
+import { dayKey, addDays } from '../time'
+import { skillGoalPace } from '../plan/planner'
+import type { Session, SetLog } from '../../types'
 
 afterEach(() => {
   cleanup()
@@ -319,6 +322,41 @@ it('honors wrist pain when an athlete skips the remaining skill interview and fi
   click(/start training/i)
   const saved = JSON.parse(localStorage.getItem('planchelab.v1')!)
   expect(saved.symptoms).toEqual(expect.arrayContaining([expect.objectContaining({ at: report!.at, source: 'onboarding', joints: 'pain', regions: ['wrist'] })]))
+})
+
+it('shows both kinds of workout on their actual days in the consistency chart', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const athlete = makeAthlete({ skills: ['flag'], steps: { flag: 'flag-tuck' } })
+  const now = Date.now() - 60_000
+  const earlier = addDays(now, -4)
+  athlete.sessions = [{ id: 'skill', startedAt: earlier, endedAt: earlier, stepId: 'flag-tuck', workoutKind: 'auto', workoutName: 'Flag', sets: [
+    { exerciseId: 'tuck-flag', section: 'main', kind: 'hold', side: 'left', at: earlier, target: 5, value: 6 },
+  ] }]
+  athlete.gym!.sessions = [earlier, now].map((at, i) => ({ id: `gym-${i}`, startedAt: at, endedAt: at, name: 'Push day', locationId: 'home',
+    exercises: [{ exerciseId: 'push-up', sets: [{ reps: 8, at, warmup: true }, { reps: 10, at }] }] }))
+  localStorage.setItem('planchelab.v1', JSON.stringify(athlete))
+  render(<StoreProvider><Stats /></StoreProvider>)
+  expect(screen.getByRole('img', { name: /Consistency: 2 training days/ })).toBeTruthy()
+  const date = screen.getByLabelText('Inspect a date')
+  fireEvent.change(date, { target: { value: dayKey(earlier) } })
+  expect(screen.getByText(/1 skill session and 1 gym session · 2 working sets/)).toBeTruthy()
+  fireEvent.change(date, { target: { value: dayKey(now) } })
+  expect(screen.getByText(/1 gym session · 1 working set/)).toBeTruthy()
+})
+
+it('calls the full flag practiced after placement and verified only after both sides meet its hold standard', () => {
+  const athlete = makeAthlete({ skills: ['flag'], steps: { flag: 'flag-full' } })
+  const now = Date.now()
+  const goal = { id: 'full', skill: 'flag' as const, stepId: 'flag-full' as const, by: dayKey(addDays(now, 7)) }
+  expect(skillGoalPace(athlete, goal, now)).toMatchObject({ status: 'practicing', text: expect.stringMatching(/0s of 5s/) })
+  const set: SetLog = { exerciseId: 'human-flag', section: 'main', kind: 'hold', side: 'left', value: 6, target: 5, at: now - 200,
+    form: { rating: 'clean', confirmed: true, armsConfirmed: true, flightConfirmed: true, variantConfirmed: true,
+      auto: { issues: [], confidence: 0.9, cleanSeconds: 6, coarse: ['elbows', 'leg position'] } } }
+  const session: Session = { id: 'flag', startedAt: now - 300, endedAt: now - 10, stepId: 'flag-full', workoutKind: 'auto', workoutName: 'Flag', sets: [set] }
+  expect(skillGoalPace({ ...athlete, sessions: [session] }, goal, now).status).toBe('practicing')
+  const both = { ...session, sets: [set, { ...set, side: 'right' as const, at: now - 100 }] }
+  expect(skillGoalPace({ ...athlete, sessions: [both] }, goal, now)).toMatchObject({ status: 'reached', text: expect.stringMatching(/^Verified Human Flag/) })
 })
 
 it('shows an opted-in gym-only athlete their recorded bodyweight and comparable bodyweight sets on Progress', () => {

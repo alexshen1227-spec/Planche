@@ -3,7 +3,7 @@ import type { AppState, SkillId, StepId } from '../types'
 import { roadOf, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { skillForStep } from '../data/skills'
-import { MEASUREMENT_FRESH_DAYS, qualifyingProgress, qualifyingSessionValue, qualifyingValueIsFloor } from './progression'
+import { barMet, MEASUREMENT_FRESH_DAYS, qualifyingProgress, qualifyingSessionValue, qualifyingValueIsFloor } from './progression'
 import { median, NOISY_SPREAD, readSignals, spreadAroundTrend, type Signals } from './signals'
 
 /**
@@ -483,9 +483,8 @@ export function goalOutlook(state: AppState, now = Date.now()): GoalOutlook {
       goalStepId: goal.id,
       stepsRemaining: 0,
       estimate: null,
-      note: `${goal.order === current.order ? 'You are training at' : 'You are past'} ${
-        goal.name
-      }, your chosen goal. Pick a longer-lever goal whenever you want the road to keep going.`,
+      note: barMet(state, goal.id) ? `Your logged holds meet the ${goal.unlockSec}s standard for ${goal.name}.`
+        : `${goal.order === current.order ? 'You are practicing' : 'Your training has moved past'} ${goal.name}. A verified ${goal.unlockSec}s hold completes this goal.`,
     }
   }
 

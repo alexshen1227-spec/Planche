@@ -8,6 +8,7 @@ import { missingKit, skillOfExercise, SKILLS } from '../../data/skills'
 import { finalizeWorkout, withRequestKit } from '../../data/workouts'
 import type { AppState, BodyRegion, EquipmentId, LineupRole, Session, SkillId, WorkoutRequest } from '../../types'
 import { goalOutlook } from '../forecast'
+import { barMet, daysAtBar, qualifyingProgress } from '../progression'
 import { daysSinceFullPart, todaysLineup } from '../lineup'
 import { fullParts, shortDoses } from '../sessionRoom'
 import { readinessTimeline } from '../signals'
@@ -53,7 +54,7 @@ const WEEK = 7 * DAY
 export const FOCUS_MUSCLES: Record<GymFocus, Muscle[]> = {
   push: ['chest', 'chest-upper', 'front-delts', 'side-delts', 'triceps', 'triceps-long'],
   pull: ['lats', 'upper-back', 'rear-delts', 'biceps', 'forearms'],
-  lower: ['quads', 'hamstrings', 'glutes', 'calves', 'adductors'],
+  lower: ['quads', 'hamstrings', 'glutes', 'calves', 'adductors', 'tibialis-anterior'],
   upper: ['chest', 'chest-upper', 'front-delts', 'side-delts', 'rear-delts', 'triceps', 'lats', 'upper-back', 'biceps'],
   full: ['quads', 'glutes', 'hamstrings', 'chest', 'front-delts', 'lats', 'upper-back', 'triceps', 'biceps'],
   athletic: ['quads', 'glutes', 'hamstrings', 'calves'],
@@ -68,7 +69,7 @@ export const FOCUS_MUSCLES: Record<GymFocus, Muscle[]> = {
 const FOCUS_SHARE: Record<GymFocus, Partial<Record<Muscle, number>>> = {
   push: { chest: 0.5, 'chest-upper': 0.2, 'front-delts': 0.45, 'side-delts': 0.2, triceps: 0.45, 'triceps-long': 0.15 },
   pull: { lats: 0.5, 'upper-back': 0.45, 'rear-delts': 0.2, biceps: 0.45, forearms: 0.15, abs: 0.1 },
-  lower: { quads: 0.45, glutes: 0.45, hamstrings: 0.35, calves: 0.15, adductors: 0.15, abs: 0.1 },
+  lower: { quads: 0.45, glutes: 0.45, hamstrings: 0.35, calves: 0.15, adductors: 0.15, abs: 0.1, 'tibialis-anterior': 0.05 },
   upper: { chest: 0.3, 'chest-upper': 0.12, 'front-delts': 0.25, 'side-delts': 0.12, 'rear-delts': 0.12, triceps: 0.25, lats: 0.3, 'upper-back': 0.3, biceps: 0.2 },
   full: { quads: 0.22, glutes: 0.22, hamstrings: 0.15, chest: 0.18, 'front-delts': 0.12, 'side-delts': 0.06, lats: 0.18, 'upper-back': 0.18, triceps: 0.1, biceps: 0.1, abs: 0.06 },
   athletic: { quads: 0.3, glutes: 0.3, hamstrings: 0.25, calves: 0.25, abs: 0.05 },
@@ -78,7 +79,7 @@ const FOCI = Object.keys(FOCUS_SHARE) as GymFocus[]
 const PLANNABLE = new Set<Muscle>(FOCI.flatMap((f) => Object.keys(FOCUS_SHARE[f]) as Muscle[]))
 export const PLANNABLE_MUSCLES: ReadonlySet<Muscle> = PLANNABLE
 
-const LEG_MUSCLES: Muscle[] = ['quads', 'hamstrings', 'glutes', 'calves', 'adductors']
+const LEG_MUSCLES: Muscle[] = ['quads', 'hamstrings', 'glutes', 'calves', 'adductors', 'tibialis-anterior']
 /** Days of absence that count toward "left longest", and how much they weigh. */
 const STALE_CAP_DAYS = 14
 const STALE_WEIGHT = 0.35
@@ -4466,7 +4467,7 @@ export function planToday(state: AppState, opts: { now?: number; minutes?: numbe
   return planWeekAhead(state, opts.now ?? Date.now(), { todayMinutes: opts.minutes, todayPlace: opts.location, ...(opts.kind ? { todayKind: opts.kind } : {}) }).days[0].plan
 }
 
-export type GoalPace = { status: 'reached' | 'on-pace' | 'possible' | 'behind' | 'unknown'; text: string }
+export type GoalPace = { status: 'reached' | 'practicing' | 'past' | 'on-pace' | 'possible' | 'behind' | 'unknown'; text: string }
 
 /** Whether a dated skill goal is on pace — or that the app cannot tell yet. */
 export function skillGoalPace(state: AppState, goal: SkillGoal, now = Date.now()): GoalPace {
@@ -4475,22 +4476,25 @@ export function skillGoalPace(state: AppState, goal: SkillGoal, now = Date.now()
   const view = skillView(state, goal.skill)
   const current = STEP_BY_ID[view.stepId]
   if (!current) return { status: 'unknown', text: 'Not started on this skill yet.' }
-  // A goal is a step to reach, as Home's outlook reads it: training at it is
-  // reaching it. At the goal step this once forecast that step's own unlock
-  // bar — "Behind: about 7–7 weeks" — while Home said "You are training at
-  // Advanced Tuck, your chosen goal".
-  if (current.id === target.id) return { status: 'reached', text: `Reached: you are training at ${target.name}.` }
-  if (view.unlocked.includes(goal.stepId) && current.order > target.order) return { status: 'reached', text: `Reached ${target.name}.` }
+  const evidence = { sessions: view.sessions.filter((s) => s.startedAt <= now) }
+  if (barMet(evidence, target.id)) return { status: 'reached', text: `Verified ${target.name}. Your logged holds meet the ${target.unlockSec}s standard.` }
+  if (current.order >= target.order) {
+    const best = qualifyingProgress(evidence, target.id).value
+    const days = target.repeatDays ?? 1
+    const repeat = days > 1 ? ` ${daysAtBar(evidence, target.id)} of ${days} required practice days at the standard.` : ''
+    const when = current.id === target.id ? 'Practicing' : 'Training past'
+    const expired = goal.by < dayKey(now) ? ' The target date has passed.' : ''
+    return { status: current.id === target.id ? 'practicing' : 'past',
+      text: `${when} ${target.name}. Verified hold ${Math.round(best * 10) / 10}s of ${target.unlockSec}s.${repeat}${expired}` }
+  }
   const [y, m, d] = goal.by.split('-').map(Number)
   const weeksLeft = (new Date(y, m - 1, d, 23, 59).getTime() - now) / WEEK
   if (weeksLeft <= 0) return { status: 'behind', text: `The date has passed — set a new one.` }
   let range: { low: number; high: number | null } | null = null
   let why = ''
-  if (current.order < target.order) {
-    const o = goalOutlook({ ...view, profile: { ...view.profile, goalStepId: target.id } }, now)
-    if (o.estimate) range = { low: o.estimate.lowWeeks, high: o.estimate.highWeeks }
-    else why = o.note
-  }
+  const o = goalOutlook({ ...view, profile: { ...view.profile, goalStepId: target.id } }, now)
+  if (o.estimate) range = { low: o.estimate.lowWeeks, high: o.estimate.highWeeks }
+  else why = o.note
   // Whole weeks left, rounded down in every sentence: 5.5 once read "6 weeks"
   // when the pace was unknown and "5 weeks left" when it was not.
   const whole = Math.floor(weeksLeft)
@@ -4506,9 +4510,9 @@ export function skillGoalPace(state: AppState, goal: SkillGoal, now = Date.now()
       : range.low === range.high
         ? `${range.low} ${range.low === 1 ? 'week' : 'weeks'}`
         : `${range.low}–${range.high} weeks`
-  if (range.high !== null && range.high <= weeksLeft) return { status: 'on-pace', text: `On pace: about ${span} at your current rate, ${remaining}.` }
-  if (range.low > weeksLeft) return { status: 'behind', text: `Behind: about ${span} at your current rate, ${remaining}.` }
-  return { status: 'possible', text: `Possible: ${span} at your current rate, ${remaining}.` }
+  if (range.high !== null && range.high <= weeksLeft) return { status: 'on-pace', text: `On pace to start ${target.name} in about ${span}, with ${remaining}. Mastery requires a verified hold.` }
+  if (range.low > weeksLeft) return { status: 'behind', text: `About ${span} to start ${target.name} at your current rate, with ${remaining}.` }
+  return { status: 'possible', text: `You could start ${target.name} in ${span} at your current rate, with ${remaining}.` }
 }
 
 /**

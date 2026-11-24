@@ -2,8 +2,8 @@ import type { AppState, EquipmentId, SkillId, StepId, Workout, WorkoutRequest } 
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import type { GymFocus } from '../gym/builder'
 import type { GymLocation } from '../gym/types'
-import { STEP_BY_ID, stepAfter } from '../../data/progressions'
-import { qualifyingProgress } from '../progression'
+import { stepAfter } from '../../data/progressions'
+import { barMet } from '../progression'
 import { addDays, weekStart } from '../time'
 import { goalDaysInWeekOf } from '../stats'
 import { countsSkillDay, latestSkillPartial } from '../skillSession'
@@ -222,9 +222,7 @@ export const GOAL_HERE_TEXT = 'Your goal is the step you are on: hold it clean t
 /** Whether a skill view is past a step: the step after it open, or — on the last step — its bar verified. */
 export function stepPassed(view: AppState, stepId: StepId): boolean {
   const next = stepAfter(stepId)
-  if (next) return view.unlocked.includes(next.id)
-  const step = STEP_BY_ID[stepId]
-  return Boolean(step) && qualifyingProgress(view, stepId).value >= step.unlockSec
+  return Boolean(next && view.unlocked.includes(next.id)) || barMet(view, stepId)
 }
 
 /**

@@ -53,7 +53,7 @@ import { WeeklySummary } from '../components/plan/WeeklySummary'
 import { pressMilestoneProgress } from '../components/PressMilestone'
 import { gymBadges } from '../lib/plan/weekly'
 import { pushToast } from '../lib/toast'
-import type { Exercise, SkillId, TrainingSurface } from '../types'
+import type { AppState, Exercise, SkillId, TrainingSurface } from '../types'
 import { surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 import { ASSIST_LABEL } from '../components/SetupRow'
 import { PRESS_LADDER, pressingChoiceFor, twinOf } from '../data/pressing'
@@ -420,6 +420,14 @@ function ProgressNavigation({ sections }: { sections: [string, string][] }) {
   )
 }
 
+function Consistency({ state }: { state: AppState }) {
+  return <section className="rounded-card border border-line bg-surface p-4">
+    <h2 className="font-display text-title3 font-semibold text-ink">Consistency</h2>
+    <p className="mb-4 text-footnote text-ink2">Skill and gym training over the last 16 weeks. Darker squares show days with more working sets.</p>
+    <TrainingHeatmap sessions={state.sessions} gymSessions={state.gym?.sessions} />
+  </section>
+}
+
 export function Stats(props: StatsProps = {}) {
   const { state } = useStore()
   if (state.gym?.prefs?.goals.skills === 0 && !state.sessions.length) {
@@ -428,6 +436,7 @@ export function Stats(props: StatsProps = {}) {
         <h1 className="font-display text-title1 font-bold text-ink">Progress</h1>
         <ProgressNavigation sections={[[ 'history', 'History' ], [ 'this-week', 'This week' ], [ 'volume', 'Muscles' ]]} />
         <div id="this-week" className="scroll-mt-5"><WeeklySummary /></div>
+        <Consistency state={state} />
         <div id="history" className="scroll-mt-5"><GymHistory /></div>
         <BodyweightHistory />
         <div id="volume" className="scroll-mt-5"><WeekVolume /></div>
@@ -447,11 +456,6 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
   const state = useMemo(() => skillView(whole, viewSkill), [whole, viewSkill])
   // The selected skill's own rep line (the handstand push-up, the 90° push-up), or nothing: the planche has the pressing ladder.
   const repLadder = useMemo(() => (viewSkill === 'planche' ? null : ladderStatus(whole, viewSkill)), [whole, viewSkill])
-  const heatmapLabel = useMemo(() => {
-    const since = Date.now() - 16 * 7 * 86_400_000
-    const days = new Set(state.sessions.filter((x) => x.startedAt >= since).map((x) => new Date(x.startedAt).toDateString()))
-    return `Consistency: ${days.size} training ${days.size === 1 ? 'day' : 'days'} in the last 16 weeks, darker squares mean more hold time`
-  }, [state.sessions])
   const [chartEx, setChartEx] = useState(() => STEP_BY_ID[state.stepId].keyExerciseId)
   // Changing skill moves the chart to that skill's key hold.
   useEffect(() => {
@@ -963,13 +967,7 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
       </div>
 
       {/* Consistency heatmap */}
-      <div className="mt-6 rounded-card border border-line bg-surface p-4">
-        <h3 className="font-display text-title3 font-semibold text-ink">Consistency</h3>
-        <div className="text-footnote text-ink2">Every training day of the last 16 weeks — darker means more hold time</div>
-        <div className="mt-4" role="img" aria-label={heatmapLabel}>
-          <TrainingHeatmap sessions={state.sessions} />
-        </div>
-      </div>
+      <Consistency state={whole} />
 
       {/* The pressing ladder: the push-up versions as a road of their own */}
       {viewSkill === 'planche' ? <PressingLadder /> : null}
@@ -1199,7 +1197,7 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
                       {s.rpe ? ` · RPE ${s.rpe}` : ''}
                       {s.completion === 'partial' ? (
                         <span className="ml-1.5 rounded-full border border-line bg-raised px-2 py-0.5 text-caption font-medium text-ink3">
-                          finished early{s.plannedRounds ? ` · ${s.sets.length}/${s.plannedRounds}` : ''}
+                          {s.skippedRounds ? 'partial workout' : 'finished early'}{s.plannedRounds ? ` · ${s.sets.length}/${s.plannedRounds}` : ''}{s.skippedRounds ? ` · ${s.skippedRounds} skipped` : ''}
                         </span>
                       ) : null}
                     </div>

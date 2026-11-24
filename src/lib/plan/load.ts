@@ -230,6 +230,8 @@ export type VolumeStatus = 'off' | 'under' | 'on' | 'over'
  */
 export function volumeTarget(muscle: Muscle, prefs: Pick<TrainingPrefs, 'goals' | 'musclesOff' | 'musclesPriority'>): [number, number] {
   if (prefs.musclesOff.includes(muscle)) return [0, 0]
+  // An optional accessory has no minimum allocation unless the athlete selects it.
+  if (muscle === 'tibialis-anterior') return prefs.musclesPriority.includes(muscle) ? [4, 8] : [0, 8]
   const p = prefs.goals.physique
   let band: [number, number] = p >= 4 ? [12, 20] : p >= 3 ? [10, 16] : p >= 1 ? [8, 12] : [4, 8]
   const sub = MUSCLES.find((m) => m.id === muscle)?.sub

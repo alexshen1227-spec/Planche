@@ -4,6 +4,9 @@ import { addDays, dayKey, fmtDuration, fmtHold, fmtShortDay, weekStart } from '.
 import { useToday } from '../lib/useToday'
 import type { WeekVolume } from '../lib/stats'
 import type { Session } from '../types'
+import type { GymSession } from '../lib/gym/types'
+import { countsSkillDay } from '../lib/skillSession'
+import { workingSkillSets, workingGymSets, skillHoldSecOf } from '../lib/progressTotals'
 import { Icon } from './Icon'
 
 function useWidth<T extends HTMLElement>() {
@@ -248,27 +251,43 @@ export function HoldLineChart({
 }
 
 /**
- * GitHub-style consistency heatmap: one cell per day, intensity = hold
- * seconds. Single-hue sequential ramp of the chart accent (alpha steps);
- * exact values live in the tooltip and the session history below it.
+ * One cell per training day. Skill and gym sessions share the same local
+ * calendar date; their completed working sets determine its shade.
  */
-export function TrainingHeatmap({ sessions, weeks = 16 }: { sessions: Session[]; weeks?: number }) {
+export function TrainingHeatmap({ sessions, gymSessions, weeks = 16 }: { sessions: Session[]; gymSessions?: GymSession[]; weeks?: number }) {
   const [tip, setTip] = useState<TipState | null>(null)
+  const [selected, setSelected] = useState('')
   // Keyed on the date too: a screen left open past midnight kept the old week
   // as its last column and never marked the new day.
   const today = useToday()
   const { byDay, start } = useMemo(() => {
-    const map = new Map<string, { sec: number; count: number }>()
-    for (const s of sessions) {
-      const k = dayKey(s.startedAt)
-      const cur = map.get(k) ?? { sec: 0, count: 0 }
-      for (const set of s.sets) if (set.kind === 'hold') cur.sec += set.value
-      cur.count += 1
-      map.set(k, cur)
+    const now = Date.now()
+    const start = addDays(weekStart(now), -7 * (weeks - 1))
+    const map = new Map<string, { skill: number; gym: number; sets: number; sec: number }>()
+    const dayOf = (at: number) => {
+      const key = dayKey(at)
+      const day = map.get(key) ?? { skill: 0, gym: 0, sets: 0, sec: 0 }
+      map.set(key, day)
+      return day
     }
-    return { byDay: map, start: addDays(weekStart(Date.now()), -7 * (weeks - 1)) }
+    for (const s of sessions) {
+      if (s.startedAt < start || s.startedAt > now || !countsSkillDay(s)) continue
+      const day = dayOf(s.startedAt)
+      day.skill++
+      day.sets += workingSkillSets(s)
+      day.sec += skillHoldSecOf(s.sets)
+    }
+    for (const s of gymSessions ?? []) {
+      if (s.startedAt < start || s.startedAt > now) continue
+      const sets = workingGymSets(s)
+      if (!sets) continue
+      const day = dayOf(s.startedAt)
+      day.gym++
+      day.sets += sets
+    }
+    return { byDay: map, start }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, weeks, today])
+  }, [sessions, gymSessions, weeks, today])
 
   const cell = 13
   const gap = 3
@@ -277,12 +296,13 @@ export function TrainingHeatmap({ sessions, weeks = 16 }: { sessions: Session[];
   const w = labelW + weeks * (cell + gap)
   const h = labelH + 7 * (cell + gap)
 
-  const level = (sec: number, count: number) => {
-    if (count === 0) return 0
-    if (sec < 60) return 1
-    if (sec < 150) return 2
-    if (sec < 280) return 3
-    return 4
+  const describeDay = (k: string) => {
+    const day = byDay.get(k)
+    if (!day) return ['No training logged']
+    const sessions = [day.skill && `${day.skill} skill session${day.skill === 1 ? '' : 's'}`,
+      day.gym && `${day.gym} gym session${day.gym === 1 ? '' : 's'}`].filter(Boolean).join(' and ')
+    return [sessions,
+      `${day.sets} working ${day.sets === 1 ? 'set' : 'sets'}${day.sec ? ` · ${fmtDuration(Math.round(day.sec))} held` : ''}`]
   }
   const FILL = ['var(--t-grid)', 0.25, 0.45, 0.7, 1] as const
 
@@ -301,6 +321,8 @@ export function TrainingHeatmap({ sessions, weeks = 16 }: { sessions: Session[];
       <svg
         width={w}
         height={h}
+        role="img"
+        aria-label={`Consistency: ${byDay.size} training ${byDay.size === 1 ? 'day' : 'days'} in the last ${weeks} weeks, darker squares mean more working sets`}
         className="block"
         onPointerLeave={(e) => {
           if (e.pointerType === 'mouse') setTip(null)
@@ -323,20 +345,15 @@ export function TrainingHeatmap({ sessions, weeks = 16 }: { sessions: Session[];
           const ts = addDays(start, wk * 7 + day)
           const k = dayKey(ts)
           if (ts > Date.now() && k !== today) return null
-          const info = byDay.get(k) ?? { sec: 0, count: 0 }
-          const lv = level(Math.round(info.sec), info.count)
+          const info = byDay.get(k)
+          const lv = !info ? 0 : info.sets < 5 ? 1 : info.sets < 10 ? 2 : info.sets < 16 ? 3 : 4
           const x = labelW + wk * (cell + gap)
           const y = labelH + day * (cell + gap)
           const hover = () =>
             setTip({
               x: x + cell / 2,
               y,
-              lines: [
-                fmtShortDay(ts),
-                info.count === 0
-                  ? 'Rest day'
-                  : `${info.count} session${info.count > 1 ? 's' : ''} · ${fmtDuration(Math.round(info.sec))} held`,
-              ],
+              lines: [fmtShortDay(ts), ...describeDay(k)],
             })
           return (
             <rect
@@ -352,7 +369,7 @@ export function TrainingHeatmap({ sessions, weeks = 16 }: { sessions: Session[];
               strokeWidth={k === today ? 1.5 : 0}
               onPointerEnter={hover}
               onPointerMove={hover}
-              onPointerDown={hover}
+              onPointerDown={() => { setSelected(k); setTip(null) }}
             />
           )
         })}
@@ -371,6 +388,13 @@ export function TrainingHeatmap({ sessions, weeks = 16 }: { sessions: Session[];
         ))}
         more
       </div>
+      <label className="mt-2 flex flex-wrap items-center gap-2 text-caption text-ink2">
+        Inspect a date
+        <input type="date" min={dayKey(start)} max={today} value={selected}
+          onChange={(e) => { setSelected(e.target.value); setTip(null) }}
+          className="min-h-11 rounded-control border border-line bg-raised px-2 text-ink" />
+      </label>
+      {selected >= dayKey(start) && selected <= today && <p className="mt-1 text-footnote text-ink2" aria-live="polite">{describeDay(selected).join(' · ')}</p>}
       <Tooltip tip={tip} />
     </div>
   )

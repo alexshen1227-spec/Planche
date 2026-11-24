@@ -186,11 +186,11 @@ describe('the display is the kind the forecast is', () => {
     expect(forecastUnlock(s, 'tuck', NOW).kind).toBe('range')
   })
 
-  it('a dated goal at the step being trained is reached, as Home says', () => {
+  it('tracks practicing the goal separately from verified attainment', () => {
     const unlocked = ['foundations', 'lean', 'frog', 'tuck', 'advtuck'] as StepId[]
     const s = st('advtuck', hist('advtuck', days(Array.from({ length: 8 }, (_, i) => 8 + i * 0.8), 50, 6)), { unlocked })
     const withGoal = { ...s, profile: { ...s.profile, goalStepId: 'advtuck' as StepId } }
-    expect(skillGoalPace(withGoal, { id: 'g', skill: 'planche', stepId: 'advtuck', by: '2026-12-31' }, NOW).status).toBe('reached')
+    expect(skillGoalPace(withGoal, { id: 'g', skill: 'planche', stepId: 'advtuck', by: '2026-12-31' }, NOW).status).toBe('practicing')
     expect(goalOutlook(withGoal, NOW).stepsRemaining).toBe(0)
   })
 
