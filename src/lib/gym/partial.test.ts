@@ -15,6 +15,34 @@ const draft: GymDraft = {
   ],
 }
 
+it('remembers which remaining reps and loads were entered manually across a partial save and reload', () => {
+  const open = structuredClone(draft)
+  open.items[0] = { ...open.items[0], exerciseId: 'chest-supported-db-row', unit: 'kg', sets: [
+    { done: true, reps: 10, load: 24, at: start + 100 },
+    { done: false, reps: 10, load: 24 },
+    { done: false, reps: 8, load: 24, repsEdited: true },
+    { done: false, reps: 10, load: 18, loadEdited: true },
+  ] }
+  const saved = sessionFromDraft(open, start + 2000)
+  const restored = sanitizeGymReport(JSON.parse(JSON.stringify({ ...defaultGym(['floor']), sessions: [saved] })))
+  expect(restored.losses).toEqual([])
+  const resumed = resumePartial(restored.gym!.sessions[0])!
+  expect(resumed.items[0].sets).toEqual(open.items[0].sets.slice(1))
+})
+
+it('lets a lighter session prefill fields whose manual values it replaced', () => {
+  const row = { ...draft.items[0], exerciseId: 'chest-supported-db-row',
+    sets: Array.from({ length: 3 }, () => ({ done: false, reps: 8, load: 18, loadEdited: true as const, repsEdited: true as const })) }
+  const assisted = { ...row, exerciseId: 'assisted-pull-up' }
+  const light = adaptOpenDraft({ ...draft, items: [row, assisted] }, [], true)
+  const nextRow = light.items[0].sets[1], nextPullup = light.items[1].sets[1]
+  expect(nextRow.reps).toBe(6)
+  expect(nextRow.repsEdited).toBeUndefined()
+  expect(nextRow.loadEdited).toBeUndefined()
+  expect(nextPullup).toMatchObject({ reps: 6, load: 18, loadEdited: true })
+  expect(nextPullup.repsEdited).toBeUndefined()
+})
+
 it('restores the fixed-rack rep target and the offered easier movement after an import', () => {
   const open = structuredClone(draft)
   open.items[0].suggestion = { kind: 'at-top-weight', kg: 2, reps: [6, 10], targetRpe: 7, targetReps: 11, why: 'Use the same weight for 11.' }

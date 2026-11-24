@@ -426,7 +426,13 @@ function sanitizeRemainder(raw: unknown, lose: Lose, where: string): GymRemainde
         lose(`${where}: an unfinished set could not be restored`)
         continue
       }
-      sets.push({ reps: set.reps, ...(set.load !== undefined ? { load: set.load } : {}), ...(set.warmup === true ? { warmup: true } : {}) })
+      sets.push({
+        reps: set.reps,
+        ...(set.load !== undefined ? { load: set.load } : {}),
+        ...(set.warmup === true ? { warmup: true } : {}),
+        ...(set.repsEdited === true ? { repsEdited: true } : {}),
+        ...(set.loadEdited === true ? { loadEdited: true } : {}),
+      })
     }
     const rack = it.rackTarget
     const rackTarget: RemainingLift['rackTarget'] = rack && ['at-top-weight', 'at-minimum-weight'].includes(rack.kind) &&

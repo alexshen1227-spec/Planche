@@ -2,7 +2,7 @@ import type { GymPlan } from './builder'
 import { GYM_EXERCISE_BY_ID, jointsToRest } from '../../data/gym/exercises'
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import { comparablePerformance, countUnit, repPlanFor, type LoadSuggestion, type RepPlan } from './progression'
-import type { GoalWeights, GymLocation, GymRemainder, GymSession, GymState, RemainingLift } from './types'
+import type { GoalWeights, GymLocation, GymRemainder, GymSession, GymSetEntry, GymState, RemainingLift } from './types'
 import { canDoHere } from './availability'
 import { preparesFor } from './bodyweightSteps'
 import { useStraightSets } from './pairedSets'
@@ -12,17 +12,10 @@ import type { Unit } from '../../data/gym/catalog'
 import type { AttemptSymptom, Profile } from '../../types'
 
 /** A gym session in progress, mirrored to storage on every change so a dying tab loses nothing. */
-export interface DraftSet {
-  /** In the exercise's display unit at this location. */
-  load?: number
-  reps: number
-  /** An entry the athlete explicitly set takes precedence over later prefills. */
-  loadEdited?: true
-  repsEdited?: true
+export interface DraftSet extends GymSetEntry {
   rpe?: number
   done: boolean
   at?: number
-  warmup?: boolean
 }
 
 export interface DraftItem {
@@ -159,7 +152,7 @@ function remainingLift(item: DraftItem, sets: DraftSet[]): RemainingLift {
     ...(item.plan.measure ? { measure: item.plan.measure } : {}),
     restSec: item.restSec, unit: item.unit, swappedFrom: item.swappedFrom,
     ...(item.pairedWith ? { pairedWith: item.pairedWith } : {}),
-    sets: sets.map(({ reps, load, warmup }) => ({ reps, load, warmup })),
+    sets: sets.map(({ reps, load, warmup, repsEdited, loadEdited }) => ({ reps, load, warmup, repsEdited, loadEdited })),
     ...(trial ? { trialReps: trial } : {}), ...(s?.variationTrial ? { variationTrial: s.variationTrial } : {}),
     ...(s?.easierId ? { easierId: s.easierId } : {}),
     ...(s && (s.kind === 'at-minimum-weight' || s.kind === 'at-top-weight') ? { rackTarget: {
@@ -196,7 +189,9 @@ export function adaptOpenDraft(draft: GymDraft, joints: Joint[], light: boolean,
       if (s.done || s.warmup) return [s]
       if (left-- <= 0) return []
       // Choose a comfortable load at the easier target. An assistance setting has the opposite meaning.
-      return [{ ...s, reps: item.plan.range[0], load: ex?.assisted ? s.load : undefined }]
+      const reps = item.plan.range[0]
+      return [{ ...s, reps, repsEdited: reps === s.reps ? s.repsEdited : undefined,
+        ...(ex?.assisted ? {} : { load: undefined, loadEdited: undefined }) }]
     })
     return [{ ...item, plan: { ...item.plan, targetRpe: Math.min(item.plan.targetRpe, 7) }, suggestion: undefined, sets }]
   })

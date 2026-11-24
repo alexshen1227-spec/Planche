@@ -60,6 +60,17 @@ export interface GymExerciseLog {
   note?: string
 }
 
+/** Values shown for a set while logging or continuing an unfinished lift. */
+export interface GymSetEntry {
+  reps: number
+  /** In the exercise's display unit at this location. */
+  load?: number
+  warmup?: boolean
+  /** Manually entered fields take precedence over prefills from earlier sets. */
+  repsEdited?: true
+  loadEdited?: true
+}
+
 export interface RemainingLift {
   exerciseId: string
   measure?: 'seconds'
@@ -68,8 +79,7 @@ export interface RemainingLift {
   targetRpe: number
   restSec: number
   unit: Unit
-  /** Loads stay in the display unit specified on this lift. */
-  sets: { reps: number; load?: number; warmup?: boolean }[]
+  sets: GymSetEntry[]
   swappedFrom?: string
   trialReps?: number
   variationTrial?: { id: string; reps: number }
