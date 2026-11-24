@@ -120,6 +120,23 @@ afterEach(() => {
 })
 
 describe('leaving the session never silently discards work', () => {
+  it('can report pain during the first rep set without logging the proposed reps', () => {
+    const exit = mount()
+    click(/Begin session/)
+    click(/Begin set/)
+    click('Something hurts')
+    const report = screen.getByRole('dialog', { name: 'Report pain or discomfort' })
+    click('Pain', report)
+    click('Shoulder', report)
+    click('Record it', report)
+    expect(screen.getByRole('heading', { name: 'Training stopped' })).toBeTruthy()
+    expect(JSON.parse(draft()!).logs).toEqual([])
+    expect(JSON.parse(localStorage.getItem('planchelab.v1')!).symptoms.at(-1)).toMatchObject({ joints: 'pain', regions: ['shoulder'] })
+    click('Close session')
+    expect(exit).toHaveBeenCalledOnce()
+    expect(saved()).toHaveLength(0)
+  })
+
   const lifts = { focus: 'pull' as const, minutes: 25, placeId: 'gym-a', avoidJoints: [], musclesOff: [], volumeFactor: 1 }
   const opener: Workout = { ...workout, blocks: [
     { ...workout.blocks[0], exerciseId: 'pushup', section: 'strength' },

@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import type { BodyRegion, EndReason, SetLog } from '../types'
+import { useId, useState, type ReactNode } from 'react'
+import type { AttemptSymptom, BodyRegion, EndReason, SetLog } from '../types'
 import { BODY_REGIONS } from '../types'
 import { Icon } from './Icon'
 
@@ -26,10 +26,7 @@ const REGION_LABEL: Record<BodyRegion, string> = {
   other: 'Somewhere else',
 }
 
-export interface AttemptSymptom {
-  joints: 'niggle' | 'pain'
-  regions: BodyRegion[]
-}
+export type { AttemptSymptom } from '../types'
 
 function Chip({
   on,
@@ -87,15 +84,11 @@ export function AttemptEnd({
 }) {
   const [otherOpen, setOtherOpen] = useState(log.endReason !== undefined && log.endReason !== 'target')
   const [hurtOpen, setHurtOpen] = useState(false)
-  const [severity, setSeverity] = useState<AttemptSymptom['joints'] | null>(null)
-  const [regions, setRegions] = useState<BodyRegion[]>([])
   const reasonId = `end-reason-${log.at}`
   const short = log.value < log.target && !log.calledAtTarget
   const moreReasons = short ? OTHER_REASONS.filter((r) => r !== 'interruption') : OTHER_REASONS
   const pickedOther = log.endReason && moreReasons.includes(log.endReason) ? log.endReason : undefined
 
-  const where = (r: BodyRegion[]) =>
-    r.length ? ` (${r.map((x) => REGION_LABEL[x].toLowerCase()).join(', ')})` : ''
 
   return (
     <div className="mx-auto mt-4 w-full max-w-sm text-left">
@@ -139,76 +132,13 @@ export function AttemptEnd({
 
       <div className={askReason ? 'mt-3' : ''}>
         {recorded ? (
-          <div className="rounded-xl border border-danger/30 bg-danger-soft p-3" role="status">
-            <p className="text-[12.5px] leading-relaxed text-ink">
-              {recorded.joints === 'pain' ? 'Pain' : 'Discomfort'}{where(recorded.regions)} recorded.
-              Your next plan will take this into account.
-            </p>
-            {onUndoSymptom ? (
-              <button
-                onClick={() => {
-                  onUndoSymptom(recorded)
-                  setSeverity(null)
-                  setRegions([])
-                }}
-                className="mt-1 min-h-11 px-1 text-[12px] font-medium text-ink2 underline-offset-2 hover:text-ink hover:underline"
-              >
-                Undo — I tapped that by mistake
-              </button>
-            ) : null}
-          </div>
+          <JointReportNotice recorded={recorded} onUndo={onUndoSymptom} />
         ) : hurtOpen ? (
-          <div className="rounded-xl border border-line bg-raised p-3">
-            <div className="text-[12.5px] font-semibold text-ink" id={`hurt-${log.at}`}>
-              How does it feel?
-            </div>
-            <div className="mt-1.5 flex gap-1.5" role="group" aria-labelledby={`hurt-${log.at}`}>
-              <Chip on={severity === 'niggle'} onClick={() => setSeverity('niggle')}>
-                Discomfort
-              </Chip>
-              <Chip on={severity === 'pain'} onClick={() => setSeverity('pain')}>
-                Pain
-              </Chip>
-            </div>
-            <div className="mt-2.5 text-[12.5px] font-semibold text-ink" id={`where-${log.at}`}>
-              Where? <span className="font-normal text-ink3">Pick all that apply.</span>
-            </div>
-            <div className="mt-1.5 flex flex-wrap gap-1.5" role="group" aria-labelledby={`where-${log.at}`}>
-              {BODY_REGIONS.map((region) => {
-                const on = regions.includes(region)
-                return (
-                  <Chip
-                    key={region}
-                    on={on}
-                    onClick={() => setRegions((current) => (on ? current.filter((r) => r !== region) : [...current, region]))}
-                  >
-                    {REGION_LABEL[region]}
-                  </Chip>
-                )
-              })}
-            </div>
-            <div className="mt-3 flex gap-2">
-              <button
-                disabled={!severity || regions.length === 0}
-                onClick={() => {
-                  if (!severity || regions.length === 0) return
-                  const symptom = { joints: severity, regions }
-                  onSymptom(symptom)
-                  setHurtOpen(false)
-                  onEditingChange?.(false)
-                }}
-                className="min-h-11 flex-1 rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-on-accent disabled:opacity-40"
-              >
-                Record it
-              </button>
-              <button
-                onClick={() => { setHurtOpen(false); onEditingChange?.(false) }}
-                className="min-h-11 rounded-xl border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+          <JointReportFields onRecord={(symptom) => {
+            onSymptom(symptom)
+            setHurtOpen(false)
+            onEditingChange?.(false)
+          }} onCancel={() => { setHurtOpen(false); onEditingChange?.(false) }} />
         ) : (
           <button
             onClick={() => { setHurtOpen(true); onEditingChange?.(true) }}
@@ -218,6 +148,83 @@ export function AttemptEnd({
             Pain or discomfort?
           </button>
         )}
+      </div>
+    </div>
+  )
+}
+
+export function JointReportNotice({ recorded, onUndo }: { recorded: AttemptSymptom; onUndo?: (report: AttemptSymptom) => void }) {
+  const where = (r: BodyRegion[]) =>
+    r.length ? ` (${r.map((x) => REGION_LABEL[x].toLowerCase()).join(', ')})` : ''
+  return (
+    <div className="rounded-xl border border-danger/30 bg-danger-soft p-3" role="status">
+      <p className="text-[12.5px] leading-relaxed text-ink">
+        {recorded.joints === 'pain' ? 'Pain' : 'Discomfort'}{where(recorded.regions)} recorded.
+        Your next plan will take this into account.
+      </p>
+      {onUndo ? (
+        <button
+          onClick={() => onUndo(recorded)}
+          className="mt-1 min-h-11 px-1 text-[12px] font-medium text-ink2 underline-offset-2 hover:text-ink hover:underline"
+        >
+          Undo — I tapped that by mistake
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+export function JointReportFields({ onRecord, onCancel }: { onRecord: (report: AttemptSymptom) => void; onCancel: () => void }) {
+  const id = useId()
+  const [severity, setSeverity] = useState<AttemptSymptom['joints'] | null>(null)
+  const [regions, setRegions] = useState<BodyRegion[]>([])
+  return (
+    <div className="rounded-xl border border-line bg-raised p-3">
+      <div className="text-[12.5px] font-semibold text-ink" id={`hurt-${id}`}>
+        How does it feel?
+      </div>
+      <div className="mt-1.5 flex gap-1.5" role="group" aria-labelledby={`hurt-${id}`}>
+        <Chip on={severity === 'niggle'} onClick={() => setSeverity('niggle')}>
+          Discomfort
+        </Chip>
+        <Chip on={severity === 'pain'} onClick={() => setSeverity('pain')}>
+          Pain
+        </Chip>
+      </div>
+      <div className="mt-2.5 text-[12.5px] font-semibold text-ink" id={`where-${id}`}>
+        Where? <span className="font-normal text-ink3">Pick all that apply.</span>
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-1.5" role="group" aria-labelledby={`where-${id}`}>
+        {BODY_REGIONS.map((region) => {
+          const on = regions.includes(region)
+          return (
+            <Chip
+              key={region}
+              on={on}
+              onClick={() => setRegions((current) => (on ? current.filter((r) => r !== region) : [...current, region]))}
+            >
+              {REGION_LABEL[region]}
+            </Chip>
+          )
+        })}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button
+          disabled={!severity || regions.length === 0}
+          onClick={() => {
+            if (!severity || regions.length === 0) return
+            onRecord({ joints: severity, regions })
+          }}
+          className="min-h-11 flex-1 rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-on-accent disabled:opacity-40"
+        >
+          Record it
+        </button>
+        <button
+          onClick={onCancel}
+          className="min-h-11 rounded-xl border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   )

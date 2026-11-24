@@ -1984,6 +1984,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     !freshCheckIn &&
     (staleConcern || openConcern.source === 'onboarding' || openConcern.source === 'attempt')
   const askCheckIn =
+    (!state.sessions.length && !freshCheckIn && (checkInAge !== 0 || sig.lastCheckIn?.source === 'onboarding')) ||
     injuryCheckDue ||
     concernNeedsUpdate ||
     (sig.totalSessions >= 1 &&

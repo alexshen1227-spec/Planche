@@ -387,9 +387,9 @@ export function GymHub({
           <div className="mt-3 flex gap-2">
             <Button
               className="flex-1"
-              onClick={() => setPending({ empty: false })}
+              onClick={() => resumable.stopReport ? setRunning(resumable) : setPending({ empty: false })}
             >
-              Resume {resumable.name}
+              {resumable.stopReport ? 'Review stopped workout' : `Resume ${resumable.name}`}
             </Button>
             <Button
               variant="secondary"
@@ -566,10 +566,10 @@ export function GymHub({
             <Button
               size="lg"
               full
-              aria-label={`Resume the open ${resumable.name} session, not the plan above`}
-              onClick={() => setPending({ empty: false })}
+              aria-label={resumable.stopReport ? 'Review stopped workout' : `Resume the open ${resumable.name} session, not the plan above`}
+              onClick={() => resumable.stopReport ? setRunning(resumable) : setPending({ empty: false })}
             >
-              Resume {resumable.name}
+              {resumable.stopReport ? 'Review stopped workout' : `Resume ${resumable.name}`}
             </Button>
           </div>
         ) : (

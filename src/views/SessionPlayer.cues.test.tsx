@@ -7,6 +7,7 @@ import { STEPS, STEP_BY_ID } from '../data/progressions'
 import { SessionPlayer } from './SessionPlayer'
 import { loadDraft } from '../lib/draft'
 import { peekNextBlock } from '../lib/plan/nextBlock'
+import { resumeSkillWorkout } from '../lib/resumeSkillWorkout'
 
 /**
  * What the athlete hears during a hold, driven through the real player on a
@@ -61,7 +62,9 @@ afterEach(() => {
 
 /** Begin the session and its first hold, skipping the lead-in; time 0 = Go. */
 function startHold(workout: Workout, stepId: StepId, walkBackSec?: number) {
-  localStorage.setItem('planchelab.v1', JSON.stringify(seed(stepId, walkBackSec)))
+  const state = seed(stepId, walkBackSec)
+  if (workout.skills?.includes('frontlever')) state.profile.equipment.push('pullup-bar')
+  localStorage.setItem('planchelab.v1', JSON.stringify(state))
   render(
     <StoreProvider>
       <SessionPlayer workout={workout} onExit={() => {}} />
@@ -134,6 +137,30 @@ it.each([false, true])('stops a front lever session after a joint report, includ
 })
 
 describe('what the athlete hears during a hold', () => {
+  it('resumes the eased target displayed before saving early', () => {
+    const workout: Workout = { id: 'hangs', name: 'Active hangs', focus: '', minutes: 15, kind: 'auto', skills: ['frontlever'],
+      blocks: [{ exerciseId: 'active-hang', sets: 4, target: { kind: 'hold', sec: 15 }, section: 'main', restSec: 60, role: 'skill' }] }
+    startHold(workout, 'foundations')
+    const click = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }))
+    holdFor(5.9)
+    click('Stop hold')
+    click('Skip rest')
+    act(() => { vi.advanceTimersByTime(100) })
+    click(/lead-in$/)
+    click('Skip lead-in')
+    holdFor(4.5)
+    click('Stop hold')
+    expect(screen.getByText('eased')).toBeTruthy()
+    const target = Number(screen.getByText('eased').previousElementSibling?.textContent?.replace('s', ''))
+    expect(target).toBeGreaterThan(0)
+    expect(target).toBeLessThan(15)
+    click('Exit session')
+    click(/Finish early/)
+    click('Save session')
+    const state: AppState = JSON.parse(localStorage.getItem('planchelab.v1')!)
+    expect(state.sessions[0].remaining?.blocks[0]).toMatchObject({ sets: 2, target: { kind: 'hold', sec: target } })
+    expect(resumeSkillWorkout(state, state.sessions[0].id, undefined, Date.now())?.workout.blocks[0].target).toEqual({ kind: 'hold', sec: target })
+  })
   it('keeps "Target" when the banked call lands on a five-second count', () => {
     // A 20s unlock attempt with the phone across the room: the call is at 25s
     // held, the same tick as the "25" count.

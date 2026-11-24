@@ -12,14 +12,52 @@ import { Library } from '../../views/Library'
 import { Stats } from '../../views/Stats'
 import { defaultGym, defaultPrefs } from './state'
 import type { GymEntry } from '../plan/screens'
-import { loadDraft, saveDraft, type DraftItem } from './draft'
+import { loadDraft, saveDraft, sessionFromDraft, type DraftItem } from './draft'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { Toasts } from '../../components/Toasts'
+import { GymPlayer } from '../../components/gym/GymPlayer'
+import { PartialWorkout } from '../../components/gym/PartialWorkout'
 
 afterEach(() => {
   cleanup()
   localStorage.clear()
   vi.unstubAllGlobals()
+})
+
+it('stops a live gym session, restores the joint report, and saves only the completed dumbbell press', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const gym = defaultGym(['floor'], 'kg')
+  const place = gym.locations[0]
+  place.equipment.push('dumbbells', 'bench', 'incline-bench')
+  localStorage.setItem('planchelab.v1', JSON.stringify({ ...initialState(), onboarded: true, gym }))
+  const item: DraftItem = { exerciseId: 'incline-db-press', restSec: 90, unit: 'kg', plan: { range: [8, 12], targetRpe: 7 },
+    sets: [0, 1].map(() => ({ load: 12.5, reps: 9, done: false })) }
+  const draft = { id: 'new-pain', name: 'Upper', startedAt: Date.now() - 60_000, locationId: place.id, items: [item] }
+  const player = (d: typeof draft | NonNullable<ReturnType<typeof loadDraft>>) =>
+    render(<StoreProvider><GymPlayer draft={d} location={place} onClose={() => {}} /></StoreProvider>)
+  const click = (label: string) => fireEvent.click(screen.getByRole('button', { name: label }))
+  const first = player(draft)
+  click('Complete set 1')
+  click('Something hurts')
+  click('Pain')
+  click('Shoulder')
+  click('Record it')
+  expect(screen.getByRole('dialog', { name: 'Training stopped' })).toBeTruthy()
+  expect(loadDraft()?.stopReport?.regions).toEqual(['shoulder'])
+  first.unmount()
+  const second = player(loadDraft()!)
+  expect(screen.queryByRole('button', { name: 'Keep training' })).toBeNull()
+  click('Save session')
+  const stored = JSON.parse(localStorage.getItem('planchelab.v1')!)
+  expect(stored.symptoms).toContainEqual(expect.objectContaining({ source: 'attempt', joints: 'pain', regions: ['shoulder'] }))
+  expect(stored.gym.sessions[0]).toMatchObject({ id: draft.id, completion: 'partial', exercises: [{ exerciseId: item.exerciseId, sets: [{ kg: 12.5, reps: 9 }] }] })
+  expect(stored.gym.sessions[0].remaining).toBeUndefined()
+  expect(loadDraft()).toBeNull()
+  second.unmount()
+  const oldPartial = sessionFromDraft({ ...draft, items: [{ ...item, sets: [{ ...item.sets[0], done: true }, item.sets[1]] }] }, Date.now())
+  render(<StoreProvider><PartialWorkout session={oldPartial} onContinue={() => {}} /></StoreProvider>)
+  expect(screen.queryByRole('button', { name: /Continue/ })).toBeNull()
+  expect(screen.getByText(/1 set is held/)).toBeTruthy()
 })
 
 function FirstRun() {

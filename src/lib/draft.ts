@@ -48,8 +48,8 @@ export interface SessionDraft {
   endedAt?: number
   /** The athlete chose to finish before the plan was complete. */
   finishedEarly?: boolean
-  /** The set the athlete reported on. Only a report made during rest can return there after a correction. */
-  attemptReport?: { at: number; setAt: number; interruptedRest: boolean }
+  /** Where to return after a mistaken report. Earlier drafts recorded only whether rest was interrupted. */
+  attemptReport?: { at: number; setAt?: number; interruptedRest?: boolean; returnTo?: 'rest' | 'ready' }
   restTotal?: number
   checkIn?: CheckIn
   /** Per-set stop setup carried to the next hold. */
@@ -69,7 +69,7 @@ export interface SessionDraft {
 export type DraftInput = Omit<SessionDraft, 'v' | 'savedAt'>
 
 export function restoredAttemptReport(state: AppState, draft?: SessionDraft | null) {
-  if (!draft?.logs.length) return null
+  if (!draft || (!draft.logs.length && !draft.attemptReport)) return null
   const saved = draft.attemptReport
   const report = readinessTimeline(state).reverse().find((entry) =>
     entry.source === 'attempt' && entry.joints !== 'good' && entry.at >= draft.startedAt &&
@@ -78,8 +78,8 @@ export function restoredAttemptReport(state: AppState, draft?: SessionDraft | nu
   if (!report || report.joints === 'good') return null
   return {
     at: report.at, joints: report.joints, regions: report.regions ?? [],
-    setAt: saved?.setAt ?? draft.logs[draft.logs.length - 1].at,
-    interruptedRest: saved?.interruptedRest ?? draft.phase !== 'summary',
+    setAt: saved ? saved.setAt : draft.logs.at(-1)?.at,
+    returnTo: saved?.returnTo ?? ((saved?.interruptedRest ?? draft.phase !== 'summary') ? 'rest' as const : undefined),
   }
 }
 
@@ -119,7 +119,7 @@ export function loadDraft(now = Date.now()): SessionDraft | null {
     // someone back into a session they only opened and walked away from. An
     // interrupted first hold still counts as work worth recovering.
     const holdInFlight = d.wasHolding && d.holdElapsed > 1
-    if (d.logs.length === 0 && !holdInFlight) {
+    if (d.logs.length === 0 && !holdInFlight && !d.attemptReport) {
       clearDraft()
       return null
     }

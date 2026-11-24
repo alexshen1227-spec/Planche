@@ -760,6 +760,7 @@ function stableJson(v: unknown): string {
 export type GymOp =
   | { op: 'init'; gym: GymState }
   | { op: 'saveSession'; session: GymSession; resumeFrom?: number }
+  | { op: 'endPartial'; id: string; resumeFrom: number }
   | { op: 'deleteSession'; id: string }
   /** Fix one logged set. `kg: null` makes it a bodyweight set. Records re-derive by replay. */
   | { op: 'correctSet'; sessionId: string; exerciseIndex: number; setIndex: number; kg?: number | null; reps?: number }
@@ -789,6 +790,13 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
   }
   if (!gym) return gym
   switch (action.op) {
+    case 'endPartial': {
+      const previous = gym.sessions.find((s) => s.id === action.id)
+      if (!previous?.remaining || previous.endedAt !== action.resumeFrom) return gym
+      const { remaining: _remaining, ...completed } = previous
+      return { ...gym, sessions: gym.sessions.map((s) => s === previous
+        ? { ...completed, updatedAt: Math.max(now, sessionStamp(previous) + 1) } : s) }
+    }
     case 'saveSession': {
       if (gym.deletedSessionIds?.includes(action.session.id)) return gym
       let next = action.session

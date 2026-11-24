@@ -7,7 +7,7 @@ import { canDoHere } from './availability'
 import { dayKey } from '../time'
 import { entryLoad, toKg } from './units'
 import type { Unit } from '../../data/gym/catalog'
-import type { Profile } from '../../types'
+import type { AttemptSymptom, Profile } from '../../types'
 
 /** A gym session in progress, mirrored to storage on every change so a dying tab loses nothing. */
 export interface DraftSet {
@@ -72,6 +72,7 @@ export interface GymDraft {
   rest?: { until: number; total: number }
   effortFor?: { item: number; set: number }
   notes?: string
+  stopReport?: AttemptSymptom & { at: number }
   /** What today's plan kept out — swaps and additions honour it too. */
   avoidJoints?: Joint[]
   musclesOff?: Muscle[]
@@ -150,6 +151,7 @@ function remainingLift(item: DraftItem, sets: DraftSet[]): RemainingLift {
 
 /** Recheck the unperformed part of an open workout without changing a single logged set. */
 export function adaptOpenDraft(draft: GymDraft, joints: Joint[], light: boolean, location?: GymLocation): GymDraft {
+  if (draft.stopReport) return draft
   const avoidJoints = [...new Set([...(draft.avoidJoints ?? []), ...joints])]
   const factor = draft.volumeFactor ?? 1
   const reduce = light && factor > 0.6
@@ -206,12 +208,12 @@ export function sessionFromDraft(draft: GymDraft, endedAt: number): GymSession {
     id: draft.id,
     locationId: draft.locationId,
     startedAt: draft.startedAt,
-    endedAt: Math.max(endedAt, draft.startedAt, (draft.resumeFrom ?? 0) + 1),
+    endedAt: Math.max(draft.stopReport?.at ?? endedAt, draft.startedAt, (draft.resumeFrom ?? 0) + 1),
     name: draft.name,
     ...(draft.notes?.trim() ? { notes: draft.notes.trim().slice(0, 2000) } : {}),
     exercises,
     completion: remainingItems.length ? 'partial' : 'full',
-    ...(remainingItems.length ? { remaining: { items: remainingItems, avoidJoints: draft.originalAvoidJoints ?? draft.avoidJoints, musclesOff: draft.musclesOff, volumeFactor: draft.volumeFactor, goals: draft.goals } } : {}),
+    ...(remainingItems.length && !draft.stopReport ? { remaining: { items: remainingItems, avoidJoints: draft.originalAvoidJoints ?? draft.avoidJoints, musclesOff: draft.musclesOff, volumeFactor: draft.volumeFactor, goals: draft.goals } } : {}),
   }
 }
 

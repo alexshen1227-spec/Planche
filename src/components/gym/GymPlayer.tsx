@@ -19,6 +19,7 @@ import { Icon } from '../Icon'
 import { finishBlocker, nextTimeLines, unfinishedLine } from '../../lib/gym/sessionLines'
 import { askStillApplies, parseTypedLoad, type LoadAsk } from '../../lib/gym/loadAsk'
 import { BadgeGlyph, Button, CountUp, RingTimer, Sheet, SwipeRow } from '../ds'
+import { JointReportFields, JointReportNotice, type AttemptSymptom } from '../AttemptEnd'
 
 const RPE_CHOICES = [6, 7, 8, 9, 10]
 
@@ -108,10 +109,12 @@ export function GymPlayer({
   const previous = draft.resumeFrom === undefined ? undefined : gym.sessions.find((s) => s.id === draft.id)
   const stale = draft.resumeFrom !== undefined && (previous?.completion !== 'partial' || previous.endedAt !== draft.resumeFrom)
   const [now, setNow] = useState(() => Date.now())
-  const rest = draft.rest
-  const askRpe = draft.effortFor
+  const rest = draft.stopReport ? undefined : draft.rest
+  const askRpe = draft.stopReport ? undefined : draft.effortFor
   const [sheet, setSheet] = useState<{ kind: 'swap' | 'add' | 'menu'; item?: number } | null>(null)
-  const [finishing, setFinishing] = useState(false)
+  const [finishOpen, setFinishing] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const finishing = finishOpen || Boolean(draft.stopReport)
   const [query, setQuery] = useState('')
   const restEndedRef = useRef((initial.rest?.until ?? Infinity) <= Date.now())
   const [unlocked, setUnlocked] = useState<GymBadge[] | null>(null)
@@ -163,6 +166,7 @@ export function GymPlayer({
   }
 
   const completeSet = (i: number, j: number, checked = false, unloadedOk = false, withLoad?: number) => {
+    if (draft.stopReport || !canEdit()) return
     const item = draft.items[i]
     if (item.held) return
     let set = item.sets[j]
@@ -293,7 +297,7 @@ export function GymPlayer({
   }
 
   const summary = useMemo(() => {
-    if (!finishing) return null
+    if (!finishing || draft.stopReport) return null
     const segment = sessionFromDraft(draft, Date.now())
     if (!segment.exercises.length || stale) return null
     const session = previous ? continueGymSession(previous, segment) : segment
@@ -304,7 +308,16 @@ export function GymPlayer({
     }
     // Computed when the sheet opens; the draft cannot change underneath it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [finishing, stale, previous])
+  }, [finishing, stale, previous, draft.stopReport])
+
+  const recordSymptom = (symptom: AttemptSymptom) => {
+    if (!canEdit() || draft.stopReport) return
+    const at = Date.now()
+    dispatch({ type: 'RECORD_SYMPTOM', event: { at, ...symptom, source: 'attempt' } })
+    setDraft((d) => ({ ...d, stopReport: { ...symptom, at } }))
+    setReportOpen(false)
+    setFinishing(false)
+  }
 
   const blocker = finishBlocker({ needLoad: !!needLoad, doubt: !!doubt })
   const save = (separate = false) => {
@@ -317,6 +330,9 @@ export function GymPlayer({
     }
     const segment = sessionFromDraft(draft, Date.now())
     if (!segment.exercises.length) {
+      if (draft.stopReport && draft.resumeFrom !== undefined && !stale) {
+        dispatch({ type: 'GYM', op: { op: 'endPartial', id: draft.id, resumeFrom: draft.resumeFrom } })
+      }
       closedRef.current = true
       saveDraft(null)
       onClose()
@@ -332,6 +348,11 @@ export function GymPlayer({
     const earnedBefore = new Set(gymBadges(state).filter((b) => b.at !== undefined).map((b) => b.id))
     dispatch({ type: 'GYM', op: { op: 'saveSession', session: segment, resumeFrom: separate ? undefined : draft.resumeFrom } })
     saveDraft(null)
+    if (draft.stopReport) {
+      pushToast('Completed sets and joint report saved.', 'success')
+      onClose()
+      return
+    }
     const prs = newMaxes(session).length
     const fresh = gymBadges({ sessions: state.sessions, gym: { ...gym, sessions: [...gym.sessions.filter((s) => s.id !== session.id), session] } }).filter(
       (b) => b.at !== undefined && !earnedBefore.has(b.id),
@@ -356,7 +377,7 @@ export function GymPlayer({
 
   const doneSets = draft.items.reduce((n, it) => n + it.sets.filter((s) => s.done).length, 0)
   const plannedSets = draft.items.reduce((n, it) => n + it.sets.length, 0)
-  const elapsed = (now - (draft.resumedAt ?? draft.startedAt)) / 1000
+  const elapsed = Math.max(0, (draft.stopReport?.at ?? now) - (draft.resumedAt ?? draft.startedAt)) / 1000
   const earlierSets = previous?.exercises.reduce((n, log) => n + log.sets.length, 0) ?? 0
   const restLeft = rest ? (rest.until - now) / 1000 : 0
   const rating = (id: string): Rating | undefined => gym.ratings[id]
@@ -370,6 +391,12 @@ export function GymPlayer({
             {location.name} · {mmss(elapsed)} · {doneSets}/{plannedSets} sets
           </p>
         </div>
+        <Button variant="ghost" onClick={() => {
+          openSheet(null)
+          setNeedLoad(null)
+          setDoubt(null)
+          setReportOpen(true)
+        }}>Something hurts</Button>
         <Button
           onClick={() => {
             if (blocker) {
@@ -816,9 +843,19 @@ export function GymPlayer({
         </div>
       </Sheet>
 
-      <Sheet open={finishing} onClose={() => setFinishing(false)} title="Finish this session?">
-        <p className="text-body text-ink2">{stale ? 'The original workout changed. Save the new sets as a separate workout, or discard this continuation.' : 'Finished sets go into your workout history. You can return to unfinished sets from Home today.'}</p>
-        {unfinishedLine(draft) ? (
+      <Sheet open={reportOpen} onClose={() => setReportOpen(false)} title="Report pain or discomfort">
+        {reportOpen && <JointReportFields onRecord={recordSymptom} onCancel={() => setReportOpen(false)} />}
+      </Sheet>
+      <Sheet open={finishing} onClose={() => setFinishing(false)} title={draft.stopReport ? 'Training stopped' : 'Finish this session?'}>
+        {draft.stopReport && <JointReportNotice recorded={draft.stopReport} onUndo={(report) => {
+          if (!canEdit() || !draft.stopReport) return
+          dispatch({ type: 'RECORD_SYMPTOM', event: { ...report, at: Math.max(Date.now(), draft.stopReport.at), source: 'attempt', correction: true, correctsAt: draft.stopReport.at } })
+          setDraft((d) => ({ ...d, stopReport: undefined }))
+        }} />}
+        <p className="mt-2 text-body text-ink2">{stale ? 'The original workout changed. Save the new sets as a separate workout, or discard this continuation.'
+          : draft.stopReport ? 'Your joint report is saved. The remaining lifts have been dropped for this session.'
+          : 'Finished sets go into your workout history. You can return to unfinished sets from Home today.'}</p>
+        {!draft.stopReport && unfinishedLine(draft) ? (
           <p className="mt-2 rounded-control bg-raised p-3 text-footnote text-ink2" role="status">
             {unfinishedLine(draft)}
           </p>
@@ -885,9 +922,9 @@ export function GymPlayer({
           <Button size="lg" full onClick={() => save(stale)}>
             {doneSets ? stale ? 'Save new sets as a separate workout' : 'Save session' : 'Close — nothing to save'}
           </Button>
-          <Button variant="secondary" full onClick={() => setFinishing(false)}>
+          {!draft.stopReport && <Button variant="secondary" full onClick={() => setFinishing(false)}>
             Keep training
-          </Button>
+          </Button>}
           <Button variant="ghost" full onClick={discard} className="text-danger-text">
             {draft.resumeFrom !== undefined ? 'Discard this continuation' : 'Discard session'}
           </Button>

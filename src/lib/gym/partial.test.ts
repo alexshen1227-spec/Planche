@@ -13,6 +13,18 @@ const draft: GymDraft = {
   ],
 }
 
+it('ends a saved partial after a new joint report before the next set, preserving corrections and a newer continuation', () => {
+  const original = sessionFromDraft(draft, start + 500)
+  const gym = reduceGym(defaultGym([], 'kg'), { op: 'saveSession', session: original }, start + 501)!
+  const end = { op: 'endPartial' as const, id: original.id, resumeFrom: original.endedAt }
+  const stopped = reduceGym(gym, end, start + 1000)!
+  expect(stopped.sessions[0]).toMatchObject({ exercises: original.exercises, endedAt: original.endedAt, completion: 'partial' })
+  expect(stopped.sessions[0].remaining).toBeUndefined()
+  expect(reduceGym(stopped, end)).toBe(stopped)
+  for (const [a, b] of [[original, stopped.sessions[0]], [stopped.sessions[0], original]]) expect(mergeSession(a, b).remaining).toBeUndefined()
+  expect(reduceGym(gym, { ...end, resumeFrom: start - 1 })).toBe(gym)
+})
+
 it('keeps a sore elbow off the remaining presses while preserving the squat already logged', () => {
   const item = { ...draft.items[1], exerciseId: 'incline-push-up' }
   const home = { ...draft, items: [{ ...draft.items[0], exerciseId: 'bodyweight-squat' }, item] }

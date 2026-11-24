@@ -309,6 +309,11 @@ export interface FormCheck {
  */
 export type BodyRegion = 'wrist' | 'elbow' | 'shoulder' | 'lower-back' | 'knee' | 'hip' | 'ankle' | 'other'
 
+export interface AttemptSymptom {
+  joints: 'niggle' | 'pain'
+  regions: BodyRegion[]
+}
+
 export const BODY_REGIONS: BodyRegion[] = ['wrist', 'elbow', 'shoulder', 'lower-back', 'knee', 'hip', 'ankle', 'other']
 
 /** Answers to the coach's periodic pre-session check-in. */

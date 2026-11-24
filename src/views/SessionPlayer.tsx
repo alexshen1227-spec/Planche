@@ -80,7 +80,7 @@ import {
   type ModelReading,
 } from '../components/FormCheckRow'
 import { CheckInForm, type CheckInContext } from '../components/CheckInForm'
-import { AttemptEnd, type AttemptSymptom } from '../components/AttemptEnd'
+import { AttemptEnd, JointReportFields, JointReportNotice, type AttemptSymptom } from '../components/AttemptEnd'
 import { SetupRow } from '../components/SetupRow'
 import {
   countedClipWindow,
@@ -360,6 +360,7 @@ export function SessionPlayer({
   )
   const [attemptReport, setAttemptReport] = useState(() => restoredAttemptReport(state, resumeFrom))
   const [editingSymptom, setEditingSymptom] = useState(false)
+  const [liveReportOpen, setLiveReportOpen] = useState(false)
   const [phase, setPhase] = useState<Phase>(
     resumeFrom
       ? resumeFrom.phase === 'summary' || attemptReport
@@ -459,7 +460,7 @@ export function SessionPlayer({
   const [busyOps, setBusyOps] = useState<Set<string>>(() => new Set())
   /** The app is hidden; nothing that was running keeps running unseen. */
   const [suspended, setSuspended] = useState(false)
-  const [finishedEarly, setFinishedEarly] = useState(resumeFrom?.finishedEarly === true || attemptReport?.interruptedRest === true)
+  const [finishedEarly, setFinishedEarly] = useState(resumeFrom?.finishedEarly === true || Boolean(attemptReport?.returnTo))
   const recorder = useFormRecorder()
   const [showCheckIn, setShowCheckIn] = useState(askCheckIn && !resumeFrom)
   const [insight, setInsight] = useState<{ delta: number; label: string } | null>(null)
@@ -715,7 +716,7 @@ export function SessionPlayer({
         logs,
         wasHolding: phase === 'hold',
         holdElapsed: elapsed,
-        restEndsAt: phase === 'rest' || attemptReport?.interruptedRest ? restEnd : null,
+        restEndsAt: phase === 'rest' || attemptReport?.returnTo === 'rest' ? restEnd : null,
         restTotal,
         ...(checkIn ? { checkIn } : {}),
         // These are live session choices. Falling back to Settings after a
@@ -733,7 +734,7 @@ export function SessionPlayer({
           : {}),
         ...(endedAtRef.current ? { endedAt: endedAtRef.current } : {}),
         ...(finishedEarly ? { finishedEarly: true } : {}),
-        ...(attemptReport ? { attemptReport: { at: attemptReport.at, setAt: attemptReport.setAt, interruptedRest: attemptReport.interruptedRest } } : {}),
+        ...(attemptReport ? { attemptReport: { at: attemptReport.at, setAt: attemptReport.setAt, returnTo: attemptReport.returnTo } } : {}),
         ...(Object.keys(blockLogAts).length ? { blockLogAts } : {}),
         rpe,
         notes,
@@ -877,7 +878,7 @@ export function SessionPlayer({
   // Countdown cues for lead-in and rest: spoken when voice is on, ticks otherwise.
   useEffect(() => {
     if (phase !== 'lead' && phase !== 'rest') return
-    if (phase === 'rest' && (problemReportOpen || reviewOpen || editingSymptom)) return
+    if (phase === 'rest' && (problemReportOpen || reviewOpen || editingSymptom || liveReportOpen)) return
     const remaining = phase === 'lead' ? leadRemaining : restRemaining
     const whole = Math.ceil(remaining)
     if (whole <= 3 && whole >= 1 && whole !== lastBeepRef.current) {
@@ -885,7 +886,7 @@ export function SessionPlayer({
       if (state.settings.voice) speak(String(whole))
       else if (state.settings.beeps) sfx.tick()
     }
-  }, [phase, leadRemaining, restRemaining, problemReportOpen, reviewOpen, editingSymptom, state.settings.beeps, state.settings.voice])
+  }, [phase, leadRemaining, restRemaining, problemReportOpen, reviewOpen, editingSymptom, liveReportOpen, state.settings.beeps, state.settings.voice])
 
   // Lead-in finished → the hold starts.
   useEffect(() => {
@@ -922,13 +923,13 @@ export function SessionPlayer({
   // Rest finished → back to ready. Never underneath an open review or report:
   // finishing the rest must not dismiss the clip someone is looking at.
   useEffect(() => {
-    if (phase === 'rest' && restRemaining <= 0 && !problemReportOpen && !reviewOpen && !editingSymptom) {
+    if (phase === 'rest' && restRemaining <= 0 && !problemReportOpen && !reviewOpen && !editingSymptom && !liveReportOpen) {
       sfx.go()
       if (state.settings.voice) speak('Rest over')
       lastBeepRef.current = -1
       setPhase('ready')
     }
-  }, [phase, restRemaining, problemReportOpen, reviewOpen, editingSymptom, state.settings.voice])
+  }, [phase, restRemaining, problemReportOpen, reviewOpen, editingSymptom, liveReportOpen, state.settings.voice])
 
   // The live elbow cue (beta): only on a filmed hold of a position whose
   // profile checks the elbows, and only when the athlete turned it on.
@@ -1343,15 +1344,16 @@ export function SessionPlayer({
 
   /** A joint report from the middle of a session reaches the record now, saved session or not. */
   const recordAttemptSymptom = useCallback(
-    (symptom: AttemptSymptom, setAt: number) => {
+    (symptom: AttemptSymptom, setAt?: number) => {
       const at = Date.now()
-      const interruptedRest = phase === 'rest'
+      const returnTo = phase === 'summary' ? undefined : phase === 'rest' ? 'rest' : 'ready'
       dispatch({
         type: 'RECORD_SYMPTOM',
         event: { at, ...symptom, source: 'attempt' },
       })
-      setAttemptReport({ at, ...symptom, setAt, interruptedRest })
-      if (interruptedRest) enterSummary(true)
+      setAttemptReport({ at, ...symptom, setAt, returnTo })
+      setLiveReportOpen(false)
+      if (returnTo) enterSummary(true)
     },
     [dispatch, phase, enterSummary],
   )
@@ -1384,12 +1386,12 @@ export function SessionPlayer({
         event: { at: Math.max(Date.now(), attemptReport.at), ...symptom, source: 'attempt', correction: true, correctsAt: attemptReport.at },
       })
       setAttemptReport(null)
-      if (attemptReport.interruptedRest) {
+      if (attemptReport.returnTo) {
         pausedMsRef.current += Math.max(0, Date.now() - endedAtRef.current)
         endedAtRef.current = 0
         setFinishedEarly(false)
         setNow(Date.now())
-        setPhase(restEnd > Date.now() ? 'rest' : 'ready')
+        setPhase(attemptReport.returnTo === 'rest' && restEnd > Date.now() ? 'rest' : 'ready')
       }
     },
     [dispatch, attemptReport, restEnd],
@@ -1554,7 +1556,9 @@ export function SessionPlayer({
     const savedAt = Date.now()
     const endedAt = endedAtRef.current || savedAt
     const partial = finishedEarly || logs.length < totalSets || Boolean(workout.deferredBlocks?.length)
-    const remaining = partial && !attemptReport && workout.kind !== 'micro' ? remainingSkillWork(workout, logs, blockLogAts) : undefined
+    const remaining = partial && !attemptReport && workout.kind !== 'micro'
+      ? remainingSkillWork({ ...workout, blocks: workout.blocks.map((b, i) => blockAt(i, logs) ?? b) }, logs, blockLogAts)
+      : undefined
     const lead: SkillId = workout.skills?.[0] ?? 'planche'
     // What each other skill was on, and what the coach gave it today.
     const skillNotes = sessionSkillSteps(state)
@@ -1682,7 +1686,7 @@ export function SessionPlayer({
     if (attemptReport || painReportedIn(next, session)) return
     if (ev.unlockedStep) confetti(2)
     else if (ev.prs.length > 0 || rungs.length > 0) confetti(1)
-  }, [workout, state, logs, rpe, notes, dispatch, getState, onExit, checkIn, finishedEarly, totalSets, blockLogAts, attemptReport])
+  }, [workout, state, logs, rpe, notes, dispatch, getState, onExit, checkIn, finishedEarly, totalSets, blockLogAts, blockAt, attemptReport])
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -1690,7 +1694,7 @@ export function SessionPlayer({
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       // A layer is on top: let it own the keyboard, or Escape would also open
       // the exit prompt and Space would start a set behind the overlay.
-      if (showCheckIn || showDemo || showRpeHelp || confirmExit || reviewOpen || problemReportOpen) return
+      if (showCheckIn || showDemo || showRpeHelp || confirmExit || reviewOpen || problemReportOpen || liveReportOpen) return
       // A focused control owns its own Space (activating a button, play/pause
       // on a focused video). Escape and "skip rest" are not keys a button owns.
       if (
@@ -1734,6 +1738,7 @@ export function SessionPlayer({
     confirmExit,
     reviewOpen,
     problemReportOpen,
+    liveReportOpen,
     startSession,
     startWaitsForCamera,
     wantsFilm,
@@ -1750,7 +1755,7 @@ export function SessionPlayer({
   // The same rule as Progress and the week's tile: main and strength holds,
   // not warm-up drills or stretches (see lib/progressTotals).
   const holdSecTotal = skillHoldSecOf(logs)
-  const layerOpen = showCheckIn || showDemo || showRpeHelp || confirmExit || reviewOpen || problemReportOpen
+  const layerOpen = showCheckIn || showDemo || showRpeHelp || confirmExit || reviewOpen || problemReportOpen || liveReportOpen
 
   // ————— Render helpers —————
 
@@ -1769,6 +1774,20 @@ export function SessionPlayer({
           ) : null}
         </div>
       </div>
+      {['ready', 'lead', 'hold', 'reps'].includes(phase) && <button
+        className="ml-auto min-h-11 shrink-0 rounded-full border border-line bg-surface px-3 text-footnote font-medium text-ink2"
+        onClick={() => {
+          if (phase === 'hold') stopHold()
+          if (phase === 'lead') cancelLead()
+          if (phase === 'reps' && filmAttemptRef.current) {
+            filmAttemptRef.current = false
+            recordingRef.current = null
+            void recorder.stop()
+            setRepFilming('lost')
+          }
+          setLiveReportOpen(true)
+        }}
+      >{phase === 'hold' ? 'Stop & report pain' : 'Something hurts'}</button>}
       <button
         onClick={requestExit}
         aria-label={phase === 'celebrate' ? 'Close' : 'Exit session'}
@@ -2738,11 +2757,14 @@ export function SessionPlayer({
     return (
       <div className="mx-auto w-full max-w-lg px-5 pb-10">
         <h1 className="mt-6 text-center font-display text-title1 font-bold text-ink">
-          {attemptReport?.interruptedRest ? 'Training stopped' : finishedEarly ? 'Finished early' : 'Session done'}
+          {attemptReport?.returnTo ? 'Training stopped' : finishedEarly ? 'Finished early' : 'Session done'}
         </h1>
         <p className="mt-1 text-center text-footnote text-ink2">{attemptReport
           ? 'Your joint report is saved. Review and save the sets you completed.'
           : 'Review and save — nothing is kept until you do.'}</p>
+        {attemptReport && attemptReport.setAt === undefined && <div className="mx-auto mt-3 max-w-sm">
+          <JointReportNotice recorded={attemptReport} onUndo={undoAttemptSymptom} />
+        </div>}
         {doneSets < totalSets ? (
           <p className="mx-auto mt-2 max-w-sm text-center text-footnote leading-relaxed text-ink3">
             {doneSets} of {totalSets} planned rounds done. {attemptReport
@@ -2788,7 +2810,7 @@ export function SessionPlayer({
               {lastNote ? ` ${lastNote}` : ''}
             </div>
             {finalPathHold && finalPathHold.at === lastSet.at ? stopAllowanceCorrection(finalPathHold) : null}
-            <AttemptEnd
+            {(!attemptReport || attemptReport.setAt !== undefined) && <AttemptEnd
               key={`end-${lastSet.at}`}
               log={lastSet}
               askReason={lastSet.kind === 'hold' && (lastSet.section === 'main' || lastSet.section === 'strength')}
@@ -2796,7 +2818,7 @@ export function SessionPlayer({
               recorded={attemptReport}
               onSymptom={(report) => recordAttemptSymptom(report, lastSet.at)}
               onUndoSymptom={undoAttemptSymptom}
-            />
+            />}
           </div>
         ) : null}
         {finalPathHold && finalPathHold.at !== lastSet?.at ? (
@@ -2859,11 +2881,11 @@ export function SessionPlayer({
             </p>
           ) : null}
           <Button size="lg"
-            onClick={save}
-            disabled={logs.length === 0 || waiting}
+            onClick={attemptReport && !logs.length ? discard : save}
+            disabled={(!logs.length && !attemptReport) || waiting}
             className="w-full disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Save session
+            {attemptReport && !logs.length ? 'Close session' : 'Save session'}
           </Button>
           {waiting && logs.length > 0 ? (
             <button
@@ -3085,6 +3107,12 @@ export function SessionPlayer({
         {phase !== 'celebrate' ? progressBar : null}
         {body()}
       </div>
+      <Modal open={liveReportOpen} onClose={() => setLiveReportOpen(false)} label="Report pain or discomfort">
+        {liveReportOpen && <div className="p-5">
+          <h2 className="mb-3 font-display text-title2 font-semibold">Report pain or discomfort</h2>
+          <JointReportFields onRecord={(symptom) => recordAttemptSymptom(symptom)} onCancel={() => setLiveReportOpen(false)} />
+        </div>}
+      </Modal>
       <Modal open={measuringWalk} onClose={() => setMeasuringWalk(false)} label="Measure your walk back">
         {measuringWalk ? (
           <WalkBackCalibrator
