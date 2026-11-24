@@ -46,6 +46,7 @@ export const FORM_ISSUE_LABEL: Record<FormIssue, string> = {
   lean: 'Not enough lean',
   twist: 'Twisted / uneven',
   narrow: 'Straddle too narrow',
+  split: 'Legs came apart',
   hips: 'Hips sagged',
   level: 'Not level',
   shoulders: 'Shoulders not open',
@@ -64,7 +65,7 @@ const ISSUES_BY_EXERCISE: Record<string, FormIssue[]> = {
   'one-leg-planche': [...COMMON_ISSUES, 'closed', 'knees'],
   'straddle-planche': [...COMMON_ISSUES, 'closed', 'knees', 'narrow'],
   'band-straddle-planche': [...COMMON_ISSUES, 'closed', 'knees', 'narrow'],
-  'full-planche': [...COMMON_ISSUES, 'closed', 'knees'],
+  'full-planche': [...COMMON_ISSUES, 'closed', 'knees', 'split'],
 }
 
 /**
@@ -92,6 +93,7 @@ export function issuesFor(exerciseId: string): { id: FormIssue; label: string }[
   const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
   return [
     ...offered.map((id) => ({ id, label: sentence(guidance[id]?.label ?? FORM_ISSUE_LABEL[id]) })),
+    ...(profile?.legsTogether ? [{ id: 'split' as const, label: FORM_ISSUE_LABEL.split }] : []),
     { id: 'twist' as FormIssue, label: FORM_ISSUE_LABEL.twist },
   ]
 }
@@ -537,7 +539,8 @@ export function FormCheckRow({
   const cameraSawBentArms = hasArmFault(progressionCameraIssues)
   const athleteHasConfirmed =
     (!needsFlightConfirmation || flightConfirmed) && (!needsArmsConfirmation || armsConfirmed)
-  const variantGaps = unseenVariantCriteria(exerciseId, value?.auto ?? (analysis?.ok ? { issues: analysis.issues, confidence: analysis.confidence, unseen: analysis.unseen } : undefined))
+  const variantGaps = unseenVariantCriteria(exerciseId, value?.auto ?? (analysis?.ok ? analysis : undefined))
+  const cameraSawSplit = progressionCameraIssues.includes('split')
   const analysedSec = value?.auto?.analysedSec
   // Stale when the hold now counts more than was checked, or was re-timed to
   // a different stretch of the clip than the one the camera looked at.
@@ -735,7 +738,7 @@ export function FormCheckRow({
           </button>
         </div>
       ) : null}
-      {clipAvailable && variantGaps.length > 0 && rating === 'clean' && confirmedByHuman ? (
+      {clipAvailable && !cameraSawSplit && variantGaps.length > 0 && rating === 'clean' && confirmedByHuman ? (
         <div className="mt-3 rounded-xl border border-line bg-raised p-3">
           <p className="text-[12.5px] leading-relaxed text-ink2">{VARIANT_CRITICAL[exerciseId]?.prompt}</p>
           <button
@@ -751,7 +754,7 @@ export function FormCheckRow({
                 : 'border-line-strong bg-surface text-ink hover:border-accent'
             }`}
           >
-            {variantConfirmed ? 'Confirmed — the shape held' : 'Confirmed — the shape held for the counted time'}
+            {variantGaps.includes('leg position') ? 'Both legs stayed straight and together' : variantConfirmed ? 'Confirmed — the shape held' : 'Confirmed — the shape held for the counted time'}
           </button>
         </div>
       ) : null}
@@ -768,6 +771,8 @@ export function FormCheckRow({
                 : needsArmsConfirmation
                   ? 'Progression evidence complete — the camera checked the shape, and you confirmed the arms.'
                   : 'Progression evidence complete — athlete and filmed form checks agree.'
+            : cameraSawSplit
+              ? 'Your practice is saved. The camera saw the legs apart during the hold, so it earns no full-hold progression credit.'
             : !clipAvailable && !value?.auto
               ? 'Your Clean rating is saved as self-rated practice. A recorded hold is needed to verify this step.'
             : needsManualReplayReview
@@ -1069,10 +1074,12 @@ function readingOf(analysis: PoseFormResult): AutoForm {
 function cleanEvidenceLine(evidence: CleanEvidence, creditedHoldSec: number): string {
   switch (evidence.state) {
     case 'verified':
+      if (evidence.legsUnconfirmed) return `The measured shape held for ${evidence.seconds.toFixed(1)}s. Check both legs on the replay${evidence.armsUnmeasured ? ' and confirm elbow lockout' : ''}.`
       return evidence.armsUnmeasured
         ? `The shape held ${evidence.seconds.toFixed(1)}s of ${creditedHoldSec.toFixed(1)}s on camera — elbows not included, only a large bend would show.`
         : `Camera-verified clean ${evidence.seconds.toFixed(1)}s of ${creditedHoldSec.toFixed(1)}s.`
     case 'fault':
+      if (evidence.legsApart) return 'The camera saw the legs apart during the hold. No time qualified for the full position.'
       return 'Camera-verified clean: none — the elbows were bent inside the hold.'
     case 'unknown':
       return evidence.reason === 'elbows'
@@ -1096,8 +1103,8 @@ function CleanWindow({ evidence, creditedHoldSec }: { evidence: CleanEvidence; c
         <span className="font-semibold">Camera-verified clean window: none</span>
         <span className="text-[11.5px]">
           {' '}
-          — the elbows were bent inside the hold rather than breaking at one moment, so none of these{' '}
-          {creditedHoldSec.toFixed(1)}s count as camera-verified clean. They still count as training.
+          {evidence.legsApart ? 'The legs were apart during the hold.' : 'The elbows were bent inside the hold.'} Your{' '}
+          {creditedHoldSec.toFixed(1)}s count as training.
         </span>
       </div>
     )
@@ -1118,6 +1125,12 @@ function CleanWindow({ evidence, creditedHoldSec }: { evidence: CleanEvidence; c
         </span>
       </div>
     )
+  }
+  if (evidence.legsUnconfirmed) {
+    return <div className="mb-2 rounded-lg bg-raised px-2.5 py-2 text-ink2">
+      <span className="font-semibold">Measured shape held for {evidence.seconds.toFixed(1)}s</span>
+      <p className="text-[11.5px]">The camera angle can hide a straddle or a tucked leg. Check both legs on the replay{evidence.armsUnmeasured ? ' and confirm elbow lockout' : ''} before counting this as a full hold.</p>
+    </div>
   }
   if (evidence.armsUnmeasured) {
     // Not green, however long it held: the criterion that defines the skill

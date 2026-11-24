@@ -172,6 +172,7 @@ const FORM_ISSUES = new Set<FormIssue>([
   'lean',
   'twist',
   'narrow',
+  'split',
   'hips',
   'level',
   'shoulders',

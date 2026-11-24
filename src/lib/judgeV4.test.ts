@@ -28,6 +28,46 @@ import {
 const tuck = (overrides: SynthParams = {}, seed = 3) =>
   judgeTrackedFrames(synthesizeClip({ ...IDEAL['tuck-planche'], frames: 31, durationSec: 10, seed, ...overrides }), 'tuck-planche')
 
+describe('the full two-leg hold', () => {
+  const result = (exercise: string, pose: SynthParams) => judgeTrackedFrames(synthesizeClip({
+    ...pose, durationSec: 8, frames: 31, noise: 0.012, farScore: 0.92, seed: 1,
+  }), exercise)
+  const credit = (exerciseId: string, auto: AutoForm, variantConfirmed: boolean) => progressionCredit({
+    exerciseId, kind: 'hold', value: 8, target: 8, section: 'main', at: 0,
+    form: { rating: 'clean', confirmed: true, flightConfirmed: true, armsConfirmed: true, variantConfirmed, auto },
+  }, exerciseId)
+  it.each([15, 22, 35, 45, 60])('does not award a full flag for legs visibly spread %i degrees to each side', (straddleDeg) => {
+    const flag = result('human-flag', { ...IDEAL['human-flag'], straddleDeg })
+    expect(flag.ok).toBe(true)
+    expect(flag.heldIssues).toContain('split')
+    expect(flag.score).toBeLessThan(90)
+    expect(credit('human-flag', flag, true)).toBe(0)
+    expect(result('straddle-flag', { ...IDEAL['human-flag'], straddleDeg }).issues).not.toContain('split')
+  })
+  it.each(['full-planche', 'front-lever', 'ninety-hold', 'human-flag'])('requires the replay to establish the full %s when depth is hidden', (id) => {
+    const full = result(id, IDEAL[id])
+    expect(full.issues).toEqual([])
+    expect(full.coarse).toContain('leg position')
+    expect(credit(id, full, false)).toBe(0)
+    expect(credit(id, full, true)).toBe(8)
+  })
+  it('separates a visible tuck from the full front lever and keeps the clean seconds before a late split', () => {
+    const lever = result('front-lever', IDEAL['one-leg-front-lever'])
+    expect(lever.heldIssues).toContain('split')
+    expect(credit('front-lever', lever, true)).toBe(0)
+    const pose = { ...IDEAL['human-flag'], frames: 31, durationSec: 8, noise: 0.005, seed: 3 }
+    const clip = synthesizeClip(pose)
+    const apart = synthesizeClip({ ...pose, straddleDeg: 45 })
+    clip.tracked = clip.tracked.map((f, i) => f.t < 4 ? f : apart.tracked[i])
+    const late = judgeTrackedFrames(clip, 'human-flag')
+    expect(late.issues).toContain('split')
+    expect(late.heldIssues).not.toContain('split')
+    const credited = credit('human-flag', late, true)
+    expect(credited).toBeGreaterThan(3)
+    expect(credited).toBeLessThan(5)
+  })
+})
+
 describe('PJ-03: a late softening ends clean time where it starts', () => {
   it('catches a 15° bend over the final three seconds that the whole-hold reading hid', () => {
     const verdict = tuck({ noise: 0, elbowBendDeg: (p) => (p >= 0.7 ? 15 : -2) })

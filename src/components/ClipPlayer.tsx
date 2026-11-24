@@ -65,6 +65,7 @@ const ISSUE_JOINTS: Partial<Record<FormIssue, string[]>> = {
   level: ['left_hip', 'right_hip'],
   closed: ['left_hip', 'right_hip', 'left_knee', 'right_knee'],
   knees: ['left_knee', 'right_knee'],
+  split: ['left_knee', 'right_knee', 'left_ankle', 'right_ankle'],
   lean: ['left_shoulder', 'right_shoulder', 'left_wrist', 'right_wrist'],
   twist: ['left_shoulder', 'right_shoulder'],
 }

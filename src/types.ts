@@ -149,6 +149,7 @@ export type FormIssue =
   | 'lean'
   | 'twist'
   | 'narrow'
+  | 'split'
   | 'hips'
   | 'level'
   /** Shoulders not open (a handstand's arm-to-torso angle short of a straight line). */

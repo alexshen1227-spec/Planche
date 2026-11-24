@@ -307,7 +307,8 @@ describe('what the camera can and cannot grade, per hold', () => {
       const result = judgeTrackedFrames(synthesizeClip({ ...IDEAL[id], elbowBendDeg: bend, seed: 3, noise: 0.015 }), id)
       expect(result.ok, id).toBe(true)
       expect(result.issues, id).not.toContain('arms')
-      expect(result.coarse, id).toEqual(['elbows'])
+      const coarse = POSE_PROFILES[id].legsTogether ? ['elbows', 'leg position'] : ['elbows']
+      expect(result.coarse, id).toEqual(coarse)
       const labels = (result.subscores ?? []).map((s) => s.label)
       expect(labels, id).not.toContain('Straight arms')
       expect(labels, id).not.toContain('Verified clean')
@@ -315,7 +316,7 @@ describe('what the camera can and cannot grade, per hold', () => {
       expect(result.good.join(' '), id).not.toMatch(/locked/i)
       // Stored, and read back as a window that leaves the arms out.
       const auto = autoFromResult(result, 5)
-      expect(auto.coarse, id).toEqual(['elbows'])
+      expect(auto.coarse, id).toEqual(coarse)
       const evidence = cleanEvidence(auto)
       expect(evidence.state, id).toBe('verified')
       expect(evidence.state === 'verified' && evidence.armsUnmeasured, id).toBe(true)
@@ -329,7 +330,7 @@ describe('what the camera can and cannot grade, per hold', () => {
           }),
         ),
       )
-      expect(saved.sessions[0].sets[0].form?.auto?.coarse, id).toEqual(['elbows'])
+      expect(saved.sessions[0].sets[0].form?.auto?.coarse, id).toEqual(coarse)
       expect(saved.sessions[0].sets[0].form?.armsConfirmed, id).toBe(true)
     }
     // A bend the camera can stand behind is still named, scored and blocks credit.
@@ -371,7 +372,8 @@ describe('what the camera can and cannot grade, per hold', () => {
       const clean = judgeTrackedFrames(synthesizeClip({ ...IDEAL[id], seed: 7, noise: 0.015 }), id)
       expect(clean.ok, `${id}: ${clean.reason}`).toBe(true)
       expect(clean.issues, id).toEqual([])
-      const confirmed = { rating: 'clean' as const, confirmed: true, flightConfirmed: true, armsConfirmed: true, auto: autoFromResult(clean, 5) }
+      const confirmed = { rating: 'clean' as const, confirmed: true, flightConfirmed: true, armsConfirmed: true, variantConfirmed: true, auto: autoFromResult(clean, 5) }
+      if (profile.legsTogether) expect(isQualifyingSet(held({ ...confirmed, variantConfirmed: false }), id)).toBe(false)
       expect(isQualifyingSet(held(confirmed), id), id).toBe(true)
       expect(progressionCredit(held(confirmed), id), id).toBeGreaterThan(3)
       // The camera's pass is never the whole of it.

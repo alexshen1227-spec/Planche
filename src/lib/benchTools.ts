@@ -282,6 +282,8 @@ export function selfTestJudge(seeds = 3): SelfTestReport {
     )
   }
 
+  const spread = judgeSynth('human-flag', { straddleDeg: 45 }, 1)
+  add('A wide straddle earns no full-flag seconds', spread.heldIssues?.includes('split') === true && spread.cleanSeconds === 0)
   return { pass: checks.every((check) => check.pass), checks }
 }
 

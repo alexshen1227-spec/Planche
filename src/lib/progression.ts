@@ -224,9 +224,9 @@ export const VARIANT_CRITICAL: Record<string, { criteria: string[]; prompt: stri
     prompt: 'The camera could not see your legs well enough. Confirm both legs stayed straight and your hips stayed open.',
   },
   'full-planche': {
-    criteria: ['knees', 'hips'],
+    criteria: ['knees', 'hips', 'leg position'],
     prompt:
-      'The camera could not see your legs well enough. Confirm your legs stayed straight and together and your hips stayed open.',
+      'Watch both legs on the replay. For a full planche, both knees stay straight, the legs stay together and the hips stay open for the counted time.',
   },
   // ——— Front lever ———
   'tuck-front-lever': {
@@ -249,9 +249,9 @@ export const VARIANT_CRITICAL: Record<string, { criteria: string[]; prompt: stri
     prompt: 'The camera could not see your legs well enough. Confirm both legs stayed straight and your hips stayed open and level.',
   },
   'front-lever': {
-    criteria: ['knees', 'hips'],
+    criteria: ['knees', 'hips', 'leg position'],
     prompt:
-      'The camera could not see your legs well enough. Confirm your legs stayed straight and together and your hips stayed open and level.',
+      'Watch both legs on the replay. For a full front lever, both knees stay straight, the legs stay together and the hips stay open and level for the counted time.',
   },
   // ——— Handstand ———
   'wall-plank': {
@@ -295,8 +295,8 @@ export const VARIANT_CRITICAL: Record<string, { criteria: string[]; prompt: stri
     prompt: 'The camera could not see your legs well enough. Confirm both legs stayed straight and your hips stayed open.',
   },
   'ninety-hold': {
-    criteria: ['knees', 'hips'],
-    prompt: 'The camera could not see your legs well enough. Confirm your legs stayed straight and together and your hips stayed open.',
+    criteria: ['knees', 'hips', 'leg position'],
+    prompt: 'Watch both legs on the replay. For a full 90° hold, both knees stay straight, the legs stay together and the hips stay open for the counted time.',
   },
   // ——— Human flag ———
   'tuck-flag': {
@@ -312,16 +312,17 @@ export const VARIANT_CRITICAL: Record<string, { criteria: string[]; prompt: stri
     prompt: 'The camera could not see your line well enough. Confirm your body stayed level and both legs straight.',
   },
   'human-flag': {
-    criteria: ['level line', 'knees'],
-    prompt: 'The camera could not see your line well enough. Confirm your body stayed level and your legs straight and together.',
+    criteria: ['level line', 'knees', 'leg position'],
+    prompt: 'Watch both legs on the replay. For a full human flag, both legs stay straight and together and the body stays level for the counted time.',
   },
 }
 
 /** Variant-defining criteria this reading could not see, in the camera's own words. */
 export function unseenVariantCriteria(exerciseId: string, auto: AutoForm | undefined): string[] {
   const critical = VARIANT_CRITICAL[exerciseId]
-  if (!critical || !auto?.unseen?.length) return []
-  return critical.criteria.filter((criterion) => auto.unseen!.includes(criterion))
+  if (!critical || !auto) return []
+  return critical.criteria.filter((criterion) => auto.unseen?.includes(criterion) ||
+    (criterion === 'leg position' && auto.coarse?.includes(criterion)))
 }
 
 /**
@@ -361,14 +362,14 @@ export function progressionRelevantIssues(
  */
 export function verifiedCleanRatio(auto: AutoForm | undefined): number | undefined {
   if (!auto || auto.cleanRatio === undefined) return undefined
-  if (hasArmFault(progressionRelevantIssues(auto))) return 0
+  if (hasArmFault(progressionRelevantIssues(auto)) || progressionRelevantIssues(auto).includes('split')) return 0
   return cleanTimeVerifiable(auto) ? auto.cleanRatio : undefined
 }
 
 /** `verifiedCleanRatio`, in seconds. */
 export function verifiedCleanSeconds(auto: AutoForm | undefined): number | undefined {
   if (!auto || auto.cleanSeconds === undefined) return undefined
-  if (hasArmFault(progressionRelevantIssues(auto))) return 0
+  if (hasArmFault(progressionRelevantIssues(auto)) || progressionRelevantIssues(auto).includes('split')) return 0
   return cleanTimeVerifiable(auto) ? auto.cleanSeconds : undefined
 }
 
@@ -401,14 +402,15 @@ export function cleanTimeVerifiable(auto: AutoForm): boolean {
  * must not be worded as if it were.
  */
 export type CleanEvidence =
-  | { state: 'verified'; seconds: number; ratio: number; armsUnmeasured?: true }
-  | { state: 'fault'; seconds: 0 }
+  | { state: 'verified'; seconds: number; ratio: number; armsUnmeasured?: true; legsUnconfirmed?: true }
+  | { state: 'fault'; seconds: 0; legsApart?: true }
   | { state: 'unknown'; reason: 'elbows' | 'coverage' | 'malformed' | 'missing' }
 
 /** One canonical reading of clean time, for every badge, panel and coach line. */
 export function cleanEvidence(auto: AutoForm | undefined): CleanEvidence {
   if (!auto || auto.cleanSeconds === undefined || auto.cleanRatio === undefined) return { state: 'unknown', reason: 'missing' }
   if (auto.malformed) return { state: 'unknown', reason: 'malformed' }
+  if (progressionRelevantIssues(auto).includes('split')) return { state: 'fault', seconds: 0, legsApart: true }
   if (hasArmFault(progressionRelevantIssues(auto))) return { state: 'fault', seconds: 0 }
   if (auto.unseen?.includes('elbows')) return { state: 'unknown', reason: 'elbows' }
   if (auto.coverage !== undefined && auto.coverage < MIN_VERIFIED_COVERAGE) return { state: 'unknown', reason: 'coverage' }
@@ -417,6 +419,7 @@ export function cleanEvidence(auto: AutoForm | undefined): CleanEvidence {
     seconds: auto.cleanSeconds,
     ratio: auto.cleanRatio,
     ...(armsReadCoarsely(auto) ? { armsUnmeasured: true as const } : {}),
+    ...(auto.coarse?.includes('leg position') || auto.unseen?.includes('leg position') ? { legsUnconfirmed: true as const } : {}),
   }
 }
 
@@ -473,6 +476,7 @@ export function passesProgressionFormCheck(form: SetLog['form'], exerciseId: str
     form.auto.confidence >= MIN_PROGRESSION_FORM_CONFIDENCE &&
       issues.length <= MAX_PROGRESSION_FORM_ISSUES &&
       !hasArmFault(issues) &&
+      !issues.includes('split') &&
       formEvidenceCoversArms(form.auto) &&
       // A hold the camera mostly did not see is not a verified one, however
       // clean the moments it did see were (judge v4+; older readings carry no

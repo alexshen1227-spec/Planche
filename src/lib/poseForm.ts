@@ -47,8 +47,11 @@ export { MIN_VERIFIED_COVERAGE }
  *     photographs (`POSTURE_TOLERANCE`). The planche family's verdicts are
  *     unchanged by it; the number moves because readings of the new positions
  *     did not exist before, and a stored reading says which judge made it.
+ *  9: a sustained visible leg separation ends full-position time. A single
+ *     projection cannot show separation in depth, so the athlete also
+ *     checks both legs on the replay before a full hold earns credit.
  */
-export const JUDGE_VERSION = 8
+export const JUDGE_VERSION = 9
 export { UNCALIBRATED_LOCKOUT_DEG, MIN_LOCKOUT_DEG, lockoutReference, setAthleteLockout, currentLockoutDeg } from './lockout'
 
 /**
@@ -291,6 +294,7 @@ export interface FormSubscore {
     | 'elbow'
     | 'angle'
     | 'knee'
+    | 'legsTogether'
     | 'hipAngle'
     | 'line'
     | 'lean'
@@ -354,11 +358,14 @@ export interface PoseProfile {
   minLeanRatio?: number
   /** Judge the deliberately extended leg, rather than the tucked leg. */
   oneLeg?: boolean
+  /** A full two-leg hold requires the legs to stay extended together. */
+  legsTogether?: boolean
   checkShrug: boolean
 }
 
 export interface FrameReading {
   t: number
+  legSeparation?: number
   elbowDeg?: number
   kneeDeg?: number
   hipAngleDeg?: number
@@ -853,6 +860,7 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
   },
   'full-planche': {
     label: 'Full planche',
+    legsTogether: true,
     minElbowDeg: 180,
     minKneeDeg: 180,
     levelTolerance: 0.1,
@@ -920,6 +928,7 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
   },
   'front-lever': {
     label: 'Front lever',
+    legsTogether: true,
     posture: 'hang',
     minElbowDeg: 180,
     minKneeDeg: 180,
@@ -1022,6 +1031,7 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
   },
   'ninety-hold': {
     label: '90° hold',
+    legsTogether: true,
     elbowTargetDeg: 90,
     elbowBandDeg: 20,
     minKneeDeg: 180,
@@ -1078,6 +1088,7 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
   },
   'human-flag': {
     label: 'Human flag',
+    legsTogether: true,
     posture: 'flag',
     minElbowDeg: 180,
     minKneeDeg: 175,
@@ -1089,6 +1100,7 @@ export const POSE_PROFILES: Record<string, PoseProfile> = {
 
 /** Which of a position's criteria the camera saw well enough to grade. */
 export interface JudgedCriteria {
+  legPosition?: boolean
   elbow: boolean
   knee: boolean
   hipAngle: boolean
@@ -1102,6 +1114,7 @@ export interface JudgedCriteria {
 
 /** How many frames carried each measurement. */
 export interface CoverageCounts {
+  legPositions?: number
   elbows: number
   knees: number
   hipAngles: number
@@ -1129,6 +1142,7 @@ export function gradeCoverage(
   const need = Math.max(MIN_FRAMES, Math.ceil(framesUsed * 0.55))
   const applies = (threshold: number | undefined, seen: number) => threshold !== undefined && seen >= need
   const judged: JudgedCriteria = {
+    ...(profile.legsTogether ? { legPosition: (counts.legPositions ?? 0) >= need } : {}),
     elbow: applies(profile.minElbowDeg ?? profile.elbowTargetDeg, counts.elbows),
     knee: applies(profile.minKneeDeg, counts.knees),
     hipAngle: applies(profile.minHipAngleDeg, counts.hipAngles),
@@ -1170,6 +1184,7 @@ export function materialIssuesForReading(
   tolerance: typeof MATERIAL_TOLERANCE | typeof MOMENTARY_MATERIAL_TOLERANCE = MATERIAL_TOLERANCE,
 ): FormIssue[] {
   const issues: FormIssue[] = []
+  if (judged.legPosition && frame.legSeparation !== undefined && frame.legSeparation > 0.60) issues.push('split')
   if (
     judged.elbow &&
     profile.minElbowDeg !== undefined &&
@@ -1285,6 +1300,7 @@ function materiallyOutsideEnvelope(
   judged: JudgedCriteria,
 ): boolean | null {
   const required: (number | undefined)[] = []
+  if (judged.legPosition) required.push(frame.legSeparation)
   if (hasElbowCriterion(profile) && judged.elbow) required.push(frame.elbowDeg)
   if (profile.minShoulderDeg !== undefined && judged.shoulder) required.push(frame.shoulderDeg)
   if (profile.maxTiltDeg !== undefined && judged.tilt) required.push(frame.tiltDeg)
@@ -1591,6 +1607,21 @@ export function plancheArmAngle(
 function byName(kps: Kp[], name: string, minScore = MIN_KP_SCORE): Kp | undefined {
   const k = kps.find((p) => p.name === name)
   return k && (k.score ?? 0) >= minScore ? k : undefined
+}
+
+/** Projected separation in torso lengths. Subtract the hip offset as well as
+ * checking the actual gap, so a turned pelvis or natural hip width does not
+ * look like a split. Close projected legs can still be spread in depth. */
+function projectedLegSeparation(kps: Kp[], torso: number): number | undefined {
+  const observed = (name: string) => {
+    const p = byName(kps, name, MIN_PRECISE_KP_SCORE)
+    return p && !p.origin ? p : undefined
+  }
+  const lh = observed('left_hip'), rh = observed('right_hip')
+  const la = observed('left_ankle'), ra = observed('right_ankle')
+  if (!lh || !rh || !la || !ra || torso <= 0) return undefined
+  const dx = la.x - ra.x, dy = la.y - ra.y
+  return Math.min(Math.hypot(dx, dy), Math.hypot(dx - (lh.x - rh.x), dy - (lh.y - rh.y))) / torso
 }
 
 function pickSide(kps: Kp[]): 'left' | 'right' | null {
@@ -2855,6 +2886,10 @@ function judgeWindow(
       // midpoints rather than one stable side.
       const flag = flagReading(kps, t, profile, flagLevelKnown)
       if (!flag) continue
+      if (profile.legsTogether) {
+        flag.reading.legSeparation = projectedLegSeparation(kps, flag.torso)
+        flag.observed.legSeparation = flag.reading.legSeparation !== undefined
+      }
       confidences.push(flag.confidence)
       frameObserved.set(t, flag.observed)
       frameReadings.push(flag.reading)
@@ -3061,7 +3096,9 @@ function judgeWindow(
       : undefined
     if (frameShrugRatio !== undefined) push(shrugs, frameShrugRatio)
 
+    const legSeparation = profile.legsTogether ? projectedLegSeparation(kps, torso) : undefined
     frameObserved.set(t, {
+      legSeparation: legSeparation !== undefined,
       elbowDeg: frameElbowDeg !== undefined && armObserved,
       kneeDeg: frameKneeDeg !== undefined && selectedLeg?.kneeObserved === true,
       hipAngleDeg: frameHipAngleDeg !== undefined && selectedLeg?.hipObserved === true,
@@ -3072,6 +3109,7 @@ function judgeWindow(
     })
     frameReadings.push({
       t,
+      ...(legSeparation !== undefined ? { legSeparation } : {}),
       elbowDeg: frameElbowDeg,
       kneeDeg: frameKneeDeg,
       hipAngleDeg: frameHipAngleDeg,
@@ -3284,6 +3322,7 @@ function judgeWindow(
     {
       elbows: elbowTrackingUncertain || farArmUnjudged ? 0 : observedCount('elbowDeg'),
       knees: observedCount('kneeDeg'),
+      legPositions: observedCount('legSeparation'),
       hipAngles: observedCount('hipAngleDeg'),
       hipOffsets: observedCount('hipOffset'),
       leans: observedCount('leanRatio'),
@@ -3436,6 +3475,7 @@ function judgeWindow(
   const shrugRatio = median(pick('shrugRatio')) ?? median(shrugs)
   const shoulderDeg = sustainedTypical(pick('shoulderDeg')) ?? sustainedTypical(shoulderAngles)
   const tiltDeg = median(pick('tiltDeg')) ?? median(tilts)
+  const legSeparation = median(pick('legSeparation'))
   // Steadiness: the robust spread of the body's position against the planted
   // hands, over torso length. Replayed on the audit's real footage - one hold
   // re-framed fixed, panning and oscillating - the old picture-frame speed read
@@ -3482,12 +3522,16 @@ function judgeWindow(
   const details: string[] = []
   const aggregateFaults = new Set(
     materialIssuesForReading(
-      { t: 0, elbowDeg, kneeDeg, hipAngleDeg, hipOffset, leanRatio, shrugRatio, shoulderDeg, tiltDeg },
+      { t: 0, elbowDeg, kneeDeg, hipAngleDeg, hipOffset, leanRatio, shrugRatio, shoulderDeg, tiltDeg, legSeparation },
       profile,
       judged,
     ),
   )
   const namedFaults = new Set([...aggregateFaults, ...sustainedFaults])
+  if (namedFaults.has('split')) {
+    issues.push('split')
+    notes.push('The feet tracked well apart during the hold. A full hold requires both legs extended together. Review the replay and log the variation you held.')
+  }
   const creditedReadings = trimTerminalDismountFrames(
     frameReadings.filter((frame) => frame.t <= creditedSeconds + 0.05),
     creditedSeconds,
@@ -3938,12 +3982,15 @@ function judgeWindow(
   const fix = pickFixFirst(uniqueIssues, posture)
   // Judged, but with a deadband wide enough to hide a real bend.
   const readCoarsely = coarseElbow(profile) && judged.elbow && profile.minElbowDeg !== undefined ? ['elbows'] : []
+  // Apparent overlap never establishes legs together in depth, even with two
+  // well-tracked ankles. Every full position asks for the same replay check.
+  if (profile.legsTogether) readCoarsely.push('leg position')
   // "Held clean" is the camera-verified share, never the raw envelope time:
   // a held arm fault means none of it was verified, and elbows the camera did
   // not judge — or a hold it mostly did not see — mean it does not know. The
   // raw `cleanRatio` stays on the result as the training-dose number.
   const verifiedCleanShare =
-    aggregateFaults.has('arms') || aggregateFaults.has('angle')
+    aggregateFaults.has('arms') || aggregateFaults.has('angle') || aggregateFaults.has('split')
       ? 0
       : (hasElbowCriterion(profile) && !judged.elbow) || (coverage !== undefined && coverage < MIN_VERIFIED_COVERAGE)
         ? undefined
@@ -3962,6 +4009,7 @@ function judgeWindow(
     drift,
     cleanRatio: verifiedCleanShare,
     armsNamed: namedFaults.has('arms'),
+    legsApart: namedFaults.has('split'),
   })
 
   return {
@@ -4379,6 +4427,7 @@ const SCORE_WEIGHTS: Record<FormSubscore['key'], number> = {
   lean: 14,
   hipAngle: 12,
   knee: 8,
+  legsTogether: 18,
   shrug: 6,
   steadiness: 5,
 }
@@ -4396,6 +4445,7 @@ const SUBSCORE_LABELS: Record<FormSubscore['key'], string> = {
   shoulder: 'Shoulders open',
   tilt: 'Level',
   knee: 'Straight legs',
+  legsTogether: 'Legs together',
   hipAngle: 'Hip opening',
   // This is shoulder-versus-hip height, not shoulder–hip–ankle collinearity.
   // Calling it "Body line" made a green 100 look like proof that the separate
@@ -4427,6 +4477,7 @@ export function computeFormScore(parts: {
   cleanRatio?: number
   /** A bent-arm fault was named on this reading (aggregate or sustained). */
   armsNamed?: boolean
+  legsApart?: boolean
 }): { score: number; subscores: FormSubscore[] } | null {
   const { profile, judged } = parts
   const subscores: FormSubscore[] = []
@@ -4462,6 +4513,7 @@ export function computeFormScore(parts: {
   if (judged.knee && profile.minKneeDeg !== undefined && parts.kneeDeg !== undefined) {
     add('knee', bandedScore(profile.minKneeDeg - parts.kneeDeg))
   }
+  if (parts.legsApart) add('legsTogether', 0)
   if (judged.hipAngle && profile.minHipAngleDeg !== undefined && parts.hipAngleDeg !== undefined) {
     add('hipAngle', bandedScore(profile.minHipAngleDeg - parts.hipAngleDeg))
   }
@@ -4508,6 +4560,7 @@ export function computeFormScore(parts: {
  * deliberate — motor-learning work shows a list of corrections fixes nothing.
  */
 export const FIX_PRIORITY: { issue: FormIssue; cue: string }[] = [
+  { issue: 'split', cue: 'Bring both straight legs together for the full hold. Use the one-leg or straddle progression if that is the shape you can sustain.' },
   { issue: 'arms', cue: 'Lock the elbows — squeeze the triceps and keep them locked all the way to the end.' },
   { issue: 'angle', cue: 'Set the elbows at a right angle beside your ribs and keep them there — not straighter, not deeper.' },
   { issue: 'shrug', cue: 'Push the floor away and keep the shoulders down away from your ears.' },
