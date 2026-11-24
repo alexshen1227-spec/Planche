@@ -2835,7 +2835,7 @@ function describe(plan: TodayPlan): string {
 
 /** Today's kind, picked by the athlete or read off what they logged today. */
 export type TodayKindPick = { todayKind?: 'calisthenics' | 'gym'; todayWhy?: 'picked' | 'followed' }
-type WeekOptions = TodayKindPick & { todayMinutes?: number; inner?: boolean; todayFocus?: GymFocus; todayPlace?: GymLocation; coverLegWeeks?: number[] }
+type WeekOptions = TodayKindPick & { todayMinutes?: number; inner?: boolean; todayFocus?: GymFocus; todayPlace?: GymLocation; coverLegWeeks?: number[]; restOpeners?: string[] }
 const weeksByState = new WeakMap<AppState, Map<string, WeekAhead>>()
 const pastPlans = new WeakMap<AppState, Map<number, TodayPlan>>()
 
@@ -2855,7 +2855,7 @@ export function planWeekAhead(
   if (opts.todayPlace && !state.gym?.locations.includes(opts.todayPlace)) return buildWeekAhead(state, now, opts)
   let cache = weeksByState.get(state)
   if (!cache) weeksByState.set(state, (cache = new Map()))
-  const key = JSON.stringify([now, opts.todayMinutes, opts.todayKind, opts.todayWhy, opts.todayFocus, opts.todayPlace?.id, opts.inner, opts.coverLegWeeks])
+  const key = JSON.stringify([now, opts.todayMinutes, opts.todayKind, opts.todayWhy, opts.todayFocus, opts.todayPlace?.id, opts.inner, opts.coverLegWeeks, opts.restOpeners])
   const cached = cache.get(key)
   if (cached) return cached
   const week = buildWeekAhead(state, now, opts)
@@ -2889,7 +2889,11 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   const days = dayContexts(state, base, prefs, Boolean(own), now, horizonEnd, opts.todayMinutes)
   const gymSessions = state.gym?.sessions ?? []
   const capacity = bodyweightCapacity(base, now)
-  const afterIntro = { ...capacity, introductory: false }
+  // The first two visits have at most eight working sets. A later visit in
+  // the preview can only budget a small increase until real sets are logged.
+  const afterIntro = capacity.introductory
+    ? { ...capacity, introductory: false, buildUpSetLimit: 10 }
+    : capacity
   let firstRegularDay = Infinity
   const active = activePlace(state)
   // Gym days are planned at the gym (`gymPlaceOf`), wherever the app is set now.
@@ -3195,9 +3199,11 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     if (!openers.has(key)) {
       const d = days[i]
       const at = placeAt(i)
-      const skill = slots[i].reservedOpener?.skill ?? (
+      const reserved = slots[i].reservedOpener?.skill
+      const resting = (family: string) => opts.restOpeners?.includes(`${i}:${family}`)
+      const skill = (reserved && !resting(skillFamily(reserved)) ? reserved : undefined) ?? (
         at && slots[i].kind === 'gym'
-          ? openerSkill(base, focus, at, { minutes: d.minutes, sore: d.avoidJoints, pain: d.pain, blocked: (fam) => (openerClear(fam, i) ? undefined : 'rest') })
+          ? openerSkill(base, focus, at, { minutes: d.minutes, sore: d.avoidJoints, pain: d.pain, blocked: (fam) => (!resting(fam) && openerClear(fam, i) ? undefined : 'rest') })
           : undefined)
       // The gym must still build beside it.
       const minutes = skill ? openerTime(i, skill) : 0
@@ -3305,6 +3311,25 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       )
     : undefined
   const focusOf = (i: number): GymFocus | null => (cur.includes(i) ? week.foci[cur.indexOf(i)] : later?.foci[nxt.indexOf(i)] ?? null)
+  // Optional openers are known only after lifting focuses have been selected.
+  // Two adjacent gym days can each individually look free, including Sunday
+  // and Monday. Keep the promised skill day and give the other time to its lifts.
+  const openersByPriority = days.flatMap((d) => {
+    const focus = slots[d.index].kind === 'gym' && focusOf(d.index)
+    const skill = focus && opener(d.index, focus)
+    if (!skill) return []
+    const family = skillFamily(skill)
+    if (family === 'balance') return []
+    const promised = Boolean(slots[d.index].exposure || slots[d.index].reservedOpener || slots[d.index].hint === family)
+    return [{ i: d.index, at: d.at, family, promised }]
+  }).sort((a, b) => Number(b.promised) - Number(a.promised) || a.i - b.i)
+  const kept: typeof openersByPriority = []
+  const restOpeners = [...(opts.restOpeners ?? [])]
+  for (const day of openersByPriority) {
+    if (kept.some((prior) => prior.family === day.family && apart(prior.at, day.at) < restMs)) restOpeners.push(`${day.i}:${day.family}`)
+    else kept.push(day)
+  }
+  if (restOpeners.length > (opts.restOpeners?.length ?? 0)) return planWeekAhead(state, now, { ...opts, restOpeners })
   // Keep a week that already covers the lower body. Only split off a skill
   // day if the actual gym allocation would otherwise leave the legs out.
   const wantsLegs = g.physique > 0 && (g.physique >= Math.max(g.skills, g.strength, g.power, g.endurance) || prefs.musclesPriority.some((m) => LEG_MUSCLES.includes(m)))

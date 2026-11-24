@@ -338,7 +338,7 @@ export function planGymExercises(input: GymSessionInput) {
   const isPriority = (e: GymExercise) => e.primary.some((m) => priority.has(m))
   const makeItem = (pick: GymExercise, wantsExplosive: boolean, sets?: number) => {
     const base = repPlanFor(pick, wantsExplosive ? 'power' : emphasisOf(pick), youth)
-    const plan = introductory || input.capacity?.buildUpSetLimit ? { ...base, targetRpe: Math.min(7, base.targetRpe) }
+    const plan = introductory || input.capacity?.introductoryEffort ? { ...base, targetRpe: Math.min(7, base.targetRpe) }
       : factor < 1 ? { ...base, targetRpe: Math.max(6, base.targetRpe - 1) } : base
     return {
       exerciseId: pick.id,
@@ -688,13 +688,13 @@ export function planGymExercises(input: GymSessionInput) {
   }
   const buildUpLimit = input.capacity?.buildUpSetLimit
   if (buildUpLimit && focus !== 'athletic' && items.reduce((n, item) => n + item.sets, 0) > buildUpLimit) {
-    for (const item of items) item.sets = Math.min(3, item.sets)
     while (items.length && items.reduce((n, item) => n + item.sets, 0) > buildUpLimit) {
-      const extra = [...items].reverse().find((item) => item.sets > 2)
+      const lastFirst = [...items].reverse()
+      const extra = lastFirst.find((item) => item.sets > 3) ?? lastFirst.find((item) => item.sets > 2)
       if (extra) extra.sets--
       else items.pop()
     }
-    notes.push('Your recent working sets support a small increase. This session adds up to two sets to the amount you have handled comfortably.')
+    notes.push(`Your recent lifting supports up to ${buildUpLimit} working sets this visit. Completing that amount comfortably on two days helps build up the next sessions.`)
   }
   return { name: FOCUS_LABEL[focus], focus, items, dropped, estimatedMin: items.length ? Math.round(total()) : 0, fits, notes }
 }

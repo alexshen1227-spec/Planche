@@ -1,8 +1,18 @@
 import type { AppState } from '../../types'
+import { EXERCISE_BY_ID } from '../../data/exercises'
 import { STEP_BY_ID } from '../../data/progressions'
+import { addDays, dayKey, weekStart } from '../time'
 
 type Base = 'pushups' | 'pullups' | 'dips'
-export type BodyweightCapacity = { base: Partial<Record<Base, number>>; practiced: Map<string, number>; introductory?: boolean; introductoryVisitsLeft?: number; buildUpSetLimit?: number; tryPullup?: boolean }
+export type BodyweightCapacity = {
+  base: Partial<Record<Base, number>>
+  practiced: Map<string, number>
+  introductory?: boolean
+  introductoryVisitsLeft?: number
+  introductoryEffort?: boolean
+  buildUpSetLimit?: number
+  tryPullup?: boolean
+}
 
 // These are starting gates for automated picks. An athlete can always add a movement manually.
 const gates = new Map<string, { base: Base; reps: number }>()
@@ -35,12 +45,23 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
     const was = evidence.get(id)
     if (!was || at > was.at || (at === was.at && reps > was.reps)) evidence.set(id, { at, reps })
   }
-  for (const a of [state.assessment, ...Object.values(state.tracks ?? {}).map((t) => t.assessment)]) {
+  const tracks = Object.values(state.tracks ?? {})
+  const assessments = [state.assessment, ...tracks.map((t) => t.assessment)]
+  let skillDose = 0
+  for (const a of assessments) {
     if (!a) continue
     for (const key of ['pushups', 'pullups'] as const) record(key, a.at, a.answers[key])
   }
   for (const s of state.sessions) {
     if (s.startedAt < from || s.startedAt > now) continue
+    const working = s.sets.filter((set) => set.section !== 'warmup' && set.section !== 'cooldown' && set.value > 0 &&
+      set.value >= set.target / 2 && !set.light && (set.rpe ?? s.rpe ?? 7) <= 8 && set.at <= now)
+    const strongSet = working.some((set) => set.kind === 'reps' &&
+      ((baseOf[set.exerciseId] === 'pushups' && set.value >= 10) || (baseOf[set.exerciseId] === 'pullups' && set.value >= 5)))
+    if (strongSet) {
+      const rounds = working.reduce((n, set) => n + (set.side && EXERCISE_BY_ID[set.exerciseId]?.perSide ? 0.5 : 1), 0)
+      if (rounds >= 8) skillDose = Math.max(skillDose, Math.floor(rounds))
+    }
     for (const x of s.sets) {
       if (x.kind !== 'reps' || x.section === 'warmup' || x.section === 'cooldown') continue
       const base = baseOf[x.exerciseId]
@@ -68,30 +89,48 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
       }
     }
   }
-  const placed = [state.stepId, ...Object.values(state.tracks ?? {}).map((t) => t.stepId)]
-  const established = placed.some((id) => (STEP_BY_ID[id]?.order ?? 0) >= 2) || (evidence.get('pushups')?.reps ?? 0) >= 10 || (evidence.get('pullups')?.reps ?? 0) >= 5
-  // A visit advances the beginner's dose when they actually tolerate a few working sets.
-  // A short workout can qualify. Two attempts taken to failure on two days cannot.
-  const days = new Map<string, { sets: number; lifts: Set<string> }>()
+  // Placement describes the starting athlete. A newly earned push-up during week one
+  // opens that exercise without also unlocking an experienced lifter's entire session.
+  const placed = [state.stepId, ...tracks.map((t) => t.stepId)]
+  const placedExperienced = placed.some((id) => (STEP_BY_ID[id]?.order ?? 0) >= 2) ||
+    assessments.some((a) => a && a.at <= now && (a.answers.pushups >= 10 || a.answers.pullups >= 5))
+  const established = placedExperienced || skillDose > 0
+  const days = new Map<string, { at: number; sets: number; lifts: Set<string> }>()
   for (const session of state.gym?.sessions ?? []) {
     if (session.startedAt < from || session.startedAt > now) continue
-    const key = new Date(session.startedAt).toDateString()
-    const day = days.get(key) ?? { sets: 0, lifts: new Set<string>() }
     for (const row of session.exercises) {
-      const sets = row.sets.filter((s) => !s.warmup && s.reps >= (row.repRange?.[0] ?? 3) && (s.rpe ?? row.targetRpe ?? 7) <= 8)
-      if (sets.length) { day.sets += sets.length; day.lifts.add(row.exerciseId) }
+      for (const set of row.sets) {
+        if (set.warmup || set.at < from || set.at > now) continue
+        const key = dayKey(set.at)
+        const day = days.get(key) ?? { at: set.at, sets: 0, lifts: new Set<string>() }
+        if (set.reps >= (row.repRange?.[0] ?? 3) && (set.rpe ?? row.targetRpe ?? 7) <= 8) {
+          day.sets++
+          day.lifts.add(row.exerciseId)
+        }
+        days.set(key, day)
+      }
     }
-    days.set(key, day)
   }
-  const visits = [...days.values()].filter((day) => day.sets >= 3 && day.lifts.size >= 2)
+  const trainingDays = [...days.values()].sort((a, b) => a.at - b.at)
+  const visits = trainingDays.filter((day) => day.sets >= 3 && day.lifts.size >= 2)
   const introductoryVisitsLeft = established ? 0 : Math.max(0, 2 - visits.length)
-  const buildUpSetLimit = !established && visits.length >= 2 && visits.length < 4 ? Math.min(12, Math.max(...visits.map((day) => day.sets)) + 2) : undefined
+  let buildUpSetLimit: number | undefined
+  if (!placedExperienced && (skillDose > 0 || visits.length >= 2)) {
+    // Increase from a dose repeated on two recent days. A single large workout or
+    // several hard sessions cannot establish a new baseline; short visits still count.
+    const doses = trainingDays.slice(-4).map((day) => day.sets).sort((a, b) => b - a)
+    const start = weekStart(now)
+    const previous = visits.filter((day) => day.at >= addDays(start, -7) && day.at < start)
+    const priorPeak = previous.reduce((n, day) => Math.max(n, day.sets), Math.max(8, skillDose))
+    buildUpSetLimit = Math.min(priorPeak, Math.max(4, skillDose, doses[1] ?? 0)) + 2
+  }
   const tryPullup = assistedTrial?.ready && now - assistedTrial.at <= 28 * 86_400_000 &&
     assistedTrial.at > (evidence.get('pullups')?.at ?? 0) && !evidence.has('pull-up')
   return {
     ...(tryPullup ? { tryPullup: true } : {}),
     introductory: introductoryVisitsLeft > 0,
     introductoryVisitsLeft,
+    introductoryEffort: !established && visits.length < 6,
     ...(buildUpSetLimit ? { buildUpSetLimit } : {}),
     base: { pushups: evidence.get('pushups')?.reps, pullups: evidence.get('pullups')?.reps, dips: evidence.get('dips')?.reps },
     practiced: new Map([...evidence].map(([id, e]) => [id, e.reps])),

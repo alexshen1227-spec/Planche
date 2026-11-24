@@ -80,6 +80,27 @@ const handstandGym = { ...GYM_PLACE, equipment: [...GYM_PLACE.equipment, 'wall' 
 const threeDays = [0, 45, 0, 45, 0, 45, 0]
 
 describe('one skill and whole-body training on three days', () => {
+  it.each([
+    [0, 60, 0, 0, 60, 0, 0],
+    [0, 60, 0, 60, 0, 60, 0],
+    [0, 60, 60, 0, 60, 0, 60],
+    [0, 60, 60, 60, 0, 60, 60],
+  ].map((minutesByDay) => ({ minutesByDay })))('builds a beginner’s lifting volume gradually on $minutesByDay', ({ minutesByDay }) => {
+    const out = season({ skills: [], birthYear: 1991, active: 'gym', prefs: {
+      minutesByDay, musclesPriority: ['side-delts', 'biceps'],
+      goals: { physique: 5, strength: 3, skills: 0, power: 0, endurance: 0 },
+    } }, 42)
+    const weeks = weeksOf(out).map((week) => week.flatMap((d) => d.gym ? [d.gym.items.reduce((n, item) => n + item.sets, 0)] : []))
+    const visits = weeks.flat()
+    expect(visits.slice(0, 2)).toEqual([8, 8])
+    for (const [i, week] of weeks.entries()) {
+      expect(week.length).toBe(minutesByDay.filter(Boolean).length)
+      expect(Math.max(...week)).toBeLessThanOrEqual(10 + i * 2)
+      if (i > 0) expect(Math.max(...week)).toBeLessThanOrEqual(Math.max(...weeks.slice(0, i).flat()) + 2)
+    }
+    expect(Math.max(...weeks[5])).toBeGreaterThan(Math.max(...weeks[0]))
+  })
+
   it.each(['planche', 'frontlever'] as const)('trains the opposing upper-body muscles and both legs alongside %s', (lead) => {
     const cfg: AthleteCfg = { skills: [lead], birthYear: 1993, active: 'gym', steps: { planche: 'lean', frontlever: 'fl-tuck' },
       prefs: { goals: { strength: 3, skills: 3, physique: 5, power: 0, endurance: 0 }, minutesByDay: threeDays } }

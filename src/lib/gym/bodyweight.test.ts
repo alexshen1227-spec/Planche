@@ -32,6 +32,23 @@ it('advances the introductory dose from manageable working sets and limits the f
   expect(next.items.every((i) => i.plan.targetRpe <= 7)).toBe(true)
 })
 
+it('unlocks a stronger push-up without turning a beginner’s short lifting history into a full-volume workout', () => {
+  const now = new Date(2026, 9, 13, 17).getTime()
+  const state = initialState()
+  const gym = defaultGym(['floor'], 'kg', now)
+  gym.sessions = [8, 6, 4, 2, 1].map((days) => {
+    const at = now - days * 86_400_000
+    return { id: String(days), name: 'Training', locationId: 'home', startedAt: at, endedAt: at + 60_000,
+      exercises: [days === 1 ? 'kneeling-push-up' : 'push-up', 'bodyweight-squat'].map((exerciseId) => ({
+        exerciseId, sets: [0, 1].map((i) => ({ at: at + i, reps: days === 1 ? 2 : 10, rpe: days === 1 ? 10 : 7 })),
+      })) }
+  })
+  const capacity = bodyweightCapacity({ ...state, gym }, now)
+  expect(readyForBodyweight('diamond-push-up', capacity)).toBe(true)
+  expect(capacity.buildUpSetLimit).toBe(6)
+  expect(capacity.introductoryEffort).toBe(true)
+})
+
 it('offers a plain pull-up after confirmed no-help sets on the machine, and keeps unknown or positive assistance on its own progression', () => {
   const now = Date.now()
   const state = initialState()
