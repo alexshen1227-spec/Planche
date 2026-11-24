@@ -2,7 +2,9 @@ import { useState, type KeyboardEvent } from 'react'
 import { MUSCLE_GROUPS, MUSCLES, type Muscle } from '../../data/gym/catalog'
 import { ALL_STEPS } from '../../data/progressions'
 import { cycleMuscleState, defaultPrefs } from '../../lib/gym/state'
-import type { ActivityKind, GoalWeights, SkillGoal, SportSlot, TrainingPrefs } from '../../lib/gym/types'
+import type { GoalWeights, SkillGoal, SportSlot, TrainingPrefs } from '../../lib/gym/types'
+import { SPORT_KINDS } from '../../lib/plan/sport'
+import { SportAreas } from './SportAreas'
 import { skillGoalPace } from '../../lib/plan/planner'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
@@ -18,14 +20,6 @@ const GOALS: { id: keyof GoalWeights; label: string; hint: string }[] = [
 ]
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const FULL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-const SPORT_KINDS: { id: ActivityKind; label: string; legs: boolean }[] = [
-  { id: 'sprint', label: 'Sprinting', legs: true },
-  { id: 'practice', label: 'Practice', legs: true },
-  { id: 'game', label: 'Game', legs: true },
-  { id: 'pe', label: 'PE', legs: true },
-  { id: 'run', label: 'Run', legs: true },
-  { id: 'other', label: 'Other', legs: false },
-]
 /** Easy / medium / hard, stored as the 1–10 effort a logged activity uses. */
 const INTENSITY = [
   { value: '4', label: 'Easy' },
@@ -91,7 +85,7 @@ export function SportWeekEditor({ prefs, setPrefs }: Edit) {
                 <div className="mt-2 space-y-2">
                   <div className="flex flex-wrap gap-2" role="group" aria-label={`${name}: what`}>
                     {SPORT_KINDS.map((k) => (
-                      <ToggleChip key={k.id} active={slot.kind === k.id} onClick={() => patch(d, { kind: k.id, legs: k.legs })}>
+                      <ToggleChip key={k.id} active={slot.kind === k.id} onClick={() => patch(d, { kind: k.id, legs: k.legs, upperPush: k.upperPush, upperPull: k.upperPull })}>
                         {k.label}
                       </ToggleChip>
                     ))}
@@ -115,10 +109,8 @@ export function SportWeekEditor({ prefs, setPrefs }: Edit) {
                         </option>
                       ))}
                     </select>
-                    <ToggleChip active={slot.legs} onClick={() => patch(d, (cur) => ({ legs: !cur.legs }))}>
-                      Hard on the legs
-                    </ToggleChip>
                   </div>
+                  <SportAreas areas={slot} onChange={(fields) => patch(d, fields)} />
                 </div>
               ) : null}
             </li>

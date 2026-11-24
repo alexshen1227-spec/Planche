@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { MUSCLE_BY_ID, MUSCLE_GROUPS, MUSCLES, locationEquipmentLabel } from '../../data/gym/catalog'
 import { missingPriorityOption } from '../../lib/gym/availability'
 import { gymPlaceOf } from '../../lib/plan/planner'
@@ -10,6 +10,8 @@ import { useToday } from '../../lib/useToday'
 import { weekForChoice } from '../../lib/plan/currentWeek'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
+import { Sheet } from '../ds'
+import { PlanSettings } from './PlanSettings'
 
 const STATUS: Record<VolumeStatus, { label: string; tone: string }> = {
   off: { label: 'off', tone: 'text-ink3' },
@@ -21,6 +23,7 @@ const STATUS: Record<VolumeStatus, { label: string; tone: string }> = {
 /** This week's sets per muscle — gym and skill work counted together — against the targets. */
 export function WeekVolume() {
   const { state } = useStore()
+  const [editing, setEditing] = useState(false)
   const today = useToday()
   usePlanClock()
   const [choice] = useTodayChoice(today)
@@ -28,6 +31,11 @@ export function WeekVolume() {
   const prefs = state.gym?.prefs ?? defaultPrefs(now)
   const priorities = prefs.musclesPriority.filter((m) => !prefs.musclesOff.includes(m))
   const planned = priorities.length ? weekForChoice(state, choice, now).weekTotal : {}
+  const shortfalls = priorities.map((muscle) => ({
+    muscle,
+    gap: volumeTarget(muscle, prefs)[0] - Math.round((planned[muscle] ?? 0) * 2) / 2,
+  })).filter(({ gap }) => gap > 0).sort((a, b) => b.gap - a.gap)
+  const largest = shortfalls[0]
   const place = gymPlaceOf(state, now)
   const sets = useMemo(
     () => setsPerMuscle(state.sessions, state.gym?.sessions ?? [], weekStart(now), now + 1),
@@ -56,7 +64,13 @@ export function WeekVolume() {
               </tr>
             ))}</tbody>
           </table>
-          <p className="mt-2 text-caption text-ink3">The week plan includes what you’ve logged and the workouts still on your schedule. The range is your weekly coaching target.</p>
+          <p className="mt-2 text-caption text-ink3">The week plan includes your logged sets and the workouts still scheduled. Ranges are coaching estimates for a full week.</p>
+          {largest && (
+            <div className="mt-3 border-t border-line pt-3">
+              <p className="text-footnote text-ink2">This plan leaves {MUSCLE_BY_ID[largest.muscle].label.toLowerCase()} {largest.gap} {largest.gap === 1 ? 'set' : 'sets'} below its range. More lifting time or fewer simultaneous priorities can change how much fits.</p>
+              <button type="button" className="ds-press mt-1 min-h-11 text-footnote font-semibold text-accent-text" onClick={() => setEditing(true)}>Review goals and schedule</button>
+            </div>
+          )}
           {place && priorities.map((m) => {
             const option = missingPriorityOption(m, place)
             if (!option) return null
@@ -109,6 +123,9 @@ export function WeekVolume() {
           ))}
         </div>
       </details>
+      <Sheet open={editing} onClose={() => setEditing(false)} label="Goals and schedule">
+        {editing && <PlanSettings onDone={() => setEditing(false)} />}
+      </Sheet>
     </section>
   )
 }

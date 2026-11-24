@@ -23,6 +23,7 @@ const SPORT: Record<ActivityKind, string> = {
   game: 'Game',
   pe: 'PE',
   run: 'Run',
+  climb: 'Climbing',
   other: 'Sport',
 }
 

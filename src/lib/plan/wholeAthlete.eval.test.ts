@@ -5,8 +5,8 @@ import { STEP_BY_ID, stepsOf } from '../../data/progressions'
 import { buildPlan } from '../coach'
 import { readSignals } from '../signals'
 import { skillView, stepOfSkill } from '../skills'
-import { dayKey } from '../time'
-import { familyWorkingSets, HARD_GYM_FAMILY_SETS } from './load'
+import { addDays, dayKey, weekStart } from '../time'
+import { familyWorkingSets, HARD_GYM_FAMILY_SETS, setsPerMuscle } from './load'
 import { exposureDays, exposuresOf, GYM_PLACE, keySets, makeAthlete, runLoop, SPORT_WEEK, weeksOf, type AthleteCfg, type DayRun, type LoopOpts, type LoopOut } from './wholeAthleteLoop'
 
 /**
@@ -73,6 +73,48 @@ const restoreClock = () => {
   else vi.useRealTimers()
 }
 afterAll(restoreClock)
+
+const handstandGym = { ...GYM_PLACE, equipment: [...GYM_PLACE.equipment, 'wall' as const] }
+const handstandAthlete = (fourDays: boolean): AthleteCfg => ({
+  skills: ['handstand', 'frontlever'], birthYear: 1991, active: 'gym',
+  steps: { handstand: 'hs-wall', frontlever: 'fl-tuck' }, kit: ['floor', 'wall', 'pullup-bar'],
+  prefs: {
+    goals: { strength: 3, power: 0, physique: 4, skills: 4, endurance: 0 },
+    minutesByDay: fourDays ? [0, 60, 60, 0, 60, 0, 60] : [0, 45, 0, 45, 0, 45, 0],
+    musclesPriority: fourDays ? ['calves', 'side-delts'] : ['chest', 'hamstrings'],
+  },
+})
+
+describe('mixed handstand and front lever weeks', () => {
+  it.each([false, true])('keeps both skills and works both chosen muscles over six weeks (four days: %s)', (fourDays) => {
+    const cfg = handstandAthlete(fourDays)
+    const out = season(cfg, 42, { perSet: 0.04, truthStart: { 'wall-handstand': 30, 'tuck-front-lever': 8 } }, handstandGym)
+    for (const week of weeksOf(out)) {
+      const start = weekStart(week[0].at)
+      const sets = setsPerMuscle(out.state.sessions, out.state.gym!.sessions, start, addDays(start, 7))
+      for (const m of cfg.prefs!.musclesPriority!) {
+        expect(sets[m] ?? 0, dayKey(start) + ' ' + m).toBeGreaterThanOrEqual(fourDays ? 9 : 6)
+      }
+      for (const skill of cfg.skills) expect(keySets(week, skill), dayKey(start) + ' ' + skill).toBeGreaterThan(0)
+    }
+  })
+
+  it('still practices the first skill after missing Monday of the second week', () => {
+    const first = season(handstandAthlete(false), 7, {}, handstandGym)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const next = runLoop(first.state, {
+        from: new Date(addDays(FROM.getTime(), 8)), days: 5,
+        truthStart: { 'wall-handstand': 30, 'tuck-front-lever': 8 }, setClock: (t) => vi.setSystemTime(t),
+      })
+      expect(keySets(next.days, 'handstand')).toBeGreaterThan(0)
+      expect(keySets(next.days, 'frontlever')).toBeGreaterThan(0)
+      expect(next.days.some((d) => d.gym?.items.some((item) => GYM_EXERCISE_BY_ID[item.id].primary.includes('hamstrings')))).toBe(true)
+    } finally {
+      restoreClock()
+    }
+  })
+})
 
 /** The first priority's key-hold working sets, mixed against the control, over the weeks after the first. */
 const doseRatio = (mixed: LoopOut, ctrl: LoopOut, weeks?: number) => {

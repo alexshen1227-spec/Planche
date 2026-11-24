@@ -12,7 +12,6 @@ import { APP_NAME, APP_TAGLINE } from '../data/app'
 import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
 import { displayToKg, CM_PER_IN } from '../lib/units'
 import type { Placement } from '../lib/assessment'
-import { fullParts, roomIn } from '../lib/lineup'
 import { goalMovedNote, goalPastPlacement, interviewCounter, interviewLength, ladderStopNote, pruneBlockedAnswers, skillKitStanding } from '../lib/onboardingFlow'
 import {
   goalChoices,
@@ -284,45 +283,11 @@ export function Onboarding() {
   const startingGym = gyms.find((place) => place.id === activeLocationFor(homeLocation(equipment.length ? equipment : ['floor']), gyms))
   /** The week asked for, read as the two numbers the app keeps: a weekly goal and a typical session. */
   const schedule = summariseSchedule(prefs.minutesByDay)
-  const minutes = schedule.sessionMinutes
-  /** One skill at a time: sessions too short to hold a second in full. */
-  const takesTurns = fullParts(minutes) === 1
-  /**
-   * What a session of the chosen length holds when several skills can train,
-   * in the line-up's own terms (`lib/lineup`), so this screen cannot promise a
-   * session the app will not build. It once said "room for two skills" of a
-   * length the line-up fills with two in full and a short dose of a third.
-   */
-  const sessionRoom = takesTurns
-    ? `Room for one skill a session: your main one gets the most turns, and ${
-        trainable.length === 2 ? 'the other takes its turn' : 'the others take theirs'
-      } in between.`
-    : trainable.length === 2
-      ? 'Room for both skills in every session, your main one first and fullest.'
-      : `Room for ${roomIn(minutes)} a session — your main skill every time, the others in turn.`
   const named = (skill: SkillId) => SKILLS[skill].name.toLowerCase()
-  /**
-   * How the skills that can train share the sessions — counted from the kit
-   * ticked, not from everything picked: "With 5 skills" was once said to an
-   * athlete whose kit trained two. Two skills are named, since the second is
-   * not "the others" and at this length it does not take turns.
-   */
-  const sharing =
-    trainable.length > 2
-      ? `With ${trainable.length} skills to train, ${named(lead)} ${
-          takesTurns
-            ? 'gets the most sessions and the others take theirs in between'
-            : 'is in every session and the others take turns behind it'
-        }.`
-      : trainable.length === 2
-        ? `With 2 skills to train, ${named(lead)} ${
-            takesTurns
-              ? `gets the most sessions and ${named(trainable[1])} takes its turn in between`
-              : `leads every session and ${named(trainable[1])} follows it`
-          }.`
-        : trainable.length === 1 && skills.length > 1
-          ? `With the kit you ticked, ${named(lead)} is the one skill your sessions can train for now.`
-          : ''
+  const sharing = trainable.length > 1
+    ? `${SKILLS[lead].name} is your first skill priority, followed by ${skillNames(trainable.slice(1))}. Your time, equipment and recovery determine which skill fits each day.`
+    : trainable.length === 1 && skills.length > 1
+      ? `${SKILLS[lead].name} can train with the equipment available.` : ''
   /** Which of the chosen skills are waiting for kit, and what that means for the sessions. */
   const waitingNote = waitingSkills.length
     ? `${capitalised(skillNames(waitingSkills))} ${waitingSkills.length === 1 ? 'is' : 'are'} waiting for kit${
@@ -593,13 +558,7 @@ export function Onboarding() {
               What do you want to train?
             </h1>
             <p className="mt-1 text-center text-body leading-relaxed text-ink2">
-              Pick one or several. The first one you pick leads every session; the others rotate in behind it. You can
-              add, drop or reorder them later.
-            </p>
-            <p className="mt-2 rounded-inner border border-line bg-surface p-3 text-center text-footnote leading-relaxed text-ink2">
-              Pick at least one skill; it is what the plan builds a skill day around. Goals can still set Calisthenics
-              skills to Off: then the plan schedules no calisthenics until you turn it back on, and the skill you
-              choose here waits for that.
+              Pick your most important skill first. Your week can include dedicated skill days, skill practice before lifting, and gym days. You can change the order later.
             </p>
             <div className="mt-6 space-y-2.5" role="group" aria-label="Skills to train">
               {SKILL_LIST.map((def) => {
@@ -646,8 +605,8 @@ export function Onboarding() {
               {skills.length === 0
                 ? 'Choose at least one.'
                 : skills.length === 1
-                  ? `${SKILLS[focus].name} only — every session is built around it.`
-                  : `${SKILLS[focus].name} leads. No trial has tested how best to combine skills like these; the mix follows what coaches broadly do — one main skill a session, a second that loads different joints.`}
+                  ? `${SKILLS[focus].name} is your skill priority.`
+                  : `Your skill priorities, in order: ${skillNames(skills)}.`}
             </p>
             <div className={actionRow}>
               <button onClick={() => setStage('goals')} className={backBtn}>
@@ -1174,7 +1133,6 @@ export function Onboarding() {
                     Your weekly goal is {schedule.weeklyGoal} and your usual session is {schedule.sessionMinutes} minutes.
                     You can change both in Settings.
                     {sharing ? ` ${sharing}` : ''}
-                    {trainable.length > 1 ? ` ${sessionRoom}` : ''}
                     {placeNote ? ` ${placeNote}` : ''}
                     {waitingNote ? ` ${waitingNote}` : ''}
                   </p>

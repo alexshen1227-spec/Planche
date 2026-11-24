@@ -1,4 +1,4 @@
-import type { ActivityKind, GymState, OutsideActivity, SportSlot } from '../gym/types'
+import type { ActivityKind, GymState, OutsideActivity, SportLoadAreas, SportSlot } from '../gym/types'
 import { dayKey } from '../time'
 
 /**
@@ -16,6 +16,16 @@ export interface SportEvent extends OutsideActivity {
 }
 
 const DEFAULT_HOUR = 17
+
+export const SPORT_KINDS: ({ id: ActivityKind; label: string } & SportLoadAreas)[] = [
+  { id: 'sprint', label: 'Sprinting', legs: true },
+  { id: 'practice', label: 'Practice', legs: true },
+  { id: 'game', label: 'Game', legs: true },
+  { id: 'pe', label: 'PE', legs: true },
+  { id: 'run', label: 'Run', legs: true },
+  { id: 'climb', label: 'Climbing', legs: false, upperPull: true },
+  { id: 'other', label: 'Other', legs: false },
+]
 
 /**
  * Hard enough to plan the legs around: a game, a sprint session, or anything
@@ -37,6 +47,7 @@ const KIND_NAME: Record<ActivityKind, string> = {
   game: 'game',
   pe: 'PE',
   run: 'run',
+  climb: 'climbing session',
   other: 'activity',
 }
 
@@ -59,7 +70,8 @@ export function scheduledSport(schedule: SportSlot[] | undefined, from: number, 
       at.setHours(slot.hour ?? DEFAULT_HOUR, 0, 0, 0)
       const t = at.getTime()
       if (t >= from && t < to) {
-        out.push({ id: `sport-${dayKey(t)}`, at: t, kind: slot.kind, minutes: slot.minutes, rpe: slot.rpe, legs: slot.legs, updatedAt: 0, scheduled: true })
+        out.push({ id: `sport-${dayKey(t)}`, at: t, kind: slot.kind, minutes: slot.minutes, rpe: slot.rpe, legs: slot.legs,
+          ...(slot.upperPush ? { upperPush: true } : {}), ...(slot.upperPull ? { upperPull: true } : {}), updatedAt: 0, scheduled: true })
       }
     }
     day.setDate(day.getDate() + 1)

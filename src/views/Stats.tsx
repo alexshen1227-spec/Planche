@@ -638,6 +638,7 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
       <div className="mt-6">
         <WeeklySummary />
       </div>
+      {Boolean(whole.gym?.prefs?.musclesPriority.length) && <div className="mt-6"><WeekVolume /></div>}
       {skills.length > 1 ? (
         <div className="mt-6">
           <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Skill shown">

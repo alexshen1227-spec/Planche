@@ -461,7 +461,21 @@ export function planGymExercises(input: GymSessionInput) {
     // for each requested muscle before spending time on another angle of the same lift.
     if (requested.size) {
       for (const muscle of requested) {
-        const candidates = items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes(muscle))
+        let candidates = items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes(muscle))
+        if (!candidates.length && !musclesOff.has(muscle)) {
+          // An isolation lift can serve a missing priority even on another focus's day.
+          // Cap its dose so tomorrow can still use the muscle for a full session.
+          const options = here.filter((e) => !used.has(e.id) && !e.compound && !e.explosive && !e.dose &&
+            e.primary.includes(muscle) && usable(e) && !spareIn(e) && !technicalPenalty(e))
+          const best = options.sort((a, b) => scoreOf(a) - scoreOf(b) || a.primary.length - b.primary.length)[0]
+          if (best) {
+            const addition = makeItem(best, false, 3)
+            items.push(addition)
+            used.add(best.id)
+            steered.add(best.id)
+            candidates = [addition]
+          }
+        }
         const isolation = candidates.find((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.length === 1)
         const best = muscle === 'quads' && (focus === 'lower' || focus === 'full') ? candidates[0] : isolation ?? candidates[0]
         if (best) protectSets.add(best.exerciseId)
@@ -495,7 +509,12 @@ export function planGymExercises(input: GymSessionInput) {
     if (trimPriority && focus !== 'athletic') {
       for (let i = items.length - 1; i > 0 && items.length > 3 && total() > minutes; i--) {
         const ex = GYM_EXERCISE_BY_ID[items[i].exerciseId]
-        if (ex.compound || protectSets.has(ex.id) || (focus === 'lower' && ex.pattern === 'knee-flexion')) continue
+        if (protectSets.has(ex.id) || anchors.has(ex.id) || ex.primary.some((m) => requested.has(m)) ||
+          (focus === 'lower' && ['hinge', 'knee-flexion'].includes(ex.pattern))) continue
+        if (ex.compound && !items.slice(0, i).some((other) => {
+          const earlier = GYM_EXERCISE_BY_ID[other.exerciseId]
+          return earlier.compound && earlier.primary.some((m) => ex.primary.includes(m))
+        })) continue
         dropped.unshift(ex.name)
         items.splice(i, 1)
         trimmed = true

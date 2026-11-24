@@ -5,6 +5,7 @@ import type { EquipmentId } from '../../types'
 import { MUSCLES, type Joint, type Muscle } from '../../data/gym/catalog'
 import { SKILL_IDS, type SkillId, type StepId } from '../../types'
 import { STEP_BY_ID } from '../../data/progressions'
+import { SPORT_KINDS } from '../plan/sport'
 import type {
   ActivityKind,
   GymExerciseLog,
@@ -30,7 +31,7 @@ const isUnit = (v: unknown): v is Unit => v === 'kg' || v === 'lb'
 const RATINGS: Rating[] = ['love', 'fine', 'avoid']
 
 const MUSCLE_IDS = new Set<string>(MUSCLES.map((m) => m.id))
-const ACTIVITY_KINDS: ActivityKind[] = ['sprint', 'practice', 'game', 'pe', 'run', 'other']
+const ACTIVITY_KINDS = SPORT_KINDS.map((k) => k.id)
 const clamp = (v: unknown, lo: number, hi: number, fallback: number) =>
   typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
 
@@ -143,6 +144,8 @@ function sanitizeSportSchedule(raw: unknown): SportSlot[] {
       minutes: Math.round(clamp(v.minutes, 10, 300, 60)),
       rpe: Math.round(clamp(v.rpe, 1, 10, 6)),
       legs: v.legs === true,
+      ...(v.upperPush === true ? { upperPush: true } : {}),
+      ...(v.upperPull === true ? { upperPull: true } : {}),
       ...(hour !== undefined ? { hour } : {}),
     })
   }
@@ -161,6 +164,8 @@ function sanitizeActivity(raw: unknown): OutsideActivity | null {
     minutes: Math.round(clamp(r.minutes, 1, 600, 30)),
     rpe: Math.round(clamp(r.rpe, 1, 10, 6)),
     legs: r.legs === true,
+    ...(r.upperPush === true ? { upperPush: true } : {}),
+    ...(r.upperPull === true ? { upperPull: true } : {}),
     ...(typeof r.note === 'string' && r.note ? { note: r.note.slice(0, 200) } : {}),
     updatedAt: isTime(r.updatedAt) ? r.updatedAt : r.at,
   }

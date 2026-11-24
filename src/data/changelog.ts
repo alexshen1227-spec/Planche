@@ -18,6 +18,16 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-11-24',
+    title: 'Make room for skills, lifting and sport',
+    area: 'coach',
+    notes: [
+      'Climbing and other activities can load your legs, pressing muscles, or pulling muscles and grip. A hard climb gives your pulling work recovery time, including front lever practice.',
+      'Short lifting sessions can train a priority muscle across several days. Handstand practice can share a longer day with lifting when its full working dose still fits.',
+      'Progress shows how many sets your current week schedules for your chosen muscles. You can review goals and available days when a priority falls below its range.',
+    ],
+  },
+  {
     date: '2026-11-23',
     title: 'Pick up a workout where you left off',
     area: 'training',

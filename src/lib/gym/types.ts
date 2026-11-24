@@ -165,31 +165,33 @@ export interface TrainingPrefs {
 }
 
 /** One regular sport session in the week. At most one per weekday. */
-export interface SportSlot {
+export interface SportLoadAreas {
+  legs: boolean
+  upperPush?: boolean
+  upperPull?: boolean
+}
+
+export interface SportSlot extends SportLoadAreas {
   /** 0 = Sunday … 6 = Saturday, like `minutesByDay`. */
   weekday: number
   kind: ActivityKind
   minutes: number
   /** How hard it usually is, 1–10. */
   rpe: number
-  /** Whether it loads the legs hard (sprints, jumps, a game). */
-  legs: boolean
   /** Local start hour, 0–23. Absent = 17:00. */
   hour?: number
 }
 
-export type ActivityKind = 'sprint' | 'practice' | 'game' | 'pe' | 'run' | 'other'
+export type ActivityKind = 'sprint' | 'practice' | 'game' | 'pe' | 'run' | 'climb' | 'other'
 
 /** Training that happens outside the app — a sport, a run, PE — counted toward fatigue. */
-export interface OutsideActivity {
+export interface OutsideActivity extends SportLoadAreas {
   id: string
   at: number
   kind: ActivityKind
   minutes: number
   /** How hard it was, 1–10. */
   rpe: number
-  /** Whether it loaded the legs hard (sprints, jumps, a game). */
-  legs: boolean
   note?: string
   updatedAt: number
 }

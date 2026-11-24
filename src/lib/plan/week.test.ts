@@ -6,7 +6,7 @@ import { defaultGym, defaultPrefs, mergeGym, sanitizeGym } from '../gym/state'
 import type { GymFocus } from '../gym/builder'
 import type { GymLocation, GymSession, OutsideActivity, SportSlot, TrainingPrefs } from '../gym/types'
 import { fatigueAt } from './load'
-import { planToday, planWeek, planWeekAhead, skillFamily, soreJoints } from './planner'
+import { gymToday, planToday, planWeek, planWeekAhead, skillFamily, soreJoints } from './planner'
 import { buildGymSession, nextFocus } from '../gym/builder'
 import { liftTrend } from '../gym/progression'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
@@ -122,6 +122,32 @@ describe('the sport week', () => {
     const both = withGym(scheduled, { activities: [{ ...activity(at(2, 12), 'practice', 4), minutes: 60 }] })
     expect(sportBetween(both.gym, MON, at(7, 0))).toHaveLength(1)
     expect(fatigueAt(both, thu).muscles.quads!).toBeLessThan(fatigueAt(scheduled, thu).muscles.quads!)
+  })
+
+  it('counts easy runs consistently and lets hard climbing recover across both skills and lifting', () => {
+    const state = athlete(['frontlever', 'handstand'], { minutesByDay: [0, 60, 60, 0, 60, 0, 60] })
+    const usual = { ...practiceOn(0, 2, 'run'), hour: 17, minutes: 20 }
+    const logged = { ...activity(at(-1, 17), 'run', 2), minutes: 20 }
+    for (const s of [
+      withGym(state, { activities: [logged] }),
+      withGym(state, { prefs: { ...state.gym!.prefs!, sportSchedule: [usual] } }),
+    ]) expect(gymToday(s, { now: MON, minutes: 60, focus: 'lower' }).musclesOff).not.toContain('quads')
+
+    for (const s of [
+      withGym(state, { activities: [{ ...logged, kind: 'climb', rpe: 9, minutes: 120, legs: false, upperPull: true }] }),
+      withGym(state, { prefs: { ...state.gym!.prefs!, sportSchedule: [{ ...usual, kind: 'climb', rpe: 9, minutes: 120, legs: false, upperPull: true }] } }),
+    ]) {
+      s.gym = sanitizeGym(JSON.parse(JSON.stringify(s.gym)))
+      expect(fatigueAt(s, MON).muscles.forearms).toBeGreaterThan(0)
+      const today = planWeekAhead(s, MON).days[0].plan
+      expect(today.skill?.skills ?? []).not.toContain('frontlever')
+      expect(today.reasons.join(' ')).toMatch(/climbing session/)
+      const gym = gymToday(s, { now: MON, minutes: 60, focus: 'pull' })
+      expect(gym.musclesOff).toContain('lats')
+      expect(gym.opener?.skills ?? []).not.toContain('frontlever')
+      expect(gym.musclesOff).not.toContain('quads')
+      expect(gymToday(s, { now: at(2, 17), minutes: 60, focus: 'pull' }).musclesOff).not.toContain('lats')
+    }
   })
 
   it('keeps legs out the day before, of and after a hard usual session — and not for an easy one', () => {
@@ -274,10 +300,11 @@ describe('readiness', () => {
     }
     const after = planToday(withGym(base, { activities: [activity(at(-1, 15), 'game', 8, false)] }), { now: MON, minutes: 60 })
     expect(after.readiness!.reason).toContain('hard game yesterday')
-    // An easy run tomorrow keeps the legs fresh and the day a little lighter: a push never lifts that, nor says push.
+    // A low-effort run tomorrow uses the same rule whether entered once or on the regular schedule.
     const run = planToday(withGym(base, { activities: [{ ...activity(at(1, 7), 'run', 4), minutes: 30 }] }), { now: MON, minutes: 60 })
-    expect(run.gym!.volumeFactor).toBeLessThanOrEqual(0.8)
-    expect(run.readiness!.level).toBe('normal')
+    const scheduled = planToday(withGym(base, { prefs: { ...base.gym!.prefs!, sportSchedule: [{ ...practiceOn(2, 4, 'run'), hour: 7, minutes: 30 }] } }), { now: MON, minutes: 60 })
+    expect(run.gym!.volumeFactor).toBe(scheduled.gym!.volumeFactor)
+    expect(run.readiness!.level).toBe(scheduled.readiness!.level)
   })
 
   it('never pushes with an open pain or niggle report; pain makes the day light', () => {

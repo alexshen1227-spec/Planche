@@ -3,7 +3,7 @@ import { athleticDomain, GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { EXERCISE_BY_ID } from '../../data/exercises'
 import { SKILLS } from '../../data/skills'
 import type { AppState, Category, Session, SetLog, SkillId } from '../../types'
-import type { GoalWeights, GymSession, OutsideActivity, TrainingPrefs } from '../gym/types'
+import type { GoalWeights, GymSession, OutsideActivity, SportLoadAreas, TrainingPrefs } from '../gym/types'
 import { sportBetween } from './sport'
 
 /**
@@ -207,6 +207,19 @@ export interface Fatigue {
   muscles: Credit
 }
 
+export const SPORT_UPPER_MUSCLES: Record<'push' | 'pull', Muscle[]> = {
+  push: ['chest', 'front-delts', 'triceps'],
+  pull: ['lats', 'upper-back', 'biceps', 'forearms'],
+}
+
+export function sportLoading(areas: SportLoadAreas): Credit {
+  const result: Credit = {}
+  if (areas.legs) Object.assign(result, { quads: 1, hamstrings: 1, glutes: 1, calves: 1 })
+  if (areas.upperPush) for (const m of SPORT_UPPER_MUSCLES.push) result[m] = 1
+  if (areas.upperPull) for (const m of SPORT_UPPER_MUSCLES.pull) result[m] = 1
+  return result
+}
+
 /**
  * Recent load per muscle, decaying with a 36-hour half-life — a planning
  * convention, not a physiological measurement. It ranks what is freshest; it
@@ -239,7 +252,7 @@ export function fatigueAt(state: Pick<AppState, 'sessions' | 'gym'>, now: number
   }
   // Logged activities and the regular sport week alike (a log of the same kind replaces that day's usual session).
   for (const a of sportBetween(state.gym, horizon, now + 1)) {
-    if (a.legs) add(out.muscles, { quads: 1, hamstrings: 1, glutes: 1, calves: 1 }, decay((now - a.at) / 3_600_000) * activityLoad(a))
+    add(out.muscles, sportLoading(a), decay((now - a.at) / 3_600_000) * activityLoad(a))
   }
   return out
 }

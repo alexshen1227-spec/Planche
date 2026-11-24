@@ -1,17 +1,10 @@
 import { useState } from 'react'
-import type { ActivityKind } from '../../lib/gym/types'
+import type { ActivityKind, SportLoadAreas } from '../../lib/gym/types'
+import { SPORT_KINDS } from '../../lib/plan/sport'
+import { SportAreas } from './SportAreas'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
 import { Button, SegmentedControl, ToggleChip } from '../ds'
-
-const KINDS: { id: ActivityKind; label: string; legs: boolean }[] = [
-  { id: 'sprint', label: 'Sprinting', legs: true },
-  { id: 'practice', label: 'Practice', legs: true },
-  { id: 'game', label: 'Game', legs: true },
-  { id: 'pe', label: 'PE', legs: true },
-  { id: 'run', label: 'Run', legs: true },
-  { id: 'other', label: 'Other', legs: false },
-]
 
 /**
  * When a logged activity happened: `ahead` calendar days from now (negative =
@@ -34,7 +27,7 @@ export function ActivitySheet({ onDone }: { onDone: () => void }) {
   const [kind, setKind] = useState<ActivityKind>('sprint')
   const [minutes, setMinutes] = useState(60)
   const [rpe, setRpe] = useState(7)
-  const [legs, setLegs] = useState(true)
+  const [areas, setAreas] = useState<SportLoadAreas>({ legs: true })
   const [when, setWhen] = useState<'yesterday' | 'today' | 'tomorrow' | 'in2'>('today')
   const save = () => {
     const ahead = { yesterday: -1, today: 0, tomorrow: 1, in2: 2 }[when]
@@ -42,26 +35,25 @@ export function ActivitySheet({ onDone }: { onDone: () => void }) {
     const at = activityTime(Date.now(), ahead)
     dispatch({
       type: 'GYM',
-      op: { op: 'logActivity', activity: { id: `act-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, at, kind, minutes, rpe, legs } },
+      op: { op: 'logActivity', activity: { id: `act-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, at, kind, minutes, rpe, ...areas } },
     })
-    pushToast(ahead > 0 ? 'Added — the plan keeps your legs fresh for it.' : 'Logged — the plan now counts it.', 'success')
+    pushToast(ahead > 0 ? 'Added to your training week.' : 'Activity logged.', 'success')
     onDone()
   }
   return (
     <div className="space-y-4">
       <h2 className="font-display text-title2 font-semibold text-ink">Log a sport or activity</h2>
       <p className="text-body text-ink2">
-        Sports and activities outside the app count toward fatigue: a hard sprint day means lighter legs in the gym, and
-        it can stand in for leg day.
+        Choose the areas you used. Your plan gives those areas time to recover after a hard session.
       </p>
       <div className="flex flex-wrap gap-2" role="group" aria-label="What you did">
-        {KINDS.map((k) => (
+        {SPORT_KINDS.map((k) => (
           <ToggleChip
             key={k.id}
             active={kind === k.id}
             onClick={() => {
               setKind(k.id)
-              setLegs(k.legs)
+              setAreas({ legs: k.legs, upperPull: k.upperPull, upperPush: k.upperPush })
             }}
           >
             {k.label}
@@ -88,11 +80,7 @@ export function ActivitySheet({ onDone }: { onDone: () => void }) {
           ))}
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <ToggleChip active={legs} onClick={() => setLegs(!legs)}>
-          {legs ? 'Hard on the legs' : 'Not hard on the legs'}
-        </ToggleChip>
-      </div>
+      <SportAreas areas={areas} onChange={(p) => setAreas((a) => ({ ...a, ...p }))} />
       <SegmentedControl
         label="When"
         value={when}
@@ -114,7 +102,7 @@ export function ActivitySheet({ onDone }: { onDone: () => void }) {
             {nearby.map((a) => (
               <li key={a.id} className="flex min-h-11 items-center justify-between gap-2 py-1">
                 <span className="text-footnote">
-                  {KINDS.find((k) => k.id === a.kind)?.label ?? a.kind} · {a.minutes} min · {a.rpe}/10
+                  {SPORT_KINDS.find((k) => k.id === a.kind)?.label ?? a.kind} · {a.minutes} min · {a.rpe}/10
                   <span className="text-ink3">
                     {' '}
                     · {new Date(a.at).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
