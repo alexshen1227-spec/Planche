@@ -142,6 +142,7 @@ export function skillKitStanding(
   skills: readonly SkillId[],
   homeKit: EquipmentId[],
   places: readonly KitPlace[],
+  placedFor?: (skill: SkillId) => StepId,
 ): {
   home: SkillId[]
   atPlaces: { skill: SkillId; places: string[] }[]
@@ -149,12 +150,13 @@ export function skillKitStanding(
 } {
   const out: ReturnType<typeof skillKitStanding> = { home: [], atPlaces: [], waiting: [] }
   for (const skill of skills) {
-    const missing = missingKit(skill, homeKit)
+    const step = placedFor?.(skill)
+    const missing = missingKit(skill, homeKit, step)
     if (missing.length === 0) {
       out.home.push(skill)
       continue
     }
-    const at = placesWithKit(skill, homeKit, places)
+    const at = placesWithKit(skill, homeKit, places, step)
     if (at.length) out.atPlaces.push({ skill, places: at })
     else out.waiting.push({ skill, missing })
   }

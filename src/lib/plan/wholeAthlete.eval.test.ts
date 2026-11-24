@@ -354,6 +354,17 @@ describe('mixed handstand and front lever weeks', () => {
       restoreClock()
     }
   })
+
+  it('keeps earned freestanding balance and lever practice across six weeks at a park without a wall', () => {
+    const kit: EquipmentId[] = ['floor', 'pullup-bar', 'rings', 'dip-bars', 'band', 'box']
+    const park = { ...GYM_PLACE, name: 'Park', equipment: kit }
+    const cfg: AthleteCfg = { skills: ['handstand', 'frontlever'], steps: { handstand: 'hs-free', frontlever: 'fl-tuck' },
+      kit, active: 'gym', birthYear: 1983, prefs: { minutesByDay: [0, 45, 0, 45, 0, 45, 0], placeByDay: Array(7).fill('gym'),
+        musclesPriority: ['side-delts', 'quads'], goals: { skills: 5, physique: 5, strength: 3, power: 0, endurance: 0 } } }
+    const run = season(cfg, 42, { truthStart: { 'freestanding-handstand': 18, 'tuck-front-lever': 12 } }, park)
+    for (const week of weeksOf(run)) for (const skill of cfg.skills) expect(mainSets(week, skill), skill + ' ' + dayKey(week[0].at)).toBeGreaterThan(0)
+    expect(run.state.sessions.flatMap((s) => s.sets).some((s) => ['wall-handstand', 'wall-float', 'wall-plank'].includes(s.exerciseId))).toBe(false)
+  })
 })
 
 /** The first priority's key-hold working sets, mixed against the control, over the weeks after the first. */

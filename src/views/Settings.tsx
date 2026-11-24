@@ -525,7 +525,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             {skillOrder.map((skill, index) => {
               const def = SKILLS[skill]
               const step = STEP_BY_ID[stepOfSkill(state, skill)]
-              const waiting = missingKit(skill, state.profile.equipment)
+              const waiting = missingKit(skill, state.profile.equipment, step.id)
               return (
                 // The controls drop under the text when the two cannot share a
                 // line, so the name and what the skill is waiting for are read

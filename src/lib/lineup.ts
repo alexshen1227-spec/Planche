@@ -1,9 +1,9 @@
 import type { AppState, Block, BodyRegion, CheckIn, LineupRole, SetLog, SkillId, WorkoutRequest } from '../types'
 import { skillOfStep } from '../data/progressions'
-import { missingKit, skillOfExercise, SKILLS } from '../data/skills'
+import { skillOfExercise, SKILLS } from '../data/skills'
 import { fullParts, roomIn, shortDoses } from './sessionRoom'
 import { readinessTimeline } from './signals'
-import { activeSkills, focusSkill, wholeState } from './skills'
+import { activeSkills, focusSkill, missingSkillKit, wholeState } from './skills'
 import { todaysDay, WEEKDAY_NAMES } from './weekPlan'
 
 /**
@@ -147,7 +147,7 @@ export { fullParts, roomIn, shortDoses }
 export function trainableActiveSkills(stateIn: AppState): SkillId[] {
   const state = wholeState(stateIn)
   const active = activeSkills(state)
-  const trainable = active.filter((skill) => missingKit(skill, state.profile.equipment).length === 0)
+  const trainable = active.filter((skill) => missingSkillKit(state, skill).length === 0)
   // A focus skill the kit no longer supports is still the athlete's choice;
   // the session builder then says what is missing rather than training nothing.
   return trainable.length ? trainable : [active[0]]
@@ -249,7 +249,7 @@ export function todaysLineup(stateIn: AppState, now = Date.now(), minutesOverrid
   if (skills.length === 1) {
     // The only skill there is — even when its kit is missing, in which case
     // the session says so and holds support work only.
-    const waiting = missingKit(lead, state.profile.equipment).length > 0
+    const waiting = missingSkillKit(state, lead).length > 0
     return [
       {
         skill: lead,

@@ -4,7 +4,7 @@ import type { SkillId, Tab, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
 import { STEP_BY_ID, stepAfter, stepsOf } from '../data/progressions'
 import { SKILLS } from '../data/skills'
-import { activeSkills, skillView } from '../lib/skills'
+import { activeSkills, skillView, stepOfSkill } from '../lib/skills'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import {
   challengeBlockedReason,
@@ -283,7 +283,7 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
   const lineup = todays.lineup
   /** Chosen skills that cannot train until some kit is added. */
   const kitLines = skills.flatMap((skill) => {
-    const status = kitStatusLine(skill, whole.profile.equipment, whole.gym?.locations ?? [])
+    const status = kitStatusLine(skill, whole.profile.equipment, whole.gym?.locations ?? [], stepOfSkill(whole, skill))
     return status.kind === 'ready' ? [] : [{ skill, status }]
   })
 

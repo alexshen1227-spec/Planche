@@ -244,14 +244,14 @@ export function Onboarding() {
   const finalGoalFor = (skill: SkillId): StepId => settledGoal(skill).goal
   /** Chosen skills whose road cannot be trained with the kit ticked so far. */
   const kitGaps = skills
-    .map((skill) => ({ skill, missing: missingKit(skill, equipment.length ? equipment : ['floor']) }))
+    .map((skill) => ({ skill, missing: missingKit(skill, equipment.length ? equipment : ['floor'], placedFor(skill)) }))
     .filter((gap) => gap.missing.length > 0)
   /**
    * Where each chosen skill can train once the places already added are counted: a gym with the bar and the wall
    * trains the lever and the handstand there. Only a skill that nothing the athlete has told the app about can
    * train is waiting (`skillKitStanding`).
    */
-  const kitStanding = skillKitStanding(skills, equipment.length ? equipment : ['floor'], gyms)
+  const kitStanding = skillKitStanding(skills, equipment.length ? equipment : ['floor'], gyms, placedFor)
   const waitingSkills = kitStanding.waiting.map((entry) => entry.skill)
   /**
    * The chosen skills that kit can train, in the order picked. Sessions are

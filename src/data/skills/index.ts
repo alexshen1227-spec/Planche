@@ -63,8 +63,11 @@ export function ownsKit(equipment: EquipmentId[], id: EquipmentId): boolean {
  * requirement not met, each a list of the kit that would meet it. Empty means
  * the athlete can train it with what they have.
  */
-export function missingKit(skill: SkillId, equipment: EquipmentId[]): EquipmentId[][] {
-  return SKILLS[skill].requires.filter((options) => !options.some((id) => ownsKit(equipment, id)))
+export function missingKit(skill: SkillId, equipment: EquipmentId[], stepId?: StepId): EquipmentId[][] {
+  const step = stepId && STEP_BY_ID[stepId]
+  const movement = step && step.skill === skill && EXERCISE_BY_ID[step.keyExerciseId]
+  const requirements = movement ? (movement.requires ?? []).map((id) => [id, ...(STANDS_IN[id] ?? [])]) : SKILLS[skill].requires
+  return requirements.filter((options) => !options.some((id) => ownsKit(equipment, id)))
 }
 
 /** Skills the athlete can train with their current kit, in standard order. */

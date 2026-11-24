@@ -57,7 +57,7 @@ export function AddSkill({ onClose, onAdded }: { onClose: () => void; onAdded: (
         </p>
         <div className="mt-4 space-y-2.5">
           {choices.map((def) => {
-            const gap = missingKit(def.id, state.profile.equipment)
+            const gap = missingKit(def.id, state.profile.equipment, stepOfSkill(state, def.id))
             return (
               <button
                 key={def.id}
@@ -169,7 +169,7 @@ export function AddSkill({ onClose, onAdded }: { onClose: () => void; onAdded: (
 
   const placement = placeSkill(skill, merged)
   const step = STEP_BY_ID[placement.stepId]
-  const gap = missingKit(skill, state.profile.equipment)
+  const gap = missingKit(skill, state.profile.equipment, step.id)
   return (
     <div className="p-6 sm:p-8">
       <div className="pr-10 text-[12.5px] font-semibold uppercase tracking-wider text-accent-text">

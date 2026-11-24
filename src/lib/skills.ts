@@ -1,5 +1,6 @@
 import type { AppState, AssessmentRecord, Category, Exercise, Session, SkillId, SkillTrack, StepDef, StepId } from '../types'
 import { SKILL_IDS } from '../types'
+import { missingKit } from '../data/skills'
 import { firstStep, skillOfStep, STEP_BY_ID, stepForKeyExercise, stepsOf, summitOf } from '../data/progressions'
 import { isReviewOnly } from './progression'
 
@@ -162,6 +163,11 @@ export function hasTrack(stateIn: AppState, skill: SkillId): boolean {
 /** The step the athlete is on, for a skill. */
 export function stepOfSkill(state: AppState, skill: SkillId): StepId {
   return trackOf(state, skill).stepId
+}
+
+/** Read the current main hold. Accessories that need other equipment are fitted separately. */
+export function missingSkillKit(state: AppState, skill: SkillId, equipment = state.profile.equipment) {
+  return missingKit(skill, equipment, stepOfSkill(state, skill))
 }
 
 /** The goal step for a skill: the athlete's choice, else the summit (the planche keeps its straddle default). */

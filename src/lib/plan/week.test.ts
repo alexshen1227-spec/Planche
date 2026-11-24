@@ -19,7 +19,7 @@ import { conservative } from '../gym/draft'
 import { weekStart } from '../time'
 import { familyEvents, familyWorkingSets, HARD_GYM_FAMILY_SETS, LIGHT_PRESS_SPARE, skillSetLoading } from './load'
 import { focusFamilies, gymOpener, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutes, openerMinutesFor, REST_SLACK_HOURS, skillRequest } from './planner'
-import { missingKit } from '../../data/skills'
+import { missingSkillKit } from '../skills'
 import type { StepId, Weekday, WeekPlan } from '../../types'
 
 // Monday 16 November 2026, 9 am local: the start of a calendar week.
@@ -630,7 +630,7 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
           expect(p.gym!.minutes, who).toBeGreaterThanOrEqual(MIN_GYM_MINUTES)
           // Its family is the focus's, its kit is at the place, and no joint the family loads is sore.
           if (!p.skill.practiceFirst) expect(fam !== 'balance' && focusFamilies(p.gym!.focus).includes(fam), `${who} ${d.day} ${skill} opens ${p.gym!.focus}`).toBe(true)
-          expect(missingKit(skill, [...loc.equipment, ...s.profile.equipment] as never), `${who} ${d.day} ${skill} kit at ${loc.name} or the athlete's`).toEqual([])
+          expect(missingSkillKit(s, skill, [...loc.equipment, ...s.profile.equipment] as never), `${who} ${d.day} ${skill} kit at ${loc.name} or the athlete's`).toEqual([])
           const f = fam === 'balance' ? 'push' : fam
           expect(p.gym!.avoidJoints.filter((j) => (FAMILY_JOINTS[f] as readonly string[]).includes(j)), `${who} ${d.day} ${skill} opens on a sore joint`).toEqual([])
           // The family's rest rule: nothing logged on an earlier day, nor another day's hard session of it, inside it.
@@ -657,7 +657,7 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
             expect(w.name, `${who} ${d.day} ${p.skill.skills} with kit [${s.profile.equipment}]`).not.toMatch(/waiting for kit/)
             // With the kit it is built with: the athlete's own, or the gym's on a day planned there (round five).
             const builtWith = p.skill.kit?.length ? (['floor', ...p.skill.kit] as typeof s.profile.equipment) : s.profile.equipment
-            for (const k of p.skill.skills) expect(missingKit(k, builtWith), `${who} ${d.day} ${k}`).toEqual([])
+            for (const k of p.skill.skills) expect(missingSkillKit(s, k, builtWith), `${who} ${d.day} ${k}`).toEqual([])
             stats.kitless += kit.length < KIT.length ? 1 : 0
           }
           // A family called hard gets the sets the app counts as hard.

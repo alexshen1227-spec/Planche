@@ -3,7 +3,7 @@ import { kitNeedsPhrase } from '../../data/equipment'
 import { missingKit, SKILLS } from '../../data/skills'
 import { placesWithKit } from '../../components/weekPlanCopy'
 import { roomIn } from '../lineup'
-import { activeSkills } from '../skills'
+import { activeSkills, stepOfSkill } from '../skills'
 import { WEEKDAY_NAMES } from '../weekPlan'
 import { skillFamily, type WeekAhead } from './planner'
 
@@ -118,10 +118,11 @@ export function skillWeekLines(week: WeekAhead, state: AppState): SkillWeekLine[
 
   function reasonFor(skill: SkillId): { kind: SkillWeekReason; text: string } {
     const name = SKILLS[skill].name
-    const missing = missingKit(skill, own)
+    const step = stepOfSkill(state, skill)
+    const missing = missingKit(skill, own, step)
     if (missing.length) {
       const needs = kitNeedsPhrase(missing)
-      const at = placesWithKit(skill, own as EquipmentId[], locations)
+      const at = placesWithKit(skill, own as EquipmentId[], locations, step)
       if (at.length === 0) return { kind: 'kit-missing', text: `${name} needs ${needs}, and no place you have added has it yet.` }
       // Only when no day is planned at a place that has the kit: a day there that left it out is a matter of room, below.
       if (!at.some((place) => placesPlanned.has(place))) {

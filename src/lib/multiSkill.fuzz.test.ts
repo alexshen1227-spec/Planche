@@ -78,8 +78,8 @@ describe('any athlete, any kit, any session length', () => {
     for (const skill of SKILL_IDS) expect(athletes.some((a) => a.skills.length === 1 && a.skills[0] === skill), `${skill} alone`).toBe(true)
     expect(athletes.some((a) => a.skills.length === 5)).toBe(true)
     expect(athletes.some((a) => a.minutes === 10)).toBe(true)
-    expect(athletes.some((a) => a.skills.some((skill) => missingKit(skill, a.equipment).length > 0))).toBe(true)
-    expect(athletes.some((a) => a.skills.every((skill) => missingKit(skill, a.equipment).length > 0))).toBe(true)
+    expect(athletes.some((a) => a.skills.some((skill) => missingKit(skill, a.equipment, a.days[0].stepsBefore[skill]).length > 0))).toBe(true)
+    expect(athletes.some((a) => a.skills.every((skill) => missingKit(skill, a.equipment, a.days[0].stepsBefore[skill]).length > 0))).toBe(true)
   })
 
   it('never builds an empty session, a nameless movement or a target that is not a whole positive number', () => {
@@ -105,7 +105,7 @@ describe('any athlete, any kit, any session length', () => {
 
   it('trains only skills in the line-up, and puts in the line-up only skills that can be trained', () => {
     each((athlete, day, where) => {
-      const trainable = athlete.skills.filter((skill) => missingKit(skill, athlete.equipment).length === 0)
+      const trainable = athlete.skills.filter((skill) => missingKit(skill, athlete.equipment, day.stepsBefore[skill]).length === 0)
       const inLineup = new Set(day.lineup.map((entry) => entry.skill))
       for (const block of day.workout.blocks) {
         if (block.section === 'warmup' || block.section === 'cooldown') continue
@@ -121,7 +121,7 @@ describe('any athlete, any kit, any session length', () => {
   it('says so when no skill can be trained, instead of naming a session after a hold it cannot contain', () => {
     let seen = 0
     each((athlete, day, where) => {
-      if (athlete.skills.some((skill) => missingKit(skill, athlete.equipment).length === 0)) return
+      if (athlete.skills.some((skill) => missingKit(skill, athlete.equipment, day.stepsBefore[skill]).length === 0)) return
       seen += 1
       expect(day.workout.name, where).toMatch(/waiting for kit/)
       expect(day.workout.purpose, where).toMatch(/Support work only/)

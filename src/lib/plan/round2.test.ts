@@ -4,7 +4,7 @@ import { initialState } from '../store'
 import { defaultGym, defaultPrefs } from '../gym/state'
 import type { GymLocation, GymSession, TrainingPrefs } from '../gym/types'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
-import { missingKit } from '../../data/skills'
+import { missingSkillKit } from '../skills'
 import { finalizeWorkout } from '../../data/workouts'
 import { gymDeloadDue, gymToday, planToday, planWeekAhead, skillRequest } from './planner'
 import { choiceOptions, readTodayChoice, writeTodayChoice } from './todayChoice'
@@ -138,7 +138,7 @@ describe('the week', () => {
     for (const d of w.days) {
       if (d.kind !== 'calisthenics') continue
       // The kit the session is built with: the athlete's and the active place's (round four: calisthenics happens where the athlete is).
-      for (const k of d.plan.skill!.skills) expect(missingKit(k, ['floor', ...(d.plan.skill!.kit ?? s.profile.equipment)]), d.day).toEqual([])
+      for (const k of d.plan.skill!.skills) expect(missingSkillKit(s, k, ['floor', ...(d.plan.skill!.kit ?? s.profile.equipment)]), d.day).toEqual([])
       expect(finalizeWorkout(s, skillRequest(d.plan.skill!), undefined, d.at).name, d.day).not.toMatch(/waiting for kit/)
     }
     // A lever alone with no bar at home nor at the place: no calisthenics day at all.

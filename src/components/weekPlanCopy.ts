@@ -1,4 +1,4 @@
-import type { BodyRegion, EquipmentId, SkillId, Weekday } from '../types'
+import type { BodyRegion, EquipmentId, SkillId, StepId, Weekday } from '../types'
 import { kitNeedsPhrase } from '../data/equipment'
 import { missingKit, SKILLS } from '../data/skills'
 import { roomIn } from '../lib/lineup'
@@ -156,10 +156,10 @@ export interface KitPlace {
 }
 
 /** The places where a skill the athlete's own list cannot train has what it needs: their portable kit and the place's own list together. */
-export function placesWithKit(skill: SkillId, own: EquipmentId[], places: readonly KitPlace[]): string[] {
+export function placesWithKit(skill: SkillId, own: EquipmentId[], places: readonly KitPlace[], step?: StepId): string[] {
   const carried = own.filter((id) => CARRIED_KIT.includes(id))
   return places
-    .filter((place) => missingKit(skill, [...new Set([...carried, ...(place.equipment as EquipmentId[])])]).length === 0)
+    .filter((place) => missingKit(skill, [...new Set([...carried, ...(place.equipment as EquipmentId[])])], step).length === 0)
     .map((place) => place.name)
 }
 
@@ -180,11 +180,11 @@ export const WALL_TICK_HINT = 'Tick ‘Clear wall’ under a place that has one 
  * train, or what it is waiting for. "Front lever is waiting for kit" once sat
  * on Home beside a Gym A that has a pull-up bar.
  */
-export function kitStatusLine(skill: SkillId, own: EquipmentId[], places: readonly KitPlace[]): { kind: 'ready' } | { kind: 'at-places'; text: string } | { kind: 'waiting'; text: string } {
-  const missing = missingKit(skill, own)
+export function kitStatusLine(skill: SkillId, own: EquipmentId[], places: readonly KitPlace[], step?: StepId): { kind: 'ready' } | { kind: 'at-places'; text: string } | { kind: 'waiting'; text: string } {
+  const missing = missingKit(skill, own, step)
   if (missing.length === 0) return { kind: 'ready' }
   const name = SKILLS[skill].name
-  const at = placesWithKit(skill, own, places)
+  const at = placesWithKit(skill, own, places, step)
   if (at.length) {
     const where = at.length === 1 ? at[0] : `${at.slice(0, -1).join(', ')} and ${at[at.length - 1]}`
     return { kind: 'at-places', text: `${name} trains at ${where} — ${kitNeedsPhrase(missing)} is there. At home it waits for that kit.` }
@@ -198,8 +198,8 @@ export function kitStatusLine(skill: SkillId, own: EquipmentId[], places: readon
  * what it needs, or what to add. "Add it under Settings → Equipment" once sat
  * on the front lever day while the athlete's gym had the bar.
  */
-export function skillDayKitNote(skill: SkillId, needs: string, own: EquipmentId[], places: readonly KitPlace[], here?: string): string {
-  const at = placesWithKit(skill, own, places).filter((name) => name !== here)
+export function skillDayKitNote(skill: SkillId, needs: string, own: EquipmentId[], places: readonly KitPlace[], here?: string, step?: StepId): string {
+  const at = placesWithKit(skill, own, places, step).filter((name) => name !== here)
   if (!at.length) return `Waiting for kit — needs ${needs}. Add it under Settings → Equipment.`
   const where = at.length === 1 ? at[0] : `${at.slice(0, -1).join(', ')} and ${at[at.length - 1]}`
   return `Needs ${needs}, which ${where} ${at.length === 1 ? 'has' : 'have'} — choose ${at.length === 1 ? 'it' : 'one'} under Gym → Where are you training?`

@@ -8,7 +8,7 @@ import { barMet } from '../progression'
 import { addDays, weekStart } from '../time'
 import { goalDaysInWeekOf } from '../stats'
 import { countsSkillDay, latestSkillPartial } from '../skillSession'
-import { missingKit } from '../../data/skills'
+import { missingSkillKit } from '../skills'
 import { readDayMarks, type DayMarks } from './nextBlock'
 import { atActivePlace, gymPlaceOf, insideRestRule, kitAt, MIN_SKILL_MINUTES, placeKit, planToday, skillRequest, weekdayPlace, type SkillBlock, type TodayPlan } from './planner'
 
@@ -146,7 +146,7 @@ export function shortVersion(
   const skills = (state.profile.skills?.length ? state.profile.skills : ['planche']) as SkillId[]
   const pain = plan.reasons.some((r) => r.startsWith('You reported pain'))
   const request = atPlanPlace(state, { source: 'auto', minutes }, opts.placeId, now)
-  const free = skills.filter((s) => !insideRestRule(state, [s], now) && missingKit(s, request.kit ?? state.profile.equipment).length === 0)
+  const free = skills.filter((s) => !insideRestRule(state, [s], now) && missingSkillKit(state, s, request.kit).length === 0)
   if (free.length && !pain) return { request: { ...request, skills: free } }
   const rule = skills.map((s) => insideRestRule(state, [s], now)).find(Boolean)
   return {

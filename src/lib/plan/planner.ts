@@ -4,7 +4,7 @@ import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { EXERCISE_BY_ID } from '../../data/exercises'
 import { STEP_BY_ID } from '../../data/progressions'
 import { kitNeedsPhrase } from '../../data/equipment'
-import { missingKit, skillOfExercise, SKILLS } from '../../data/skills'
+import { skillOfExercise, SKILLS } from '../../data/skills'
 import { finalizeWorkout, withRequestKit } from '../../data/workouts'
 import type { AppState, BodyRegion, EquipmentId, LineupRole, Session, SkillId, WorkoutRequest } from '../../types'
 import { goalOutlook } from '../forecast'
@@ -12,7 +12,7 @@ import { barMet, daysAtBar, qualifyingProgress } from '../progression'
 import { daysSinceFullPart, todaysLineup } from '../lineup'
 import { fullParts, shortDoses } from '../sessionRoom'
 import { readinessTimeline } from '../signals'
-import { skillView } from '../skills'
+import { missingSkillKit, skillView } from '../skills'
 import { addDays, dayKey, weekStart } from '../time'
 import { readDay, weekdayOf } from '../weekPlan'
 import { planGymExercises, FOCUS_LABEL, focusMain, focusOpen, NAMED_PATTERNS, type GymFocus } from '../gym/builder'
@@ -223,7 +223,7 @@ const trainedSkills = (state: AppState) => (state.profile.skills?.length ? state
 
 /** Whether a skill can train with the athlete's own kit: a calisthenics day is built from that list, so only these can hold one. */
 function canTrainAtHome(state: AppState, skill: SkillId): boolean {
-  return missingKit(skill, state.profile.equipment).length === 0
+  return missingSkillKit(state, skill).length === 0
 }
 
 /** The athlete's kit and the place's together: what a session built there can use. */
@@ -329,7 +329,7 @@ function openerVerdict(state: AppState, focus: GymFocus, location: GymLocation, 
   for (const s of candidates) {
     const f = openerFamily(s, focus)!
     const sore = FAMILY_JOINTS[f].filter((j) => day.sore.includes(j))
-    const missing = missingKit(s, kit)
+    const missing = missingSkillKit(state, s, kit)
     const rest = day.blocked(f)
     if (!rest && !sore.length && !missing.length) return { skill: s }
     why ??= sore.length
@@ -1550,7 +1550,7 @@ function lineupParts(state: AppState, d: DayCtx, allowed: SkillId[], minutes: nu
  */
 function hardAtStep(state: AppState, skill: SkillId, kit: EquipmentId[] = state.profile.equipment): boolean {
   const f = skillFamily(skill)
-  if (f === 'balance' || missingKit(skill, kit).length > 0) return false
+  if (f === 'balance' || missingSkillKit(state, skill, kit).length > 0) return false
   const step = STEP_BY_ID[skillView(state, skill).stepId]
   return Boolean(step) && skillSetLoading(step.keyExerciseId, 'main')?.straightArm === f
 }
@@ -3092,7 +3092,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       if (!location || slot.kind !== 'calisthenics' || slot.skills.length !== 1 || slot.skills[0] !== 'handstand' ||
           d.assigned || d.pain || d.niggle || d.held || d.factor < 1 || d.sportRest.push || (d.index === 0 && opts.todayKind)) continue
       const kit = kitAt(base, location)
-      if (missingKit('handstand', kit).length) continue
+      if (missingSkillKit(base, 'handstand', kit).length) continue
       const full = builtSkill(base, ['handstand'], d.minutes, d.at, kit)
       const minutes = Math.max(MIN_SKILL_MINUTES[1], full.minutes)
       if (full.painSafe || d.minutes - minutes < MIN_LIFTS_AFTER_OPENER || !full.key.handstand) continue
@@ -3120,7 +3120,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
           d.assigned || d.pain || d.niggle || d.held || d.factor < 1 || !legsOpen(d) || (d.index === 0 && opts.todayKind)) continue
         const kit = kitAt(base, place)
         const minutes = openerMinutesOf(base, lead, d.minutes, d.at, place)
-        if (missingKit(lead, kit).length || !viable(d, d.minutes - minutes, 'lower')) continue
+        if (missingSkillKit(base, lead, kit).length || !viable(d, d.minutes - minutes, 'lower')) continue
         const practice = builtSkill(base, [lead], minutes, d.at, kit, true)
         if (practice.painSafe || !(practice.key[lead] && practice.key[lead] >= builtSkill(base, [lead], UNTRIMMED_MINUTES, d.at, kit).bare)) continue
         slots[d.index] = { ...sl, kind: 'gym', why: 'leg-coverage', legDay: true, reservedOpener: { skill: lead, minutes },
@@ -3192,7 +3192,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       const wanted = skills.length === 1 && g.skills >= 3 ? 2 : 1
       if (other ? other === 'handstand' || firstDays >= 2 || count(other) <= Math.max(1, firstDays) : firstDays >= wanted) continue
       const kit = kitAt(base, place)
-      if (missingKit('handstand', kit).length || FAMILY_JOINTS.push.some((joint) => d.avoidJoints.includes(joint))) continue
+      if (missingSkillKit(base, 'handstand', kit).length || FAMILY_JOINTS.push.some((joint) => d.avoidJoints.includes(joint))) continue
       const minutes = balanceWithLifting && !canShareBalance ? OPENER_MINUTES : openerMinutes(d.minutes)
       const practice = builtSkill(base, ['handstand'], minutes, d.at, kit, true)
       if (practice.painSafe || !practice.key.handstand || !FOCI.some((f) => f !== 'athletic' && openOn(d, f) && viable(d, d.minutes - minutes, f))) continue
@@ -3243,7 +3243,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     const waited = (s: SkillId) => daysSinceFullPart(base, s, d.at) ?? NEVER_TRAINED_DAYS
     missing.sort((a, b) => waited(b) - waited(a))
     for (const skill of missing) {
-      if (missingKit(skill, kit).length) continue
+      if (missingSkillKit(base, skill, kit).length) continue
       const fam = skillFamily(skill) === 'pull' ? 'pull' : 'push'
       if (FAMILY_JOINTS[fam].some((j) => d.avoidJoints.includes(j)) || !openerClear(fam, d.index)) continue
       const minutes = openerMinutesOf(base, skill, d.minutes, d.at, location)
@@ -4161,9 +4161,9 @@ function assembleDay(
   if (why) reasons.push(why)
   // Where: a calisthenics day planned at the gym says why it is there.
   if (slot.kind === 'calisthenics' && slot.placeId && extra.place) {
-    const away = slot.skills.filter((s) => missingKit(s, state.profile.equipment).length > 0)
+    const away = slot.skills.filter((s) => missingSkillKit(state, s).length > 0)
     if (away.length) {
-      const needs = kitNeedsPhrase(away.flatMap((s) => missingKit(s, state.profile.equipment)))
+      const needs = kitNeedsPhrase(away.flatMap((s) => missingSkillKit(state, s)))
       reasons.push(`At ${extra.place.name}: the ${joinNames(away.map(skillName))} ${away.length > 1 ? 'need' : 'needs'} ${needs}, which your own kit does not have, so today's session is planned there.`)
     }
   }

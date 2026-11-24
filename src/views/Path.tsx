@@ -128,7 +128,7 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   const skillDef = SKILLS[viewSkill]
   const STEPS = stepsOf(viewSkill)
   const notTraining = SKILL_LIST.filter((def) => !skills.includes(def.id))
-  const kitGap = missingKit(viewSkill, whole.profile.equipment)
+  const kitGap = missingKit(viewSkill, whole.profile.equipment, state.stepId)
 
   const currentOrder = STEPS.find((s) => s.id === state.stepId)?.order ?? 0
   const goalStepId = state.profile.goalStepId ?? skillDef.defaultGoal

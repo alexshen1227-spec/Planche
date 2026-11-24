@@ -1,9 +1,9 @@
 import { countsSkillDay } from './skillSession'
 import type { AppState, DayPlan, SkillId, WeekPlan, Weekday } from '../types'
 import { SKILL_IDS } from '../types'
-import { missingKit, skillOfExercise, SKILLS } from '../data/skills'
+import { skillOfExercise, SKILLS } from '../data/skills'
 import { fullParts, roomIn, shortDoses } from './sessionRoom'
-import { activeSkills, wholeState } from './skills'
+import { activeSkills, missingSkillKit, wholeState } from './skills'
 import { addDays, weekStart } from './time'
 
 /**
@@ -90,7 +90,7 @@ export function readDay(stateIn: AppState, weekday: Weekday): DayReading {
   if (assigned === 'rest') return { kind: 'rest', weekday }
   if (!assigned?.length) return { kind: 'open', weekday, unavailable: [] }
   const active = activeSkills(state)
-  const can = (skill: SkillId) => active.includes(skill) && missingKit(skill, state.profile.equipment).length === 0
+  const can = (skill: SkillId) => active.includes(skill) && missingSkillKit(state, skill).length === 0
   const skills = assigned.filter(can)
   const unavailable = assigned.filter((skill) => !can(skill))
   // A day whose skills were all dropped, or all wait for kit, is not a rest
@@ -150,7 +150,7 @@ export interface PlanCoverage {
 export function planCoverage(stateIn: AppState, plan: WeekPlan | undefined): PlanCoverage {
   const state = wholeState(stateIn)
   const active = activeSkills(state)
-  const can = (skill: SkillId) => active.includes(skill) && missingKit(skill, state.profile.equipment).length === 0
+  const can = (skill: SkillId) => active.includes(skill) && missingSkillKit(state, skill).length === 0
   const minutes = state.settings.sessionMinutes
   const two = fullParts(minutes) >= 2
   const rows = new Map(active.map((skill) => [skill, { skill, full: 0, short: 0, leftOut: 0, unavailable: 0 }]))

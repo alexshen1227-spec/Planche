@@ -1398,6 +1398,8 @@ describe('the line-up', () => {
     expect(todaysLineup(state, T0).map((entry) => entry.skill)).toEqual(['planche'])
     expect(missingKit('frontlever', ['floor'])).toEqual([['pullup-bar', 'rings']])
     expect(missingKit('frontlever', ['floor', 'rings'])).toEqual([])
+    expect(missingKit('handstand', ['floor'], 'hs-free')).toEqual([])
+    for (const step of ['hs-foundations', 'hs-wall', 'hs-float'] as const) expect(missingKit('handstand', ['floor'], step)).toEqual([['wall']])
     expect(trainableSkills(['floor'])).toEqual(['planche', 'ninety'])
     // A focus skill the kit does not support is still the athlete's choice.
     const stuck = startingState({ skills: ['flag'], equipment: ['floor'] })

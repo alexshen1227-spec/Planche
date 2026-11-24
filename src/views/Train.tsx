@@ -114,7 +114,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   // The skills the athlete trains, and which of them can train with the kit
   // listed: a skill waiting for a bar is not offered a session.
   const skills = activeSkills(state)
-  const trainable = skills.filter((skill) => missingKit(skill, state.profile.equipment).length === 0)
+  const trainable = skills.filter((skill) => missingKit(skill, state.profile.equipment, stepOfSkill(state, skill)).length === 0)
   const [testPick, setTestPick] = useState<SkillId | null>(null)
   const testSkill: SkillId = testPick && trainable.includes(testPick) ? testPick : (trainable[0] ?? skills[0])
   const [mix, setMix] = useState<SkillId[]>([])
@@ -192,7 +192,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   const skillDays = skills.flatMap((skill) => {
     const def = SKILLS[skill]
     // The kit where the athlete is: their own and the active place's (`placeKit`), as the session is built.
-    const needsList = missingKit(skill, atPlanPlace(state, { source: 'auto' }, choice.placeId).kit ?? state.profile.equipment)
+    const needsList = missingKit(skill, atPlanPlace(state, { source: 'auto' }, choice.placeId).kit ?? state.profile.equipment, stepOfSkill(state, skill))
     const needs = needsList.length ? kitNeedsPhrase(needsList) : null
     const rest = restNotes.get(skill)?.text ?? null
     const days: { key: string; skill: SkillId; title: string; line: string; needs: string | null; rest: string | null; request: WorkoutRequest }[] = [
@@ -351,6 +351,7 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
                   state.profile.equipment,
                   state.gym?.locations ?? [],
                   state.gym?.locations.find((l) => l.id === state.gym?.activeLocationId)?.name,
+                  stepOfSkill(state, day.skill),
                 )}
               </p>
             ) : day.rest ? (
