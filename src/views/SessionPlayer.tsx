@@ -1,5 +1,6 @@
 import { SetEffort } from '../components/SetEffort'
 import { Button } from '../components/ds'
+import { WorkoutWriter } from '../components/WorkoutWriter'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { useInertBackground } from '../components/gym/GymPlayer'
@@ -35,12 +36,12 @@ import { STEP_BY_ID } from '../data/progressions'
 import { describeBlock, describeTarget, primaryTargetBlock, isPainSafe } from '../data/workouts'
 import { buildPlan, debriefSession, type CoachDecision } from '../lib/coach'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
-import { useStore } from '../lib/store'
+import { newId, useStore } from '../lib/store'
 import { applySession } from '../lib/engine'
 import { sfx, speak, buzz } from '../lib/audio'
 import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
-import { clearDraft, restoredAttemptReport, restoredSessionSetup, saveDraft, type SessionDraft } from '../lib/draft'
+import { clearDraft, loadDraft, restoredAttemptReport, restoredSessionSetup, saveDraft, type SessionDraft } from '../lib/draft'
 import { countsSkillDay, plannedMainRounds, remainingSkillWork } from '../lib/skillSession'
 import { rememberNextBlock } from '../lib/plan/nextBlock'
 import { useFormRecorder, type RecorderStatus } from '../lib/recorder'
@@ -326,15 +327,7 @@ function timingNote(log: SetLog, walkBackSec?: number): string | null {
   return countedNote(log, walkBackSec)
 }
 
-export function SessionPlayer({
-  workout,
-  onExit,
-  resumeFrom,
-  askCheckIn = false,
-  checkInContext,
-  onCheckInAnswered,
-  onViewSession,
-}: {
+interface SessionPlayerProps {
   workout: Workout
   onExit: (savedSessionId?: string) => void
   /** Open the saved session in History. */
@@ -343,8 +336,38 @@ export function SessionPlayer({
   askCheckIn?: boolean
   checkInContext?: CheckInContext
   onCheckInAnswered?: (c: CheckIn) => void
-}) {
+}
+
+const editable = () => true
+const restoredId = (d: SessionDraft) => d.sessionId ?? `skill-${d.startedAt || d.savedAt}`
+
+export function SkillWorkoutGate(props: SessionPlayerProps) {
+  const { getState } = useStore()
+  const open = () => {
+    const state = getState()
+    const latest = loadDraft(Date.now(), state.epoch)
+    if (!latest) return props.resumeFrom ? null : { draft: null, workout: null }
+    const id = restoredId(latest)
+    if (state.deletedSessionIds?.includes(id) || state.sessions.some((s) => s.id === id)) {
+      clearDraft()
+      return null
+    }
+    const workout = props.workout.request?.gymAfter && !latest.workout.request?.gymAfter ?
+      { ...latest.workout, request: { ...props.workout.request, ...latest.workout.request } } : latest.workout
+    return { draft: latest, workout }
+  }
+  return <WorkoutWriter ownerKey="planchelab.skillWriter" restoring={Boolean(props.resumeFrom)} load={open} onClose={props.onExit}>
+    {({ draft, workout }, owns) => <SessionPlayer {...props} workout={workout ?? props.workout}
+      resumeFrom={draft} canEdit={owns} />}
+  </WorkoutWriter>
+}
+
+export function SessionPlayer({
+  workout, onExit, resumeFrom, askCheckIn = false, checkInContext, onCheckInAnswered, onViewSession, canEdit = editable,
+}: SessionPlayerProps & { canEdit?: () => boolean }) {
   const { state, dispatch, persist, getState } = useStore()
+  const [sessionId] = useState(() => resumeFrom ? restoredId(resumeFrom) : newId())
+  const openedEpoch = useRef(state.epoch).current
   const [measuringWalk, setMeasuringWalk] = useState(false)
   const walkOfferKept = useRef(false)
   // Everything in #root sits behind this full-screen session.
@@ -703,12 +726,15 @@ export function SessionPlayer({
   useEffect(() => {
     if (phase === 'celebrate') return
     const snapshot = () => {
+      if (!canEdit() || savedSessionIdRef.current) return
       // Once the screen is off the athlete is no longer holding, so the
       // elapsed value is frozen at the moment the page was hidden rather
       // than left to climb while the tab is torn down.
       const live = Math.max(0, (Date.now() - holdStart) / 1000)
       const elapsed = phase === 'hold' ? (frozenElapsedRef.current ?? live) : 0
       saveDraft({
+        sessionId,
+        epoch: openedEpoch,
         workout,
         startedAt: startedAtRef.current,
         pausedMs: pausedMsRef.current,
@@ -850,6 +876,9 @@ export function SessionPlayer({
     blockLogAts,
     skippedByBlock,
     skippedRounds,
+    canEdit,
+    sessionId,
+    openedEpoch,
   ])
 
   // Say what was recovered, not that nothing was lost — an interrupted hold
@@ -1550,14 +1579,14 @@ export function SessionPlayer({
   }, [phase, stopHold, cancelLead, enterSummary])
 
   const discard = useCallback(() => {
-    clearDraft()
+    if (canEdit()) clearDraft()
     recorder.release()
     onExit()
-  }, [recorder, onExit])
+  }, [canEdit, recorder, onExit])
 
   const save = useCallback(() => {
     // Exactly once, however many taps arrive before the next render.
-    if (savingRef.current || savedSessionIdRef.current || logs.length === 0) return
+    if (!canEdit() || savingRef.current || savedSessionIdRef.current || logs.length === 0) return
     savingRef.current = true
     const savedAt = Date.now()
     const endedAt = endedAtRef.current || savedAt
@@ -1580,7 +1609,7 @@ export function SessionPlayer({
       }
     }
     let session: Session = {
-      id: crypto.randomUUID(),
+      id: sessionId,
       // Never 0 in practice — a session cannot reach the summary without
       // leaving the intro — but a real timestamp beats an epoch date if it is.
       startedAt: startedAtRef.current || endedAt,
@@ -1639,7 +1668,7 @@ export function SessionPlayer({
     const part = session
     const { events: raw } = applySession(current, part)
     if (canContinue && original) session = { ...part, id: original.id }
-    flushSync(() => dispatch({ type: 'SAVE_SESSION', session, ...(canContinue ? { resumeFrom: workout.continuation!.endedAt } : {}) }))
+    flushSync(() => dispatch({ type: 'SAVE_SESSION', session, expectedEpoch: openedEpoch, ...(canContinue ? { resumeFrom: workout.continuation!.endedAt } : {}) }))
     const next = getState()
     session = next.sessions.find((s) => s.id === session.id) ?? session
     // The coach reacts to every finished session, whatever kind it was — read
@@ -1694,7 +1723,7 @@ export function SessionPlayer({
     if (attemptReport || painReportedIn(next, session)) return
     if (ev.unlockedStep) confetti(2)
     else if (ev.prs.length > 0 || rungs.length > 0) confetti(1)
-  }, [workout, state, logs, rpe, notes, dispatch, getState, onExit, checkIn, finishedEarly, totalSets, blockLogAts, blockAt, attemptReport, skippedByBlock, skippedRounds, weakSideFirst])
+  }, [workout, state, logs, rpe, notes, dispatch, getState, onExit, checkIn, finishedEarly, totalSets, blockLogAts, blockAt, attemptReport, skippedByBlock, skippedRounds, weakSideFirst, canEdit, sessionId, openedEpoch])
 
   // Keyboard shortcuts.
   useEffect(() => {

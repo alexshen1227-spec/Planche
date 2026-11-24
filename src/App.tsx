@@ -52,7 +52,7 @@ const Path = lazy(routes.path)
 const Library = lazy(routes.library)
 const Stats = lazy(routes.stats)
 const Settings = lazy(routes.settings)
-const SessionPlayer = lazy(() => import('./views/SessionPlayer').then((m) => ({ default: m.SessionPlayer })))
+const SessionPlayer = lazy(() => import('./views/SessionPlayer').then((m) => ({ default: m.SkillWorkoutGate })))
 const Onboarding = lazy(() => import('./views/Onboarding').then((m) => ({ default: m.Onboarding })))
 
 function warmTab(next: Tab) {
@@ -377,7 +377,7 @@ export default function App() {
   }, [state.onboarded])
   // An interrupted session (phone slept, tab discarded) is picked back up
   // automatically on the next load instead of being silently lost.
-  const [resumeDraft] = useState(() => loadDraft())
+  const [resumeDraft] = useState(() => loadDraft(Date.now(), state.epoch))
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(() => {
     const workout = resumeDraft?.workout
     if (!workout) return null

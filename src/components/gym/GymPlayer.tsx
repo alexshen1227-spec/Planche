@@ -385,7 +385,7 @@ export function GymPlayer({
     const segment = sessionFromDraft(draft, Date.now())
     if (!segment.exercises.length) {
       if (draft.stopReport && draft.resumeFrom !== undefined && !stale) {
-        dispatch({ type: 'GYM', op: { op: 'endPartial', id: draft.id, resumeFrom: draft.resumeFrom } })
+        dispatch({ type: 'GYM', expectedEpoch: draft.epoch, op: { op: 'endPartial', id: draft.id, resumeFrom: draft.resumeFrom } })
       }
       closedRef.current = true
       saveDraft(null)
@@ -400,7 +400,7 @@ export function GymPlayer({
     }
     const session = previous && !separate ? continueGymSession(previous, segment) : segment
     const earnedBefore = new Set(gymBadges(state).filter((b) => b.at !== undefined).map((b) => b.id))
-    dispatch({ type: 'GYM', op: { op: 'saveSession', session: segment, resumeFrom: separate ? undefined : draft.resumeFrom } })
+    dispatch({ type: 'GYM', expectedEpoch: draft.epoch, op: { op: 'saveSession', session: segment, resumeFrom: separate ? undefined : draft.resumeFrom } })
     saveDraft(null)
     if (draft.stopReport) {
       pushToast('Completed sets and joint report saved.', 'success')

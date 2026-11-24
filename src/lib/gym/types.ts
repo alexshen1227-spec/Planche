@@ -47,6 +47,8 @@ export interface GymSet {
 export interface GymExerciseLog {
   exerciseId: string
   sets: GymSet[]
+  /** Original working-set count when this movement was left unfinished. */
+  plannedWorkingSets?: number
   /** What it replaced on the day ("this machine is taken"). */
   swappedFrom?: string
   /** The rep range and effort it was programmed with. */

@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppState, StepId, Workout } from '../types'
 import { initialState, StoreProvider } from '../lib/store'
 import { STEPS, STEP_BY_ID } from '../data/progressions'
-import { SessionPlayer } from './SessionPlayer'
-import { loadDraft } from '../lib/draft'
+import { SessionPlayer, SkillWorkoutGate } from './SessionPlayer'
+import { loadDraft, saveDraft } from '../lib/draft'
 import { peekNextBlock } from '../lib/plan/nextBlock'
 import { resumeSkillWorkout } from '../lib/resumeSkillWorkout'
 import { makeAthlete } from '../lib/plan/wholeAthleteLoop'
@@ -93,6 +93,36 @@ function holdFor(sec: number) {
     })
   }
 }
+
+it('lets only the active tab save a restored hold, preserving its id and its unfinished rounds', () => {
+  const workout: Workout = { id: 'wall', name: 'Wall practice', focus: '', minutes: 15, kind: 'auto', skills: ['handstand'],
+    blocks: [{ exerciseId: 'wall-handstand', section: 'main', role: 'skill', sets: 3, target: { kind: 'hold', sec: 20 }, restSec: 45 }] }
+  const at = Date.now() - 60_000
+  localStorage.setItem('planchelab.v1', JSON.stringify(seed('foundations')))
+  saveDraft({ workout, startedAt: at, phase: 'summary', endedAt: at + 30_000, finishedEarly: true, wasHolding: false,
+    holdElapsed: 0, restEndsAt: null, blockIndex: 0, setIndex: 1,
+    logs: [{ exerciseId: 'wall-handstand', kind: 'hold', section: 'main', target: 20, value: 20.7, at: at + 22_000 }] })
+  const oldDraft = loadDraft()!
+  const closeFirst = vi.fn()
+  const first = render(<StoreProvider><SkillWorkoutGate workout={workout} resumeFrom={oldDraft} onExit={closeFirst} /></StoreProvider>)
+  const originalSave = screen.getByRole('button', { name: 'Save session' })
+  const id = loadDraft()!.sessionId
+  expect(id).toBeTruthy()
+  render(<StoreProvider><SkillWorkoutGate workout={workout} resumeFrom={loadDraft()} onExit={vi.fn()} /></StoreProvider>)
+  expect(screen.getByRole('dialog', { name: 'Workout open in another tab' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Continue in this tab' }))
+  fireEvent.click(originalSave)
+  expect(JSON.parse(localStorage.getItem('planchelab.v1')!).sessions).toHaveLength(0)
+  const key = 'planchelab.skillWriter'
+  fireEvent(window, new StorageEvent('storage', { key, newValue: localStorage.getItem(key) }))
+  expect(closeFirst).toHaveBeenCalledOnce()
+  first.unmount()
+  fireEvent.click(screen.getByRole('button', { name: 'Save session' }))
+  const history: AppState['sessions'] = JSON.parse(localStorage.getItem('planchelab.v1')!).sessions
+  expect(history).toHaveLength(1)
+  expect(history[0]).toMatchObject({ id, sets: oldDraft.logs, completion: 'partial', remaining: { blocks: [{ sets: 2 }] } })
+  expect(loadDraft()).toBeNull()
+})
 
 it.each([false, true])('stops a front lever session after a joint report, including across reload (corrected: %s)', (corrected) => {
   const workout: Workout = {

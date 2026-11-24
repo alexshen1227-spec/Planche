@@ -94,19 +94,19 @@ export function GymHub({
   const [historyOf, setHistoryOf] = useState<string | null>(null)
   const [guideId, setGuideId] = useState<string | null>(null)
   const [running, setRunning] = useState<GymDraft | null>(null)
-  const [resumable, setResumable] = useState<GymDraft | null>(() => loadDraft())
+  const [resumable, setResumable] = useState<GymDraft | null>(() => loadDraft(state.epoch))
   // What is open is whatever storage holds now: read again when the player closes (a saved session clears it) and when
   // another tab changes it. It was read once at mount, so a finished session was still "open" beside "today: done".
   useEffect(() => {
-    setResumable(openDraftFor(loadDraft(), running))
-  }, [running])
+    setResumable(openDraftFor(loadDraft(state.epoch), running))
+  }, [running, state.epoch])
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === null || e.key === 'planchelab.gymDraft') setResumable(openDraftFor(loadDraft(), running))
+      if (e.key === null || e.key === 'planchelab.gymDraft') setResumable(openDraftFor(loadDraft(state.epoch), running))
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
-  }, [running])
+  }, [running, state.epoch])
   // Where the lifts are built: where the plan has them (the gym, even with Home set as the place now) unless the
   // athlete said today that they are somewhere else. Home being active is not a pick.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -224,7 +224,7 @@ export function GymHub({
       // to clear it from the gym.
       dispatch({ type: 'RECORD_SYMPTOM', event: { at: Date.now(), joints: 'good', source: 'check-in' } })
     }
-    const open = loadDraft()
+    const open = loadDraft(state.epoch)
     const avoid = [...new Set([...sore.joints, ...joints])]
     const light = kind === 'pain' || sore.pain
     if (open) {

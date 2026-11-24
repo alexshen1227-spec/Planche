@@ -3,6 +3,7 @@ import { EXERCISE_BY_ID } from '../../data/exercises'
 import { STEP_BY_ID } from '../../data/progressions'
 import { addDays, dayKey, weekStart } from '../time'
 import { unassistedSteps, type UnassistedLift, type UnassistedWork } from './bodyweightSteps'
+import { unfinishedLiftSets } from './progression'
 
 type Base = 'pushups' | 'pullups' | 'dips'
 export type BodyweightCapacity = {
@@ -83,7 +84,7 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
         const top = log.repRange?.[1] ?? 10
         if (sets.length) assistedTrial = {
           at: s.startedAt,
-          ready: sets.length >= 2 && sets.every((x) => x.kg === 0 && x.reps >= top && x.rpe !== undefined && x.rpe <= (log.targetRpe ?? 8) + 0.5),
+          ready: !unfinishedLiftSets(s, log.exerciseId) && sets.length >= 2 && sets.every((x) => x.kg === 0 && x.reps >= top && x.rpe !== undefined && x.rpe <= (log.targetRpe ?? 8) + 0.5),
         }
       }
       for (const x of log.sets) {

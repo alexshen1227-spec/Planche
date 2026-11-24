@@ -58,6 +58,7 @@ export function previousSets(
 
 export interface GymDraft {
   id: string
+  epoch?: string
   startedAt: number
   locationId: string
   name: string
@@ -130,12 +131,13 @@ export function saveDraft(draft: GymDraft | null): void {
   }
 }
 
-export function loadDraft(): GymDraft | null {
+export function loadDraft(epoch?: string): GymDraft | null {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return null
     const d = JSON.parse(raw) as GymDraft
     if (!d || typeof d.id !== 'string' || !Array.isArray(d.items)) return null
+    if (d.epoch && epoch && d.epoch !== epoch) return null
     return { ...d, items: d.items.filter((it) => it && typeof it.exerciseId === 'string' && it.exerciseId in GYM_EXERCISE_BY_ID) }
   } catch {
     return null
@@ -194,6 +196,7 @@ export function sessionFromDraft(draft: GymDraft, endedAt: number): GymSession {
       if (left.length) remainingItems.push(remainingLift(item, left))
       return {
         exerciseId: item.exerciseId,
+        ...(left.some((s) => !s.warmup) ? { plannedWorkingSets: item.sets.filter((s) => !s.warmup).length } : {}),
         sets: done.map((s) => ({
           reps: Math.max(0, Math.round(s.reps)),
           at: s.at ?? endedAt,
@@ -227,7 +230,8 @@ export function remainingSetCount(plan?: GymRemainder): number {
 export function latestPartialToday(sessions: GymSession[] = [], now = Date.now()): GymSession | undefined {
   const today = dayKey(now)
   const latest = sessions.reduce<GymSession | undefined>((last, s) =>
-    s.startedAt <= now && dayKey(s.startedAt) === today && (!last || s.endedAt > last.endedAt) ? s : last, undefined)
+    s.startedAt <= now && (dayKey(s.startedAt) === today || (s.endedAt <= now && dayKey(s.endedAt) === today)) &&
+      (!last || s.endedAt > last.endedAt) ? s : last, undefined)
   return latest?.completion === 'partial' ? latest : undefined
 }
 

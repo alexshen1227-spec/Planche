@@ -21,6 +21,15 @@ export interface RepPlan {
   targetRpe: number
 }
 
+/** Read both newer per-lift prescriptions and the outstanding sets in older partial workouts. */
+export function unfinishedLiftSets(session: GymSession, exerciseId: string): number {
+  const pending = session.remaining?.items.reduce((n, it) =>
+    n + (it.exerciseId === exerciseId ? it.sets.filter((s) => !s.warmup).length : 0), 0) ?? 0
+  const missing = session.exercises.reduce((n, log) => n + (log.exerciseId === exerciseId && log.plannedWorkingSets ?
+    Math.max(0, log.plannedWorkingSets - log.sets.filter((s) => !s.warmup && s.reps > 0).length) : 0), 0)
+  return Math.max(pending, missing)
+}
+
 /** A bodyweight movement that needs coaching to do well: dosed in a few slow reps. */
 export function isHardBodyweight(ex: GymExercise): boolean {
   return Boolean(ex.technical && ex.load === 'bodyweight' && !ex.dose && !ex.explosive && !ex.assisted)
@@ -423,6 +432,7 @@ export function suggestLoad(input: {
     }
   }
   const working = last.sets
+  const unfinished = unfinishedLiftSets(last.session, exerciseId)
   // Time away: a session this old says little about what the body can do today (CONSENSUS —
   // the usual return-to-training convention, not a measured rule), at any age.
   // Free weights carry between gyms, so the gap runs from the lift's latest session at any place
@@ -439,16 +449,16 @@ export function suggestLoad(input: {
   const atLoad = working.filter((s) => (s.kg ?? 0) === kg)
   // One set stopped early is not "every set": a step up needs at least two.
   // ...and each with its effort logged: a set nobody rated says nothing about effort.
-  const allTop = !stale && atLoad.length >= 2 && atLoad.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
+  const allTop = !stale && !unfinished && atLoad.length >= 2 && atLoad.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
   const anyShort = atLoad.some((s) => s.reps < lo)
   const grinding = atLoad.some((s) => s.rpe !== undefined && s.rpe >= 9.5)
   // No effort was ever logged, so one session at the top of the range proves
   // nothing (it may have been a grind). The same load at the top of the range
   // in two sessions running is repeatable: that earns one step.
   const unratedTwice = (() => {
-    if (stale || allTop || atLoad.length < 2 || atLoad.some((s) => s.rpe !== undefined) || !atLoad.every((s) => s.reps >= hi)) return false
+    if (stale || unfinished || allTop || atLoad.length < 2 || atLoad.some((s) => s.rpe !== undefined) || !atLoad.every((s) => s.reps >= hi)) return false
     const before = lastPerformance(sessions, exerciseId, location?.id, last.session.startedAt, keep)
-    if (!before) return false
+    if (!before || unfinishedLiftSets(before.session, exerciseId)) return false
     const prior = before.sets.filter((s) => (s.kg ?? 0) === kg)
     return prior.length >= 2 && prior.every((s) => s.reps >= hi && (s.rpe === undefined || s.rpe <= plan.targetRpe + 0.5))
   })()
@@ -461,14 +471,15 @@ export function suggestLoad(input: {
       working.some((s) => s.kg === v && s.unit === unit)
     return observed ? v : roundToStep(v > 0 ? Math.max(v, step) : 0, step, top)
   }
-  if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, top, reach, { stale, away, weeksAway })
+  const incompleteWhy = unfinished ? `${unfinished} planned ${unfinished === 1 ? 'set of this lift was' : 'sets of this lift were'} unfinished. Repeat the prescription at the same load.` : undefined
+  if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, top, reach, { stale, away, weeksAway, incompleteWhy })
   if (ex.load === 'bodyweight' && !(kg > 0)) {
     if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan, working.map((s) => s.reps)) }
     const reps = atLoad.map((s) => s.reps).sort((a, b) => a - b)
     const typical = reps[Math.floor((reps.length - 1) / 2)]
-    const easy = !stale && atLoad.every((s) => s.rpe !== undefined && s.rpe <= plan.targetRpe)
+    const easy = !stale && !unfinished && atLoad.every((s) => s.rpe !== undefined && s.rpe <= plan.targetRpe)
     const targetReps = Math.max(1, Math.min(hi, typical + (easy ? 1 : grinding || away ? -1 : 0)))
-    let why = `Last time you did ${atLoad.map((s) => s.reps).join(', ')} reps. Aim for ${targetReps} clean reps per set.`
+    let why = `Last time you did ${atLoad.map((s) => s.reps).join(', ')} reps. Aim for ${targetReps} clean reps per set.${incompleteWhy ? ' ' + incompleteWhy : ''}`
     if (grinding && typical < lo) why += ` Swap to an easier version if you need help reaching ${lo} with reps to spare.`
     if (allTop) why += ' When every set feels controlled, try a harder variation.'
     return { ...base, kind: 'bodyweight', targetReps, why }
@@ -495,7 +506,7 @@ export function suggestLoad(input: {
   const topTwice = (() => {
     if (!bigYouthStep || !allTop) return false
     const before = lastPerformance(sessions, exerciseId, location?.id, last.session.startedAt, keep)
-    const prior = before?.sets.filter((s) => (s.kg ?? 0) === kg) ?? []
+    const prior = before && !unfinishedLiftSets(before.session, exerciseId) ? before.sets.filter((s) => (s.kg ?? 0) === kg) : []
     return prior.length >= 2 && prior.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
   })()
   const moveUpBar = Math.max(failedSteps > 0 ? retryBar : hi, bigBar)
@@ -567,7 +578,7 @@ export function suggestLoad(input: {
       why: `Nearest load here to last time’s ${there}${grown ? ' (not a step up: the next real step is further than an under-18 jump allows)' : ''}: aim to add a rep to last time’s ${reps}.`,
     }
   }
-  return { ...base, kg: repeatKg, kind: 'repeat', why: `Same weight: aim to add a rep to last time’s ${reps}.` }
+  return { ...base, kg: repeatKg, kind: 'repeat', why: incompleteWhy ?? `Same weight: aim to add a rep to last time’s ${reps}.` }
 }
 
 /**
@@ -585,14 +596,14 @@ function assistedSuggestion(
   step: number,
   top: number | undefined,
   repeatLoad: (value: number) => number,
-  gap: { stale: boolean; away: boolean; weeksAway: number } = { stale: false, away: false, weeksAway: 0 },
+  gap: { stale: boolean; away: boolean; weeksAway: number; incompleteWhy?: string },
 ): LoadSuggestion {
   const help = workingLoad(working.map((s) => s.kg ?? 0), 'lightest')
   const atHelp = working.filter((s) => (s.kg ?? 0) === help)
   if (gap.away && step > 0) {
     return { ...base, kg: roundToStep(help + step, step, top), kind: 'decrease', why: `First time in ${gap.weeksAway} weeks: a step more help, then build back.` }
   }
-  const allTop = !gap.stale && atHelp.length >= 2 && atHelp.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
+  const allTop = !gap.stale && !gap.incompleteWhy && atHelp.length >= 2 && atHelp.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
   const anyShort = atHelp.some((s) => s.reps < lo)
   const grinding = atHelp.some((s) => s.rpe !== undefined && s.rpe >= 9.5)
   if (allTop) {
@@ -617,7 +628,7 @@ function assistedSuggestion(
   if (failedWithoutEffort(atHelp, lo) && step > 0) {
     return { ...base, kg: roundToStep(help + step, step, top), kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step more help, then build back.` }
   }
-  return { ...base, kg: repeatLoad(help), kind: 'repeat', why: `Aim to add a rep to last time’s ${atHelp.map((s) => s.reps).join(', ')} with this assistance.` }
+  return { ...base, kg: repeatLoad(help), kind: 'repeat', why: gap.incompleteWhy ?? `Aim to add a rep to last time’s ${atHelp.map((s) => s.reps).join(', ')} with this assistance.` }
 }
 
 export interface GymRecord {

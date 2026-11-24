@@ -37,6 +37,22 @@ const session = (id: string, locationId: string, at: number, exerciseId: string,
   exercises: [{ exerciseId, sets }],
 })
 
+it('earns a load increase only after all prescribed working sets of that lift are completed', () => {
+  const place: GymLocation = { ...gymA, unit: 'lb', gear: {} }
+  const kg = toKg(35, 'lb')
+  const performed = { ...set(kg, 10, 8), unit: 'lb' as const }
+  const original = session('partial', place.id, T0, 'goblet-squat', [performed, performed])
+  const pending = { exerciseId: 'goblet-squat', repRange: [6, 10] as [number, number], targetRpe: 8, restSec: 120, unit: 'lb' as const, sets: [{ reps: 6 }, { reps: 6 }] }
+  const next = (s: GymSession) => suggestLoad({ exerciseId: 'goblet-squat', location: place, sessions: [s], plan: { range: [6, 10], targetRpe: 8 }, now: T0 + DAY })
+  const partial: GymSession = { ...original, completion: 'partial', remaining: { items: [pending] } }
+  expect(next(partial)).toMatchObject({ kg, kind: 'repeat', why: expect.stringContaining('2 planned sets') })
+  const stopped: GymSession = { ...partial, remaining: undefined, exercises: [{ ...original.exercises[0], plannedWorkingSets: 4 }] }
+  expect(next(stopped).kind).toBe('repeat')
+  const finishedLift = { ...original.exercises[0], sets: [performed, performed, performed, performed], plannedWorkingSets: 4 }
+  expect(next({ ...partial, exercises: [finishedLift], remaining: { items: [{ ...pending, exerciseId: 'leg-curl' }] } }))
+    .toMatchObject({ kg: toKg(40, 'lb'), kind: 'increase' })
+})
+
 describe('catalog', () => {
   it('keeps all pressing and hanging variants off a reported elbow and all gripping hangs off a reported wrist', () => {
     for (const ex of GYM_EXERCISES.filter((e) => ['horizontal-press', 'incline-press', 'dip', 'vertical-press', 'horizontal-pull', 'vertical-pull'].includes(e.pattern))) {

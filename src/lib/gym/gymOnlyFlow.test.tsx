@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { initialState, SETUP_DRAFT_KEY, StoreProvider, useStore } from '../store'
+import { forgetUnfinishedWork, initialState, reducer, SETUP_DRAFT_KEY, StoreProvider, useStore } from '../store'
 import { loadSetupDraft, newSetupDraft, saveSetupDraft } from '../onboardingDraft'
 import { nextInterviewItem } from '../placement'
 import { Onboarding } from '../../views/Onboarding'
@@ -16,6 +16,7 @@ import { loadDraft, resumePartial, saveDraft, sessionFromDraft, type DraftItem }
 import { GYM_EXERCISE_BY_ID, jointsToRest } from '../../data/gym/exercises'
 import { Toasts } from '../../components/Toasts'
 import { GymPlayer } from '../../components/gym/GymPlayer'
+import { GymWorkoutGate } from '../../components/gym/GymWorkoutGate'
 import { PartialWorkout } from '../../components/gym/PartialWorkout'
 import { WeekVolume } from '../../components/plan/WeekVolume'
 import { PlanSettings } from '../../components/plan/PlanSettings'
@@ -28,7 +29,35 @@ import type { Session, SetLog } from '../../types'
 afterEach(() => {
   cleanup()
   localStorage.clear()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
+})
+
+it('retires an open gym writer and its draft when another tab replaces the training history', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const athlete = makeAthlete({ skills: ['handstand'], active: 'home' })
+  const place = athlete.gym!.locations[0]
+  localStorage.setItem('planchelab.v1', JSON.stringify(athlete))
+  const at = Date.now() - 60_000
+  const item: DraftItem = { exerciseId: 'goblet-squat', plan: { range: [6, 10], targetRpe: 8 }, restSec: 120, unit: 'lb',
+    sets: [{ reps: 10, load: 35, done: true, rpe: 8, at: at + 30_000 }] }
+  const draft = { id: 'old', startedAt: at, locationId: place.id, name: 'Lower body', items: [item] }
+  const close = vi.fn()
+  render(<StoreProvider><GymWorkoutGate draft={draft} location={place} onClose={close} /></StoreProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Finish' }))
+  const save = screen.getByRole('button', { name: 'Save session' })
+  expect(loadDraft(athlete.epoch)?.epoch).toBe(athlete.epoch)
+  const replacement = reducer(athlete, { type: 'IMPORT_REPLACE', state: athlete, expectedRev: athlete.rev ?? 0 })
+  expect(replacement.epoch).not.toBe(athlete.epoch)
+  localStorage.setItem('planchelab.v1', JSON.stringify(replacement))
+  forgetUnfinishedWork()
+  fireEvent.click(save)
+  fireEvent(window, new StorageEvent('storage', { key: 'planchelab.v1', newValue: JSON.stringify(replacement) }))
+  expect(close).toHaveBeenCalled()
+  expect(screen.queryByRole('button', { name: 'Save session' })).toBeNull()
+  expect(loadDraft()).toBeNull()
+  expect(reducer(replacement, { type: 'GYM', expectedEpoch: athlete.epoch, op: { op: 'saveSession', session: sessionFromDraft(draft, Date.now()) } })).toBe(replacement)
+  expect(JSON.parse(localStorage.getItem('planchelab.v1')!).gym.sessions).toHaveLength(0)
 })
 
 it.each([['push-up', 0], ['push-up', 1], ['pull-up', 0], ['pull-up', 1]] as const)('saves the actual %s trial of %i reps, preserves the easier sets and recovers the draft', (id, reps) => {
@@ -407,7 +436,9 @@ it('finds prescribed gym movements in Learn and opens their equipment and techni
   }
 })
 
-it('lets a gym-only athlete log a first set, reload Home and finish the original workout', () => {
+it('lets a gym-only athlete log a set, finish after midnight, reload Home and complete the original workout', () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(2026, 10, 24, 23, 55))
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
   const click = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }))
   const mount = () => render(<StoreProvider><FirstRun /></StoreProvider>)
@@ -429,9 +460,11 @@ it('lets a gym-only athlete log a first set, reload Home and finish the original
   fireEvent.click(within(screen.getByRole('region', { name: 'Today’s session' })).getByRole('button'))
   click(/nothing hurts.*start/i)
   const firstSet = screen.getAllByLabelText(/^Complete set 1 of /)[0]
+  vi.setSystemTime(new Date(2026, 10, 24, 23, 58))
   fireEvent.click(firstSet)
   expect(screen.getByRole('group', { name: /^Effort for .+, set 1$/ })).toBeTruthy()
   click('8')
+  vi.setSystemTime(new Date(2026, 10, 25, 0, 2))
   click('Finish')
   click('Save session')
   const stored = () => JSON.parse(localStorage.getItem('planchelab.v1')!).gym.sessions

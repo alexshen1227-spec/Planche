@@ -377,6 +377,7 @@ function sanitizeLog(raw: unknown, lose: Lose = noLoss, where = 'an exercise'): 
   return {
     exerciseId: id,
     sets,
+    ...(typeof r.plannedWorkingSets === 'number' && Number.isInteger(r.plannedWorkingSets) && r.plannedWorkingSets > 0 && r.plannedWorkingSets <= 1000 ? { plannedWorkingSets: r.plannedWorkingSets } : {}),
     ...(typeof r.swappedFrom === 'string' && r.swappedFrom ? { swappedFrom: r.swappedFrom } : {}),
     ...(range ? { repRange: range } : {}),
     ...(typeof r.targetRpe === 'number' && r.targetRpe >= 5 && r.targetRpe <= 10 ? { targetRpe: r.targetRpe } : {}),
@@ -589,7 +590,11 @@ export function continueGymSession(previous: GymSession, segment: GymSession): G
     const i = exercises.findIndex((e) => e.exerciseId === log.exerciseId && e.swappedFrom === log.swappedFrom &&
       e.repRange?.[0] === log.repRange?.[0] && e.repRange?.[1] === log.repRange?.[1] && e.targetRpe === log.targetRpe)
     if (i < 0) exercises.push(log)
-    else exercises[i] = { ...exercises[i], sets: [...exercises[i].sets, ...log.sets] }
+    else {
+      const earlier = exercises[i]
+      const planned = Math.max(earlier.plannedWorkingSets ?? 0, log.plannedWorkingSets ? earlier.sets.filter((s) => !s.warmup).length + log.plannedWorkingSets : 0)
+      exercises[i] = { ...earlier, sets: [...earlier.sets, ...log.sets], ...(planned ? { plannedWorkingSets: planned } : {}) }
+    }
   }
   return { ...segment, id: previous.id, locationId: previous.locationId, startedAt: previous.startedAt, name: previous.name, exercises }
 }

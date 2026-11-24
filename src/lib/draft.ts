@@ -22,6 +22,9 @@ export const MAX_EMPTY_DRAFT_AGE_MS = 18 * 3_600_000
 
 export interface SessionDraft {
   v: 1 | 2
+  /** Allocated when the player opens so a restored draft still names the same session. */
+  sessionId?: string
+  epoch?: string
   savedAt: number
   workout: Workout
   startedAt: number
@@ -110,12 +113,13 @@ export function saveDraft(input: DraftInput): void {
   }
 }
 
-export function loadDraft(now = Date.now()): SessionDraft | null {
+export function loadDraft(now = Date.now(), epoch?: string): SessionDraft | null {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return null
     const d = JSON.parse(raw) as SessionDraft
     if ((d?.v !== 1 && d?.v !== 2) || !d.workout || !Array.isArray(d.logs)) return null
+    if (d.epoch && epoch && d.epoch !== epoch) return null
     // Nothing logged and nothing mid-hold means nothing to lose — don't force
     // someone back into a session they only opened and walked away from. An
     // interrupted first hold still counts as work worth recovering.
@@ -125,7 +129,8 @@ export function loadDraft(now = Date.now()): SessionDraft | null {
         Number.isInteger(Number(index)) && Number.isInteger(count) && count > 0 && count <= (d.workout.blocks?.[Number(index)]?.sets ?? 0)))
     }
     if (d.logs.length === 0 && !holdInFlight && !d.attemptReport && !Object.keys(d.skippedByBlock ?? {}).length) {
-      clearDraft()
+      // Another tab may own this still-empty workout. Reading it must not erase its snapshot.
+      if (now - d.savedAt > MAX_EMPTY_DRAFT_AGE_MS) clearDraft()
       return null
     }
     if (d.logs.length === 0 && now - d.savedAt > MAX_EMPTY_DRAFT_AGE_MS) {

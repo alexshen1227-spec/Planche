@@ -69,7 +69,7 @@ export const SETUP_DRAFT_KEY = 'planchelab.setupDraft'
  * the gym session in progress, and the note of what follows today's opener.
  * Each belongs to one dataset, so a reset or an import takes them with it.
  */
-const UNFINISHED_WORK_KEYS = [DRAFT_KEY, SETUP_DRAFT_KEY, 'planchelab.gymDraft', 'planchelab.nextBlock', 'planchelab.dayMarks', 'planchelab.todayChoice']
+const UNFINISHED_WORK_KEYS = ['planchelab.skillWriter', 'planchelab.gymWriter', DRAFT_KEY, SETUP_DRAFT_KEY, 'planchelab.gymDraft', 'planchelab.nextBlock', 'planchelab.dayMarks', 'planchelab.todayChoice']
 /** How long a burst of changes waits before the mirror is written. */
 const MIRROR_DEBOUNCE_MS = 1500
 /** A birth year past this is not a year; before it, the stored year is kept whatever the clock says. */
@@ -1351,7 +1351,7 @@ export function skipToStep(state: AppState, stepId: StepId): AppState {
 export type SymptomInput = Omit<SymptomEvent, 'id'> & { id?: string }
 
 export type Action =
-  | { type: 'SAVE_SESSION'; session: Session; resumeFrom?: number }
+  | { type: 'SAVE_SESSION'; session: Session; resumeFrom?: number; expectedEpoch?: string }
   | { type: 'DELETE_SESSION'; id: string }
   | { type: 'SET_SETTINGS'; patch: Partial<Settings> }
   /** Set (or, with nothing left in it, clear) the athlete's week plan. */
@@ -1405,7 +1405,7 @@ export type Action =
   | { type: 'ATTACH_SET_CLIP'; sessionId: string; setAt: number; clipKey: string }
   | { type: 'SET_SETUP'; exerciseId: string; setup: Omit<ExerciseSetup, 'updatedAt'> | null }
   /** Everything on the gym side (state v9): sessions, locations, preferences. */
-  | { type: 'GYM'; op: GymOp }
+  | { type: 'GYM'; op: GymOp; expectedEpoch?: string }
   | { type: 'MERGE_EXTERNAL'; incoming: AppState }
   /** Wholesale replacement: a mirror restore, sample data, or an unguarded legacy caller. */
   | { type: 'REPLACE'; state: AppState; reason?: 'restore' | 'sample' }
@@ -1769,6 +1769,7 @@ function completeOnboardingOverHistory(
 function reduceAction(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'SAVE_SESSION': {
+      if (action.expectedEpoch && action.expectedEpoch !== state.epoch) return state
       let incoming = action.session
       // A deleted session stays deleted. Saved again (a resumed draft, a second
       // tap), it came back in memory and vanished again on the next load.
@@ -2016,6 +2017,7 @@ function reduceAction(state: AppState, action: Action): AppState {
       return { ...state, setups }
     }
     case 'GYM': {
+      if (action.expectedEpoch && action.expectedEpoch !== state.epoch) return state
       const gym = reduceGym(state.gym, action.op)
       return gym === state.gym ? state : { ...state, gym }
     }

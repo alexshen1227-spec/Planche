@@ -2,6 +2,7 @@ import type { AppState, EquipmentId, SkillId, StepId, Workout, WorkoutRequest } 
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import type { GymFocus } from '../gym/builder'
 import type { GymLocation } from '../gym/types'
+import { latestPartialToday } from '../gym/draft'
 import { stepAfter } from '../../data/progressions'
 import { barMet } from '../progression'
 import { addDays, weekStart } from '../time'
@@ -88,6 +89,7 @@ export type DayStage = 'open' | 'skill-partial' | 'lifts-next' | 'done'
 export function dayStage(state: AppState, plan: Pick<TodayPlan, 'kind'> & { skill?: { opener?: boolean } }, now = Date.now(), marks: DayMarks = readDayMarks(now)): DayStage {
   if (marks.ended) return 'done'
   const done = trainedToday(state, now)
+  if (latestPartialToday(state.gym?.sessions, now)?.remaining) return 'done'
   if (!(done && done.gym) && latestSkillPartial(state.sessions, now)) return 'skill-partial'
   if (marks.openerSessionId) {
     const opener = state.sessions.find((s) => s.id === marks.openerSessionId)
