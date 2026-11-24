@@ -332,6 +332,9 @@ export type StampedGym = GymState & { activeLocationAt?: number }
 
 const shownKg = (v: unknown) => (typeof v === 'number' ? String(v) : JSON.stringify(v))
 
+const validTargetCount = (v: unknown, id?: string): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v > 0 && v <= maxCountFor(id)
+
 function sanitizeSet(raw: unknown, exerciseId?: string, lose: Lose = noLoss, where = 'a set'): GymSet | null {
   if (typeof raw !== 'object' || raw === null) {
     lose(`${where}: not a set, left out`)
@@ -358,6 +361,7 @@ function sanitizeSet(raw: unknown, exerciseId?: string, lose: Lose = noLoss, whe
     }
   }
   const rpe = typeof r.rpe === 'number' && r.rpe >= 1 && r.rpe <= 10 ? Math.round(r.rpe * 2) / 2 : undefined
+  const original = r.originalTarget && typeof r.originalTarget === 'object' ? r.originalTarget as Record<string, unknown> : undefined
   if (r.rpe !== undefined && rpe === undefined) lose(`${where}: effort ${JSON.stringify(r.rpe)} unreadable, left blank`)
   return {
     reps,
@@ -365,6 +369,8 @@ function sanitizeSet(raw: unknown, exerciseId?: string, lose: Lose = noLoss, whe
     ...(r.measure === 'seconds' && exerciseId && GYM_EXERCISE_BY_ID[exerciseId]?.pattern === 'carry' ? { measure: 'seconds' as const } : {}),
     ...(kg !== undefined ? { kg } : {}),
     ...(rpe !== undefined ? { rpe } : {}),
+    ...(original && typeof original.rpe === 'number' && original.rpe >= 5 && original.rpe <= 10
+      ? { originalTarget: { rpe: original.rpe, ...(validTargetCount(original.count, exerciseId) ? { count: original.count } : {}) } } : {}),
     ...(isUnit(r.unit) ? { unit: r.unit } : {}),
     ...(r.warmup === true ? { warmup: true } : {}),
     ...(isTime(r.editedAt) ? { editedAt: r.editedAt } : {}),
@@ -401,6 +407,7 @@ function sanitizeLog(raw: unknown, lose: Lose = noLoss, where = 'an exercise'): 
     ...(typeof r.plannedWorkingSets === 'number' && Number.isInteger(r.plannedWorkingSets) && r.plannedWorkingSets > 0 && r.plannedWorkingSets <= 1000 ? { plannedWorkingSets: r.plannedWorkingSets } : {}),
     ...(typeof r.swappedFrom === 'string' && r.swappedFrom ? { swappedFrom: r.swappedFrom } : {}),
     ...(range ? { repRange: range } : {}),
+    ...(validTargetCount(r.targetCount, id) ? { targetCount: r.targetCount } : {}),
     ...(typeof r.targetRpe === 'number' && r.targetRpe >= 5 && r.targetRpe <= 10 ? { targetRpe: r.targetRpe } : {}),
     ...(typeof r.note === 'string' && r.note ? { note: r.note.slice(0, 500) } : {}),
   }
@@ -635,7 +642,7 @@ export function continueGymSession(previous: GymSession, segment: GymSession): G
   const exercises = previous.exercises.slice()
   for (const log of segment.exercises) {
     const i = exercises.findIndex((e) => e.exerciseId === log.exerciseId && e.swappedFrom === log.swappedFrom &&
-      e.repRange?.[0] === log.repRange?.[0] && e.repRange?.[1] === log.repRange?.[1] && e.targetRpe === log.targetRpe)
+      e.repRange?.[0] === log.repRange?.[0] && e.repRange?.[1] === log.repRange?.[1] && e.targetRpe === log.targetRpe && e.targetCount === log.targetCount)
     if (i < 0) exercises.push(log)
     else {
       const earlier = exercises[i]

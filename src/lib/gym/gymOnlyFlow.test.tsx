@@ -226,6 +226,11 @@ it('opens a priority muscle’s breakdown and identifies which logged sets came 
     const row = dialog.getByRole('rowheader', { name: label }).closest('tr')!
     expect(within(row).getAllByRole('cell').map((cell) => cell.textContent)).toEqual([value, value])
   }
+  const targets = within(dialog.getByRole('table', { name: 'Logged gym sets compared with saved targets' }))
+  for (const label of ['Reps, time or trips', 'Effort (RPE)']) {
+    const row = targets.getByRole('rowheader', { name: label }).closest('tr')!
+    expect(within(row).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['0', '0', '0', '0.5'])
+  }
   fireEvent.click(dialog.getByRole('button', { name: 'Close' }))
   expect(screen.queryByRole('dialog')).toBeNull()
 })
@@ -623,7 +628,7 @@ it('keeps finished sets and applies a new pain check when Home reopens an unfini
   const remaining = d.items.filter((item) => item.sets.some((s) => !s.done))
   expect(remaining.every((it) => !GYM_EXERCISE_BY_ID[it.exerciseId].stress.includes('shoulders'))).toBe(true)
   expect(remaining[0].sets).toHaveLength(2)
-  expect(d.items.flatMap((it) => it.sets.filter((s) => s.done))).toEqual([squat, press])
+  expect(d.items.flatMap((it) => it.sets.filter((s) => s.done))).toEqual([{ ...squat, originalTarget: { rpe: 8 } }, press])
   expect(d.deferred?.map((it) => it.exerciseId)).toContain('db-bench-press')
   fireEvent.click(player.getByRole('button', { name: 'Add an exercise' }))
   expect(screen.queryByRole('button', { name: /dumbbell bench press/i })).toBeNull()
@@ -633,6 +638,6 @@ it('keeps finished sets and applies a new pain check when Home reopens an unfini
   const saved = JSON.parse(localStorage.getItem('planchelab.v1')!).gym.sessions
   expect(saved).toHaveLength(1)
   expect(saved[0].exercises.map((it: { sets: unknown[] }) => it.sets)).toEqual([
-    [{ kg: 12, reps: 8, rpe: 7, unit: 'kg', at }], [{ kg: 14, reps: 8, rpe: 7, unit: 'kg', at: at + 60_000 }],
+    [{ kg: 12, reps: 8, rpe: 7, originalTarget: { rpe: 8 }, unit: 'kg', at }], [{ kg: 14, reps: 8, rpe: 7, unit: 'kg', at: at + 60_000 }],
   ])
 })

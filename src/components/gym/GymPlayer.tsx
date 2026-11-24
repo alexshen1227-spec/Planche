@@ -247,6 +247,7 @@ export function GymPlayer({
       if (wasDone) {
         delete s.at
         delete s.rpe
+        delete s.originalTarget
         if (d.effortFor?.item === i && d.effortFor.set === j) delete d.effortFor
         if (item.pairedWith) restoreSetRest(d, at, previous)
       } else {

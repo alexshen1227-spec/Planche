@@ -2,7 +2,7 @@ import type { GymPlan } from './builder'
 import { GYM_EXERCISE_BY_ID, jointsToRest } from '../../data/gym/exercises'
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import { comparablePerformance, countUnit, repPlanFor, type LoadSuggestion, type RepPlan } from './progression'
-import type { GoalWeights, GymLocation, GymRemainder, GymSession, GymSetEntry, GymState, RemainingLift } from './types'
+import type { GoalWeights, GymLocation, GymRemainder, GymSession, GymSetEntry, GymState, OriginalSetTarget, RemainingLift } from './types'
 import { canDoHere } from './availability'
 import { preparesFor } from './bodyweightSteps'
 import { useStraightSets } from './pairedSets'
@@ -14,6 +14,7 @@ import type { AttemptSymptom, Profile } from '../../types'
 /** A gym session in progress, mirrored to storage on every change so a dying tab loses nothing. */
 export interface DraftSet extends GymSetEntry {
   rpe?: number
+  originalTarget?: OriginalSetTarget
   done: boolean
   at?: number
 }
@@ -185,7 +186,11 @@ export function adaptOpenDraft(draft: GymDraft, joints: Joint[], light: boolean,
     if (!reduce || !item.sets.some((s) => !s.done)) return [item]
     const working = item.sets.filter((s) => !s.warmup)
     let left = Math.max(1, Math.round(working.length * 0.6 / factor)) - working.filter((s) => s.done).length
+    const targetRpe = Math.min(item.plan.targetRpe, 7)
+    const count = item.suggestion?.repsToMoveUp === undefined ? item.suggestion?.targetReps : undefined
+    const targetsChanged = targetRpe !== item.plan.targetRpe || count !== undefined
     const sets = item.sets.flatMap((s) => {
+      if (s.done && !s.warmup && targetsChanged && !s.originalTarget) return [{ ...s, originalTarget: { rpe: item.plan.targetRpe, count } }]
       if (s.done || s.warmup) return [s]
       if (left-- <= 0) return []
       // Choose a comfortable load at the easier target. An assistance setting has the opposite meaning.
@@ -193,7 +198,7 @@ export function adaptOpenDraft(draft: GymDraft, joints: Joint[], light: boolean,
       return [{ ...s, reps, repsEdited: reps === s.reps ? s.repsEdited : undefined,
         ...(ex?.assisted ? {} : { load: undefined, loadEdited: undefined }) }]
     })
-    return [{ ...item, plan: { ...item.plan, targetRpe: Math.min(item.plan.targetRpe, 7) }, suggestion: undefined, sets }]
+    return [{ ...item, plan: { ...item.plan, targetRpe }, suggestion: undefined, sets }]
   })
   return { ...draft, items, deferred, avoidJoints, originalAvoidJoints: draft.originalAvoidJoints ?? draft.avoidJoints ?? [],
     volumeFactor: reduce ? 0.6 : draft.volumeFactor, effortFor: reduce || deferred.length !== (draft.deferred?.length ?? 0) ? undefined : draft.effortFor }
@@ -217,10 +222,12 @@ export function sessionFromDraft(draft: GymDraft, endedAt: number): GymSession {
           at: s.at ?? endedAt,
           ...(s.load !== undefined && (s.load > 0 || recordsZeroLoad(GYM_EXERCISE_BY_ID[item.exerciseId])) ? { kg: toKg(s.load, item.unit), unit: item.unit } : {}),
           ...(s.rpe !== undefined ? { rpe: s.rpe } : {}),
+          ...(s.originalTarget ? { originalTarget: s.originalTarget } : {}),
           ...(s.warmup ? { warmup: true } : {}),
         })),
         repRange: item.plan.range,
         targetRpe: item.plan.targetRpe,
+        ...(item.suggestion?.targetReps !== undefined && item.suggestion.repsToMoveUp === undefined ? { targetCount: item.suggestion.targetReps } : {}),
         ...(item.swappedFrom ? { swappedFrom: item.swappedFrom } : {}),
       }
     })

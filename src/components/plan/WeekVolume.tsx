@@ -4,7 +4,7 @@ import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { missingPriorityOption } from '../../lib/gym/availability'
 import { gymPlaceOf } from '../../lib/plan/planner'
 import { defaultPrefs } from '../../lib/gym/state'
-import { emptySetSources, resistanceSetLoading, setsPerMuscle, volumeStatus, volumeTarget, type VolumeStatus } from '../../lib/plan/load'
+import { emptySetSources, gymTargetBreakdown, resistanceSetLoading, setsPerMuscle, volumeStatus, volumeTarget, type VolumeStatus } from '../../lib/plan/load'
 import { useStore } from '../../lib/store'
 import { weekStart } from '../../lib/time'
 import { useToday } from '../../lib/useToday'
@@ -59,6 +59,8 @@ export function WeekVolume() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [state.sessions, state.gym?.sessions, today],
   )
+  const targets = detail && ((sources.direct[detail] ?? 0) + (sources.assisting[detail] ?? 0) > 0)
+    ? gymTargetBreakdown(state.gym?.sessions ?? [], detail, weekStart(now), now + 1) : undefined
   return (
     <section>
       <h2 className="text-footnote font-semibold uppercase tracking-wide text-ink3">This week, sets per muscle</h2>
@@ -167,6 +169,20 @@ export function WeekVolume() {
                 <td className="text-right">{sources[key][detail] ?? 0}</td><td className="text-right">{week.weekSources[key][detail] ?? 0}</td></tr>)}</tbody>
             <tfoot><tr><th scope="row" className="py-3">Total</th><td className="text-right font-semibold">{sets[detail] ?? 0}</td><td className="text-right font-semibold">{planned[detail] ?? 0}</td></tr></tfoot>
           </table>
+          {targets && <section className="mt-4">
+            <h3 className="text-footnote font-semibold">How your logged gym sets compared</h3>
+            <table aria-label="Logged gym sets compared with saved targets" className="mt-1 w-full text-right text-caption tnum">
+              <thead><tr className="border-b border-line text-ink2">
+                <th scope="col" className="py-2 text-left">Target</th>
+                {['Below', 'In range', 'Above', 'Unknown'].map((label) => <th key={label} scope="col">{label}</th>)}
+              </tr></thead>
+              <tbody>{([['Reps, time or trips', targets.count], ['Effort (RPE)', targets.effort]] as const).map(([label, values]) =>
+                <tr key={label} className="border-b border-line"><th scope="row" className="py-2 text-left font-medium">{label}</th>
+                  {(['below', 'within', 'above', 'unknown'] as const).map((band) => <td key={band}>{values[band]}</td>)}</tr>)}</tbody>
+            </table>
+            {targets.assessedBoth > 0 && <p className="mt-2 text-footnote text-ink2">Both targets were in range for {targets.matchedBoth} of {targets.assessedBoth} gym set equivalents with both recorded.</p>}
+            <p className="mt-1 text-caption text-ink3">Each lift uses its saved count or range. An effort rating within half a point of the target RPE counts as in range. Missing targets or effort appear under Unknown.</p>
+          </section>}
           <h3 className="mt-4 text-footnote font-semibold">Remaining gym work for {MUSCLE_BY_ID[detail].label.toLowerCase()}</h3>
           {detailDays.length ? <ul className="mt-1 space-y-2 text-footnote">
             {detailDays.map((day) => <li key={day.at}>

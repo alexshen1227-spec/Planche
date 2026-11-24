@@ -5,7 +5,7 @@ import { defaultGym, defaultPrefs } from '../gym/state'
 import { buildGymSession } from '../gym/builder'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { GymLocation, GymSession, TrainingPrefs } from '../gym/types'
-import { addLiftVolume, emptySetSources, fatigueAt, lastHardStraightArm, setsPerMuscle, volumeStatus, volumeTarget } from './load'
+import { addLiftVolume, emptySetSources, fatigueAt, gymTargetBreakdown, lastHardStraightArm, setsPerMuscle, volumeStatus, volumeTarget } from './load'
 import { gymDeloadDue, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutesFor, planToday, planWeekAhead, REST_SLACK_HOURS, skillGoalPace } from './planner'
 import { weekStart } from '../time'
 
@@ -51,6 +51,36 @@ const gymSession = (at: number, exerciseId: string, sets: number, rpe = 8): GymS
   endedAt: at + HOUR,
   name: 'Upper body',
   exercises: [{ exerciseId, sets: Array.from({ length: sets }, () => ({ kg: 40, reps: 8, rpe, at })) }],
+})
+
+describe('logged gym targets', () => {
+  it('preserves volume and compares each set with its saved count and effort independently', () => {
+    const press = gymSession(NOW, 'incline-db-press', 0)
+    press.exercises[0] = { exerciseId: 'incline-db-press', repRange: [8, 12], targetRpe: 9, sets: [
+      ...Array.from({ length: 4 }, () => ({ at: NOW, reps: 1, rpe: 6 })),
+      ...Array.from({ length: 4 }, () => ({ at: NOW, reps: 11, rpe: 9 })),
+      { at: NOW, reps: 12 }, { at: NOW, reps: 13, rpe: 10 },
+      { at: NOW, reps: 10, warmup: true }, { at: NOW, reps: 0 }, { at: NOW - 1, reps: 10, rpe: 9 },
+    ] }
+    press.exercises.push({ exerciseId: 'incline-db-press', sets: [{ at: NOW, reps: 9, rpe: 7 }] })
+    expect(setsPerMuscle([], [press], NOW, NOW + 1).chest).toBe(11)
+    expect(gymTargetBreakdown([press], 'chest', NOW, NOW + 1)).toEqual({
+      count: { below: 4, within: 5, above: 1, unknown: 1 }, effort: { below: 4, within: 4, above: 1, unknown: 2 },
+      assessedBoth: 9, matchedBoth: 4,
+    })
+    expect(gymTargetBreakdown([press], 'triceps', NOW, NOW + 1).matchedBoth).toBe(2)
+  })
+
+  it('uses the individual target on a timed set and treats skipped effort as unknown', () => {
+    const session = gymSession(NOW, 'plank', 0)
+    session.exercises[0] = { exerciseId: 'plank', repRange: [20, 40], targetCount: 12, targetRpe: 7, sets: [
+      { at: NOW, reps: 12, rpe: 7.5 }, { at: NOW, reps: 8 }, { at: NOW + 1, reps: 12, rpe: 7 },
+    ] }
+    expect(gymTargetBreakdown([session], 'abs', NOW, NOW + 1)).toEqual({
+      count: { below: 1, within: 1, above: 0, unknown: 0 }, effort: { below: 0, within: 1, above: 0, unknown: 1 },
+      assessedBoth: 1, matchedBoth: 1,
+    })
+  })
 })
 
 describe('the day plan', () => {

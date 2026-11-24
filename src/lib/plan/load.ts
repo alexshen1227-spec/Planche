@@ -3,7 +3,7 @@ import { athleticDomain, equivalentGymExercise, GYM_EXERCISE_BY_ID } from '../..
 import { EXERCISE_BY_ID } from '../../data/exercises'
 import { SKILLS } from '../../data/skills'
 import type { AppState, Category, Session, SetLog, SkillId } from '../../types'
-import type { GoalWeights, GymSession, OutsideActivity, SportLoadAreas, TrainingPrefs } from '../gym/types'
+import type { GoalWeights, GymSession, GymSet, OutsideActivity, SportLoadAreas, TrainingPrefs } from '../gym/types'
 import { sportBetween } from './sport'
 
 /**
@@ -183,6 +183,46 @@ export function addLiftVolume(total: Credit, exerciseId: string, sets: number, s
   }
 }
 
+function loggedWorkingSet(set: GymSet, startedAt: number, from: number, to: number): boolean {
+  const at = set.at ?? startedAt
+  return !set.warmup && set.reps > 0 && at >= from && at < to
+}
+
+type TargetBand = 'below' | 'within' | 'above' | 'unknown'
+
+function targetBand(value: number | undefined, low: number | undefined, high: number | undefined): TargetBand {
+  if (value === undefined || low === undefined || high === undefined) return 'unknown'
+  if (value < low) return 'below'
+  return value > high ? 'above' : 'within'
+}
+
+/** Compare performed resistance sets with the prescription saved on that visit, using the same muscle shares as volume. */
+export function gymTargetBreakdown(sessions: GymSession[], muscle: Muscle, from: number, to: number) {
+  const count = { below: 0, within: 0, above: 0, unknown: 0 }
+  const effort = { ...count }
+  let assessedBoth = 0
+  let matchedBoth = 0
+  for (const session of sessions) {
+    if (session.endedAt < from || session.startedAt >= to) continue
+    for (const log of session.exercises) {
+      const share = resistanceSetLoading(log.exerciseId)?.muscles[muscle]
+      if (!share) continue
+      for (const set of log.sets) {
+        if (!loggedWorkingSet(set, session.startedAt, from, to)) continue
+        const target = set.originalTarget ? set.originalTarget.count : log.targetCount
+        const plannedRpe = set.originalTarget?.rpe ?? log.targetRpe
+        const reps = targetBand(set.reps, target ?? log.repRange?.[0], target ?? log.repRange?.[1])
+        const rpe = plannedRpe === undefined ? 'unknown' : targetBand(set.rpe, plannedRpe - 0.5, plannedRpe + 0.5)
+        count[reps] += share
+        effort[rpe] += share
+        if (reps !== 'unknown' && rpe !== 'unknown') assessedBoth += share
+        if (reps === 'within' && rpe === 'within') matchedBoth += share
+      }
+    }
+  }
+  return { count, effort, assessedBoth, matchedBoth }
+}
+
 /** Weekly sets per muscle between `from` and `to` (ms), from gym and skill work alike. */
 export function setsPerMuscle(
   skillSessions: Session[],
@@ -208,10 +248,7 @@ export function setsPerMuscle(
   for (const s of gymSessions) {
     if ((s.endedAt ?? s.startedAt) < from || s.startedAt >= to) continue
     for (const log of s.exercises) {
-      const completed = log.sets.filter((set) => {
-        const at = set.at ?? s.startedAt
-        return !set.warmup && set.reps > 0 && at >= from && at < to
-      }).length
+      const completed = log.sets.filter((set) => loggedWorkingSet(set, s.startedAt, from, to)).length
       addLiftVolume(out, log.exerciseId, completed, sources)
     }
   }

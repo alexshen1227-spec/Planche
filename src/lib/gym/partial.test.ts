@@ -43,6 +43,23 @@ it('lets a lighter session prefill fields whose manual values it replaced', () =
   expect(nextPullup.repsEdited).toBeUndefined()
 })
 
+it('keeps the displayed prescription with completed sets when the rest of an open session is made lighter', () => {
+  const item = draft.items[0]
+  const open: GymDraft = { ...draft, items: [{ ...item, plan: { range: [6, 10], targetRpe: 8 },
+    suggestion: { kind: 'bodyweight', reps: [6, 10], targetReps: 3, targetRpe: 8, why: 'Starting count' },
+    sets: [{ done: true, reps: 3, rpe: 8, at: start }, ...Array.from({ length: 3 }, () => ({ done: false, reps: 3 }))] }] }
+  expect(sessionFromDraft(open, start + 100).exercises[0].targetCount).toBe(3)
+  const lighter = adaptOpenDraft(open, [], true)
+  expect(lighter.items[0].sets).toHaveLength(2)
+  lighter.items[0].sets[1] = { done: true, reps: 6, rpe: 7, at: start + 500 }
+  const saved = sessionFromDraft(lighter, start + 1000)
+  const restored = sanitizeGymReport(JSON.parse(JSON.stringify({ ...defaultGym(['floor']), sessions: [saved] })))
+  expect(restored.losses).toEqual([])
+  const log = restored.gym!.sessions[0].exercises[0]
+  expect(log.targetRpe).toBe(7)
+  expect(log.sets.map((set) => [set.reps, set.originalTarget])).toEqual([[3, { rpe: 8, count: 3 }], [6, undefined]])
+})
+
 it('restores the fixed-rack rep target and the offered easier movement after an import', () => {
   const open = structuredClone(draft)
   open.items[0].suggestion = { kind: 'at-top-weight', kg: 2, reps: [6, 10], targetRpe: 7, targetReps: 11, why: 'Use the same weight for 11.' }

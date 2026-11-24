@@ -26,6 +26,12 @@ export interface GymLocation {
 
 export type Rating = 'love' | 'fine' | 'avoid'
 
+/** Targets in effect for a finished set before a later check-in changed the rest of that lift. */
+export interface OriginalSetTarget {
+  rpe: number
+  count?: number
+}
+
 export interface GymSet {
   /**
    * Load in kg — the canonical unit, whatever was typed. Absent for a
@@ -39,6 +45,7 @@ export interface GymSet {
   measure?: 'seconds'
   /** 6–10, half steps allowed. Absent when not asked or skipped. */
   rpe?: number
+  originalTarget?: OriginalSetTarget
   /** The unit it was entered in, for showing it back the same way. */
   unit?: Unit
   warmup?: boolean
@@ -57,6 +64,8 @@ export interface GymExerciseLog {
   /** The rep range and effort it was programmed with. */
   repRange?: [number, number]
   targetRpe?: number
+  /** An individual count shown in place of the general range on this visit. */
+  targetCount?: number
   note?: string
 }
 
