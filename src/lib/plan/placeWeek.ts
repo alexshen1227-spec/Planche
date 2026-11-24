@@ -16,20 +16,26 @@ export function fitPriorityLegs(state: AppState, week: WeekAhead, now: number, b
   const priority = prefs.musclesPriority.filter((m) => !prefs.musclesOff.includes(m))
   const below = priority.filter((m) => ['quads', 'hamstrings', 'glutes', 'calves'].includes(m) && (week.weekTotal[m] ?? 0) + 2 <= volumeTarget(m, prefs)[0])
   const above = priority.filter((m) => (week.weekSources.skill[m] ?? 0) > 0 && (week.weekTotal[m] ?? 0) > volumeTarget(m, prefs)[1])
-  if (!below.length || !above.length) return week
+  const bothBehind = below.some((m) => (week.weekTotal[m] ?? 0) < volumeTarget(m, prefs)[0] / 2) &&
+    priority.some((m) => !below.includes(m) && (week.weekTotal[m] ?? 0) < volumeTarget(m, prefs)[0] * 0.75)
+  if (!below.length || (!above.length && !bothBehind)) return week
   const end = addDays(weekStart(now), 7)
   const days = (w: WeekAhead) => w.days.filter((d) => d.at < end && !d.plan.rest)
   const practice = (w: WeekAhead, skill: SkillId) => days(w).filter((d) => d.skillWorkingSets?.[skill]).length
   const trained = new Set([...state.sessions, ...state.gym!.sessions].filter((s) => s.startedAt <= now).map((s) => dayKey(s.startedAt)))
   const need = (w: WeekAhead) => below.reduce((n, m) => n + Math.max(0, volumeTarget(m, prefs)[0] - (w.weekTotal[m] ?? 0)), 0)
   const excess = (w: WeekAhead) => above.reduce((n, m) => n + Math.max(0, (w.weekTotal[m] ?? 0) - volumeTarget(m, prefs)[1]), 0)
-  const options = days(week).filter((d) => d.kind === 'calisthenics' && (d.plan.skill?.skills.length ?? 0) >= 2 &&
+  const options = days(week).filter((d) => d.kind === 'calisthenics' && (d.plan.skill?.skills.length ?? 0) >= (bothBehind ? 1 : 2) &&
     !d.plan.skill?.painSafe && !trained.has(d.day)).reverse()
   for (const day of options) {
     const [skill] = [...day.plan.skill!.skills].sort((a, b) => practice(week, a) - practice(week, b))
     const option = build(day.day, skill)
-    if (need(option) + 2 > need(week) || excess(option) >= excess(week) ||
+    if (need(option) + 2 > need(week) || (above.length && excess(option) >= excess(week)) ||
       skills.some((s) => practice(option, s) < Math.min(2, practice(week, s)))) continue
+    if (!above.length && skills.some((s) => {
+      const dose = (w: WeekAhead) => days(w).reduce((n, d) => n + (d.skillWorkingSets?.[s] ?? 0), 0)
+      return dose(option) < dose(week) * 0.75
+    })) continue
     if (priority.some((m) => (option.weekTotal[m] ?? 0) < Math.min(week.weekTotal[m] ?? 0, volumeTarget(m, prefs)[0]))) continue
     return option
   }

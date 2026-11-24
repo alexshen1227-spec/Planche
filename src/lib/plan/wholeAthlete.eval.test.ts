@@ -13,6 +13,7 @@ import { weekForChoice } from './currentWeek'
 import { setLiftingWeekday } from '../gym/state'
 import { addDays, dayKey, weekStart } from '../time'
 import { familyWorkingSets, HARD_GYM_FAMILY_SETS, setsPerMuscle } from './load'
+import type { Muscle } from '../../data/gym/catalog'
 import { exposureDays, exposuresOf, GYM_PLACE, keySets, mainSets, makeAthlete, runLoop, SPORT_WEEK, weeksOf, type AthleteCfg, type DayRun, type LoopOpts, type LoopOut } from './wholeAthleteLoop'
 
 /**
@@ -444,14 +445,21 @@ describe('mixed handstand and front lever weeks', () => {
   it.each([false, true])('keeps both skills and works both chosen muscles over six weeks (four days: %s)', (fourDays) => {
     const cfg = handstandAthlete(fourDays)
     const out = season(cfg, 42, { perSet: 0.04, truthStart: { 'wall-handstand': 30, 'tuck-front-lever': 8 } }, handstandGym)
-    for (const week of weeksOf(out)) {
+    const weeks = weeksOf(out)
+    const totals: Partial<Record<Muscle, number>> = {}
+    for (const [index, week] of weeks.entries()) {
       const start = weekStart(week[0].at)
       const sets = setsPerMuscle(out.state.sessions, out.state.gym!.sessions, start, addDays(start, 7))
       for (const m of cfg.prefs!.musclesPriority!) {
-        expect(sets[m] ?? 0, dayKey(start) + ' ' + m).toBeGreaterThanOrEqual(fourDays ? 9 : 6)
+        const dose = sets[m] ?? 0
+        totals[m] = (totals[m] ?? 0) + dose
+        // Two introductory visits cap at eight sets. On the strict split the
+        // athlete no longer gets calf sets on upper days or raises on leg days.
+        expect(dose, dayKey(start) + ' ' + m).toBeGreaterThanOrEqual(fourDays && !index ? 4 : 6)
       }
       for (const skill of cfg.skills) expect(keySets(week, skill), dayKey(start) + ' ' + skill).toBeGreaterThan(0)
     }
+    for (const m of cfg.prefs!.musclesPriority!) expect(totals[m]! / weeks.length, m).toBeGreaterThanOrEqual(fourDays ? 9 : 6)
   })
 
   it('still practices the first skill after missing Monday of the second week', () => {

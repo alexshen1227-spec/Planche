@@ -3741,6 +3741,22 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
         keepOut.set(i, after)
       }
     }
+    // Sparing an overworked shoulder or triceps can also remove the press
+    // that supplied the side delts. Recheck the fitted lifts after those cuts.
+    for (const i of steerable) {
+      const muscle = 'side-delts'
+      const f = focusAt(i)!
+      if (g.physique < 3 || (total[muscle] ?? 0) >= targets[muscle][0] - 0.5 || !FOCUS_SHARE[f][muscle] ||
+          days[i].off.has(muscle) || keepOut.get(i)?.includes(muscle) || given.get(i)?.includes(muscle)) continue
+      const before = lifts(i)
+      const original = given.get(i) ?? []
+      given.set(i, [...original, muscle])
+      const after = lifts(i)
+      const losses = prefs.musclesPriority.some((m) => (after[m] ?? 0) < (before[m] ?? 0))
+      if (losses || !(after[muscle] && after[muscle]! >= (before[muscle] ?? 0))) { given.set(i, original); continue }
+      addCredit(total, before, -1)
+      addCredit(total, after)
+    }
     for (const i of steerable) {
       const out = keepOut.get(i) ?? []
       const priority = (given.get(i) ?? []).filter((m) => !out.includes(m))
