@@ -7,6 +7,7 @@ import type { AppState, EquipmentId, SkillId, StepId, Workout, WorkoutRequest } 
 import { applySession } from '../engine'
 import { buildGymSession, type GymFocus } from '../gym/builder'
 import { conservative } from '../gym/draft'
+import { bodyweightCapacity } from '../gym/bodyweight'
 import { loadForReps } from '../gym/progression'
 import { defaultGym, defaultPrefs } from '../gym/state'
 import type { GymLocation, GymSession, GymSet, SportSlot, TrainingPrefs } from '../gym/types'
@@ -294,6 +295,7 @@ export function runLoop(start: AppState, opts: LoopOpts): LoopOut {
     const chestUnder = (weekSets.chest ?? 0) < volumeTarget('chest', prefs)[0]
     const built = buildGymSession({
       location: place,
+      capacity: bodyweightCapacity(state, t),
       minutes: g.minutes,
       focus: g.focus,
       sessions: state.gym!.sessions,

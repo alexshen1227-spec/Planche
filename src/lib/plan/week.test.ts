@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { bodyweightCapacity } from '../gym/bodyweight'
 import type { AppState, EquipmentId, Session, SetLog, SkillId } from '../../types'
 import { initialState, reducer } from '../store'
 import { defaultGym, defaultPrefs, mergeGym, sanitizeGym } from '../gym/state'
@@ -647,6 +648,7 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
           expect(s.gym?.locations.length, `${who} gym block with no place`).toBeGreaterThan(0)
           const b = buildGymSession({
             location: loc,
+            capacity: bodyweightCapacity(s, now),
             minutes: p.gym.minutes,
             focus: p.gym.focus,
             sessions: history,

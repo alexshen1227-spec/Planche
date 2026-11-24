@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { dayKey } from '../time'
 import type { GymPreset } from './screens'
+import { planClockTick } from './usePlanClock'
 
 /**
  * A saved skill opener hands its lifts to Home and Train. Older builds kept
@@ -135,6 +136,7 @@ export function endTheDay(now = Date.now()): void {
 /** Every screen reading today's marks hears a change; a new day reads none. */
 export function useDayMarks(todayKey: string): DayMarks {
   const [marks, setMarks] = useState<DayMarks>(() => readDayMarks())
+  const tick = planClockTick(Date.now())
   useEffect(() => {
     const sync = () =>
       setMarks((cur) => {
@@ -148,7 +150,7 @@ export function useDayMarks(todayKey: string): DayMarks {
       window.removeEventListener(MARKS_EVENT, sync)
       window.removeEventListener('storage', sync)
     }
-  }, [todayKey])
+  }, [todayKey, tick])
   return marks
 }
 

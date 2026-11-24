@@ -62,7 +62,8 @@ import {
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { ladderStatus } from '../lib/repLadder'
 import { WeekPreview } from '../components/plan/WeekPreview'
-import type { GymPreset } from '../components/plan/TodayPlanCard'
+import { TodayPlanCard, type GymPreset } from '../components/plan/TodayPlanCard'
+import { GymHistory } from '../components/gym/GymHistory'
 import { FOCUS_LABEL } from '../lib/gym/builder'
 
 /** Per-device memory of the complete-sessions notice; never state that matters. */
@@ -177,15 +178,28 @@ function WeekStrip({ trainedDays }: { trainedDays: Set<string> }) {
   )
 }
 
-export function Dashboard({
-  startWorkout,
-  go,
-  viewSession,
-}: {
+interface DashboardProps {
   startWorkout: (request: WorkoutRequest) => void
+  startGym?: (preset: GymPreset) => void
   go: (t: Tab) => void
   viewSession: (sessionId: string) => void
-}) {
+}
+
+export function Dashboard(props: DashboardProps) {
+  const { state } = useStore()
+  if (state.gym?.prefs?.goals.skills === 0) {
+    return (
+      <div className="animate-rise space-y-5">
+        <h1 className="font-display text-title1 font-bold text-ink">Your training</h1>
+        <TodayPlanCard startWorkout={props.startWorkout} onStartGym={props.startGym ?? (() => props.go('train'))} />
+        <GymHistory limit={3} />
+      </div>
+    )
+  }
+  return <SkillDashboard {...props} />
+}
+
+function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardProps) {
   const { state: whole, dispatch } = useStore()
   // Everything date-dependent is keyed on today too: a screen left open
   // overnight used to offer yesterday's plan.
@@ -403,7 +417,8 @@ export function Dashboard({
         ...calisthenicsRequest(whole, opener, choice.placeId),
         gymAfter: gymPreset(g, { placeId: gymWhere?.place.id ?? g.placeId, warmUpMin: AFTER_OPENER_WARM_UP_MIN }),
       })
-    } else go('train')
+    } else if (g && startGym) startGym(gymPreset(g, { placeId: gymWhere?.place.id ?? g.placeId }))
+    else go('train')
   }
   const recentAchievements = useMemo(
     () =>
@@ -571,7 +586,7 @@ export function Dashboard({
               {rememberedLifts ? ` (${FOCUS_LABEL[rememberedLifts.focus].toLowerCase()}, ${rememberedLifts.minutes} min)` : ''}.
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Button onClick={() => go('train')}>{rememberedLifts ? 'Go to the lifts' : 'Open the Gym side'}</Button>
+              <Button onClick={() => rememberedLifts && startGym ? startGym(rememberedLifts) : go('train')}>{rememberedLifts ? 'Go to the lifts' : 'Open the Gym side'}</Button>
               <button onClick={() => endTheDay()} className="min-h-11 px-1 text-footnote font-medium text-accent-text">
                 End the day here
               </button>

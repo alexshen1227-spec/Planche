@@ -1,6 +1,7 @@
 import { type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
 import { athleticDomain, GYM_EXERCISE_BY_ID, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
 import { availableAt, preferenceRank } from './availability'
+import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
 import { gateTier, liftTrend, plyoGate, repPlanFor, STALL_SESSIONS, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymSession, Rating } from './types'
 
@@ -215,8 +216,9 @@ export function nextFocus(sessions: GymSession[], now = Date.now(), musclesOff: 
  * a movement that needs coaching is only picked when nothing else fills the
  * slot or the athlete loves it.
  */
-export function buildGymSession(input: {
+interface GymSessionInput {
   location: GymLocation | undefined
+  capacity?: BodyweightCapacity
   minutes: number
   focus?: GymFocus
   sessions: GymSession[]
@@ -245,7 +247,10 @@ export function buildGymSession(input: {
   /** Where each movement is liked best (`gym.favoriteAt`): it wins its slot at that place. */
   favoriteAt?: Record<string, string>
   now?: number
-}): GymPlan {
+}
+
+/** Fit and sequence the movements. A week compares many candidate sessions before anyone needs load suggestions. */
+export function planGymExercises(input: GymSessionInput) {
   const { location, minutes, sessions, ratings = {}, youth = false, now = Date.now() } = input
   const musclesOff = new Set(input.musclesOff ?? [])
   const priority = new Set(input.priority ?? [])
@@ -266,6 +271,7 @@ export function buildGymSession(input: {
   const goalEmphasis = input.goals ? { power: input.goals.power >= 3 } : null
   const emphasisOf = (e: GymExercise) => input.emphasis ?? goalEmphasisFor(input.goals, e)
   const usable = (e: GymExercise) =>
+    readyForBodyweight(e.id, input.capacity) &&
     !e.primary.some((m) => musclesOff.has(m)) &&
     !e.stress.some((j) => avoid.has(j)) &&
     ratings[e.id] !== 'avoid' &&
@@ -274,7 +280,7 @@ export function buildGymSession(input: {
   const focus = input.focus ?? nextFocus(sessions, now, input.musclesOff)
   const here = availableAt(location)
   const used = new Set<string>()
-  const items: PlannedExercise[] = []
+  const items: Omit<PlannedExercise, 'suggestion'>[] = []
   /** Movements kept for what the day is named for, though they lean on a spare muscle: never given a set more. */
   const steered = new Set<string>()
   const notes: string[] = []
@@ -286,7 +292,7 @@ export function buildGymSession(input: {
   }
   const staleness = (e: GymExercise) => ((lastLogged.get(e.id) ?? 0) === 0 ? -0.2 : -Math.min(0.2, (now - (lastLogged.get(e.id) ?? now)) / (60 * 86_400_000)))
   const isPriority = (e: GymExercise) => e.primary.some((m) => priority.has(m))
-  const makeItem = (pick: GymExercise, wantsExplosive: boolean, sets?: number): PlannedExercise => {
+  const makeItem = (pick: GymExercise, wantsExplosive: boolean, sets?: number) => {
     const base = repPlanFor(pick, wantsExplosive ? 'power' : emphasisOf(pick), youth)
     const plan = factor < 1 ? { ...base, targetRpe: Math.max(6, base.targetRpe - 1) } : base
     return {
@@ -294,7 +300,6 @@ export function buildGymSession(input: {
       // The usual dose: a light or hard day is made from the fitted session below, so it cannot lose to the time fit.
       sets: sets ?? 3 + (isPriority(pick) ? 1 : 0),
       plan,
-      suggestion: suggestLoad({ exerciseId: pick.id, location, sessions, plan, youth, now }),
       restSec: restFor(pick, plan),
     }
   }
@@ -411,9 +416,9 @@ export function buildGymSession(input: {
       // the same movement for a while: a change of exercise is a common way to
       // restart progress (CONSENSUS). Only a close fit — never one that is
       // hard to do here, or coached-only under 18 — and never a favourite.
-      if (!wantsExplosive && ratings[pick.id] !== 'love' && liftTrend(sessions, pick.id, now).status === 'stalled') {
+      if (sessions.length > STALL_SESSIONS && !wantsExplosive && ratings[pick.id] !== 'love' && liftTrend(sessions, pick.id, now, location?.id).status === 'stalled') {
         const alt = ranked.find(
-          (r) => r.e.id !== first.e.id && r.e.pattern === first.e.pattern && r.score <= first.score + 1.5 && liftTrend(sessions, r.e.id, now).status !== 'stalled',
+          (r) => r.e.id !== first.e.id && r.e.pattern === first.e.pattern && r.score <= first.score + 1.5 && liftTrend(sessions, r.e.id, now, location?.id).status !== 'stalled',
         )
         if (alt) {
           notes.push(
@@ -545,4 +550,14 @@ export function buildGymSession(input: {
     }
   }
   return { name: FOCUS_LABEL[focus], focus, items, dropped, estimatedMin: items.length ? Math.round(total()) : 0, fits, notes }
+}
+
+export function buildGymSession(input: GymSessionInput): GymPlan {
+  const now = input.now ?? Date.now()
+  const session = planGymExercises({ ...input, now })
+  const items = session.items.map((item) => ({
+    ...item,
+    suggestion: suggestLoad({ exerciseId: item.exerciseId, location: input.location, sessions: input.sessions, plan: item.plan, youth: input.youth, now }),
+  }))
+  return { ...session, items }
 }

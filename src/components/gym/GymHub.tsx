@@ -17,14 +17,15 @@ import { useToday } from '../../lib/useToday'
 import type { AppState, SkillId, WorkoutRequest } from '../../types'
 import { countUnit, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, lastPerformance } from '../../lib/gym/progression'
 import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
-import { displayLoad, formatLoad, unitFor } from '../../lib/gym/units'
+import { entryLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { Icon } from '../Icon'
 import { Button, Card, CardTitle, EmptyState, Sheet, ToggleChip } from '../ds'
 import { GymPlayer } from './GymPlayer'
 import { WeekVolume } from '../plan/WeekVolume'
 import { LocationEditor } from './LocationEditor'
 import { ExerciseHistory } from './ExerciseHistory'
-import { SessionDetail } from './SessionDetail'
+import { bodyweightCapacity } from '../../lib/gym/bodyweight'
+import { GymHistory } from './GymHistory'
 
 const MINUTES = [20, 30, 45, 60, 75, 90]
 const SKILL_NAME: Record<SkillId, string> = { planche: 'planche', frontlever: 'front lever', handstand: 'handstand', ninety: '90° hold', flag: 'human flag' }
@@ -47,6 +48,7 @@ export function GymHub({
   const todayKey = useToday()
   // The coarse clock re-plans a screen left open: the pain, joint and rest rules run in hours.
   const clock = usePlanClock()
+  const capacity = useMemo(() => bodyweightCapacity(state, Date.now()), [state, todayKey, clock])
   const [choice, setChoice] = useTodayChoice(todayKey)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const today = weekForChoice(state, choice).days[0].plan
@@ -78,11 +80,14 @@ export function GymHub({
   const finished = stage === 'done'
   // The opener is saved and the lifts are what is left: no second opener, and the lifts keep the minutes the day planned.
   const liftsNext = stage === 'lifts-next'
+  const [editingLifts, setEditingLifts] = useState(false)
+  const [pending, setPending] = useState<{ empty: boolean; preset?: GymPreset } | null>(null)
+  const remaining = liftsNext && !editingLifts ? remembered : null
+  const block = pending?.preset ?? preset ?? remaining
   const [skipOpener, setSkipOpener] = useState(false)
   const [focus, setFocus] = useState<GymFocus | 'auto'>('auto')
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   const [historyOf, setHistoryOf] = useState<string | null>(null)
-  const [openSessionId, setOpenSessionId] = useState<string | null>(null)
   const [running, setRunning] = useState<GymDraft | null>(null)
   const [resumable, setResumable] = useState<GymDraft | null>(() => loadDraft())
   // What is open is whatever storage holds now: read again when the player closes (a saved session clears it) and when
@@ -100,7 +105,8 @@ export function GymHub({
   // Where the lifts are built: where the plan has them (the gym, even with Home set as the place now) unless the
   // athlete said today that they are somewhere else. Home being active is not a pick.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const where = useMemo(() => (gym ? resolveGymPlace(state, Date.now(), { pickedId: choice.placeId }) : undefined), [state, gym, choice.placeId, todayKey, clock])
+  const fixedPlace = pending?.preset?.placeId ?? preset?.placeId
+  const where = useMemo(() => (gym ? resolveGymPlace(state, Date.now(), { plannedId: block?.placeId, pickedId: fixedPlace ?? choice.placeId }) : undefined), [state, gym, block?.placeId, fixedPlace, choice.placeId, todayKey, clock])
   const location = where?.place
 
   // The coach's gym session for now, as if today were a gym day: the focus, the
@@ -117,37 +123,38 @@ export function GymHub({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [auto, state, gym, location, minutes, focus, todayKey, clock],
   )
-  const resolvedFocus: GymFocus | undefined = coach?.focus
-  const offeredOpener = startWorkout && !liftsNext ? coach?.opener : undefined
+  const resolvedFocus: GymFocus | undefined = block?.focus ?? coach?.focus
+  const limits = block ?? coach
+  const offeredOpener = startWorkout && !liftsNext && !block ? coach?.opener : undefined
   const opener = skipOpener ? undefined : offeredOpener
-  const liftMinutes = liftsNext && remembered ? remembered.minutes : minutes - (opener?.minutes ?? 0)
+  const liftMinutes = block?.minutes ?? minutes - (opener?.minutes ?? 0)
+  const warmUpMin = block?.warmUpMin ?? (opener || liftsNext ? AFTER_OPENER_WARM_UP_MIN : undefined)
   const plan = useMemo(
     () =>
-      gym && location && coach && resolvedFocus
+      gym && location && limits && resolvedFocus
         ? buildGymSession({
             location,
+            capacity,
             minutes: liftMinutes,
             focus: resolvedFocus,
-            musclesOff: coach.musclesOff,
-            avoidJoints: coach.avoidJoints,
-            volumeFactor: coach.volumeFactor,
+            musclesOff: limits.musclesOff,
+            avoidJoints: [...new Set([...limits.avoidJoints, ...sore.joints])],
+            volumeFactor: limits.volumeFactor,
             // Straight after the opener, the lifts need only a short warm-up of their own.
-            ...(opener ? { warmUpMin: AFTER_OPENER_WARM_UP_MIN } : {}),
+            warmUpMin,
             favoriteAt: gym.favoriteAt,
             sessions: gym.sessions,
             ratings: gym.ratings,
             youth,
             ...(gym.prefs ? { goals: gym.prefs.goals } : {}),
             // The athlete's priorities and the week's: the muscles it leaves furthest under target, and the ones it has far past it.
-            ...steerInput(coach, gym.prefs?.musclesPriority),
+            ...steerInput(limits, gym.prefs?.musclesPriority),
             now: Date.now(),
           })
         : null,
-    [gym, location, liftMinutes, resolvedFocus, youth, coach, opener],
+    [gym, location, liftMinutes, resolvedFocus, youth, limits, warmUpMin, capacity, sore],
   )
-  const records = useMemo(() => (gym ? gymRecords(gym.sessions) : {}), [gym])
-
-  const [pending, setPending] = useState<{ empty: boolean; preset?: GymPreset } | null>(null)
+  const records = useMemo(() => (gym ? gymRecords(gym.sessions, location?.id) : {}), [gym, location?.id])
 
   // A session planned on the Today card asks the pain check, then starts.
   useEffect(() => {
@@ -179,7 +186,7 @@ export function GymHub({
   const toDraftItem = (it: PlannedExercise) => {
     const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
     const unit = unitFor(ex, location)
-    const load = it.suggestion.kg !== undefined ? displayLoad(it.suggestion.kg, unit) : undefined
+    const load = it.suggestion.kg !== undefined ? entryLoad(it.suggestion.kg, unit) : undefined
     return {
       exerciseId: it.exerciseId,
       plan: it.plan,
@@ -256,6 +263,7 @@ export function GymHub({
         if (!g.focus) return false
         const b = buildGymSession({
           location,
+          capacity,
           minutes: p.minutes,
           focus: g.focus,
           musclesOff: g.musclesOff,
@@ -300,6 +308,7 @@ export function GymHub({
       ? null
       : buildGymSession({
           location,
+          capacity,
           minutes: p?.minutes ?? minutes,
           favoriteAt: gym.favoriteAt,
           ...(base.focus ? { focus: base.focus } : {}),
@@ -308,7 +317,7 @@ export function GymHub({
           youth,
           avoidJoints,
           volumeFactor,
-          ...(p?.warmUpMin !== undefined ? { warmUpMin: p.warmUpMin } : {}),
+          warmUpMin,
           musclesOff,
           ...(gym.prefs ? { goals: gym.prefs.goals } : {}),
           ...steerInput(replanned ?? (p ? p : (coach ?? {})), gym.prefs?.musclesPriority),
@@ -331,8 +340,6 @@ export function GymHub({
 
   const editingLocation =
     editing === 'new' ? newLocation('New gym', location.unit) : gym.locations.find((l) => l.id === editing) ?? null
-  const recent = [...gym.sessions].reverse().slice(0, 5)
-  const openSession = openSessionId ? gym.sessions.find((s) => s.id === openSessionId) : undefined
   const topRecords = Object.values(records)
     .filter((r) => r.bestE1rm)
     .sort((a, b) => b.bestE1rm!.kg - a.bestE1rm!.kg)
@@ -444,6 +451,16 @@ export function GymHub({
             {sore.pain ? ' Never train through pain.' : ''}
           </p>
         ) : null}
+        {remaining ? (
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-inner bg-raised px-3">
+            <span className="text-footnote font-semibold">{FOCUS_LABEL[remaining.focus]} · {remaining.minutes} min</span>
+            <Button variant="ghost" onClick={() => {
+              setMinutes(remaining.minutes)
+              setFocus(remaining.focus)
+              setEditingLifts(true)
+            }}>Change lifts</Button>
+          </div>
+        ) : <>
         <p className="mt-3 text-caption font-medium text-ink3">Time</p>
         <div className="mt-1 flex flex-wrap gap-2">
           {[...new Set([...MINUTES, minutes])].sort((a, b) => a - b).map((m) => (
@@ -460,6 +477,7 @@ export function GymHub({
             </ToggleChip>
           ))}
         </div>
+        </>}
         {offeredOpener ? (
           <div className="mt-4 flex items-center justify-between gap-3 rounded-inner bg-accent-soft p-3">
             <span className="min-w-0">
@@ -478,7 +496,7 @@ export function GymHub({
           </div>
         ) : liftsNext ? (
           <p className="mt-3 rounded-control bg-accent-soft p-3 text-footnote text-ink2">
-            Your skill opener is saved — these are the lifts that follow it{remembered ? `, in the ${remembered.minutes} minutes the day planned` : ''}.
+            Your skill opener is saved. These lifts finish the session.
           </p>
         ) : coach?.noOpener ? (
           <p className="mt-3 text-caption text-ink3">No skill work first: {coach.noOpener}</p>
@@ -542,7 +560,7 @@ export function GymHub({
           </div>
         ) : (
         <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
-          <Button size="lg" disabled={!plan?.items.length} onClick={() => setPending({ empty: false })}>
+          <Button size="lg" disabled={!plan?.items.length} onClick={() => setPending({ empty: false, ...(remaining ? { preset: { ...remaining, placeId: location.id } } : {}) })}>
             Start session
           </Button>
           <Button size="lg" variant="secondary" onClick={() => setPending({ empty: true })}>
@@ -560,41 +578,7 @@ export function GymHub({
         ) : null}
       </Card>
 
-      <section>
-        <h2 className="text-footnote font-semibold uppercase tracking-wide text-ink3">Recent</h2>
-        {recent.length ? (
-          <ul className="mt-2 space-y-2">
-            {recent.map((s) => {
-              const sets = s.exercises.reduce((n, e) => n + e.sets.filter((x) => !x.warmup).length, 0)
-              const place = gym.locations.find((l) => l.id === s.locationId)?.name ?? 'A deleted place'
-              return (
-                <li key={s.id}>
-                  <button
-                    onClick={() => setOpenSessionId(s.id)}
-                    aria-label={`${s.name}, ${dayLabel(s.startedAt)} — open to correct or delete`}
-                    className="ds-press block min-h-11 w-full rounded-card border border-line bg-surface p-4 text-left"
-                  >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-body font-semibold">{s.name}</span>
-                    <span className="text-caption text-ink3">{dayLabel(s.startedAt)}</span>
-                  </div>
-                  <p className="mt-0.5 text-footnote text-ink2">
-                    {place} · {s.exercises.length} {s.exercises.length === 1 ? 'exercise' : 'exercises'} · {sets} {sets === 1 ? 'set' : 'sets'}
-                    {s.completion === 'partial' ? ' · some sets skipped' : ''}
-                  </p>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <Card className="mt-2 border-dashed">
-            <EmptyState icon="calendar" title="No gym sessions yet">
-              Your first one sets the starting weights for the next.
-            </EmptyState>
-          </Card>
-        )}
-      </section>
+      <GymHistory limit={5} />
 
       {topRecords.length ? (
         <section>
@@ -627,9 +611,6 @@ export function GymHub({
         {historyOf ? <ExerciseHistory exerciseId={historyOf} /> : null}
       </Sheet>
 
-      <Sheet open={openSession !== undefined} onClose={() => setOpenSessionId(null)} label="Gym session">
-        {openSession ? <SessionDetail session={openSession} onClose={() => setOpenSessionId(null)} /> : null}
-      </Sheet>
 
       <Sheet open={pending !== null} onClose={() => setPending(null)} label="Before you start">
         {pending ? <PainCheck onAnswer={launch} /> : null}

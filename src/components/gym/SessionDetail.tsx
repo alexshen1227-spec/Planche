@@ -5,7 +5,7 @@ import { doubtedLoad, maxCountFor } from '../../lib/gym/state'
 import { conservative } from '../../lib/gym/draft'
 import { effortLabel, exerciseTitle, nextTimeLines } from '../../lib/gym/sessionLines'
 import type { GymSession, GymSet } from '../../lib/gym/types'
-import { displayLoad, formatLoad, toKg } from '../../lib/gym/units'
+import { entryLoad, formatLoad, toKg } from '../../lib/gym/units'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
 import { Button } from '../ds'
@@ -149,7 +149,7 @@ function SetEditor({
   onDone: () => void
 }) {
   const { state } = useStore()
-  const [load, setLoad] = useState(set.kg !== undefined ? String(displayLoad(set.kg, unit)) : '')
+  const [load, setLoad] = useState(set.kg !== undefined ? String(entryLoad(set.kg, unit)) : '')
   const [reps, setReps] = useState(String(set.reps))
   const [doubt, setDoubt] = useState<{ bestKg: number; probablyKg?: number; typedKg: number } | null>(null)
   const field = 'min-h-11 w-24 rounded-control border border-line-strong bg-surface px-3 text-body tnum'

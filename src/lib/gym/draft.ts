@@ -3,7 +3,7 @@ import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import { lastPerformance, repPlanFor, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymSession, GymState } from './types'
-import { displayLoad, toKg } from './units'
+import { entryLoad, toKg } from './units'
 import type { Unit } from '../../data/gym/catalog'
 import type { Profile } from '../../types'
 
@@ -45,7 +45,7 @@ export function previousSets(
   const last = lastPerformance(sessions, exerciseId, locationId, now)
   if (!last) return undefined
   return last.sets.map((s) => ({
-    ...(s.kg !== undefined && s.kg > 0 ? { load: displayLoad(s.kg, unit) } : {}),
+    ...(s.kg !== undefined && s.kg > 0 ? { load: entryLoad(s.kg, unit) } : {}),
     reps: s.reps,
     ...(s.rpe !== undefined ? { rpe: s.rpe } : {}),
   }))
@@ -96,13 +96,14 @@ export function prefillReps(plan: RepPlan, suggestion: LoadSuggestion | undefine
   const [lo, hi] = plan.range
   // A lift held back shows the bar it has to clear, and the screen starts there.
   if (suggestion?.repsToMoveUp !== undefined) return suggestion.repsToMoveUp
+  if (suggestion?.targetReps !== undefined) return suggestion.targetReps
   if (suggestion?.kind === 'repeat' && lastReps !== undefined) return Math.min(hi, Math.max(lo, lastReps + 1))
   return lo
 }
 
 /** Reps for a set added to a block: the last set's, else the bar a held-back lift must clear, else the top of the range. */
 export function addedSetReps(lastReps: number | undefined, plan: RepPlan, suggestion: LoadSuggestion | undefined): number {
-  return lastReps ?? suggestion?.repsToMoveUp ?? plan.range[1]
+  return lastReps ?? suggestion?.repsToMoveUp ?? suggestion?.targetReps ?? plan.range[1]
 }
 
 const KEY = 'planchelab.gymDraft'

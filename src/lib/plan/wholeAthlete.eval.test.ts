@@ -137,6 +137,16 @@ function expectWeeklyPressing(mixed: LoopOut, restHours: number): number {
 }
 
 describe('the whole athlete: the planche first, then the rest (round five)', () => {
+  it('keeps skill practice and loggable gym work in a floor-only beginner’s two short days', () => {
+    const mixed = season({
+      skills: ['planche'], steps: { planche: 'foundations' }, kit: ['floor'], active: 'home', birthYear: 1995,
+      prefs: { minutesByDay: [0, 30, 0, 0, 30, 0, 0], musclesPriority: ['quads', 'lats'], goals: { skills: 4, physique: 4, strength: 3, endurance: 1, power: 1 } },
+    }, 35, {}, { ...GYM_PLACE, equipment: ['floor'] })
+    for (const week of weeksOf(mixed)) {
+      expect(week.some((d) => d.skill.length)).toBe(true)
+      expect(week.some((d) => d.gym?.items.length)).toBe(true)
+    }
+  })
   it.each([
     [0, 45, 0, 45, 0, 45, 0],
     [0, 60, 60, 0, 60, 0, 60],

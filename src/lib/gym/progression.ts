@@ -5,7 +5,7 @@ import {
   type GymExercise,
   type IntensityTier,
 } from '../../data/gym/exercises'
-import { formatLoad, maxKgFor, roundToStep, stepKgFor, unitFor } from './units'
+import { formatLoad, maxKgFor, roundToStep, stepKgFor, takesAddedLoad, unitFor } from './units'
 import type { GymLocation, GymSession, GymSet } from './types'
 
 /**
@@ -307,6 +307,8 @@ export interface LoadSuggestion {
   kg?: number
   /** Reps to aim for. */
   reps: [number, number]
+  /** Starting reps per set when bodyweight history gives a more useful target than the generic range. */
+  targetReps?: number
   targetRpe: number
   /** One line on why, in the athlete's terms. */
   why: string
@@ -324,7 +326,7 @@ export interface LoadSuggestion {
 /** The heaviest load on this unit's grid that is at most one step above the true last load (a jump under 18 never exceeds it). */
 export function youthCeiling(lastKg: number, stepKg: number, topKg?: number): number {
   const grid = Math.floor((lastKg + stepKg) / stepKg + 1e-9) * stepKg
-  return topKg !== undefined ? Math.min(grid, topKg) : grid
+  return roundToStep(grid, stepKg, topKg)
 }
 
 /**
@@ -341,7 +343,7 @@ export function stepDownKg(kg: number, stepKg: number, topKg?: number): number {
   if (!(stepKg > 0)) return Math.max(0, kg)
   const lowered = Math.max(0, kg - stepKg)
   const grid = Math.ceil(lowered / stepKg - 1e-9) * stepKg
-  return topKg !== undefined ? Math.min(grid, topKg) : grid
+  return roundToStep(grid, stepKg, topKg)
 }
 
 export function suggestLoad(input: {
@@ -358,7 +360,8 @@ export function suggestLoad(input: {
   const base = { reps: plan.range, targetRpe: plan.targetRpe }
   if (!ex) return { ...base, kind: 'first-time', why: 'Not a movement this app knows.' }
   // A set of a loaded movement with no weight logged says nothing about the load.
-  const keep = (set: GymSet) => !isUnloadedSet(ex, set)
+  const addedLoad = takesAddedLoad(ex, location)
+  const keep = (set: GymSet) => !isUnloadedSet(ex, set) && (ex.load !== 'bodyweight' || !ex.stepFrom || addedLoad || !set.kg)
   const last = lastPerformance(sessions, exerciseId, location?.id, now, keep)
   const step = stepKgFor(ex, location)
   const top = maxKgFor(ex, location)
@@ -387,6 +390,7 @@ export function suggestLoad(input: {
     }
     if (ex.load === 'bodyweight') {
       if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan) }
+      if (addedLoad) return { ...base, kind: 'bodyweight', why: `Aim for ${lo}–${hi} clean reps. Enter the extra weight you use, or zero for bodyweight.` }
       if (isHardBodyweight(ex)) return { ...base, kind: 'bodyweight', why: `Hard bodyweight movement: ${lo}–${hi} slow, controlled reps, lowering for about three seconds. Stop a rep before form breaks.` }
       return { ...base, kind: 'bodyweight', why: `Bodyweight: aim for ${lo}–${hi} clean reps.` }
     }
@@ -435,15 +439,18 @@ export function suggestLoad(input: {
   })()
   const failing = failedWithoutEffort(atLoad, lo)
   // Every suggested load is one this place can make.
-  const reach = (v: number) => {
-    const r = roundToStep(v, step, top)
-    return r > 0 || !(v > 0) ? r : v
-  }
+  const reach = (v: number) => roundToStep(v > 0 ? Math.max(v, step) : 0, step, top)
   if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, top, { stale, away, weeksAway })
   if (ex.load === 'bodyweight' && !(kg > 0)) {
     if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan, working.map((s) => s.reps)) }
-    if (allTop) return { ...base, kind: 'bodyweight', why: `Every set reached ${hi} last time: add a few reps, slow the lowering, or move to a harder version.` }
-    return { ...base, kind: 'bodyweight', why: `Aim to beat last time’s ${working.map((s) => s.reps).join(', ')} reps.` }
+    const reps = atLoad.map((s) => s.reps).sort((a, b) => a - b)
+    const typical = reps[Math.floor((reps.length - 1) / 2)]
+    const easy = !stale && atLoad.every((s) => s.rpe !== undefined && s.rpe <= plan.targetRpe)
+    const targetReps = Math.max(1, Math.min(hi, typical + (easy ? 1 : grinding || away ? -1 : 0)))
+    let why = `Last time you did ${atLoad.map((s) => s.reps).join(', ')} reps. Aim for ${targetReps} clean reps per set.`
+    if (grinding && typical < lo) why += ` Swap to an easier version if you need help reaching ${lo} with reps to spare.`
+    if (allTop) why += ' When every set feels controlled, try a harder variation.'
+    return { ...base, kind: 'bodyweight', targetReps, why }
   }
   if (away && step > 0 && kg > 0) {
     return {
@@ -584,7 +591,7 @@ function assistedSuggestion(
   if (failedWithoutEffort(atHelp, lo) && step > 0) {
     return { ...base, kg: roundToStep(help + step, step, top), kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step more help, then build back.` }
   }
-  return { ...base, kg: help > 0 ? (roundToStep(help, step, top) || help) : help, kind: 'repeat', why: `Same help: aim to add a rep to last time’s ${atHelp.map((s) => s.reps).join(', ')}.` }
+  return { ...base, kg: roundToStep(help, step, top), kind: 'repeat', why: `Aim to add a rep to last time’s ${atHelp.map((s) => s.reps).join(', ')} with this assistance.` }
 }
 
 export interface GymRecord {
@@ -613,7 +620,7 @@ export function isFirstEstimate(rec: Pick<GymRecord, 'e1rmSessions'> | undefined
 }
 
 /** Records per exercise, derived by replaying history — never stored, never edited. */
-export function gymRecords(sessions: GymSession[]): Record<string, GymRecord> {
+export function gymRecords(sessions: GymSession[], locationId?: string): Record<string, GymRecord> {
   const out: Record<string, GymRecord> = {}
   const ordered = [...sessions].sort((a, b) => a.startedAt - b.startedAt)
   // A machine's estimate is only comparable inside one place: the record is the one at the place it was last used.
@@ -623,7 +630,7 @@ export function gymRecords(sessions: GymSession[]): Record<string, GymRecord> {
     for (const log of s.exercises) {
       const rec = (out[log.exerciseId] ??= { exerciseId: log.exerciseId })
       const assisted = Boolean(GYM_EXERCISE_BY_ID[log.exerciseId]?.assisted)
-      const sameBar = maxKey(log.exerciseId, s.locationId) === log.exerciseId || lastPlace.get(log.exerciseId) === s.locationId
+      const sameBar = maxKey(log.exerciseId, s.locationId) === log.exerciseId || (locationId ?? lastPlace.get(log.exerciseId)) === s.locationId
       let gaveEstimate = false
       for (const set of log.sets) {
         if (set.warmup || !(set.reps > 0)) continue
@@ -669,13 +676,17 @@ const STALL_CURRENT_DAYS = 21
  * old lucky high is not a stall). A coaching reading, not a measurement — and
  * never about fatigue or anything else it cannot see.
  */
-export function liftTrend(sessions: GymSession[], exerciseId: string, now: number): LiftTrend {
+export function liftTrend(sessions: GymSession[], exerciseId: string, now: number, locationId?: string): LiftTrend {
   const ex = GYM_EXERCISE_BY_ID[exerciseId]
   if (!ex || ex.assisted || ex.count || ex.explosive || ex.dose) return { status: 'unknown', sessions: 0 }
   const from = now - TREND_WINDOW_DAYS * 86_400_000
   const points: { at: number; value: number; kind: 'e1rm' | 'reps' }[] = []
+  const machinePlace = ex.load === 'machine' || ex.load === 'cable'
+    ? locationId ?? lastPerformance(sessions, exerciseId, undefined, now)?.session.locationId
+    : undefined
   for (const s of [...sessions].sort((a, b) => a.startedAt - b.startedAt)) {
     if (s.startedAt >= now || s.startedAt < from) continue
+    if (machinePlace !== undefined && s.locationId !== machinePlace) continue
     const sets = s.exercises.filter((e) => e.exerciseId === exerciseId).flatMap((e) => e.sets.filter((x) => !x.warmup && x.reps > 0))
     if (!sets.length) continue
     const e1rm = Math.max(-1, ...sets.map((x) => estimateOneRepMax(x, exerciseId) ?? -1))

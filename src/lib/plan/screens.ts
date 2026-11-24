@@ -8,7 +8,7 @@ import { addDays, weekStart } from '../time'
 import { goalDaysInWeekOf } from '../stats'
 import { missingKit } from '../../data/skills'
 import { readDayMarks, type DayMarks } from './nextBlock'
-import { atActivePlace, gymPlaceOf, insideRestRule, MIN_SKILL_MINUTES, placeKit, planToday, skillFamily, type SkillBlock, type TodayPlan } from './planner'
+import { atActivePlace, gymPlaceOf, insideRestRule, kitAt, MIN_SKILL_MINUTES, placeKit, planToday, skillFamily, type SkillBlock, type TodayPlan } from './planner'
 
 /**
  * Decisions the Home and Train screens make about today and this week, kept
@@ -306,13 +306,6 @@ export function gymPlaceLine(choice: GymPlaceChoice | undefined): string | null 
   return choice.moved && choice.planned ? `At ${choice.place.name}. The plan had this at ${choice.planned.name}.` : `At ${choice.place.name}`
 }
 
-/** A state seen from one place, for the kit it holds; an unknown place is no view. */
-function viewAt(state: AppState, placeId: string | undefined): AppState | undefined {
-  const gym = state.gym
-  if (!gym || !placeId || !gym.locations.some((l) => l.id === placeId)) return undefined
-  return gym.activeLocationId === placeId ? state : { ...state, gym: { ...gym, activeLocationId: placeId } }
-}
-
 /**
  * A skill block as the request that starts it, built where the plan has it:
  * the block's kit (a lever day at the gym with the bar, an opener at its
@@ -322,8 +315,8 @@ function viewAt(state: AppState, placeId: string | undefined): AppState | undefi
  */
 export function calisthenicsRequest(state: AppState, block: SkillBlock, pickedId?: string): WorkoutRequest {
   const base: WorkoutRequest = { source: 'auto', minutes: block.minutes, skills: block.skills }
-  const picked = pickedId !== block.placeId ? viewAt(state, pickedId) : undefined
-  const kit: EquipmentId[] | undefined = picked ? placeKit(picked) : block.kit?.length ? block.kit : placeKit(state)
+  const picked = state.gym?.locations.find((l) => l.id === pickedId)
+  const kit: EquipmentId[] | undefined = picked ? kitAt(state, picked) : block.kit?.length ? block.kit : placeKit(state)
   return kit?.length ? { ...base, kit } : base
 }
 

@@ -12,8 +12,9 @@ import { readinessTimeline } from '../signals'
 import { skillView } from '../skills'
 import { addDays, dayKey, weekStart } from '../time'
 import { readDay, weekdayOf } from '../weekPlan'
-import { buildGymSession, FOCUS_LABEL, focusMain, focusOpen, NAMED_PATTERNS, type GymFocus } from '../gym/builder'
+import { planGymExercises, FOCUS_LABEL, focusMain, focusOpen, NAMED_PATTERNS, type GymFocus } from '../gym/builder'
 import { conservative } from '../gym/draft'
+import { bodyweightCapacity } from '../gym/bodyweight'
 import { estimateOneRepMax } from '../gym/progression'
 import { defaultPrefs } from '../gym/state'
 import type { GymLocation, GymSession, SkillGoal, TrainingPrefs } from '../gym/types'
@@ -239,7 +240,7 @@ const PORTABLE_KIT: EquipmentId[] = ['floor', 'parallettes', 'band', 'rings']
  * travels. A home pull-up bar once counted at a gym with none, so a lever
  * opener was offered where nothing could hold it.
  */
-function kitAt(state: AppState, location: GymLocation): EquipmentId[] {
+export function kitAt(state: AppState, location: GymLocation): EquipmentId[] {
   const carried = state.profile.equipment.filter((e) => PORTABLE_KIT.includes(e))
   return [...new Set([...carried, ...(location.equipment as EquipmentId[])])]
 }
@@ -1130,6 +1131,7 @@ type KindWhy =
   | 'exposure-opener'
   | 'legs'
   | 'leg-coverage'
+  | 'skill-practice'
 
 interface SkillSlot {
   /** The day's one main session. */
@@ -1556,6 +1558,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
   const done = hardCount(state.sessions, thisWeek, today)
   const first = skills[0]
   const lead = skillFamily(first)
+  const shortWeek = prefs.minutesByDay.filter((m) => m >= MIN_SKILL_MINUTES[1]).length <= 3
   const target = (f: Straight) => (f === lead ? FAMILY_SESSIONS_LEAD : FAMILY_SESSIONS_OTHER)
   // Whether each skill's session at its current step reaches the hard count at all (with the kit it has anywhere).
   const anyKit = [...new Set([...state.profile.equipment, ...(places.gymCal?.profile.equipment ?? [])])]
@@ -1899,6 +1902,13 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
         kind = 'gym'
         hint = pairs
         why = 'pair'
+      } else if (shortWeek && !d.pain && (lead === 'balance' || !stepIsHard(first)) && t.cal === 0 && (t.gym > 0 || lean === 'calisthenics') &&
+        (t.gym > 0 || days.some((later) => later.index > i && later.week === d.week && !later.restDay && later.minutes >= MIN_GYM_MINUTES)) &&
+        (!legDay || t.gym > 0)) {
+        // Balance and Foundations work never fills a hard straight-arm quota.
+        // Keep a feasible practice day before using the remaining time for volume.
+        kind = 'calisthenics'
+        why = 'skill-practice'
       } else if (legDay) {
         kind = 'gym'
         why = 'legs'
@@ -2731,6 +2741,7 @@ export function planWeekAhead(
   const base = asTodayBegan(state, now)
   const days = dayContexts(state, base, prefs, Boolean(own), now, horizonEnd, opts.todayMinutes)
   const gymSessions = state.gym?.sessions ?? []
+  const capacity = bodyweightCapacity(base, now)
   const active = activePlace(state)
   // Gym days are planned at the gym (`gymPlaceOf`), wherever the app is set now.
   const place = gymPlaceOf(state, now)
@@ -2752,7 +2763,7 @@ export function planWeekAhead(
   const legsOff = !focusOpen('lower', prefs.musclesOff)
   // A focus counts only when it builds two movements or more at the place with the day's limits —
   // checked by building it, once per distinct set of limits.
-  const built = new Map<string, ReturnType<typeof buildGymSession>>()
+  const built = new Map<string, ReturnType<typeof planGymExercises>>()
   const buildAt = (d: DayCtx, minutes: number, focus: GymFocus, spare: Muscle[] = [], extra: Muscle[] = []) => {
     const factor = focus === 'athletic' ? Math.min(1, d.factor) : d.factor
     const off = [...d.off].sort()
@@ -2761,8 +2772,9 @@ export function planWeekAhead(
     const location = placeAt(d.index)
     const key = [focus, minutes, factor, [...d.liftJoints].sort().join(','), off.join(','), spared.join(','), priority.join(','), d.at, location?.id].join('|')
     if (!built.has(key)) {
-      const plan = buildGymSession({
+      const plan = planGymExercises({
         location,
+        capacity,
         minutes,
         focus,
         sessions: gymSessions,
@@ -3403,11 +3415,10 @@ export function planWeekAhead(
           parts.push(`${FOCUS_LABEL[f].toLowerCase()} drops this week — the days left go to what is furthest behind`)
         }
       }
-      for (const f of ['push', 'pull', 'balance'] as const) {
-        const names = (was.skill?.skills ?? []).filter((s) => skillFamily(s) === f).map(skillName)
-        if (!names.length) continue
-        const nextDay = remaining.find((p) => (p.plan.skill?.skills ?? []).some((s) => skillFamily(s) === f))
-        parts.push(`${joinNames(names)} ${nextDay ? (nextDay.at === now ? 'is on today' : `is next on ${dayName(nextDay.at)}`) : 'waits for next week'}`)
+      for (const skill of was.skill?.skills ?? []) {
+        const nextDay = remaining.find((p) => p.plan.skill?.skills.includes(skill))
+        if (nextDay) nextDay.movedFrom ??= dayName(t)
+        parts.push(`${skillName(skill)} ${nextDay ? (nextDay.at === now ? 'is on today' : `is next on ${dayName(nextDay.at)}`) : 'waits for next week'}`)
       }
       const planned = cap(describe(was))
       missed.push({ day: dayKey(t), at: t, planned, text: `${dayName(t)}’s session (${planned}) did not happen: ${joinNames(parts)}.` })
@@ -3551,9 +3562,11 @@ function kindReason(slot: SkillSlot, d: DayCtx, skills: SkillId[], extra: DayExt
       return 'A gym day for your legs: it is the last day this week your sport leaves them fresh, and they are under this week’s target (the app’s own rule around sport).'
     case 'leg-coverage':
       return 'Your muscle goal reserves this session for lower-body strength. Your skill work has its own days this week.'
+    case 'skill-practice':
+      return 'Today gives your skill a practice session alongside this week’s gym work.'
     case 'sets':
       return slot.setsNeed
-        ? `A gym day: your muscles need about ${slot.setsNeed.need} more gym ${slot.setsNeed.need === 1 ? 'session' : 'sessions'} to reach this week’s sets, with ${slot.setsNeed.left} open ${slot.setsNeed.left === 1 ? 'day' : 'days'} left after today (an estimate).`
+        ? `Today adds working sets toward your muscle goals. ${slot.setsNeed.left === 0 ? 'This is the last open training day this week.' : `You have ${slot.setsNeed.left} more open training ${slot.setsNeed.left === 1 ? 'day' : 'days'} after today.`}`
         : share()
     case 'share':
       return share()
@@ -3874,6 +3887,8 @@ function kindShort(slot: SkillSlot, skills: SkillId[], week: { cal: number; gym:
       return 'Gym: the week’s last day your sport leaves the legs fresh.'
     case 'leg-coverage':
       return 'Lower-body strength for your muscle goal.'
+    case 'skill-practice':
+      return 'Skill practice alongside your gym sessions.'
     case 'share':
       return share
     default:

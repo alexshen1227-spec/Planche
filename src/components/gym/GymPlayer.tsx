@@ -6,11 +6,12 @@ import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
 import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
 import { alternativesFor, availableAt } from '../../lib/gym/availability'
+import { bodyweightCapacity } from '../../lib/gym/bodyweight'
 import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../lib/gym/builder'
 import { addedSetReps, conservative, dayOfItem, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
-import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, maxKey, isUnloadedSet, lastPerformance, plyoGate, repPlanFor, suggestLoad } from '../../lib/gym/progression'
+import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, isUnloadedSet, lastPerformance, plyoGate, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GoalWeights, GymLocation, Rating } from '../../lib/gym/types'
-import { displayLoad, formatLoad, stepKgFor, toKg, unitFor } from '../../lib/gym/units'
+import { displayLoad, entryLoad, formatLoad, stepKgFor, takesAddedLoad, toKg, unitFor } from '../../lib/gym/units'
 import { doubtedLoad } from '../../lib/gym/state'
 import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
 import { Icon } from '../Icon'
@@ -68,7 +69,7 @@ export function draftItemFor(
   const suggestion = suggestLoad({ exerciseId: exercise.id, location, sessions, plan, youth, now })
   const unit = unitFor(exercise, location)
   const last = lastPerformance(sessions, exercise.id, location.id, now)
-  const load = suggestion.kg !== undefined ? displayLoad(suggestion.kg, unit) : undefined
+  const load = suggestion.kg !== undefined ? entryLoad(suggestion.kg, unit) : undefined
   return {
     exerciseId: exercise.id,
     plan,
@@ -136,7 +137,7 @@ export function GymPlayer({
   }, [now, rest])
 
   const update = (fn: (d: GymDraft) => GymDraft) => setDraft((d) => fn(structuredClone(d)))
-  const records = useMemo(() => gymRecords(gym.sessions), [gym.sessions])
+  const records = useMemo(() => gymRecords(gym.sessions, location.id), [gym.sessions, location.id])
 
   /** A load far above this lift's best, asked about before the set is logged: a slipped decimal once set records for good. */
   const [doubt, setDoubt] = useState<{ item: number; set: number; probably?: number; best: number } | null>(null)
@@ -359,10 +360,10 @@ export function GymPlayer({
           {draft.items.map((item, i) => {
             const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
             const step = stepKgFor(ex, location)
-            const stepDisplay = step > 0 ? Math.max(0.5, displayLoad(step, item.unit)) : 0
+            const stepDisplay = entryLoad(step, item.unit)
+            const addedLoad = takesAddedLoad(ex, location)
             const rec = records[item.exerciseId]
-            // A machine's max belongs to the gym it was set at; another gym's is not shown beside this one's.
-            const best = rec?.bestE1rm && maxKey(item.exerciseId, location.id) !== item.exerciseId && rec.bestE1rm.locationId !== location.id ? undefined : rec?.bestE1rm
+            const best = rec?.bestE1rm
             return (
               <section key={`${item.exerciseId}-${i}`} className="rounded-card border border-line bg-surface p-4">
                 <div className="flex items-start gap-2">
@@ -431,12 +432,12 @@ export function GymPlayer({
                             {item.previous[j].rpe !== undefined ? ` @${item.previous[j].rpe}` : ''} · tap to use
                           </button>
                         ) : null}
-                        {ex.load !== 'bodyweight' || s.load !== undefined ? (
+                        {ex.load !== 'bodyweight' || addedLoad || s.load !== undefined ? (
                           <Stepper
                             value={s.load ?? 0}
                             unit={item.unit}
                             step={stepDisplay || 1}
-                            label={`${ex.name}, set ${j + 1} ${ex.assisted ? 'assistance' : 'load'}`}
+                            label={`${ex.name}, set ${j + 1} ${ex.assisted ? 'assistance' : addedLoad ? 'added load' : 'load'}`}
                             onChange={(v) =>
                               update((d) => {
                                 const sets = d.items[i].sets
@@ -695,6 +696,7 @@ export function GymPlayer({
                   locationName={location.name}
                   all={alternativesFor(draft.items[sh.item].exerciseId, location, gym.ratings, draft.items.map((d) => d.exerciseId), {
                     youth,
+                    capacity: bodyweightCapacity(state, Date.now()),
                     sessions: gym.sessions,
                     now: Date.now(),
                   })}
@@ -877,28 +879,40 @@ function Stepper({
   label: string
   onChange: (v: number) => void
 }) {
-  const shown = Number.isInteger(value) ? String(value) : value.toFixed(1)
+  const [typed, setTyped] = useState<string | null>(null)
+  const isCount = unit === 'reps' || unit === 'sec'
+  const nudge = (by: number) => onChange(Math.max(0, Number((value + by).toFixed(3))))
   return (
     <div className="flex flex-1 items-center justify-center gap-1" role="group" aria-label={label}>
       <button
-        onClick={() => onChange(Math.max(0, Math.round((value - step) * 2) / 2))}
+        onClick={() => nudge(-step)}
         className="ds-press flex h-11 w-11 items-center justify-center rounded-control text-ink2 hover:bg-surface"
         aria-label={`Less ${unit}, ${label}`}
       >
         <Icon name="minus" />
       </button>
       <input
-        inputMode="decimal"
-        value={shown}
+        inputMode={isCount ? 'numeric' : 'decimal'}
+        value={typed ?? String(value)}
+        onFocus={(e) => {
+          setTyped(String(value))
+          e.target.select()
+        }}
+        onBlur={() => setTyped(null)}
         onChange={(e) => {
-          const v = Number(e.target.value.replace(',', '.'))
-          if (Number.isFinite(v) && v >= 0 && v < 1000) onChange(v)
+          const raw = e.target.value
+          if (!(isCount ? /^\d*$/ : /^\d*(?:[.,]\d{0,3})?$/).test(raw)) return
+          const v = Number(raw.replace(',', '.'))
+          if (v >= 1000) return
+          setTyped(raw)
+          if (Number.isFinite(v)) onChange(v)
         }}
         className="h-11 w-14 rounded-lg bg-surface text-center text-title3 font-semibold tnum"
         aria-label={label}
       />
       <button
-        onClick={() => onChange(Math.round((value + step) * 2) / 2)}
+        onClick={() => nudge(step)}
+        disabled={value + step >= 1000}
         className="ds-press flex h-11 w-11 items-center justify-center rounded-control text-ink2 hover:bg-surface"
         aria-label={`More ${unit}, ${label}`}
       >

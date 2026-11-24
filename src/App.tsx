@@ -20,6 +20,7 @@ import { SessionPlayer, type CheckInContext } from './views/SessionPlayer'
 import { APP_NAME } from './data/app'
 import { setAthleteLockout } from './lib/lockout'
 import { legacyOpenerLifts } from './lib/plan/nextBlock'
+import type { GymPreset } from './lib/plan/screens'
 
 /**
  * A bench for the camera form judge, reached at #devlab.
@@ -370,6 +371,7 @@ export default function App() {
   // The judge measures straight-arm bends from this athlete's own lockout.
   useEffect(() => setAthleteLockout(state.settings.lockoutDeg), [state.settings.lockoutDeg])
   const [tab, setTabNow] = useState<Tab>('home')
+  const [gymEntry, setGymEntry] = useState<GymPreset | null>(null)
   // A transition keeps the current screen on show while a lazy one loads,
   // rather than flashing a placeholder over the whole page.
   const setTab = (next: Tab) => startTransition(() => setTabNow(next))
@@ -379,7 +381,10 @@ export default function App() {
   // who reset from Settings and set up again was dropped back on the Settings
   // tab, at the button they had just pressed.
   useEffect(() => {
-    if (!state.onboarded) setTabNow('home')
+    if (!state.onboarded) {
+      setTabNow('home')
+      setGymEntry(null)
+    }
   }, [state.onboarded])
   usePrefetchScreens(state.onboarded && boot.phase === 'ready' && !devLab)
   // An interrupted session (phone slept, tab discarded) is picked back up
@@ -401,6 +406,7 @@ export default function App() {
   // Updates has no nav entry of its own; it lives under Settings, so Settings
   // stays lit while you are reading it rather than nothing being selected.
   const navTab: Tab = tab === 'updates' ? 'settings' : tab
+  const navigation = state.gym?.prefs?.goals.skills === 0 && !state.sessions.length ? NAV.filter((item) => item.tab !== 'path') : NAV
 
   // Each tab is a page, even though the app does not navigate to a new URL.
   // Resetting scroll prevents a long Progress/Settings page from opening the
@@ -523,7 +529,7 @@ export default function App() {
             </div>
           </div>
           <nav className="space-y-1">
-            {NAV.map((n) => (
+            {navigation.map((n) => (
               <button
                 key={n.tab}
                 onClick={() => setTab(n.tab)}
@@ -563,6 +569,10 @@ export default function App() {
           {tab === 'home' ? (
             <Dashboard
               startWorkout={startWorkout}
+              startGym={(preset) => {
+                setGymEntry(preset)
+                setTab('train')
+              }}
               go={setTab}
               viewSession={(sessionId) => {
                 setFocusSessionId(sessionId)
@@ -570,7 +580,7 @@ export default function App() {
               }}
             />
           ) : null}
-          {tab === 'train' ? <Train startWorkout={startWorkout} /> : null}
+          {tab === 'train' ? <Train startWorkout={startWorkout} entryPreset={gymEntry} onEntryUsed={() => setGymEntry(null)} /> : null}
           {tab === 'path' ? <Path startWorkout={startWorkout} /> : null}
           {tab === 'library' ? <Library /> : null}
           {tab === 'stats' ? <Stats focusSessionId={focusSessionId} onFocused={() => setFocusSessionId(null)} /> : null}
@@ -587,7 +597,7 @@ export default function App() {
         className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 backdrop-blur-lg lg:hidden"
       >
         <div className="mx-auto flex max-w-lg items-stretch justify-around px-2 pb-[max(env(safe-area-inset-bottom),6px)] pt-1.5">
-          {NAV.map((n) => (
+          {navigation.map((n) => (
             <button
               key={n.tab}
               onClick={() => setTab(n.tab)}

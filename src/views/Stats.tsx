@@ -21,6 +21,8 @@ import { useToday } from '../lib/useToday'
 import { holdTotalCaption } from '../lib/sessionSummary'
 import { historyEntries, progressTotals, skillHoldSecOf, workingGymSets, workingSkillSets } from '../lib/progressTotals'
 import { SessionDetail } from '../components/gym/SessionDetail'
+import { GymHistory } from '../components/gym/GymHistory'
+import { WeekVolume } from '../components/plan/WeekVolume'
 import {
   armStats,
   STRATEGY_BY_ID,
@@ -399,14 +401,28 @@ function achievementProgressText(progress: AchievementProgress): string {
   return `${progress.current} / ${progress.target}`
 }
 
-export function Stats({
-  focusSessionId = null,
-  onFocused,
-}: {
+interface StatsProps {
   /** Open this session's history entry and bring it into view. */
   focusSessionId?: string | null
   onFocused?: () => void
-} = {}) {
+}
+
+export function Stats(props: StatsProps = {}) {
+  const { state } = useStore()
+  if (state.gym?.prefs?.goals.skills === 0 && !state.sessions.length) {
+    return (
+      <div className="animate-rise space-y-6">
+        <h1 className="font-display text-title1 font-bold text-ink">Progress</h1>
+        <WeeklySummary />
+        <GymHistory />
+        <WeekVolume />
+      </div>
+    )
+  }
+  return <SkillStats {...props} />
+}
+
+function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
   const { state: whole, dispatch } = useStore()
   // What the coach has learned, the forecast and the plateau read are all per
   // skill; history, records and achievements are the whole athlete's.

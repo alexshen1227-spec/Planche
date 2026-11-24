@@ -1,5 +1,6 @@
 import { GYM_EXERCISE_BY_ID, GYM_EXERCISES, type GymExercise, type LocationEquipment } from '../../data/gym/exercises'
 import { plyoGate } from './progression'
+import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
 import type { GymLocation, GymSession, Rating } from './types'
 
 /** The floor is everywhere. */
@@ -53,7 +54,7 @@ export function alternativesFor(
   ratings: Record<string, Rating> = {},
   exclude: string[] = [],
   /** When given, speed and power work this athlete has not built up to is never offered. */
-  athlete?: { youth: boolean; sessions: GymSession[]; now?: number },
+  athlete?: { youth: boolean; sessions: GymSession[]; now?: number; capacity?: BodyweightCapacity },
 ): GymExercise[] {
   const ex = GYM_EXERCISE_BY_ID[exerciseId]
   if (!ex) return []
@@ -61,6 +62,7 @@ export function alternativesFor(
   const candidates = availableAt(location).filter(
     (c) =>
       !skip.has(c.id) &&
+      readyForBodyweight(c.id, athlete?.capacity) &&
       ratings[c.id] !== 'avoid' &&
       // An explosive movement is swapped for explosive ones only: a box jump is not a back squat.
       (!ex.explosive || c.explosive) &&

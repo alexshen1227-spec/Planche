@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { gymRecords } from './progression'
+import { gymRecords, liftTrend } from './progression'
 import type { GymSession } from './types'
 
 // Machines differ from gym to gym (round nine): the estimate was keyed by place,
@@ -20,6 +20,13 @@ function gs(loc: string, daysAgo: number, ex: string, kg: number): GymSession {
 }
 
 describe('the heaviest load is compared where it can be', () => {
+  it('uses the current machine for the player and never declares a stall from gyms with different stacks', () => {
+    const id = 'machine-chest-press'
+    const logs = [gs('B', 12, id, 90), gs('A', 8, id, 50), gs('A', 4, id, 50), gs('B', 1, id, 60)]
+    expect(gymRecords(logs, 'A')[id].bestE1rm?.locationId).toBe('A')
+    expect(liftTrend(logs, id, NOW, 'A')).toEqual({ status: 'unknown', sessions: 2 })
+    expect(liftTrend(logs, id, NOW)).toEqual({ status: 'unknown', sessions: 2 })
+  })
   it('a machine at another gym never sets the heaviest of the one used now', () => {
     const records = gymRecords([gs('B', 7, 'machine-chest-press', 90), gs('A', 1, 'machine-chest-press', 50)])
     expect(records['machine-chest-press'].heaviest?.kg).toBe(50)

@@ -212,6 +212,7 @@ export function Onboarding() {
   }))
   /** Gyms added here; Home is always the first place and takes the kit ticked below. */
   const [gyms, setGyms] = useState<GymLocation[]>([])
+  const gymOnly = prefs.goals.skills === 0
   const [editing, setEditing] = useState<{ location: GymLocation; isNew: boolean } | null>(null)
   const [birthYear, setBirthYear] = useState('')
   const [ageDeclined, setAgeDeclined] = useState(false)
@@ -388,7 +389,7 @@ export function Onboarding() {
       return
     }
     setMeasurementError(null)
-    const chosen: SkillId[] = skills.length ? skills : ['planche']
+    const chosen: SkillId[] = gymOnly ? [] : skills.length ? skills : ['planche']
     const homeKit: EquipmentId[] = equipment.length ? equipment : ['floor']
     const plancheChosen = chosen.includes('planche')
     const assessment: AssessmentRecord | undefined =
@@ -455,10 +456,11 @@ export function Onboarding() {
     if (bodyweightReminders) dispatch({ type: 'SET_SETTINGS', patch: { trackBodyweight: true } })
   }
 
-  const sectionIndex = SECTION_OF[stage]
+  const sections: readonly (typeof SECTIONS)[number][] = gymOnly ? SECTIONS.filter((s) => s !== 'Skills') : SECTIONS
+  const sectionIndex = sections.indexOf(SECTIONS[SECTION_OF[stage]])
   // The header counts the seven setup steps and nothing else: the screens inside Skills used to be counted
   // in it too ("2 of up to 19", "13 of 19", "16 of 16"). The interview counts its own questions.
-  const progressText = `Step ${sectionIndex + 1} of ${SECTIONS.length} · ${SECTIONS[sectionIndex]}${placementCounter ? ` · ${placementCounter}` : ''}`
+  const progressText = `Step ${sectionIndex + 1} of ${sections.length} · ${sections[sectionIndex]}${placementCounter ? ` · ${placementCounter}` : ''}`
   // The primary action: big, last in the row, within thumb reach. Back is quiet.
   const primaryBtn = 'min-h-[52px] flex-1'
   const backBtn =
@@ -472,15 +474,15 @@ export function Onboarding() {
         <div className="mb-8">
           <div
             className="grid gap-1"
-            style={{ gridTemplateColumns: `repeat(${SECTIONS.length}, minmax(0, 1fr))` }}
+            style={{ gridTemplateColumns: `repeat(${sections.length}, minmax(0, 1fr))` }}
             role="progressbar"
             aria-label="Setup progress"
             aria-valuemin={1}
-            aria-valuemax={SECTIONS.length}
+            aria-valuemax={sections.length}
             aria-valuenow={sectionIndex + 1}
             aria-valuetext={progressText}
           >
-            {SECTIONS.map((section, i) => (
+            {sections.map((section, i) => (
               <span
                 key={section}
                 className={`h-1 rounded-full transition-colors duration-300 ${i <= sectionIndex ? 'bg-accent' : 'bg-line-strong'}`}
@@ -572,7 +574,13 @@ export function Onboarding() {
               <button onClick={() => setStage('welcome')} className={backBtn}>
                 Back
               </button>
-              <Button onClick={() => setStage('skills')} className={primaryBtn}>
+              <Button onClick={() => {
+                if (gymOnly) {
+                  setSkills([])
+                  setAnswers({})
+                }
+                setStage(gymOnly ? 'places' : 'skills')
+              }} className={primaryBtn}>
                 Continue <Icon name="arrowR" size={16} />
               </Button>
             </div>
@@ -1130,7 +1138,7 @@ export function Onboarding() {
             </div>
 
             <div className={actionRow}>
-              <button onClick={() => setStage('result')} className={backBtn}>
+              <button onClick={() => setStage(gymOnly ? 'goals' : 'result')} className={backBtn}>
                 Back
               </button>
               <Button onClick={() => setStage('schedule')} className={primaryBtn}>
@@ -1314,6 +1322,7 @@ export function Onboarding() {
 
             <div className="mt-3 rounded-inner border border-line bg-surface p-4 text-left">
               <div className="text-footnote font-semibold uppercase tracking-wide text-ink3">Your plan</div>
+              {gymOnly ? <p className="mt-2 text-body font-semibold">Gym training · {schedule.days} {schedule.days === 1 ? 'day' : 'days'} a week</p> : null}
               {skills.map((skill) => {
                 const from = STEP_BY_ID[placedFor(skill)]
                 const to = STEP_BY_ID[finalGoalFor(skill)]
@@ -1352,8 +1361,8 @@ export function Onboarding() {
                 )
               })}
               <p className="mt-2.5 text-footnote leading-relaxed text-ink3">
-                The coach needs a handful of sessions before it can tell which kind of training you respond to. Until
-                then it runs a sensible default and says so rather than pretending to know.
+                {gymOnly ? 'Your first workout uses the equipment at your training place. Log reps, weight and effort to set your next targets.' :
+                  'Your first skill sessions help the coach adjust the starting plan to what you can do.'}
               </p>
             </div>
 

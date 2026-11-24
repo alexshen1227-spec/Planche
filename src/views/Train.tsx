@@ -773,8 +773,15 @@ const TRAIN_MODE_KEY = 'planchelab.trainMode'
  * coach's session exactly as before; the gym side builds from the place the
  * athlete is at. Which one shows is remembered per device.
  */
-export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest) => void }) {
+export function Train({ startWorkout, entryPreset, onEntryUsed }: {
+  startWorkout: (request: WorkoutRequest) => void
+  entryPreset?: GymPreset | null
+  onEntryUsed?: () => void
+}) {
+  const { state } = useStore()
+  const gymOnly = state.gym?.prefs?.goals.skills === 0
   const [mode, setMode] = useState<'skills' | 'gym'>(() => {
+    if (entryPreset || gymOnly) return 'gym'
     try {
       return localStorage.getItem(TRAIN_MODE_KEY) === 'gym' ? 'gym' : 'skills'
     } catch {
@@ -800,7 +807,7 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
         }}
         onSwitch={(k) => choose(k === 'gym' ? 'gym' : 'skills')}
       />
-      <SegmentedControl
+      {!gymOnly ? <SegmentedControl
         className="mx-auto mb-5 max-w-sm"
         label="What to train"
         value={mode}
@@ -809,11 +816,17 @@ export function Train({ startWorkout }: { startWorkout: (request: WorkoutRequest
           { value: 'skills', label: 'Calisthenics' },
           { value: 'gym', label: 'Gym' },
         ]}
-      />
-      {mode === 'skills' ? (
+      /> : null}
+      {!gymOnly && mode === 'skills' && !entryPreset ? (
         <SkillsTrain startWorkout={startWorkout} />
       ) : (
-        <GymHub preset={gymPreset} onPresetUsed={() => setGymPreset(null)} startWorkout={startWorkout} />
+        <GymHub preset={entryPreset ?? gymPreset} onPresetUsed={() => {
+          setGymPreset(null)
+          if (entryPreset) {
+            choose('gym')
+            onEntryUsed?.()
+          }
+        }} startWorkout={startWorkout} />
       )}
     </div>
   )

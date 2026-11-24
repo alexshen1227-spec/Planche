@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { defaultGym } from './state'
 import { loadDraft, type GymDraft } from './draft'
+import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 
 const T = Date.UTC(2026, 10, 2, 17)
 const gym = defaultGym([], 'kg', T)
@@ -24,6 +25,30 @@ afterEach(() => {
   cleanup()
   localStorage.clear()
   dispatch.mockClear()
+})
+
+it.each(['weighted-pull-up', 'weighted-dip', 'weighted-push-up'])('logs a first fractional added load on %s and carries it into the next session', async (id) => {
+  const { GymPlayer, draftItemFor } = await import('../../components/gym/GymPlayer')
+  const ex = GYM_EXERCISE_BY_ID[id]
+  const location = { ...gym.locations[0], gear: { [ex.stepFrom!]: { stepKg: 1.25 } } }
+  const now = Date.now()
+  const item = draftItemFor(ex, location, [], false, 1, now)
+  render(<GymPlayer draft={{ ...draft, startedAt: now, items: [item] }} location={location} onClose={() => undefined} />)
+  const label = `${ex.name}, set 1 added load`
+  const field = screen.getByRole('textbox', { name: label }) as HTMLInputElement
+  fireEvent.focus(field)
+  for (const value of ['5', '5,', '5,0']) fireEvent.change(field, { target: { value } })
+  expect(field.value).toBe('5,0')
+  fireEvent.blur(field)
+  fireEvent.click(screen.getByRole('button', { name: `More kg, ${label}` }))
+  expect(field.value).toBe('6.25')
+  fireEvent.click(screen.getByLabelText('Complete set 1'))
+  fireEvent.click(screen.getByRole('button', { name: '8' }))
+  fireEvent.click(screen.getByText('Finish'))
+  fireEvent.click(screen.getByText('Save session'))
+  const saved = dispatch.mock.calls.map(([action]) => action.op?.session).find(Boolean)
+  expect(saved.exercises[0].sets[0]).toMatchObject({ kg: 6.25, rpe: 8 })
+  expect(draftItemFor(ex, location, [saved], false, 1, now + 86_400_000).sets[0].load).toBe(6.25)
 })
 
 it('recovers the remaining rest, unanswered effort and typed notes when the phone reloads', async () => {

@@ -64,6 +64,7 @@ describe('units', () => {
     expect(stepKgFor(db, { ...gymA, unit: 'lb' })).toBeCloseTo(toKg(5, 'lb'), 6)
     expect(stepKgFor(db, { ...gymA, gear: { dumbbells: { stepKg: 2.5 } } })).toBe(2.5)
     expect(roundToStep(33, 2, 30)).toBe(30)
+    expect(roundToStep(30, 2.5, 24)).toBe(22.5)
   })
 })
 

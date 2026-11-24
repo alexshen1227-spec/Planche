@@ -194,6 +194,14 @@ describe('5. a loaded lift is never logged at 0 kg', () => {
     const pushUp = session('p', 'a', T0, 'push-up', [set(undefined, 12)])
     expect(suggestLoad({ exerciseId: 'push-up', location: gymA, sessions: [pushUp], plan, now: SOON }).why).toContain('12')
   })
+  it('opens a bodyweight workout at a target the last sets earned', () => {
+    const ex = GYM_EXERCISE_BY_ID['push-up']
+    const after = (n: number, rpe: number) => draftItemFor(ex, gymA,
+      [session('p', 'a', T0, ex.id, Array.from({ length: 3 }, () => set(undefined, n, rpe)))], false, 3, SOON)
+    expect(after(3, 10).sets.map((s) => s.reps)).toEqual([2, 2, 2])
+    expect(after(8, 7).sets.map((s) => s.reps)).toEqual([9, 9, 9])
+    expect(after(10, 7).sets.map((s) => s.reps)).toEqual([10, 10, 10])
+  })
   it('knows which sets need a weight and which movements may go without', () => {
     const squatEx = GYM_EXERCISE_BY_ID['back-squat']
     expect(isUnloadedSet(squatEx, {})).toBe(true)

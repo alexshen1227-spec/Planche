@@ -162,7 +162,7 @@ export function nextTimeLines(
           : hasLoad
           ? `Next time: ${formatLoad(s.kg, unit)} × ${lo}–${hi}${word}`
           : s.kind === 'bodyweight' || s.kg === 0
-            ? `Next time: ${s.kg === 0 ? 'no help' : 'bodyweight'} × ${lo}–${hi}${word}`
+            ? `Next time: ${ex.assisted ? 'no help' : 'bodyweight'} × ${s.targetReps !== undefined ? `${s.targetReps} reps` : `${lo}–${hi}${word}`}`
             : `Next time: no load suggested yet`
     return [{ ...base, text, why: s.why, ...(later ? { superseded: true } : {}) }]
   })

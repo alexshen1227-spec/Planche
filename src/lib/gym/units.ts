@@ -10,16 +10,27 @@ export function fromKg(kg: number, unit: Unit): number {
   return unit === 'kg' ? kg : kg * LB_PER_KG
 }
 
-/** A load as the athlete reads it: whole or half units, never 22.6796185. */
+/** Convert a logged load for editing without rounding away a small plate. */
+export function entryLoad(kg: number, unit: Unit): number {
+  return Math.round(fromKg(kg, unit) * 1000) / 1000
+}
+
+export function takesAddedLoad(exercise: GymExercise, location: GymLocation | undefined): boolean {
+  if (exercise.load !== 'bodyweight' || !exercise.stepFrom) return false
+  return exercise.stepFrom !== 'dumbbells' || Boolean(location?.equipment.includes('dumbbells'))
+}
+
+/** Summarise estimates to half units, preserving an actual quarter-unit plate. */
 export function displayLoad(kg: number, unit: Unit): number {
-  const v = fromKg(kg, unit)
+  const v = entryLoad(kg, unit)
+  if (Number.isInteger(v * 4)) return v
   return Math.round(v * 2) / 2
 }
 
 export function formatLoad(kg: number | undefined, unit: Unit): string {
   if (kg === undefined || kg <= 0) return 'Bodyweight'
   const v = displayLoad(kg, unit)
-  return `${Number.isInteger(v) ? v : v.toFixed(1)} ${unit}`
+  return `${v} ${unit}`
 }
 
 /** The unit loads for this exercise are entered in at this location. */
@@ -47,7 +58,7 @@ export function maxKgFor(exercise: GymExercise, location: GymLocation | undefine
 
 /** Round to a reachable load: the nearest step, never below zero, never past the top weight. */
 export function roundToStep(kg: number, stepKg: number, maxKg?: number): number {
-  const capped = maxKg !== undefined ? Math.min(kg, maxKg) : kg
-  if (!(stepKg > 0)) return Math.max(0, Math.round(capped * 4) / 4)
-  return Math.max(0, Math.round(capped / stepKg) * stepKg)
+  const step = stepKg > 0 ? stepKg : 0.25
+  const limit = maxKg !== undefined ? Math.floor(maxKg / step + 1e-9) : Infinity
+  return Math.max(0, Math.min(Math.round(kg / step), limit)) * step
 }

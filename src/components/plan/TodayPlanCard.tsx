@@ -112,7 +112,7 @@ export function TodayPlanCard({
     }
   }
   const startLabel = allDone ? 'Again' : 'Start'
-  const switchTo = plan.alternative && !skillDone && !gymDone && !liftsNext ? plan.alternative : undefined
+  const switchTo = plan.alternative && !skillDone && !gymDone && !liftsNext && (plan.alternative !== 'calisthenics' || state.gym?.prefs?.goals.skills !== 0) ? plan.alternative : undefined
   const marker = (done: boolean, n: number) => (
     <span
       className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-footnote font-semibold ${done ? 'bg-ok text-white' : 'bg-accent-soft text-accent-text'}`}

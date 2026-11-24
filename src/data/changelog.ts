@@ -19,6 +19,26 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-23',
+    title: 'A first week that fits your starting point',
+    area: 'coach',
+    notes: [
+      'Switch skills off during setup to go straight to your equipment and gym plan. Home starts your lifts and Progress shows your gym history.',
+      'A beginner with two short training days gets room for both skill practice and strength work. Push-up and pull-up choices use your placement answers and recent reps.',
+      'Lunges and step-ups can be logged at bodyweight. Band-assisted pull-ups use a band and a bar, and the assisted machine records its own assistance.',
+    ],
+  },
+  {
+    date: '2026-11-23',
+    title: 'Weights and reps you can use next time',
+    area: 'training',
+    notes: [
+      'Enter the added weight on your very first weighted pull-up, dip or push-up. Small plates and decimal entries carry into the next workout.',
+      'Bodyweight rep targets now use your completed sets and effort. A tough set of three and a comfortable set of eight give different targets when you return.',
+      'Choose a gym in machine history to see its own chart and records. The planner also checks progress on that gym’s machine before suggesting a swap.',
+    ],
+  },
+  {
+    date: '2026-11-23',
     title: 'Room for legs in a mixed week',
     area: 'coach',
     notes: [

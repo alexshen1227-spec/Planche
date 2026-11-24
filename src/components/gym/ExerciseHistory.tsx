@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { activeLocation } from '../../lib/gym/draft'
 import { countUnit, estimateOneRepMax, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate } from '../../lib/gym/progression'
@@ -12,9 +12,9 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
   const { state } = useStore()
   const gym = state.gym
   const ex = GYM_EXERCISE_BY_ID[exerciseId]
-  const location = activeLocation(gym)
-  const unit = ex && location ? unitFor(ex, location) : location?.unit ?? 'kg'
-  const rows = useMemo(
+  const active = activeLocation(gym)
+  const [pickedPlace, setPickedPlace] = useState<string>()
+  const allRows = useMemo(
     () =>
       [...(gym?.sessions ?? [])]
         .filter((s) => s.exercises.some((e) => e.exerciseId === exerciseId))
@@ -25,15 +25,21 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
         })),
     [gym?.sessions, exerciseId],
   )
+  const placeIds = [...new Set(allRows.map(({ s }) => s.locationId))]
+  const machine = ex?.load === 'machine' || ex?.load === 'cable'
+  const selected = [pickedPlace, active?.id, placeIds[0]].find((id) => id !== undefined && placeIds.includes(id))
+  const rows = useMemo(() => machine ? allRows.filter(({ s }) => s.locationId === selected) : allRows, [allRows, machine, selected])
+  const location = machine ? gym?.locations.find((l) => l.id === selected) : active
+  const unit = ex ? unitFor(ex, location) : 'kg'
   const points = useMemo(
     () =>
       rows
         .map(({ s, sets }) => ({ at: s.startedAt, value: Math.max(0, ...sets.map((x) => estimateOneRepMax(x, exerciseId) ?? 0)) }))
         .filter((p) => p.value > 0)
         .reverse(),
-    [rows],
+    [rows, exerciseId],
   )
-  const record = gym ? gymRecords(gym.sessions)[exerciseId] : undefined
+  const record = useMemo(() => gym ? gymRecords(gym.sessions, machine ? selected : undefined)[exerciseId] : undefined, [gym, exerciseId, machine, selected])
   if (!ex) return null
   if (!rows.length) {
     return (
@@ -49,6 +55,17 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
         <h2 className="font-display text-title2 font-semibold">{ex.name}</h2>
         <p className="text-footnote text-ink3">{ex.cue}</p>
       </div>
+      {machine && selected ? (
+        <label className="flex items-center gap-2 text-footnote text-ink2">
+          Machine at
+          {placeIds.length === 1 ? place(selected) : (
+            <select aria-label="Gym for machine history" value={selected} onChange={(e) => setPickedPlace(e.target.value)}
+              className="min-h-11 rounded-control border border-line bg-raised px-3 text-ink">
+              {placeIds.map((id) => <option key={id} value={id}>{place(id)}</option>)}
+            </select>
+          )}
+        </label>
+      ) : null}
       <dl className="grid grid-cols-3 gap-2">
         <div className="rounded-inner bg-raised p-3">
           <dt className="text-caption text-ink3">Sessions</dt>
