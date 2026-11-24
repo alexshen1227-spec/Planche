@@ -60,6 +60,37 @@ it('retires an open gym writer and its draft when another tab replaces the train
   expect(JSON.parse(localStorage.getItem('planchelab.v1')!).gym.sessions).toHaveLength(0)
 })
 
+it('alternates the two nominated lifts, keeps recovery across a reload, and restores straight sets after a hard effort', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const gym = defaultGym(['floor'], 'kg'), place = gym.locations[0]
+  place.equipment.push('dumbbells')
+  localStorage.setItem('planchelab.v1', JSON.stringify({ ...initialState(), onboarded: true, gym }))
+  const lifts = ['db-lateral-raise', 'floor-calf-raise']
+  const items: DraftItem[] = lifts.map((exerciseId, i) => ({ exerciseId, pairedWith: lifts[1 - i], plan: { range: [10, 15], targetRpe: 8 },
+    restSec: 75, unit: 'kg', sets: Array.from({ length: 3 }, () => ({ reps: 12, load: i ? undefined : 4, done: false })) }))
+  const start = Date.now()
+  const initial = { id: 'pair', startedAt: start, locationId: place.id, name: 'Upper', items }
+  const open = (draft = loadDraft() ?? initial) => render(<StoreProvider><GymPlayer draft={draft} location={place} onClose={() => {}} /></StoreProvider>)
+  const first = open()
+  const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }))
+  click('Complete set 1 of Dumbbell lateral raise')
+  expect(loadDraft()?.rest).toMatchObject({ total: 20, nextExerciseId: lifts[1] })
+  click('8')
+  first.unmount()
+  open()
+  expect(screen.getByText('Next · Floor calf raise')).toBeTruthy()
+  click('Complete set 1 of Floor calf raise')
+  expect(loadDraft()?.rest?.until).toBeGreaterThanOrEqual(start + 75_000)
+  expect(loadDraft()?.rest?.nextExerciseId).toBe(lifts[0])
+  click('9')
+  const stored = loadDraft()!
+  expect(stored.items.every((it) => !it.pairedWith)).toBe(true)
+  expect(stored.items[1].sets[0].rpe).toBe(9)
+  expect(stored.rest?.nextExerciseId).toBeUndefined()
+  expect(stored.rest?.until).toBeGreaterThanOrEqual(stored.items[1].sets[0].at! + 75_000)
+  expect(screen.queryByText('Use straight sets')).toBeNull()
+})
+
 it.each([['push-up', 0], ['push-up', 1], ['pull-up', 0], ['pull-up', 1]] as const)('saves the actual %s trial of %i reps, preserves the easier sets and recovers the draft', (id, reps) => {
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
   const gym = defaultGym(['floor', 'wall', 'band', 'pullup-bar'], 'kg')

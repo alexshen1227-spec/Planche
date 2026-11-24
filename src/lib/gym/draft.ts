@@ -5,6 +5,7 @@ import { lastPerformance, repPlanFor, type LoadSuggestion, type RepPlan } from '
 import type { GoalWeights, GymLocation, GymRemainder, GymSession, GymState, RemainingLift } from './types'
 import { canDoHere } from './availability'
 import { preparesFor } from './bodyweightSteps'
+import { useStraightSets } from './pairedSets'
 import { dayKey } from '../time'
 import { entryLoad, toKg } from './units'
 import type { Unit } from '../../data/gym/catalog'
@@ -23,6 +24,7 @@ export interface DraftSet {
 
 export interface DraftItem {
   exerciseId: string
+  pairedWith?: string
   /** Previously logged sets retained when today's joint check or equipment excludes the movement. */
   held?: boolean
   plan: RepPlan
@@ -71,7 +73,7 @@ export interface GymDraft {
   /** Previously prescribed lifts that the current joint check keeps out. */
   deferred?: RemainingLift[]
   /** Absolute end time so the timer keeps time while the phone sleeps. */
-  rest?: { until: number; total: number }
+  rest?: { until: number; total: number; nextExerciseId?: string }
   effortFor?: { item: number; set: number }
   notes?: string
   stopReport?: AttemptSymptom & { at: number }
@@ -149,6 +151,7 @@ function remainingLift(item: DraftItem, sets: DraftSet[]): RemainingLift {
   return {
     exerciseId: item.exerciseId, repRange: item.plan.range, targetRpe: item.plan.targetRpe,
     restSec: item.restSec, unit: item.unit, swappedFrom: item.swappedFrom,
+    ...(item.pairedWith ? { pairedWith: item.pairedWith } : {}),
     sets: sets.map(({ reps, load, warmup }) => ({ reps, load, warmup })),
     ...(trial ? { trialReps: trial } : {}), ...(item.suggestion?.easierId ? { easierId: item.suggestion.easierId } : {}),
   }
@@ -162,6 +165,10 @@ export function adaptOpenDraft(draft: GymDraft, joints: Joint[], light: boolean,
   const reduce = light && factor > 0.6
   const missingKit = (id: string) => location && !canDoHere(id, location)
   if (!avoidJoints.length && !reduce && !draft.items.some((it) => missingKit(it.exerciseId))) return draft
+  if (draft.items.some((it) => it.pairedWith)) {
+    draft = structuredClone(draft)
+    draft.items.forEach((_, index) => useStraightSets(draft, index, Date.now()))
+  }
   const deferred = [...(draft.deferred ?? [])]
   const items = draft.items.flatMap((item): DraftItem[] => {
     const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
@@ -250,6 +257,7 @@ export function resumePartial(session: GymSession, avoid: Joint[] = [], location
     }
     items.push({
       exerciseId: it.exerciseId, plan: { range: it.repRange, targetRpe: it.targetRpe }, restSec: it.restSec, unit: it.unit,
+      ...(it.pairedWith && !avoidJoints.length && (plan.volumeFactor ?? 1) >= 1 ? { pairedWith: it.pairedWith } : {}),
       sets: it.sets.map((s) => ({ ...s, done: false })), swappedFrom: it.swappedFrom,
       ...(it.trialReps || it.easierId ? { suggestion: {
         kind: 'bodyweight', reps: it.repRange, targetRpe: it.targetRpe, why: '', easierId: it.easierId,

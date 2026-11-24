@@ -3,6 +3,7 @@ import { athleticDomain, GYM_EXERCISE_BY_ID, jointsToRest, type AthleticDomain, 
 import { availableAt, canDoHere, preferenceRank } from './availability'
 import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
 import { preparesFor, unassistedDose, UNASSISTED_LIFTS } from './bodyweightSteps'
+import { canPairExercises, savedPairSeconds } from './pairedSets'
 import { gateTier, isHardBodyweight, liftTrend, plyoGate, repPlanFor, STALL_SESSIONS, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymSession, Rating } from './types'
 
@@ -119,6 +120,7 @@ const FILL_FAMILIES: Record<GymFocus, ReadonlySet<Pattern>[]> = {
 
 export interface PlannedExercise {
   exerciseId: string
+  pairedWith?: string
   sets: number
   plan: RepPlan
   suggestion: LoadSuggestion
@@ -553,6 +555,7 @@ export function planGymExercises(input: GymSessionInput) {
   // cannot fit even alone is reported, never built on invented minutes.
   const dropped: string[] = []
   const warm = input.warmUpMin !== undefined ? Math.max(0, input.warmUpMin) : focus === 'athletic' ? ATHLETIC_WARM_UP_MIN : WARM_UP_MIN
+  let pair: [string, string] | undefined
   const total = () => {
     const blocks = items.reduce((m, it) => m + blockMinutes(it.sets, it.restSec, GYM_EXERCISE_BY_ID[it.exerciseId].dose?.workSec), 0)
     // A brief visit finishes at its last set. Longer visits keep the usual
@@ -560,7 +563,26 @@ export function planGymExercises(input: GymSessionInput) {
     const lastRest = items.at(-1)?.restSec ?? 0
     const finalRest = minutes >= 15 && minutes < 20 ? lastRest / 60 :
       fullPriorityDose && warm <= 2 && minutes <= 30 ? Math.max(0, lastRest - 30) / 60 : 0
-    return warm + blocks - finalRest
+    let saved = 0
+    if (pair) {
+      const [a, b] = pair
+      const first = items.find((it) => it.exerciseId === a), second = items.find((it) => it.exerciseId === b)
+      if (first && second) saved = savedPairSeconds(first.sets, second.sets, first.restSec) / 60
+    }
+    return warm + blocks - finalRest - saved
+  }
+  // Use a single station. Basic strength work and a pair's own recovery stay intact.
+  if (fullPriorityDose && !avoid.size && focus !== 'athletic' && minutes >= 15 && minutes <= 35 && total() > minutes) {
+    const choices = items.filter((it) => protectSets.has(it.exerciseId) && !anchors.has(it.exerciseId) &&
+      GYM_EXERCISE_BY_ID[it.exerciseId].primary.some((m) => requested.has(m)))
+    for (const first of choices) {
+      const second = choices.find((it) => it.restSec === first.restSec && canPairExercises(first.exerciseId, it.exerciseId))
+      if (!second) continue
+      pair = [first.exerciseId, second.exerciseId]
+      items.splice(items.indexOf(second), 1)
+      items.splice(items.indexOf(first) + 1, 0, second)
+      break
+    }
   }
   let trimmed = false
   for (const trimPriority of priorityExercises.size ? [false, true] : [false]) {
@@ -746,6 +768,15 @@ export function planGymExercises(input: GymSessionInput) {
         backoff.restSec = Math.min(backoff.restSec, item.restSec)
         items.splice(items.indexOf(item) + 1, 0, backoff)
       }
+    }
+  }
+  if (pair) {
+    const [a, b] = pair
+    const first = items.find((it) => it.exerciseId === a), second = items.find((it) => it.exerciseId === b)
+    if (first && second) {
+      first.pairedWith = second.exerciseId
+      second.pairedWith = first.exerciseId
+      notes.push(`Alternate one set of ${GYM_EXERCISE_BY_ID[first.exerciseId].name.toLowerCase()} with one set of ${GYM_EXERCISE_BY_ID[second.exerciseId].name.toLowerCase()}. Allow 20 seconds to switch and at least ${first.restSec} seconds before repeating a lift. Straight sets are available during the workout.`)
     }
   }
   const setLimit = introductory ? 8 : capped ? buildUpLimit : undefined

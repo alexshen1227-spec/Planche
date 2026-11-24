@@ -7,6 +7,7 @@ import { pushToast } from '../../lib/toast'
 import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
 import { alternativesFor, availableAt, canDoHere } from '../../lib/gym/availability'
 import { bodyweightCapacity } from '../../lib/gym/bodyweight'
+import { partnerIndex, restAfterSet, restoreSetRest, useStraightSets } from '../../lib/gym/pairedSets'
 import { GymExerciseGuide } from './ExerciseGuide'
 import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../lib/gym/builder'
 import { addedSetReps, conservative, dayOfItem, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
@@ -151,15 +152,21 @@ export function GymPlayer({
     if (askRpe) playerRef.current?.querySelector<HTMLButtonElement>(`[data-set="${askRpe.item}-${askRpe.set}"] [data-effort] button`)?.focus()
   }, [askRpe?.item, askRpe?.set])
   const finishEffort = (i: number, j: number, rpe?: number) => {
+    const item = draft.items[i]
+    const partner = partnerIndex(draft.items, i)
+    const stay = rpe !== undefined && rpe >= 9
+    const nextPair = !stay && partner >= 0 ? restAfterSet(draft, i, j, item.sets[j].at ?? Date.now(), previous)?.nextExerciseId : undefined
     update((d) => {
       if (rpe !== undefined) d.items[i].sets[j].rpe = rpe
+      if (stay) useStraightSets(d, i, Date.now())
       delete d.effortFor
       return d
     })
     requestAnimationFrame(() => {
       const rows = [...(playerRef.current?.querySelectorAll<HTMLElement>('[data-set]') ?? [])]
       const current = rows.findIndex((row) => row.dataset.set === `${i}-${j}`)
-      const next = [...rows.slice(current + 1), ...rows.slice(0, current)].find((row) => row.hasAttribute('data-pending-set'))
+      const paired = nextPair && rows.find((row) => row.dataset.set?.startsWith(`${partner}-`) && row.hasAttribute('data-pending-set'))
+      const next = paired || [...rows.slice(current + 1), ...rows.slice(0, current)].find((row) => row.hasAttribute('data-pending-set'))
       const control = next?.querySelector<HTMLElement>('input') ?? playerRef.current?.querySelector<HTMLButtonElement>('[data-finish]')
       control?.focus()
     })
@@ -221,7 +228,6 @@ export function GymPlayer({
     primeSignal()
     const wasDone = draft.items[i].sets[j].done
     const at = Date.now()
-    const secs = item.restSec
     update((d) => {
       const s = d.items[i].sets[j]
       s.done = !wasDone
@@ -229,6 +235,7 @@ export function GymPlayer({
         delete s.at
         delete s.rpe
         if (d.effortFor?.item === i && d.effortFor.set === j) delete d.effortFor
+        if (item.pairedWith) restoreSetRest(d, at, previous)
       } else {
         if (exercise.assisted && (withLoad !== undefined || unloadedOk)) {
           const help = withLoad ?? 0
@@ -237,8 +244,7 @@ export function GymPlayer({
         }
         s.at = at
         d.effortFor = { item: i, set: j }
-        const moreSets = d.items.some((block) => !block.held && block.sets.some((set) => !set.done))
-        d.rest = moreSets ? { until: at + secs * 1000, total: secs } : undefined
+        d.rest = restAfterSet(d, i, j, at, previous)
       }
       return d
     })
@@ -252,6 +258,7 @@ export function GymPlayer({
     if (!fitsToday(ex)) return
     update((d) => {
       const old = d.items[i]
+      useStraightSets(d, i, Date.now())
       const done = old.sets.filter((s) => s.done)
       const left = Math.max(1, old.sets.length - done.length)
       // The swap keeps what the day gave the movement it replaces: the rep-range kind, the set count
@@ -482,6 +489,7 @@ export function GymPlayer({
           {!plannedSets && !!draft.avoidJoints?.length && !draft.resumeFrom && <Button variant="secondary" onClick={discard}>Rest today and close</Button>}
           {draft.items.map((item, i) => {
             const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
+            const partner = draft.items[partnerIndex(draft.items, i)]
             const option = availableTrial(item)
             const easier = item.suggestion?.easierId && GYM_EXERCISE_BY_ID[item.suggestion.easierId]
             const target = prescribedCount(item.plan, item.suggestion)
@@ -519,6 +527,13 @@ export function GymPlayer({
                       {best ? ` · est. max ${formatLoad(best.kg, item.unit)}${isFirstEstimate(rec) ? ` (${FIRST_ESTIMATE_NOTE})` : ''}` : ''}
                     </p>
                     {item.suggestion?.why ? <p className="mt-1 text-caption text-ink3">{item.suggestion.why}</p> : null}
+                    {partner && <div className="mt-2 border-l-2 border-accent pl-2.5 text-footnote">
+                      <p>Alternate one set with {GYM_EXERCISE_BY_ID[partner.exerciseId].name.toLowerCase()}. Rest {item.restSec} seconds before repeating this lift.</p>
+                      <button className="min-h-11 text-left font-semibold text-accent-text" onClick={() => update((d) => {
+                        useStraightSets(d, i, Date.now())
+                        return d
+                      })}>Use straight sets</button>
+                    </div>}
                     {option && <button type="button" className="min-h-11 text-left text-footnote font-semibold text-accent-text"
                       onClick={() => setTrialFor(i)}>{option.title}</button>}
                     {easier && gym.ratings[easier.id] !== 'avoid' && fitsToday(easier) && item.sets.some((s) => !s.done) &&
@@ -545,7 +560,12 @@ export function GymPlayer({
                         onEdit={() => document.querySelector<HTMLInputElement>(`[data-set="${i}-${j}"] input`)?.focus()}
                         onDelete={() =>
                           update((d) => {
-                            d.items[i].sets.splice(j, 1)
+                            const [removed] = d.items[i].sets.splice(j, 1)
+                            if (d.effortFor?.item === i) {
+                              if (d.effortFor.set === j) delete d.effortFor
+                              else if (d.effortFor.set > j) d.effortFor.set--
+                            }
+                            if (removed.done && item.pairedWith) restoreSetRest(d, Date.now(), previous)
                             return d
                           })
                         }
@@ -686,6 +706,7 @@ export function GymPlayer({
 
       {rest && !needLoad && !doubt && !sheet ? (
         <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
+          {rest.nextExerciseId && GYM_EXERCISE_BY_ID[rest.nextExerciseId] && <p className="mx-auto mb-2 max-w-xl text-footnote font-semibold" role="status">Next · {GYM_EXERCISE_BY_ID[rest.nextExerciseId].name}</p>}
           <div className="mx-auto flex max-w-xl items-center gap-3">
             <RingTimer left={restLeft} total={rest.total} label={`Rest, ${mmss(restLeft)} left`}>
               <span className="tnum font-display text-title3 font-semibold">{mmss(restLeft)}</span>
@@ -698,7 +719,7 @@ export function GymPlayer({
             <Button variant="secondary" aria-label="15 seconds less" onClick={() => setDraft((d) => d.rest ? { ...d, rest: { ...d.rest, until: d.rest.until - 15_000 } } : d)}>
               −15
             </Button>
-            <Button variant="secondary" aria-label="15 seconds more" onClick={() => setDraft((d) => d.rest ? { ...d, rest: { until: d.rest.until + 15_000, total: d.rest.total + 15 } } : d)}>
+            <Button variant="secondary" aria-label="15 seconds more" onClick={() => setDraft((d) => d.rest ? { ...d, rest: { ...d.rest, until: d.rest.until + 15_000, total: d.rest.total + 15 } } : d)}>
               +15
             </Button>
             <Button variant="ghost" className="min-w-12 shrink-0" onClick={() => setDraft((d) => ({ ...d, rest: undefined }))}>

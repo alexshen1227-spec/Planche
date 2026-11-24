@@ -1,6 +1,8 @@
 import { expect, it } from 'vitest'
 import { adaptOpenDraft, resumePartial, sessionFromDraft, type GymDraft } from './draft'
 import { defaultGym, mergeSession, reduceGym, sanitizeGymReport } from './state'
+import { canPairExercises, restAfterSet, useStraightSets } from './pairedSets'
+import { buildGymSession } from './builder'
 
 const start = new Date(2026, 10, 16, 10).getTime()
 const draft: GymDraft = {
@@ -12,6 +14,35 @@ const draft: GymDraft = {
       sets: [{ reps: 12, load: 5, done: false }] },
   ],
 }
+
+it('budgets one alternating pair at the same station and carries a timed recovery through a saved partial', () => {
+  const gym = defaultGym(['floor', 'pullup-bar'], 'kg', start)
+  gym.locations[0].equipment.push('dumbbells', 'incline-bench')
+  const input = { location: gym.locations[0], minutes: 22, warmUpMin: 2, focus: 'upper' as const, sessions: [],
+    priority: ['calves', 'side-delts'] as ('calves' | 'side-delts')[], athletePriority: ['calves', 'side-delts'] as const,
+    goals: { strength: 2, physique: 5, skills: 5, endurance: 0, power: 0 }, now: start }
+  const plan = buildGymSession(input), lifts = plan.items.filter((it) => it.pairedWith)
+  expect(lifts).toHaveLength(2)
+  expect(plan.items.indexOf(lifts[1])).toBe(plan.items.indexOf(lifts[0]) + 1)
+  expect(plan.estimatedMin).toBeLessThanOrEqual(22)
+  expect(buildGymSession({ ...input, avoidJoints: ['wrists'] }).items.some((it) => it.pairedWith)).toBe(false)
+  expect(buildGymSession({ ...input, volumeFactor: 0.6 }).items.some((it) => it.pairedWith)).toBe(false)
+  expect(canPairExercises('standing-calf-raise', 'machine-lateral-raise')).toBe(false)
+  expect(canPairExercises('db-lateral-raise', 'goblet-squat')).toBe(false)
+  const items = lifts.map((it, i) => ({ ...it, unit: 'kg' as const, sets: [
+    { reps: 12, done: i === 0, at: i === 0 ? start : undefined }, { reps: 12, done: false },
+  ] }))
+  const partial = sessionFromDraft({ ...draft, items }, start + 2000)
+  const saved = sanitizeGymReport({ ...gym, sessions: [partial] }).gym!.sessions[0]
+  const open = resumePartial(saved, [], gym.locations[0], start + 4000)!
+  expect(open.items.map((it) => it.pairedWith)).toEqual(lifts.map((it) => it.pairedWith))
+  open.items[1].sets[0] = { ...open.items[1].sets[0], done: true, at: start + 10_000 }
+  open.rest = restAfterSet(open, 1, 0, start + 10_000, saved)
+  expect(open.rest).toEqual({ nextExerciseId: lifts[0].exerciseId, until: start + 75_000, total: 65 })
+  useStraightSets(open, 1, start + 11_000)
+  expect(open.rest?.until).toBe(start + 85_000)
+  expect(open.items.every((it) => !it.pairedWith)).toBe(true)
+})
 
 it('ends a saved partial after a new joint report before the next set, preserving corrections and a newer continuation', () => {
   const original = sessionFromDraft(draft, start + 500)

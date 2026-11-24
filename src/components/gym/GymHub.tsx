@@ -198,6 +198,7 @@ export function GymHub({
       plan: it.plan,
       suggestion: it.suggestion,
       restSec: it.restSec,
+      ...(it.pairedWith ? { pairedWith: it.pairedWith } : {}),
       unit,
       ...(() => {
         const previous = previousSets(gym.sessions, it.exerciseId, location.id, unit)

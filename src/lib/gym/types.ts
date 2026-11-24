@@ -59,6 +59,7 @@ export interface GymExerciseLog {
 
 export interface RemainingLift {
   exerciseId: string
+  pairedWith?: string
   repRange: [number, number]
   targetRpe: number
   restSec: number
