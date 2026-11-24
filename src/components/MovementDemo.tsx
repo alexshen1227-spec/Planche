@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { stepForKeyExercise } from '../data/progressions'
-import { embedUrl, movementVideo, youtubeId } from '../lib/video'
+import { embedUrl, movementVideo, youtubeId, type MovementVideo } from '../lib/video'
 import { Figure } from './Figure'
 import { Icon } from './Icon'
 
@@ -18,7 +18,7 @@ export function MovementDemo({ exerciseId, name, pinnedUrl }: { exerciseId: stri
     return () => { window.removeEventListener('online', sync); window.removeEventListener('offline', sync) }
   }, [])
   const pinned = pinnedUrl && youtubeId(pinnedUrl)
-  const video = pinned ? { id: pinned, by: 'Your pinned video', start: undefined } : movementVideo(exerciseId)
+  const video: MovementVideo | undefined = pinned ? { id: pinned, by: 'Your pinned video' } : movementVideo(exerciseId)
   const step = stepForKeyExercise(exerciseId)
   if (!step && !video) return null
   const start = video?.start ?? 0
@@ -38,6 +38,7 @@ export function MovementDemo({ exerciseId, name, pinnedUrl }: { exerciseId: stri
           </button>}
         </div>
       </div>
+      {video?.watchFor && <p className="mt-1 text-footnote leading-relaxed text-ink2">{video.watchFor}</p>}
       {video && online && source && playing === key && <>
         <iframe className="mt-2 aspect-video w-full rounded-control" src={`${embedUrl(video.id)}?autoplay=1&start=${start}`}
           title={`${name} demonstration`} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen

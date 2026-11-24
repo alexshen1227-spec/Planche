@@ -201,7 +201,7 @@ function ExercisePane() {
         {detail && ('pattern' in detail ? (
           <div className="space-y-4 p-4 sm:p-6">
             <h2 className="pr-10 font-display text-title2 font-bold text-ink">{detail.name}</h2>
-            <GymExerciseGuide exercise={detail} />
+            <GymExerciseGuide exercise={detail} onOpen={setDetail} />
           </div>
         ) : <ExerciseDetail exercise={detail} />)}
       </Modal>

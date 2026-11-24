@@ -622,7 +622,7 @@ export function GymHub({
       <WeekVolume />
 
       <Sheet open={guideId !== null} onClose={() => setGuideId(null)} label="Exercise guide">
-        {guideId && <><h2 className="mb-3 text-title2 font-semibold">{GYM_EXERCISE_BY_ID[guideId].name}</h2><GymExerciseGuide exercise={GYM_EXERCISE_BY_ID[guideId]} /></>}
+        {guideId && <><h2 className="mb-3 text-title2 font-semibold">{GYM_EXERCISE_BY_ID[guideId].name}</h2><GymExerciseGuide exercise={GYM_EXERCISE_BY_ID[guideId]} onOpen={(ex) => setGuideId(ex.id)} /></>}
       </Sheet>
       <Sheet open={historyOf !== null} onClose={() => setHistoryOf(null)} label="Exercise history">
         {historyOf ? <ExerciseHistory exerciseId={historyOf} /> : null}

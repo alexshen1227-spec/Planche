@@ -6,6 +6,8 @@ import { initialState, StoreProvider } from '../lib/store'
 import { SessionPlayer } from './SessionPlayer'
 import { FormCheckRow } from '../components/FormCheckRow'
 import { MovementDemo } from '../components/MovementDemo'
+import { ALL_STEPS } from '../data/progressions'
+import { movementVideo } from '../lib/video'
 import { dayStage } from '../lib/plan/screens'
 import { goalDaysInWeekOf } from '../lib/stats'
 import { resumeSkillWorkout } from '../lib/resumeSkillWorkout'
@@ -45,6 +47,16 @@ it('plays the same strict pull-up demonstration in the gym and skill exercise gu
     rerender(<MovementDemo exerciseId={id} name={name} />)
     fireEvent.click(screen.getByRole('button', { name: `Play ${name} demonstration` }))
     expect(screen.getByTitle(`${name} demonstration`).getAttribute('src')).toContain('HRV5YKKaeVw')
+  }
+})
+
+it('opens a publisher demonstration for every main skill position and every moving 90° progression', () => {
+  const ids = [...ALL_STEPS.map((step) => step.keyExerciseId), 'tuck-ninety-pushup', 'ninety-negative', 'straddle-ninety-pushup', 'ninety-pushup']
+  const { rerender } = render(<MovementDemo exerciseId={ids[0]} name="Movement" />)
+  for (const id of ids) {
+    rerender(<MovementDemo exerciseId={id} name={id} />)
+    fireEvent.click(screen.getByRole('button', { name: `Play ${id} demonstration` }))
+    expect(screen.getByTitle(`${id} demonstration`).getAttribute('src'), id).toContain(movementVideo(id)!.id)
   }
 })
 

@@ -14,6 +14,7 @@ import { addedSetReps, conservative, dayOfItem, prefillReps, previousSets, saveD
 import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, isUnloadedSet, lastPerformance, plyoGate, prescribedCount, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GoalWeights, GymLocation, Rating } from '../../lib/gym/types'
 import { displayLoad, entryLoad, formatLoad, minKgFor, stepKgFor, takesAddedLoad, toKg, unitFor, unloadedLabel } from '../../lib/gym/units'
+import { easierDragonFlag } from '../../lib/gym/bodyweightSteps'
 import { continueGymSession, doubtedLoad, newGymSessionId } from '../../lib/gym/state'
 import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
 import { Icon } from '../Icon'
@@ -491,7 +492,8 @@ export function GymPlayer({
             const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
             const partner = draft.items[partnerIndex(draft.items, i)]
             const option = availableTrial(item)
-            const easier = item.suggestion?.easierId && GYM_EXERCISE_BY_ID[item.suggestion.easierId]
+            const easierId = item.suggestion?.easierId ?? easierDragonFlag(item.exerciseId)
+            const easier = easierId && GYM_EXERCISE_BY_ID[easierId]
             const target = prescribedCount(item.plan, item.suggestion)
             if (item.held) return (
               <section key={`${item.exerciseId}-${i}`} className="rounded-card border border-line bg-surface p-4">
@@ -1136,6 +1138,7 @@ function MenuSheet({
   onSwap: () => void
   onRemove: () => void
 }) {
+  const [guide, setGuide] = useState(exercise)
   const choice = (r: Rating, label: string) => (
     <button
       onClick={() => onRate(rating === r ? null : r)}
@@ -1148,7 +1151,10 @@ function MenuSheet({
   return (
     <>
       <h2 className="text-title3 font-semibold">{exercise.name}</h2>
-      <div className="mt-2"><GymExerciseGuide exercise={exercise} /></div>
+      <div className="mt-2">
+        {guide.id !== exercise.id && <h3 className="mb-2 text-body font-semibold">{guide.name}</h3>}
+        <GymExerciseGuide exercise={guide} onOpen={setGuide} />
+      </div>
       <p className="mt-3 text-caption font-medium text-ink3">How do you like it? The planner picks favourites and leaves out avoided ones.</p>
       <div className="mt-2 flex gap-2">
         {choice('love', 'Love')}

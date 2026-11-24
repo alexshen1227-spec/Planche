@@ -4,6 +4,13 @@ import type { GymSession, GymSet } from './types'
 export const UNASSISTED_LIFTS = ['push-up', 'pull-up'] as const
 export type UnassistedLift = (typeof UNASSISTED_LIFTS)[number]
 
+export const DRAGON_FLAG_STEPS = ['tuck-dragon-flag-lower', 'one-leg-dragon-flag-lower', 'dragon-flag']
+
+export function easierDragonFlag(id: string): string | undefined {
+  const level = DRAGON_FLAG_STEPS.indexOf(id)
+  return level < 0 ? undefined : level === 0 ? 'reverse-crunch' : DRAGON_FLAG_STEPS[level - 1]
+}
+
 export function preparesFor(exerciseId: string): UnassistedLift | undefined {
   if (exerciseId === 'incline-push-up' || exerciseId === 'kneeling-push-up') return 'push-up'
   if (exerciseId === 'band-assisted-pull-up' || exerciseId === 'negative-pull-up') return 'pull-up'
