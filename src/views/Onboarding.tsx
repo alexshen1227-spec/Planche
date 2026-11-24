@@ -1,5 +1,6 @@
 import { Button } from '../components/ds'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import type { AssessmentRecord, Profile, EquipmentId, SkillId, StepId, Units } from '../types'
 import { normalizeStateWithReport, rebuildDerivedState, reportHasLosses, useStore } from '../lib/store'
 import { readImportFile, validateImport } from '../lib/exportImport'
@@ -174,13 +175,12 @@ export function Onboarding() {
       validateImport(raw)
       const { state: normalized, report } = normalizeStateWithReport(raw)
       const before = getState()
-      dispatch({ type: 'IMPORT_REPLACE', state: rebuildDerivedState(normalized), expectedRev: before.rev ?? 0 })
-      await new Promise((resolve) => window.setTimeout(resolve, 0))
+      flushSync(() => dispatch({ type: 'IMPORT_REPLACE', state: rebuildDerivedState(normalized), expectedRev: before.rev ?? 0 }))
       if (getState().epoch === before.epoch) {
         pushToast('That backup could not be applied. Try picking the file again.', 'danger', 7000)
         return
       }
-      const count = report.sessionsKept
+      const count = report.sessionsKept + (normalized.gym?.sessions.length ?? 0)
       pushToast(
         `Backup restored — ${count} session${count === 1 ? '' : 's'}.${
           reportHasLosses(report) ? ' Some entries in the file could not be read and were left out.' : ''

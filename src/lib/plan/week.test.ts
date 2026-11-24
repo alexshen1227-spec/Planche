@@ -625,7 +625,7 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
           expect(p.skill.minutes + p.gym!.minutes, `${who} ${d.day} opener and gym`).toBe(p.minutes)
           expect(p.gym!.minutes, who).toBeGreaterThanOrEqual(MIN_GYM_MINUTES)
           // Its family is the focus's, its kit is at the place, and no joint the family loads is sore.
-          expect(fam !== 'balance' && focusFamilies(p.gym!.focus).includes(fam), `${who} ${d.day} ${skill} opens ${p.gym!.focus}`).toBe(true)
+          if (!p.skill.practiceFirst) expect(fam !== 'balance' && focusFamilies(p.gym!.focus).includes(fam), `${who} ${d.day} ${skill} opens ${p.gym!.focus}`).toBe(true)
           expect(missingKit(skill, [...loc.equipment, ...s.profile.equipment] as never), `${who} ${d.day} ${skill} kit at ${loc.name} or the athlete's`).toEqual([])
           const f = fam === 'balance' ? 'push' : fam
           expect(p.gym!.avoidJoints.filter((j) => (FAMILY_JOINTS[f] as readonly string[]).includes(j)), `${who} ${d.day} ${skill} opens on a sore joint`).toEqual([])

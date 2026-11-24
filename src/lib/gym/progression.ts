@@ -395,17 +395,19 @@ export function suggestLoad(input: {
       if (isHardBodyweight(ex)) return { ...base, kind: 'bodyweight', why: `Hard bodyweight movement: ${lo}–${hi} slow, controlled reps, lowering for about three seconds. Stop a rep before form breaks.` }
       return { ...base, kind: 'bodyweight', why: `Bodyweight: aim for ${lo}–${hi} clean reps.` }
     }
+    const rir = Math.max(0, Math.round(10 - plan.targetRpe))
+    const reserve = rir === 1 ? 'one rep' : rir === 2 ? 'two reps' : rir === 3 ? 'three reps' : `${rir} reps`
     if (ex.assisted) {
       return {
         ...base,
         kind: 'first-time',
-        why: `First time here: set the least help that still gives about ${hi} clean reps with two to spare. The weight you log is the help, so progress takes it off.`,
+        why: `Choose enough assistance for ${hi} clean reps with ${reserve} to spare. Record the help you use. Progress gradually reduces it.`,
       }
     }
     return {
       ...base,
       kind: 'first-time',
-      why: `First time here: pick a weight you could lift about ${hi} times with two reps to spare. The next session sets it from what you log.`,
+      why: `Pick a weight you can lift for ${hi} controlled reps with ${reserve} to spare. Your logged sets guide the next workout.`,
     }
   }
   const working = last.sets

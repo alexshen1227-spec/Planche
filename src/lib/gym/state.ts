@@ -791,11 +791,11 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
     case 'saveSession': {
       if (gym.deletedSessionIds?.includes(action.session.id)) return gym
       let next = action.session
+      const previous = gym.sessions.find((s) => s.id === next.id)
       if (action.resumeFrom !== undefined) {
-        const previous = gym.sessions.find((s) => s.id === next.id)
         if (previous?.completion !== 'partial' || previous.endedAt !== action.resumeFrom || !next.exercises.length) return gym
         next = continueGymSession(previous, next)
-      }
+      } else if (previous) return gym
       const session = { ...next, updatedAt: now }
       const rest = gym.sessions.filter((s) => s.id !== session.id)
       return { ...gym, sessions: [...rest, session].sort((a, b) => a.startedAt - b.startedAt) }

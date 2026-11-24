@@ -7,7 +7,7 @@ import { readSignals } from '../signals'
 import { skillView, stepOfSkill } from '../skills'
 import { addDays, dayKey, weekStart } from '../time'
 import { familyWorkingSets, HARD_GYM_FAMILY_SETS, setsPerMuscle } from './load'
-import { exposureDays, exposuresOf, GYM_PLACE, keySets, makeAthlete, runLoop, SPORT_WEEK, weeksOf, type AthleteCfg, type DayRun, type LoopOpts, type LoopOut } from './wholeAthleteLoop'
+import { exposureDays, exposuresOf, GYM_PLACE, keySets, mainSets, makeAthlete, runLoop, SPORT_WEEK, weeksOf, type AthleteCfg, type DayRun, type LoopOpts, type LoopOut } from './wholeAthleteLoop'
 
 /**
  * The whole athlete, closed (round five). A fourteen-year-old whose first
@@ -86,6 +86,28 @@ const handstandAthlete = (fourDays: boolean): AthleteCfg => ({
 })
 
 describe('mixed handstand and front lever weeks', () => {
+  it.each(['adult', 'teen'] as const)('gives all three skills and the legs actual work every week for the %s on three training days', (age) => {
+    const youth = age === 'teen'
+    const minutes = youth ? 60 : 45
+    const cfg: AthleteCfg = {
+      skills: youth ? ['planche', 'handstand', 'frontlever'] : ['frontlever', 'planche', 'handstand'],
+      birthYear: youth ? 2012 : 1990, active: 'gym', kit: ['floor', 'wall', 'parallettes', 'pullup-bar'],
+      steps: { handstand: 'hs-wall', frontlever: 'fl-tuck', planche: 'tuck' },
+      prefs: {
+        goals: { skills: youth ? 5 : 4, physique: 4, strength: youth ? 3 : 4, power: 0, endurance: 0 },
+        musclesPriority: youth ? ['chest', 'side-delts'] : ['lats', 'quads'],
+        minutesByDay: [0, minutes, 0, minutes, 0, minutes, 0],
+        sportSchedule: youth ? [{ weekday: 6, kind: 'game', minutes: 75, rpe: 8, legs: true, hour: 8 }] : [],
+      },
+    }
+    const out = season(cfg, 42, {}, handstandGym)
+    for (const week of weeksOf(out)) {
+      for (const skill of cfg.skills) expect(mainSets(week, skill), dayKey(week[0].at) + ' ' + skill).toBeGreaterThan(0)
+      expect(week.some((d) => d.gym?.items.some((item) => GYM_EXERCISE_BY_ID[item.id].primary.some((m) => m === 'quads' || m === 'hamstrings'))),
+        dayKey(week[0].at) + ' lower-body lift').toBe(true)
+    }
+  })
+
   it.each([false, true])('keeps both skills and works both chosen muscles over six weeks (four days: %s)', (fourDays) => {
     const cfg = handstandAthlete(fourDays)
     const out = season(cfg, 42, { perSet: 0.04, truthStart: { 'wall-handstand': 30, 'tuck-front-lever': 8 } }, handstandGym)

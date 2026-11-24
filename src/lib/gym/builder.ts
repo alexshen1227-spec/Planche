@@ -294,6 +294,7 @@ export function planGymExercises(input: GymSessionInput) {
     }
   }
   const used = new Set<string>()
+  const movement = (e: GymExercise) => e.variantOf ?? e.id
   const items: Omit<PlannedExercise, 'suggestion'>[] = []
   /** Movements whose dose is capped to keep the rest of the week's workouts available. */
   const steered = new Set<string>()
@@ -350,12 +351,12 @@ export function planGymExercises(input: GymSessionInput) {
     // Fresh and fast first, strength last: drills, then jumps, then runs and throws, then one lift.
     const take = (e: GymExercise | undefined, sets?: number) => {
       if (!e) return
-      used.add(e.id)
+      used.add(movement(e))
       items.push(makeItem(e, false, sets))
     }
     const fromDomain = (domain: AthleticDomain, patterns: Pattern[], cap: IntensityTier) => {
       const pool = here.filter(
-        (e) => !used.has(e.id) && patterns.includes(e.pattern) && athleticDomain(e) === domain && usable(e) && TIER_RANK[gateTier(e)!] <= TIER_RANK[cap],
+        (e) => !used.has(movement(e)) && patterns.includes(e.pattern) && athleticDomain(e) === domain && usable(e) && TIER_RANK[gateTier(e)!] <= TIER_RANK[cap],
       )
       if (!pool.length) return undefined
       // The highest tier allowed today; inside it the ladder is climbed in order.
@@ -369,8 +370,8 @@ export function planGymExercises(input: GymSessionInput) {
     const drillPool = here.filter((e) => e.pattern === 'drill' && usable(e))
     const gentle = drillPool.filter((e) => e.tier === 'low').sort(ladder)[0]
     take(gentle, 2)
-    const upper = drillPool.filter((e) => e.tier === 'medium' && !used.has(e.id)).sort(ladder)[0]
-    take(upper ?? drillPool.filter((e) => !used.has(e.id)).sort(ladder)[0], 2)
+    const upper = drillPool.filter((e) => e.tier === 'medium' && !used.has(movement(e))).sort(ladder)[0]
+    take(upper ?? drillPool.filter((e) => !used.has(movement(e))).sort(ladder)[0], 2)
     // Only one high-intensity block a session: jumps first, then it is spent.
     const jump = fromDomain('jump', ['jump'], cap)
     if (jump && gateTier(jump) === 'high') cap = 'medium'
@@ -383,7 +384,7 @@ export function planGymExercises(input: GymSessionInput) {
     // One strength movement: the slot nothing explosive filled, lower body first unless the legs are off.
     for (const slot of [['squat', 'lunge', 'hinge'], ['horizontal-pull', 'vertical-pull'], ['horizontal-press', 'vertical-press']] as Pattern[][]) {
       const options = here
-        .filter((e) => slot.includes(e.pattern) && !used.has(e.id) && !e.explosive && !athleticDomain(e) && usable(e))
+        .filter((e) => slot.includes(e.pattern) && !used.has(movement(e)) && !e.explosive && !athleticDomain(e) && usable(e))
         .map((e) => ({ e, score: scoreOf(e, staleness(e)) + slot.indexOf(e.pattern) * 0.5 }))
         .sort((a, b) => a.score - b.score)
       if (options.length) {
@@ -407,7 +408,7 @@ export function planGymExercises(input: GymSessionInput) {
       const wantsExplosive = slot.includes('jump') || slot.includes('throw')
       // Avoided means avoided: a slot nothing else can fill is left out.
       const fit = here.filter(
-        (e) => slot.includes(e.pattern) && !used.has(e.id) && (wantsExplosive ? e.explosive : !e.explosive) && usable(e),
+        (e) => slot.includes(e.pattern) && !used.has(movement(e)) && (wantsExplosive ? e.explosive : !e.explosive) && usable(e),
       )
       // A muscle the week has plenty of steers the slot to a movement not built on it. When every movement of the
       // slot is, the slot goes — unless it is what the day is named for: then the movement that leans on the spare
@@ -447,11 +448,11 @@ export function planGymExercises(input: GymSessionInput) {
           notes.push(
             `${first.e.name} has not beaten its best in its last ${STALL_SESSIONS} sessions, so ${alt.e.name} takes its place for now — changing the variation is a common way to restart progress (a coaching convention, not a proven rule). Swap back any time.`,
           )
-          used.add(first.e.id)
+          used.add(movement(first.e))
           pick = alt.e
         }
       }
-      used.add(pick.id)
+      used.add(movement(pick))
       const extraLateral = lateralAccessory && pick.pattern === 'lateral-raise'
       const extraQuad = quadAccessory && pick.pattern === 'knee-extension'
       items.push(makeItem(pick, wantsExplosive, spared || extraLateral ? 2 : extraQuad ? 3 : undefined))
@@ -465,13 +466,13 @@ export function planGymExercises(input: GymSessionInput) {
         if (!candidates.length && !musclesOff.has(muscle)) {
           // An isolation lift can serve a missing priority even on another focus's day.
           // Cap its dose so tomorrow can still use the muscle for a full session.
-          const options = here.filter((e) => !used.has(e.id) && !e.compound && !e.explosive && !e.dose &&
+          const options = here.filter((e) => !used.has(movement(e)) && !e.compound && !e.explosive && !e.dose &&
             e.primary.includes(muscle) && usable(e) && !spareIn(e) && !technicalPenalty(e))
           const best = options.sort((a, b) => scoreOf(a) - scoreOf(b) || a.primary.length - b.primary.length)[0]
           if (best) {
             const addition = makeItem(best, false, 3)
             items.push(addition)
-            used.add(best.id)
+            used.add(movement(best))
             steered.add(best.id)
             candidates = [addition]
           }
@@ -577,7 +578,7 @@ export function planGymExercises(input: GymSessionInput) {
       const candidates = here
         .filter(
           (e) =>
-            !used.has(e.id) &&
+            !used.has(movement(e)) &&
             slotPatterns.has(e.pattern) &&
             !e.explosive &&
             (![PRESSING_PATTERNS, PULLING_PATTERNS].some((f) => f.has(e.pattern)) || FILL_FAMILIES[focus].some((f) => f.has(e.pattern))) &&
@@ -598,7 +599,7 @@ export function planGymExercises(input: GymSessionInput) {
         const rest = restFor(e, makeItem(e, false, 2).plan)
         const sets = [...new Set([want, 3, 2])].find((n) => n <= want && setsSoFar + n <= ceiling && blockMinutes(n, rest, e.dose?.workSec) <= room)
         if (sets === undefined) continue
-        used.add(e.id)
+        used.add(movement(e))
         items.push(makeItem(e, false, sets))
         addCredit(e, sets)
         added.push(e)

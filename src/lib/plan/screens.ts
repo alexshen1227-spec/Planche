@@ -184,8 +184,9 @@ const OPENER_HOLDS: Record<SkillId, string> = {
  * while fresh, and its family's strength work with the lifts. "Opens with
  * planche (18 min)" once stood for a warm-up, four short holds and a cooldown.
  */
-export function openerLine(block: Pick<SkillBlock, 'skills' | 'minutes' | 'half'>): string {
+export function openerLine(block: Pick<SkillBlock, 'skills' | 'minutes' | 'half' | 'practiceFirst'>): string {
   const skill = block.skills[0]
+  if (block.practiceFirst) return `${OPENER_HOLDS[skill]} first (${block.minutes} min), then your planned lifts.`
   const family = skillFamily(skill)
   const work = family === 'push' ? 'the pressing' : family === 'pull' ? 'the pulling' : 'the strength work'
   return `Opens with ${OPENER_HOLDS[skill]} (${block.minutes} min${block.half ? ', short opener' : ''}); ${work} comes with the lifts`

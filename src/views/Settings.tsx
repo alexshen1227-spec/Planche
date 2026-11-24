@@ -1,5 +1,6 @@
 import { Button } from '../components/ds'
 import { useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import type { AppState, EquipmentId, Settings as SettingsShape, Tab, TrainingSurface } from '../types'
 import {
   clearQuarantine,
@@ -410,8 +411,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         )
         return
       }
-      dispatch({ type: 'IMPORT_REPLACE', state: staged.state, expectedRev: staged.stagedRev })
-      await new Promise((resolve) => window.setTimeout(resolve, 0))
+      flushSync(() => dispatch({ type: 'IMPORT_REPLACE', state: staged.state, expectedRev: staged.stagedRev }))
       if (getState().epoch === before.epoch) {
         setPendingImport(null)
         pushToast('Newer data arrived while importing, so nothing was replaced. Try the import again.', 'danger', 8000)

@@ -22,6 +22,8 @@ export interface DraftSet {
 
 export interface DraftItem {
   exerciseId: string
+  /** Previously logged sets retained when today's joint check or equipment excludes the movement. */
+  held?: boolean
   plan: RepPlan
   suggestion?: LoadSuggestion
   restSec: number
@@ -147,19 +149,20 @@ function remainingLift(item: DraftItem, sets: DraftSet[]): RemainingLift {
 }
 
 /** Recheck the unperformed part of an open workout without changing a single logged set. */
-export function adaptOpenDraft(draft: GymDraft, joints: Joint[], light: boolean): GymDraft {
+export function adaptOpenDraft(draft: GymDraft, joints: Joint[], light: boolean, location?: GymLocation): GymDraft {
   const avoidJoints = [...new Set([...(draft.avoidJoints ?? []), ...joints])]
   const factor = draft.volumeFactor ?? 1
   const reduce = light && factor > 0.6
-  if (!avoidJoints.length && !reduce) return draft
+  const missingKit = (id: string) => location && !canDoHere(id, location)
+  if (!avoidJoints.length && !reduce && !draft.items.some((it) => missingKit(it.exerciseId))) return draft
   const deferred = [...(draft.deferred ?? [])]
   const items = draft.items.flatMap((item): DraftItem[] => {
     const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
-    if (ex?.stress.some((j) => avoidJoints.includes(j))) {
+    if (ex?.stress.some((j) => avoidJoints.includes(j)) || missingKit(item.exerciseId)) {
       const left = item.sets.filter((s) => !s.done)
       if (left.length) deferred.push(remainingLift(item, left))
       const done = item.sets.filter((s) => s.done)
-      return done.length ? [{ ...item, sets: done }] : []
+      return done.length ? [{ ...item, sets: done, held: true }] : []
     }
     if (!reduce || !item.sets.some((s) => !s.done)) return [item]
     const working = item.sets.filter((s) => !s.warmup)
@@ -173,7 +176,7 @@ export function adaptOpenDraft(draft: GymDraft, joints: Joint[], light: boolean)
     return [{ ...item, plan: { ...item.plan, targetRpe: Math.min(item.plan.targetRpe, 7) }, suggestion: undefined, sets }]
   })
   return { ...draft, items, deferred, avoidJoints, originalAvoidJoints: draft.originalAvoidJoints ?? draft.avoidJoints ?? [],
-    volumeFactor: reduce ? 0.6 : draft.volumeFactor, effortFor: undefined }
+    volumeFactor: reduce ? 0.6 : draft.volumeFactor, effortFor: reduce || deferred.length !== (draft.deferred?.length ?? 0) ? undefined : draft.effortFor }
 }
 
 /** Finished sets only, loads back to kg. Planned sets never done make the session partial. */

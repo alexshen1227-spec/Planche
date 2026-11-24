@@ -158,6 +158,16 @@ describe('the day plan', () => {
 })
 
 describe('weekly volume', () => {
+  it('gives the same muscle credit for three rounds of side planks in either player', () => {
+    const s = skillSession(NOW, 'side-plank', 0)
+    s.sets = Array.from({ length: 6 }, (_, i) => ({ ...set('side-plank', 'strength', NOW), side: i % 2 ? 'right' : 'left', rpe: 8 }))
+    const strength = gymSession(NOW, 'side-plank', 3)
+    const equivalent = { obliques: 3, abs: 1.5, glutes: 1.5 }
+    expect(setsPerMuscle([s], [], NOW, NOW + 1)).toEqual(equivalent)
+    expect(setsPerMuscle([], [strength], NOW, NOW + 1)).toEqual(equivalent)
+    expect(fatigueAt({ sessions: [s] }, NOW)).toEqual(fatigueAt({ sessions: [], gym: { ...defaultGym([]), sessions: [strength] } }, NOW))
+    expect(setsPerMuscle([{ ...s, sets: s.sets.slice(0, 1) }], [], NOW, NOW + 1).obliques).toBe(0.5)
+  })
   it('keeps short technical attempts in practice and fatigue without spending the muscle target', () => {
     const s = skillSession(NOW - DAY, 'tuck-planche', 12)
     const attempts = { ...s, sets: s.sets.map((set) => ({ ...set, value: 1, target: 10, light: true, endReason: 'balance' as const })) }

@@ -7,7 +7,7 @@ import { buildGymSession, FOCUS_LABEL } from './builder'
 import { estimateOneRepMax, gateTier, gymRecords, isHardBodyweight, plyoGate, repPlanFor, suggestLoad, unlockedTier } from './progression'
 import { defaultGym, mergeGym, newLocation, reduceGym, sanitizeGym } from './state'
 import type { GymLocation, GymSession, GymSet } from './types'
-import { displayLoad, fromKg, roundToStep, stepKgFor, toKg } from './units'
+import { displayLoad, fromKg, maxKgFor, roundToStep, stepKgFor, toKg, unitFor } from './units'
 import { initialState, mergeExternalState, normalizeState, reducer } from '../store'
 
 const T0 = Date.UTC(2026, 10, 2, 17)
@@ -69,6 +69,24 @@ describe('units', () => {
 })
 
 describe('availability and swaps', () => {
+  it('chooses the implement before transferring a load from another gym', () => {
+    const small: GymLocation = { id: 'small', name: 'Home', unit: 'kg', equipment: ['dumbbells', 'bench'], updatedAt: T0,
+      gear: { dumbbells: { unit: 'lb', stepKg: toKg(5, 'lb'), maxKg: toKg(25, 'lb') } } }
+    const heavy = session('barbell-session', 'a', T0, 'romanian-deadlift', [set(100, 8), set(100, 8), set(100, 8)])
+    const plan = buildGymSession({ location: small, focus: 'full', minutes: 45, sessions: [heavy], ratings: { 'db-rdl': 'love' }, youth: false, now: T0 + 3 * DAY })
+    expect(canDoHere('romanian-deadlift', small)).toBe(false)
+    expect(canDoHere('seal-row', small)).toBe(false)
+    expect(plan.items.find((it) => it.exerciseId === 'db-rdl')?.suggestion).toMatchObject({ kind: 'first-time' })
+    const db = GYM_EXERCISE_BY_ID['db-rdl']
+    expect(unitFor(db, small)).toBe('lb')
+    expect(stepKgFor(db, small)).toBe(toKg(5, 'lb'))
+    expect(maxKgFor(db, small)).toBe(toKg(25, 'lb'))
+    const earlier = session('dumbbell-session', 'a', T0, db.id, [set(25, 8), set(25, 8)])
+    const suggestion = suggestLoad({ exerciseId: db.id, location: small, sessions: [heavy, earlier], plan: repPlanFor(db) })
+    expect(fromKg(suggestion.kg!, 'lb')).toBeCloseTo(25)
+    expect(availableAt(small).filter((e) => e.load !== 'bodyweight').every((e) => e.stepFrom && small.equipment.includes(e.stepFrom))).toBe(true)
+    expect(availableAt({ ...small, equipment: ['hip-thrust-machine'] }).some((e) => e.id === 'machine-hip-thrust' && e.load === 'machine')).toBe(true)
+  })
   it('programs only what the location has', () => {
     expect(canDoHere('bench-press', home)).toBe(false)
     expect(canDoHere('pull-up', home)).toBe(true)
@@ -182,6 +200,13 @@ describe('gym state', () => {
     const merged = mergeGym(left, right)!
     expect(merged.sessions.map((s) => s.id)).toEqual(['s2'])
     expect(mergeGym(merged, merged)).toBe(merged)
+  })
+  it('keeps a corrected workout when an old editor repeats its original save', () => {
+    const log = session('shared', 'home', T0, 'push-up', [set(undefined, 8)])
+    const saved = reduceGym(defaultGym([]), { op: 'saveSession', session: log }, T0)!
+    const corrected = reduceGym(saved, { op: 'correctSet', sessionId: log.id, exerciseIndex: 0, setIndex: 0, reps: 10 }, T0 + 1)!
+    expect(corrected.sessions[0].exercises[0].sets[0].reps).toBe(10)
+    expect(reduceGym(corrected, { op: 'saveSession', session: log }, T0 + 2)).toBe(corrected)
   })
   it('keeps at least one location, and moves the active one off a deleted gym', () => {
     let g = defaultGym([])

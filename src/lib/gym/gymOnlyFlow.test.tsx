@@ -12,6 +12,7 @@ import { defaultGym, defaultPrefs } from './state'
 import type { GymEntry } from '../plan/screens'
 import { loadDraft, saveDraft, type DraftItem } from './draft'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import { Toasts } from '../../components/Toasts'
 
 afterEach(() => {
   cleanup()
@@ -30,6 +31,22 @@ function FirstRun() {
     setTrain(true)
   }} />
 }
+
+it('confirms the imported workout count after restoring a backup on the welcome screen', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const at = Date.now()
+  const gym = defaultGym(['floor'])
+  const backup = { ...initialState(), onboarded: true, gym: { ...gym, sessions: [{
+    id: 'my-squat', locationId: 'home', name: 'Lifting', startedAt: at - 300_000, endedAt: at,
+    exercises: [{ exerciseId: 'bodyweight-squat', sets: [{ at, reps: 8 }] }],
+  }] } }
+  const { container } = render(<StoreProvider><FirstRun /><Toasts /></StoreProvider>)
+  const file = new File([JSON.stringify(backup)], 'training.json', { type: 'application/json' })
+  fireEvent.change(container.querySelector('input[type=file]')!, { target: { files: [file] } })
+  expect(await screen.findByText('Backup restored — 1 session.')).toBeTruthy()
+  expect(screen.queryByText(/backup could not be applied/i)).toBeNull()
+  expect(JSON.parse(localStorage.getItem('planchelab.v1')!).gym.sessions[0].id).toBe('my-squat')
+})
 
 it('shows an opted-in gym-only athlete their recorded bodyweight and comparable bodyweight sets on Progress', () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
@@ -129,6 +146,7 @@ it('keeps finished sets and applies a new pain check when Home reopens an unfini
   const base = initialState()
   const at = Date.now() - 180_000
   const gym = defaultGym(['floor'])
+  gym.locations[0].equipment.push('dumbbells', 'bench')
   const prefs = defaultPrefs(at)
   prefs.minutesByDay = Array.from({ length: 7 }, (_, i) => i === new Date().getDay() ? 45 : 0)
   localStorage.setItem('planchelab.v1', JSON.stringify({

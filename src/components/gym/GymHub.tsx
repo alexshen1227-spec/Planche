@@ -20,7 +20,7 @@ import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
 import { entryLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { Icon } from '../Icon'
 import { Button, Card, CardTitle, EmptyState, Sheet, ToggleChip } from '../ds'
-import { GymPlayer } from './GymPlayer'
+import { GymWorkoutGate } from './GymWorkoutGate'
 import { PartialWorkout } from './PartialWorkout'
 import { WeekVolume } from '../plan/WeekVolume'
 import { LocationEditor } from './LocationEditor'
@@ -228,7 +228,7 @@ export function GymHub({
     const avoid = [...new Set([...sore.joints, ...joints])]
     const light = kind === 'pain' || sore.pain
     if (open) {
-      setRunning(adaptOpenDraft(open, avoid, light))
+      setRunning(adaptOpenDraft(open, avoid, light, gym.locations.find((l) => l.id === open.locationId) ?? location))
       setPending(null)
       setResumable(null)
       return
@@ -651,7 +651,7 @@ export function GymHub({
       </Sheet>
 
       {running ? (
-        <GymPlayer
+        <GymWorkoutGate
           draft={running}
           location={gym.locations.find((l) => l.id === running.locationId) ?? location}
           onClose={() => setRunning(null)}

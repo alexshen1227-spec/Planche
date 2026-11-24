@@ -1,5 +1,5 @@
 import { MUSCLES, type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
-import { athleticDomain, GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import { athleticDomain, equivalentGymExercise, GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { EXERCISE_BY_ID } from '../../data/exercises'
 import { SKILLS } from '../../data/skills'
 import type { AppState, Category, Session, SetLog, SkillId } from '../../types'
@@ -42,7 +42,6 @@ interface Loading {
  * credit here); never chest, which the category's push-up credit once gave
  * them.
  */
-const HANDSTAND_PRESS_TWIN: Record<string, string> = { 'pike-pushup': 'pike-push-up', 'elevated-pike-pushup': 'elevated-pike-push-up' }
 const HANDSTAND_PRESSES: readonly string[] = SKILLS.handstand.ladder?.rungs.map((r) => r.exerciseId) ?? []
 
 /**
@@ -64,7 +63,7 @@ export const PRESS_SKILLS: ReadonlySet<SkillId> = new Set(
 
 function pressLoading(exerciseId: string): Loading | null {
   if (!HANDSTAND_PRESSES.includes(exerciseId)) return null
-  const twin = gymSetLoading(HANDSTAND_PRESS_TWIN[exerciseId] ?? 'wall-hspu')
+  const twin = gymSetLoading(equivalentGymExercise(exerciseId)?.id ?? 'wall-hspu')
   if (!twin) return null
   return { muscles: twin.muscles, joints: twin.joints, ...(HARD_PRESSES.has(exerciseId) ? { press: true } : {}) }
 }
@@ -97,10 +96,19 @@ export function familyLoading(family: 'push' | 'pull' | 'balance'): Credit {
 /** How a skill set loads the body; warm-up and cooldown sets count for nothing. */
 export function skillSetLoading(exerciseId: string, section: string): Loading | null {
   if (section === 'warmup' || section === 'cooldown') return null
+  return SKILL_MOVEMENT_LOAD[exerciseId] ?? null
+}
+
+function loadingOfSkill(exerciseId: string): Loading | null {
   const press = pressLoading(exerciseId)
   if (press) return press
   const ex = EXERCISE_BY_ID[exerciseId]
-  return ex ? SKILL_LOADING[ex.category] ?? null : null
+  if (!ex) return null
+  const category = SKILL_LOADING[ex.category]
+  const twinId = equivalentGymExercise(exerciseId)?.id
+  const twin = twinId && gymSetLoading(twinId)
+  if (twin) return { ...category, ...twin }
+  return category ?? null
 }
 
 /**
@@ -119,13 +127,18 @@ export function restFamilyOf(set: { exerciseId: string; section: string; light?:
   return l.press && !set.light ? 'push' : undefined
 }
 
-export function gymSetLoading(exerciseId: string): Loading | null {
-  const ex = GYM_EXERCISE_BY_ID[exerciseId]
-  if (!ex) return null
+const GYM_MOVEMENT_LOAD: Record<string, Loading> = Object.fromEntries(Object.values(GYM_EXERCISE_BY_ID).map((ex) => {
   const muscles: Credit = {}
   for (const m of ex.secondary) muscles[m] = 0.5
   for (const m of ex.primary) muscles[m] = 1
-  return { muscles, joints: ex.stress }
+  return [ex.id, { muscles, joints: ex.stress }]
+}))
+const SKILL_MOVEMENT_LOAD: Record<string, Loading | null> = Object.fromEntries(
+  Object.keys(EXERCISE_BY_ID).map((id) => [id, loadingOfSkill(id)]),
+)
+
+export function gymSetLoading(exerciseId: string): Loading | null {
+  return GYM_MOVEMENT_LOAD[exerciseId] ?? null
 }
 
 function add(into: Credit, credit: Credit, scale = 1) {
@@ -135,9 +148,13 @@ function add(into: Credit, credit: Credit, scale = 1) {
 /** A planning estimate for muscle work. All attempts still count in the skill log and fatigue model. */
 function skillVolumeCredit(set: SetLog): number {
   if (!(set.value > 0) || set.value < set.target / 2) return 0
-  if (set.light || (set.rpe !== undefined && set.rpe <= 6)) return 0.5
-  return 1
+  const effortCredit = set.light || (set.rpe !== undefined && set.rpe <= 6) ? 0.5 : 1
+  return effortCredit * sideCredit(set)
 }
+
+// The gym logs one round for both sides. The skill player logs each side separately.
+// Older entries without a recorded side keep their original whole-round interpretation.
+const sideCredit = (set: SetLog) => EXERCISE_BY_ID[set.exerciseId]?.perSide && set.side ? 0.5 : 1
 
 /** Speed and impact sessions have their own records and recovery cost. Only resistance work enters the lifting volume target. */
 export function resistanceSetLoading(exerciseId: string): Loading | null {
@@ -235,7 +252,7 @@ export function fatigueAt(state: Pick<AppState, 'sessions' | 'gym'>, now: number
     const age = decay((now - s.startedAt) / 3_600_000)
     for (const set of s.sets) {
       const l = skillSetLoading(set.exerciseId, set.section)
-      if (l) add(out.muscles, l.muscles, age * effort(set.rpe ?? s.rpe))
+      if (l) add(out.muscles, l.muscles, age * effort(set.rpe ?? s.rpe) * sideCredit(set))
     }
   }
   for (const s of state.gym?.sessions ?? []) {

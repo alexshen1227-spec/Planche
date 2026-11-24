@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { GYM_EXERCISE_BY_ID, type GymExercise } from '../../data/gym/exercises'
 import { PATTERN_LABEL } from '../../data/gym/catalog'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
 import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
-import { alternativesFor, availableAt } from '../../lib/gym/availability'
+import { alternativesFor, availableAt, canDoHere } from '../../lib/gym/availability'
 import { bodyweightCapacity } from '../../lib/gym/bodyweight'
 import { GymExerciseGuide } from './ExerciseGuide'
 import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../lib/gym/builder'
@@ -93,10 +93,12 @@ export function GymPlayer({
   draft: initial,
   location,
   onClose,
+  canEdit = () => true,
 }: {
   draft: GymDraft
   location: GymLocation
   onClose: () => void
+  canEdit?: () => boolean
 }) {
   const { state, dispatch } = useStore()
   const gym = state.gym!
@@ -119,9 +121,9 @@ export function GymPlayer({
 
   // Every change is mirrored, so a closed tab or a crash resumes here.
   const closedRef = useRef(false)
-  useEffect(() => {
-    if (!closedRef.current) saveDraft(draft)
-  }, [draft])
+  useLayoutEffect(() => {
+    if (!closedRef.current && canEdit()) saveDraft(draft)
+  }, [draft, canEdit])
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 500)
     return () => {
@@ -162,7 +164,7 @@ export function GymPlayer({
 
   const completeSet = (i: number, j: number, checked = false, unloadedOk = false, withLoad?: number) => {
     const item = draft.items[i]
-    if (!fitsToday(GYM_EXERCISE_BY_ID[item.exerciseId])) return
+    if (item.held) return
     let set = item.sets[j]
     // A weight typed in the set's box is the answer: it once could not be logged without the sheet in the way.
     if (!set.done && (set.load === undefined || set.load === 0)) {
@@ -259,7 +261,7 @@ export function GymPlayer({
 
   /** What today's plan kept out stays out of swaps and additions too. */
   const fitsToday = (e: GymExercise) =>
-    !e.stress.some((j) => draft.avoidJoints?.includes(j)) && !e.primary.some((m) => draft.musclesOff?.includes(m))
+    canDoHere(e.id, location) && !e.stress.some((j) => draft.avoidJoints?.includes(j)) && !e.primary.some((m) => draft.musclesOff?.includes(m))
 
   const addExercise = (exerciseId: string) => {
     if (!fitsToday(GYM_EXERCISE_BY_ID[exerciseId])) return
@@ -305,7 +307,7 @@ export function GymPlayer({
 
   const blocker = finishBlocker({ needLoad: !!needLoad, doubt: !!doubt })
   const save = (separate = false) => {
-    if (closedRef.current) return
+    if (closedRef.current || !canEdit()) return
     // A question still waiting on an answer holds a set that is not saved: it is answered or closed first.
     if (blocker) {
       setFinishing(false)
@@ -345,6 +347,7 @@ export function GymPlayer({
   }
 
   const discard = () => {
+    if (!canEdit()) return
     closedRef.current = true
     saveDraft(null)
     onClose()
@@ -393,7 +396,7 @@ export function GymPlayer({
           {(draft.volumeFactor ?? 1) <= 0.6 && <p className="text-footnote text-ink2">Light session. Use a comfortable weight and keep several reps in reserve.</p>}
           {draft.items.map((item, i) => {
             const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
-            if (!fitsToday(ex)) return (
+            if (item.held) return (
               <section key={`${item.exerciseId}-${i}`} className="rounded-card border border-line bg-surface p-4">
                 <h3 className="text-title3 font-semibold">{ex.name}</h3>
                 <p className="mt-1 text-footnote text-ink2">Completed before this check-in</p>
@@ -423,6 +426,7 @@ export function GymPlayer({
                         ? `${item.suggestion.repsToMoveUp} reps to move up · ${item.plan.range[0]}–${item.plan.range[1]} is the range`
                         : `${item.plan.range[0]}–${item.plan.range[1]} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`}{' '}
                       · stop about RPE {item.plan.targetRpe}
+                      {ex.load === 'dumbbell' || ex.load === 'kettlebell' ? ` · weight per ${ex.load}` : ''}
                       {best ? ` · est. max ${formatLoad(best.kg, item.unit)}${isFirstEstimate(rec) ? ` (${FIRST_ESTIMATE_NOTE})` : ''}` : ''}
                     </p>
                     {item.suggestion ? <p className="mt-1 text-caption text-ink3">{item.suggestion.why}</p> : null}

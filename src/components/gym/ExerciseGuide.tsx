@@ -13,6 +13,7 @@ export function GymExerciseGuide({ exercise }: { exercise: GymExercise }) {
     : e.distanceM ? `Each rep covers ${e.distanceM} metres. Record the reps you complete.`
     : unloadedLabel(e) === 'Band' ? 'Log your reps. Use the same band and starting stretch when comparing sessions.'
     : e.load === 'bodyweight' ? (e.stepFrom ? 'Record reps and any added weight.' : 'Record the reps you complete.')
+    : e.load === 'dumbbell' || e.load === 'kettlebell' ? `Record the weight of one ${e.load} and the reps completed in each set.`
     : 'Record the weight used and reps completed in each working set.'
   return (
     <div className="space-y-3 text-footnote text-ink2">

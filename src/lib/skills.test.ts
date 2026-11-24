@@ -711,6 +711,23 @@ describe('the rep ladders', () => {
   })
   const reviewed: SetLog['form'] = { rating: 'clean', confirmed: true, visualReviewPassed: true }
 
+  it('shows working pike reps from the gym on the press road and follows a correction or deletion', () => {
+    const base = startingState({ skills: ['handstand'], equipment: ['floor'] })
+    const choose = reducer(base, { type: 'SET_REP_GOAL', skill: 'handstand', exerciseId: 'pike-pushup' })
+    const saved = reducer(choose, { type: 'GYM', op: { op: 'saveSession', session: {
+      id: 'press-day', locationId: 'home', name: 'Pressing', startedAt: T0, endedAt: T0 + 2,
+      exercises: [{ exerciseId: 'pike-push-up', sets: [{ at: T0, reps: 12, warmup: true }, { at: T0 + 1, reps: 5 }] }],
+    } } })
+    expect(ladderStatus(saved, 'handstand', T0)).toMatchObject({ loggedBest: 0, goal: { logged: false } })
+    expect(ladderStatus(saved, 'handstand', T0 + 2)).toMatchObject({ loggedBest: 5, verifiedBest: 0, index: 0, goal: { logged: true, reviewed: false, gymBest: 5 } })
+    const fixed = reducer(saved, { type: 'GYM', op: { op: 'correctSet', sessionId: 'press-day', exerciseIndex: 0, setIndex: 1, reps: 3 } })
+    expect(ladderStatus(fixed, 'handstand')?.loggedBest).toBe(3)
+    const removed = reducer(fixed, { type: 'GYM', op: { op: 'deleteSession', id: 'press-day' } })
+    expect(ladderStatus(removed, 'handstand')?.goal.logged).toBe(false)
+    const deficit = reducer(removed, { type: 'SET_REP_GOAL', skill: 'handstand', exerciseId: 'deficit-wall-hspu' })
+    expect(ladderStatus(deficit, 'handstand')?.goal.missingKit).toEqual(['wall', 'parallettes'])
+  })
+
   it('keeps a first-rep goal separate from the balance goal and checks it against the saved set', () => {
     const base = startingState({ skills: ['handstand'], equipment: ['floor', 'wall'] })
     expect(ladderStatus(base, 'handstand')!.goal.rung.exerciseId).toBe('freestanding-hspu')

@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-24',
+    title: 'Train all three skills and lift with the kit at hand',
+    area: 'training',
+    notes: [
+      'On three-day schedules the coach can pair a skill with leg day so you can practise a third skill and still train your lower body.',
+      'Dumbbell, kettlebell and barbell variations have their own loads and limits. The working weight for a pair of dumbbells is shown per dumbbell.',
+      'Resume a gym workout in a second tab and your sets come with you. Pressing reps logged in the gym also appear on your skill road.',
+    ],
+  },
+  {
+    date: '2026-11-24',
     title: 'Resume around sore joints and choose a pressing milestone',
     area: 'training',
     notes: [

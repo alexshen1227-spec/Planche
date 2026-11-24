@@ -1,5 +1,6 @@
 import type { AppState, EquipmentId, Session, SetLog, SkillId, StepId } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
+import { equivalentGymExercise } from '../data/gym/exercises'
 import { skillOfStep } from '../data/progressions'
 import { ownsKit, SKILLS, type RepLadder, type RepRung } from '../data/skills'
 import { isAssisted } from './progression'
@@ -68,7 +69,7 @@ export interface LadderStatus {
   index: number
   rung: RepRung
   /** A first-rep milestone, independent of placement and of the hold destination. */
-  goal: { rung: RepRung; reviewed: boolean; logged: boolean }
+  goal: { rung: RepRung; reviewed: boolean; logged: boolean; gymBest?: number; missingKit?: EquipmentId[]; atPlace?: string }
   /** The next rung, when there is one. */
   next?: RepRung
   /** Most full reps shown with evidence on the current rung, in one set. */
@@ -163,9 +164,33 @@ export function ladderStatus(stateIn: AppState, skill: SkillId, now = Number.POS
 
   const rung = rungs[index]
   const goalRung = ladder.rungs.find((r) => r.exerciseId === trackOf(state, skill).repGoal) ?? ladder.rungs[ladder.rungs.length - 1]
-  const goal = { rung: goalRung, reviewed: false, logged: false }
+  const goal: LadderStatus['goal'] = { rung: goalRung, reviewed: false, logged: false }
+  const needed = EXERCISE_BY_ID[goalRung.exerciseId]?.requires ?? []
+  const missingHome = needed.filter((k) => !ownsKit(state.profile.equipment, k))
+  if (missingHome.length) {
+    const place = state.gym?.locations.find((l) => missingHome.every((k) => ownsKit(l.equipment as EquipmentId[], k)) &&
+      needed.every((k) => ownsKit(l.equipment as EquipmentId[], k) || (['floor', 'band', 'rings', 'parallettes'].includes(k) && ownsKit(state.profile.equipment, k))))
+    if (place) goal.atPlace = place.name
+    else goal.missingKit = missingHome
+  }
+  const currentGymId = equivalentGymExercise(rung.exerciseId)?.id
+  const goalGymId = equivalentGymExercise(goalRung.exerciseId)?.id
   let verifiedBest = 0
   let loggedBest = 0
+  if (goalGymId || currentGymId) for (const session of state.gym?.sessions ?? []) {
+    if (session.startedAt > now) continue
+    for (const row of session.exercises) {
+      if (row.exerciseId !== currentGymId && row.exerciseId !== goalGymId) continue
+      for (const set of row.sets) {
+        if (set.warmup || set.reps < 1 || set.at > now) continue
+        if (row.exerciseId === currentGymId) loggedBest = Math.max(loggedBest, set.reps)
+        if (row.exerciseId === goalGymId) {
+          goal.logged = true
+          goal.gymBest = Math.max(goal.gymBest ?? 0, set.reps)
+        }
+      }
+    }
+  }
   for (const session of sessions) {
     for (const set of session.sets) {
       if (set.kind !== 'reps' || (set.exerciseId !== rung.exerciseId && set.exerciseId !== goalRung.exerciseId)) continue
