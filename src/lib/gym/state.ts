@@ -5,7 +5,7 @@ import type { EquipmentId } from '../../types'
 import { MUSCLES, type Joint, type Muscle } from '../../data/gym/catalog'
 import { SKILL_IDS, type SkillId, type StepId } from '../../types'
 import { STEP_BY_ID } from '../../data/progressions'
-import { SPORT_KINDS } from '../plan/sport'
+import { SPORT_KINDS, sportStart } from '../plan/sport'
 import type {
   ActivityKind,
   GymExerciseLog,
@@ -18,6 +18,8 @@ import type {
   Rating,
   RemainingLift,
   SkillGoal,
+  SportDateChange,
+  SportDateEdit,
   SportSlot,
   TrainingPrefs,
 } from './types'
@@ -154,6 +156,29 @@ function sanitizeSportSchedule(raw: unknown): SportSlot[] {
     })
   }
   return [...byDay.values()].sort((a, b) => a.weekday - b.weekday)
+}
+
+function readSportChange(raw: unknown): SportDateChange | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const v = raw as Record<string, unknown>
+  if (typeof v.day !== 'string' || !isTime(v.updatedAt)) return undefined
+  const noon = sportStart(v.day + 'T12:00')
+  const slot = sanitizeSportSchedule([v.slot])[0]
+  if (noon === undefined || !slot || slot.weekday !== new Date(noon).getDay()) return undefined
+  const original = { day: v.day, slot, updatedAt: v.updatedAt }
+  if (v.status === 'skipped' || v.status === 'restored') return { ...original, status: v.status }
+  if (v.status === 'moved' && typeof v.start === 'string' && sportStart(v.start) !== undefined) return { ...original, status: 'moved', start: v.start }
+  return undefined
+}
+
+function mergeSportChanges(changes: SportDateChange[]): SportDateChange[] {
+  const byDay = new Map<string, SportDateChange>()
+  for (const c of changes) {
+    const key = c.day + '/' + c.slot.kind
+    const old = byDay.get(key)
+    if (!old || c.updatedAt > old.updatedAt || (c.updatedAt === old.updatedAt && stableJson(c) > stableJson(old))) byDay.set(key, c)
+  }
+  return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day) || a.slot.kind.localeCompare(b.slot.kind))
 }
 
 function sanitizeActivity(raw: unknown): OutsideActivity | null {
@@ -479,6 +504,9 @@ function readGym(r: Record<string, unknown>, lose: Lose): StampedGym {
   const prefs = sanitizePrefs(r.prefs)
   if (r.prefs !== undefined && !prefs) lose('training preferences: not readable, left out')
   const activityRows = Array.isArray(r.activities) ? r.activities.map(sanitizeActivity) : []
+  const changeRows = Array.isArray(r.sportChanges) ? r.sportChanges.map(readSportChange) : []
+  if (changeRows.some((c) => !c)) lose('a dated sport change: not readable, left out')
+  const sportChanges = mergeSportChanges(changeRows.filter((c): c is SportDateChange => Boolean(c)))
   if (activityRows.some((a) => a === null)) lose('an outside activity: not readable, left out')
   const activities = [...new Map(activityRows.filter((a): a is OutsideActivity => a !== null).map((a) => [a.id, a])).values()].sort(
     (a, b) => a.at - b.at,
@@ -502,6 +530,7 @@ function readGym(r: Record<string, unknown>, lose: Lose): StampedGym {
     ...(isTime(r.prefsUpdatedAt) ? { prefsUpdatedAt: r.prefsUpdatedAt } : {}),
     ...(prefs ? { prefs } : {}),
     ...(activities.length ? { activities } : {}),
+    ...(sportChanges.length ? { sportChanges } : {}),
     ...(deletedActivityIds.length ? { deletedActivityIds } : {}),
   }
 }
@@ -651,6 +680,7 @@ export function mergeGym(localIn: GymState | undefined, incomingIn: GymState | u
     if (!have || a.updatedAt > have.updatedAt) activities.set(a.id, a)
   }
   const prefs = mergePrefs(local.prefs, incoming.prefs)
+  const sportChanges = mergeSportChanges([...(local.sportChanges ?? []), ...(incoming.sportChanges ?? [])])
   const merged: GymState = {
     locations: [...locations.values()],
     ...activeChoice(local, incoming, locations),
@@ -663,6 +693,7 @@ export function mergeGym(localIn: GymState | undefined, incomingIn: GymState | u
     ...(Object.keys(favorites.at).length ? { favoriteAtTime: favorites.at } : {}),
     ...(prefs ? { prefs } : {}),
     ...(activities.size ? { activities: [...activities.values()].sort((a, b) => a.at - b.at) } : {}),
+    ...(sportChanges.length ? { sportChanges } : {}),
     ...(deadActivities.length ? { deletedActivityIds: deadActivities } : {}),
     ...(prefsStamp !== undefined ? { prefsUpdatedAt: prefsStamp } : {}),
   }
@@ -775,6 +806,7 @@ export type GymOp =
   | { op: 'toggleHardHere'; locationId: string; exerciseId: string }
   | { op: 'setPrefs'; prefs: Omit<TrainingPrefs, 'updatedAt'> }
   | { op: 'logActivity'; activity: Omit<OutsideActivity, 'updatedAt'> }
+  | { op: 'changeSportDate'; change: SportDateEdit }
   | { op: 'deleteActivity'; id: string }
 
 /** The gym reducer. Pure; `now` stamps what it changes. */
@@ -896,6 +928,11 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
         fieldTimes[k] = !prev || stableJson(before[k]) !== stableJson(next[k]) ? now : prefFieldTime(prev, k)
       }
       return { ...gym, prefs: { ...action.prefs, fieldTimes, updatedAt: now } }
+    }
+    case 'changeSportDate': {
+      const previous = gym.sportChanges?.find((c) => c.day === action.change.day && c.slot.kind === action.change.slot.kind)
+      const change = readSportChange({ ...action.change, updatedAt: Math.max(now, (previous?.updatedAt ?? 0) + 1) })
+      return change ? { ...gym, sportChanges: mergeSportChanges([...(gym.sportChanges ?? []), change]) } : gym
     }
     case 'logActivity': {
       const activity = { ...action.activity, updatedAt: now }

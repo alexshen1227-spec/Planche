@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import type { ActivityKind, SportLoadAreas } from '../../lib/gym/types'
-import { SPORT_KINDS } from '../../lib/plan/sport'
+import { SPORT_KINDS, sportStart } from '../../lib/plan/sport'
 import { SportAreas } from './SportAreas'
+import { SportOnDate } from './SportOnDate'
+import { dayKey } from '../../lib/time'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
 import { Button, SegmentedControl, ToggleChip } from '../ds'
@@ -29,20 +31,31 @@ export function ActivitySheet({ onDone }: { onDone: () => void }) {
   const [rpe, setRpe] = useState(7)
   const [areas, setAreas] = useState<SportLoadAreas>({ legs: true })
   const [when, setWhen] = useState<'yesterday' | 'today' | 'tomorrow' | 'in2'>('today')
+  const [scheduleDay, setScheduleDay] = useState(() => dayKey(Date.now()))
+  const [exact, setExact] = useState<string | null>(null)
   const save = () => {
     const ahead = { yesterday: -1, today: 0, tomorrow: 1, in2: 2 }[when]
     // Something coming up is put at 5 pm that day, so the plan can keep legs fresh for it.
-    const at = activityTime(Date.now(), ahead)
+    const at = exact === null ? activityTime(Date.now(), ahead) : sportStart(exact)
+    if (at === undefined) return
     dispatch({
       type: 'GYM',
       op: { op: 'logActivity', activity: { id: `act-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, at, kind, minutes, rpe, ...areas } },
     })
-    pushToast(ahead > 0 ? 'Added to your training week.' : 'Activity logged.', 'success')
+    pushToast(at > Date.now() ? 'Added to your training week.' : 'Activity logged.', 'success')
     onDone()
   }
   return (
     <div className="space-y-4">
       <h2 className="font-display text-title2 font-semibold text-ink">Log a sport or activity</h2>
+      {Boolean(state.gym?.prefs?.sportSchedule?.length || state.gym?.sportChanges?.length) && <details className="rounded-inner border border-line px-3">
+        <summary className="cursor-pointer py-3 text-footnote font-semibold">Move or skip a scheduled session</summary>
+        <label className="block text-footnote font-medium">Scheduled date
+          <input type="date" value={scheduleDay} onChange={(e) => setScheduleDay(e.target.value)}
+            className="mt-1 block min-h-11 w-full rounded-control border border-line bg-surface px-2 text-body" />
+        </label>
+        <div className="mb-3">{scheduleDay && <SportOnDate key={scheduleDay} at={new Date(scheduleDay + 'T12:00').getTime()} showEmpty />}</div>
+      </details>}
       <p className="text-body text-ink2">
         Choose the areas you used. Your plan gives those areas time to recover after a hard session.
       </p>
@@ -81,7 +94,7 @@ export function ActivitySheet({ onDone }: { onDone: () => void }) {
         </div>
       </div>
       <SportAreas areas={areas} onChange={(p) => setAreas((a) => ({ ...a, ...p }))} />
-      <SegmentedControl
+      {exact === null ? <SegmentedControl
         label="When"
         value={when}
         onChange={setWhen}
@@ -91,8 +104,15 @@ export function ActivitySheet({ onDone }: { onDone: () => void }) {
           { value: 'tomorrow' as const, label: 'Tomorrow' },
           { value: 'in2' as const, label: 'In 2 days' },
         ]}
-      />
-      <Button size="lg" full onClick={save}>
+      /> : <label className="block text-footnote font-medium">Activity date and time
+        <input type="datetime-local" value={exact} onChange={(e) => setExact(e.target.value)}
+          className="mt-1 block min-h-11 w-full min-w-0 rounded-control border border-line bg-surface px-2 text-body" />
+      </label>}
+      <button type="button" className="min-h-11 text-footnote font-semibold text-accent-text"
+        onClick={() => setExact(exact === null ? dayKey(Date.now()) + 'T' + new Date().toTimeString().slice(0, 5) : null)}>
+        {exact === null ? 'Choose a date and time' : 'Use quick dates'}
+      </button>
+      <Button size="lg" full onClick={save} disabled={exact !== null && sportStart(exact) === undefined}>
         Log it
       </Button>
       {nearby.length ? (

@@ -13,6 +13,17 @@ import { dayKey } from '../time'
 export interface SportEvent extends OutsideActivity {
   /** True when this comes from the regular sport week rather than a log. */
   scheduled: boolean
+  /** The original local date of a moved occurrence. Its identity stays with that date. */
+  movedFrom?: string
+}
+
+/** Read local calendar input without accepting an invalid date or a missing hour at a clock change. */
+export function sportStart(value: string): number | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return undefined
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime()) || dayKey(date.getTime()) !== value.slice(0, 10) ||
+      date.getHours() !== Number(value.slice(11, 13)) || date.getMinutes() !== Number(value.slice(14))) return undefined
+  return date.getTime()
 }
 
 const DEFAULT_HOUR = 17
@@ -56,6 +67,13 @@ export function sportName(kind: ActivityKind): string {
   return KIND_NAME[kind]
 }
 
+/** Mid-sentence name for a logged, recurring or rescheduled session. */
+export function namedSport(event: SportEvent): string {
+  const name = sportName(event.kind)
+  if (event.movedFrom) return `your rescheduled ${name}`
+  return event.scheduled ? `your usual ${name}` : name
+}
+
 /** The regular sport week's sessions that fall in [from, to), one per matching local day. */
 export function scheduledSport(schedule: SportSlot[] | undefined, from: number, to: number): SportEvent[] {
   if (!schedule?.length || !(to > from)) return []
@@ -88,11 +106,37 @@ export function sameSession(logged: ActivityKind, usual: ActivityKind): boolean 
 }
 
 /** Logged activities and the regular sport week in [from, to), oldest first. */
-export function sportBetween(gym: Pick<GymState, 'activities' | 'prefs'> | undefined, from: number, to: number): SportEvent[] {
+export function sportBetween(gym: Pick<GymState, 'activities' | 'prefs' | 'sportChanges'> | undefined, from: number, to: number): SportEvent[] {
+  if (!(to > from)) return []
   const logs = gym?.activities ?? []
   const logged = logs.filter((a) => a.at >= from && a.at < to).map((a): SportEvent => ({ ...a, scheduled: false }))
-  const usual = scheduledSport(gym?.prefs?.sportSchedule, from, to).filter(
-    (s) => !logs.some((a) => dayKey(a.at) === dayKey(s.at) && sameSession(a.kind, s.kind)),
-  )
-  return [...logged, ...usual].sort((a, b) => a.at - b.at)
+  const changes = gym?.sportChanges?.filter((change) => change.status !== 'restored') ?? []
+  if (!changes.length) {
+    const usual = scheduledSport(gym?.prefs?.sportSchedule, from, to).filter(
+      (s) => !logs.some((a) => dayKey(a.at) === dayKey(s.at) && sameSession(a.kind, s.kind)))
+    return [...logged, ...usual].sort((a, b) => a.at - b.at)
+  }
+  // Match over whole local days. A morning log may replace an evening
+  // practice even when the caller is only looking at the afternoon.
+  const start = new Date(from).setHours(0, 0, 0, 0)
+  const end = new Date(to - 1).setHours(24, 0, 0, 0)
+  const usual = scheduledSport(gym?.prefs?.sportSchedule, start, end).filter((s) =>
+    !changes.some((c) => c.day === dayKey(s.at) && c.slot.kind === s.kind))
+  for (const change of changes) {
+    if (change.status !== 'moved') continue
+    const at = sportStart(change.start)
+    if (at === undefined || at < start || at >= end) continue
+    const { kind, minutes, rpe, legs, upperPush, upperPull } = change.slot
+    usual.push({ id: `moved-${change.day}-${kind}`, at, kind, minutes, rpe, legs, upperPush, upperPull,
+      movedFrom: change.day, scheduled: true, updatedAt: change.updatedAt })
+  }
+  // Two practices can share a destination date. Each recorded activity
+  // stands in for one occurrence, preferring an exact kind and the closest time.
+  const replaced = new Set<string>()
+  for (const a of logs.filter((a) => a.at >= start && a.at < end).sort((a, b) => a.at - b.at)) {
+    const match = usual.filter((s) => !replaced.has(s.id) && dayKey(s.at) === dayKey(a.at) && sameSession(a.kind, s.kind))
+      .sort((x, y) => Number(y.kind === a.kind) - Number(x.kind === a.kind) || Math.abs(x.at - a.at) - Math.abs(y.at - a.at))[0]
+    if (match) replaced.add(match.id)
+  }
+  return [...logged, ...usual.filter((s) => !replaced.has(s.id) && s.at >= from && s.at < to)].sort((a, b) => a.at - b.at)
 }

@@ -42,7 +42,7 @@ import {
   type FamilyEvent,
 } from './load'
 import { dayReadiness, MIN_RATED_SETS, READINESS_FACTOR, type DayReadiness } from './readiness'
-import { isHardForLegs, isHardSport, sportBetween, sportName, type SportEvent } from './sport'
+import { isHardForLegs, isHardSport, namedSport, sportBetween, sportName, type SportEvent } from './sport'
 
 export type { DayReadiness, ReadinessLevel } from './readiness'
 
@@ -642,7 +642,7 @@ export function gymToday(state: AppState, opts: { now: number; minutes: number; 
   const sport = d.sameDay ?? d.legsCovered ?? d.upcoming
   if (sport) {
     const when = d.sameDay ? (sport.at > now ? 'later today' : 'today') : d.legsCovered ? `on ${dayName(sport.at)}` : 'tomorrow'
-    notes.push(`Legs out: ${sport.scheduled ? 'your usual ' : ''}${sportName(sport.kind)} ${when}.`)
+    notes.push(`Legs out: ${namedSport(sport)} ${when}.`)
   }
   // A picked focus that presses (or pulls) inside the rest rule still builds — it is the athlete's pick — and says so.
   for (const f of picked ? focusFamilies(picked) : []) {
@@ -1116,7 +1116,8 @@ interface FamilyBlock extends FamilyEvent {
 
 function upperSportReason(family: Straight, event: SportEvent): string {
   const work = family === 'push' ? 'pressing' : 'pulling and grip work'
-  return `Your ${sportName(event.kind)} on ${dayName(event.at)} loads the same muscles. Hard ${work} gets a break today.`
+  const name = event.movedFrom ? cap(namedSport(event)) : `Your ${sportName(event.kind)}`
+  return `${name} on ${dayName(event.at)} loads the same muscles. Hard ${work} gets a break today.`
 }
 
 const sportRestsSkill = (day: DayCtx, skill: SkillId) => day.sportRest[skillFamily(skill) === 'pull' ? 'pull' : 'push']
@@ -2801,6 +2802,8 @@ export interface WeekDayPlan {
   why: string[]
   /** Sport on this day, logged or from the sport week. */
   sport?: SportEvent
+  /** Present when more than one sport session falls on the day. */
+  sportCount?: number
   /** The day whose work moved here because it was missed. */
   movedFrom?: string
 }
@@ -3766,6 +3769,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       // What a day serves never names a muscle its lifts lean away from (`spare`): the two lines once disagreed.
       why: whyFor(d, slot, plan, servesOf(d.index).filter((m) => !(plan.gym?.spare ?? []).includes(m)), prefs, skills, notes.short, kinds, state.settings.weeklyGoal, sessionsIn(d.week)),
       ...(d.sport.length ? { sport: d.sport[d.sport.length - 1] } : {}),
+      ...(d.sport.length > 1 ? { sportCount: d.sport.length } : {}),
     }
   })
   // Today as it happened: a gym session logged on a calisthenics day, or a skill session on a gym day
@@ -3968,7 +3972,7 @@ function kindReason(slot: SkillSlot, d: DayCtx, skills: SkillId[], extra: DayExt
     case 'sport': {
       const s = d.sameDay ?? d.legsCovered ?? d.upcoming
       if (!s) return undefined
-      const what = s.scheduled ? `Your usual ${sportName(s.kind)}` : s.kind === 'pe' ? 'PE' : s.kind === 'other' ? 'Your activity' : cap(s.kind)
+      const what = s.scheduled ? cap(namedSport(s)) : s.kind === 'pe' ? 'PE' : s.kind === 'other' ? 'Your activity' : cap(s.kind)
       const when = d.sameDay ? 'is today' : d.legsCovered ? `on ${dayName(s.at)} already loaded your legs` : 'is coming up'
       return `${what} ${when}, so the gym would leave the legs out today: today is calisthenics, and the gym waits for fresher legs.`
     }
@@ -4207,14 +4211,14 @@ function assembleDay(
   }
   const covered = d.legsCovered
   if (covered) {
-    const what = covered.scheduled ? `Your usual ${sportName(covered.kind)}` : covered.kind === 'pe' ? 'PE' : cap(covered.kind)
+    const what = covered.scheduled ? cap(namedSport(covered)) : covered.kind === 'pe' ? 'PE' : cap(covered.kind)
     reasons.push(
       `${what} on ${dayName(covered.at)} already loaded your legs — no leg work in the gym today.${covered.scheduled ? ' (Counted from your sport week; log it if it went differently.)' : ''}`,
     )
   }
   const onDay = d.sameDay
   if (onDay) {
-    const what = onDay.scheduled ? `Your usual ${sportName(onDay.kind)}` : onDay.kind === 'pe' ? 'PE' : onDay.kind === 'other' ? 'Your activity' : `Your ${onDay.kind}`
+    const what = onDay.scheduled ? cap(namedSport(onDay)) : onDay.kind === 'pe' ? 'PE' : onDay.kind === 'other' ? 'Your activity' : `Your ${onDay.kind}`
     reasons.push(`${what} is today: no leg work in the gym, and the gym is a little lighter — the same as the day before it.`)
   }
   reasons.push(...extra.notes)
@@ -4246,7 +4250,7 @@ function assembleDay(
   }
   const upcoming = d.upcoming
   if (upcoming) {
-    const what = upcoming.scheduled ? `Your usual ${sportName(upcoming.kind)}` : upcoming.kind === 'pe' ? 'PE' : upcoming.kind === 'other' ? 'Your activity' : `Your ${upcoming.kind}`
+    const what = upcoming.scheduled ? cap(namedSport(upcoming)) : upcoming.kind === 'pe' ? 'PE' : upcoming.kind === 'other' ? 'Your activity' : `Your ${upcoming.kind}`
     reasons.push(`${what} is tomorrow: legs stay fresh — no leg work today, and the gym is a little lighter.`)
   }
   if (prefs.season === 'in') reasons.push('In season: the sport comes first, so the gym keeps the weights but drops some sets.')
@@ -4423,8 +4427,8 @@ function whyFor(
   }
   why.push(...notes)
   // The sport's own day is named: "the day before" once showed two days after a Saturday game.
-  if (d.sameDay) why.push(`Legs out of the gym: ${d.sameDay.scheduled ? 'your usual ' : ''}${sportName(d.sameDay.kind)} today.`)
-  else if (d.legsCovered) why.push(`Legs out of the gym: ${d.legsCovered.scheduled ? 'your usual ' : ''}${sportName(d.legsCovered.kind)} on ${dayName(d.legsCovered.at)}.`)
+  if (d.sameDay) why.push(`Legs out of the gym: ${namedSport(d.sameDay)} today.`)
+  else if (d.legsCovered) why.push(`Legs out of the gym: ${namedSport(d.legsCovered)} on ${dayName(d.legsCovered.at)}.`)
   else if (d.upcoming) why.push(`Legs stay fresh for the ${sportName(d.upcoming.kind)} tomorrow.`)
   if (plan.readiness?.level === 'light') why.push('A light day.')
   else if (plan.readiness?.level === 'push') why.push(plan.gym && plan.gym.volumeFactor > 1 ? 'A push day: one more set on each lift.' : 'A push day — speed work keeps its usual dose.')

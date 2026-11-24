@@ -111,6 +111,8 @@ export interface GymState {
   prefs?: TrainingPrefs
   /** Sports and activities outside the app, counted toward fatigue. */
   activities?: OutsideActivity[]
+  /** One-off changes to a recurring sport. A restored entry keeps its timestamp across devices. */
+  sportChanges?: SportDateChange[]
   deletedActivityIds?: string[]
 }
 
@@ -185,6 +187,11 @@ export interface SportSlot extends SportLoadAreas {
   /** Local start hour, 0–23. Absent = 17:00. */
   hour?: number
 }
+
+export type SportDateEdit = { day: string; slot: SportSlot } & (
+  { status: 'moved'; start: string } | { status: 'skipped' | 'restored' }
+)
+export type SportDateChange = SportDateEdit & { updatedAt: number }
 
 export type ActivityKind = 'sprint' | 'practice' | 'game' | 'pe' | 'run' | 'climb' | 'other'
 

@@ -6,6 +6,7 @@ import { weekForChoice } from '../../lib/plan/currentWeek'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useStore } from '../../lib/store'
 import { useToday } from '../../lib/useToday'
+import { SportOnDate } from './SportOnDate'
 import type { SkillId } from '../../types'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
 import { skillDayWords, skillWeekLines } from '../../lib/plan/skillWeek'
@@ -67,6 +68,7 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
       <ol className="mt-2 grid auto-cols-[minmax(2.75rem,1fr)] grid-flow-col gap-1.5 overflow-x-auto pb-1">
         {week.days.map((d, i) => {
           const { day, at, plan, sport, movedFrom } = d
+          const sportLabel = d.sportCount ? `${d.sportCount} sport sessions` : sport ? SPORT[sport.kind] : undefined
           const label = i === 0 ? 'Today' : new Date(at).toLocaleDateString(undefined, { weekday: 'short' })
           const skills = plan.skill?.skills ?? []
           const opener = plan.kind === 'gym' && plan.skill?.opener ? skills[0] : undefined
@@ -75,7 +77,7 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
               <button
                 onClick={() => setPicked(i)}
                 aria-pressed={picked === i}
-                aria-label={`${i === 0 ? 'Today' : new Date(at).toLocaleDateString(undefined, { weekday: 'long' })}: ${dayWords(d)}${sport ? `, ${SPORT[sport.kind]}` : ''} — show why`}
+                aria-label={`${i === 0 ? 'Today' : new Date(at).toLocaleDateString(undefined, { weekday: 'long' })}: ${dayWords(d)}${sportLabel ? `, ${sportLabel}` : ''} — show why`}
                 className={`relative flex min-h-[104px] w-full flex-col items-stretch gap-1 rounded-control border p-1.5 text-center ${
                   picked === i ? 'border-accent' : i === 0 ? 'border-line-strong' : 'border-line'
                 } ${plan.rest ? 'bg-raised' : 'bg-surface'}`}
@@ -95,8 +97,8 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
                   </span>
                 ) : null}
                 {opener ? <span className="text-caption leading-tight text-accent-text">{SHORT[opener].toLowerCase()} first</span> : null}
-                {sport ? (
-                  <span className="rounded-md border border-line px-1 py-0.5 text-caption leading-tight text-ink2">{SPORT[sport.kind]}</span>
+                {sportLabel ? (
+                  <span className="rounded-md border border-line px-1 py-0.5 text-caption leading-tight text-ink2">{sportLabel}</span>
                 ) : null}
                 {!plan.rest ? <span className="mt-auto text-caption tnum text-ink3">{plan.minutes}′</span> : null}
                 {movedFrom && <span className="sr-only">Takes over {movedFrom}’s missed work.</span>}
@@ -119,6 +121,7 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
               </li>
             ))}
           </ul>
+          <SportOnDate key={selected.day} at={selected.at} />
         </div>
       ) : null}
       {bySkill.length ? (
