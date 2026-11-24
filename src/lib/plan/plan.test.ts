@@ -5,7 +5,7 @@ import { defaultGym, defaultPrefs } from '../gym/state'
 import { buildGymSession } from '../gym/builder'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { GymLocation, GymSession, TrainingPrefs } from '../gym/types'
-import { emptySetSources, fatigueAt, lastHardStraightArm, setsPerMuscle, volumeStatus, volumeTarget } from './load'
+import { addLiftVolume, emptySetSources, fatigueAt, lastHardStraightArm, setsPerMuscle, volumeStatus, volumeTarget } from './load'
 import { gymDeloadDue, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutesFor, planToday, planWeekAhead, REST_SLACK_HOURS, skillGoalPace } from './planner'
 import { weekStart } from '../time'
 
@@ -184,10 +184,16 @@ describe('weekly volume', () => {
     const monday = weekStart(NOW)
     state.sessions = [skillSession(monday + HOUR, 'tuck-planche', 2)]
     state.gym!.sessions = [gymSession(monday + 2 * HOUR, 'incline-db-press', 2)]
-    const { weekSources, weekTotal } = planWeekAhead(state, monday + 3 * HOUR)
+    const { remainingLifts, weekSources, weekTotal } = planWeekAhead(state, monday + 3 * HOUR)
     expect(weekSources.skill.triceps).toBeGreaterThanOrEqual(1)
     expect(weekSources.assisting.triceps).toBeGreaterThanOrEqual(1)
     expect(weekTotal.chest).toBeGreaterThan(3)
+    const counted = emptySetSources()
+    setsPerMuscle([], state.gym!.sessions, monday, monday + 3 * HOUR + 1, counted)
+    expect(remainingLifts.length).toBeGreaterThan(0)
+    for (const day of remainingLifts) for (const it of day.items) addLiftVolume({}, it.exerciseId, it.sets, counted)
+    expect(counted.direct).toEqual(weekSources.direct)
+    expect(counted.assisting).toEqual(weekSources.assisting)
     for (const m of Object.keys(weekTotal) as (keyof typeof weekTotal)[]) {
       expect(weekTotal[m], m).toBe((weekSources.direct[m] ?? 0) + (weekSources.assisting[m] ?? 0) + (weekSources.skill[m] ?? 0))
     }

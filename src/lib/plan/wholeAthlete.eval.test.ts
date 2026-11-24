@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import type { EquipmentId, SkillId, StepId } from '../../types'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import { GYM_EQUIPMENT } from '../../data/gym/catalog'
 import { STEP_BY_ID, stepsOf } from '../../data/progressions'
 import { buildPlan } from '../coach'
 import { readSignals } from '../signals'
@@ -78,6 +79,24 @@ afterAll(restoreClock)
 
 const handstandGym = { ...GYM_PLACE, equipment: [...GYM_PLACE.equipment, 'wall' as const] }
 const threeDays = [0, 45, 0, 45, 0, 45, 0]
+
+it('builds toward both chosen muscles on three long visits while keeping introductory and whole-body work', () => {
+  const place = { ...GYM_PLACE, equipment: [...GYM_PLACE.equipment, ...GYM_EQUIPMENT.map((e) => e.id)] }
+  const out = season({ skills: [], active: 'gym', birthYear: 1994, prefs: { minutesByDay: [0, 75, 0, 75, 0, 75, 0],
+    goals: { skills: 0, strength: 2, physique: 5, power: 0, endurance: 0 }, musclesPriority: ['lats', 'hamstrings'] } }, 42, {}, place)
+  const first = out.days.flatMap((d) => d.gym ? [d.gym] : []).slice(0, 2)
+  expect(first.every((g) => g.items.reduce((sum, item) => sum + item.sets, 0) <= 8)).toBe(true)
+  for (const [index, week] of weeksOf(out).entries()) {
+    const start = weekStart(week[0].at)
+    const sets = setsPerMuscle([], out.state.gym!.sessions, start, addDays(start, 7))
+    expect(sets.chest ?? 0).toBeGreaterThanOrEqual(4)
+    expect(sets.quads ?? 0).toBeGreaterThanOrEqual(4)
+    if (index >= 3) {
+      expect(sets.hamstrings ?? 0).toBeGreaterThanOrEqual(9)
+      expect(sets.lats ?? 0).toBeGreaterThanOrEqual(12)
+    }
+  }
+})
 
 describe('one skill and whole-body training on three days', () => {
   it('keeps both skills and trains the chest, shoulders and legs on a three-day front-lever week', () => {

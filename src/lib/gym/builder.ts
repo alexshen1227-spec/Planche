@@ -694,16 +694,31 @@ export function planGymExercises(input: GymSessionInput) {
     }
   }
   const buildUpLimit = input.capacity?.buildUpSetLimit
-  if (buildUpLimit && focus !== 'athletic' && items.reduce((n, item) => n + item.sets, 0) > buildUpLimit) {
-    while (items.length && items.reduce((n, item) => n + item.sets, 0) > buildUpLimit) {
+  const capped = buildUpLimit !== undefined && focus !== 'athletic' && setCount() > buildUpLimit
+  if (capped) {
+    const chosen = (id: string) => protectSets.has(id) && GYM_EXERCISE_BY_ID[id].primary.some((m) => requested.has(m))
+    while (items.length && setCount() > buildUpLimit) {
       const lastFirst = [...items].reverse()
-      const extra = lastFirst.find((item) => item.sets > 3) ?? lastFirst.find((item) => item.sets > 2)
-      if (extra) extra.sets--
+      const ordinary = lastFirst.filter((it) => !chosen(it.exerciseId))
+      const extra = ordinary.find((it) => it.sets > 3) ?? ordinary.find((it) => it.sets > 2)
+      if (extra) { extra.sets--; continue }
+      // Keep a direct lift for each chosen muscle and the movements the visit
+      // is named for. A second angle or an optional accessory can give up its
+      // place before every priority lift spends weeks at two sets.
+      const prioritySet = lastFirst.find((it) => chosen(it.exerciseId) && it.sets > 2)
+      const accessory = prioritySet && items.length > 4 && ordinary.find((it) => !anchors.has(it.exerciseId) &&
+        !((focus === 'full' || focus === 'lower') && GYM_EXERCISE_BY_ID[it.exerciseId].pattern === 'hinge'))
+      if (accessory) {
+        if (setCount() - accessory.sets >= buildUpLimit) items.splice(items.indexOf(accessory), 1)
+        else accessory.sets -= setCount() - buildUpLimit
+      } else if (prioritySet) prioritySet.sets--
       else items.pop()
     }
     notes.push(`Your recent lifting supports up to ${buildUpLimit} working sets this visit. Completing that amount comfortably on two days helps build up the next sessions.`)
   }
-  return { name: FOCUS_LABEL[focus], focus, items, dropped, estimatedMin: items.length ? Math.round(total()) : 0, fits, notes }
+  const setLimit = introductory ? 8 : capped ? buildUpLimit : undefined
+  return { name: FOCUS_LABEL[focus], focus, items, dropped, estimatedMin: items.length ? Math.round(total()) : 0, fits, notes,
+    ...(setLimit !== undefined ? { setLimit } : {}) }
 }
 
 export function buildGymSession(input: GymSessionInput): GymPlan {

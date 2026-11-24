@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { MUSCLE_BY_ID, MUSCLE_GROUPS, MUSCLES, locationEquipmentLabel, type Muscle } from '../../data/gym/catalog'
+import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { missingPriorityOption } from '../../lib/gym/availability'
 import { gymPlaceOf } from '../../lib/plan/planner'
 import { defaultPrefs } from '../../lib/gym/state'
-import { emptySetSources, setsPerMuscle, volumeStatus, volumeTarget, type VolumeStatus } from '../../lib/plan/load'
+import { emptySetSources, resistanceSetLoading, setsPerMuscle, volumeStatus, volumeTarget, type VolumeStatus } from '../../lib/plan/load'
 import { useStore } from '../../lib/store'
 import { weekStart } from '../../lib/time'
 import { useToday } from '../../lib/useToday'
@@ -44,7 +45,16 @@ export function WeekVolume() {
   const largest = shortfalls[0]
   const comparison = useMemo(() => comparing ? compareLiftingDays(state, choice, Date.now()) : undefined, [comparing, state, choice, today])
   const dateLabel = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
-  const place = gymPlaceOf(state, now)
+  const weekday = (at: number) => new Date(at).toLocaleDateString(undefined, { weekday: 'long' })
+  const upcoming = week?.remainingLifts ?? []
+  const capped = upcoming.find((day) => day.setLimit !== undefined && day.estimatedMin < day.minutes)
+  const usualPlace = gymPlaceOf(state, now)
+  const locations = state.gym?.locations ?? []
+  const places = upcoming.length ? locations.filter((place) => upcoming.some((day) => day.placeId === place.id)) : usualPlace ? [usualPlace] : []
+  const detailDays = !detail ? [] : upcoming.map((day) => ({ ...day, lifts: day.items.flatMap(({ exerciseId, sets }) => {
+    const share = resistanceSetLoading(exerciseId)?.muscles[detail] ?? 0
+    return share ? [{ name: GYM_EXERCISE_BY_ID[exerciseId].name, sets, credit: share * sets }] : []
+  }) })).filter((day) => day.lifts.length)
   const { sets, sources } = useMemo(
     () => {
       const sources = emptySetSources()
@@ -86,14 +96,19 @@ export function WeekVolume() {
           </div>}
           {largest && (
             <div className="mt-3 border-t border-line pt-3">
-              <p className="text-footnote text-ink2">This plan leaves {MUSCLE_BY_ID[largest.muscle].label.toLowerCase()} {largest.gap} {largest.gap === 1 ? 'set' : 'sets'} below its range. More lifting time or fewer simultaneous priorities can change how much fits.</p>
+              <p className="text-footnote text-ink2">This plan leaves {MUSCLE_BY_ID[largest.muscle].label.toLowerCase()} {largest.gap} {largest.gap === 1 ? 'set' : 'sets'} below its range. {capped
+                ? `${weekday(capped.at)} has a limit of ${capped.setLimit} working sets across all lifts. Repeated manageable sessions help that limit increase.`
+                : upcoming.length ? `${upcoming.length} lifting ${upcoming.length === 1 ? 'session remains' : 'sessions remain'} this week.` : 'There are no more lifting sessions scheduled this week.'}</p>
               <div className="flex flex-wrap gap-x-4">
+                <button type="button" className="ds-press min-h-11 text-footnote font-semibold text-accent-text" onClick={() => setDetail(largest.muscle)}>See planned {MUSCLE_BY_ID[largest.muscle].label.toLowerCase()} work</button>
                 {prefs.goals.skills > 0 && <button type="button" className="ds-press min-h-11 text-footnote font-semibold text-accent-text" onClick={() => setComparing(true)}>Compare plans in my available time</button>}
                 <button type="button" className="ds-press min-h-11 text-footnote font-semibold text-accent-text" onClick={() => setEditing(true)}>Review goals and schedule</button>
               </div>
             </div>
           )}
-          {place && priorities.map((m) => {
+          {priorities.map((m) => {
+            const place = places[0]
+            if (!place || places.slice(1).some((p) => !missingPriorityOption(m, p))) return null
             const option = missingPriorityOption(m, place)
             if (!option) return null
             const kit = option.needs.map((group) => group.map(locationEquipmentLabel).join(' or ')).join(' and ')
@@ -156,6 +171,13 @@ export function WeekVolume() {
                 <td className="text-right">{sources[key][detail] ?? 0}</td><td className="text-right">{week.weekSources[key][detail] ?? 0}</td></tr>)}</tbody>
             <tfoot><tr><th scope="row" className="py-3">Total</th><td className="text-right font-semibold">{sets[detail] ?? 0}</td><td className="text-right font-semibold">{planned[detail] ?? 0}</td></tr></tfoot>
           </table>
+          <h3 className="mt-4 text-footnote font-semibold">Remaining gym work for {MUSCLE_BY_ID[detail].label.toLowerCase()}</h3>
+          {detailDays.length ? <ul className="mt-1 space-y-2 text-footnote">
+            {detailDays.map((day) => <li key={day.at}>
+              <p className="font-medium">{weekday(day.at)} · {locations.find((p) => p.id === day.placeId)?.name ?? 'Gym'}</p>
+              <ul className="pl-3 text-ink2">{day.lifts.map((lift) => <li key={lift.name}>{lift.name} · {lift.sets} {lift.sets === 1 ? 'set' : 'sets'}{lift.credit < lift.sets ? ` (${lift.credit} assisting)` : ' direct'}</li>)}</ul>
+            </li>)}
+          </ul> : <p className="mt-1 text-footnote text-ink2">No remaining lift this week contributes sets for this muscle.</p>}
           <p className="mt-2 text-footnote text-ink2">A gym set counts once for a primary muscle and half for an assisting muscle. Skill work estimates this muscle’s contribution from the exercise, effort and completed holds or reps.</p>
           <p className="mt-2 text-footnote text-ink2">The week plan combines your log with scheduled work. {volumeTarget(detail, prefs)[1] > 0
             ? `Your full-week coaching range is ${volumeTarget(detail, prefs).join('–')} set equivalents.` : 'You have switched off the weekly target for this muscle.'}</p>

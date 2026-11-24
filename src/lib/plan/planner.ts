@@ -2346,6 +2346,7 @@ interface GymCtx {
   weights: Record<Muscle, number>
   lastHit: Partial<Record<Muscle, number>>
   power: number
+  physique: number
   athleticWanted: number
   legsOff: boolean
   /** The athlete's own switched-off muscles (sport cover is separate, per day). */
@@ -2484,7 +2485,7 @@ export const FAR_OVER = 1.5
  * changes before then moves their sets.
  */
 const STEER_LINE = FAR_OVER - 0.2
-const BRIEF_SESSION_MUSCLES = new Set<Muscle>(['chest', 'lats', 'quads', 'hamstrings'])
+const BASIC_LIFT_MUSCLES = new Set<Muscle>(['chest', 'lats', 'quads', 'hamstrings'])
 
 /**
  * The gym focus of each day in one calendar week, chosen together (a beam
@@ -2754,9 +2755,15 @@ function allocate(
           const h = have[m] ?? 0
           const met = Math.max(0, Math.min(lo, h + n) - Math.min(lo, h))
           need += w * met
+          // A compound may credit several assisting muscles. Keep that breadth
+          // from outweighing a large shortfall in a muscle the athlete chose.
+          // The extra weight tapers out as the week approaches its target.
+          if (ctx.physique >= 3 && ctx.priority.has(m)) {
+            need += 2 * Math.min(n, Math.max(0, 0.75 * lo - h)) + 0.5 * met
+          }
           // With only a few working sets available, a first dose of knee,
           // hip, push or pull work matters more than a third pressing angle.
-          if (slot.gymMin < MIN_LIFTS_AFTER_OPENER && BRIEF_SESSION_MUSCLES.has(m)) {
+          if ((slot.gymMin < MIN_LIFTS_AFTER_OPENER || (ctx.physique >= 3 && ctx.priority.size > 0)) && BASIC_LIFT_MUSCLES.has(m)) {
             need += 2 * w * Math.min(n, Math.max(0, Math.min(4, lo) - h))
           }
           if (met >= 0.5) served.push([m, w * met])
@@ -2831,6 +2838,8 @@ export interface WeekAhead {
    */
   weekTotal: Credit
   weekSources: MuscleSetSources
+  /** The remaining lifts that supplied this calendar week's forecast. Same-day logged work is already counted. */
+  remainingLifts: { at: number; placeId: string; minutes: number; estimatedMin: number; setLimit?: number; items: { exerciseId: string; sets: number }[] }[]
 }
 
 const covers = (by: GymFocus, focus: GymFocus) =>
@@ -3252,6 +3261,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     weights,
     lastHit: lastTrainedAt(state, now),
     power: g.power,
+    physique: g.physique,
     athleticWanted: g.power >= 4 ? 2 : g.power >= 3 ? 1 : 0,
     legsOff,
     musclesOff: prefs.musclesOff,
@@ -3601,6 +3611,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   // What the athlete can actually start, after fitting, steering and any blocked
   // workout replacements. A partial workout today contributes only its logged sets.
   const weekSources = emptySetSources()
+  const remainingLifts: WeekAhead['remainingLifts'] = []
   const weekTotal = setsPerMuscle(state.sessions, gymSessions, thisWeek, now + 1, weekSources)
   for (const i of cur) {
     const slot = final[i]
@@ -3609,10 +3620,13 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       addCredit(weekSources.skill, slot.credit)
     }
     const focus = slot.kind === 'gym' ? focusOf(i) : null
-    if (!focus || !placeAt(i) || slot.gymMin < MIN_GYM_MINUTES || (i === 0 && gymDone)) continue
+    const location = placeAt(i)
+    if (!focus || !location || slot.gymMin < MIN_GYM_MINUTES || (i === 0 && gymDone)) continue
     const steerDay = steer.get(i)
     const plan = buildAt(days[i], slot.gymMin, focus, [...(steerDay?.keepOut ?? []), ...lightSpareOf(i)], steerDay?.priority)
     for (const item of plan.items) addLiftVolume(weekTotal, item.exerciseId, item.sets, weekSources)
+    if (plan.items.length) remainingLifts.push({ at: days[i].at, placeId: location.id, minutes: slot.gymMin, estimatedMin: plan.estimatedMin,
+      setLimit: plan.setLimit, items: plan.items.map(({ exerciseId, sets }) => ({ exerciseId, sets })) })
   }
   // Hard sessions of each family this calendar week, up to and including each day.
   const doneHard = hardCount(state.sessions, thisWeek, today)
@@ -3868,7 +3882,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       `The rest of this week: ${rest.map((p) => `${dayName(p.at)} ${p.plan.kind === 'gym' ? 'gym' : 'calisthenics'} (${describe(p.plan)})`).join(', ')}. Spread so each muscle gets its weekly sets across your training days without the same muscles worked hard two days running — coaching conventions, and the week is planned again from what you log.`,
     )
   }
-  return { days: out, missed, shortfall, frequency, weekTotal, weekSources }
+  return { days: out, missed, shortfall, frequency, weekTotal, weekSources, remainingLifts }
 }
 
 /** What `assembleDay` needs beside the day's decisions. */
