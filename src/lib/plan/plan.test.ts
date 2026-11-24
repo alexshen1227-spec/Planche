@@ -5,8 +5,8 @@ import { defaultGym, defaultPrefs } from '../gym/state'
 import { buildGymSession } from '../gym/builder'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { GymLocation, GymSession, TrainingPrefs } from '../gym/types'
-import { fatigueAt, lastHardStraightArm, setsPerMuscle, volumeStatus, volumeTarget } from './load'
-import { gymDeloadDue, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutesFor, planToday, REST_SLACK_HOURS, skillGoalPace } from './planner'
+import { emptySetSources, fatigueAt, lastHardStraightArm, setsPerMuscle, volumeStatus, volumeTarget } from './load'
+import { gymDeloadDue, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutesFor, planToday, planWeekAhead, REST_SLACK_HOURS, skillGoalPace } from './planner'
 import { weekStart } from '../time'
 
 // A Saturday afternoon, local time: the default schedule gives Saturday 60 minutes.
@@ -82,7 +82,11 @@ describe('the day plan', () => {
             expect(p.skill.opener, what).toBe(true)
             expect(p.skill.skills, what).toHaveLength(1)
             // The first priority's opener is the long one whenever the lifts keep their smallest block (round five).
-            expect(p.skill.minutes, what).toBe(openerMinutesFor(p.skill.skills[0] === 'planche', minutes))
+            const budget = openerMinutesFor(p.skill.skills[0] === 'planche', minutes)
+            if (p.skill.skills[0] === 'frontlever') {
+              expect(p.skill.minutes, what).toBeGreaterThanOrEqual(MIN_SKILL_MINUTES[1])
+              expect(p.skill.minutes, what).toBeLessThanOrEqual(budget)
+            } else expect(p.skill.minutes, what).toBe(budget)
             expect(p.skill.minutes + p.gym!.minutes, what).toBe(minutes)
           } else expect(p.gym!.minutes, what).toBe(minutes)
           if (minutes < MIN_SKILL_MINUTES[1] + MIN_GYM_MINUTES) expect(p.skill, what).toBeUndefined()
@@ -158,6 +162,37 @@ describe('the day plan', () => {
 })
 
 describe('weekly volume', () => {
+  it('attributes sets to the week they were completed, including a workout resumed after midnight', () => {
+    const monday = weekStart(NOW)
+    const gym = gymSession(monday - HOUR, 'incline-db-press', 1)
+    gym.endedAt = monday + HOUR
+    const rep = gym.exercises[0].sets[0]
+    gym.exercises[0].sets.push({ ...rep, at: monday }, { ...rep, at: monday, warmup: true }, { ...rep, at: monday, reps: 0 }, { ...rep, at: monday + HOUR })
+    gym.exercises.push(gymSession(monday, 'db-bench-press', 2).exercises[0])
+    const skill = skillSession(monday - HOUR, 'tuck-planche', 1)
+    skill.endedAt = monday + HOUR
+    skill.sets.push(set('tuck-planche', 'main', monday), set('tuck-planche', 'warmup', monday), set('tuck-planche', 'main', monday + HOUR))
+    const sources = emptySetSources()
+    const totals = setsPerMuscle([skill], [gym], monday, monday + HOUR, sources)
+    expect([sources.direct.triceps, sources.assisting.triceps, sources.skill.triceps, totals.triceps]).toEqual([2, 0.5, 0.5, 3])
+    expect(setsPerMuscle([skill], [gym], monday - HOUR, monday).triceps).toBe(1)
+    expect(setsPerMuscle([skill], [gym], monday + HOUR, monday + 2 * HOUR).triceps).toBe(1)
+  })
+
+  it('reconciles each muscle’s logged and remaining weekly work to the three displayed sources', () => {
+    const state = athlete(['planche'], { minutesByDay: [55, 0, 55, 0, 55, 0, 55] })
+    const monday = weekStart(NOW)
+    state.sessions = [skillSession(monday + HOUR, 'tuck-planche', 2)]
+    state.gym!.sessions = [gymSession(monday + 2 * HOUR, 'incline-db-press', 2)]
+    const { weekSources, weekTotal } = planWeekAhead(state, monday + 3 * HOUR)
+    expect(weekSources.skill.triceps).toBeGreaterThanOrEqual(1)
+    expect(weekSources.assisting.triceps).toBeGreaterThanOrEqual(1)
+    expect(weekTotal.chest).toBeGreaterThan(3)
+    for (const m of Object.keys(weekTotal) as (keyof typeof weekTotal)[]) {
+      expect(weekTotal[m], m).toBe((weekSources.direct[m] ?? 0) + (weekSources.assisting[m] ?? 0) + (weekSources.skill[m] ?? 0))
+    }
+  })
+
   it('gives the same muscle credit for three rounds of side planks in either player', () => {
     const s = skillSession(NOW, 'side-plank', 0)
     s.sets = Array.from({ length: 6 }, (_, i) => ({ ...set('side-plank', 'strength', NOW), side: i % 2 ? 'right' : 'left', rpe: 8 }))

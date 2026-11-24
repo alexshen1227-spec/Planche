@@ -105,12 +105,12 @@ describe('the first priority gets every session its rest rule allows (round five
     expect(week.days.flatMap((d) => d.plan.reasons).some((r) => /needs it to get 3 hard sessions/.test(r))).toBe(false)
   })
 
-  it('gives its opener the long minutes from 45-minute days; another skill keeps 18 under an hour', () => {
+  it('reserves the long block for the first skill and gives unused front-lever minutes back to the lifts', () => {
     expect([38, 44, 45, 59, 60].map((m) => openerMinutesFor(true, m))).toEqual([18, 18, 25, 25, 25])
     expect([38, 45, 59, 60].map((m) => openerMinutesFor(false, m))).toEqual([18, 18, 18, 25])
     const s = teen()
     expect(gymToday(s, { now: MON, minutes: 45, focus: 'push', location: GYM_PLACE }).opener?.minutes).toBe(25)
-    expect(gymToday(s, { now: MON, minutes: 45, focus: 'pull', location: GYM_PLACE }).opener).toMatchObject({ skills: ['frontlever'], minutes: 18 })
+    expect(gymToday(s, { now: MON, minutes: 45, focus: 'pull', location: GYM_PLACE }).opener).toMatchObject({ skills: ['frontlever'], minutes: 17 })
   })
 
   it('counts an opener short of its kept dose as half, and gives the planche its own day rather than one', () => {

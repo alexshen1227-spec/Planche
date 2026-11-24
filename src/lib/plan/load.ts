@@ -19,6 +19,13 @@ import { sportBetween } from './sport'
  */
 
 export type Credit = Partial<Record<Muscle, number>>
+export interface MuscleSetSources {
+  direct: Credit
+  assisting: Credit
+  skill: Credit
+}
+
+export const emptySetSources = (): MuscleSetSources => ({ direct: {}, assisting: {}, skill: {} })
 
 interface Loading {
   muscles: Credit
@@ -162,28 +169,50 @@ export function resistanceSetLoading(exerciseId: string): Loading | null {
   return ex && !athleticDomain(ex) ? gymSetLoading(exerciseId) : null
 }
 
+/** Use the same primary and secondary weights for logged sets and scheduled lifts. */
+export function addLiftVolume(total: Credit, exerciseId: string, sets: number, sources?: MuscleSetSources) {
+  const loading = resistanceSetLoading(exerciseId)
+  if (!loading || sets <= 0) return
+  for (const [muscle, factor] of Object.entries(loading.muscles) as [Muscle, number][]) {
+    const amount = factor * sets
+    total[muscle] = (total[muscle] ?? 0) + amount
+    if (sources) {
+      const part = factor === 1 ? sources.direct : sources.assisting
+      part[muscle] = (part[muscle] ?? 0) + amount
+    }
+  }
+}
+
 /** Weekly sets per muscle between `from` and `to` (ms), from gym and skill work alike. */
 export function setsPerMuscle(
   skillSessions: Session[],
   gymSessions: GymSession[],
   from: number,
   to: number,
+  sources?: MuscleSetSources,
 ): Credit {
   const out: Credit = {}
   for (const s of skillSessions) {
-    if (s.startedAt < from || s.startedAt >= to) continue
+    if ((s.endedAt ?? s.startedAt) < from || s.startedAt >= to) continue
     for (const set of s.sets) {
+      const at = set.at ?? s.startedAt
+      if (at < from || at >= to) continue
       const l = skillSetLoading(set.exerciseId, set.section)
       const credit = skillVolumeCredit(set)
-      if (l && credit > 0) add(out, l.muscles, credit)
+      if (l && credit > 0) {
+        add(out, l.muscles, credit)
+        if (sources) add(sources.skill, l.muscles, credit)
+      }
     }
   }
   for (const s of gymSessions) {
-    if (s.startedAt < from || s.startedAt >= to) continue
+    if ((s.endedAt ?? s.startedAt) < from || s.startedAt >= to) continue
     for (const log of s.exercises) {
-      const l = resistanceSetLoading(log.exerciseId)
-      if (!l) continue
-      add(out, l.muscles, log.sets.filter((x) => !x.warmup && x.reps > 0).length)
+      const completed = log.sets.filter((set) => {
+        const at = set.at ?? s.startedAt
+        return !set.warmup && set.reps > 0 && at >= from && at < to
+      }).length
+      addLiftVolume(out, log.exerciseId, completed, sources)
     }
   }
   return out

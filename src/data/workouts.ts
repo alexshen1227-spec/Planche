@@ -1186,6 +1186,7 @@ export interface SessionBuildOptions {
    */
   part?: boolean
   deferPressing?: boolean
+  deferPulling?: boolean
   /**
    * The moment the session is built for; the real clock when absent. A plan
    * made for a stated time must be turned into a session for that same time:
@@ -2356,7 +2357,7 @@ export function finalizeFromPlan(
   const plan = planIn.skill === lead && sameInsideRest(planIn, context) ? planIn : buildPlan(state, now, freshCheckIn, context)
   /** Today's coach-built session: one skill, or the line-up mixed. */
   const coachSession = (): Workout => {
-    if (lineup.length === 1) return todaysSession(state, plan, request.minutes, { now, deferPressing: request.deferPressing, ...(request.focus ? { focus: request.focus } : {}) })
+    if (lineup.length === 1) return todaysSession(state, plan, request.minutes, { now, deferPressing: request.deferPressing, deferPulling: request.deferPulling, ...(request.focus ? { focus: request.focus } : {}) })
     const plans: Partial<Record<SkillId, CoachPlan>> = { [lead]: plan }
     for (const entry of lineup) {
       plans[entry.skill] ??= buildPlan(skillView(whole, entry.skill), now, freshCheckIn, context)

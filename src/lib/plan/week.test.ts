@@ -621,7 +621,11 @@ describe('the week plan keeps shared recovery, the minutes and the athlete’s o
           const fam = skillFamily(skill)
           expect(p.skill.skills, `${who} ${d.day} one skill opens`).toHaveLength(1)
           // The first priority's opener is the long one from 45-minute days (round five).
-          expect(p.skill.minutes, who).toBe(openerMinutesFor(skill === skills[0], p.minutes))
+          const budget = openerMinutesFor(skill === skills[0], p.minutes)
+          if (skill === 'frontlever') {
+            expect(p.skill.minutes, who).toBeGreaterThanOrEqual(MIN_SKILL_MINUTES[1])
+            expect(p.skill.minutes, who).toBeLessThanOrEqual(budget)
+          } else expect(p.skill.minutes, who).toBe(budget)
           expect(p.skill.minutes + p.gym!.minutes, `${who} ${d.day} opener and gym`).toBe(p.minutes)
           expect(p.gym!.minutes, who).toBeGreaterThanOrEqual(MIN_GYM_MINUTES)
           // Its family is the focus's, its kit is at the place, and no joint the family loads is sore.
@@ -902,7 +906,7 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
     expect(new Set(gymOpener(s, 'push', gymA, MON, 60)!.kit)).toEqual(new Set(['floor', 'parallettes', 'rings', ...gymA.equipment]))
     // The first priority's opener is the long one from 45 minutes (round five); another skill's keeps 18 under an hour.
     expect(gymOpener(s, 'push', gymA, MON, 45)?.minutes).toBe(openerMinutesFor(true, 45))
-    expect(gymOpener(s, 'pull', gymA, MON, 45)?.minutes).toBe(18)
+    expect(gymOpener(s, 'pull', gymA, MON, 45)?.minutes).toBe(17)
     expect(op(s, 'pull')).toBe('frontlever')
     expect(op(s, 'upper')).toBe('planche')
     for (const focus of ['lower', 'full', 'athletic'] as GymFocus[]) expect(op(s, focus), focus).toBeUndefined()

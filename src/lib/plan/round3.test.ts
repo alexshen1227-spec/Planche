@@ -214,8 +214,8 @@ describe('the opener scales with the day', () => {
   })
 
   it('is described as the holds it is, with the family’s strength work at the lifts', () => {
-    expect(openerLine({ skills: ['planche'], minutes: 25 })).toBe('Opens with planche holds (25 min); the pressing comes with the lifts')
-    expect(openerLine({ skills: ['frontlever'], minutes: 18 })).toBe('Opens with front lever holds (18 min); the pulling comes with the lifts')
+    expect(openerLine({ skills: ['planche'], minutes: 25 })).toBe('Opens with planche holds (25 min), followed by your lifts')
+    expect(openerLine({ skills: ['frontlever'], minutes: 18 })).toBe('Opens with front lever holds (18 min), followed by your lifts')
   })
 })
 

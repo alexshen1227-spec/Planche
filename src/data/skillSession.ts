@@ -255,7 +255,7 @@ export function skillSession(
   state: AppState,
   planIn?: CoachPlan,
   minutesOverride?: number,
-  options: { part?: boolean; now?: number; focus?: 'ladder' } = {},
+  options: { part?: boolean; now?: number; focus?: 'ladder'; deferPulling?: boolean } = {},
 ): Workout {
   const stepId = state.stepId
   const step = STEP_BY_ID[stepId]
@@ -558,7 +558,14 @@ export function skillSession(
 
   // Kit first (so a substitute is sized like everything else), then capacity,
   // then a light day's share of the dose that capacity chose.
-  const kit = resolveEquipment(blocks, equipment)
+  const leverOpener = skill.id === 'frontlever' && options.deferPulling && !ladderDay
+  // Keep the hold, transitions and a shoulder-control drill while fresh. The
+  // normal dedicated day still provides the full pulling and core accessories.
+  const skillBlocks = leverOpener
+    ? blocks.filter((b) => b.role !== 'press' && b.role !== 'pressing' && b.section !== 'core')
+        .map((b) => b.role === 'straight-arm' ? { ...b, sets: Math.min(b.emphasis ? 2 : 1, b.sets) } : b)
+    : blocks
+  const kit = resolveEquipment(skillBlocks, equipment)
   const sized = capacityAdjustBlocks(state, kit.blocks, now)
   const lightened = sized.blocks.map((b) => (b.light ? lightDose(b) : b))
   if (firstPikeTrial) {
@@ -687,7 +694,9 @@ export function skillSession(
     strategy: plan.strategy,
     baseTargetSec: baseTarget,
     ...(plan.dayType === 'deload' ? { plannedDeload: true } : {}),
-    purpose: ladderPlaced
+    purpose: leverOpener
+      ? `Practise ${keyName} while fresh, then move on to the lifts.`
+      : ladderPlaced
       ? `Work the ${skill.ladder?.name.toLowerCase()} line first, with ${keyName} kept as short practice.`
       : skillOnly
       ? `Practise ${keyName} at an easy dose, with light skill work only — no loaded ${words.strength} in a second session today.`

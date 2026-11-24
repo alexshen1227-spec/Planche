@@ -64,7 +64,7 @@ describe('a calisthenics day is built with the kit of the place the plan has it 
     const block = lever()
     expect(block.placeId).toBe(GYM_PLACE.id)
     expect(calisthenicsRequest(s, block).kit).toContain('pullup-bar')
-    expect(calisthenicsRequest(s, block)).toEqual({ source: 'auto', minutes: block.minutes, skills: block.skills, kit: block.kit, placeId: GYM_PLACE.id })
+    expect(calisthenicsRequest(s, block)).toEqual({ source: 'auto', minutes: block.minutes, skills: block.skills, kit: block.kit, placeId: GYM_PLACE.id, ...(block.opener ? { deferPulling: true } : {}) })
     expect(atActivePlace(s, { source: 'auto' }).kit ?? []).not.toContain('pullup-bar')
     expect(calisthenicsPlaceLine(s, block)).toBe(`At ${GYM_PLACE.name}`)
   })

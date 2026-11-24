@@ -17,11 +17,31 @@ import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { Toasts } from '../../components/Toasts'
 import { GymPlayer } from '../../components/gym/GymPlayer'
 import { PartialWorkout } from '../../components/gym/PartialWorkout'
+import { WeekVolume } from '../../components/plan/WeekVolume'
 
 afterEach(() => {
   cleanup()
   localStorage.clear()
   vi.unstubAllGlobals()
+})
+
+it('opens a priority muscle’s breakdown and identifies which logged sets came from assisting on a lift', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const now = Date.now()
+  const gym = defaultGym(['floor'], 'kg')
+  gym.prefs = { ...defaultPrefs(now), musclesPriority: ['triceps'], minutesByDay: [0, 0, 0, 0, 0, 0, 0] }
+  gym.sessions = [{ id: 'presses', startedAt: now, endedAt: now, locationId: gym.locations[0].id, name: 'Upper',
+    exercises: [{ exerciseId: 'incline-db-press', sets: [{ kg: 12.5, reps: 9, at: now }] }] }]
+  localStorage.setItem('planchelab.v1', JSON.stringify({ ...initialState(), onboarded: true, gym }))
+  render(<StoreProvider><WeekVolume /></StoreProvider>)
+  fireEvent.click(within(screen.getByRole('table', { name: 'Priority muscles' })).getByRole('button', { name: 'See triceps set breakdown' }))
+  const dialog = within(screen.getByRole('dialog', { name: 'Triceps set breakdown' }))
+  for (const [label, value] of [['Direct gym work', '0'], ['Assisting gym work', '0.5'], ['Estimated skill work', '0'], ['Total', '0.5']]) {
+    const row = dialog.getByRole('rowheader', { name: label }).closest('tr')!
+    expect(within(row).getAllByRole('cell').map((cell) => cell.textContent)).toEqual([value, value])
+  }
+  fireEvent.click(dialog.getByRole('button', { name: 'Close' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
 })
 
 it('stops a live gym session, restores the joint report, and saves only the completed dumbbell press', () => {

@@ -9,7 +9,7 @@ import { goalDaysInWeekOf } from '../stats'
 import { countsSkillDay, latestSkillPartial } from '../skillSession'
 import { missingKit } from '../../data/skills'
 import { readDayMarks, type DayMarks } from './nextBlock'
-import { atActivePlace, gymPlaceOf, insideRestRule, kitAt, MIN_SKILL_MINUTES, placeKit, planToday, skillFamily, skillRequest, type SkillBlock, type TodayPlan } from './planner'
+import { atActivePlace, gymPlaceOf, insideRestRule, kitAt, MIN_SKILL_MINUTES, placeKit, planToday, skillRequest, type SkillBlock, type TodayPlan } from './planner'
 
 /**
  * Decisions the Home and Train screens make about today and this week, kept
@@ -189,9 +189,7 @@ const OPENER_HOLDS: Record<SkillId, string> = {
 export function openerLine(block: Pick<SkillBlock, 'skills' | 'minutes' | 'half' | 'practiceFirst'>): string {
   const skill = block.skills[0]
   if (block.practiceFirst) return `${OPENER_HOLDS[skill]} first (${block.minutes} min), then your planned lifts.`
-  const family = skillFamily(skill)
-  const work = family === 'push' ? 'the pressing' : family === 'pull' ? 'the pulling' : 'the strength work'
-  return `Opens with ${OPENER_HOLDS[skill]} (${block.minutes} min${block.half ? ', short opener' : ''}); ${work} comes with the lifts`
+  return `Opens with ${OPENER_HOLDS[skill]} (${block.minutes} min${block.half ? ', short opener' : ''}), followed by your lifts`
 }
 
 /**

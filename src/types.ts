@@ -547,6 +547,8 @@ export interface WorkoutRequest {
   gymAfter?: import('./lib/plan/screens').GymPreset
   /** A planche opener keeps the holds and leaves bent-arm pressing to the lifts that follow. */
   deferPressing?: true
+  /** A front-lever opener followed by lifting keeps its technical work and returns accessory time to the gym. */
+  deferPulling?: true
 }
 
 export interface Workout {

@@ -117,7 +117,14 @@ describe('openers', () => {
     expect(op?.skills).toEqual(['frontlever'])
     // The whole kit at the place (round three: `WorkoutRequest.kit` is the kit for that build): the gym's list and the athlete's portable kit.
     expect(new Set(op?.kit)).toEqual(new Set(['floor', ...gymA.equipment]))
-    expect(skillRequest(op!)).toEqual({ source: 'auto', minutes: op!.minutes, skills: ['frontlever'], kit: op!.kit })
+    expect(skillRequest(op!)).toEqual({ source: 'auto', minutes: op!.minutes, skills: ['frontlever'], kit: op!.kit, deferPulling: true })
+    const paired = finalizeWorkout(s, skillRequest(op!), undefined, at(0, 17))
+    const solo = finalizeWorkout(s, { ...skillRequest(op!), deferPulling: undefined, minutes: 60 }, undefined, at(0, 17))
+    const main = (w: typeof paired) => w.blocks.filter((b) => b.role === 'skill').reduce((n, b) => n + b.sets - (b.reach ?? 0), 0)
+    expect(main(paired)).toBeGreaterThanOrEqual(main(solo))
+    expect(paired.blocks.some((b) => b.role === 'press' || b.role === 'pressing')).toBe(false)
+    expect(solo.blocks.some((b) => b.role === 'press' || b.role === 'pressing')).toBe(true)
+    expect(op!.minutes).toBe(Math.max(15, paired.minutes))
     const noBar = { ...gymA, id: 'nb', name: 'No bar', equipment: gymA.equipment.filter((e) => e !== 'pullup-bar') }
     expect(gymToday(s, { now: at(0, 17), minutes: 60, focus: 'pull', location: noBar }).opener).toBeUndefined()
   })

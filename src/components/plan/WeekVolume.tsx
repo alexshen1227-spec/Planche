@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import { MUSCLE_BY_ID, MUSCLE_GROUPS, MUSCLES, locationEquipmentLabel } from '../../data/gym/catalog'
+import { MUSCLE_BY_ID, MUSCLE_GROUPS, MUSCLES, locationEquipmentLabel, type Muscle } from '../../data/gym/catalog'
 import { missingPriorityOption } from '../../lib/gym/availability'
 import { gymPlaceOf } from '../../lib/plan/planner'
 import { defaultPrefs } from '../../lib/gym/state'
-import { setsPerMuscle, volumeStatus, volumeTarget, type VolumeStatus } from '../../lib/plan/load'
+import { emptySetSources, setsPerMuscle, volumeStatus, volumeTarget, type VolumeStatus } from '../../lib/plan/load'
 import { useStore } from '../../lib/store'
 import { weekStart } from '../../lib/time'
 import { useToday } from '../../lib/useToday'
@@ -18,9 +18,9 @@ import { PlanSettings } from './PlanSettings'
 
 const STATUS: Record<VolumeStatus, { label: string; tone: string }> = {
   off: { label: 'off', tone: 'text-ink3' },
-  under: { label: 'logged', tone: 'text-ink2' },
+  under: { label: 'below range', tone: 'text-ink2' },
   on: { label: 'on target', tone: 'text-ok-text' },
-  over: { label: 'over', tone: 'text-danger-text' },
+  over: { label: 'above range', tone: 'text-ink2' },
 }
 
 /** This week's sets per muscle — gym and skill work counted together — against the targets. */
@@ -28,23 +28,28 @@ export function WeekVolume() {
   const { state, dispatch, getState } = useStore()
   const [editing, setEditing] = useState(false)
   const [comparing, setComparing] = useState(false)
+  const [detail, setDetail] = useState<Muscle | null>(null)
   const today = useToday()
   usePlanClock()
   const [choice] = useTodayChoice(today)
   const now = Date.now()
   const prefs = state.gym?.prefs ?? defaultPrefs(now)
   const priorities = prefs.musclesPriority.filter((m) => !prefs.musclesOff.includes(m))
-  const planned = priorities.length ? weekForChoice(state, choice, now).weekTotal : {}
+  const week = priorities.length || detail ? weekForChoice(state, choice, now) : undefined
+  const planned = week?.weekTotal ?? {}
   const shortfalls = priorities.map((muscle) => ({
     muscle,
-    gap: volumeTarget(muscle, prefs)[0] - Math.round((planned[muscle] ?? 0) * 2) / 2,
+    gap: volumeTarget(muscle, prefs)[0] - (planned[muscle] ?? 0),
   })).filter(({ gap }) => gap > 0).sort((a, b) => b.gap - a.gap)
   const largest = shortfalls[0]
   const comparison = useMemo(() => comparing ? compareLiftingDays(state, choice, Date.now()) : undefined, [comparing, state, choice, today])
   const dateLabel = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
   const place = gymPlaceOf(state, now)
-  const sets = useMemo(
-    () => setsPerMuscle(state.sessions, state.gym?.sessions ?? [], weekStart(now), now + 1),
+  const { sets, sources } = useMemo(
+    () => {
+      const sources = emptySetSources()
+      return { sets: setsPerMuscle(state.sessions, state.gym?.sessions ?? [], weekStart(now), now + 1, sources), sources }
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [state.sessions, state.gym?.sessions, today],
   )
@@ -54,7 +59,7 @@ export function WeekVolume() {
       {priorities.length > 0 && (
         <div className="mt-3 rounded-card border border-line bg-surface p-4">
           <h3 className="text-body font-semibold">Your priority muscles</h3>
-          <table className="mt-2 w-full text-left text-footnote tnum">
+          <table aria-label="Priority muscles" className="mt-2 w-full text-left text-footnote tnum">
             <thead><tr className="text-caption text-ink3">
               <th scope="col" className="font-medium">Muscle</th>
               <th scope="col" className="text-right font-medium">Logged</th>
@@ -63,9 +68,10 @@ export function WeekVolume() {
             </tr></thead>
             <tbody>{priorities.map((m) => (
               <tr key={m} className="border-b border-line last:border-0">
-                <th scope="row" className="py-2 pr-1 font-medium">{MUSCLE_BY_ID[m].label}</th>
-                <td className="text-right">{Math.round((sets[m] ?? 0) * 2) / 2}</td>
-                <td className="text-right">{Math.round((planned[m] ?? 0) * 2) / 2}</td>
+                <th scope="row" className="pr-1 font-medium"><button type="button" className="min-h-11 text-left text-accent-text underline decoration-accent/40 underline-offset-4"
+                  aria-label={`See ${MUSCLE_BY_ID[m].label.toLowerCase()} set breakdown`} onClick={() => setDetail(m)}>{MUSCLE_BY_ID[m].label}</button></th>
+                <td className="text-right">{sets[m] ?? 0}</td>
+                <td className="text-right">{planned[m] ?? 0}</td>
                 <td className="text-right text-ink2">{volumeTarget(m, prefs).join('–')}</td>
               </tr>
             ))}</tbody>
@@ -109,12 +115,14 @@ export function WeekVolume() {
               <ul className="mt-1 space-y-1.5">
                 {MUSCLES.filter((m) => m.group === group.id).map((m) => {
                   const target = volumeTarget(m.id, prefs)
-                  const done = Math.round((sets[m.id] ?? 0) * 2) / 2
+                  const done = sets[m.id] ?? 0
                   const status = volumeStatus(done, target)
                   const width = target[1] > 0 ? Math.min(100, (done / target[1]) * 100) : 0
                   return (
-                    <li key={m.id} className="grid grid-cols-[7.5rem_1fr_5.5rem] items-center gap-2 text-footnote">
-                      <span className="truncate">{m.label}</span>
+                    <li key={m.id}><button type="button" onClick={() => setDetail(m.id)}
+                      aria-label={`See ${m.label.toLowerCase()} set breakdown`}
+                      className="grid min-h-11 w-full grid-cols-[minmax(5rem,7.5rem)_1fr_5.5rem] items-center gap-2 rounded-control text-left text-footnote hover:bg-raised">
+                      <span>{m.label}</span>
                       <span className="relative h-2 overflow-hidden rounded-full bg-raised" aria-hidden>
                         {target[1] > 0 ? (
                           <span
@@ -123,7 +131,7 @@ export function WeekVolume() {
                           />
                         ) : null}
                         <span
-                          className={`absolute inset-y-0 left-0 rounded-full ${status === 'over' ? 'bg-danger' : status === 'on' ? 'bg-ok' : 'bg-accent'} transition-[width] duration-700 motion-reduce:transition-none`}
+                          className={`absolute inset-y-0 left-0 rounded-full ${status === 'on' ? 'bg-ok' : 'bg-accent'} transition-[width] duration-700 motion-reduce:transition-none`}
                           style={{ width: `${width}%` }}
                         />
                       </span>
@@ -131,7 +139,7 @@ export function WeekVolume() {
                         {status === 'off' ? 'off' : `${done}/${target[0]}–${target[1]}`}
                         {status !== 'off' ? <span className="block text-caption">{STATUS[status].label}</span> : null}
                       </span>
-                    </li>
+                    </button></li>
                   )
                 })}
               </ul>
@@ -139,6 +147,20 @@ export function WeekVolume() {
           ))}
         </div>
       </details>
+      <Sheet open={detail !== null} onClose={() => setDetail(null)} title={detail ? `${MUSCLE_BY_ID[detail].label} set breakdown` : 'Set breakdown'}>
+        {detail && week && <div>
+          <table className="w-full text-left text-footnote tnum">
+            <thead><tr className="border-b border-line text-ink2"><th scope="col" className="py-2">Source</th><th scope="col" className="text-right">Logged</th><th scope="col" className="text-right">Week plan</th></tr></thead>
+            <tbody>{([['direct', 'Direct gym work'], ['assisting', 'Assisting gym work'], ['skill', 'Estimated skill work']] as const).map(([key, label]) =>
+              <tr key={key} className="border-b border-line"><th scope="row" className="py-3 font-medium">{label}</th>
+                <td className="text-right">{sources[key][detail] ?? 0}</td><td className="text-right">{week.weekSources[key][detail] ?? 0}</td></tr>)}</tbody>
+            <tfoot><tr><th scope="row" className="py-3">Total</th><td className="text-right font-semibold">{sets[detail] ?? 0}</td><td className="text-right font-semibold">{planned[detail] ?? 0}</td></tr></tfoot>
+          </table>
+          <p className="mt-2 text-footnote text-ink2">A gym set counts once for a primary muscle and half for an assisting muscle. Skill work estimates this muscle’s contribution from the exercise, effort and completed holds or reps.</p>
+          <p className="mt-2 text-footnote text-ink2">The week plan combines your log with scheduled work. {volumeTarget(detail, prefs)[1] > 0
+            ? `Your full-week coaching range is ${volumeTarget(detail, prefs).join('–')} set equivalents.` : 'You have switched off the weekly target for this muscle.'}</p>
+        </div>}
+      </Sheet>
       <Sheet open={comparing} onClose={() => setComparing(false)} label="Compare weekly plans">
         {comparing && comparison && <div className="p-5">
           <h2 className="pr-9 font-display text-title2 font-semibold">Compare weekly plans</h2>

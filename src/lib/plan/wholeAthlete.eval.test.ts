@@ -80,6 +80,23 @@ const handstandGym = { ...GYM_PLACE, equipment: [...GYM_PLACE.equipment, 'wall' 
 const threeDays = [0, 45, 0, 45, 0, 45, 0]
 
 describe('one skill and whole-body training on three days', () => {
+  it('keeps both skills and trains the chest, shoulders and legs on a three-day front-lever week', () => {
+    const place = { ...GYM_PLACE, equipment: ['floor', 'wall', 'pullup-bar', 'dumbbells', 'incline-bench', 'assisted-pullup', 'cable', 'leg-press', 'leg-curl'] as typeof GYM_PLACE.equipment }
+    const out = season({ skills: ['frontlever', 'handstand'], active: 'gym', birthYear: 1994,
+      steps: { frontlever: 'fl-hang', handstand: 'hs-foundations' }, prefs: { minutesByDay: [0, 0, 45, 0, 45, 0, 45],
+        goals: { physique: 5, skills: 5, strength: 1, power: 0, endurance: 0 }, musclesPriority: ['hamstrings'] } }, 28, {}, place)
+    for (const week of weeksOf(out)) {
+      const from = weekStart(week[0].at)
+      const sets = setsPerMuscle(out.state.sessions, out.state.gym!.sessions, from, addDays(from, 7))
+      expect(week.filter((d) => d.skill.some((s) => s.parts.frontlever?.key))).toHaveLength(2)
+      expect(keySets(week, 'handstand')).toBeGreaterThanOrEqual(2)
+      expect(sets.chest ?? 0).toBeGreaterThanOrEqual(4)
+      expect(sets['side-delts'] ?? 0).toBeGreaterThanOrEqual(3)
+      expect(sets.quads ?? 0).toBeGreaterThanOrEqual(2)
+      expect(sets.hamstrings ?? 0).toBeGreaterThanOrEqual(4)
+    }
+  })
+
   it.each([
     [0, 60, 0, 0, 60, 0, 0],
     [0, 60, 0, 60, 0, 60, 0],

@@ -284,6 +284,9 @@ export function planGymExercises(input: GymSessionInput) {
   const musclesOff = new Set(input.musclesOff ?? [])
   const priority = new Set(input.priority ?? [])
   const requested = new Set(input.athletePriority ?? [])
+  const weeklyAccessories = input.focus === 'lower' && minutes >= 35
+    ? ([...priority].filter((m) => !requested.has(m) && (m === 'chest' || m === 'lats' || m === 'side-delts'))) : []
+  const priorityExercises = new Set([...requested, ...weeklyAccessories])
   // A muscle the athlete asked for is not spared: a movement built on a priority muscle keeps its slot whatever
   // the week's steer says about the other muscles it leans on, and a muscle on both lists counts as priority.
   // One exception is a recovery rail, not a steer: with the pressing pair spared (the planner's light pressing
@@ -497,8 +500,8 @@ export function planGymExercises(input: GymSessionInput) {
     }
     // Keep the first compound(s) that define the day, then protect a direct exercise
     // for each requested muscle before spending time on another angle of the same lift.
-    if (requested.size) {
-      for (const muscle of requested) {
+    if (priorityExercises.size) {
+      for (const muscle of priorityExercises) {
         let candidates = items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes(muscle))
         if (!candidates.length && !musclesOff.has(muscle)) {
           // An isolation lift can serve a missing priority even on another focus's day.
@@ -525,8 +528,8 @@ export function planGymExercises(input: GymSessionInput) {
       const rank = (id: string) => {
         const ex = GYM_EXERCISE_BY_ID[id]
         if (ex.explosive || anchors.has(id) || (focus === 'lower' && ex.pattern === 'hinge')) return 0
-        if (protectSets.has(id)) return 1
-        return ex.primary.some((m) => requested.has(m)) ? 2 : 3
+        if (protectSets.has(id)) return ex.primary.some((m) => requested.has(m)) ? 1 : 2
+        return ex.primary.some((m) => requested.has(m)) ? 3 : 4
       }
       items.sort((a, b) => rank(a.exerciseId) - rank(b.exerciseId))
     }
@@ -548,7 +551,7 @@ export function planGymExercises(input: GymSessionInput) {
     return warm + blocks - finalRest
   }
   let trimmed = false
-  for (const trimPriority of requested.size ? [false, true] : [false]) {
+  for (const trimPriority of priorityExercises.size ? [false, true] : [false]) {
     if (trimPriority && focus !== 'athletic') {
       for (let i = items.length - 1; i > 0 && items.length > 3 && total() > minutes; i--) {
         const ex = GYM_EXERCISE_BY_ID[items[i].exerciseId]
@@ -569,7 +572,7 @@ export function planGymExercises(input: GymSessionInput) {
         if (protectSets.has(ex.id) !== trimPriority) continue
         if (Boolean(ex.compound) === compound && items[i].sets > 2) {
           const setMinutes = blockMinutes(items[i].sets, items[i].restSec, ex.dose?.workSec) / items[i].sets
-          const remove = requested.size ? Math.ceil((total() - minutes) / setMinutes) : items[i].sets
+          const remove = priorityExercises.size ? Math.ceil((total() - minutes) / setMinutes) : items[i].sets
           items[i] = { ...items[i], sets: Math.max(2, items[i].sets - remove) }
           trimmed = true
         }
