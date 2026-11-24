@@ -27,6 +27,38 @@ afterEach(() => {
   dispatch.mockClear()
 })
 
+it('prefills later working sets with the reps and load just logged, including after reopening the workout', async () => {
+  const { GymPlayer } = await import('../../components/gym/GymPlayer')
+  const row = { ...draft.items[0], exerciseId: 'chest-supported-db-row', plan: { range: [6, 12] as [number, number], targetRpe: 8 },
+    sets: [...Array.from({ length: 4 }, () => ({ reps: 6, load: 20, done: false })),
+      { reps: 5, load: 12, done: false, warmup: true }, { reps: 7, load: 18, done: true, at: T }] }
+  const mount = (d: GymDraft) => render(<GymPlayer draft={d} location={gym.locations[0]} onClose={() => undefined} />)
+  const first = mount({ ...draft, items: [row, draft.items[0]] })
+  const field = (set: number, kind: 'reps' | 'load') =>
+    screen.getByRole('textbox', { name: `Chest-supported dumbbell row, set ${set} ${kind}` }) as HTMLInputElement
+  const enter = (set: number, kind: 'reps' | 'load', value: string) => {
+    fireEvent.change(field(set, kind), { target: { value } })
+    fireEvent.blur(field(set, kind))
+  }
+  const complete = (set: number) => fireEvent.click(screen.getByRole('button', { name: `Complete set ${set} of Chest-supported dumbbell row` }))
+  enter(3, 'load', '18')
+  enter(4, 'reps', '8')
+  enter(1, 'load', '24')
+  enter(1, 'reps', '10')
+  complete(1)
+  expect([field(2, 'load').value, field(2, 'reps').value]).toEqual(['24', '10'])
+  expect([field(3, 'load').value, field(3, 'reps').value]).toEqual(['18', '10'])
+  expect([field(4, 'load').value, field(4, 'reps').value]).toEqual(['24', '8'])
+
+  first.unmount()
+  mount(loadDraft()!)
+  enter(2, 'reps', '9')
+  complete(2)
+  const saved = loadDraft()!
+  expect(saved.items[0].sets.map((s) => [s.load, s.reps])).toEqual([[24, 10], [24, 9], [18, 9], [24, 8], [12, 5], [18, 7]])
+  expect(saved.items[1]).toEqual(draft.items[0])
+})
+
 it('asks the first time for machine assistance and keeps an intentional zero on subsequent sets and reload', async () => {
   const { GymPlayer } = await import('../../components/gym/GymPlayer')
   const it = { ...draft.items[0], exerciseId: 'assisted-pull-up', sets: [0, 1].map(() => ({ reps: 10, done: false })) }

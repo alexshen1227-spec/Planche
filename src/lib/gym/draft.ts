@@ -16,6 +16,9 @@ export interface DraftSet {
   /** In the exercise's display unit at this location. */
   load?: number
   reps: number
+  /** An entry the athlete explicitly set takes precedence over later prefills. */
+  loadEdited?: true
+  repsEdited?: true
   rpe?: number
   done: boolean
   at?: number

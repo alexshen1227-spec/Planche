@@ -252,7 +252,13 @@ export function GymPlayer({
       } else {
         if (recordsZeroLoad(exercise) && (set.load !== undefined || unloadedOk)) {
           s.load = set.load ?? 0
-          for (const later of d.items[i].sets.slice(j + 1)) if (!later.done && later.load === undefined) later.load = s.load
+        }
+        if (!s.warmup) {
+          for (const later of d.items[i].sets.slice(j + 1)) {
+            if (later.done || later.warmup) continue
+            if (!later.repsEdited) later.reps = s.reps
+            if (!later.loadEdited) later.load = s.load
+          }
         }
         s.at = at
         d.effortFor = { item: i, set: j }
@@ -286,7 +292,7 @@ export function GymPlayer({
       // Sets already finished stay logged under the movement they were done on.
       const matching = d.items.find((it, j) => j !== i && !it.held && it.exerciseId === exerciseId)
       if (matching) {
-        matching.sets.push(...Array.from({ length: left }, () => ({ ...matching.sets.at(-1), done: false, at: undefined, rpe: undefined, warmup: false,
+        matching.sets.push(...Array.from({ length: left }, () => ({ load: matching.sets.at(-1)?.load, done: false,
           reps: prefillReps(matching.plan, matching.suggestion) })))
         if (done.length) old.sets = done
         else d.items.splice(i, 1)
@@ -606,8 +612,12 @@ export function GymPlayer({
                                 const prev = d.items[i].previous?.[j]
                                 if (!prev) return d
                                 const set = d.items[i].sets[j]
-                                if (prev.load !== undefined) set.load = prev.load
+                                if (prev.load !== undefined) {
+                                  set.load = prev.load
+                                  set.loadEdited = true
+                                }
                                 set.reps = prev.reps
+                                set.repsEdited = true
                                 return d
                               })
                             }
@@ -631,10 +641,13 @@ export function GymPlayer({
                                 const sets = d.items[i].sets
                                 const was = sets[j].load
                                 sets[j].load = v
+                                sets[j].loadEdited = true
                                 // Later sets not yet done follow the new load
                                 // unless they were given their own.
                                 for (let k = j + 1; k < sets.length; k++) {
-                                  if (!sets[k].done && (sets[k].load === undefined || sets[k].load === 0 || sets[k].load === was)) sets[k].load = v
+                                  const later = sets[k]
+                                  if (!sets[j].warmup && !later.warmup && !later.done && !later.loadEdited &&
+                                    (later.load === undefined || later.load === 0 || later.load === was)) later.load = v
                                 }
                                 return d
                               })
@@ -651,6 +664,7 @@ export function GymPlayer({
                           onChange={(v) =>
                             update((d) => {
                               d.items[i].sets[j].reps = Math.max(0, Math.round(v ?? 0))
+                              d.items[i].sets[j].repsEdited = true
                               return d
                             })
                           }

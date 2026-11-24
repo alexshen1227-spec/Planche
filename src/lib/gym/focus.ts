@@ -1,4 +1,4 @@
-import type { Pattern } from '../../data/gym/catalog'
+import type { Muscle, Pattern } from '../../data/gym/catalog'
 import { GYM_EXERCISE_BY_ID, type GymExercise } from '../../data/gym/exercises'
 import type { GymSession } from './types'
 
@@ -7,6 +7,16 @@ export const FOCUS_LABEL = {
 } as const
 export type GymFocus = keyof typeof FOCUS_LABEL
 type Family = 'push' | 'pull' | 'lower'
+
+const core = ['abs', 'obliques', 'hip-flexors'] as const
+const splitMuscles = {
+  push: new Set<Muscle>(['chest', 'chest-upper', 'front-delts', 'side-delts', 'triceps', 'triceps-long', ...core]),
+  pull: new Set<Muscle>(['lats', 'upper-back', 'traps', 'rear-delts', 'biceps', 'forearms', ...core]),
+}
+
+export function muscleFitsGymFocus(focus: GymFocus, muscle: Muscle): boolean {
+  return (focus !== 'push' && focus !== 'pull') || splitMuscles[focus].has(muscle)
+}
 
 const families: Partial<Record<Pattern, Family>> = {
   'horizontal-press': 'push', 'incline-press': 'push', 'vertical-press': 'push', dip: 'push', 'chest-fly': 'push',
@@ -25,6 +35,7 @@ function exerciseFamily(ex: Pick<GymExercise, 'pattern' | 'primary'>): Family | 
 export function fitsGymFocus(focus: GymFocus, ex: Pick<GymExercise, 'pattern' | 'primary' | 'explosive'> & Partial<Pick<GymExercise, 'secondary'>>): boolean {
   if (focus === 'full') return true
   if (focus === 'athletic') return Boolean(ex.explosive || ['carry', 'jump', 'throw', 'drill', 'sprint', 'squat', 'hinge'].includes(ex.pattern))
+  if ((focus === 'push' || focus === 'pull') && !ex.primary.every((m) => splitMuscles[focus].has(m))) return false
   if (ex.pattern === 'core-flexion' || ex.pattern === 'core-anti-rotation') return true
   if (focus === 'pull' && ex.pattern === 'straight-arm-pull' && ex.secondary?.includes('chest')) return false
   const family = exerciseFamily(ex)

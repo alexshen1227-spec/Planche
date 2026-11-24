@@ -7,7 +7,7 @@ import { legPracticeAt, LEG_VARIATIONS, preparesFor, unassistedDose, UNASSISTED_
 import { canPairExercises, savedPairSeconds } from './pairedSets'
 import { gateTier, isHardBodyweight, liftTrend, plyoGate, repPlanFor, STALL_SESSIONS, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymSession, Rating } from './types'
-import { fitsGymFocus, FOCUS_LABEL, type GymFocus } from './focus'
+import { fitsGymFocus, FOCUS_LABEL, muscleFitsGymFocus, type GymFocus } from './focus'
 export { FOCUS_LABEL, type GymFocus } from './focus'
 
 /**
@@ -49,7 +49,7 @@ const SLOTS: Record<Exclude<GymFocus, 'athletic'>, Pattern[][]> = {
  */
 export const NAMED_PATTERNS: Record<GymFocus, Pattern[][]> = {
   push: [['horizontal-press', 'incline-press']],
-  pull: [['vertical-pull', 'horizontal-pull']],
+  pull: [['horizontal-pull'], ['vertical-pull']],
   lower: [['squat', 'lunge', 'hinge']],
   upper: [
     ['horizontal-press', 'incline-press'],
@@ -281,9 +281,11 @@ interface GymSessionInput {
 /** Fit and sequence the movements. A week compares many candidate sessions before anyone needs load suggestions. */
 export function planGymExercises(input: GymSessionInput) {
   const { location, minutes, sessions, ratings = {}, youth = false, now = Date.now() } = input
+  const focus = input.focus ?? nextFocus(sessions, now, input.musclesOff)
+  const split = focus === 'pull' || focus === 'push'
   const musclesOff = new Set(input.musclesOff ?? [])
-  const priority = new Set(input.priority ?? [])
-  const requested = new Set(input.athletePriority ?? [])
+  const priority = new Set(input.priority?.filter((m) => muscleFitsGymFocus(focus, m)))
+  const requested = new Set(input.athletePriority?.filter((m) => muscleFitsGymFocus(focus, m)))
   const combinedGoals = (input.goals?.skills ?? 0) > 0 && (input.goals?.physique ?? 0) >= 3
   const weeklyAccessories = minutes >= 35 || combinedGoals
     ? [...priority].filter((m) => !requested.has(m) && (m === 'chest' || m === 'lats' || m === 'side-delts' || (combinedGoals && (m === 'hamstrings' || m === 'quads')))) : []
@@ -314,7 +316,6 @@ export function planGymExercises(input: GymSessionInput) {
     ratings[e.id] !== 'avoid' &&
     // Speed and power work is built up to, never started at the top (see plyoGate).
     plyoGate(e, sessions, youth, now).allowed
-  const focus = input.focus ?? nextFocus(sessions, now, input.musclesOff)
   const legPractice = legPracticeAt(sessions, location?.id, now)
   const introductory = Boolean(input.capacity?.introductory && focus !== 'athletic')
   const fullPriorityDose = !introductory && factor >= 1 && (input.goals?.physique ?? 0) >= 3 &&
@@ -574,9 +575,15 @@ export function planGymExercises(input: GymSessionInput) {
           for (const it of candidates) if (GYM_EXERCISE_BY_ID[it.exerciseId].pattern === 'hinge') protectSets.add(it.exerciseId)
         }
       }
-      for (const group of NAMED_PATTERNS[focus]) {
+    }
+    if (split || priorityExercises.size) {
+      // Protect the first lift for each main action before considering another
+      // pressing angle or isolation work.
+      const groups: Pattern[][] = focus === 'push'
+        ? [['horizontal-press', 'incline-press', 'dip'], ['vertical-press']] : NAMED_PATTERNS[focus]
+      for (const group of groups) {
         const inGroup = items.filter((it) => group.includes(GYM_EXERCISE_BY_ID[it.exerciseId].pattern))
-        const first = inGroup.find((it) => protectSets.has(it.exerciseId)) ?? inGroup[0]
+        const first = split ? inGroup[0] : inGroup.find((it) => protectSets.has(it.exerciseId)) ?? inGroup[0]
         if (first) anchors.add(first.exerciseId)
       }
       // A week of pressing skill practice can leave just one short upper-body
@@ -601,7 +608,8 @@ export function planGymExercises(input: GymSessionInput) {
         const ex = GYM_EXERCISE_BY_ID[id]
         if (ex.explosive || anchors.has(id) || (focus === 'lower' && ex.pattern === 'hinge')) return 0
         if (protectSets.has(id)) return ex.primary.some((m) => requested.has(m)) ? 1 : 2
-        return ex.primary.some((m) => requested.has(m)) ? 3 : 4
+        if (ex.primary.some((m) => requested.has(m))) return 3
+        return split && isPriority(ex) ? 4 : 5
       }
       items.sort((a, b) => rank(a.exerciseId) - rank(b.exerciseId))
     }
@@ -644,6 +652,15 @@ export function planGymExercises(input: GymSessionInput) {
       break
     }
   }
+  const mainLift = anchors.values().next().value
+  const lowestPriorityIndex = () => {
+    if (!split) return items.length - 1
+    const lastFirst = [...items].reverse()
+    const cut = lastFirst.find((it) => !anchors.has(it.exerciseId))
+      ?? lastFirst.find((it) => it.exerciseId !== mainLift)
+      ?? lastFirst[0]
+    return items.indexOf(cut)
+  }
   let trimmed = false
   for (const trimPriority of priorityExercises.size ? [false, true] : [false]) {
     if (trimPriority && focus !== 'athletic') {
@@ -675,8 +692,19 @@ export function planGymExercises(input: GymSessionInput) {
       }
     }
   }
-  while (items.length > 1 && total() > minutes) {
-    const last = items[items.length - 1].exerciseId
+  while (items.length && total() > minutes) {
+    const cut = lowestPriorityIndex()
+    const last = items[cut].exerciseId
+    if (split && anchors.has(last)) {
+      // Only main movements remain. Keep a set of each if both fit.
+      const extra = [...items].reverse().find((it) => it.sets > 1)
+      if (extra) {
+        extra.sets--
+        trimmed = true
+        continue
+      }
+    }
+    if (items.length === 1) break
     if (protectSets.has(last) && (!requested.size || GYM_EXERCISE_BY_ID[last].primary.some((m) => requested.has(m)))) {
       // On a very short day a single accessory set can keep a chosen muscle in the program.
       const spareSet = [...items].reverse().find((it) => it.sets > 1 && !anchors.has(it.exerciseId) && !protectSets.has(it.exerciseId))
@@ -687,8 +715,8 @@ export function planGymExercises(input: GymSessionInput) {
         continue
       }
     }
-    const gone = items.pop()!
-    dropped.unshift(GYM_EXERCISE_BY_ID[gone.exerciseId].name)
+    items.splice(cut, 1)
+    dropped.unshift(GYM_EXERCISE_BY_ID[last].name)
     trimmed = true
   }
   if (combinedGoals && trimmed && !introductory && factor >= 1 && total() <= minutes) {
@@ -808,7 +836,7 @@ export function planGymExercises(input: GymSessionInput) {
         }
       })
       if (cut >= 0) items[cut] = { ...items[cut], sets: items[cut].sets - 1 }
-      else if (items.length > 1) dropped.unshift(GYM_EXERCISE_BY_ID[items.pop()!.exerciseId].name)
+      else if (items.length > 1) dropped.unshift(GYM_EXERCISE_BY_ID[items.splice(lowestPriorityIndex(), 1)[0].exerciseId].name)
       else break
     }
   } else if (items.length && factor > 1 && !introductory) {
@@ -903,7 +931,7 @@ export function planGymExercises(input: GymSessionInput) {
         if (setCount() - accessory.sets >= buildUpLimit) items.splice(items.indexOf(accessory), 1)
         else accessory.sets -= setCount() - buildUpLimit
       } else if (prioritySet) prioritySet.sets--
-      else items.pop()
+      else items.splice(lowestPriorityIndex(), 1)
     }
     notes.push(`Your recent lifting supports up to ${buildUpLimit} working sets this visit. Completing that amount comfortably on two days helps build up the next sessions.`)
   }
