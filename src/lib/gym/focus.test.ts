@@ -5,6 +5,7 @@ import { finalizeWorkout } from '../../data/workouts'
 import { planWeekAhead } from '../plan/planner'
 import { calisthenicsRequest } from '../plan/screens'
 import { volumeTarget } from '../plan/load'
+import { compareLiftingDays } from '../plan/weekComparison'
 import { makeAthlete } from '../plan/wholeAthleteLoop'
 import { addDays } from '../time'
 import { availableAt, searchExercises } from './availability'
@@ -84,6 +85,56 @@ describe('lifting splits and portable starting doses', () => {
     const removed = setLiftingWeekday(state.gym!.prefs!, 1, false)
     expect(removed.focusByDay).toEqual([null, null, 'pull', null, null, null, null])
     expect(sanitizePrefs({ ...removed, focusByDay: [null, 'push', 'constructor'] })?.focusByDay).toBeUndefined()
+  })
+
+  it('keeps Tuesday Push and Saturday Lower when both lever practices fit on other gym visits', () => {
+    const at = +new Date(2026, 10, 17, 17, 30)
+    const state = makeAthlete({ skills: ['frontlever'], active: 'gym', birthYear: 1994, steps: { frontlever: 'fl-advtuck' }, kit: ['floor', 'box', 'band'],
+      prefs: { goals: { skills: 4, strength: 2, physique: 5, endurance: 0, power: 0 }, minutesByDay: [45, 0, 60, 0, 45, 0, 60],
+        placeByDay: ['home', null, 'gym', null, 'gym', null, 'gym'], musclesPriority: ['chest-upper', 'side-delts', 'calves'],
+        gymWeekdays: [0, 2, 6], focusByDay: [null, null, 'push', null, null, null, 'lower'], shortSkillOpeners: true } })
+    state.settings.weeklyGoal = 4
+    state.tracks!.frontlever!.assessment = { at: at - 60000, placedStepId: 'fl-advtuck', confidence: 'moderate', gapIds: [],
+      answers: { hollow: 50, pullups: 7, 'level:frontlever': 2, experience: 12 } }
+    const week = planWeekAhead(state, at)
+    expect(week.days[0].plan.gym?.focus).toBe('push')
+    expect(week.days[0].plan.skill).toBeUndefined()
+    expect(week.days[4].plan.gym?.focus).toBe('lower')
+    expect(week.days[2].plan.gym?.focus).not.toBe('lower')
+    for (const index of [2, 4]) expect(week.days[index].skillWorkingSets?.frontlever).toBeGreaterThanOrEqual(2)
+    const push = week.remainingLifts.find((day) => day.at === week.days[0].at)!
+    expect(push.items.every((item) => fitsGymFocus('push', GYM_EXERCISE_BY_ID[item.exerciseId]))).toBe(true)
+  })
+
+  it('fits two planche practices and leg training around a saved or confirmed home Pull day', () => {
+    const at = +new Date(2026, 10, 24, 10, 40)
+    const state = makeAthlete({ skills: ['planche'], active: 'home', birthYear: 1993, steps: { planche: 'lean' }, kit: ['floor', 'pullup-bar'],
+      prefs: { goals: { strength: 3, power: 0, physique: 5, skills: 3, endurance: 0 }, minutesByDay: [0, 0, 45, 0, 45, 0, 45],
+        gymWeekdays: [2], focusByDay: [null, null, 'pull', null, null, null, null], musclesPriority: ['chest', 'chest-upper', 'side-delts'],
+        straightArmRestHours: 48 } })
+    state.settings.weeklyGoal = 3
+    state.profile.goalStepId = 'tuck'
+    const home = state.gym!.locations[0]
+    home.equipment = ['floor', 'pullup-bar', 'dumbbells', 'incline-bench']
+    state.gym!.locations = [home]
+    const saved = planWeekAhead(state, at)
+    const confirmed = planWeekAhead(state, at, { todayKind: 'gym', todayFocus: 'pull', todayMinutes: 45, todayPlace: home })
+    for (const week of [saved, confirmed]) {
+      expect(week.days[0].plan.gym?.focus).toBe('pull')
+      expect(week.days[0].plan.skill).toBeUndefined()
+      for (const i of [2, 4]) {
+        const day = week.days[i]
+        expect(day.skillWorkingSets?.planche).toBeGreaterThanOrEqual(2)
+        expect((day.plan.skill?.minutes ?? 0) + (day.plan.gym?.minutes ?? 0)).toBeLessThanOrEqual(45)
+      }
+      expect(week.remainingLifts.every((block) => block.estimatedMin <= block.minutes)).toBe(true)
+      for (const m of ['chest-upper', 'side-delts', 'quads', 'hamstrings'] as const) expect(week.weekTotal[m] ?? 0, m).toBeGreaterThan(0)
+    }
+    expect(confirmed.remainingLifts).toEqual(saved.remainingLifts)
+    const comparison = compareLiftingDays(state, {}, at)!.current
+    expect(comparison.practiceDays.planche).toBe(2)
+    expect(comparison.remainingSkillSets.planche).toBe(8)
+    expect(comparison.remainingSkillMinutes + comparison.remainingLiftMinutes).toBe(3 * 45)
   })
 
   it('uses the recommended home kit and drops only extra pressing after actual bench work on a custom day', () => {

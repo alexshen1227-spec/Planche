@@ -254,6 +254,10 @@ function openerSkill(state: AppState, focus: GymFocus, location: GymLocation, da
   return openerVerdict(state, focus, location, day).skill
 }
 
+function compatibleOpener(focus: GymFocus, skill: SkillId): boolean {
+  return focus === 'pull' ? skillFamily(skill) === 'pull' : focus !== 'push' || skillFamily(skill) !== 'pull'
+}
+
 /**
  * `openerSkill`'s decision with its reason: the skill a gym day of this focus
  * opens with, or why none does (said on the Gym side). The kit is the place's
@@ -1371,6 +1375,7 @@ function dayContexts(state: AppState, base: AppState, prefs: TrainingPrefs, own:
 
 /** What the skill side of planning needs beside the days. */
 interface SkillCtx {
+  preferredFocus: (d: DayCtx) => GymFocus | undefined
   liftingPlaceDate?: string
   coverLegWeeks?: number[]
   restMs: number
@@ -1620,6 +1625,8 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     for (let j = i + 1; j < days.length && days[j].week === days[i].week; j++) {
       const dj = days[j]
       if (dj.restDay || dj.assigned || dj.minutes < MIN_SKILL_MINUTES[1]) continue
+      const preferred = ctx.preferredFocus(dj)
+      if (preferred && !skills.some((s) => skillFamily(s) === f && compatibleOpener(preferred, s))) continue
       if (places.fixed(j) && !skills.some((s) => skillFamily(s) === f && available(s, j))) continue
       // The first priority's days are its own: another family cannot lead one.
       if (f !== lead && exposures.has(j)) continue
@@ -1768,6 +1775,8 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     for (let i = 0; i < days.length; i++) {
       const d = days[i]
       if (d.restDay || d.minutes < MIN_SKILL_MINUTES[1] || d.assigned || d.sportRest[lead] || !holdsFirst(i)) continue
+      const preferred = ctx.preferredFocus(d)
+      if (preferred && !compatibleOpener(preferred, first)) continue
       // Today picked as a gym day of another family is not the first priority's: the pick stands.
       if (i === 0 && ctx.todayKind === 'gym' && ctx.todayFocus && !focusFamilies(ctx.todayFocus).includes(lead as Straight)) continue
       if (ctx.logged[lead].some((e) => e.at < d.start && insideRest(d.at, e.at, ctx.restMs))) continue
@@ -1848,7 +1857,9 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     const canOpen = (f: Straight) => {
       const place = gymPlace
       const skill = place ? openerSkill(view, f, place, { minutes: d.minutes, sore: d.avoidJoints, pain: d.pain, blocked: (x) => (blocked[x] ? 'rest' : undefined) }) : undefined
-      return place && skill && ctx.familyGymFits(d, d.minutes - openerMinutesOf(view, skill, d.minutes, d.at, place), f) ? { skill, hard: hardAtStep(view, skill, kitAt(view, place)) } : undefined
+      const preferred = ctx.preferredFocus(d)
+      return place && skill && (!preferred || compatibleOpener(preferred, skill)) &&
+        ctx.familyGymFits(d, d.minutes - openerMinutesOf(view, skill, d.minutes, d.at, place), f) ? { skill, hard: hardAtStep(view, skill, kitAt(view, place)) } : undefined
     }
     const hardIn = (f: Straight) => [...allowed, ...gymOnly].some((s) => skillFamily(s) === f && stepIsHard(s))
     /** Whether a family needs this day for its weekly hard sessions: it needs more than the open days after it could give. */
@@ -2102,7 +2113,7 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
       const training = days.filter((d) => d.week === wk && !d.restDay && d.minutes >= MIN_GYM_MINUTES)
       const trained = wk === thisWeek ? ctx.before.cal + ctx.before.gym : 0
       if (trained + training.length < 2) continue
-      const options = training.filter((d) => !d.assigned && ctx.legsOpen(d)
+      const options = training.filter((d) => !d.assigned && ctx.legsOpen(d) && covers(ctx.preferredFocus(d) ?? 'lower', 'lower')
         && (last === undefined || startOfDay(d.at) >= addDays(startOfDay(last), 2))
         && (d.index !== 0 || (ctx.todayKind !== 'calisthenics' && !ctx.todayFocus)))
       const pick = options.filter((d) => !exposures.has(d.index)).at(-1) ?? options.at(-1)
@@ -2303,7 +2314,7 @@ interface Path {
   /** The previous day's gym sets alone, for the two-days-running rule. */
   prevGym: Credit
   previousFocus: GymFocus | null
-  lastVisit: { focus: GymFocus; at: number } | null
+  lastVisit: { focus: GymFocus; actual?: GymFocus; at: number } | null
   /** When this path presses or pulls hard in the gym (push, pull or upper days), for the family rest rule. */
   gymEvents: Record<Straight, number[]>
   last: Partial<Record<Muscle, number>>
@@ -2526,7 +2537,9 @@ function allocate(
       prev,
       prevGym,
       previousFocus: visitFocus,
-      lastVisit: visitFocus ? { focus: visitFocus, at: days[i].start } : p.lastVisit,
+      lastVisit: visitFocus ? { focus: visitFocus, at: days[i].start,
+        actual: fixed?.index === i && fixed.logged ? visitFocus :
+          ctx.split(days[i], ctx.gymMinutes(i, visitFocus), visitFocus, light ? lightSpare : []) ?? undefined } : p.lastVisit,
       gymEvents,
       last,
       athletic: p.athletic + (focus === 'athletic' ? 1 : 0),
@@ -2726,6 +2739,27 @@ function allocate(
       if (!forced) {
         const fills = calm.filter((c) => !spent(c))
         if (fills.length) calm = fills
+      }
+      // A rest day clears yesterday's hard-work rule, but the next lifting
+      // visit should still rotate when another split covers the same priorities.
+      const lastVisit = p.lastVisit
+      const nextGym = gymDays[ord + 1]
+      const nextPreference = nextGym !== undefined && days[nextGym].start <= addDays(d.start, 6)
+        ? ctx.focusByDay?.[weekdayOf(days[nextGym].start)] : undefined
+      if (!forced && !scheduled && calm.length > 1 && (nextPreference || (lastVisit && lastVisit.at >= addDays(d.start, -6)))) {
+        const nearby = [nextPreference, ...(lastVisit && lastVisit.at >= addDays(d.start, -6) ? [lastVisit.focus, lastVisit.actual] : [])]
+        const same = (c: { f: GymFocus; light: boolean }) => {
+          const actual = ctx.split(d, ctx.gymMinutes(i, c.f), c.f, c.light ? lightSpare : [])
+          return nearby.some((f) => f && f !== 'full' && (c.f === f || actual === f))
+        }
+        const repeats = calm.filter(same)
+        if (repeats.length) {
+          const served = (c: { f: GymFocus; light: boolean }) => [...ctx.priority].reduce((n, m) =>
+            n + Math.min(3, liftsOf(c)[m] ?? 0, Math.max(0, ctx.targets[m][0] - (p.P[m] ?? 0))), 0)
+          const minimum = Math.max(0, ...repeats.map(served)) - 1
+          const rotates = calm.filter((c) => !same(c) && served(c) >= minimum)
+          if (rotates.length) calm = rotates
+        }
       }
       if (!choices.length) {
         // Nothing builds or fits the rules today: no gym block, said in the day's reasons.
@@ -2928,11 +2962,11 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     prefs.goals.physique >= Math.max(3, prefs.goals.skills) && prefs.minutesByDay.filter((m) => m > 0).length >= 4
   const singleSkillWeek = skills.length === 1 && prefs.goals.skills > 0 && prefs.goals.physique >= 3 &&
     prefs.minutesByDay.filter((m) => m > 0).length <= 3
-  // Choosing the gym should preserve a full handstand practice that already
-  // shares today's gym session. Only this conversion happens after kind selection.
-  if ((canShareBalance || singleSkillWeek || balancedSkillWeek) && opts.todayKind === 'gym' && !opts.todayFocus && !opts.coverLegWeeks && opts.todayWhy !== 'followed') {
-    const recommended = planWeekAhead(state, now, { ...opts, todayKind: undefined, todayWhy: undefined })
-    if (recommended.days[0].plan.gym) return recommended
+  // Confirming the recommended visit preserves its opener and the rest of the week.
+  if ((canShareBalance || singleSkillWeek || balancedSkillWeek) && opts.todayKind === 'gym' && !opts.coverLegWeeks && opts.todayWhy !== 'followed') {
+    const recommended = planWeekAhead(state, now, { ...opts, todayKind: undefined, todayWhy: undefined, todayFocus: undefined })
+    const gym = recommended.days[0].plan.gym
+    if (gym && (!opts.todayFocus || opts.todayFocus === gym.focus)) return recommended
   }
   const today = startOfDay(now)
   const thisWeek = weekStart(now)
@@ -3061,12 +3095,18 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     else if (state.sessions.some((s) => on(s.startedAt) && countsSkillDay(s))) before.cal++
   }
   const openOn = (d: DayCtx, f: GymFocus) => openOnDay(d, f, prefs.musclesOff, legsOff, g.power)
+  const preferredFocus = (d: DayCtx) => {
+    const f = prefs.focusByDay?.[weekdayOf(d.start)]
+    if (!f || d.assigned || !prefs.gymWeekdays?.includes(weekdayOf(d.start)) || (d.index === 0 && (opts.todayFocus || opts.todayKind === 'calisthenics'))) return undefined
+    return openOn(d, f) && viable(d, d.minutes, f) ? f : undefined
+  }
   /** Whether the sport and joint rules leave the legs open on a day, and a lower-body block builds there. */
   const legsOpen = (d: DayCtx) => d.minutes >= MIN_GYM_MINUTES && openOn(d, 'lower') && viable(d, d.minutes, 'lower')
   const legsLast = gymSessions
     .filter((x) => x.startedAt < today && x.exercises.some((e) => ['squat', 'hinge', 'lunge'].includes(GYM_EXERCISE_BY_ID[e.exerciseId]?.pattern ?? '') && e.sets.some((s) => !s.warmup && s.reps > 0)))
     .reduce<number | undefined>((m, x) => (m === undefined || x.startedAt > m ? x.startedAt : m), undefined)
   const slots = planSkills(base, places, prefs, days, skills, {
+    preferredFocus,
     coverLegWeeks: opts.coverLegWeeks,
     liftingPlaceDate: opts.liftingPlaceDate,
     restMs,
@@ -3117,15 +3157,19 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
         skillMin: 0, gymMin: d.minutes, skills: [], parts: [], families: new Set(), credit: {} }
     }
   }
-  // One short lifting block cannot train the whole body beside three skill
-  // practices. Keep the lead's working holds on another day and use its
-  // accessory time for the legs when the actual workouts both fit.
+  // A lone lift, or a week booked for upper-body splits, can leave the legs out.
+  // Share a skill visit when its working dose and a lower-body block both fit.
   if (singleSkillWeek && !legsOff) {
     const lead = skills[0]
     for (const wk of new Set(days.map((d) => d.week))) {
       const inWeek = days.filter((d) => d.week === wk)
-      const liftingDays = inWeek.filter((d) => slots[d.index].kind === 'gym').length + (wk === thisWeek ? before.gym : 0)
-      if (liftingDays !== 1) continue
+      const visits = inWeek.filter((d) => slots[d.index].kind === 'gym')
+      const liftingDays = visits.length + (wk === thisWeek ? before.gym : 0)
+      const upperOnly = visits.length >= 2 && (legsLast === undefined || legsLast < wk) && visits.every((d) => {
+        const focus = (d.index === 0 ? opts.todayFocus : undefined) ?? preferredFocus(d) ?? slots[d.index].hint
+        return focus === 'push' || focus === 'pull' || focus === 'upper'
+      })
+      if (liftingDays !== 1 && !upperOnly) continue
       for (const d of inWeek.reverse()) {
         const sl = slots[d.index]
         const place = placeAt(d.index)
@@ -3135,7 +3179,8 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
         const minutes = openerMinutesOf(base, lead, d.minutes, d.at, place)
         if (missingSkillKit(base, lead, kit).length || !viable(d, d.minutes - minutes, 'lower')) continue
         const practice = builtSkill(base, [lead], minutes, d.at, kit, true)
-        if (practice.painSafe || !(practice.key[lead] && practice.key[lead] >= builtSkill(base, [lead], UNTRIMMED_MINUTES, d.at, kit).bare)) continue
+        if (practice.painSafe || !(practice.key[lead] && practice.key[lead] >= builtSkill(base, [lead], UNTRIMMED_MINUTES, d.at, kit).bare) ||
+            (upperOnly && practice.attempts < builtSkill(base, [lead], d.minutes, d.at, kit).attempts)) continue
         slots[d.index] = { ...sl, kind: 'gym', why: 'leg-coverage', legDay: true, reservedOpener: { skill: lead, minutes },
           exposure: true, skillMin: 0, gymMin: d.minutes, skills: [], parts: [], credit: {} }
         break
@@ -3263,7 +3308,10 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       x.startedAt >= d.week && x.startedAt < today && x.startedAt < addDays(d.week, 7) && fullPartIn(x, s)))
     const waited = (s: SkillId) => daysSinceFullPart(base, s, d.at) ?? NEVER_TRAINED_DAYS
     missing.sort((a, b) => waited(b) - waited(a))
-    for (const skill of missing) {
+    // If the leg reservation displaced a scheduled practice, keep it before lifting
+    // when the equipment, recovery window and remaining minutes support both blocks.
+    const candidates = slot.sharedSkillDay && skills.length === 1 ? skills : missing
+    for (const skill of candidates) {
       if (missingSkillKit(base, skill, kit).length) continue
       const fam = skillFamily(skill) === 'pull' ? 'pull' : 'push'
       if (FAMILY_JOINTS[fam].some((j) => d.avoidJoints.includes(j)) || !openerClear(fam, d.index)) continue
@@ -3329,6 +3377,26 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       }
     }
   }
+  // An automatic skill reservation must not turn a saved Push day into Full
+  // body just to fit a lever. Authored skill days and logged recovery still win.
+  for (const d of days) {
+    const slot = slots[d.index]
+    const f = preferredFocus(d)
+    if (slot.kind !== 'gym' || d.assigned) continue
+    if (!f && slot.legDay && days.some((other) => other.index > d.index && other.week === d.week &&
+        slots[other.index].kind === 'gym' && preferredFocus(other) === 'lower')) {
+      slot.legDay = undefined
+      slot.wholeBody = undefined
+      slot.why = slot.reservedOpener ? 'skill-practice' : 'sets'
+    }
+    if (!f) continue
+    slot.legDay = undefined
+    slot.wholeBody = undefined
+    const promised = slot.reservedOpener?.skill ?? (slot.hint ? skills.find((s) => skillFamily(s) === slot.hint) : slot.exposure ? skills[0] : undefined)
+    if (!promised || compatibleOpener(f, promised)) continue
+    slots[d.index] = { ...slot, reservedOpener: undefined, hint: undefined, exposure: undefined, urgent: undefined,
+      families: new Set(), presses: false, why: 'reserved-lifts' }
+  }
   const openers = new Map<string, SkillId | undefined>()
   if (opts.todaySkipOpener && slots[0].kind === 'gym') {
     slots[0] = { ...slots[0], reservedOpener: undefined, hint: undefined, exposure: undefined, families: new Set(), presses: false }
@@ -3346,8 +3414,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       const d = days[i]
       const at = placeAt(i)
       const reserved = slots[i].reservedOpener?.skill
-      if (reserved && ((focus === 'pull' && skillFamily(reserved) !== 'pull') ||
-        (focus === 'push' && skillFamily(reserved) === 'pull'))) {
+      if (reserved && !compatibleOpener(focus, reserved)) {
         openers.set(key, undefined)
         return undefined
       }

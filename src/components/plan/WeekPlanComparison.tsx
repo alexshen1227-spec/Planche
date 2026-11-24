@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { MUSCLE_BY_ID } from '../../data/gym/catalog'
 import { SKILLS } from '../../data/skills'
-import { setLiftingWeekday } from '../../lib/gym/state'
+import { setLiftingWeekday, setWeekdayFocus } from '../../lib/gym/state'
+import { FOCUS_LABEL } from '../../lib/gym/focus'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
 import { compareLiftingDays } from '../../lib/plan/weekComparison'
@@ -14,16 +15,24 @@ import { Button, SegmentedControl, Sheet } from '../ds'
 export function WeekPlanComparison() {
   const { state, getState, dispatch } = useStore()
   const [open, setOpen] = useState(false)
-  const [option, setOption] = useState<'day' | 'time'>('day')
+  const [option, setOption] = useState<'day' | 'time' | 'split'>('day')
   const today = useToday()
   const [choice] = useTodayChoice(today)
   const tick = usePlanClock()
   const comparison = useMemo(() => open ? compareLiftingDays(state, choice, Date.now()) : undefined, [open, state, choice, today, tick])
   const prefs = state.gym?.prefs
   if (!prefs?.goals.skills || !prefs.musclesPriority.some((m) => !prefs.musclesOff.includes(m))) return null
-  const time = Boolean(comparison?.compact && (option === 'time' || !comparison.alternative))
-  const alternative = time ? comparison?.compact : comparison?.alternative
-  const day = !time && alternative?.gymDate ? new Date(alternative.gymDate + 'T12:00') : undefined
+  const choices = [
+    { value: 'day' as const, label: 'Lifting day', plan: comparison?.alternative },
+    { value: 'time' as const, label: 'Shorter opener', plan: comparison?.compact },
+    { value: 'split' as const, label: 'Lifting focus', plan: comparison?.split },
+  ].filter((c) => c.plan)
+  const shown = choices.find((c) => c.value === option) ?? choices[0]
+  const alternative = shown?.plan
+  const time = shown?.value === 'time'
+  const split = shown?.value === 'split' ? alternative?.split : undefined
+  const date = split?.day ?? (!time ? alternative?.gymDate : undefined)
+  const day = date ? new Date(date + 'T12:00') : undefined
   const weekday = day?.toLocaleDateString(undefined, { weekday: 'long' })
   const to = alternative?.liftingVisits.find((visit) => visit.day === alternative.gymDate)
   const from = comparison?.current.liftingVisits.find((visit) => !alternative?.liftingVisits.some((next) => next.day === visit.day))
@@ -40,10 +49,18 @@ export function WeekPlanComparison() {
         current.remainingRepSets[s] ?? 0, alternative?.remainingRepSets[s] ?? 0])
     }
     rows.push(['Lifting days', current.gymDays, alternative?.gymDays])
+    rows.push(['Skill minutes remaining', current.remainingSkillMinutes, alternative?.remainingSkillMinutes],
+      ['Lifting minutes available', current.remainingLiftMinutes, alternative?.remainingLiftMinutes])
   }
   const save = (weekly: boolean) => {
     const latest = getState().gym?.prefs
     if (!latest) return
+    if (split && day) {
+      dispatch({ type: 'GYM', op: { op: 'setPrefs', prefs: setWeekdayFocus(latest, day.getDay(), split.focus) } })
+      setOpen(false)
+      pushToast(`${weekday} lifting focus saved.`, 'success')
+      return
+    }
     if (time) {
       dispatch({ type: 'GYM', op: { op: 'setPrefs', prefs: { ...latest, shortSkillOpeners: true } } })
       setOpen(false)
@@ -59,22 +76,23 @@ export function WeekPlanComparison() {
   return <>
     <button type="button" className="ds-press min-h-11 text-left text-footnote font-semibold text-accent-text" onClick={() => { setOption('day'); setOpen(true) }}>Compare skill and lifting days</button>
     <Sheet open={open} onClose={() => setOpen(false)} title="Compare weekly plans">
-      {comparison?.alternative && comparison.compact && <SegmentedControl className="mb-3" label="Weekly plan change" value={option} onChange={setOption}
-        options={[{ value: 'day', label: 'Lifting day' }, { value: 'time', label: 'Shorter opener' }]} />}
+      {choices.length > 1 && <SegmentedControl className="mb-3" label="Weekly plan change" value={shown.value} onChange={setOption} options={choices} />}
       {time ? <p className="text-footnote text-ink2">Aim for {OPENER_MINUTES} minutes of warm-up and skill practice before lifting. This setting applies each week.</p>
+        : split ? <p className="text-footnote text-ink2">Use {FOCUS_LABEL[split.focus]} on {weekday}s. The table shows what that recurring choice would change this week within your existing training time.</p>
         : alternative && day ? <>
         <p className="text-footnote text-ink2">{to && from && alternative.gymDays === comparison?.current.gymDays ?
           `Move lifting from ${visitName(from)} to ${visitName(to)}.` :
           `Use ${day.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}${to?.place ? ' at ' + to.place : ''} for lifting within your available time.`} Logging a workout can change the estimates for the remaining days.</p>
         {prefs.extraGymDate && prefs.extraGymDate >= today && prefs.extraGymDate !== alternative.gymDate && <p className="mt-2 text-footnote text-ink2">This replaces the extra lifting date you chose earlier this week.</p>}
-      </> : <p className="text-footnote text-ink2">Here’s how your current week adds up. Changing a lifting day or shortening an opener did not improve these estimates while keeping your first skill in practice.</p>}
+      </> : <p className="text-footnote text-ink2">Here’s how your current week adds up. The lifting dates, weekday splits and shorter openers compared here gave no gain for your priority muscles while keeping your first skill in practice.</p>}
         <table className="mt-3 w-full text-left text-footnote tnum">
           <thead><tr className="border-b border-line"><th scope="col" className="py-2">Training</th><th scope="col" className="text-right">Current</th>{alternative && <th scope="col" className="text-right">With change</th>}</tr></thead>
           <tbody>{rows.map(([label, a, b]) => <tr key={label} className="border-b border-line"><th scope="row" className="py-2 pr-2 font-medium">{label}</th>
             <td className="text-right">{a}</td>{alternative && <td className="text-right">{b}</td>}</tr>)}</tbody>
         </table>
-        <p className="mt-2 text-caption text-ink2">Working sets left count the current hold. Rep-ladder sets count the scheduled pressing exercises for a selected rep goal. Both exclude warm-ups and tests. Weekly muscle estimates and practice days include work already logged.</p>
+        <p className="mt-2 text-caption text-ink2">Working sets count practice on your current progression. {comparison?.skills.some((s) => SKILLS[s].ladder) && 'Ladder sets count practice toward your pressing milestone. '}These counts exclude warm-ups and tests. Minutes show the time reserved for each block. Weekly muscle estimates and practice days include work already logged.</p>
         {time ? <Button className="mt-4" onClick={() => save(false)}>Use shorter skill openers</Button>
+          : split ? <Button className="mt-4" onClick={() => save(false)}>Use {FOCUS_LABEL[split.focus]} on {weekday}s</Button>
           : alternative && day && <div className="mt-4 flex flex-wrap gap-2">
           <Button onClick={() => save(false)}>Use this lifting day</Button>
           <Button variant="secondary" onClick={() => save(true)}>Keep {weekday}s for lifting</Button>

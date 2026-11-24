@@ -420,7 +420,7 @@ export function ScheduleEditor({ prefs, setPrefs, locations = [] }: Edit & { loc
                   onChange={(e) => { const checked = e.currentTarget.checked; setPrefs((p) => setLiftingWeekday(p, picked, checked)) }} />
                 Keep {FULL_DAYS[picked]}s for lifting
               </label>}
-            {pickedMinutes > 0 && (prefs.gymWeekdays?.includes(picked) || (!prefs.goals.skills && Math.max(prefs.goals.physique, prefs.goals.strength, prefs.goals.power, prefs.goals.endurance) > 0)) && <label className="mt-2 block text-footnote font-medium">
+            {pickedMinutes > 0 && (prefs.gymWeekdays?.includes(picked) || Math.max(prefs.goals.physique, prefs.goals.strength, prefs.goals.power, prefs.goals.endurance) > 0) && <label className="mt-2 block text-footnote font-medium">
               Preferred lifting focus on {FULL_DAYS[picked]}s
               <select className="mt-1 block min-h-11 w-full rounded-control border border-line bg-surface px-3 text-body text-ink"
                 value={prefs.focusByDay?.[picked] ?? ''} onChange={(e) => {
@@ -430,7 +430,7 @@ export function ScheduleEditor({ prefs, setPrefs, locations = [] }: Edit & { loc
                 <option value="">Auto</option>
                 {Object.entries(FOCUS_LABEL).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
               </select>
-              <span className="mt-1 block text-caption font-normal text-ink2">The coach uses this focus when equipment, recovery and your skill practice allow it.</span>
+              <span className="mt-1 block text-caption font-normal text-ink2">Choosing a focus reserves this day for lifting. The coach uses it when your equipment, recovery and skill practice allow.</span>
             </label>}
           </div>
         )}
