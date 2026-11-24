@@ -9,6 +9,7 @@ export function GymExerciseGuide({ exercise, onOpen }: { exercise: GymExercise; 
   const e = exercise
   const equipment = e.needs.map((group) => group.map(locationEquipmentLabel).join(' or ')).join(' + ') || 'Floor'
   const tracking = e.assisted ? 'Log the weight helping you and the reps you complete.'
+    : e.pattern === 'carry' ? `Record the load and seconds walked${e.unilateral ? ' on each side. If the times differ, enter the shorter walk' : ' per set'}.${e.load === 'dumbbell' || e.load === 'kettlebell' ? ` Enter the weight of one ${e.load}.` : ''}`
     : countUnit(e) === 'seconds' ? 'Log the seconds held in each set.'
     : e.count === 'contacts' ? 'Log the number of contacts in each set.'
     : e.distanceM ? `One trip is ${e.distanceM} metres. Record the trips you finish in each set.${e.stepFrom === 'sled' ? ' Log the plates you add. Leave weight blank for the empty sled.' : ''}`

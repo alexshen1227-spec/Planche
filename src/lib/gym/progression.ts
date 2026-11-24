@@ -19,6 +19,7 @@ import { addDays, dayKey } from '../time'
 
 export interface RepPlan {
   range: [number, number]
+  measure?: 'seconds'
   /** Effort to stop at, on the 6–10 RPE scale. */
   targetRpe: number
 }
@@ -38,14 +39,17 @@ export function isHardBodyweight(ex: GymExercise): boolean {
 }
 
 /** What a set of this movement is counted in. Reps logged on a hold are read as seconds. */
-export function countUnit(ex: Pick<GymExercise, 'count' | 'distanceM'> | undefined): 'reps' | 'seconds' | 'contacts' | 'trips' {
+type CountedMovement = Pick<GymExercise, 'count' | 'distanceM'> & Partial<Pick<GymExercise, 'pattern'>>
+
+export function countUnit(ex: CountedMovement | undefined, entry?: { measure?: 'seconds' }): 'reps' | 'seconds' | 'contacts' | 'trips' {
+  if (entry && ex?.pattern === 'carry' && !entry.measure) return 'reps'
   if (ex?.count === 'seconds' || ex?.count === 'contacts') return ex.count
   return ex?.distanceM ? 'trips' : 'reps'
 }
 
 /** "12 reps" or "30 s": a count as the movement is counted (reps logged on a hold read as seconds). */
-export function countWord(ex: Pick<GymExercise, 'count' | 'distanceM'> | undefined, n: number | string): string {
-  const unit = countUnit(ex)
+export function countWord(ex: CountedMovement | undefined, n: number | string, entry?: { measure?: 'seconds' }): string {
+  const unit = countUnit(ex, entry)
   if (unit === 'seconds') return `${n} s`
   if (unit === 'trips') return Number(n) === 1 ? `${ex!.distanceM} m` : `${n} trips of ${ex!.distanceM} m`
   return `${n} ${Number(n) === 1 ? unit.slice(0, -1) : unit}`
@@ -91,7 +95,8 @@ export function repPlanFor(
     // box jump, a medicine-ball throw): the dose's own range is the adult one. A run is one rep by definition,
     // a hold is counted in seconds, and a drill's contacts already start higher.
     if (youth && lo < YOUTH_REP_FLOOR && isCountedInReps(exercise)) return { range: [YOUTH_REP_FLOOR, Math.max(hi, YOUTH_REP_FLOOR + 2)], targetRpe: exercise.dose.rpe }
-    return { range: exercise.dose.range, targetRpe: exercise.dose.rpe }
+    return { range: exercise.dose.range, targetRpe: exercise.dose.rpe,
+      ...(exercise.pattern === 'carry' && exercise.count === 'seconds' ? { measure: 'seconds' as const } : {}) }
   }
   if (exercise.explosive || emphasis === 'power') return youth ? { range: [6, 8], targetRpe: 7 } : { range: [3, 6], targetRpe: 7 }
   // A hard bodyweight movement (a Nordic curl, a dragon flag) is a few slow, controlled reps, never an
@@ -398,7 +403,8 @@ export function suggestLoad(input: {
   if (!ex) return { ...base, kind: 'first-time', why: 'Not a movement this app knows.' }
   // A set of a loaded movement with no weight logged says nothing about the load.
   const addedLoad = takesAddedLoad(ex, location)
-  const keep = (set: GymSet) => !isUnloadedSet(ex, set) && (!ex.assisted || set.kg !== undefined) && (ex.load !== 'bodyweight' || !ex.stepFrom || addedLoad || !set.kg)
+  const keep = (set: GymSet) => countUnit(ex, set) === countUnit(ex) && !isUnloadedSet(ex, set) &&
+    (!ex.assisted || set.kg !== undefined) && (ex.load !== 'bodyweight' || !ex.stepFrom || addedLoad || !set.kg)
   const last = lastPerformance(sessions, exerciseId, location?.id, now, keep)
   const step = stepKgFor(ex, location)
   const top = maxKgFor(ex, location)
@@ -410,6 +416,8 @@ export function suggestLoad(input: {
     why: `${why} Choose an easier variation or enter a lighter weight if you have one.`,
   })
   if (!last) {
+    if (ex.pattern === 'carry' && ex.count === 'seconds') return { ...base, kind: 'first-time', targetReps: lo,
+      why: `Choose a load you can walk with for ${lo} seconds${ex.unilateral ? ' on each side' : ''} at a steady pace. Stop if you lose your position.` }
     if (ex.stepFrom === 'sled' && ex.distanceM) return { ...base, kind: 'first-time', targetReps: 1,
       why: `Push the sled ${ex.distanceM} m once per set. Start with a load you can move smoothly and log the plates you add. An empty sled is fine.` }
     const shared = sharedEstimate(sessions, exerciseId, now)
@@ -540,6 +548,19 @@ export function suggestLoad(input: {
   }
   const incompleteWhy = unfinished ? `${unfinished} planned ${unfinished === 1 ? 'set of this lift was' : 'sets of this lift were'} unfinished. Repeat the prescription at the same load.` : undefined
   if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, adjacent, reach, { stale, away, weeksAway, incompleteWhy })
+  if (ex.pattern === 'carry' && ex.count === 'seconds') {
+    const shortest = Math.min(...atLoad.map((s) => s.reps))
+    const hard = atLoad.some((s) => (s.rpe ?? 0) > plan.targetRpe + 0.5) || shortest < lo
+    const easier = adjacent(kg, false)
+    const up = adjacent(kg, true)
+    const stepEarned = allTop && up > kg && (!youth || up <= kg * (1 + YOUTH_LARGE_STEP_SHARE))
+    const reduce = (hard || away) && easier < kg && (easier > 0 || ex.stepFrom === 'sled')
+    const load = reduce ? easier : stepEarned ? up : reach(kg)
+    const controlled = !stale && !unfinished && atLoad.every((s) => s.rpe !== undefined && s.rpe <= plan.targetRpe)
+    const target = reduce || stepEarned || away ? lo : Math.max(1, Math.min(hi, shortest + (controlled ? 5 : 0)))
+    return { ...base, kg: load, targetReps: target, kind: reduce ? 'decrease' : stepEarned ? 'increase' : 'repeat',
+      why: `Aim for ${target} seconds${ex.unilateral ? ' on each side' : ''} per set. ${reduce ? 'Use a lighter load to keep your steps steady.' : stepEarned ? 'Every working set reached the top of the time range. Try the next weight.' : 'Keep your posture and stop while you can still walk smoothly.'}` }
+  }
   if (ex.stepFrom === 'sled' && ex.distanceM) {
     const lighten = away || atLoad.some((set) => (set.rpe ?? 0) > plan.targetRpe + 0.5)
     const load = lighten ? adjacent(kg, false) : reach(kg)
@@ -779,10 +800,10 @@ export function gymRecords(sessions: GymSession[], locationId?: string): Record<
         if (!assisted && sameBar && set.kg !== undefined && set.kg > 0 && (!rec.heaviest || set.kg > rec.heaviest.kg)) {
           rec.heaviest = { kg: set.kg, reps: set.reps, at: set.at }
         }
-        if (GYM_EXERCISE_BY_ID[log.exerciseId]?.count === 'seconds' && (!rec.longestHold || set.reps > rec.longestHold.sec)) {
+        if (countUnit(GYM_EXERCISE_BY_ID[log.exerciseId], set) === 'seconds' && (!rec.longestHold || set.reps > rec.longestHold.sec)) {
           rec.longestHold = { sec: set.reps, at: set.at }
         }
-        if (!rec.mostReps || set.reps > rec.mostReps.reps) rec.mostReps = { reps: set.reps, ...(set.kg ? { kg: set.kg } : {}), at: set.at }
+        if (!set.measure && (!rec.mostReps || set.reps > rec.mostReps.reps)) rec.mostReps = { reps: set.reps, ...(set.kg ? { kg: set.kg } : {}), at: set.at }
       }
     }
     for (const id of estimated) out[id].e1rmSessions = (out[id].e1rmSessions ?? 0) + 1

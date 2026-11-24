@@ -496,13 +496,14 @@ export function GymPlayer({
             const easierId = item.suggestion?.easierId ?? easierDragonFlag(item.exerciseId)
             const easier = easierId && GYM_EXERCISE_BY_ID[easierId]
             const target = prescribedCount(item.plan, item.suggestion)
+            const measure = countUnit(ex, item.plan)
             if (item.held) return (
               <section key={`${item.exerciseId}-${i}`} className="rounded-card border border-line bg-surface p-4">
                 <h3 className="text-title3 font-semibold">{ex.name}</h3>
                 <p className="mt-1 text-footnote text-ink2">Completed before this check-in</p>
                 <ul className="mt-2 space-y-1 text-footnote text-ink2">
                   {item.sets.filter((s) => s.done).map((s, j) => <li key={j}>
-                    Set {j + 1} · {countWord(ex, s.reps)}{s.load !== undefined ? ` · ${s.load} ${item.unit}` : ''}{s.rpe ? ` · RPE ${s.rpe}` : ''}
+                    Set {j + 1} · {countWord(ex, s.reps, item.plan)}{s.load !== undefined ? ` · ${s.load} ${item.unit}` : ''}{s.rpe ? ` · RPE ${s.rpe}` : ''}
                   </li>)}
                 </ul>
               </section>
@@ -524,7 +525,7 @@ export function GymPlayer({
                       {item.sets.length} ×{' '}
                       {item.suggestion?.repsToMoveUp !== undefined
                         ? `${item.suggestion.repsToMoveUp} reps to move up · ${item.plan.range[0]}–${item.plan.range[1]} is the range`
-                        : countWord(ex, target)}{' '}
+                        : countWord(ex, target, item.plan)}{ex.unilateral && measure === 'seconds' ? ' each side' : ''}{' '}
                       · stop about RPE {item.plan.targetRpe}
                       {ex.load === 'dumbbell' || ex.load === 'kettlebell' ? ` · weight per ${ex.load}` : ''}
                       {best ? ` · est. max ${formatLoad(best.kg, item.unit)}${isFirstEstimate(rec) ? ` (${FIRST_ESTIMATE_NOTE})` : ''}` : ''}
@@ -594,10 +595,10 @@ export function GymPlayer({
                               })
                             }
                             className="order-last basis-full text-left text-caption text-ink3 hover:text-ink2"
-                            aria-label={`Previous: ${item.previous[j].load !== undefined ? `${item.previous[j].load} ${item.unit} × ` : ''}${countWord(ex, item.previous[j].reps)} — tap to use`}
+                            aria-label={`Previous: ${item.previous[j].load !== undefined ? `${item.previous[j].load} ${item.unit} × ` : ''}${countWord(ex, item.previous[j].reps, item.plan)} — tap to use`}
                           >
                             Previous: {item.previous[j].load !== undefined ? `${item.previous[j].load} ${item.unit} × ` : ''}
-                            {countUnit(ex) === 'reps' ? item.previous[j].reps : countWord(ex, item.previous[j].reps)}
+                            {measure === 'reps' ? item.previous[j].reps : countWord(ex, item.previous[j].reps, item.plan)}
                             {item.previous[j].rpe !== undefined ? ` @${item.previous[j].rpe}` : ''} · tap to use
                           </button>
                         ) : null}
@@ -627,9 +628,9 @@ export function GymPlayer({
                         )}
                         <Stepper
                           value={s.reps}
-                          unit={countUnit(ex) === 'seconds' ? 'sec' : countUnit(ex)}
-                          step={countUnit(ex) === 'seconds' ? 5 : 1}
-                          label={`${ex.name}, set ${j + 1} ${countUnit(ex)}`}
+                          unit={measure === 'seconds' ? 'sec' : measure}
+                          step={measure === 'seconds' ? 5 : 1}
+                          label={`${ex.name}, set ${j + 1} ${measure}`}
                           onChange={(v) =>
                             update((d) => {
                               d.items[i].sets[j].reps = Math.max(0, Math.round(v ?? 0))

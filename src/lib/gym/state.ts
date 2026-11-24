@@ -345,6 +345,7 @@ function sanitizeSet(raw: unknown, exerciseId?: string, lose: Lose = noLoss, whe
   return {
     reps,
     at: r.at,
+    ...(r.measure === 'seconds' && exerciseId && GYM_EXERCISE_BY_ID[exerciseId]?.pattern === 'carry' ? { measure: 'seconds' as const } : {}),
     ...(kg !== undefined ? { kg } : {}),
     ...(rpe !== undefined ? { rpe } : {}),
     ...(isUnit(r.unit) ? { unit: r.unit } : {}),
@@ -419,6 +420,7 @@ function sanitizeRemainder(raw: unknown, lose: Lose, where: string): GymRemainde
       } : undefined
     if (sets.length) items.push({
       exerciseId: it.exerciseId, sets, unit: it.unit, restSec: clamp(it.restSec, 0, 1800, 90),
+      ...(it.measure === 'seconds' && GYM_EXERCISE_BY_ID[it.exerciseId]?.pattern === 'carry' ? { measure: 'seconds' as const } : {}),
       ...(rackTarget ? { rackTarget } : {}),
       ...(typeof it.pairedWith === 'string' && canPairExercises(it.exerciseId, it.pairedWith) ? { pairedWith: it.pairedWith } : {}),
       repRange: plan.repRange, targetRpe: plan.targetRpe, ...(plan.swappedFrom ? { swappedFrom: plan.swappedFrom } : {}),

@@ -1,7 +1,7 @@
 import type { GymPlan } from './builder'
 import { GYM_EXERCISE_BY_ID, jointsToRest } from '../../data/gym/exercises'
 import type { Joint, Muscle } from '../../data/gym/catalog'
-import { lastPerformance, repPlanFor, type LoadSuggestion, type RepPlan } from './progression'
+import { countUnit, lastPerformance, repPlanFor, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymRemainder, GymSession, GymState, RemainingLift } from './types'
 import { canDoHere } from './availability'
 import { preparesFor } from './bodyweightSteps'
@@ -49,7 +49,8 @@ export function previousSets(
   unit: Unit,
   now = Infinity,
 ): DraftItem['previous'] {
-  const last = lastPerformance(sessions, exerciseId, locationId, now)
+  const ex = GYM_EXERCISE_BY_ID[exerciseId]
+  const last = lastPerformance(sessions, exerciseId, locationId, now, (s) => countUnit(ex, s) === countUnit(ex))
   if (!last) return undefined
   return last.sets.map((s) => ({
     ...(s.kg !== undefined ? { load: entryLoad(s.kg, unit) } : {}),
@@ -151,6 +152,7 @@ function remainingLift(item: DraftItem, sets: DraftSet[]): RemainingLift {
   const s = item.suggestion
   return {
     exerciseId: item.exerciseId, repRange: item.plan.range, targetRpe: item.plan.targetRpe,
+    ...(item.plan.measure ? { measure: item.plan.measure } : {}),
     restSec: item.restSec, unit: item.unit, swappedFrom: item.swappedFrom,
     ...(item.pairedWith ? { pairedWith: item.pairedWith } : {}),
     sets: sets.map(({ reps, load, warmup }) => ({ reps, load, warmup })),
@@ -211,6 +213,7 @@ export function sessionFromDraft(draft: GymDraft, endedAt: number): GymSession {
         ...(prescribed > 0 ? { plannedWorkingSets: prescribed } : {}),
         sets: done.map((s) => ({
           reps: Math.max(0, Math.round(s.reps)),
+          ...(item.plan.measure ? { measure: item.plan.measure } : {}),
           at: s.at ?? endedAt,
           ...(s.load !== undefined && (s.load > 0 || GYM_EXERCISE_BY_ID[item.exerciseId]?.assisted) ? { kg: toKg(s.load, item.unit), unit: item.unit } : {}),
           ...(s.rpe !== undefined ? { rpe: s.rpe } : {}),
@@ -261,7 +264,7 @@ export function resumePartial(session: GymSession, avoid: Joint[] = [], location
       continue
     }
     items.push({
-      exerciseId: it.exerciseId, plan: { range: it.repRange, targetRpe: it.targetRpe }, restSec: it.restSec, unit: it.unit,
+      exerciseId: it.exerciseId, plan: { range: it.repRange, targetRpe: it.targetRpe, ...(it.measure ? { measure: it.measure } : {}) }, restSec: it.restSec, unit: it.unit,
       ...(it.pairedWith && !avoidJoints.length && (plan.volumeFactor ?? 1) >= 1 ? { pairedWith: it.pairedWith } : {}),
       sets: it.sets.map((s) => ({ ...s, done: false })), swappedFrom: it.swappedFrom,
       ...(it.rackTarget ? { suggestion: {

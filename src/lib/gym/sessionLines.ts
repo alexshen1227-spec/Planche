@@ -125,6 +125,7 @@ export function noMaxReason(log: GymExerciseLog): string | undefined {
   if (!ex) return 'No estimated max: this movement is no longer in the catalogue.'
   if (ex.assisted) return 'No estimated max: the weight logged is help, not load.'
   if (unloadedLabel(ex) === 'Band') return 'Compare reps using the same band and starting stretch.'
+  if (ex.pattern === 'carry') return 'Compare time walked at the same load. Earlier sessions recorded in reps have their own history.'
   if (ex.count === 'seconds') return 'No estimated max for a hold; the longest hold is what is tracked.'
   if (countUnit(ex) === 'trips') return 'Track the distance completed at the same load.'
   if (ex.load === 'bodyweight') return 'No estimated max: only added load is known for a bodyweight movement.'
@@ -152,13 +153,14 @@ export function nextTimeLines(
     if (!ex) return [{ ...base, text: 'No suggestion: this movement is no longer in the catalogue.', why: 'Its sets are kept as logged.' }]
     const later = all.some((s) => s.id !== session.id && s.startedAt > session.startedAt && s.exercises.some((e) => e.exerciseId === log.exerciseId))
     const usual = repPlanFor(ex, 'muscle', youth)
-    const plan = { range: ex.dose ? usual.range : log.repRange ?? usual.range, targetRpe: log.targetRpe ?? usual.targetRpe }
+    const plan = { ...usual, range: ex.dose ? usual.range : log.repRange ?? usual.range, targetRpe: log.targetRpe ?? usual.targetRpe }
     const s = suggestLoad({ exerciseId: log.exerciseId, location, sessions: [...all].sort((a, b) => a.startedAt - b.startedAt), plan, youth, now })
     const unit = unitFor(ex, location)
     const [lo, hi] = s.reps
     const word = countUnit(ex) === 'seconds' ? ' s' : ''
     const hasLoad = s.kg !== undefined && s.kg > 0
     const text =
+      ex.pattern === 'carry' ? `Next time: ${countWord(ex, prescribedCount(plan, s))}${ex.unilateral ? ' each side' : ' per set'}${s.kg !== undefined ? ` · ${formatLoad(s.kg, unit, ex)}` : ''}` :
       countUnit(ex) === 'trips' || countUnit(ex) === 'contacts'
         ? `Next time: ${countWord(ex, prescribedCount(plan, s))} per set${ex.stepFrom === 'sled' && s.kg !== undefined ? ` · ${formatLoad(s.kg, unit, ex)}` : ''}`
         : s.chooseAlternative ? 'Next time: choose an easier variation or use lighter equipment'

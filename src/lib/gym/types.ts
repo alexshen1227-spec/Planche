@@ -34,6 +34,8 @@ export interface GymSet {
    */
   kg?: number
   reps: number
+  /** New timed carries record their unit. Earlier carry logs counted reps. */
+  measure?: 'seconds'
   /** 6–10, half steps allowed. Absent when not asked or skipped. */
   rpe?: number
   /** The unit it was entered in, for showing it back the same way. */
@@ -59,6 +61,7 @@ export interface GymExerciseLog {
 
 export interface RemainingLift {
   exerciseId: string
+  measure?: 'seconds'
   pairedWith?: string
   repRange: [number, number]
   targetRpe: number

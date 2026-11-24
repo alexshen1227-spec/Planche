@@ -13,7 +13,7 @@ export function seriesMetric(series: LiftSeries, unit: Unit) {
   switch (series.kind) {
     case 'estimate': return 'Estimated max'
     case 'assistance': return `Least assistance for ${series.minReps}+ reps`
-    case 'seconds': return `Longest hold${load}`
+    case 'seconds': return `Longest ${GYM_EXERCISE_BY_ID[series.id]?.pattern === 'carry' ? 'carry' : 'hold'}${load}`
     case 'contacts': return `Session contacts${load}`
     case 'distance': return `Distance completed${load}`
     default: return `Most reps${load || (unloadedLabel(GYM_EXERCISE_BY_ID[series.id]) === 'Band' ? ' with a band' : ' at bodyweight')}`

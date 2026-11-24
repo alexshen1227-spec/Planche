@@ -101,7 +101,11 @@ function x(
           : load === 'cable'
             ? 'cable'
             : undefined)
-  return { id, name, pattern, primary, secondary, needs, load, compound, stress, cue, ...opts, ...(stepFrom ? { stepFrom } : {}) }
+  const carryDose = pattern === 'carry' ? {
+    count: 'seconds' as const,
+    dose: { sets: 3, range: [20, 30] as [number, number], rpe: 7, restSec: 90, workSec: opts.unilateral ? 65 : 30 },
+  } : undefined
+  return { id, name, pattern, primary, secondary, needs, load, compound, stress, cue, ...carryDose, ...opts, ...(stepFrom ? { stepFrom } : {}) }
 }
 
 const BASE_EXERCISES: GymExercise[] = [

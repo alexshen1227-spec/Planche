@@ -66,7 +66,7 @@ describe('6. next time, for every lift, from the builder own rule', () => {
     const find = (f: (e: (typeof GYM_EXERCISES)[number]) => boolean) => GYM_EXERCISES.find(f)!.id
     const log = (exerciseId: string, kg?: number) => ({ exerciseId, sets: [{ reps: 8, at: 1, ...(kg ? { kg } : {}) }] })
     expect(noMaxReason(log(find((e) => e.load === 'bodyweight' && !e.assisted && e.count !== 'seconds')))).toMatch(/bodyweight/)
-    expect(noMaxReason(log(find((e) => e.count === 'seconds')))).toMatch(/hold/)
+    expect(noMaxReason(log(find((e) => e.count === 'seconds' && e.load === 'bodyweight')))).toMatch(/hold/)
     expect(noMaxReason(log(find((e) => Boolean(e.assisted)), 20))).toMatch(/help/)
     expect(noMaxReason(log(leg))).toMatch(/no weight was logged/)
     expect(noMaxReason(log(leg, 40))).toBeUndefined()

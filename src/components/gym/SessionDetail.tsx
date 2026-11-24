@@ -71,7 +71,7 @@ export function SessionDetail({ session, onClose }: { session: GymSession; onClo
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-footnote tnum text-ink2">
                         {set.warmup ? 'Warm-up · ' : ''}
-                        {countUnit(ex) !== 'reps' ? `${countWord(ex, set.reps)}${set.kg || ex?.stepFrom === 'sled' ? ` · ${formatLoad(set.kg, set.unit ?? unit, ex)}` : ''}` : `${set.reps} × ${formatLoad(set.kg, set.unit ?? unit, ex)}`}
+                        {countUnit(ex, set) !== 'reps' ? `${countWord(ex, set.reps, set)}${set.kg || ex?.stepFrom === 'sled' ? ` · ${formatLoad(set.kg, set.unit ?? unit, ex)}` : ''}` : `${set.reps} ${ex?.pattern === 'carry' ? 'reps ' : ''}× ${formatLoad(set.kg, set.unit ?? unit, ex)}`}
                         {effortLabel(set.rpe) ? ` · ${effortLabel(set.rpe)}` : ''}
                       </span>
                       <button
@@ -198,7 +198,7 @@ function SetEditor({
         <input className={`${field} mt-0.5 block`} inputMode="decimal" value={load} onChange={(e) => setLoad(e.target.value)} placeholder={exercise?.assisted ? 'Unknown' : exercise?.stepFrom === 'sled' ? 'Empty sled' : allowsUnloaded(exercise) ? 'Bodyweight' : 'Weight'} />
       </label>
       <label className="text-caption text-ink3">
-        <span className="capitalize">{countUnit(exercise)}</span>{countUnit(exercise) === 'trips' ? ` of ${exercise!.distanceM} m` : ''}
+        <span className="capitalize">{countUnit(exercise, set)}</span>{countUnit(exercise, set) === 'trips' ? ` of ${exercise!.distanceM} m` : ''}
         <input className={`${field} mt-0.5 block`} inputMode="numeric" value={reps} onChange={(e) => setReps(e.target.value)} />
       </label>
       <Button

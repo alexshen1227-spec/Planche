@@ -171,8 +171,8 @@ export function setsCsv(state: AppState): string {
   for (const s of state.gym?.sessions ?? []) {
     for (const log of s.exercises) {
       const ex = GYM_EXERCISE_BY_ID[log.exerciseId]
-      const measure = countUnit(ex)
-      log.sets.forEach((set, i) =>
+      log.sets.forEach((set, i) => {
+        const measure = countUnit(ex, set)
         rows.push([
           new Date(set.at).toISOString(),
           'gym',
@@ -188,8 +188,8 @@ export function setsCsv(state: AppState): string {
           set.rpe,
           measure === 'trips' ? set.reps * ex.distanceM! : undefined,
           measure === 'contacts' ? set.reps : undefined,
-        ]),
-      )
+        ])
+      })
     }
   }
   rows.sort((a, b) => (a[0] === 'date' ? -1 : b[0] === 'date' ? 1 : String(a[0]).localeCompare(String(b[0]))))

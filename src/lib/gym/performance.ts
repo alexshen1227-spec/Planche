@@ -1,5 +1,5 @@
 import { GYM_EXERCISE_BY_ID, type GymExercise } from '../../data/gym/exercises'
-import { estimateOneRepMax, isUnloadedSet } from './progression'
+import { countUnit, estimateOneRepMax, isUnloadedSet } from './progression'
 import type { GymSession, GymSet } from './types'
 
 export interface LiftSeries {
@@ -14,6 +14,7 @@ export interface LiftSeries {
 
 interface LiftGroup {
   ex: GymExercise
+  unit: ReturnType<typeof countUnit>
   placeId?: string
   rows: { at: number; sets: GymSet[] }[]
 }
@@ -22,25 +23,30 @@ interface LiftGroup {
 export function liftSeries(sessions: GymSession[], exerciseId?: string): LiftSeries[] {
   const groups = new Map<string, LiftGroup>()
   for (const s of [...sessions].sort((a, b) => a.startedAt - b.startedAt)) {
-    const working = new Map<string, GymSet[]>()
+    const working = new Map<string, { ex: GymExercise; unit: ReturnType<typeof countUnit>; sets: GymSet[] }>()
     for (const log of s.exercises) {
       if (exerciseId && log.exerciseId !== exerciseId) continue
       const ex = GYM_EXERCISE_BY_ID[log.exerciseId]
       if (!ex) continue
       const sets = log.sets.filter((x) => !x.warmup && x.reps > 0 && !isUnloadedSet(ex, x) && (!ex.assisted || x.kg !== undefined))
-      if (sets.length) working.set(ex.id, [...(working.get(ex.id) ?? []), ...sets])
+      for (const set of sets) {
+        const unit = countUnit(ex, set)
+        const key = `${ex.id}/${unit}`
+        const entry = working.get(key) ?? { ex, unit, sets: [] }
+        entry.sets.push(set)
+        working.set(key, entry)
+      }
     }
-    for (const [id, sets] of working) {
-      const ex = GYM_EXERCISE_BY_ID[id]
+    for (const { ex, unit, sets } of working.values()) {
       const placeId = ex.load === 'machine' || ex.load === 'cable' ? s.locationId : undefined
-      const key = JSON.stringify([id, placeId])
-      const group: LiftGroup = groups.get(key) ?? { ex, placeId, rows: [] }
+      const key = JSON.stringify(ex.pattern === 'carry' ? [ex.id, placeId, unit] : [ex.id, placeId])
+      const group: LiftGroup = groups.get(key) ?? { ex, unit, placeId, rows: [] }
       group.rows.push({ at: s.startedAt, sets })
       groups.set(key, group)
     }
   }
   const out: LiftSeries[] = []
-  for (const [key, { ex, placeId, rows }] of groups) {
+  for (const [key, { ex, unit, placeId, rows }] of groups) {
     const base = { id: ex.id, placeId }
     if (ex.assisted) {
       // Compare help at a rep count this athlete has actually reached in every session.
@@ -56,7 +62,7 @@ export function liftSeries(sessions: GymSession[], exerciseId?: string): LiftSer
     if (estimates.length) out.push({ ...base, key, kind: 'estimate', points: estimates })
     if (estimates.length >= 2) continue
 
-    const kind = ex.count === 'seconds' ? 'seconds' : ex.count === 'contacts' ? 'contacts' : ex.distanceM ? 'distance' : 'reps'
+    const kind = unit === 'trips' ? 'distance' : unit
     const loads = new Map<number, LiftSeries>()
     for (const { at, sets } of rows) {
       const byLoad = new Map<number, number>()

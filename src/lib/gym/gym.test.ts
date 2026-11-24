@@ -63,6 +63,30 @@ it('lowers a working weight when multiple sets miss the range above the prescrib
   expect(next([11, 11, 10, 9], 9).kind).toBe('repeat')
 })
 
+it('saves and restores timed carries while keeping older rep logs out of their prescription and time chart', async () => {
+  const { draftItemFor } = await import('../../components/gym/GymPlayer')
+  const { sessionFromDraft, resumePartial, previousSets } = await import('./draft')
+  const { sanitizeGym } = await import('./state')
+  const { liftSeries } = await import('./performance')
+  const { setsCsv } = await import('../exportImport')
+  const ex = GYM_EXERCISE_BY_ID['suitcase-carry']
+  const legacy = session('legacy', gymA.id, T0, ex.id, [set(10, 8, 7)])
+  const item = draftItemFor(ex, gymA, [legacy], false, 3, T0 + DAY)
+  expect(item.plan.measure).toBe('seconds')
+  expect(item.previous).toBeUndefined()
+  expect(item.sets.map((s) => s.reps)).toEqual([20, 20, 20])
+  item.sets[0] = { done: true, reps: 25, load: 10, rpe: 7 }
+  const timed = sessionFromDraft({ id: 'timed', startedAt: T0 + DAY, name: 'Carry', locationId: gymA.id, items: [item] }, T0 + DAY + 60_000)
+  const gym = sanitizeGym({ ...defaultGym([]), locations: [gymA], activeLocationId: gymA.id, sessions: [legacy, timed] })!
+  const saved = gym.sessions.find((s) => s.id === timed.id)!
+  expect(saved.exercises[0].sets[0]).toMatchObject({ measure: 'seconds', reps: 25 })
+  expect(resumePartial(saved)?.items[0].plan.measure).toBe('seconds')
+  expect(previousSets(gym.sessions, ex.id, gymA.id, 'kg')?.[0].reps).toBe(25)
+  expect(liftSeries(gym.sessions, ex.id).map((s) => [s.kind, s.points[0].value]).sort()).toEqual([['reps', 8], ['seconds', 25]])
+  const lines = setsCsv({ ...initialState(), gym }).trim().split('\n').map((l) => l.split(','))
+  expect(lines.slice(1).map((row) => [row[9], row[10]])).toEqual([['8', ''], ['', '25']])
+})
+
 it('carries earned reps forward at a fixed rack and offers an actionable swap below its lightest weight', () => {
   const rack = { ...gymA, gear: { dumbbells: { stepKg: 2, maxKg: 2 } } }
   const log: GymSession[] = []

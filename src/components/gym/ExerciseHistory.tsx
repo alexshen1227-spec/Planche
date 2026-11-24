@@ -90,7 +90,7 @@ export function ExerciseHistory({ exerciseId }: { exerciseId: string }) {
             </div>
             <p className="mt-0.5 text-footnote tnum text-ink2">
               {sets
-                .map((x) => `${x.kg ? `${formatLoad(x.kg, x.unit ?? unit)} × ` : ''}${countWord(ex, x.reps)}${x.rpe !== undefined ? ` @${x.rpe}` : ''}`)
+                .map((x) => `${x.kg ? `${formatLoad(x.kg, x.unit ?? unit)} × ` : ''}${countWord(ex, x.reps, x)}${x.rpe !== undefined ? ` @${x.rpe}` : ''}`)
                 .join(' · ')}
             </p>
           </li>
