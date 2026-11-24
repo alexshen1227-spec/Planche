@@ -33,8 +33,14 @@ export function unloadedLabel(ex?: GymExercise): string {
   return ex?.needs.some((group) => group.length === 1 && group[0] === 'band') ? 'Band' : 'Bodyweight'
 }
 
+/** Zero is a measured setting on an assistance machine and on a sled with no added plates. */
+export function recordsZeroLoad(ex?: Pick<GymExercise, 'assisted' | 'stepFrom'>): boolean {
+  return Boolean(ex?.assisted || ex?.stepFrom === 'sled')
+}
+
 export function formatLoad(kg: number | undefined, unit: Unit, ex?: GymExercise): string {
   if (kg === undefined && ex?.assisted) return 'Assistance unrecorded'
+  if (kg === undefined && ex?.stepFrom === 'sled') return 'Plate load unrecorded'
   if (kg === undefined || kg <= 0) return unloadedLabel(ex)
   const v = displayLoad(kg, unit)
   return `${v} ${unit}`

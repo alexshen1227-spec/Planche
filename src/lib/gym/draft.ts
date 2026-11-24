@@ -7,7 +7,7 @@ import { canDoHere } from './availability'
 import { preparesFor } from './bodyweightSteps'
 import { useStraightSets } from './pairedSets'
 import { dayKey } from '../time'
-import { entryLoad, toKg } from './units'
+import { entryLoad, recordsZeroLoad, toKg } from './units'
 import type { Unit } from '../../data/gym/catalog'
 import type { AttemptSymptom, Profile } from '../../types'
 
@@ -150,6 +150,7 @@ export function loadDraft(epoch?: string): GymDraft | null {
 function remainingLift(item: DraftItem, sets: DraftSet[]): RemainingLift {
   const trial = item.suggestion?.floorPushupTrial ?? item.suggestion?.pullupTrial
   const s = item.suggestion
+  const count = s?.repsToMoveUp ?? s?.targetReps
   return {
     exerciseId: item.exerciseId, repRange: item.plan.range, targetRpe: item.plan.targetRpe,
     ...(item.plan.measure ? { measure: item.plan.measure } : {}),
@@ -160,7 +161,7 @@ function remainingLift(item: DraftItem, sets: DraftSet[]): RemainingLift {
     ...(s?.easierId ? { easierId: s.easierId } : {}),
     ...(s && (s.kind === 'at-minimum-weight' || s.kind === 'at-top-weight') ? { rackTarget: {
       kind: s.kind, reps: s.targetReps, why: s.why, chooseAlternative: s.chooseAlternative,
-    } } : {}),
+    } } : s && count !== undefined ? { countTarget: { count, ...(s.repsToMoveUp !== undefined ? { toMoveUp: true } : {}), why: s.why } } : {}),
   }
 }
 
@@ -216,7 +217,7 @@ export function sessionFromDraft(draft: GymDraft, endedAt: number): GymSession {
           reps: Math.max(0, Math.round(s.reps)),
           ...(item.plan.measure ? { measure: item.plan.measure } : {}),
           at: s.at ?? endedAt,
-          ...(s.load !== undefined && (s.load > 0 || GYM_EXERCISE_BY_ID[item.exerciseId]?.assisted) ? { kg: toKg(s.load, item.unit), unit: item.unit } : {}),
+          ...(s.load !== undefined && (s.load > 0 || recordsZeroLoad(GYM_EXERCISE_BY_ID[item.exerciseId])) ? { kg: toKg(s.load, item.unit), unit: item.unit } : {}),
           ...(s.rpe !== undefined ? { rpe: s.rpe } : {}),
           ...(s.warmup ? { warmup: true } : {}),
         })),
@@ -271,8 +272,10 @@ export function resumePartial(session: GymSession, avoid: Joint[] = [], location
       ...(it.rackTarget ? { suggestion: {
         kind: it.rackTarget.kind, reps: it.repRange, targetRpe: it.targetRpe, why: it.rackTarget.why,
         targetReps: it.rackTarget.reps, chooseAlternative: it.rackTarget.chooseAlternative, easierId: it.easierId,
-      } } : it.trialReps || it.easierId || it.variationTrial ? { suggestion: {
-        kind: 'bodyweight', reps: it.repRange, targetRpe: it.targetRpe, why: '', easierId: it.easierId,
+      } } : it.trialReps || it.easierId || it.variationTrial || it.countTarget ? { suggestion: {
+        kind: GYM_EXERCISE_BY_ID[it.exerciseId].load === 'bodyweight' ? 'bodyweight' : 'repeat',
+        reps: it.repRange, targetRpe: it.targetRpe, why: it.countTarget?.why ?? '', easierId: it.easierId,
+        ...(it.countTarget && (it.countTarget.toMoveUp ? { repsToMoveUp: it.countTarget.count } : { targetReps: it.countTarget.count })),
         ...(it.variationTrial ? { variationTrial: it.variationTrial } : {}),
         ...(it.trialReps && (preparesFor(it.exerciseId) === 'push-up' ? { floorPushupTrial: it.trialReps } : { pullupTrial: it.trialReps })),
       } } : {}),

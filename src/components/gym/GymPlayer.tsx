@@ -13,7 +13,7 @@ import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../li
 import { addedSetReps, conservative, dayOfItem, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
 import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, isUnloadedSet, lastPerformance, plyoGate, prescribedCount, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GoalWeights, GymLocation, Rating } from '../../lib/gym/types'
-import { displayLoad, entryLoad, formatLoad, minKgFor, stepKgFor, takesAddedLoad, toKg, unitFor, unloadedLabel } from '../../lib/gym/units'
+import { displayLoad, entryLoad, formatLoad, minKgFor, recordsZeroLoad, stepKgFor, takesAddedLoad, toKg, unitFor, unloadedLabel } from '../../lib/gym/units'
 import { easierDragonFlag } from '../../lib/gym/bodyweightSteps'
 import { continueGymSession, doubtedLoad, newGymSessionId } from '../../lib/gym/state'
 import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
@@ -210,7 +210,7 @@ export function GymPlayer({
       }
     }
     const exercise = GYM_EXERCISE_BY_ID[item.exerciseId]
-    if (!set.done && !unloadedOk && ((exercise.assisted && set.load === undefined) || isUnloadedSet(exercise, { kg: set.load }))) {
+    if (!set.done && !unloadedOk && ((recordsZeroLoad(exercise) && set.load === undefined) || isUnloadedSet(exercise, { kg: set.load }))) {
       setNeedValue('')
       setNeedLoad({ item: i, set: j, exerciseId: item.exerciseId })
       return
@@ -241,10 +241,9 @@ export function GymPlayer({
         if (d.effortFor?.item === i && d.effortFor.set === j) delete d.effortFor
         if (item.pairedWith) restoreSetRest(d, at, previous)
       } else {
-        if (exercise.assisted && (withLoad !== undefined || unloadedOk)) {
-          const help = withLoad ?? 0
-          s.load = help
-          for (const later of d.items[i].sets.slice(j + 1)) if (!later.done && later.load === undefined) later.load = help
+        if (recordsZeroLoad(exercise) && (set.load !== undefined || unloadedOk)) {
+          s.load = set.load ?? 0
+          for (const later of d.items[i].sets.slice(j + 1)) if (!later.done && later.load === undefined) later.load = s.load
         }
         s.at = at
         d.effortFor = { item: i, set: j }

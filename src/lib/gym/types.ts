@@ -30,7 +30,8 @@ export interface GymSet {
   /**
    * Load in kg — the canonical unit, whatever was typed. Absent for a
    * bodyweight set. On an assisted machine, zero is confirmed no assistance
-   * and an absent value means the help was never recorded.
+   * and an absent value means the help was never recorded. On a sled, zero
+   * means no added plates, independent of the sled's own weight.
    */
   kg?: number
   reps: number
@@ -72,6 +73,8 @@ export interface RemainingLift {
   swappedFrom?: string
   trialReps?: number
   variationTrial?: { id: string; reps: number }
+  /** An individual working target, in this lift's own unit, retained across a saved interruption. */
+  countTarget?: { count: number; toMoveUp?: true; why: string }
   rackTarget?: { kind: 'at-minimum-weight' | 'at-top-weight'; reps?: number; why: string; chooseAlternative?: boolean }
   easierId?: string
 }

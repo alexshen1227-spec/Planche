@@ -7,7 +7,7 @@ import { buildGymSession, FOCUS_LABEL } from './builder'
 import { estimateOneRepMax, gateTier, gymRecords, isHardBodyweight, plyoGate, repPlanFor, suggestLoad, unlockedTier } from './progression'
 import { defaultGym, mergeGym, newLocation, reduceGym, sanitizeGym } from './state'
 import type { GymLocation, GymSession, GymSet } from './types'
-import { displayLoad, fromKg, maxKgFor, roundToStep, stepKgFor, toKg, unitFor } from './units'
+import { displayLoad, formatLoad, fromKg, maxKgFor, roundToStep, stepKgFor, toKg, unitFor } from './units'
 import { initialState, mergeExternalState, normalizeState, reducer } from '../store'
 import { prefillReps } from './draft'
 import { nextTimeLines } from './sessionLines'
@@ -108,6 +108,37 @@ it('carries earned reps forward at a fixed rack and offers an actionable swap be
     expect(s).toMatchObject({ kind: 'at-minimum-weight', chooseAlternative: true, easierId: 'bent-arm-db-lateral-raise' })
     expect(s.kg).toBeUndefined()
   }
+})
+
+it('lets a young athlete earn a larger carry weight on separate visits and respects the lightest bell', () => {
+  const ex = GYM_EXERCISE_BY_ID['suitcase-carry']
+  const rack = { ...gymA, gear: { dumbbells: { minKg: 4, stepKg: 2, maxKg: 16 } } }
+  const visit = (at: number, sec = 30, effort = 7) => session(String(at), rack.id, at, ex.id,
+    Array.from({ length: 2 }, () => ({ ...set(4, sec, effort, at), measure: 'seconds' as const })))
+  const next = (visits: GymSession[], location = rack) => suggestLoad({ exerciseId: ex.id, location, sessions: visits,
+    plan: repPlanFor(ex, 'muscle', true), youth: true, now: T0 + 4 * DAY })
+  expect(next([visit(T0)])).toMatchObject({ kind: 'repeat', kg: 4, targetReps: 30 })
+  expect(next([visit(T0), visit(T0 + 60_000)]).kind).toBe('repeat')
+  expect(next([visit(T0), visit(T0 + 2 * DAY)])).toMatchObject({ kind: 'increase', kg: 6, targetReps: 20 })
+  expect(next([visit(T0, 16, 9)])).toMatchObject({ kind: 'at-minimum-weight', chooseAlternative: true })
+  expect(next([visit(T0, 26, 9)])).toMatchObject({ kind: 'repeat', kg: 4, targetReps: 20 })
+  expect(next([visit(T0)], { ...rack, gear: { dumbbells: { minKg: 8, stepKg: 2, maxKg: 16 } } }).kg).toBeUndefined()
+})
+
+it('keeps a confirmed empty sled distinct from an unknown plate load through save, import and correction', async () => {
+  const { sessionFromDraft } = await import('./draft')
+  const ex = GYM_EXERCISE_BY_ID['sled-push'], plan = repPlanFor(ex)
+  const empty = sessionFromDraft({ id: 'sled', startedAt: T0, locationId: gymA.id, name: 'Speed',
+    items: [{ exerciseId: ex.id, plan, restSec: 120, unit: 'kg', sets: [{ done: true, reps: 1, load: 0 }] }] }, T0 + 60_000)
+  const gym = sanitizeGym({ ...defaultGym([]), locations: [gymA], sessions: [empty] })!
+  expect(gym.sessions[0].exercises[0].sets[0].kg).toBe(0)
+  const correct = (kg: number | null) => ({ op: 'correctSet' as const, sessionId: empty.id, exerciseIndex: 0, setIndex: 0, kg })
+  const unknown = reduceGym(gym, correct(null))!
+  expect(formatLoad(unknown.sessions[0].exercises[0].sets[0].kg, 'kg', ex)).toBe('Plate load unrecorded')
+  const next = (sessions: GymSession[]) => suggestLoad({ exerciseId: ex.id, location: gymA, plan, sessions, now: T0 + DAY })
+  expect(next(unknown.sessions).kg).toBeUndefined()
+  const restored = reduceGym(unknown, correct(0))!
+  expect(formatLoad(next(restored.sessions).kg, 'kg', ex)).toBe('Empty sled')
 })
 
 it('uses a stated empty bar and the increments above it, including a change of gym or time away', () => {

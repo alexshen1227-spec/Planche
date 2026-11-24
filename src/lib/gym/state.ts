@@ -7,6 +7,7 @@ import { SKILL_IDS, type SkillId, type StepId } from '../../types'
 import { STEP_BY_ID } from '../../data/progressions'
 import { SPORT_KINDS, sportStart } from '../plan/sport'
 import { LEG_VARIATIONS, preparesFor } from './bodyweightSteps'
+import { recordsZeroLoad } from './units'
 import { canPairExercises, partnerIndex } from './pairedSets'
 import type {
   ActivityKind,
@@ -330,7 +331,7 @@ function sanitizeSet(raw: unknown, exerciseId?: string, lose: Lose = noLoss, whe
   // A load the app cannot believe is kept and reported, never turned into a bodyweight set: that would
   // erase a heavy lift from the athlete's records without a word. Only a load with no meaning at all
   // (negative, not a number) takes the set with it, and says so.
-  let kg = r.kg === 0 && exerciseId && GYM_EXERCISE_BY_ID[exerciseId]?.assisted ? 0 : undefined
+  let kg = r.kg === 0 && exerciseId && recordsZeroLoad(GYM_EXERCISE_BY_ID[exerciseId]) ? 0 : undefined
   if (r.kg !== undefined && r.kg !== null && r.kg !== 0) {
     if (typeof r.kg === 'number' && Number.isFinite(r.kg) && r.kg > 0) {
       kg = r.kg
@@ -422,6 +423,9 @@ function sanitizeRemainder(raw: unknown, lose: Lose, where: string): GymRemainde
       exerciseId: it.exerciseId, sets, unit: it.unit, restSec: clamp(it.restSec, 0, 1800, 90),
       ...(it.measure === 'seconds' && GYM_EXERCISE_BY_ID[it.exerciseId]?.pattern === 'carry' ? { measure: 'seconds' as const } : {}),
       ...(rackTarget ? { rackTarget } : {}),
+      ...(it.countTarget && Number.isInteger(it.countTarget.count) && it.countTarget.count > 0 && it.countTarget.count <= maxCountFor(it.exerciseId)
+        ? { countTarget: { count: it.countTarget.count, ...(it.countTarget.toMoveUp === true ? { toMoveUp: true as const } : {}),
+          why: typeof it.countTarget.why === 'string' ? it.countTarget.why.slice(0, 500) : '' } } : {}),
       ...(typeof it.pairedWith === 'string' && canPairExercises(it.exerciseId, it.pairedWith) ? { pairedWith: it.pairedWith } : {}),
       repRange: plan.repRange, targetRpe: plan.targetRpe, ...(plan.swappedFrom ? { swappedFrom: plan.swappedFrom } : {}),
       ...(preparesFor(it.exerciseId) && Number.isInteger(it.trialReps) && it.trialReps >= 1 && it.trialReps <= 4 ? { trialReps: it.trialReps } : {}),
@@ -896,7 +900,7 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
       const fixed: GymSet = { ...set, editedAt: now }
       if (action.kg === null) delete fixed.kg
       else if (action.kg !== undefined) {
-        if (!(action.kg >= 0 && action.kg < 1000) || (action.kg === 0 && !GYM_EXERCISE_BY_ID[log.exerciseId]?.assisted)) return gym
+        if (!(action.kg >= 0 && action.kg < 1000) || (action.kg === 0 && !recordsZeroLoad(GYM_EXERCISE_BY_ID[log.exerciseId]))) return gym
         fixed.kg = action.kg
       }
       if (action.reps !== undefined) {

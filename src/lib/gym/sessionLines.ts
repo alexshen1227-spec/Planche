@@ -160,10 +160,10 @@ export function nextTimeLines(
     const word = countUnit(ex) === 'seconds' ? ' s' : ''
     const hasLoad = s.kg !== undefined && s.kg > 0
     const text =
+      s.chooseAlternative ? 'Next time: choose an easier variation or use lighter equipment' :
       ex.pattern === 'carry' ? `Next time: ${countWord(ex, prescribedCount(plan, s))}${ex.unilateral ? ' each side' : ' per set'}${s.kg !== undefined ? ` · ${formatLoad(s.kg, unit, ex)}` : ''}` :
       countUnit(ex) === 'trips' || countUnit(ex) === 'contacts'
         ? `Next time: ${countWord(ex, prescribedCount(plan, s))} per set${ex.stepFrom === 'sled' && s.kg !== undefined ? ` · ${formatLoad(s.kg, unit, ex)}` : ''}`
-        : s.chooseAlternative ? 'Next time: choose an easier variation or use lighter equipment'
         : hasLoad && s.repsToMoveUp !== undefined
         ? `Repeat ${formatLoad(s.kg, unit)}: every set needs ${s.repsToMoveUp} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`
         : hasLoad && s.nearestTo !== undefined

@@ -28,6 +28,20 @@ it('restores the fixed-rack rep target and the offered easier movement after an 
   expect(resumed.items[1].suggestion).toMatchObject({ chooseAlternative: true, easierId: 'bent-arm-db-lateral-raise' })
 })
 
+it('restores the original time target and reps needed for a load increase after an interruption', () => {
+  const open = structuredClone(draft)
+  open.items[0] = { ...open.items[0], exerciseId: 'suitcase-carry', plan: { range: [20, 30], measure: 'seconds', targetRpe: 7 },
+    suggestion: { kind: 'repeat', reps: [20, 30], targetRpe: 7, targetReps: 25, why: 'Walk for 25 seconds on each side.' },
+    sets: [{ reps: 23, load: 10, done: true }, { reps: 24, load: 10, done: false }] }
+  open.items[1].suggestion = { kind: 'repeat', reps: [12, 15], targetRpe: 8, repsToMoveUp: 17, why: 'Repeat the same load for 17.' }
+  const saved = sessionFromDraft(open, start + 2_000)
+  const { gym } = sanitizeGymReport({ ...defaultGym(['floor']), sessions: [saved] })
+  const [carry, raise] = resumePartial(gym!.sessions[0])!.items
+  expect(carry.suggestion).toMatchObject({ targetReps: 25, why: open.items[0].suggestion!.why })
+  expect(carry.sets[0].reps).toBe(24)
+  expect(raise.suggestion).toMatchObject({ repsToMoveUp: 17, why: open.items[1].suggestion.why })
+})
+
 it('budgets one alternating pair at the same station and carries a timed recovery through a saved partial', () => {
   const gym = defaultGym(['floor', 'pullup-bar'], 'kg', start)
   gym.locations[0].equipment.push('dumbbells', 'incline-bench')

@@ -5,7 +5,7 @@ import { doubtedLoad, maxCountFor } from '../../lib/gym/state'
 import { conservative } from '../../lib/gym/draft'
 import { effortLabel, exerciseTitle, nextTimeLines } from '../../lib/gym/sessionLines'
 import type { GymSession, GymSet } from '../../lib/gym/types'
-import { entryLoad, formatLoad, toKg } from '../../lib/gym/units'
+import { entryLoad, formatLoad, recordsZeroLoad, toKg } from '../../lib/gym/units'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
 import { Button } from '../ds'
@@ -168,7 +168,7 @@ function SetEditor({
   const exercise = GYM_EXERCISE_BY_ID[exerciseId]
   // A loaded lift cannot be corrected to no weight: that would read as a 0 kg set.
   const needsWeight = typed === null && !allowsUnloaded(exercise)
-  const loadOk = !needsWeight && (typed === null || (Number.isFinite(typed) && (typed > 0 || (typed === 0 && exercise?.assisted)) && typed < 1000))
+  const loadOk = !needsWeight && (typed === null || (Number.isFinite(typed) && (typed > 0 || (typed === 0 && recordsZeroLoad(exercise))) && typed < 1000))
 
   if (doubt) {
     const shown = (kg: number) => formatLoad(kg, unit)
@@ -195,7 +195,7 @@ function SetEditor({
     <div className="flex flex-wrap items-end gap-2 py-1">
       <label className="text-caption text-ink3">
         {exercise?.assisted ? 'Assistance' : 'Load'} ({unit})
-        <input className={`${field} mt-0.5 block`} inputMode="decimal" value={load} onChange={(e) => setLoad(e.target.value)} placeholder={exercise?.assisted ? 'Unknown' : exercise?.stepFrom === 'sled' ? 'Empty sled' : allowsUnloaded(exercise) ? 'Bodyweight' : 'Weight'} />
+        <input className={`${field} mt-0.5 block`} inputMode="decimal" value={load} onChange={(e) => setLoad(e.target.value)} placeholder={recordsZeroLoad(exercise) ? 'Unknown' : allowsUnloaded(exercise) ? 'Bodyweight' : 'Weight'} />
       </label>
       <label className="text-caption text-ink3">
         <span className="capitalize">{countUnit(exercise, set)}</span>{countUnit(exercise, set) === 'trips' ? ` of ${exercise!.distanceM} m` : ''}

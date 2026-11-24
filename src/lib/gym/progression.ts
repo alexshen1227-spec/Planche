@@ -5,7 +5,7 @@ import {
   type GymExercise,
   type IntensityTier,
 } from '../../data/gym/exercises'
-import { formatLoad, maxKgFor, minKgFor, roundToStep, stepKgFor, takesAddedLoad, unitFor, unloadedLabel } from './units'
+import { formatLoad, maxKgFor, minKgFor, recordsZeroLoad, roundToStep, stepKgFor, takesAddedLoad, unitFor, unloadedLabel } from './units'
 import type { GymSession, GymSet } from './types'
 import type { StampedLocation } from './state'
 import { addDays, dayKey } from '../time'
@@ -406,7 +406,7 @@ export function suggestLoad(input: {
   // A set of a loaded movement with no weight logged says nothing about the load.
   const addedLoad = takesAddedLoad(ex, location)
   const keep = (set: GymSet) => countUnit(ex, set) === countUnit(ex) && !isUnloadedSet(ex, set) &&
-    (!ex.assisted || set.kg !== undefined) && (ex.load !== 'bodyweight' || !ex.stepFrom || addedLoad || !set.kg)
+    (!recordsZeroLoad(ex) || set.kg !== undefined) && (ex.load !== 'bodyweight' || !ex.stepFrom || addedLoad || !set.kg)
   const last = lastPerformance(sessions, exerciseId, location?.id, now, keep)
   const step = stepKgFor(ex, location)
   const top = maxKgFor(ex, location)
@@ -501,6 +501,13 @@ export function suggestLoad(input: {
   // A pair of deliberately programmed singles on separate days can establish the
   // same repeatability. Stopping after one of several prescribed sets cannot.
   const allTop = !stale && !unfinished && (atLoad.length >= 2 || repeatedSingle) && atLoad.every(hitTop)
+  const reachedTopOnPreviousVisit = () => {
+    const before = previousSingle ?? lastPerformance(sessions, exerciseId, location?.id, last.session.startedAt, keep)
+    if (!before || dayKey(before.session.startedAt) === dayKey(last.session.startedAt) ||
+        last.session.startedAt - before.session.startedAt > NO_STEP_UP_DAYS * 86_400_000 || unfinishedLiftSets(before.session, exerciseId)) return false
+    const prior = before.sets.filter((s) => (s.kg ?? 0) === kg)
+    return (prior.length >= 2 || repeatedSingle) && prior.every(hitTop)
+  }
   const anyShort = atLoad.some((s) => s.reps < lo)
   const grinding = atLoad.some((s) => s.rpe !== undefined && s.rpe >= 9.5)
   // No effort was ever logged, so one session at the top of the range proves
@@ -550,18 +557,27 @@ export function suggestLoad(input: {
   }
   const incompleteWhy = unfinished ? `${unfinished} planned ${unfinished === 1 ? 'set of this lift was' : 'sets of this lift were'} unfinished. Repeat the prescription at the same load.` : undefined
   if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, adjacent, reach, { stale, away, weeksAway, incompleteWhy })
+  if (external && ex.stepFrom !== 'sled' && min !== undefined && kg < min - 0.001) return changeLift('Your last working weight is lighter than the first weight listed here.')
   if (ex.pattern === 'carry' && ex.count === 'seconds') {
     const shortest = Math.min(...atLoad.map((s) => s.reps))
     const hard = atLoad.some((s) => (s.rpe ?? 0) > plan.targetRpe + 0.5) || shortest < lo
     const easier = adjacent(kg, false)
     const up = adjacent(kg, true)
-    const stepEarned = allTop && up > kg && (!youth || up <= kg * (1 + YOUTH_LARGE_STEP_SHARE))
-    const reduce = (hard || away) && easier < kg && (easier > 0 || ex.stepFrom === 'sled')
+    const largeStep = youth && up > kg * (1 + YOUTH_LARGE_STEP_SHARE) + 0.001
+    const stepEarned = allTop && up > kg && (!largeStep || reachedTopOnPreviousVisit())
+    const reduce = (hard || away) && easier > 0 && easier < kg
+    if ((hard || away) && !reduce && (shortest <= lo || away)) {
+      return changeLift(`The lightest weight here is ${formatLoad(reach(kg), unit)}. This carry calls for a lighter load today.`)
+    }
     const load = reduce ? easier : stepEarned ? up : reach(kg)
     const controlled = !stale && !unfinished && atLoad.every((s) => s.rpe !== undefined && s.rpe <= plan.targetRpe)
-    const target = reduce || stepEarned || away ? lo : Math.max(1, Math.min(hi, shortest + (controlled ? 5 : 0)))
+    const target = hard || stepEarned || away ? lo : Math.max(1, Math.min(hi, shortest + (controlled ? 5 : 0)))
+    const reason = reduce ? 'Use a lighter load to keep your steps steady.'
+      : stepEarned ? 'Every working set reached the top of the time range. Try the next weight.'
+      : largeStep && allTop ? `The next weight is a large jump. Repeat ${hi} seconds on every set at target effort on a second visit first.`
+      : incompleteWhy ?? 'Keep your posture and stop while you can still walk smoothly.'
     return { ...base, kg: load, targetReps: target, kind: reduce ? 'decrease' : stepEarned ? 'increase' : 'repeat',
-      why: `Aim for ${target} seconds${ex.unilateral ? ' on each side' : ''} per set. ${reduce ? 'Use a lighter load to keep your steps steady.' : stepEarned ? 'Every working set reached the top of the time range. Try the next weight.' : 'Keep your posture and stop while you can still walk smoothly.'}` }
+      why: `Aim for ${target} seconds${ex.unilateral ? ' on each side' : ''} per set. ${reason}` }
   }
   if (ex.stepFrom === 'sled' && ex.distanceM) {
     const lighten = away || atLoad.some((set) => (set.rpe ?? 0) > plan.targetRpe + 0.5)
@@ -569,7 +585,6 @@ export function suggestLoad(input: {
     return { ...base, kg: load, targetReps: 1, kind: load < kg ? 'decrease' : 'repeat',
       why: `One smooth ${ex.distanceM} m push per set. ${lighten ? 'Use a lighter load if needed to keep your speed.' : 'Keep the same plates while each push stays quick.'} Rest ${ex.dose!.restSec} seconds between pushes.` }
   }
-  if (external && min !== undefined && kg < min - 0.001) return changeLift('Your last working weight is lighter than the first weight listed here.')
   if (ex.load === 'bodyweight' && !(kg > 0)) {
     if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan, working.map((s) => s.reps)) }
     const reps = atLoad.map((s) => s.reps).sort((a, b) => a - b)
@@ -622,12 +637,7 @@ export function suggestLoad(input: {
   const bigYouthStep = youthNext > kg && (youthNext - kg) / kg > YOUTH_LARGE_STEP_SHARE + 1e-9
   const bigBar = bigYouthStep ? hi + YOUTH_LARGE_STEP_EXTRA_REPS : hi
   // ...or by the same load at the top of the range at the target effort in two sessions running (the load held until it is easy).
-  const topTwice = (() => {
-    if (!bigYouthStep || !allTop) return false
-    const before = lastPerformance(sessions, exerciseId, location?.id, last.session.startedAt, keep)
-    const prior = before && !unfinishedLiftSets(before.session, exerciseId) ? before.sets.filter((s) => (s.kg ?? 0) === kg) : []
-    return (prior.length >= 2 || repeatedSingle) && prior.every(hitTop)
-  })()
+  const topTwice = bigYouthStep && allTop && reachedTopOnPreviousVisit()
   const moveUpBar = Math.max(failedSteps > 0 ? retryBar : hi, bigBar)
   const bigHeld = bigYouthStep && !topTwice
   const heldBack = (failedSteps > 0 || bigHeld) && !atLoad.every((s) => s.reps >= moveUpBar)
