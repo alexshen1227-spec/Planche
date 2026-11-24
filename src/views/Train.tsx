@@ -212,7 +212,9 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
         key: `${skill}-ladder`,
         skill,
         title: `${def.ladder.name} day`,
-        line: status
+        line: status?.pikePreparation
+          ? 'Two sets of knee-supported pike presses build toward your first full rep, with short handstand practice.'
+          : status
           ? `The ${def.ladder.name.toLowerCase()} line comes first: ${EXERCISE_BY_ID[status.rung.exerciseId]?.name ?? status.rung.exerciseId} for about five sets, the hold as short practice.`
           : def.ladder.summit,
         needs,

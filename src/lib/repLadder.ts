@@ -1,10 +1,11 @@
-import type { AppState, EquipmentId, Session, SetLog, SkillId, StepId } from '../types'
+import type { AppState, AssessmentRecord, EquipmentId, Session, SetLog, SkillId, StepId } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { equivalentGymExercise } from '../data/gym/exercises'
 import { skillOfStep } from '../data/progressions'
 import { ownsKit, SKILLS, type RepLadder, type RepRung } from '../data/skills'
 import { isAssisted } from './progression'
 import { isActiveSkill, trackOf, wholeState } from './skills'
+import { dayKey } from './time'
 
 /**
  * Rep ladders: the push-up lines that move on their own standards.
@@ -68,6 +69,8 @@ export interface LadderStatus {
   /** Index into `rungs` of the rung being trained. */
   index: number
   rung: RepRung
+  /** Preparation for the first full pike rep. It never earns a ladder standard. */
+  pikePreparation?: 'practice' | 'trial'
   /** A first-rep milestone, independent of placement and of the hold destination. */
   goal: { rung: RepRung; reviewed: boolean; logged: boolean; gymBest?: number; missingKit?: EquipmentId[]; atPlace?: string }
   /** The next rung, when there is one. */
@@ -105,6 +108,37 @@ function counts(session: Session): boolean {
   return session.workoutName !== 'Quick Log'
 }
 
+function firstPikePreparation(assessment: AssessmentRecord | undefined, sessions: Session[], lastGymRep: number, now: number): LadderStatus['pikePreparation'] {
+  let lastMiss = assessment?.answers['prep:hspu'] === 1 && assessment.at <= now ? assessment.at : -Infinity
+  let lastRep = lastGymRep
+  const practice = new Map<string, { at: number; sets: number }>()
+  for (const session of sessions) {
+    const full: SetLog[] = []
+    for (const set of session.sets) {
+      if (set.exerciseId !== 'pike-pushup' && set.exerciseId !== 'kneeling-pike-pushup') continue
+      if (set.at > now || set.kind !== 'reps' || set.section === 'warmup' || set.section === 'cooldown' ||
+          set.repaired?.length || isAssisted(set) || set.endReason === 'interruption' || set.endReason === 'timing') continue
+      if (set.exerciseId === 'pike-pushup') {
+        full.push(set)
+        if (set.value > 0 && set.form?.rating !== 'slipped') lastRep = Math.max(lastRep, set.at)
+      } else if (set.value >= 5 && !set.light && (set.rpe ?? session.rpe ?? 8) <= 8 && (!set.form || set.form.rating === 'clean')) {
+        const key = dayKey(set.at)
+        const day = practice.get(key)
+        practice.set(key, { at: set.at, sets: (day?.sets ?? 0) + 1 })
+      }
+    }
+    if (full.length && full.every((s) => s.value === 0) &&
+        (full.length >= 2 || full.some((s) => s.target === 1 || (s.rpe ?? session.rpe ?? 0) >= 9))) {
+      for (const set of full) lastMiss = Math.max(lastMiss, set.at)
+    }
+  }
+  if (!Number.isFinite(lastMiss) || lastRep >= lastMiss) return undefined
+  // A coaching cue to try one full rep after two manageable practice days.
+  // A missed trial starts a fresh practice period, independently of filming.
+  const days = [...practice.values()].filter((day) => day.sets >= 2 && day.at > lastMiss && dayKey(day.at) !== dayKey(lastMiss))
+  return days.length >= 2 ? 'trial' : 'practice'
+}
+
 /** Whether a step is open on its own skill's road — whichever skill that is. */
 function stepOpen(state: AppState, stepId: StepId): boolean {
   return trackOf(state, skillOfStep(stepId)).unlocked.includes(stepId)
@@ -121,7 +155,8 @@ export function ladderStatus(stateIn: AppState, skill: SkillId, now = Number.POS
   const rungs = availableRungs(ladder, state.profile.equipment)
 
   // Placement: the rung the athlete said they could already do, by exercise.
-  const answered = trackOf(state, skill).assessment?.answers[ladderAnswerKey(ladder)]
+  const assessment = trackOf(state, skill).assessment
+  const answered = assessment?.answers[ladderAnswerKey(ladder)]
   const answeredId = answered !== undefined ? ladder.rungs[Math.round(answered)]?.exerciseId : undefined
   let baseIndex = 0
   if (answeredId) {
@@ -177,13 +212,17 @@ export function ladderStatus(stateIn: AppState, skill: SkillId, now = Number.POS
   const goalGymId = equivalentGymExercise(goalRung.exerciseId)?.id
   let verifiedBest = 0
   let loggedBest = 0
+  let lastGymRep = -Infinity
   if (goalGymId || currentGymId) for (const session of state.gym?.sessions ?? []) {
     if (session.startedAt > now) continue
     for (const row of session.exercises) {
       if (row.exerciseId !== currentGymId && row.exerciseId !== goalGymId) continue
       for (const set of row.sets) {
         if (set.warmup || set.reps < 1 || set.at > now) continue
-        if (row.exerciseId === currentGymId) loggedBest = Math.max(loggedBest, set.reps)
+        if (row.exerciseId === currentGymId) {
+          loggedBest = Math.max(loggedBest, set.reps)
+          lastGymRep = Math.max(lastGymRep, set.at)
+        }
         if (row.exerciseId === goalGymId) {
           goal.logged = true
           goal.gymBest = Math.max(goal.gymBest ?? 0, set.reps)
@@ -209,6 +248,7 @@ export function ladderStatus(stateIn: AppState, skill: SkillId, now = Number.POS
     rungs,
     index,
     rung,
+    ...(rung.exerciseId === 'pike-pushup' ? { pikePreparation: firstPikePreparation(assessment, sessions, lastGymRep, now) } : {}),
     goal,
     ...(rungs[index + 1] ? { next: rungs[index + 1] } : {}),
     verifiedBest,

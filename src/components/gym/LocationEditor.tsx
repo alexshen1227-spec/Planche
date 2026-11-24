@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { EQUIPMENT_OPTIONS } from '../../data/equipment'
-import { GYM_EQUIPMENT, locationEquipmentLabel as labelOf, type GymEquipmentId, type Unit } from '../../data/gym/catalog'
+import { GYM_EQUIPMENT, locationEquipmentLabel as labelOf, type GymEquipmentDef, type GymEquipmentId, type Unit } from '../../data/gym/catalog'
 import type { LocationEquipment } from '../../data/gym/exercises'
 import { availableAt } from '../../lib/gym/availability'
 import type { GymLocation } from '../../lib/gym/types'
-import { displayLoad, toKg } from '../../lib/gym/units'
+import { entryLoad, fromKg, toKg } from '../../lib/gym/units'
 import { Button, SegmentedControl, ToggleChip } from '../ds'
 
 const GROUPS: { title: string; ids: LocationEquipment[] }[] = [
@@ -18,6 +18,31 @@ const GROUPS: { title: string; ids: LocationEquipment[] }[] = [
   },
   { title: 'Other', ids: GYM_EQUIPMENT.filter((e) => (e.kind === 'accessory' || e.kind === 'space') && e.id !== 'plates' && e.id !== 'dip-belt').map((e) => e.id) },
 ]
+
+function LoadField({ label, name, unit, kg, maxKg, placeholder, onChange }: {
+  label: string
+  name: string
+  unit: Unit
+  kg?: number
+  maxKg: number
+  placeholder: string
+  onChange: (value: number | undefined) => void
+}) {
+  return (
+    <label className="block min-w-0">
+      <span className="text-caption text-ink3">{label} ({unit})</span>
+      <input key={unit} type="number" inputMode="decimal" step="any" min="0.001" max={fromKg(maxKg, unit)}
+        defaultValue={kg === undefined ? '' : entryLoad(kg, unit)} aria-label={name} placeholder={placeholder}
+        onChange={(event) => {
+          const input = event.currentTarget
+          if (!input.value && !input.validity.badInput) onChange(undefined)
+          else if (input.validity.valid) onChange(toKg(input.valueAsNumber, unit))
+        }}
+        className="mt-1 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body"
+      />
+    </label>
+  )
+}
 
 /** Name, units, equipment and top weights for one location. */
 export function LocationEditor({
@@ -36,16 +61,44 @@ export function LocationEditor({
   const [local, setLocal] = useState(location)
   const draft = onDraftChange ? location : local
   const setDraft = onDraftChange ?? setLocal
+  const [selectedGear, setSelectedGear] = useState<GymEquipmentId | null>(null)
   const has = new Set(draft.equipment)
   const toggle = (id: LocationEquipment) =>
     setDraft({ ...draft, equipment: has.has(id) ? draft.equipment.filter((e) => e !== id) : [...draft.equipment, id] })
   const gear = (id: GymEquipmentId) => draft.gear?.[id] ?? {}
-  const setGear = (id: GymEquipmentId, patch: { unit?: Unit; maxKg?: number }) =>
+  const setGear = (id: GymEquipmentId, patch: { unit?: Unit; maxKg?: number; stepKg?: number }) =>
     setDraft({ ...draft, gear: { ...draft.gear, [id]: { ...draft.gear?.[id], ...patch } } })
   const count = availableAt(draft).length
+  const loadable = GYM_EQUIPMENT.filter((item) => has.has(item.id) && item.step)
+  const otherGear = loadable.filter((item) => !item.hasMax)
+  const selected = otherGear.find((item) => item.id === selectedGear) ?? otherGear[0]
+  const controls = (item: GymEquipmentDef) => {
+    const { id, label } = item
+    const config = gear(id)
+    const unit = config.unit ?? draft.unit
+    return (
+      <div key={id} className="space-y-3">
+        <SegmentedControl label={label + ' unit'} value={unit} onChange={(unit) => setGear(id, { unit })}
+          options={[{ value: 'kg' as Unit, label: 'kg' }, { value: 'lb' as Unit, label: 'lb' }]} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          {item.hasMax ? (
+            <LoadField label={id === 'dumbbells' ? 'Heaviest single dumbbell' : 'Heaviest single kettlebell'}
+              name={`Heaviest ${label.toLowerCase()} in ${unit}`} unit={unit} kg={config.maxKg} maxKg={999.99}
+              placeholder="Not set" onChange={(maxKg) => setGear(id, { maxKg })} />
+          ) : null}
+          <LoadField label="Smallest weight increase" name={`${label} weight increment in ${unit}`}
+            unit={unit} kg={config.stepKg} maxKg={50} placeholder={`Usual ${item.step?.[unit]} ${unit}`}
+            onChange={(stepKg) => setGear(id, { stepKg })} />
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-5">
+    <form className="space-y-5" onSubmit={(event) => {
+      event.preventDefault()
+      onSave({ ...draft, name: draft.name.trim() || 'Gym' })
+    }}>
       <h2 className="font-display text-title2 font-semibold text-ink">{location.name || 'Place'}</h2>
       <div>
         <label htmlFor="location-name" className="text-footnote font-medium text-ink2">
@@ -71,7 +124,7 @@ export function LocationEditor({
             { value: 'lb' as Unit, label: 'lb' },
           ]}
         />
-        <p className="mt-1 text-caption text-ink3">Set a different unit for dumbbells or kettlebells below if this place mixes them.</p>
+        <p className="mt-1 text-caption text-ink3">Equipment can use a different unit or weight increment below.</p>
       </div>
 
       {GROUPS.map((group) => (
@@ -87,47 +140,29 @@ export function LocationEditor({
         </fieldset>
       ))}
 
-      {(['dumbbells', 'kettlebells'] as GymEquipmentId[])
-        .filter((id) => has.has(id))
-        .map((id) => {
-          const unit = gear(id).unit ?? draft.unit
-          const max = gear(id).maxKg
-          return (
-            <div key={id} className="rounded-card border border-line p-4">
-              <p className="text-body font-semibold">{labelOf(id)}</p>
-              <div className="mt-2 flex items-center gap-2">
-                <label className="flex-1">
-                  <span className="text-caption text-ink3">Heaviest pair ({unit})</span>
-                  <input
-                    inputMode="decimal"
-                    value={max !== undefined ? String(displayLoad(max, unit)) : ''}
-                    placeholder="Not set"
-                    aria-label={`Heaviest ${labelOf(id).toLowerCase()} in ${unit}`}
-                    onChange={(e) => {
-                      const v = Number(e.target.value.replace(',', '.'))
-                      setGear(id, { maxKg: Number.isFinite(v) && v > 0 ? toKg(v, unit) : undefined })
-                    }}
-                    className="mt-1 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body"
-                  />
-                </label>
-                <SegmentedControl
-                  className="self-end"
-                  label={`${labelOf(id)} unit`}
-                  value={unit}
-                  onChange={(u) => setGear(id, { unit: u })}
-                  options={[
-                    { value: 'kg' as Unit, label: 'kg' },
-                    { value: 'lb' as Unit, label: 'lb' },
-                  ]}
-                />
-              </div>
-            </div>
-          )
-        })}
+      {loadable.filter((item) => item.hasMax).map((item) => (
+        <fieldset key={item.id} className="rounded-card border border-line p-4">
+          <legend className="px-1 text-body font-semibold">{item.label}</legend>
+          {controls(item)}
+        </fieldset>
+      ))}
+      {selected ? (
+        <details className="rounded-card border border-line p-4">
+          <summary className="min-h-11 cursor-pointer content-center text-body font-semibold">Other equipment weights</summary>
+          <label className="mb-3 mt-2 block text-footnote text-ink2">
+            Equipment
+            <select value={selected.id} onChange={(e) => setSelectedGear(e.target.value as GymEquipmentId)}
+              className="mt-1 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body text-ink">
+              {otherGear.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </label>
+          {controls(selected)}
+        </details>
+      ) : null}
 
       <p className="text-footnote text-ink2">{count} exercises can be programmed here.</p>
       <div className="grid gap-2">
-        <Button size="lg" full onClick={() => onSave({ ...draft, name: draft.name.trim() || 'Gym' })}>
+        <Button type="submit" size="lg" full>
           Save
         </Button>
         {canDelete ? (
@@ -136,6 +171,6 @@ export function LocationEditor({
           </Button>
         ) : null}
       </div>
-    </div>
+    </form>
   )
 }

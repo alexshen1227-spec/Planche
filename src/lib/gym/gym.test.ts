@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GYM_EXERCISE_BY_ID, GYM_EXERCISES } from '../../data/gym/exercises'
+import { GYM_EXERCISE_BY_ID, GYM_EXERCISES, jointsToRest } from '../../data/gym/exercises'
 import { GYM_EQUIPMENT_BY_ID, MUSCLE_BY_ID, PATTERN_LABEL, type Pattern } from '../../data/gym/catalog'
 import { athleticDomain } from '../../data/gym/exercises'
 import { alternativesFor, availableAt, canDoHere } from './availability'
@@ -38,6 +38,15 @@ const session = (id: string, locationId: string, at: number, exerciseId: string,
 })
 
 describe('catalog', () => {
+  it('keeps all pressing and hanging variants off a reported elbow and all gripping hangs off a reported wrist', () => {
+    for (const ex of GYM_EXERCISES.filter((e) => ['horizontal-press', 'incline-press', 'dip', 'vertical-press', 'horizontal-pull', 'vertical-pull'].includes(e.pattern))) {
+      expect(jointsToRest(ex.id), ex.name).toEqual(expect.arrayContaining(['elbows', 'shoulders', 'wrists']))
+    }
+    for (const id of ['hanging-leg-raise', 'hanging-knee-raise', 'l-sit', 'ab-wheel']) {
+      expect(jointsToRest(id), id).toEqual(expect.arrayContaining(['wrists', 'elbows', 'shoulders']))
+    }
+    expect(jointsToRest('bodyweight-squat')).not.toContain('elbows')
+  })
   it('every exercise names real muscles, a unique id and a cue', () => {
     expect(new Set(GYM_EXERCISES.map((e) => e.id)).size).toBe(GYM_EXERCISES.length)
     for (const e of GYM_EXERCISES) {
@@ -106,6 +115,15 @@ describe('availability and swaps', () => {
 
 describe('double progression', () => {
   const plan = repPlanFor(GYM_EXERCISE_BY_ID['db-bench-press'], 'muscle')
+  it('repeats the weight actually used at this location and increases on its configured rack', () => {
+    const hist = [session('db-rack', 'a', T0, 'db-bench-press', [{ ...set(12.5, 9, 7), unit: 'kg' }])]
+    const suggest = (location: GymLocation, sessions = hist) => suggestLoad({ exerciseId: 'db-bench-press', location, sessions, plan, now: T0 + DAY })
+    expect(suggest(gymA)).toMatchObject({ kind: 'repeat', kg: 12.5 })
+    expect(suggest(gymA).nearestTo).toBeUndefined()
+    expect(suggest({ ...gymA, gear: { dumbbells: { maxKg: 10 } } }).kg).toBe(10)
+    const rack = { ...gymA, gear: { dumbbells: { stepKg: 2.5, maxKg: 30 } } }
+    expect(suggest(rack, [session('next', 'a', T0, 'db-bench-press', [set(12.5, 10, 7), set(12.5, 10, 7)])])).toMatchObject({ kind: 'increase', kg: 15 })
+  })
   it('adds the smallest step once every set reaches the top at the target effort', () => {
     const hist = [session('s1', 'a', T0, 'db-bench-press', [set(20, 10, 8), set(20, 10, 8), set(20, 10, 8)])]
     const next = suggestLoad({ exerciseId: 'db-bench-press', location: gymA, sessions: hist, plan })

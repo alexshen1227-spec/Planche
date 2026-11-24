@@ -208,7 +208,7 @@ const BASE_EXERCISES: GymExercise[] = [
   x('archer-push-up', 'Archer push-up', 'horizontal-press', ['chest', 'front-delts', 'triceps'], ['abs'], [], 'bodyweight', true, ['wrists', 'shoulders', 'elbows'], 'Wide hands; lower over one arm while the other stays long, then switch sides.', { unilateral: true, carries: ['planche'] }),
   x('pseudo-planche-push-up', 'Pseudo planche push-up', 'horizontal-press', ['front-delts', 'chest', 'triceps'], ['abs', 'biceps'], [], 'bodyweight', true, ['wrists', 'shoulders', 'elbows'], 'Hands by the hips, fingers turned out, lean the shoulders well past the hands and stay there.', { carries: ['planche'] }),
   x('decline-push-up', 'Feet-elevated push-up', 'incline-press', ['chest-upper', 'front-delts', 'triceps'], ['chest', 'abs'], [['box', 'bench', 'incline-bench']], 'bodyweight', true, ['wrists', 'shoulders', 'elbows'], 'Feet on a box, body one plank; the higher the feet, the more the shoulders work.', { carries: ['planche', 'handstand'] }),
-  x('incline-push-up', 'Hands-elevated push-up', 'horizontal-press', ['chest', 'triceps', 'front-delts'], ['abs'], [['box', 'bench', 'incline-bench', 'wall']], 'bodyweight', true, ['wrists', 'shoulders'], 'Hands on a bench or wall: the way to earn clean push-ups before the floor ones.'),
+  x('incline-push-up', 'Hands-elevated push-up', 'horizontal-press', ['chest', 'triceps', 'front-delts'], ['abs'], [['box', 'bench', 'incline-bench', 'wall']], 'bodyweight', true, ['wrists', 'shoulders', 'elbows'], 'Hands on a bench or wall: the way to earn clean push-ups before the floor ones.'),
   x('kneeling-push-up', 'Kneeling push-up', 'horizontal-press', ['chest', 'triceps', 'front-delts'], ['abs'], [], 'bodyweight', true, ['wrists', 'elbows', 'shoulders'], 'Keep a straight line from knees to shoulders. Lower your chest between your hands and press the floor away.'),
   x('landmine-press', 'Landmine press', 'incline-press', ['front-delts', 'chest-upper', 'triceps'], ['abs', 'upper-back'], [['barbell'], ['landmine']], 'barbell', true, ['shoulders', 'elbows', 'wrists'], 'Bar at the shoulder, press up and forward along its arc; a kind angle for the shoulder.', { stepFrom: 'barbell' }),
   x('barbell-incline-close-grip', 'Close-grip incline press', 'incline-press', ['chest-upper', 'triceps'], ['front-delts'], [['barbell'], ['incline-bench']], 'barbell', true, ['elbows', 'wrists', 'shoulders'], 'Hands just inside shoulder width on a low incline; bar to the upper chest.'),
@@ -435,10 +435,23 @@ export const GYM_EXERCISE_BY_ID: Record<string, GymExercise> = Object.fromEntrie
 // even when the wrist is not a primary source of training fatigue for that lift.
 const handsFree = new Set(['hip-thrust', 'zercher-squat', 'cable-kickback', 'cable-hip-abduction', 'cable-hip-adduction', 'machine-lateral-raise'])
 const handPatterns = new Set<Pattern>(['horizontal-press', 'incline-press', 'vertical-press', 'dip', 'chest-fly', 'triceps', 'biceps', 'vertical-pull', 'horizontal-pull', 'straight-arm-pull', 'carry', 'throw'])
+// These movements transfer load through both joints, including a supported
+// arm in a plank or a carry. A request to keep off a joint is stricter than
+// its usual fatigue contribution in the exercise catalogue.
+const loadedArmPatterns = new Set<Pattern>(['horizontal-press', 'incline-press', 'vertical-press', 'dip', 'horizontal-pull', 'vertical-pull', 'straight-arm-pull', 'carry', 'throw'])
+const loadedArmSupports = new Set(['plank', 'side-plank', 'copenhagen-plank', 'short-copenhagen', 'ab-wheel', 'sled-push', 'nordic-curl', 'dragon-flag'])
+const handSupports = new Set<LocationEquipment>(['pullup-bar', 'rings', 'parallettes', 'dip-bars', 'ab-wheel'])
 const jointRest = new Map<string, Joint[]>(GYM_EXERCISES.map((ex) => {
+  const supportedByHands = ex.needs.some((group) => group.length > 0 && group.every((id) => handSupports.has(id)))
   const gripped = !handsFree.has(ex.variantOf ?? ex.id) && (['barbell', 'dumbbell', 'kettlebell', 'cable'].includes(ex.load) ||
-    handPatterns.has(ex.pattern) || ex.id === 'sled-push' || ex.id === 'sled-drag-backward')
-  return [ex.id, gripped && !ex.stress.includes('wrists') ? [...ex.stress, 'wrists'] : ex.stress]
+    handPatterns.has(ex.pattern) || supportedByHands || ex.id === 'sled-push' || ex.id === 'dragon-flag')
+  const joints = new Set(ex.stress)
+  if (gripped) joints.add('wrists')
+  if (loadedArmPatterns.has(ex.pattern) || supportedByHands || loadedArmSupports.has(ex.id)) {
+    joints.add('elbows')
+    joints.add('shoulders')
+  }
+  return [ex.id, [...joints]]
 }))
 
 export function jointsToRest(exerciseId: string): Joint[] {

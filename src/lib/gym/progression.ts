@@ -441,9 +441,15 @@ export function suggestLoad(input: {
     return prior.length >= 2 && prior.every((s) => s.reps >= hi && (s.rpe === undefined || s.rpe <= plan.targetRpe + 0.5))
   })()
   const failing = failedWithoutEffort(atLoad, lo)
-  // Every suggested load is one this place can make.
-  const reach = (v: number) => roundToStep(v > 0 ? Math.max(v, step) : 0, step, top)
-  if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, top, { stale, away, weeksAway })
+  const unit = unitFor(ex, location)
+  const reach = (v: number) => {
+    // A logged 12.5 kg dumbbell is on this rack even if our default step
+    // guesses 2 kg. A changed unit or a new equipment maximum still applies.
+    const observed = location?.id === last.session.locationId && (top === undefined || v <= top + 0.001) &&
+      working.some((s) => s.kg === v && s.unit === unit)
+    return observed ? v : roundToStep(v > 0 ? Math.max(v, step) : 0, step, top)
+  }
+  if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, top, reach, { stale, away, weeksAway })
   if (ex.load === 'bodyweight' && !(kg > 0)) {
     if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan, working.map((s) => s.reps)) }
     const reps = atLoad.map((s) => s.reps).sort((a, b) => a - b)
@@ -499,14 +505,17 @@ export function suggestLoad(input: {
     // Only a real step is "up one step". When the grid has nothing between last time's load and one step above it
     // but a load barely heavier (22.5 kg dumbbells at a place now counted in pounds: 50 lb is +0.18 kg), it is the
     // nearest load, not a step — said as such below.
-    const realStep = !youth || jump - kg >= step / 2 - 1e-9
+    const smallerStep = youth && here === kg && jump > kg && jump - kg < step / 2 - 1e-9
+    const realStep = !youth || smallerStep || jump - kg >= step / 2 - 1e-9
     if (realStep) {
       return {
         ...base,
         kg: jump,
         kind: 'increase',
         why:
-          twoSteps > next
+          smallerStep
+            ? `Every set reached ${hi}. Try the next small increase available here, up to ${formatLoad(jump, unit)}.`
+            : twoSteps > next
             ? `Every set went well past ${hi} at an easy effort last time: up two steps.`
             : unratedTwice
               ? `Every set reached ${hi} in your last two sessions at this weight (no effort logged, so two in a row stands in for it): up one step.`
@@ -563,6 +572,7 @@ function assistedSuggestion(
   plan: RepPlan,
   step: number,
   top: number | undefined,
+  repeatLoad: (value: number) => number,
   gap: { stale: boolean; away: boolean; weeksAway: number } = { stale: false, away: false, weeksAway: 0 },
 ): LoadSuggestion {
   const help = workingLoad(working.map((s) => s.kg ?? 0), 'lightest')
@@ -595,7 +605,7 @@ function assistedSuggestion(
   if (failedWithoutEffort(atHelp, lo) && step > 0) {
     return { ...base, kg: roundToStep(help + step, step, top), kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step more help, then build back.` }
   }
-  return { ...base, kg: roundToStep(help, step, top), kind: 'repeat', why: `Aim to add a rep to last time’s ${atHelp.map((s) => s.reps).join(', ')} with this assistance.` }
+  return { ...base, kg: repeatLoad(help), kind: 'repeat', why: `Aim to add a rep to last time’s ${atHelp.map((s) => s.reps).join(', ')} with this assistance.` }
 }
 
 export interface GymRecord {

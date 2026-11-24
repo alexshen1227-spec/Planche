@@ -141,10 +141,16 @@ function twinFor(
   step: StepDef,
   capacity: number | undefined,
   easeDown: boolean,
-): { spec: BlockSpec; reason: string; standard?: number; eased?: string } | null {
+  now: number,
+): { spec: BlockSpec; reason: string; standard?: number; eased?: string; preparation?: 'practice' | 'trial' } | null {
   if (skill.ladder) {
-    const status = ladderStatus(state, skill.id)
+    const status = ladderStatus(state, skill.id, now)
     if (!status) return null
+    if (status.pikePreparation) return {
+      spec: { exerciseId: 'kneeling-pike-pushup', sets: 2, amount: 3, rest: 'main' },
+      reason: 'Keep your knees down and shift your hips back until each rep is smooth. Build toward two sets of five on two separate days before trying a full pike rep.',
+      preparation: status.pikePreparation,
+    }
     // A maximal press steps down a rung on a day that calls for less.
     const eased = easeDown && status.index > 0 && (EXERCISE_BY_ID[status.rung.exerciseId]?.difficulty ?? 0) >= 4
     const rung = eased ? status.rungs[status.index - 1] : status.rung
@@ -277,6 +283,7 @@ export function skillSession(
   // reaches this file, and a request without `focus` takes none of these paths.
   const ladderDay = options.focus === 'ladder' && Boolean(skill.ladder)
   let ladderPlaced = false
+  let firstPikeTrial = false
 
   // ——— The key hold's numbers (shared with the coach, so its copy matches) ———
   const baseTarget = cappedBase(adaptiveTarget(state, stepId, now), plan)
@@ -445,12 +452,13 @@ export function skillSession(
   } else {
     // ——— 7. The moving version of the step ———
     const easeForJoints = plan.loadPermission === 'reduced'
-    const twin = twinFor(state, skill, step, capacity, easeForJoints || light)
+    const twin = twinFor(state, skill, step, capacity, easeForJoints || light, now)
     if (twin) {
+      firstPikeTrial = twin.preparation === 'trial' && !light && !easyDay && !easeForJoints && !attemptQueued && plan.challengeAllowed
       const exercise = EXERCISE_BY_ID[twin.spec.exerciseId]
       const maximal = (exercise?.difficulty ?? 0) >= 4
       const baseReps = twin.spec.amount
-      const targetReps = plan.strategy === 'intensity' ? Math.max(1, baseReps - (maximal ? 1 : 2)) : baseReps
+      const targetReps = plan.strategy === 'intensity' && !twin.preparation ? Math.max(1, baseReps - (maximal ? 1 : 2)) : baseReps
       const easedNote = twin.eased
         ? easeForJoints
           ? ` ${EXERCISE_BY_ID[twin.eased].name} is set aside today for the joint you flagged — stop any set that makes it worse.`
@@ -463,7 +471,7 @@ export function skillSession(
       const label = twin.spec.note ?? (skill.ladder ? `${skill.ladder.name} line.` : 'The moving version of this step.')
       const rungBlock: Block = {
         exerciseId: twin.spec.exerciseId,
-        sets: light ? 2 : ladderDay ? scale(LADDER_DAY_SETS) : scale((plan.strategy === 'volume' ? 4 : 3) + (emphasis === 'pressing' ? 1 : 0)),
+        sets: twin.preparation ? twin.spec.sets : light ? 2 : ladderDay ? scale(LADDER_DAY_SETS) : scale((plan.strategy === 'volume' ? 4 : 3) + (emphasis === 'pressing' ? 1 : 0)),
         target: exercise?.type === 'hold' ? hold(targetReps) : reps(targetReps),
         restSec: maximal || plan.strategy === 'intensity' ? Math.max(rAcc, Math.round(rMain * 0.8)) : plan.strategy === 'density' ? Math.min(60, rAcc) : rAcc,
         section: 'strength',
@@ -553,6 +561,13 @@ export function skillSession(
   const kit = resolveEquipment(blocks, equipment)
   const sized = capacityAdjustBlocks(state, kit.blocks, now)
   const lightened = sized.blocks.map((b) => (b.light ? lightDose(b) : b))
+  if (firstPikeTrial) {
+    const firstWork = lightened.findIndex((b) => b.section !== 'warmup')
+    lightened.splice(firstWork < 0 ? lightened.length : firstWork, 0, {
+      exerciseId: 'pike-pushup', sets: 1, target: reps(1), restSec: rMain, section: 'strength', role: 'pressing',
+      note: 'Try one controlled pike push-up from your feet while fresh. If it stalls, come down to your knees and log zero. The knee-supported sets are your working sets today.',
+    })
+  }
   if (lightened.some((b) => b.light)) {
     adjustments.push(
       `Easy day: ${words.strength} and support work at about ${Math.round(LIGHT_DOSE_SHARE * 100)}% of your usual dose — keep the pattern, leave the fatigue. These sets do not change your accessory targets.`,

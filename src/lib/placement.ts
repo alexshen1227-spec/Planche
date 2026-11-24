@@ -102,11 +102,11 @@ export function ladderItem(skill: SkillId): InterviewItem | null {
     question: `${ladder.name}: which is the hardest of these you can do at least one clean rep of?`,
     standard:
       'A clean rep goes all the way down under control and finishes with the arms locked. Pick the last one you are sure of.',
-    options: ladder.rungs.map((rung, index) => ({
+    options: [...(skill === 'handstand' ? [{ label: 'No full pike push-up yet', value: -1, hint: 'Start with knee-supported presses' }] : []), ...ladder.rungs.map((rung, index) => ({
       label: EXERCISE_BY_ID[rung.exerciseId]?.name ?? rung.exerciseId,
       value: index,
-      ...(index === 0 ? { hint: 'Or none of these yet — the line starts here' } : {}),
-    })),
+      ...(index === 0 && skill !== 'handstand' ? { hint: 'Or none of these yet — the line starts here' } : {}),
+    }))],
   }
 }
 
@@ -265,7 +265,11 @@ export function placementRecord(skill: SkillId, answers: InterviewAnswers, at: n
   return {
     at,
     // The rep line starts where the caps allow, not where it was claimed.
-    answers: { ...answers, ...(rung !== undefined ? { [ladderId(skill)]: rung } : {}) },
+    answers: {
+      ...answers,
+      ...(rung !== undefined ? { [ladderId(skill)]: rung } : {}),
+      ...(skill === 'handstand' && answers[ladderId(skill)] === -1 ? { 'prep:hspu': 1 } : {}),
+    },
     placedStepId: placement.stepId,
     confidence: placement.confidence,
     gapIds: placement.gaps.map((gap) => gap.id),

@@ -752,6 +752,11 @@ function LadderCard({ status, skill }: { status: LadderStatus; skill: SkillId })
         Works up to {ladder.summit}. This line moves on its own standards, beside the {SKILLS[skill].holdName} holds
         rather than behind them.
       </p>
+      {status.pikePreparation && <p className="mt-3 text-footnote leading-relaxed text-ink2">
+        {status.pikePreparation === 'trial'
+          ? 'Your knee-supported sets are consistent. On a fresh day, try one full pike rep before your kneeling sets.'
+          : 'Preparing for your first pike rep. Start on your knees and build to two manageable sets of five on two different days.'}
+      </p>}
       <ol className="mt-3 space-y-2">
         {rungs.map((rung, i) => {
           const done = i < index

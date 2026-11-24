@@ -294,6 +294,24 @@ const exercises: Exercise[] = [
   },
   // ————— Handstand push-up line —————
   {
+    id: 'kneeling-pike-pushup',
+    name: 'Kneeling Pike Push-Up',
+    category: 'push',
+    skill: 'handstand',
+    type: 'reps',
+    difficulty: 1,
+    equipment: ['Floor'],
+    blurb: 'Practise the overhead press with your knees supporting part of your weight. Move your hips back to make each rep easier.',
+    howTo: [
+      'Start on your hands and knees. Set your hands just outside shoulder width, then lift your hips and keep your knees planted.',
+      'Bend your elbows and bring your head toward a spot just ahead of your hands. Choose a depth you can reverse smoothly and keep your weight off your head.',
+      'Press the floor away to straighten your arms. Shorten the range or shift your hips back if the next rep would stall.',
+    ],
+    cues: ['Knees stay down', 'Head travels ahead of hands', 'Press back to straight arms'],
+    mistakes: ['Dropping weight onto the head', 'Flaring the elbows wide', 'Rushing through the bottom'],
+    muscles: ['Delts', 'Triceps', 'Upper back'],
+  },
+  {
     id: 'elevated-pike-pushup',
     name: 'Feet-Elevated Pike Push-Up',
     category: 'push',

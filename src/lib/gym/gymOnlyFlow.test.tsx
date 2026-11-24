@@ -65,10 +65,15 @@ it('restores an unfinished gym editor, then finishes setup with the saved name, 
   const weightUnit = () => within(screen.getByRole('radiogroup', { name: 'Unit' })).getByRole('radio', { name: 'lb' })
   fireEvent.click(weightUnit())
   click('Dumbbells')
+  const increment = () => screen.getByRole('spinbutton', { name: 'Dumbbells weight increment in lb' }) as HTMLInputElement
+  fireEvent.change(screen.getByLabelText('Heaviest dumbbells in lb'), { target: { value: '52.5' } })
+  fireEvent.change(increment(), { target: { value: '2.5' } })
   first.unmount()
   mount()
   expect(screen.getByDisplayValue('Track gym')).toBeTruthy()
   expect(weightUnit().getAttribute('aria-checked')).toBe('true')
+  expect(increment().value).toBe('2.5')
+  expect((screen.getByLabelText('Heaviest dumbbells in lb') as HTMLInputElement).value).toBe('52.5')
   expect(screen.getByRole('button', { name: 'Dumbbells' }).getAttribute('aria-pressed')).toBe('true')
   click('Save')
   click(/continue/i)
@@ -79,6 +84,9 @@ it('restores an unfinished gym editor, then finishes setup with the saved name, 
   const finished = JSON.parse(localStorage.getItem('planchelab.v1')!)
   expect(finished.name).toBe('Quinn')
   expect(finished.gym.locations).toContainEqual(expect.objectContaining({ name: 'Track gym', unit: 'lb', equipment: ['dumbbells'] }))
+  const dumbbells = finished.gym.locations.find((l: { name: string }) => l.name === 'Track gym').gear.dumbbells
+  expect(dumbbells.stepKg).toBeCloseTo(2.5 * 0.45359237)
+  expect(dumbbells.maxKg).toBeCloseTo(52.5 * 0.45359237)
   expect(localStorage.getItem(SETUP_DRAFT_KEY)).toBeNull()
 })
 

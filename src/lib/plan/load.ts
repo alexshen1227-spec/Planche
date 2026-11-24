@@ -62,8 +62,8 @@ export const PRESS_SKILLS: ReadonlySet<SkillId> = new Set(
 )
 
 function pressLoading(exerciseId: string): Loading | null {
-  if (!HANDSTAND_PRESSES.includes(exerciseId)) return null
-  const twin = gymSetLoading(equivalentGymExercise(exerciseId)?.id ?? 'wall-hspu')
+  if (!HANDSTAND_PRESSES.includes(exerciseId) && exerciseId !== 'kneeling-pike-pushup') return null
+  const twin = gymSetLoading(exerciseId === 'kneeling-pike-pushup' ? 'pike-push-up' : equivalentGymExercise(exerciseId)?.id ?? 'wall-hspu')
   if (!twin) return null
   return { muscles: twin.muscles, joints: twin.joints, ...(HARD_PRESSES.has(exerciseId) ? { press: true } : {}) }
 }

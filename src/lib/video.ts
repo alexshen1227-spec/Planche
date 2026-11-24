@@ -15,6 +15,7 @@ export const MOVEMENT_VIDEOS: Readonly<Record<string, MovementVideo | undefined>
   'handstand-bail': { id: 'ZzEP7XvkDDk', by: 'GMB Fitness' },
   'freestanding-handstand': { id: 'Y3FSeSecjKA', by: 'GMB Fitness' },
   'pike-push-up': { id: 'DG-NcMnfZ_0', by: 'FitnessFAQs', start: 48 },
+  'kneeling-pike-pushup': { id: 'bA4xN8hD1l8', by: 'That Lifestyle Coach' },
   'wall-hspu-negative': { id: 'uZWjFe4fufA', by: 'FitnessFAQs' },
   'wall-hspu': { id: 'hvoQiF0kBI8', by: 'CrossFit' },
   'freestanding-hspu': { id: '2fY3DHUZLOs', by: 'FitnessFAQs' },

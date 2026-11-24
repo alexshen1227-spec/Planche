@@ -181,6 +181,7 @@ const ACCESSORY_CEILING: Record<string, number> = {
   pushup: 20,
   pppu: 12,
   'pike-pushup': 12,
+  'kneeling-pike-pushup': 10,
   dip: 12,
   'tuck-planche-pushup': 8,
   'adv-tuck-planche-pushup': 6,

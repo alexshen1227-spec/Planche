@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { resumePartial, sessionFromDraft, type GymDraft } from './draft'
+import { adaptOpenDraft, resumePartial, sessionFromDraft, type GymDraft } from './draft'
 import { defaultGym, mergeSession, reduceGym, sanitizeGymReport } from './state'
 
 const start = new Date(2026, 10, 16, 10).getTime()
@@ -12,6 +12,18 @@ const draft: GymDraft = {
       sets: [{ reps: 12, load: 5, done: false }] },
   ],
 }
+
+it('keeps a sore elbow off the remaining presses while preserving the squat already logged', () => {
+  const item = { ...draft.items[1], exerciseId: 'incline-push-up' }
+  const home = { ...draft, items: [{ ...draft.items[0], exerciseId: 'bodyweight-squat' }, item] }
+  const partial = sessionFromDraft(home, start + 1000)
+  const again = resumePartial(partial, ['elbows'], undefined, start + 2000)!
+  expect(again.items.map((i) => i.exerciseId)).toEqual(['bodyweight-squat'])
+  expect(again.deferred?.map((i) => i.exerciseId)).toEqual(['incline-push-up'])
+  const open = adaptOpenDraft(home, ['elbows'], true)
+  expect(open.items.map((i) => i.exerciseId)).toEqual(['bodyweight-squat'])
+  expect(open.items[0].sets[0]).toEqual(home.items[0].sets[0])
+})
 
 it('keeps unfinished prescription outside volume, carries a late correction, and rejects duplicate or deleted continuations', () => {
   const first = sessionFromDraft(draft, start + 1000)

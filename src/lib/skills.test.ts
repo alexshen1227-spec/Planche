@@ -712,6 +712,33 @@ describe('the rep ladders', () => {
   })
   const reviewed: SetLog['form'] = { rating: 'clean', confirmed: true, visualReviewPassed: true }
 
+  it('trains a first pike rep from the knees and offers one trial after two manageable practice days', () => {
+    const base = startingState({ skills: ['handstand'], equipment: ['floor', 'wall'] })
+    const assessment = placementRecord('handstand', { [ladderId('handstand')]: -1, pushups: 3 }, T0)
+    const state = normalizeState({ ...base, tracks: { ...base.tracks, handstand: { ...trackOf(base, 'handstand'), assessment } } })
+    const withLog = (s: AppState, day: number, sets: SetLog[]) => ({ ...s, sessions: [...s.sessions, sessionOf(s, T0 + day * DAY, sets)] })
+    const practice = (day: number, rpe: number) => [0, 1].map((i) => rep('kneeling-pike-pushup', 5, T0 + day * DAY + i, undefined, { rpe }))
+    const pressBlocks = (s: AppState, day: number) => finalizeWorkoutWithPlan(s, { source: 'auto', skills: ['handstand'], focus: 'ladder', minutes: 45 }, undefined, T0 + day * DAY).workout.blocks.filter((b) => b.section === 'strength')
+    expect(ladderStatus(state, 'handstand')!.pikePreparation).toBe('practice')
+    expect(pressBlocks(state, 1).find((b) => b.role === 'press')).toMatchObject({ exerciseId: 'kneeling-pike-pushup', sets: 2 })
+    expect(pressBlocks(state, 1).some((b) => b.exerciseId === 'pike-pushup')).toBe(false)
+    const tooHard = withLog(state, 1, practice(1, 10))
+    const once = withLog(tooHard, 3, practice(3, 7))
+    expect(ladderStatus(once, 'handstand')!.pikePreparation).toBe('practice')
+    const twice = withLog(once, 5, practice(5, 8))
+    expect(ladderStatus(twice, 'handstand')!).toMatchObject({ pikePreparation: 'trial', loggedBest: 0, verifiedBest: 0 })
+    const trial = pressBlocks(twice, 8).filter((b) => b.exerciseId === 'pike-pushup')
+    expect(trial).toMatchObject([{ sets: 1, target: { reps: 1 } }])
+    const failed = withLog(twice, 8, [rep('pike-pushup', 0, T0 + 8 * DAY, undefined, { target: 1 })])
+    expect(ladderStatus(failed, 'handstand')!.pikePreparation).toBe('practice')
+    const unplaced = withLog(base, 8, [rep('pike-pushup', 0, T0 + 8 * DAY, undefined, { target: 4, rpe: 10 })])
+    expect(ladderStatus(unplaced, 'handstand')!.pikePreparation).toBe('practice')
+    const firstFull = withLog(failed, 11, [rep('pike-pushup', 1, T0 + 11 * DAY)])
+    expect(ladderStatus(firstFull, 'handstand')!.pikePreparation).toBeUndefined()
+    expect(ladderStatus(firstFull, 'handstand')!).toMatchObject({ loggedBest: 1, verifiedBest: 0, index: 0 })
+    expect(pressBlocks(firstFull, 14).find((b) => b.role === 'press')?.exerciseId).toBe('pike-pushup')
+  })
+
   it('shows working pike reps from the gym on the press road and follows a correction or deletion', () => {
     const base = startingState({ skills: ['handstand'], equipment: ['floor'] })
     const choose = reducer(base, { type: 'SET_REP_GOAL', skill: 'handstand', exerciseId: 'pike-pushup' })

@@ -498,7 +498,7 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
             {standing === 'here' ? <div className="mt-1 text-footnote font-medium text-accent-text">{GOAL_HERE_TEXT}</div> : null}
             {ladder ? (
               <div className="mt-1 text-caption text-ink3">
-                Practicing {EXERCISE_BY_ID[ladder.rung.exerciseId].name.toLowerCase()} · {ladder.goal.reviewed ? 'Reached' : 'Aiming for'} one {EXERCISE_BY_ID[ladder.goal.rung.exerciseId].name.toLowerCase()}
+                Practicing {EXERCISE_BY_ID[ladder.pikePreparation ? 'kneeling-pike-pushup' : ladder.rung.exerciseId].name.toLowerCase()} · {ladder.goal.reviewed ? 'Reached' : 'Aiming for'} one {EXERCISE_BY_ID[ladder.goal.rung.exerciseId].name.toLowerCase()}
               </div>
             ) : null}
           </div>
