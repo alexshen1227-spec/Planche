@@ -7,6 +7,58 @@ import { dayKey } from './time'
 
 const isWorking = (section: Block['section']) => section !== 'warmup' && section !== 'cooldown'
 
+export function skillPlanVersion(session: Session): number {
+  return Math.max(session.endedAt, session.prescriptionUpdatedAt ?? 0)
+}
+
+/** Record a decision about a saved workout without manufacturing a set or any training time. */
+export function reviseSkillRemainder(session: Session, remaining: SkillRemainder | undefined, skipped: number, at: number): Session {
+  if (!session.remaining) return session
+  const count = session.remaining.blocks.reduce((n, b) => n + b.sets, 0)
+  const version = Math.max(at, skillPlanVersion(session) + 1)
+  const { remaining: _old, ...original } = session
+  return { ...original, completion: 'partial', ...(remaining ? { remaining } : {}),
+    skippedRounds: (session.skippedRounds ?? 0) + Math.min(count, Math.max(0, skipped)),
+    prescriptionUpdatedAt: version, updatedAt: Math.max(version, session.updatedAt ?? 0) }
+}
+
+/** Apply reviews to the latest prescription. A later camera edit on an old
+ * copy must not reopen rounds or erase work logged since that copy was made. */
+export function mergeSkillSession(a: Session, b: Session): Session {
+  if (a === b) return a
+  const lastEdit = (s: Session) => Math.max(s.updatedAt ?? 0, s.savedAt ?? 0, skillPlanVersion(s))
+  const delta = skillPlanVersion(b) - skillPlanVersion(a)
+  const base = (delta || lastEdit(b) - lastEdit(a)) > 0 ? b : a
+  const other = base === a ? b : a
+  if (!other.updatedAt) return base
+  // Earlier backups kept one edit time for the whole session. Only a recorded
+  // form, clip, or explicit retime can supply a missing legacy field clock.
+  const legacy = (s: Session) => !s.prescriptionUpdatedAt && (s.updatedAt ?? 0) > (s.savedAt ?? s.endedAt) &&
+    !s.sets.some((x) => x.timingEditedAt || x.formEditedAt || x.clipEditedAt) ? s.updatedAt! : 0
+  const otherLegacy = legacy(other), baseLegacy = legacy(base)
+  if (!otherLegacy && !other.sets.some((s) => s.formEditedAt || s.timingEditedAt || s.clipEditedAt)) return base
+  const byTime = new Map(other.sets.map((s) => [s.at, s]))
+  let changed = false
+  const sets = base.sets.map((s) => {
+    const peer = byTime.get(s.at)
+    if (!peer || peer.exerciseId !== s.exerciseId || peer.kind !== s.kind) return s
+    let out = s
+    const wins = (incoming: number, current: number, value: unknown, before: unknown) =>
+      incoming > current || (incoming > 0 && incoming === current && JSON.stringify(value) > JSON.stringify(before))
+    const ft = peer.formEditedAt ?? (peer.form ? otherLegacy : 0)
+    if (peer.form && wins(ft, s.formEditedAt ?? (s.form ? baseLegacy : 0), peer.form, s.form)) out = { ...out, form: peer.form, formEditedAt: ft }
+    const ct = peer.clipEditedAt ?? (peer.clipKey ? otherLegacy : 0)
+    if (peer.clipKey && wins(ct, s.clipEditedAt ?? (s.clipKey ? baseLegacy : 0), peer.clipKey, s.clipKey)) out = { ...out, clipKey: peer.clipKey, clipEditedAt: ct }
+    const retimed = (set: SetLog) => set.timing?.method === 'edited' || set.timing?.method === 'video'
+    const tt = peer.timingEditedAt ?? (retimed(peer) ? otherLegacy : 0)
+    if (peer.timing && wins(tt, s.timingEditedAt ?? (retimed(s) ? baseLegacy : 0), [peer.value, peer.timing], [s.value, s.timing]))
+      out = { ...out, timing: peer.timing, value: peer.value, timingEditedAt: tt }
+    if (out !== s) changed = true
+    return out
+  })
+  return changed ? { ...base, sets, updatedAt: Math.max(lastEdit(a), lastEdit(b)) } : base
+}
+
 /** A legacy attendance-only record can have no set detail. A modern partial says exactly what was done. */
 export function countsSkillDay(session: Session): boolean {
   if (session.workoutKind === 'micro') return false
@@ -122,7 +174,8 @@ export function continueSkillSession(previous: Session, part: Session): Session 
   }
   const { remaining: _remaining, ...original } = previous
   const skipped = (previous.skippedRounds ?? 0) + (part.skippedRounds ?? 0)
-  return { ...original, sets: [...previous.sets, ...added], endedAt: Math.max(previous.endedAt + 1, part.endedAt),
+  const endedAt = Math.max(previous.endedAt + 1, part.endedAt)
+  return { ...original, sets: [...previous.sets, ...added], endedAt, prescriptionUpdatedAt: Math.max(endedAt, skillPlanVersion(previous) + 1),
     pausedMs: (previous.pausedMs ?? 0) + Math.max(0, part.startedAt - previous.endedAt) + (part.pausedMs ?? 0),
     savedAt: part.savedAt, updatedAt: Math.max(part.savedAt ?? part.endedAt, (previous.updatedAt ?? 0) + 1),
     completion: skipped ? 'partial' : part.completion, ...(skipped ? { skippedRounds: skipped } : {}), ...(part.remaining ? { remaining: part.remaining } : {}),

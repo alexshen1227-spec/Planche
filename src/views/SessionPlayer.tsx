@@ -42,7 +42,7 @@ import { sfx, speak, buzz } from '../lib/audio'
 import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
 import { clearDraft, loadDraft, restoredAttemptReport, restoredSessionSetup, saveDraft, type SessionDraft } from '../lib/draft'
-import { countsSkillDay, plannedMainRounds, remainingSkillWork } from '../lib/skillSession'
+import { countsSkillDay, plannedMainRounds, remainingSkillWork, skillPlanVersion } from '../lib/skillSession'
 import { endTheDay, rememberNextBlock } from '../lib/plan/nextBlock'
 import { useFormRecorder, type RecorderStatus } from '../lib/recorder'
 import { saveClip } from '../lib/clips'
@@ -1584,9 +1584,10 @@ export function SessionPlayer({
     onExit()
   }, [canEdit, recorder, onExit])
 
+  const revisingOnly = !logs.length && Boolean(workout.continuation && (skippedRounds || attemptReport))
   const save = useCallback(() => {
     // Exactly once, however many taps arrive before the next render.
-    if (!canEdit() || savingRef.current || savedSessionIdRef.current || logs.length === 0) return
+    if (!canEdit() || savingRef.current || savedSessionIdRef.current || (!logs.length && !revisingOnly)) return
     savingRef.current = true
     const savedAt = Date.now()
     const endedAt = endedAtRef.current || savedAt
@@ -1594,6 +1595,21 @@ export function SessionPlayer({
     const remaining = partial && !attemptReport && workout.kind !== 'micro'
       ? remainingSkillWork({ ...workout, blocks: workout.blocks.map((b, i) => blockAt(i, logs) ?? b) }, logs, blockLogAts, skippedByBlock, weakSideFirst)
       : undefined
+    const current = getState()
+    const original = workout.continuation && current.sessions.find((s) => s.id === workout.continuation!.id)
+    const from = workout.continuation?.version ?? workout.continuation?.endedAt
+    const canContinue = Boolean(original?.remaining && skillPlanVersion(original) === from)
+    if (revisingOnly) {
+      if (original?.remaining && canContinue && from !== undefined) {
+        const skipped = attemptReport ? original.remaining.blocks.reduce((n, b) => n + b.sets, 0) : skippedRounds
+        flushSync(() => dispatch({ type: 'REVISE_SKILL_REMAINDER', sessionId: original.id, from, expectedEpoch: openedEpoch, skipped, remaining }))
+        pushToast(remaining ? 'Skipped rounds saved.' : 'Workout closed. Your earlier sets are saved.', 'info')
+      } else pushToast('This workout was updated elsewhere. Your saved rounds are current.', 'info')
+      clearDraft()
+      recorder.release()
+      onExit(original?.id)
+      return
+    }
     const lead: SkillId = workout.skills?.[0] ?? 'planche'
     // What each other skill was on, and what the coach gave it today.
     const skillNotes = sessionSkillSteps(state)
@@ -1651,9 +1667,6 @@ export function SessionPlayer({
           })()
         : {}),
     }
-    const current = getState()
-    const original = workout.continuation && current.sessions.find((s) => s.id === workout.continuation!.id)
-    const canContinue = Boolean(original?.remaining && original.endedAt === workout.continuation?.endedAt)
     if (workout.continuation && !canContinue) {
       const existingTimes = new Set(original?.sets.map((set) => set.at))
       const newLogs = logs.filter((set) => !existingTimes.has(set.at))
@@ -1668,7 +1681,7 @@ export function SessionPlayer({
     const part = session
     const { events: raw } = applySession(current, part)
     if (canContinue && original) session = { ...part, id: original.id }
-    flushSync(() => dispatch({ type: 'SAVE_SESSION', session, expectedEpoch: openedEpoch, ...(canContinue ? { resumeFrom: workout.continuation!.endedAt } : {}) }))
+    flushSync(() => dispatch({ type: 'SAVE_SESSION', session, expectedEpoch: openedEpoch, ...(canContinue ? { resumeFrom: from } : {}) }))
     const next = getState()
     session = next.sessions.find((s) => s.id === session.id) ?? session
     // The coach reacts to every finished session, whatever kind it was — read
@@ -1723,7 +1736,7 @@ export function SessionPlayer({
     if (attemptReport || painReportedIn(next, session)) return
     if (ev.unlockedStep) confetti(2)
     else if (ev.prs.length > 0 || rungs.length > 0) confetti(1)
-  }, [workout, state, logs, rpe, notes, dispatch, getState, onExit, checkIn, finishedEarly, totalSets, blockLogAts, blockAt, attemptReport, skippedByBlock, skippedRounds, weakSideFirst, canEdit, sessionId, openedEpoch])
+  }, [workout, state, logs, rpe, notes, dispatch, getState, onExit, checkIn, finishedEarly, totalSets, blockLogAts, blockAt, attemptReport, skippedByBlock, skippedRounds, weakSideFirst, canEdit, sessionId, openedEpoch, revisingOnly, recorder])
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -2799,7 +2812,7 @@ export function SessionPlayer({
         </h1>
         <p className="mt-1 text-center text-footnote text-ink2">{attemptReport
           ? 'Your joint report is saved. Review and save the sets you completed.'
-          : 'Review and save — nothing is kept until you do.'}</p>
+          : revisingOnly ? 'Your earlier sets are saved. Review the rounds you skipped.' : logs.length ? 'Review your sets before saving.' : 'You can close this attempt without adding a session.'}</p>
         {attemptReport && attemptReport.setAt === undefined && <div className="mx-auto mt-3 max-w-sm">
           <JointReportNotice recorded={attemptReport} onUndo={undoAttemptSymptom} />
         </div>}
@@ -2807,7 +2820,7 @@ export function SessionPlayer({
           <p className="mx-auto mt-2 max-w-sm text-center text-footnote leading-relaxed text-ink3">
             {doneSets} of {totalSets} planned rounds done. {skippedRounds > 0 && `${skippedRounds} explicitly skipped. `}{attemptReport
               ? 'The remaining rounds have been dropped for this session.'
-              : doneSets + skippedRounds < totalSets ? 'Save the sets you logged. You can return to unfinished working rounds today.' : 'Save the sets you logged.'}
+              : revisingOnly ? 'Your training time stays the same.' : !logs.length ? '' : doneSets + skippedRounds < totalSets ? 'Save the sets you logged. You can return to unfinished working rounds today.' : 'Save the sets you logged.'}
           </p>
         ) : null}
         <div className="mt-4 grid grid-cols-3 gap-2.5">
@@ -2919,11 +2932,11 @@ export function SessionPlayer({
             </p>
           ) : null}
           <Button size="lg"
-            onClick={attemptReport && !logs.length ? discard : save}
-            disabled={(!logs.length && !attemptReport) || waiting}
+            onClick={!logs.length && !revisingOnly ? discard : save}
+            disabled={waiting}
             className="w-full disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {attemptReport && !logs.length ? 'Close session' : 'Save session'}
+            {revisingOnly ? (attemptReport ? 'Close saved workout' : 'Save skipped rounds') : !logs.length ? 'Close session' : 'Save session'}
           </Button>
           {waiting && logs.length > 0 ? (
             <button

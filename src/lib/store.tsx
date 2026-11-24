@@ -42,7 +42,7 @@ import { EXERCISE_BY_ID } from '../data/exercises'
 import { isRepGoal } from '../data/skills'
 import { ACHIEVEMENT_VERSION, REVALIDATED_ACHIEVEMENTS } from '../data/achievements'
 import { applySession } from './engine'
-import { continueSkillSession, readSkillRemainder } from './skillSession'
+import { continueSkillSession, mergeSkillSession, readSkillRemainder, reviseSkillRemainder, skillPlanVersion } from './skillSession'
 import { configureAudio } from './audio'
 import { clearMirror, readMirror, requestPersistence, writeMirror } from './persist'
 import { pushToast } from './toast'
@@ -584,6 +584,9 @@ function sanitizeSet(rawSet: unknown, sessionStart: number, report: NormalizeRep
       ? { leadInSec: clampNum(x.leadInSec, 0, 60, 0) }
       : {}),
     ...(typeof x.clipKey === 'string' ? { clipKey: x.clipKey } : {}),
+    ...(isTime(x.formEditedAt) && form ? { formEditedAt: x.formEditedAt } : {}),
+    ...(isTime(x.timingEditedAt) && timing ? { timingEditedAt: x.timingEditedAt } : {}),
+    ...(isTime(x.clipEditedAt) && typeof x.clipKey === 'string' ? { clipEditedAt: x.clipEditedAt } : {}),
     ...(form ? { form } : {}),
     ...(timing ? { timing } : {}),
     ...(typeof x.endReason === 'string' && END_REASONS.has(x.endReason as EndReason)
@@ -682,6 +685,7 @@ function sanitizeSessions(
       checkIn,
       ...(isTime(c.savedAt) ? { savedAt: c.savedAt } : {}),
       ...(isTime(c.updatedAt) ? { updatedAt: c.updatedAt } : {}),
+      ...(isTime(c.prescriptionUpdatedAt) ? { prescriptionUpdatedAt: c.prescriptionUpdatedAt } : {}),
       ...(c.completion === 'full' || c.completion === 'partial' ? { completion: c.completion } : {}),
       ...(remaining ? { remaining } : {}),
       ...(Object.keys(mainRounds).length ? { plannedMainRounds: mainRounds } : {}),
@@ -1352,6 +1356,7 @@ export type SymptomInput = Omit<SymptomEvent, 'id'> & { id?: string }
 
 export type Action =
   | { type: 'SAVE_SESSION'; session: Session; resumeFrom?: number; expectedEpoch?: string }
+  | { type: 'REVISE_SKILL_REMAINDER'; sessionId: string; from: number; expectedEpoch?: string; remaining?: Session['remaining']; skipped: number }
   | { type: 'DELETE_SESSION'; id: string }
   | { type: 'SET_SETTINGS'; patch: Partial<Settings> }
   /** Set (or, with nothing left in it, clear) the athlete's week plan. */
@@ -1466,11 +1471,6 @@ function appendSymptom(state: AppState, input: SymptomInput): AppState {
   }
 }
 
-/** When a saved session last changed, for picking the newer of two copies. */
-function sessionVersion(s: Session): number {
-  return s.updatedAt ?? s.savedAt ?? s.endedAt
-}
-
 /**
  * Fold another tab's write into this one.
  *
@@ -1523,8 +1523,9 @@ export function mergeExternalState(local: AppState, incoming: AppState): AppStat
   for (const s of incoming.sessions) {
     if (dead.has(s.id)) continue
     const current = byId.get(s.id)
-    if (!current || sessionVersion(s) > sessionVersion(current)) {
-      byId.set(s.id, s)
+    const merged = current ? mergeSkillSession(current, s) : s
+    if (merged !== current) {
+      byId.set(s.id, merged)
       sessionsChanged = true
     }
   }
@@ -1779,7 +1780,7 @@ function reduceAction(state: AppState, action: Action): AppState {
       // the goal and the load until a reload set one aside as conflicting.
       const existing = state.sessions.find((s) => s.id === incoming.id)
       if (action.resumeFrom !== undefined) {
-        if (!existing?.remaining || existing.endedAt !== action.resumeFrom) return state
+        if (!existing?.remaining || skillPlanVersion(existing) !== action.resumeFrom) return state
         incoming = continueSkillSession(existing, incoming)
       }
       if (existing) {
@@ -1788,6 +1789,13 @@ function reduceAction(state: AppState, action: Action): AppState {
         return rebuildDerivedState({ ...state, sessions }, sessions)
       }
       return applySession(state, incoming).next
+    }
+    case 'REVISE_SKILL_REMAINDER': {
+      if (action.expectedEpoch && action.expectedEpoch !== state.epoch) return state
+      const session = state.sessions.find((s) => s.id === action.sessionId)
+      if (!session?.remaining || skillPlanVersion(session) !== action.from || !Number.isInteger(action.skipped) || action.skipped < 0) return state
+      const revised = reviseSkillRemainder(session, action.remaining, action.skipped, Date.now())
+      return { ...state, sessions: state.sessions.map((s) => s.id === session.id ? revised : s) }
     }
     case 'DELETE_SESSION': {
       const deletedSessionIds = [...new Set([...(state.deletedSessionIds ?? []), action.id])].slice(-MAX_TOMBSTONES)
@@ -1974,7 +1982,7 @@ function reduceAction(state: AppState, action: Action): AppState {
         const sets = s.sets.map((set) => {
           if (set.at !== action.setAt) return set
           found = true
-          return { ...set, form: action.form }
+          return { ...set, form: action.form, formEditedAt: Math.max(Date.now(), (set.formEditedAt ?? 0) + 1) }
         })
         return { ...s, sets, updatedAt: Date.now() }
       })
@@ -1991,7 +1999,7 @@ function reduceAction(state: AppState, action: Action): AppState {
           if (set.at !== action.setAt || set.kind !== 'hold') return set
           found = true
           // The stopwatch reading is the observation; it survives a re-timing.
-          return { ...set, value: Math.round(action.value * 10) / 10, timing: action.timing }
+          return { ...set, value: Math.round(action.value * 10) / 10, timing: action.timing, timingEditedAt: Math.max(Date.now(), (set.timingEditedAt ?? 0) + 1) }
         })
         return found ? { ...s, sets, updatedAt: Date.now() } : s
       })
@@ -2004,7 +2012,7 @@ function reduceAction(state: AppState, action: Action): AppState {
         const sets = s.sets.map((set) => {
           if (set.at !== action.setAt || set.clipKey === action.clipKey) return set
           found = true
-          return { ...set, clipKey: action.clipKey }
+          return { ...set, clipKey: action.clipKey, clipEditedAt: Math.max(Date.now(), (set.clipEditedAt ?? 0) + 1) }
         })
         return found ? { ...s, sets, updatedAt: Date.now() } : s
       })

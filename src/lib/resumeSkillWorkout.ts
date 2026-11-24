@@ -2,7 +2,7 @@ import type { AppState, CheckIn, Workout, WorkoutRequest } from '../types'
 import { estimateMinutes, finalizeWorkoutWithPlan, hasEquipmentFor, isPainSafe, restrictTemplate } from '../data/workouts'
 import { kitAt } from './plan/planner'
 import { readTodayChoice } from './plan/todayChoice'
-import { latestSkillPartial } from './skillSession'
+import { latestSkillPartial, skillPlanVersion } from './skillSession'
 
 /** Start, or recheck, the actual remaining rounds using the equipment and readiness available now. */
 export function resumeSkillWorkout(state: AppState, id: string, checkIn?: CheckIn, now = Date.now()) {
@@ -33,7 +33,7 @@ export function resumeSkillWorkout(state: AppState, id: string, checkIn?: CheckI
   const saved: Workout = { id: (left.recovery ? 'pain-safe-recovery-continue-' : 'continue-') + id, name: session.workoutName, kind: session.workoutKind,
     focus: 'Continue the rounds left in your saved workout.', minutes, blocks, request: preset,
     skills: left.skills, lineup: left.lineup, strategy: session.strategy, baseTargetSec: session.baseTargetSec,
-    continuation: { id, endedAt: session.endedAt }, ...(deferred.length ? { deferredBlocks: deferred } : {}) }
+    continuation: { id, endedAt: session.endedAt, version: skillPlanVersion(session) }, ...(deferred.length ? { deferredBlocks: deferred } : {}) }
   const workout = recovery ? saved : restrictTemplate(saved, current.plan)
   const adjustments = ['Your earlier sets are saved. These rounds continue the same session.']
   if (deferred.length) adjustments.push('Rounds that need different equipment or load an area you are resting stay in your saved workout.')

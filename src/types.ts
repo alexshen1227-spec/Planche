@@ -560,7 +560,7 @@ export interface Workout {
   kind: 'auto' | 'template' | 'test' | 'micro'
   blocks: Block[]
   /** The saved partial this segment continues. Its end time guards against a stale editor. */
-  continuation?: { id: string; endedAt: number }
+  continuation?: { id: string; endedAt: number; version?: number }
   /** Original rounds that cannot be trained at the current place. */
   deferredBlocks?: Block[]
   strategy?: StrategyId
@@ -643,6 +643,10 @@ export interface SetLog {
   at: number
   /** Self-assessed quality of this set, when the coach asked. */
   form?: FormCheck
+  /** Independent review edits so two tabs can keep a retime, form check and clip together. */
+  formEditedAt?: number
+  timingEditedAt?: number
+  clipEditedAt?: number
   /** Recorded clip attached before the athlete or camera has rated the set. */
   clipKey?: string
   /** Which side a unilateral movement was performed on. */
@@ -718,6 +722,8 @@ export interface Session {
   completion?: 'full' | 'partial'
   /** Unfinished working prescription saved by a player that supports continuation. */
   remaining?: SkillRemainder
+  /** Last decision about the unfinished rounds. Training duration still ends at endedAt. */
+  prescriptionUpdatedAt?: number
   /** Raw rounds the plan contained. */
   plannedRounds?: number
   /** Main practice rounds by exercise, including later skips. */
