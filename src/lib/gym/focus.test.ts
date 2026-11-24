@@ -11,7 +11,7 @@ import { availableAt, searchExercises } from './availability'
 import { buildGymSession } from './builder'
 import { comparablePerformance, suggestLoad } from './progression'
 import { previousSets } from './draft'
-import { defaultPrefs, homeLocation, sanitizePrefs } from './state'
+import { defaultPrefs, homeLocation, sanitizePrefs, setLiftingWeekday, setWeekdayFocus } from './state'
 import { bodyweightCapacity } from './bodyweight'
 import { fitsGymFocus, loggedFocus } from './focus'
 import type { GymSession } from './types'
@@ -45,8 +45,8 @@ describe('lifting splits and portable starting doses', () => {
       steps: { frontlever: 'fl-tuck', handstand: 'hs-wall' }, kit: ['floor', 'band', 'pullup-bar', 'wall'],
       prefs: { goals: { physique: 5, skills: 4, strength: 3, power: 0, endurance: 0 },
         minutesByDay: [0, 60, 60, 45, 0, 60, 0], placeByDay: [null, 'home', 'gym', null, null, 'gym', null], musclesPriority: ['lats', 'quads'] } })
-    state.gym!.locations[0].equipment.push('bench', 'dumbbells')
-    state.gym!.locations[1].equipment.push('wall')
+    state.gym!.locations = state.gym!.locations.map((place, i) => ({ ...place,
+      equipment: i ? [...place.equipment, 'wall'] : [...place.equipment, 'bench', 'dumbbells'] }))
     const answers = { wrist: 2, pushups: 12, hollow: 35, pullups: 7, experience: 12, 'level:frontlever': 1, 'level:handstand': 1 }
     for (const [skill, step] of [['frontlever', 'fl-tuck'], ['handstand', 'hs-wall']] as const) {
       state.tracks![skill]!.assessment = { at: now - 1, answers, placedStepId: step, confidence: 'moderate', gapIds: [] }
@@ -61,6 +61,29 @@ describe('lifting splits and portable starting doses', () => {
     const quadVisits = week.remainingLifts.filter((d) => d.items.some((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes('quads')))
     expect(quadVisits.length).toBeGreaterThanOrEqual(2)
     expect(quadVisits[1].at - quadVisits[0].at).toBeGreaterThanOrEqual(2 * 86_400_000)
+  })
+
+  it('keeps a saved weekday split when feasible and rotates after the actual workout', () => {
+    const state = makeAthlete({ skills: [], active: 'gym', birthYear: 1993, prefs: {
+      goals: { strength: 3, physique: 5, skills: 0, endurance: 0, power: 0 }, minutesByDay: [0, 50, 50, 0, 50, 0, 0] } })
+    let prefs = setWeekdayFocus(state.gym!.prefs!, 1, 'pull')
+    prefs = setWeekdayFocus(prefs, 2, 'pull')
+    state.gym!.prefs = sanitizePrefs(prefs)!
+    expect(state.gym!.prefs!.focusByDay).toEqual([null, 'pull', 'pull', null, null, null, null])
+    const week = planWeekAhead(state, now)
+    expect(week.days[0].plan.gym?.focus).toBe('pull')
+    expect(week.days[1].plan.gym?.focus).toBeTruthy()
+    expect(week.days[1].plan.gym?.focus).not.toBe('pull')
+    const workout = logs('renamed', 'gym', 'lat-pulldown', now, [10, 10, 10, 10], 8)
+    workout.name = 'Chest'
+    state.gym!.sessions = [workout]
+    const tomorrow = planWeekAhead(state, addDays(now, 1)).days[0].plan
+    expect(tomorrow.gym?.focus).toBeTruthy()
+    expect(tomorrow.gym?.focus).not.toBe('pull')
+    expect(tomorrow.reasons.join(' ')).toContain('usually choose Pull')
+    const removed = setLiftingWeekday(state.gym!.prefs!, 1, false)
+    expect(removed.focusByDay).toEqual([null, null, 'pull', null, null, null, null])
+    expect(sanitizePrefs({ ...removed, focusByDay: [null, 'push', 'constructor'] })?.focusByDay).toBeUndefined()
   })
 
   it('uses the recommended home kit and drops only extra pressing after actual bench work on a custom day', () => {
@@ -140,5 +163,10 @@ describe('lifting splits and portable starting doses', () => {
     expect(rows).not.toContain('db-row')
     expect(searchExercises(eligible, 'row').some((e) => e.pattern === 'throw')).toBe(false)
     expect(searchExercises(eligible, 'traps').map((e) => e.id)).toContain('db-shrug')
+    expect(searchExercises(eligible, 'single leg RDL').map((e) => e.id)).toContain('single-leg-rdl')
+    expect(searchExercises(eligible, 'RDL').some((e) => e.explosive)).toBe(false)
+    expect(searchExercises(eligible, 'DB lateral raises').map((e) => e.id)).toContain('db-lateral-raise')
+    expect(eligible.some((e) => e.id === 'leaning-lateral-raise')).toBe(false)
+    expect(availableAt({ ...home, equipment: [...home.equipment, 'squat-rack'] }).some((e) => e.id === 'leaning-lateral-raise')).toBe(true)
   })
 })

@@ -36,6 +36,8 @@ export function WeekPlanComparison() {
     for (const s of comparison.skills) {
       rows.push([`${SKILLS[s].name} practice days`, current.practiceDays[s] ?? 0, alternative?.practiceDays[s] ?? 0],
         [`${SKILLS[s].name} working sets left`, current.remainingSkillSets[s] ?? 0, alternative?.remainingSkillSets[s] ?? 0])
+      if (SKILLS[s].ladder) rows.push([`${SKILLS[s].ladder.name} ladder sets left`,
+        current.remainingRepSets[s] ?? 0, alternative?.remainingRepSets[s] ?? 0])
     }
     rows.push(['Lifting days', current.gymDays, alternative?.gymDays])
   }
@@ -65,13 +67,13 @@ export function WeekPlanComparison() {
           `Move lifting from ${visitName(from)} to ${visitName(to)}.` :
           `Use ${day.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}${to?.place ? ' at ' + to.place : ''} for lifting within your available time.`} Logging a workout can change the estimates for the remaining days.</p>
         {prefs.extraGymDate && prefs.extraGymDate >= today && prefs.extraGymDate !== alternative.gymDate && <p className="mt-2 text-footnote text-ink2">This replaces the extra lifting date you chose earlier this week.</p>}
-      </> : <p className="text-footnote text-ink2">This is the current forecast for your available days. The planner found no change that improves priority muscle work and keeps your first skill in practice.</p>}
+      </> : <p className="text-footnote text-ink2">Here’s how your current week adds up. Changing a lifting day or shortening an opener did not improve these estimates while keeping your first skill in practice.</p>}
         <table className="mt-3 w-full text-left text-footnote tnum">
           <thead><tr className="border-b border-line"><th scope="col" className="py-2">Training</th><th scope="col" className="text-right">Current</th>{alternative && <th scope="col" className="text-right">With change</th>}</tr></thead>
           <tbody>{rows.map(([label, a, b]) => <tr key={label} className="border-b border-line"><th scope="row" className="py-2 pr-2 font-medium">{label}</th>
             <td className="text-right">{a}</td>{alternative && <td className="text-right">{b}</td>}</tr>)}</tbody>
         </table>
-        <p className="mt-2 text-caption text-ink2">Working sets left are the scheduled sets of each skill’s current progression exercise. Warm-ups and tests are excluded. Weekly muscle estimates and practice days include work already logged.</p>
+        <p className="mt-2 text-caption text-ink2">Working sets left count the current hold. Rep-ladder sets count the scheduled pressing exercises for a selected rep goal. Both exclude warm-ups and tests. Weekly muscle estimates and practice days include work already logged.</p>
         {time ? <Button className="mt-4" onClick={() => save(false)}>Use shorter skill openers</Button>
           : alternative && day && <div className="mt-4 flex flex-wrap gap-2">
           <Button onClick={() => save(false)}>Use this lifting day</Button>

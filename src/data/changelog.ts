@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-24',
+    title: 'Choose a lifting split for each weekday',
+    area: 'training',
+    notes: [
+      'In Goals and schedule, reserve a weekday for lifting and choose a preferred focus. The coach looks at the sets you actually logged when deciding whether that focus has recovered.',
+      'Pull days use rows, pulldowns and pulling accessories. Push days use pressing movements and accessories. A gym swap or an added exercise starts with choices that fit the day and your equipment.',
+      'Learn now understands searches such as RDL, HSPU and DB lateral raises. The weekly comparison also shows the sets scheduled for your pressing milestone.',
+    ],
+  },
+  {
+    date: '2026-11-24',
     title: 'Train on a 15-minute schedule',
     area: 'training',
     notes: [

@@ -308,6 +308,7 @@ export function runLoop(start: AppState, opts: LoopOpts): LoopOut {
       ...(g.spare?.length ? { spare: g.spare } : {}),
       priority: [...new Set([...prefs.musclesPriority, ...(g.priority ?? [])])],
       athletePriority: prefs.musclesPriority,
+      weeklyPriority: g.priority,
       avoidJoints: [...new Set([...g.avoidJoints, ...sore.joints])],
       volumeFactor: g.volumeFactor,
       ...(opener ? { warmUpMin: AFTER_OPENER_WARM_UP_MIN } : {}),

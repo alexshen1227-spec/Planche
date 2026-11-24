@@ -11,7 +11,8 @@ import type { WeekAhead } from './planner'
 export function fitPriorityLegs(state: AppState, week: WeekAhead, now: number, build: (day: string, skill: SkillId) => WeekAhead): WeekAhead {
   const prefs = state.gym?.prefs
   const skills = state.profile.skills ?? []
-  if (!prefs || skills.length < 2 || prefs.goals.physique < Math.max(3, prefs.goals.skills) || prefs.extraGymDate) return week
+  if (!prefs || skills.length < 2 || prefs.goals.physique < Math.max(3, prefs.goals.skills) ||
+    (prefs.extraGymDate && prefs.extraGymDate >= dayKey(now))) return week
   const priority = prefs.musclesPriority.filter((m) => !prefs.musclesOff.includes(m))
   const below = priority.filter((m) => ['quads', 'hamstrings', 'glutes', 'calves'].includes(m) && (week.weekTotal[m] ?? 0) + 2 <= volumeTarget(m, prefs)[0])
   const above = priority.filter((m) => (week.weekSources.skill[m] ?? 0) > 0 && (week.weekTotal[m] ?? 0) > volumeTarget(m, prefs)[1])
@@ -59,12 +60,14 @@ export function fitLiftingPlace(state: AppState, week: WeekAhead, now: number, b
   const dose = (w: WeekAhead, skill: SkillId) => remaining(w).map((d) => d.skillWorkingSets?.[skill] ?? 0)
   const cap = (w: WeekAhead, m: Muscle) => Math.min(w.weekTotal[m] ?? 0, volumeTarget(m, prefs)[0])
   const score = (w: WeekAhead) => priority.reduce((n, m) => n + cap(w, m), 0)
+  const equipmentCoverage = (w: WeekAhead) => remaining(w).reduce((n, d) => n + (variety.get(d.plan.gym?.placeId ?? '') ?? 0), 0)
   let best = week
   for (const day of choices) {
     const option = build(day.day)
     const next = remaining(option)
     if (!next.some((d) => d.day === day.day && d.plan.gym) || next.filter((d) => d.plan.gym).length !== lifts.length ||
-        score(option) <= score(best) || priority.some((m) => cap(option, m) < cap(week, m) ||
+        score(option) < score(best) || (score(option) === score(best) && equipmentCoverage(option) <= equipmentCoverage(best)) ||
+        priority.some((m) => cap(option, m) < cap(week, m) ||
           (option.weekSources.direct[m] ?? 0) < (week.weekSources.direct[m] ?? 0))) continue
     // A gain for a chosen muscle cannot remove the week's basic push, pull, knee or hip work.
     if ((['chest', 'lats', 'quads', 'hamstrings'] as const).some((m) =>

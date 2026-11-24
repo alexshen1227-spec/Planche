@@ -288,7 +288,7 @@ export function GymHub({
           musclesOff: g.musclesOff,
           avoidJoints: [...new Set([...g.avoidJoints, ...joints])],
           volumeFactor: kind === 'pain' ? Math.min(g.volumeFactor, 0.6) : g.volumeFactor,
-          ...steerInput(g),
+          ...steerInput(g, gym.prefs?.musclesPriority),
           sessions: gym.sessions,
           ratings: gym.ratings,
           youth,

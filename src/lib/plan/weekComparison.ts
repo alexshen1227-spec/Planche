@@ -15,6 +15,7 @@ export interface WeekOption {
   muscleSets: Partial<Record<Muscle, number>>
   practiceDays: Partial<Record<SkillId, number>>
   remainingSkillSets: Partial<Record<SkillId, number>>
+  remainingRepSets: Partial<Record<SkillId, number>>
   gymDays: number
   liftingVisits: { day: string; place?: string }[]
 }
@@ -42,6 +43,7 @@ export function compareLiftingDays(state: AppState, choice: TodayChoice, now: nu
     const days = week.days.filter((d) => d.at < end && !d.plan.rest)
     const practiceDays: WeekOption['practiceDays'] = {}
     const remainingSkillSets: WeekOption['remainingSkillSets'] = {}
+    const remainingRepSets: WeekOption['remainingRepSets'] = {}
     for (const skill of skills) {
       const dates = new Set(practiced(skill))
       for (const d of days) {
@@ -49,6 +51,7 @@ export function compareLiftingDays(state: AppState, choice: TodayChoice, now: nu
         if (!trained && !d.plan.skill?.painSafe && d.plan.skill?.skills.includes(skill)) dates.add(d.day)
         if (!trained && !d.plan.skill?.painSafe && !skillLogged.has(d.day)) {
           remainingSkillSets[skill] = (remainingSkillSets[skill] ?? 0) + (d.skillWorkingSets?.[skill] ?? 0)
+          if (d.repSets?.[skill] !== undefined) remainingRepSets[skill] = (remainingRepSets[skill] ?? 0) + d.repSets[skill]!
         }
       }
       practiceDays[skill] = dates.size
@@ -62,13 +65,15 @@ export function compareLiftingDays(state: AppState, choice: TodayChoice, now: nu
     })
     const gymDays = new Set([...gymLog.map((s) => dayKey(s.startedAt)), ...liftingVisits.map((d) => d.day)]).size
     const selected = gymDate && days.some((d) => d.day === gymDate && d.plan.gym) ? gymDate : undefined
-    return { gymDate: selected, muscleSets: week.weekTotal, practiceDays, remainingSkillSets, gymDays, liftingVisits }
+    return { gymDate: selected, muscleSets: week.weekTotal, practiceDays, remainingSkillSets, remainingRepSets, gymDays, liftingVisits }
   }
   const trained = new Set([...logged, ...gymLog].map((s) => dayKey(s.startedAt)))
   const current = snapshot(prefs.extraGymDate)
   const funded = (option: WeekOption) => muscles.reduce((n, m) => n + Math.min(option.muscleSets[m] ?? 0, volumeTarget(m, prefs)[0]), 0)
   const retained = (option: WeekOption) => skills.filter((s) => (current.practiceDays[s] ?? 0) > 0 && (option.practiceDays[s] ?? 0) > 0).length
-  const lostWork = (option: WeekOption) => skills.reduce((n, s) => n + Math.max(0, (current.remainingSkillSets[s] ?? 0) - (option.remainingSkillSets[s] ?? 0)), 0)
+  const lostWork = (option: WeekOption) => skills.reduce((n, s) => n +
+    Math.max(0, (current.remainingSkillSets[s] ?? 0) - (option.remainingSkillSets[s] ?? 0)) +
+    Math.max(0, (current.remainingRepSets[s] ?? 0) - (option.remainingRepSets[s] ?? 0)), 0)
   // A different place on the same number of visits can train a priority better
   // while preserving every chosen muscle, practice day and progression set.
   const improvesAtSameFrequency = (o: WeekOption) => o.gymDays === current.gymDays && !lostWork(o) &&

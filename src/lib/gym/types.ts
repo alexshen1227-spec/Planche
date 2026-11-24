@@ -165,6 +165,8 @@ export interface TrainingPrefs {
   extraGymDate?: string
   /** Weekdays the athlete wants to keep for lifting when training is possible, Sunday first. */
   gymWeekdays?: number[]
+  /** Preferred split for a reserved lifting weekday, Sunday first. */
+  focusByDay?: (import('./focus').GymFocus | null)[]
   /** Athlete chose a shorter skill block on combined lifting days. */
   shortSkillOpeners?: true
   /** Hours between hard straight-arm sessions of the same family. */

@@ -8,6 +8,7 @@ import { STEP_BY_ID } from '../../data/progressions'
 import { SPORT_KINDS, sportStart } from '../plan/sport'
 import { LEG_VARIATIONS, preparesFor } from './bodyweightSteps'
 import { recordsZeroLoad } from './units'
+import { FOCUS_LABEL, type GymFocus } from './focus'
 import { canPairExercises, partnerIndex } from './pairedSets'
 import type {
   ActivityKind,
@@ -79,6 +80,10 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
   const places = Array.isArray(r.placeByDay) && r.placeByDay.length === 7
     ? r.placeByDay.map((id) => typeof id === 'string' && id.trim() ? id : null) : []
   const gymWeekdays = Array.isArray(r.gymWeekdays) ? [...new Set(r.gymWeekdays.filter((d): d is number => Number.isInteger(d) && d >= 0 && d < 7))].sort() : []
+  const focusByDay = Array.from({ length: 7 }, (_, i) => {
+    const f = Array.isArray(r.focusByDay) && gymWeekdays.includes(i) ? r.focusByDay[i] : null
+    return typeof f === 'string' && Object.hasOwn(FOCUS_LABEL, f) ? f as GymFocus : null
+  })
   return {
     goals: {
       strength: clamp(g.strength, 0, 5, base.goals.strength),
@@ -97,6 +102,7 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
     ...(places.some(Boolean) ? { placeByDay: places } : {}),
     ...(typeof r.extraGymDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.extraGymDate) ? { extraGymDate: r.extraGymDate } : {}),
     ...(gymWeekdays.length ? { gymWeekdays } : {}),
+    ...(focusByDay.some(Boolean) ? { focusByDay } : {}),
     ...(r.shortSkillOpeners === true ? { shortSkillOpeners: true as const } : {}),
     straightArmRestHours: Math.round(clamp(r.straightArmRestHours, 24, 96, 48)),
     ...(r.season === 'in' ? { season: 'in' as const } : {}),
@@ -107,13 +113,19 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
 }
 
 /** Every setting a training-prefs edit can change on its own (all but the stamps). */
-const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'pullupStartingSet', 'minutesByDay', 'placeByDay', 'extraGymDate', 'gymWeekdays', 'shortSkillOpeners', 'straightArmRestHours', 'season', 'sportSchedule'] as const
+const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'pullupStartingSet', 'minutesByDay', 'placeByDay', 'extraGymDate', 'gymWeekdays', 'focusByDay', 'shortSkillOpeners', 'straightArmRestHours', 'season', 'sportSchedule'] as const
 
 export function setLiftingWeekday(prefs: TrainingPrefs, weekday: number, enabled: boolean): TrainingPrefs {
   const days = new Set(prefs.gymWeekdays)
   if (enabled) days.add(weekday)
   else days.delete(weekday)
-  return { ...prefs, gymWeekdays: days.size ? [...days].sort() : undefined }
+  const focusByDay = prefs.focusByDay?.map((focus, i) => i === weekday && !enabled ? null : focus)
+  return { ...prefs, gymWeekdays: days.size ? [...days].sort() : undefined, ...(prefs.focusByDay ? { focusByDay: focusByDay?.some(Boolean) ? focusByDay : undefined } : {}) }
+}
+
+export function setWeekdayFocus(prefs: TrainingPrefs, weekday: number, focus: GymFocus | null): TrainingPrefs {
+  const days = Array.from({ length: 7 }, (_, i) => i === weekday ? focus : prefs.focusByDay?.[i] ?? null)
+  return { ...(focus ? setLiftingWeekday(prefs, weekday, true) : prefs), focusByDay: days.some(Boolean) ? days : undefined }
 }
 
 function sanitizeFieldTimes(raw: unknown): Record<string, number> | undefined {

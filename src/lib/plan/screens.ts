@@ -361,5 +361,6 @@ export function calisthenicsTitle(block: Pick<SkillBlock, 'skills' | 'minutes' |
  */
 export function steerInput(limits: { priority?: readonly Muscle[]; spare?: readonly Muscle[] }, own: readonly Muscle[] = []) {
   const spare = [...new Set(limits.spare ?? [])]
-  return { priority: [...new Set([...own, ...(limits.priority ?? [])])], athletePriority: own, ...(spare.length ? { spare } : {}) }
+  return { priority: [...new Set([...own, ...(limits.priority ?? [])])], athletePriority: own,
+    ...(limits.priority?.length ? { weeklyPriority: limits.priority } : {}), ...(spare.length ? { spare } : {}) }
 }

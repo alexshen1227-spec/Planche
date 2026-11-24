@@ -1,9 +1,10 @@
 import { useState, type KeyboardEvent } from 'react'
 import { MUSCLE_GROUPS, MUSCLES, type Muscle } from '../../data/gym/catalog'
 import { ALL_STEPS } from '../../data/progressions'
-import { cycleMuscleState, defaultPrefs, setLiftingWeekday } from '../../lib/gym/state'
+import { cycleMuscleState, defaultPrefs, setLiftingWeekday, setWeekdayFocus } from '../../lib/gym/state'
 import type { GoalWeights, GymLocation, SkillGoal, SportSlot, TrainingPrefs } from '../../lib/gym/types'
 import { SPORT_KINDS } from '../../lib/plan/sport'
+import { FOCUS_LABEL, type GymFocus } from '../../lib/gym/focus'
 import { SportAreas } from './SportAreas'
 import { OPENER_MINUTES } from '../../lib/sessionRoom'
 import { skillGoalPace } from '../../lib/plan/goalPace'
@@ -419,6 +420,18 @@ export function ScheduleEditor({ prefs, setPrefs, locations = [] }: Edit & { loc
                   onChange={(e) => { const checked = e.currentTarget.checked; setPrefs((p) => setLiftingWeekday(p, picked, checked)) }} />
                 Keep {FULL_DAYS[picked]}s for lifting
               </label>}
+            {pickedMinutes > 0 && (prefs.gymWeekdays?.includes(picked) || (!prefs.goals.skills && Math.max(prefs.goals.physique, prefs.goals.strength, prefs.goals.power, prefs.goals.endurance) > 0)) && <label className="mt-2 block text-footnote font-medium">
+              Preferred lifting focus on {FULL_DAYS[picked]}s
+              <select className="mt-1 block min-h-11 w-full rounded-control border border-line bg-surface px-3 text-body text-ink"
+                value={prefs.focusByDay?.[picked] ?? ''} onChange={(e) => {
+                  const focus = e.currentTarget.value as GymFocus | ''
+                  setPrefs((p) => setWeekdayFocus(p, picked, focus || null))
+                }}>
+                <option value="">Auto</option>
+                {Object.entries(FOCUS_LABEL).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+              <span className="mt-1 block text-caption font-normal text-ink2">The coach uses this focus when equipment, recovery and your skill practice allow it.</span>
+            </label>}
           </div>
         )}
       </section>

@@ -242,7 +242,7 @@ const BASE_EXERCISES: GymExercise[] = [
   x('landmine-shoulder-press', 'Half-kneeling landmine press', 'vertical-press', ['front-delts', 'triceps'], ['chest-upper', 'abs', 'obliques'], [['barbell'], ['landmine']], 'barbell', true, ['shoulders', 'elbows', 'wrists'], 'Half-kneeling, bar held at the shoulder, ribs down; press up along its arc.', { unilateral: true, stepFrom: 'barbell' }),
   // ---- Lateral and rear delts, shoulder health ----
   x('lu-raise', 'Lu raise', 'lateral-raise', ['side-delts', 'front-delts'], ['traps', 'upper-back'], [['dumbbells']], 'dumbbell', false, ['shoulders'], 'Light plates or dumbbells, raise forward and out in one arc to above the head, thumbs up.', { technical: true }),
-  x('leaning-lateral-raise', 'Leaning dumbbell lateral raise', 'lateral-raise', ['side-delts'], [], [['dumbbells']], 'dumbbell', false, ['shoulders'], 'Hold a rack or post and lean away; the lean puts tension on the bottom of the raise.', { unilateral: true }),
+  x('leaning-lateral-raise', 'Leaning dumbbell lateral raise', 'lateral-raise', ['side-delts'], [], [['dumbbells'], ['pole', 'squat-rack', 'smith-machine']], 'dumbbell', false, ['shoulders'], 'Grasp a fixed upright and lean away slightly. Raise the dumbbell out to the side with a soft elbow, then lower it under control.', { unilateral: true }),
   x('cable-y-raise', 'Cable Y raise', 'lateral-raise', ['side-delts', 'traps'], ['upper-back', 'rear-delts'], [['cable']], 'cable', false, ['shoulders'], 'Cables crossed low, raise both arms into a Y with thumbs up; very light.'),
   x('y-raise', 'Incline Y raise', 'rear-delt', ['traps', 'rear-delts'], ['side-delts', 'upper-back'], [['dumbbells'], ['incline-bench']], 'dumbbell', false, ['shoulders'], 'Chest on a bench at 45°, arms lift into a Y with thumbs up; a few kg is plenty.'),
   x('prone-t-raise', 'Prone T raise', 'rear-delt', ['rear-delts', 'upper-back'], ['traps'], [['dumbbells'], ['incline-bench']], 'dumbbell', false, ['shoulders'], 'Chest on the bench, arms out to the sides, lift to shoulder height and squeeze.'),
@@ -313,7 +313,7 @@ const BASE_EXERCISES: GymExercise[] = [
   x('cossack-squat', 'Cossack squat', 'lunge', ['adductors', 'glutes'], ['quads'], [], 'bodyweight', true, ['knees', 'hips'], 'Wide stance, sink onto one leg while the other stays straight with the toes up.', { unilateral: true }),
   x('curtsy-lunge', 'Curtsy lunge', 'lunge', ['glutes', 'quads'], ['adductors'], [['dumbbells']], 'dumbbell', true, ['knees', 'hips'], 'Step behind and across, lower the back knee diagonally; keep the front knee tracking the toes.', { unilateral: true }),
   x('smith-split-squat', 'Smith machine split squat', 'lunge', ['quads', 'glutes'], ['adductors'], [['smith-machine']], 'machine', true, ['knees', 'hips'], 'Front foot well forward of the bar; the track holds the balance.', { unilateral: true, stepFrom: 'smith-machine' }),
-  x('sissy-squat', 'Sissy squat', 'knee-extension', ['quads'], ['hip-flexors'], [['wall', 'pole', 'squat-rack']], 'bodyweight', false, ['knees'], 'Hold a post, lean back with the knees forward and the heels rising; build the depth slowly.'),
+  x('sissy-squat', 'Sissy squat', 'knee-extension', ['quads'], ['hip-flexors'], [['wall', 'pole', 'squat-rack']], 'bodyweight', false, ['knees'], 'Stand side-on with one hand against a wall for balance, or hold a fixed upright. Keep hips and shoulders in line as the knees travel forward and heels lift. Start shallow and stand back up smoothly.'),
   x('spanish-squat', 'Spanish squat', 'knee-extension', ['quads'], [], [['band'], ['pole', 'squat-rack']], 'bodyweight', false, ['knees'], 'A band behind the knees anchored to a post; sit back with an upright shin and hold or rep.'),
   x('reverse-nordic', 'Reverse Nordic curl', 'knee-extension', ['quads'], ['hip-flexors'], [['floor']], 'bodyweight', false, ['knees'], 'Kneel tall and lean back as far as you can control, then come back up; a strong quad stretch.', { technical: true }),
   x('tibialis-raise', 'Tibialis raise', 'dorsiflexion', ['tibialis-anterior'], [], [['wall']], 'bodyweight', false, ['ankles'], 'Lean your back against a wall with your heels planted out in front. Lift your toes toward your shins and lower slowly.'),
@@ -421,6 +421,7 @@ const HOME_AND_GYM_EXERCISES: GymExercise[] = [
   x('lateral-step-up', 'Lateral step-up', 'lunge', ['quads', 'glutes'], ['adductors', 'calves'], [['box']], 'bodyweight', true, ['knees', 'hips', 'ankles'], 'Stand beside a stable low box. Put the near foot fully on top, stand on that leg and lower the other foot slowly to the floor.', { unilateral: true, stepFrom: 'dumbbells' }),
   x('seated-db-calf-raise', 'Seated dumbbell calf raise', 'calf', ['calves'], [], [['dumbbells'], ['bench', 'box', 'incline-bench']], 'dumbbell', false, ['ankles'], 'Sit with knees bent and feet flat. Steady a dumbbell above each knee. Raise your heels together, pause and lower without bouncing.'),
   x('side-lying-adduction', 'Side-lying inner thigh raise', 'adduction', ['adductors'], [], [], 'bodyweight', false, ['hips'], 'Lie on your side with the top foot planted in front of the lower leg. Keep the lower knee straight and lift that leg a short distance. Work both sides.', { unilateral: true }),
+  x('wall-assisted-db-rdl', 'Wall-assisted single-leg Romanian deadlift', 'hinge', ['hamstrings', 'glutes'], ['lower-back', 'forearms'], [['wall'], ['dumbbells']], 'dumbbell', true, ['lower-back', 'hips', 'ankles'], 'Stand a short step in front of a wall with one foot resting against it behind you. Hold a dumbbell on that side. Hinge over the standing leg, keep your hips level and stand tall. Switch sides.', { unilateral: true, variantOf: 'single-leg-rdl' }),
   x('bear-plank-shoulder-tap', 'Bear plank shoulder tap', 'core-anti-rotation', ['abs', 'obliques'], ['front-delts'], [], 'bodyweight', false, ['wrists', 'shoulders', 'knees'], 'From hands and knees, lift the knees just off the floor. Tap the opposite shoulder with one hand and set it back down without rocking the hips. Count taps per side.', { unilateral: true }),
 ]
 
@@ -488,7 +489,7 @@ const feetUnloaded = new Set([
   'incline-db-curl', 'preacher-curl', 'db-preacher-curl', 'spider-curl', 'concentration-curl',
   'skull-crusher', 'db-skull-crusher', 'barbell-skull-crusher',
   'lat-pulldown', 'neutral-grip-pulldown', 'chest-supported-row', 'seal-row',
-  'side-lying-abduction', 'adductor-squeeze', 'dead-bug', 'hollow-hold', 'reverse-crunch', 'v-up',
+  'side-lying-abduction', 'side-lying-adduction', 'adductor-squeeze', 'dead-bug', 'hollow-hold', 'reverse-crunch', 'v-up',
 ])
 const handSupports = new Set<LocationEquipment>(['pullup-bar', 'rings', 'parallettes', 'dip-bars', 'ab-wheel'])
 const jointRest = new Map<string, Joint[]>(GYM_EXERCISES.map((ex) => {

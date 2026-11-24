@@ -5,7 +5,8 @@ import { EXERCISE_BY_ID } from './exercises'
 import { STEP_BY_ID, stepAfter, stepBefore } from './progressions'
 import { needsYouthWarmup, youthWarmup, YOUTH_WARMUP_NOTE } from './youthWarmup'
 import { pressingChoiceFor } from './pressing'
-import { SKILLS, type BlockSpec, type SkillDef } from './skills'
+import { isRepGoal, SKILLS, type BlockSpec, type SkillDef } from './skills'
+import { weekStart } from '../lib/time'
 import { bridgeStatus } from '../lib/bridge'
 import { buildPlan, cappedBase, cappedTarget, STRATEGY_BY_ID, type CoachPlan, type WarmupLevel } from '../lib/coach'
 import { isReviewOnly } from '../lib/progression'
@@ -620,8 +621,26 @@ export function skillSession(
         })
       : { blocks: lightened, added: [] as string[] }
   const whole = withSides(fill.blocks)
-  const fit = shortLadder ? { blocks: whole, dropped: [] as string[] } :
+  let fit = shortLadder ? { blocks: whole, dropped: [] as string[] } :
     fitToBudget(whole, budget, emphasis === 'core', state.settings.stopLatencySec, state.settings.phoneWithinReach)
+  // If the athlete chose the moving skill too, offer a little rung practice in
+  // a short opener when it fits beside the warm-up and at least two working holds.
+  if (ninetyOpener && !light && !easyDay && (state.tracks?.ninety?.repGoal || state.tracks?.ninety?.assessment?.answers['ladder:ninety-pushup'] !== undefined) &&
+      !fit.blocks.some((b) => b.role === 'press') && !state.sessions.some((session) => session.startedAt >= weekStart(now) &&
+        session.startedAt <= now && session.sets.some((set) => set.value > 0 && !set.light &&
+          (set.section === 'main' || set.section === 'strength') && isRepGoal(skill.id, set.exerciseId)))) {
+    const rung = whole.find((b) => b.role === 'press' && isRepGoal(skill.id, b.exerciseId))
+    if (rung && fit.blocks.some((b) => b.role === 'skill' && b.sets >= 2)) {
+      const compact = fit.blocks.filter((b) => b.section === 'warmup' || b.section === 'main')
+        .map((b) => b.role === 'skill' ? { ...b, sets: Math.min(3, b.sets), reach: undefined } : b)
+      for (const sets of [2, 1]) {
+        const option = [...compact, { ...rung, sets }]
+        if (sets > rung.sets || estimateMinutes(option, state.settings.stopLatencySec, state.settings.phoneWithinReach) > budget) continue
+        fit = { blocks: option, dropped: whole.filter((b) => !option.some((kept) => kept.exerciseId === b.exerciseId)).map((b) => b.exerciseId) }
+        break
+      }
+    }
+  }
   const fitted = fit.blocks.map((b) => ({ ...b, skill: skill.id }))
   // Whether the budget took anything off: a block, or a set.
   const trimmed = shortLadder || fit.dropped.length > 0 || totalSetsOf(fit.blocks) < totalSetsOf(whole)
@@ -714,7 +733,9 @@ export function skillSession(
     strategy: plan.strategy,
     baseTargetSec: baseTarget,
     ...(plan.dayType === 'deload' ? { plannedDeload: true } : {}),
-    purpose: leverOpener
+    purpose: ninetyOpener && !fitted.some((b) => b.role === 'press' || b.role === 'pressing')
+      ? `Practise ${keyName} while fresh, then move on to the lifts.`
+      : leverOpener
       ? `Practise ${keyName} while fresh, then move on to the lifts.`
       : ladderPlaced
       ? `Work the ${skill.ladder?.name.toLowerCase()} line first, with ${keyName} kept as short practice.`

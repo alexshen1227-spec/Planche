@@ -1,5 +1,5 @@
 import { type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
-import { addDays } from '../time'
+import { addDays, weekStart } from '../time'
 import { athleticDomain, GYM_EXERCISE_BY_ID, jointsToRest, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
 import { availableAt, canDoHere, preferenceRank } from './availability'
 import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
@@ -258,6 +258,8 @@ interface GymSessionInput {
   priority?: Muscle[]
   /** The athlete's own selections, ahead of the week's automatic suggestions when time is short. */
   athletePriority?: readonly Muscle[]
+  /** Muscles still below their weekly targets after the planner priced each visit. */
+  weeklyPriority?: readonly Muscle[]
   /**
    * Muscles the week already has far past target (the planner's steer). A movement built on one gives its slot to
    * one that is not, and a slot only such movements fill is left out — except the movements the day is named for
@@ -443,6 +445,7 @@ export function planGymExercises(input: GymSessionInput) {
     // On a brief leg visit, buy knee and hip sets before an unrequested calf or trunk accessory.
     const shortLegs = combinedGoals && focus === 'lower' && minutes <= 25 && !requested.has('calves') && !requested.has('abs')
     if (shortLegs) slots.splice(2, slots.length - 2, here.some((e) => e.pattern === 'knee-extension' && usable(e)) ? ['knee-extension'] : ['lunge'])
+    if (focus === 'lower' && avoid.has('ankles')) slots.push(['abduction'], ['adduction'])
     // A hinge and a knee curl give a hamstring priority two distinct movements on
     // a full-body visit. A longer session can also carry a second chest exercise.
     if (focus === 'full' && combinedGoals && minutes >= 35) {
@@ -537,6 +540,7 @@ export function planGymExercises(input: GymSessionInput) {
       const extraLateral = lateralAccessory && pick.pattern === 'lateral-raise'
       const limitAccessory = extraLateral && !fullPriorityDose
       const item = makeItem(pick, wantsExplosive, spared || limitAccessory ? 2 : shortLegs && !items.length ? 4 : undefined)
+      if (focus !== 'full' && pick.pattern.startsWith('core-') && !pick.primary.some((m) => requested.has(m))) item.sets = Math.min(3, item.sets)
       if (spared && recentPress && PRESSING_PATTERNS.has(pick.pattern)) item.sets = 1
       items.push(item)
       if (spared || limitAccessory) steered.add(pick.id)
@@ -564,20 +568,33 @@ export function planGymExercises(input: GymSessionInput) {
         const best = useFirst ? candidates[0] : isolation ?? candidates[0]
         if (best) protectSets.add(best.exerciseId)
         if (calfAngles && muscle === 'calves') for (const it of candidates) protectSets.add(it.exerciseId)
+        if (focus === 'full' && minutes >= 35 && combinedGoals && muscle === 'hamstrings' && requested.has(muscle) &&
+            !sessions.some((s) => s.startedAt >= weekStart(now) && s.startedAt < now && s.exercises.some((row) =>
+              GYM_EXERCISE_BY_ID[row.exerciseId]?.primary.includes(muscle) && row.sets.some((set) => !set.warmup && set.reps > 0)))) {
+          for (const it of candidates) if (GYM_EXERCISE_BY_ID[it.exerciseId].pattern === 'hinge') protectSets.add(it.exerciseId)
+        }
       }
       for (const group of NAMED_PATTERNS[focus]) {
         const inGroup = items.filter((it) => group.includes(GYM_EXERCISE_BY_ID[it.exerciseId].pattern))
         const first = inGroup.find((it) => protectSets.has(it.exerciseId)) ?? inGroup[0]
         if (first) anchors.add(first.exerciseId)
       }
+      // A week of pressing skill practice can leave just one short upper-body
+      // visit for the back. Keep a row beside a pulldown before an optional raise.
+      if (focus === 'upper' && combinedGoals && !requested.size && input.weeklyPriority?.[0] === 'lats') {
+        const row = items.find((it) => GYM_EXERCISE_BY_ID[it.exerciseId].pattern === 'horizontal-pull')
+        if (row) anchors.add(row.exerciseId)
+      }
       // A short full-body block can pair a leg compound with the requested upper
       // movement. Requiring two upper compounds first would spend the whole visit.
-      if (focus === 'full' && minutes <= 25 && combinedGoals && requested.size > 1) {
+      if (focus === 'full' && (minutes <= 25 || introductory) && combinedGoals && requested.size > 1) {
         const isLeg = (id: string) => fitsGymFocus('lower', GYM_EXERCISE_BY_ID[id]) &&
           !GYM_EXERCISE_BY_ID[id].pattern.startsWith('core')
         const direct = [...protectSets].filter((id) => GYM_EXERCISE_BY_ID[id].primary.some((m) => requested.has(m)))
         if (direct.some(isLeg) && direct.some((id) => !isLeg(id))) {
-          for (const id of anchors) if (!isLeg(id) && !direct.includes(id)) anchors.delete(id)
+          const upperAnchor = introductory && !direct.some((id) => !isLeg(id) && GYM_EXERCISE_BY_ID[id].compound)
+            ? [...anchors].find((id) => !isLeg(id)) : undefined
+          for (const id of anchors) if (!isLeg(id) && !direct.includes(id) && id !== upperAnchor) anchors.delete(id)
         }
       }
       const rank = (id: string) => {
@@ -605,7 +622,7 @@ export function planGymExercises(input: GymSessionInput) {
     // allowance to change equipment, rerack weights and record the workout.
     const lastRest = items.at(-1)?.restSec ?? 0
     const finalRest = minutes >= 15 && minutes < 20 ? lastRest / 60 :
-      combinedGoals && minutes <= 30 ? Math.max(0, lastRest - 30) / 60 : 0
+      combinedGoals && (priorityExercises.size || input.capacity) && minutes <= 30 ? Math.max(0, lastRest - 30) / 60 : 0
     let saved = 0
     if (pair) {
       const [a, b] = pair
@@ -659,7 +676,8 @@ export function planGymExercises(input: GymSessionInput) {
     }
   }
   while (items.length > 1 && total() > minutes) {
-    if (protectSets.has(items[items.length - 1].exerciseId)) {
+    const last = items[items.length - 1].exerciseId
+    if (protectSets.has(last) && (!requested.size || GYM_EXERCISE_BY_ID[last].primary.some((m) => requested.has(m)))) {
       // On a very short day a single accessory set can keep a chosen muscle in the program.
       const spareSet = [...items].reverse().find((it) => it.sets > 1 && !anchors.has(it.exerciseId) && !protectSets.has(it.exerciseId))
         ?? items.find((it) => it.sets > 1 && !anchors.has(it.exerciseId))
@@ -697,7 +715,11 @@ export function planGymExercises(input: GymSessionInput) {
   // named for, and a short day, which has no such room, builds exactly what it always did.
   if (focus !== 'athletic' && !introductory && fits && items.length && !trimmed) {
     const slotPatterns = new Set<Pattern>(SLOTS[focus].flat())
-    if (focus === 'pull' || focus === 'upper') slotPatterns.add('shrug')
+    if ((focus === 'pull' || focus === 'upper') && (minutes >= 75 || priority.has('traps'))) slotPatterns.add('shrug')
+    if (minutes >= 75) {
+      slotPatterns.add('core-anti-rotation')
+      slotPatterns.add('core-flexion')
+    }
     const main = new Set<Muscle>(FOCUS_MAIN[focus])
     const credit = new Map<Muscle, number>()
     const addCredit = (ex: GymExercise, sets: number) => {
@@ -706,7 +728,15 @@ export function planGymExercises(input: GymSessionInput) {
     }
     for (const it of items) addCredit(GYM_EXERCISE_BY_ID[it.exerciseId], it.sets)
     const added: GymExercise[] = []
+    const limit = (m: Muscle) => requested.has(m) || (!input.athletePriority && priority.has(m)) ||
+      (focus === 'pull' && m === 'upper-back') ? FILL_MUSCLE_SETS + 2 : FILL_MUSCLE_SETS
     const differentAccessory = (ex: GymExercise) => {
+      if (ex.pattern.startsWith('core-')) {
+        const chosen = ex.primary.some((m) => requested.has(m) || (!input.athletePriority && priority.has(m)))
+        const core = items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].pattern.startsWith('core-'))
+        return (chosen || minutes >= 75 || !core.length) &&
+          core.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].pattern === ex.pattern).length < (chosen ? 2 : 1)
+      }
       if (!UPPER_ISOLATION.has(ex.pattern)) return true
       const chosen = ex.primary.some((m) => requested.has(m) || (!input.athletePriority && priority.has(m)))
       const count = items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].pattern === ex.pattern).length
@@ -729,7 +759,7 @@ export function planGymExercises(input: GymSessionInput) {
             usable(e) &&
             spareIn(e) === 0 &&
             technicalPenalty(e) === 0 &&
-            e.primary.every((m) => (credit.get(m) ?? 0) < FILL_MUSCLE_SETS),
+            e.primary.every((m) => (credit.get(m) ?? 0) < limit(m)),
         )
         .map((e) => {
           const tier = isPriority(e) ? 0 : e.primary.some((m) => (main.size ? main.has(m) : true)) ? 1 : 2
@@ -741,7 +771,7 @@ export function planGymExercises(input: GymSessionInput) {
       for (const { e } of candidates) {
         const want = 3 + (isPriority(e) ? 1 : 0)
         const rest = restFor(e, makeItem(e, false, 2).plan)
-        const muscleRoom = Math.min(...e.primary.map((m) => FILL_MUSCLE_SETS - (credit.get(m) ?? 0)))
+        const muscleRoom = Math.min(...e.primary.map((m) => limit(m) - (credit.get(m) ?? 0)))
         const sets = [...new Set([want, 3, 2])].find((n) => n <= want && n <= muscleRoom && setsSoFar + n <= ceiling && blockMinutes(n, rest, e.dose?.workSec) <= room)
         if (sets === undefined) continue
         used.add(movement(e))
@@ -755,7 +785,7 @@ export function planGymExercises(input: GymSessionInput) {
     }
     if (added.length) {
       notes.push(
-        `There was time left in the ${minutes} minutes, so ${added.map((e) => e.name).join(', ')} ${added.length === 1 ? 'was' : 'were'} added for the muscles the session gave least — your priority muscles first. It is the app's own way of using a long day, not a prescription.`,
+        `There was time left in the ${minutes} minutes, so ${added.map((e) => e.name).join(', ')} ${added.length === 1 ? 'was' : 'were'} added. These give ${[...new Set(added.flatMap((e) => e.primary))].map((m) => m.replaceAll('-', ' ')).join(', ')} more work on this ${FOCUS_LABEL[focus].toLowerCase()} day.`,
       )
     }
   }
@@ -790,6 +820,71 @@ export function planGymExercises(input: GymSessionInput) {
     }
   }
   const buildUpLimit = input.capacity?.buildUpSetLimit
+  if (!introductory && factor >= 1 && !avoid.size && focus !== 'athletic' && input.weeklyPriority?.length) {
+    const behind = input.weeklyPriority.filter((m) => requested.has(m) ||
+      (combinedGoals && ((m === 'chest' || m === 'lats') && (focus === 'upper' || focus === 'full') ||
+        (m === 'quads' || m === 'hamstrings') && (focus === 'lower' || focus === 'full'))))
+    const withinBudget = () => total() <= minutes && setCount() <= Math.min(FILL_SESSION_SETS, buildUpLimit ?? Infinity)
+    const fund = (muscle: Muscle) => {
+      if (withinBudget()) return true
+      for (let i = items.length - 1; i >= 0; i--) {
+        const donor = items[i]
+        const e = GYM_EXERCISE_BY_ID[donor.exerciseId]
+        if (e.primary.includes(muscle) || e.explosive) continue
+        const chosen = e.primary.filter((m) => requested.has(m))
+        if (chosen.length && requested.has(muscle)) continue
+        const before = donor.sets
+        const optional = !e.compound && !anchors.has(e.id) && !['knee-flexion', 'knee-extension'].includes(e.pattern)
+        // When a basic lift has fewer than four sets, a priority that already
+        // has a full dose can lend a set while keeping its first four.
+        const surplus = chosen.map((m) => items.reduce((n, it) => n + (GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes(m) ? it.sets : 0), 0) - 4)
+        const floor = Math.max(optional ? 0 : 2, before - Math.min(...surplus))
+        while (donor.sets > floor) {
+          donor.sets--
+          if (!donor.sets) items.splice(i, 1)
+          if (withinBudget()) return true
+        }
+        if (!donor.sets) items.splice(i, 0, donor)
+        donor.sets = before
+      }
+      return false
+    }
+    let selectedAdded = 0
+    let otherAdded = 0
+    for (const m of behind) {
+      let added = requested.has(m) ? selectedAdded : otherAdded
+      const working = items.filter((it) => {
+        const e = GYM_EXERCISE_BY_ID[it.exerciseId]
+        return e.primary.includes(m) && !e.dose && !e.explosive && !spareIn(e) && !steered.has(e.id)
+      })
+      let direct = items.reduce((n, it) => n + (GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes(m) ? it.sets : 0), 0)
+      for (const it of working) {
+        const target = requested.has(m) ? 6 : 4
+        while (direct < target && it.sets < 5 && added < (requested.has(m) ? 3 : 2)) {
+          it.sets++
+          if (!fund(m)) { it.sets--; break }
+          direct++
+          added++
+        }
+      }
+      if (requested.has(m) && combinedGoals && direct >= 3 && direct < 6 && working.length === 1 && added < 3) {
+        const movements = new Set(items.map((it) => movement(GYM_EXERCISE_BY_ID[it.exerciseId])))
+        const options = here.filter((e) => !e.compound && !e.dose && !e.explosive && !movements.has(movement(e)) &&
+          e.primary.includes(m) && usable(e) && !technicalPenalty(e) && !spareIn(e))
+        const pick = options.sort((a, b) => scoreOf(a) - scoreOf(b))[0]
+        if (pick) {
+          const item = makeItem(pick, false, 2)
+          const moved = Math.max(0, direct + item.sets - 6)
+          working[0].sets -= moved
+          items.push(item)
+          if (fund(m)) added += item.sets - moved
+          else { items.pop(); working[0].sets += moved }
+        }
+      }
+      if (requested.has(m)) selectedAdded = added
+      else otherAdded = added
+    }
+  }
   const capped = buildUpLimit !== undefined && focus !== 'athletic' && setCount() > buildUpLimit
   if (capped) {
     const chosen = (id: string) => protectSets.has(id) && GYM_EXERCISE_BY_ID[id].primary.some((m) => requested.has(m))

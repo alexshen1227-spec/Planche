@@ -607,7 +607,7 @@ export function suggestLoad(input: {
     const easy = !stale && !unfinished && atLoad.every((s) => s.rpe !== undefined && s.rpe <= plan.targetRpe)
     // The printed range is a starting point. An easier variation can already be
     // well below the athlete's capacity, even on the first visit.
-    const easyAtTop = reps[0] === hi && atLoad.every((s) => s.rpe !== undefined && s.rpe <= Math.min(7, plan.targetRpe - 1))
+    const easyAtTop = reps[0] === hi && atLoad.every((s) => s.rpe !== undefined && s.rpe <= Math.min(6, plan.targetRpe - 1))
     const repeatable = easy && reps.length >= 2 && !ex.technical && !ex.explosive && !ex.dose &&
       unloadedLabel(ex) !== 'Band' && (reps[0] > hi || easyAtTop) ? Math.min(30, reps[0] + (easyAtTop ? 1 : 0)) : undefined
     const targetReps = repeatable ?? Math.max(1, Math.min(hi, typical + (easy ? 1 : grinding || away ? -1 : 0)))

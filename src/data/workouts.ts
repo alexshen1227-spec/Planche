@@ -2434,7 +2434,9 @@ export function finalizeFromPlan(
       if (resting.size && blocks.some((b) => b.section === 'main')) {
         const removed = workout.blocks.filter((b) => !blocks.some((kept) => kept.exerciseId === b.exerciseId)).map((b) => EXERCISE_BY_ID[b.exerciseId]?.name)
         const notes = workout.adjustments?.filter((line) => !removed.some((name) => name && line.startsWith(name + ' set to ')))
-        workout = { ...workout, blocks, adjustments: notes, minutes: estimateMinutes(blocks, state.settings.stopLatencySec, state.settings.phoneWithinReach) }
+        const purpose = lineup.length === 1 && !blocks.some((b) => b.role === 'press' || b.role === 'pressing')
+          ? `Practise ${EXERCISE_BY_ID[blocks.find((b) => b.role === 'skill')?.exerciseId ?? '']?.name.toLowerCase() ?? 'your current hold'} while the muscles from your last lifting session recover.` : workout.purpose
+        workout = { ...workout, blocks, purpose, adjustments: notes, minutes: estimateMinutes(blocks, state.settings.stopLatencySec, state.settings.phoneWithinReach) }
         for (const f of resting) {
           const last = recent[f]!
           const day = new Date(last.at).toLocaleDateString(undefined, { weekday: 'long' })

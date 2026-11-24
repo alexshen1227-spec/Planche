@@ -17,6 +17,7 @@ import { activeSkills } from '../lib/skills'
 import { GYM_EXERCISES, type GymExercise } from '../data/gym/exercises'
 import { MUSCLE_BY_ID, PATTERN_LABEL, locationEquipmentLabel } from '../data/gym/catalog'
 import { GymExerciseGuide } from '../components/gym/ExerciseGuide'
+import { exerciseWords, matchesExercise } from '../lib/exerciseSearch'
 
 type LibraryCategory = Category | 'all' | 'gym'
 const CATS: LibraryCategory[] = [
@@ -37,14 +38,14 @@ const CATS: LibraryCategory[] = [
 ]
 
 type Move = Exercise | GymExercise
-const normalise = (text: string) => text.toLowerCase().replace(/[-–]/g, ' ').replace(/\s+/g, ' ').trim()
 const moves = ([...EXERCISES, ...GYM_EXERCISES] as Move[]).map((exercise) => {
   const gym = 'pattern' in exercise
   const words = gym
     ? [exercise.cue, PATTERN_LABEL[exercise.pattern], ...exercise.primary.map((m) => MUSCLE_BY_ID[m].label),
         ...exercise.secondary.map((m) => MUSCLE_BY_ID[m].label), ...exercise.needs.flat().map(locationEquipmentLabel)]
     : [exercise.blurb, ...exercise.howTo, ...exercise.cues, ...exercise.mistakes, ...exercise.muscles]
-  return { exercise, category: gym ? 'gym' : exercise.category, name: normalise(exercise.name), search: normalise([exercise.name, ...words].join(' ')) }
+  const name = exerciseWords(exercise.name)
+  return { exercise, category: gym ? 'gym' : exercise.category, name, title: name.join(' '), search: exerciseWords([exercise.name, exercise.id, ...words].join(' ')) }
 })
 
 export function Library() {
@@ -83,10 +84,10 @@ function ExercisePane() {
   const gymFirst = state.gym?.prefs?.goals.skills === 0
 
   const list = useMemo(() => {
-    const q = normalise(query)
-    const terms = q.split(' ').filter(Boolean)
-    const matches = moves.filter((m) => (cat === 'all' || m.category === cat) && terms.every((term) => m.search.includes(term)))
-    const rank = (m: (typeof moves)[number]) => !q ? 0 : m.name === q ? 0 : m.name.startsWith(q) ? 1 : m.name.includes(q) ? 2 : 3
+    const terms = exerciseWords(query)
+    const q = terms.join(' ')
+    const matches = moves.filter((m) => (cat === 'all' || m.category === cat) && matchesExercise(m.search, terms))
+    const rank = (m: (typeof moves)[number]) => !q || m.title === q ? 0 : m.title.startsWith(q) ? 1 : matchesExercise(m.name, terms) ? 2 : 3
     return matches.sort((a, b) => rank(a) - rank(b) || (gymFirst ? Number(b.category === 'gym') - Number(a.category === 'gym') : 0))
   }, [cat, query, gymFirst])
 
