@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppState, Session, Workout } from '../types'
 import { initialState, StoreProvider } from '../lib/store'
 import { SessionPlayer } from './SessionPlayer'
+import { FormCheckRow } from '../components/FormCheckRow'
+import { MovementDemo } from '../components/MovementDemo'
 import { dayStage } from '../lib/plan/screens'
 import { goalDaysInWeekOf } from '../lib/stats'
 import { resumeSkillWorkout } from '../lib/resumeSkillWorkout'
@@ -28,6 +30,23 @@ vi.mock('../lib/audio', () => ({
 vi.mock('../lib/confetti', () => ({ confetti: () => {} }))
 
 let clock = Date.UTC(2026, 9, 5, 9)
+
+it('saves an unfilmed wall handstand as self-rated practice without asking for replay checks', () => {
+  render(<FormCheckRow clipKey={null} exerciseId="wall-handstand" creditedHoldSec={5.2}
+    value={{ rating: 'clean', confirmed: true, issues: [] }} onHuman={vi.fn()} onModel={vi.fn()} />)
+  expect(screen.getByText(/recorded hold is needed/i)).toBeTruthy()
+  expect(screen.queryByText(/watch the replay/i)).toBeNull()
+  expect(screen.queryByRole('button', { name: /elbows stayed locked/i })).toBeNull()
+})
+
+it('plays the same strict pull-up demonstration in the gym and skill exercise guides', () => {
+  const { rerender } = render(<MovementDemo exerciseId="pullup" name="Skill pull-up" />)
+  for (const [id, name] of [['pullup', 'Skill pull-up'], ['pull-up', 'Gym pull-up']]) {
+    rerender(<MovementDemo exerciseId={id} name={name} />)
+    fireEvent.click(screen.getByRole('button', { name: `Play ${name} demonstration` }))
+    expect(screen.getByTitle(`${name} demonstration`).getAttribute('src')).toContain('HRV5YKKaeVw')
+  }
+})
 
 function seed(): AppState {
   return {

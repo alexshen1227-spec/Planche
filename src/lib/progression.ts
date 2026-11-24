@@ -2,6 +2,7 @@ import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import type { AppState, AutoForm, FormCheck, FormIssue, FormRating, Session, SetLog, StepId, TrainingSurface } from '../types'
 import { trustedCameraEvidence } from './formEvidence'
+import { dayKey } from './time'
 import { PROGRESSION_STOP_LATENCY_SEC, WALK_BACK_MAX_SEC } from './sessionTiming'
 
 export interface Qualification {
@@ -750,6 +751,28 @@ export function endedForNonCapacityReason(set: Pick<SetLog, 'endReason' | 'timin
   return set.endReason === 'interruption' || set.endReason === 'timing' || set.timing?.method === 'interrupted'
 }
 
+/** A single short hold in an unfinished block has no known stopping reason yet. */
+export function unfinishedHoldSample(session: Session, stepId: StepId): boolean {
+  if (session.completion !== 'partial' || !session.remaining) return false
+  const key = STEP_BY_ID[stepId]?.keyExerciseId
+  if (!key || !session.remaining.blocks.some((b) => b.section === 'main' && b.exerciseId === key)) return false
+  const sets = session.sets.filter((s) => s.section === 'main' && s.exerciseId === key && s.kind === 'hold')
+  if (sets.length !== 1) return false
+  const set = sets[0]
+  return (!set.endReason || set.endReason === 'unsure') && (set.rpe ?? 0) < 9 && set.value > 0 && set.value < set.target &&
+    !set.calledAtTarget && !isBarAttempt(set, stepId) && !trustedCameraEvidence(set) && humanRating(set.form) !== 'broke'
+}
+
+/** A timer record stays in History even when its source set cannot establish a working target. */
+export function capacityTimerBest(state: Pick<AppState, 'sessions' | 'prs'>, stepId: StepId): number | undefined {
+  const key = STEP_BY_ID[stepId].keyExerciseId
+  const mark = state.prs[key]
+  if (!mark) return undefined
+  const source = state.sessions.find((s) => s.endedAt === mark.at && s.sets.some((x) => x.exerciseId === key && x.value === mark.value))
+  if (source && (unfinishedHoldSample(source, stepId) || source.sets.filter((x) => x.exerciseId === key && x.value === mark.value).every(endedForNonCapacityReason))) return undefined
+  return mark.value
+}
+
 function inScope(set: SetLog, scope: LearningScope | undefined): boolean {
   if (isAssisted(set)) return false
   if (!scope) return true
@@ -1152,18 +1175,24 @@ export function learningSeries(
   const sorted = [...state.sessions]
     .filter((s) => s.startedAt <= now)
     .sort((a, b) => a.startedAt - b.startedAt)
-  const seriesFor = (surface: TrainingSurface | null): LearningPoint[] =>
-    sorted
-      .map((s) => {
-        const { value, floorAt } = sessionLearningPoint(s, stepId, { surface })
-        return {
-          at: s.startedAt,
-          value,
-          ...(floorAt !== null ? { cappedAt: floorAt } : {}),
-          ...(learningValueFromCamera(s, stepId, value, { surface }) ? { camera: true as const } : {}),
-        }
-      })
-      .filter((p) => p.value > 0)
+  const seriesFor = (surface: TrainingSurface | null): LearningPoint[] => {
+    let previousShort: number | undefined
+    return sorted.flatMap((s) => {
+      const { value, floorAt } = sessionLearningPoint(s, stepId, { surface })
+      if (!(value > 0)) return []
+      if (unfinishedHoldSample(s, stepId)) {
+        const previous = previousShort
+        previousShort = s.startedAt
+        if (previous === undefined || dayKey(previous) === dayKey(s.startedAt) || s.startedAt - previous > MEASUREMENT_FRESH_DAYS * 86_400_000) return []
+      }
+      return [{
+        at: s.startedAt,
+        value,
+        ...(floorAt !== null ? { cappedAt: floorAt } : {}),
+        ...(learningValueFromCamera(s, stepId, value, { surface }) ? { camera: true as const } : {}),
+      }]
+    })
+  }
   const own = seriesFor(preferred)
   if (own.length) return { surface: preferred, points: own, transferred: false }
   const legacy = seriesFor(null)

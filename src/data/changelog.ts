@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-24',
+    title: 'Train the whole body alongside your skill',
+    area: 'training',
+    notes: [
+      'Short mixed weeks can fit rows or pulldowns after planche, pressing after front lever, and leg work after a skill practice. A sole handstand goal can get a second practice day with the same equipment and time.',
+      'Learn and both workout players now include publisher demonstrations for many more prescribed exercises, including the squat, bench press, strict pull-up, frog stand, elbow lever and handstand entry.',
+      'An interrupted hold stays in your history. A single unexplained short hold in a saved unfinished block waits for more evidence before it changes your working target.',
+    ],
+  },
+  {
+    date: '2026-11-24',
     title: 'Continue your skill work and compare your week',
     area: 'coach',
     notes: [

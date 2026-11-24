@@ -656,6 +656,8 @@ export interface CoachPlan {
   strategyReason: string
   setsDelta: number
   targetFactor: number
+  /** Working hold on today's plan after its readiness and capacity limits. */
+  workingHoldSec: number
   restMainSec: number
   restAccessorySec: number
   warmup: WarmupLevel
@@ -2192,6 +2194,7 @@ export function buildPlan(state: AppState, now = Date.now(), freshCheckIn?: Chec
     strategyReason,
     setsDelta: finalSets,
     targetFactor: finalTarget,
+    workingHoldSec: todaySec,
     restMainSec,
     restAccessorySec,
     warmup,
@@ -2314,7 +2317,10 @@ export function debriefSession(
   // held less than they were asked. And a first session's target was a
   // starting estimate: the step's usual start, or a share of a setup answer
   // that was "not yet" — never a measure of the athlete.
-  if (!hurt && targets && targets.after !== undefined && Math.abs(targets.after - targets.before) >= 1) {
+  const remainingHold = session.completion === 'partial' && session.remaining?.blocks.find((b) => b.section === 'main' && b.exerciseId === step?.keyExerciseId && b.target.kind === 'hold')
+  if (!hurt && remainingHold && remainingHold.target.kind === 'hold') {
+    out.push({ text: `Your saved workout has ${remainingHold.sets} more ${EXERCISE_BY_ID_COACH[remainingHold.exerciseId]?.name.toLowerCase() ?? 'hold'} ${remainingHold.sets === 1 ? 'set' : 'sets'} at ${remainingHold.target.sec}s. Continue it today from Home.`, kind: 'info' })
+  } else if (!hurt && targets && targets.after !== undefined && Math.abs(targets.after - targets.before) >= 1) {
     const up = targets.after > targets.before
     let why = ''
     if (!up) {

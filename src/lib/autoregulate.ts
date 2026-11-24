@@ -144,7 +144,7 @@ export function adviseNextHold(planned: number, done: SetOutcome[], ceiling = In
     return {
       target: current,
       change: 'same',
-      reason: 'One short hold is noise — same target. If the next is short too, it comes down.',
+      reason: `Keep ${current}s for the next set today. Two short holds in a row will lower the target for this workout.`,
       suggestMoveOn,
     }
   }

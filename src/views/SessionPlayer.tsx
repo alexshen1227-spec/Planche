@@ -32,8 +32,8 @@ import type {
 } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
-import { describeBlock, describeTarget, primaryTargetBlock, adaptiveTarget, isPainSafe } from '../data/workouts'
-import { debriefSession, type CoachDecision } from '../lib/coach'
+import { describeBlock, describeTarget, primaryTargetBlock, isPainSafe } from '../data/workouts'
+import { buildPlan, debriefSession, type CoachDecision } from '../lib/coach'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { useStore } from '../lib/store'
 import { applySession } from '../lib/engine'
@@ -63,7 +63,7 @@ import {
 } from '../lib/sessionTiming'
 import { defaultSurface, surfaceLabel, TRAINING_SURFACES } from '../data/equipment'
 import { recordForSurface } from '../lib/records'
-import { demoSearchUrl, MOVEMENT_VIDEOS, youtubeId } from '../lib/video'
+import { demoSearchUrl, movementVideo, youtubeId } from '../lib/video'
 import { MovementDemo } from '../components/MovementDemo'
 import { Icon } from '../components/Icon'
 import { BadgeGlyph } from '../components/ds/BadgeGlyph'
@@ -1618,9 +1618,10 @@ export function SessionPlayer({
     const before = skillView(current, lead)
     const after = skillView(next, lead)
     const viewed = after.sessions.find((s) => s.id === session.id) ?? session
-    const targetBefore = adaptiveTarget(before, before.stepId)
-    const targetAfter = after.stepId === before.stepId ? adaptiveTarget(after, after.stepId) : undefined
-    setDebrief(debriefSession(before, after, viewed, { before: targetBefore, after: targetAfter }))
+    const prescribed = workout.blocks.find((b) => b.section === 'main' && b.exerciseId === STEP_BY_ID[before.stepId]?.keyExerciseId && b.role === 'skill')?.target
+    const targets = prescribed?.kind === 'hold' && after.stepId === before.stepId && !session.remaining
+      ? { before: prescribed.sec, after: buildPlan(after).workingHoldSec } : undefined
+    setDebrief(debriefSession(before, after, viewed, targets))
     // First-ever values on accessories are technically PRs but not worth a
     // party — celebrate improvements, plus any first number on a skill line.
     const ev: SessionEvents = {
@@ -3223,7 +3224,7 @@ function DemoHelp({ exercise, pinnedUrl }: { exercise: Exercise; pinnedUrl?: str
         <p className="mt-1 text-body leading-relaxed text-ink2">{exercise.blurb}</p>
       </div>
       <MovementDemo exerciseId={exercise.id} name={exercise.name} pinnedUrl={pinnedUrl} />
-      {!pinnedId && !MOVEMENT_VIDEOS[exercise.id] && (
+      {!pinnedId && !movementVideo(exercise.id) && (
         <a
           href={demoSearchUrl(exercise)}
           target="_blank"

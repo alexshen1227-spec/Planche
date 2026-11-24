@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { stepForKeyExercise } from '../data/progressions'
-import { embedUrl, MOVEMENT_VIDEOS, youtubeId } from '../lib/video'
+import { embedUrl, movementVideo, youtubeId } from '../lib/video'
 import { Figure } from './Figure'
 import { Icon } from './Icon'
 
@@ -18,7 +18,7 @@ export function MovementDemo({ exerciseId, name, pinnedUrl }: { exerciseId: stri
     return () => { window.removeEventListener('online', sync); window.removeEventListener('offline', sync) }
   }, [])
   const pinned = pinnedUrl && youtubeId(pinnedUrl)
-  const video = pinned ? { id: pinned, by: 'Your pinned video', start: undefined } : MOVEMENT_VIDEOS[exerciseId]
+  const video = pinned ? { id: pinned, by: 'Your pinned video', start: undefined } : movementVideo(exerciseId)
   const step = stepForKeyExercise(exerciseId)
   if (!step && !video) return null
   const start = video?.start ?? 0

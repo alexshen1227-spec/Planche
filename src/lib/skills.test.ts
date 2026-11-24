@@ -21,6 +21,7 @@ import { debriefSession } from './coach'
 import { niggleRegionsToday, painReportedIn } from './signals'
 import { autoFromResult, issuesFor, mergeHumanReview } from '../components/FormCheckRow'
 import { bridgeStatus, capacityOn } from './bridge'
+import { adaptiveTarget } from './workingTarget'
 import { applySession } from './engine'
 import { figureBounds, figureParts } from './figure'
 import { filmedExercises, filmedExercisesFor, readFormTrends } from './formTrend'
@@ -1523,6 +1524,25 @@ describe('the line-up', () => {
     for (const day of [-6, -3]) three = applySession(three, short(T0 + day * DAY)).next
     expect(targetOf(three), 'after three short sessions').toBeLessThanOrEqual(2)
     expect(capacityOn(skillView(three, 'handstand'), 'hs-wall')).toBe(2)
+  })
+
+  it('keeps a lone unfinished wall hold as practice until a second day or a reported limit confirms it', () => {
+    const base = startingState({ skills: ['handstand'], steps: { handstand: 'hs-wall' } })
+    const view = skillView(base, 'handstand')
+    const key = 'wall-handstand'
+    const block = finalizeWorkoutWithPlan(base, { source: 'auto', skills: ['handstand'] }, undefined, T0).workout.blocks.find((b) => b.exerciseId === key && b.section === 'main')!
+    const entry = (at: number, endReason?: SetLog['endReason']): Session => ({
+      ...sessionOf(view, at, [{ exerciseId: key, section: 'main', kind: 'hold', value: 5.2, target: 20, at, endReason }]),
+      completion: 'partial', remaining: { blocks: [{ ...block, sets: 5 }], skills: ['handstand'] },
+    })
+    const after = (session: Session, state = base) => applySession(state, session).next
+    const target = (state: AppState) => adaptiveTarget(skillView(state, 'handstand'), 'hs-wall', T0 + 7 * DAY)
+    const first = after(entry(T0))
+    expect(first.prs[key].value).toBe(5.2)
+    expect(target(first)).toBe(target(base))
+    expect(target(after(entry(T0, 'interruption')))).toBe(target(base))
+    expect(target(after(entry(T0, 'effort')))).toBeLessThan(target(base))
+    expect(target(after(entry(T0 + 2 * DAY), first))).toBeLessThan(target(base))
   })
 
   it('does not let holds stopped at their calls outvote what the athlete said they can hold', () => {

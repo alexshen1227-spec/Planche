@@ -394,6 +394,11 @@ export function planGymExercises(input: GymSessionInput) {
     }
   } else {
     const slots: Pattern[][] = [...SLOTS[focus]]
+    // A short upper session still gets a press and a pull. When the week
+    // needs more back work, fit the row before a second pressing angle.
+    if (focus === 'upper' && priority.has('lats') && !priority.has('chest') && !requested.has('chest-upper')) {
+      [slots[2], slots[3]] = [slots[3], slots[2]]
+    }
     // A lateral raise can share a leg or pull day without turning it into hard pressing.
     const lateralAccessory = requested.has('side-delts') && !slots.some((slot) => slot.includes('lateral-raise'))
     if (lateralAccessory) slots.push(['lateral-raise'])

@@ -77,6 +77,41 @@ const restoreClock = () => {
 afterAll(restoreClock)
 
 const handstandGym = { ...GYM_PLACE, equipment: [...GYM_PLACE.equipment, 'wall' as const] }
+const threeDays = [0, 45, 0, 45, 0, 45, 0]
+
+describe('one skill and whole-body training on three days', () => {
+  it.each(['planche', 'frontlever'] as const)('trains the opposing upper-body muscles and both legs alongside %s', (lead) => {
+    const cfg: AthleteCfg = { skills: [lead], birthYear: 1993, active: 'gym', steps: { planche: 'lean', frontlever: 'fl-tuck' },
+      prefs: { goals: { strength: 3, skills: 3, physique: 5, power: 0, endurance: 0 }, minutesByDay: threeDays } }
+    const out = season(cfg, 28)
+    for (const week of weeksOf(out)) {
+      const start = weekStart(week[0].at)
+      const sets = setsPerMuscle(out.state.sessions, out.state.gym!.sessions, start, addDays(start, 7))
+      expect(sets[lead === 'planche' ? 'lats' : 'chest'] ?? 0).toBeGreaterThanOrEqual(4)
+      expect(Math.min(sets.quads ?? 0, sets.hamstrings ?? 0)).toBeGreaterThanOrEqual(2)
+      expect(week.filter((d) => d.skill.some((s) => (s.parts[lead]?.key ?? 0) > 0)).length).toBeGreaterThanOrEqual(2)
+    }
+  })
+  it('keeps knee and hip work in default planche weeks while retaining all three skill practices', () => {
+    const out = season({ skills: ['planche'], birthYear: 1993, steps: { planche: 'lean' }, prefs: { minutesByDay: threeDays } }, 28)
+    for (const week of weeksOf(out)) {
+      const start = weekStart(week[0].at)
+      const sets = setsPerMuscle(out.state.sessions, out.state.gym!.sessions, start, addDays(start, 7))
+      expect(sets.hamstrings ?? 0).toBeGreaterThanOrEqual(2)
+      expect(sets.quads ?? 0).toBeGreaterThanOrEqual(4)
+      expect(week.filter((d) => d.skill.some((s) => (s.parts.planche?.key ?? 0) > 0))).toHaveLength(3)
+    }
+  })
+  it('practises a sole handstand goal at least twice per week at home', () => {
+    const cfg: AthleteCfg = { skills: ['handstand'], birthYear: 1993, active: 'home', kit: ['floor', 'wall'],
+      steps: { handstand: 'hs-wall' }, prefs: { minutesByDay: threeDays } }
+    const out = season(cfg, 28, {}, { ...GYM_PLACE, equipment: ['floor', 'wall'] })
+    for (const week of weeksOf(out)) {
+      expect(week.filter((d) => d.skill.some((s) => (s.parts.handstand?.key ?? 0) > 0)).length).toBeGreaterThanOrEqual(2)
+      expect(week.some((d) => d.gym)).toBe(true)
+    }
+  })
+})
 const handstandAthlete = (fourDays: boolean): AthleteCfg => ({
   skills: ['handstand', 'frontlever'], birthYear: 1991, active: 'gym',
   steps: { handstand: 'hs-wall', frontlever: 'fl-tuck' }, kit: ['floor', 'wall', 'pullup-bar'],

@@ -1,7 +1,7 @@
 import type { AppState, StepDef, StepId } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { defaultSurface } from '../data/equipment'
-import { completedBaseTarget, learningSeries, measuredLevel, qualifyingProgress } from './progression'
+import { capacityTimerBest, completedBaseTarget, learningSeries, measuredLevel, qualifyingProgress } from './progression'
 import { capacityOn, settled, toldHold } from './bridge'
 import { median } from './signals'
 
@@ -81,7 +81,7 @@ export function adaptiveTarget(state: AppState, stepId: StepId, now = Date.now()
     // but it is still useful as a safety ceiling. A beginner with a real 3s
     // tuck should not receive generic 5s working sets merely because the clip
     // failed.
-    const timerBest = state.prs[step.keyExerciseId]?.value ?? 0
+    const timerBest = capacityTimerBest(state, stepId) ?? 0
     if (timerBest > 0) return clamp(Math.round(timerBest * 0.6), 1, step.startSec)
     const answered = state.assessment?.answers[step.keyExerciseId]
     if (answered !== undefined) {

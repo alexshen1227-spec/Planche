@@ -47,7 +47,7 @@ function Chip({
       onClick={onClick}
       aria-pressed={expanded === undefined ? on : undefined}
       aria-expanded={expanded}
-      className={`min-h-10 rounded-full border px-3.5 py-2 text-[12.5px] font-medium transition ${
+      className={`min-h-11 rounded-full border px-3.5 py-2 text-[12.5px] font-medium transition ${
         on ? 'border-transparent bg-accent text-on-accent' : 'border-line bg-raised text-ink2 hover:text-ink'
       }`}
     >
@@ -91,6 +91,9 @@ export function AttemptEnd({
   const [recorded, setRecorded] = useState<AttemptSymptom | null>(null)
   const [adviceDismissed, setAdviceDismissed] = useState(false)
   const reasonId = `end-reason-${log.at}`
+  const short = log.value < log.target && !log.calledAtTarget
+  const moreReasons = short ? OTHER_REASONS.filter((r) => r !== 'interruption') : OTHER_REASONS
+  const pickedOther = log.endReason && moreReasons.includes(log.endReason) ? log.endReason : undefined
 
   const where = (r: BodyRegion[]) =>
     r.length ? ` (${r.map((x) => REGION_LABEL[x].toLowerCase()).join(', ')})` : ''
@@ -106,18 +109,21 @@ export function AttemptEnd({
             <Chip on={log.endReason === 'target'} onClick={() => onReason(log.endReason === 'target' ? undefined : 'target')}>
               {END_REASON_LABEL.target}
             </Chip>
+            {short && <Chip on={log.endReason === 'interruption'} onClick={() => onReason(log.endReason === 'interruption' ? undefined : 'interruption')}>
+              Interrupted
+            </Chip>}
             <Chip
-              on={otherOpen || (log.endReason !== undefined && log.endReason !== 'target')}
+              on={otherOpen || Boolean(pickedOther)}
               expanded={otherOpen}
               onClick={() => setOtherOpen((open) => !open)}
             >
               {/* Collapsed, it names the chosen reason; open, the list below does. */}
-              {!otherOpen && log.endReason && log.endReason !== 'target' ? END_REASON_LABEL[log.endReason] : 'Other reason'}
+              {!otherOpen && pickedOther ? END_REASON_LABEL[pickedOther] : 'Other reason'}
             </Chip>
           </div>
           {otherOpen ? (
             <div className="mt-1.5 flex flex-wrap gap-1.5" role="group" aria-label="Other reasons">
-              {OTHER_REASONS.map((reason) => (
+              {moreReasons.map((reason) => (
                 <Chip
                   key={reason}
                   on={log.endReason === reason}
@@ -128,6 +134,7 @@ export function AttemptEnd({
               ))}
             </div>
           ) : null}
+          {log.endReason === 'interruption' && <p className="mt-1.5 text-footnote text-ink2" role="status">Saved in your history. This hold is excluded from future target calculations.</p>}
         </div>
       ) : null}
 

@@ -1,7 +1,7 @@
 import type { AppState, Session, StepDef, StepId } from '../types'
 import { STEP_BY_ID, stepAfter } from '../data/progressions'
 import { defaultSurface } from '../data/equipment'
-import { learningSeries, measuredLevel, qualifyingProgress } from './progression'
+import { capacityTimerBest, learningSeries, measuredLevel, qualifyingProgress } from './progression'
 
 /**
  * The bridge between one step and the next — the part of the road where
@@ -55,7 +55,6 @@ const BRIDGE_FROM_DAY_ONE = new Set<StepId>(['lean'])
  * up through a real drop.
  */
 export function capacityOn(state: AppState, stepId: StepId): number | undefined {
-  const step = STEP_BY_ID[stepId]
   const surface = defaultSurface(state.profile.equipment, state.profile.preferredSurface)
   const series = learningSeries(state, stepId, surface)
   const recent = series.points.slice(-6).map((p) => p.value)
@@ -65,7 +64,7 @@ export function capacityOn(state: AppState, stepId: StepId): number | undefined 
     const shown = Math.max(...recent, measuredLevel(series.points, newest.at) ?? 0)
     return !settled(series.points) && told !== undefined ? Math.max(shown, told) : shown
   }
-  const timerBest = state.prs[step.keyExerciseId]?.value
+  const timerBest = capacityTimerBest(state, stepId)
   if (timerBest !== undefined && timerBest > 0) return timerBest
   return told
 }

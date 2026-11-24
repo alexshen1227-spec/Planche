@@ -700,7 +700,7 @@ export function FormCheckRow({
           </button>
         </div>
       ) : null}
-      {needsAthleteConfirmation && rating === 'clean' && confirmedByHuman && !cameraSawBentArms ? (
+      {clipAvailable && needsAthleteConfirmation && rating === 'clean' && confirmedByHuman && !cameraSawBentArms ? (
         <div className="mt-3 rounded-xl border border-line bg-raised p-3">
           <p className="text-[12.5px] leading-relaxed text-ink2">
             {needsFlightConfirmation
@@ -735,7 +735,7 @@ export function FormCheckRow({
           </button>
         </div>
       ) : null}
-      {variantGaps.length > 0 && rating === 'clean' && confirmedByHuman ? (
+      {clipAvailable && variantGaps.length > 0 && rating === 'clean' && confirmedByHuman ? (
         <div className="mt-3 rounded-xl border border-line bg-raised p-3">
           <p className="text-[12.5px] leading-relaxed text-ink2">{VARIANT_CRITICAL[exerciseId]?.prompt}</p>
           <button
@@ -768,6 +768,8 @@ export function FormCheckRow({
                 : needsArmsConfirmation
                   ? 'Progression evidence complete — the camera checked the shape, and you confirmed the arms.'
                   : 'Progression evidence complete — athlete and filmed form checks agree.'
+            : !clipAvailable && !value?.auto
+              ? 'Your Clean rating is saved as self-rated practice. A recorded hold is needed to verify this step.'
             : needsManualReplayReview
               ? 'Your Clean rating is saved. Review the replay above for this hold to count toward progression.'
               : !cameraSawBentArms && !athleteConfirmed(value, exerciseId)

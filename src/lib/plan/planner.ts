@@ -2676,8 +2676,13 @@ function allocate(
         // A lever opener can precede upper body. Keep that option when it serves
         // a chosen muscle better, even if a pure pull workout would also fit.
         const ownFits = own.some((c) => !spent(c))
+        // On a single-family road the opener already trains that family. An
+        // upper-body session can use the same day for a neglected row or press.
+        const opposite = hint === 'push' ? 'pull' : 'push'
+        const needs = [...ctx.priority]
+        if (!ctx.shared[opposite]) needs.push(hint === 'push' ? 'lats' : 'chest')
         const others = opening.filter((c) => !own.includes(c) && !spent(c) && (!ownFits ||
-          [...ctx.priority].some((m) => (p.P[m] ?? 0) < ctx.targets[m][0] &&
+          needs.some((m) => (p.P[m] ?? 0) < ctx.targets[m][0] &&
             (liftsOf(c)[m] ?? 0) > Math.max(0, ...own.map((o) => liftsOf(o)[m] ?? 0)))))
         choices = own.length ? [...own, ...others] : opening
       }
@@ -2711,6 +2716,7 @@ function allocate(
         const credit = liftsOf(c)
         const have = { ...p.P }
         addCredit(have, slot.credit)
+        if (!(ctx.shared.push && ctx.shared.pull) && ctx.opener(i, f)) addCredit(have, ctx.openerCredit(i, f))
         let need = 0
         let band = 0
         let over = 0
@@ -2856,10 +2862,13 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   const own = state.gym?.prefs
   const prefs: TrainingPrefs = own ?? defaultPrefs(now)
   const skills = trainedSkills(state)
-  const canShareBalance = skills[0] === 'handstand' && prefs.goals.skills > 0 && prefs.goals.physique >= 3 && prefs.goals.physique >= prefs.goals.skills
+  const canShareBalance = skills[0] === 'handstand' && prefs.goals.skills > 0 && prefs.goals.physique >= 3 &&
+    (skills.length === 1 || prefs.goals.physique >= prefs.goals.skills)
+  const singleSkillWeek = skills.length === 1 && prefs.goals.skills > 0 && prefs.goals.physique >= 3 &&
+    prefs.minutesByDay.filter((m) => m > 0).length <= 3
   // Choosing the gym should preserve a full handstand practice that already
   // shares today's gym session. Only this conversion happens after kind selection.
-  if (canShareBalance && opts.todayKind === 'gym' && !opts.todayFocus && !opts.coverLegWeeks && opts.todayWhy !== 'followed') {
+  if ((canShareBalance || singleSkillWeek) && opts.todayKind === 'gym' && !opts.todayFocus && !opts.coverLegWeeks && opts.todayWhy !== 'followed') {
     const recommended = planWeekAhead(state, now, { ...opts, todayKind: undefined, todayWhy: undefined })
     if (recommended.days[0].plan.gym) return recommended
   }
@@ -3023,6 +3032,31 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
         skillMin: 0, gymMin: d.minutes, skills: [], parts: [], families: new Set(), credit: {} }
     }
   }
+  // One short lifting block cannot train the whole body beside three skill
+  // practices. Keep the lead's working holds on another day and use its
+  // accessory time for the legs when the actual workouts both fit.
+  if (singleSkillWeek && !legsOff) {
+    const lead = skills[0]
+    for (const wk of new Set(days.map((d) => d.week))) {
+      const inWeek = days.filter((d) => d.week === wk)
+      const liftingDays = inWeek.filter((d) => slots[d.index].kind === 'gym').length + (wk === thisWeek ? before.gym : 0)
+      if (liftingDays !== 1) continue
+      for (const d of inWeek.reverse()) {
+        const sl = slots[d.index]
+        const place = placeAt(d.index)
+        if (!place || sl.kind !== 'calisthenics' || sl.skills.length !== 1 || sl.skills[0] !== lead ||
+          d.assigned || d.pain || d.niggle || d.held || d.factor < 1 || !legsOpen(d) || (d.index === 0 && opts.todayKind)) continue
+        const kit = kitAt(base, place)
+        const minutes = openerMinutesOf(base, lead, d.minutes)
+        if (missingKit(lead, kit).length || !viable(d, d.minutes - minutes, 'lower')) continue
+        const practice = builtSkill(base, [lead], minutes, d.at, kit, true)
+        if (practice.painSafe || !(practice.key[lead] && practice.key[lead] >= builtSkill(base, [lead], UNTRIMMED_MINUTES, d.at, kit).bare)) continue
+        slots[d.index] = { ...sl, kind: 'gym', why: 'leg-coverage', legDay: true, reservedOpener: { skill: lead, minutes },
+          exposure: true, skillMin: 0, gymMin: d.minutes, skills: [], parts: [], credit: {} }
+        break
+      }
+    }
+  }
   const selectedSkills = g.skills > 0 || days.some((d) => d.assigned?.length)
   const sharesRecovery = (fam: Straight) => (selectedSkills && skills.some((s) => skillFamily(s) === fam)) ||
     slots.some((s) => s.families.has(fam) || s.hint === fam || (fam === 'push' && s.presses)) ||
@@ -3064,7 +3098,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   // A hard pulling quota can book the lever twice even when the athlete ranked
   // handstand first. Use the duplicate opener for balance when both skills keep
   // a real session and the lifts still fit in the same time.
-  if (canShareBalance && skills.length > 1) {
+  if (canShareBalance) {
     const practices = (sl: SkillSlot, skill: SkillId) => sl.skills.includes(skill) || (sl.reservedOpener
       ? sl.reservedOpener.skill === skill : Boolean(sl.hint && skills.find((s) => skillFamily(s) === sl.hint) === skill))
     // Replace an extra secondary opener first. On an all-gym week a plain
@@ -3079,7 +3113,8 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       const count = (skill: SkillId) => slots.filter((s, j) => days[j].week === d.week && practices(s, skill)).length +
         new Set(state.sessions.filter((s) => s.startedAt >= d.week && s.startedAt < Math.min(today, addDays(d.week, 7)) && fullPartIn(s, skill)).map((s) => dayKey(s.startedAt))).size
       const firstDays = count('handstand')
-      if (other ? other === 'handstand' || firstDays >= 2 || count(other) <= Math.max(1, firstDays) : firstDays > 0) continue
+      const wanted = skills.length === 1 && g.skills >= 3 ? 2 : 1
+      if (other ? other === 'handstand' || firstDays >= 2 || count(other) <= Math.max(1, firstDays) : firstDays >= wanted) continue
       const kit = kitAt(base, place)
       if (missingKit('handstand', kit).length || FAMILY_JOINTS.push.some((joint) => d.avoidJoints.includes(joint))) continue
       const minutes = openerMinutes(d.minutes)
@@ -3097,7 +3132,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     for (const wk of new Set(days.map((d) => d.week))) {
       if (legsLast !== undefined && legsLast >= addDays(wk, -3)) continue
       const gymDays = days.filter((d) => d.week === wk && slots[d.index].kind === 'gym')
-      if (gymDays.length !== 1) continue
+      if (gymDays.length !== 1 || (wk === thisWeek && before.gym > 0)) continue
       const d = gymDays[0]
       const sl = slots[d.index]
       const place = placeAt(d.index)
@@ -3393,10 +3428,16 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     const priorityOf = (i: number): Muscle[] => {
       const f = focusAt(i)!
       const out = keepOut.get(i) ?? []
+      const opener = final[i].opener
+      const family = opener && skillFamily(opener)
+      const opposite = family === 'push' ? 'lats' : family === 'pull' ? 'chest' : undefined
+      const covered = family === 'push' ? 'chest' : 'lats'
+      const complement = f === 'upper' && opposite && !shared[family === 'push' ? 'pull' : 'push'] &&
+        (total[opposite] ?? 0) < (total[covered] ?? 0) ? opposite : undefined
       return (Object.keys(FOCUS_SHARE[f]) as Muscle[])
         .filter((m) => !days[i].off.has(m) && !out.includes(m) && weights[m] > 0 && !prefs.musclesPriority.includes(m) && targets[m][0] > 0)
         .filter((m) => (total[m] ?? 0) < targets[m][0] - 0.5 && !(parentOf.has(m) && (total[parentOf.get(m)!] ?? 0) >= targets[parentOf.get(m)!][1]))
-        .sort((a, b) => (total[a] ?? 0) / targets[a][0] - (total[b] ?? 0) / targets[b][0])
+        .sort((a, b) => Number(b === complement) - Number(a === complement) || (total[a] ?? 0) / targets[a][0] - (total[b] ?? 0) / targets[b][0])
         .slice(0, 2)
     }
     const given = new Map<number, Muscle[]>()
@@ -3825,7 +3866,7 @@ function kindReason(slot: SkillSlot, d: DayCtx, skills: SkillId[], extra: DayExt
         : share()
     case 'pair':
       return slot.hint && slot.opener
-        ? `A ${slot.hint} gym day that opens with the ${skillName(slot.opener)}: your ${slot.hint === 'push' ? 'chest, shoulders and triceps' : 'back and biceps'} still need a gym session this week, and the holds and the ${slot.hint === 'push' ? 'pressing' : 'pulling'} share recovery — on one day, the days around it stay clear of both (a coaching convention).`
+        ? `The ${skillName(slot.opener)} comes first. Today’s lifts include ${slot.hint === 'push' ? 'pressing' : 'pulling'}, so the next hard session for those muscles can follow your recovery interval.`
         : share()
     case 'sport': {
       const s = d.sameDay ?? d.legsCovered ?? d.upcoming
@@ -3841,7 +3882,7 @@ function kindReason(slot: SkillSlot, d: DayCtx, skills: SkillId[], extra: DayExt
         ? `This session pairs ${skillName(slot.opener)} practice with lower-body strength. Start with the skill while you are fresh.`
         : 'Your muscle goal reserves this session for lower-body strength.'
     case 'skill-practice':
-      return slot.opener ? `Start with the ${skillName(slot.opener)}, your first priority. Your other skill already has practice this week, and the lifts fit after this opener.`
+      return slot.opener ? `Start with the ${skillName(slot.opener)}, your first priority. The lifts fit in the time left after this practice.`
         : 'Today gives your skill a practice session alongside this week’s gym work.'
     case 'reserved-lifts':
       return 'You chose this date for lifting when you compared weekly plans.'

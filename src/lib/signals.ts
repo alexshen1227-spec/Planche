@@ -9,11 +9,13 @@ import { defaultSurface } from '../data/equipment'
 import { addDays, CLOCK_SKEW_MS, dayKey, weekStart } from './time'
 import {
   capacityReading,
+  endedForNonCapacityReason,
   isBarAttempt,
   learningSeries,
   measuredMaxIn,
   qualifyingProgress,
   testWasAttempted,
+  unfinishedHoldSample,
   verifiedCleanRatio,
 } from './progression'
 import { trustedCameraEvidence } from './formEvidence'
@@ -658,7 +660,8 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   let mainHitRate: number | null = null
   let mainSetCount = 0
   const workingSetsOf = (s: Session) =>
-    keySetsOf(s, keyId, 'main').filter((set) => !isBarAttempt(set, state.stepId))
+    unfinishedHoldSample(s, state.stepId) ? [] : keySetsOf(s, keyId, 'main').filter((set) =>
+      !isBarAttempt(set, state.stepId) && !endedForNonCapacityReason(set))
   // On this step only: after a step change the last session holding the new
   // key exercise is the one that practised it as next-shape attempts — maximal
   // efforts against the next bar — and read as working sets they made every
