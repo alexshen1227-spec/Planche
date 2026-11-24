@@ -1,3 +1,6 @@
+/** Time reserved for a short skill practice before lifting. */
+export const OPENER_MINUTES = 18
+
 /**
  * How much a session of a given length has room for.
  *

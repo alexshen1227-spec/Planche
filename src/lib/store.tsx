@@ -52,7 +52,7 @@ import { WALK_BACK_MAX_SEC, WALK_BACK_MIN_SEC } from './sessionTiming'
 import { goalHistoryOf, goalHistoryWith, mergeGoalHistory, sanitizeGoalHistory } from './stats'
 import { activeSkills, addTrack, trackOf, trackedSkills, withTrack } from './skills'
 
-const STORAGE_KEY = 'planchelab.v1'
+import { SETUP_DRAFT_KEY, STORAGE_KEY } from './storageKeys'
 const THEME_KEY = 'planchelab.theme'
 /** Kept so a bad migration is recoverable rather than terminal. */
 const BACKUP_KEY = 'planchelab.prev'
@@ -63,7 +63,7 @@ const BACKUP_KEY = 'planchelab.prev'
  */
 export const QUARANTINE_KEY = 'planchelab.quarantine'
 const DRAFT_KEY = 'planchelab.draft'
-export const SETUP_DRAFT_KEY = 'planchelab.setupDraft'
+export { SETUP_DRAFT_KEY } from './storageKeys'
 /**
  * Unfinished work kept outside the main state: the skill session in progress,
  * the gym session in progress, and the note of what follows today's opener.
