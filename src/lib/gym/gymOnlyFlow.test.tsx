@@ -84,6 +84,13 @@ it('finds prescribed gym movements in Learn and opens their equipment and techni
       expect(guide.querySelector('iframe')).toBeNull()
       fireEvent.click(within(guide).getByRole('button', { name: 'Play Goblet squat demonstration' }))
       expect(within(guide).getByTitle('Goblet squat demonstration').getAttribute('src')).toContain('youtube-nocookie.com/embed/qBZ9pJf7uHY')
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      fireEvent(window, new Event('offline'))
+      expect(guide.querySelector('iframe')).toBeNull()
+      expect(within(guide).getByText(/Video needs an internet connection/)).toBeTruthy()
+      vi.restoreAllMocks()
+      fireEvent(window, new Event('online'))
+      expect(within(guide).getByRole('button', { name: /Play Goblet squat/ })).toBeTruthy()
     }
     fireEvent.click(within(guide).getByRole('button', { name: /close/i }))
   }

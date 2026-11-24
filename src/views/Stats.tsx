@@ -408,16 +408,29 @@ interface StatsProps {
   onFocused?: () => void
 }
 
+function ProgressNavigation({ sections }: { sections: [string, string][] }) {
+  return (
+    <nav aria-label="Progress sections" className="mt-4 flex flex-wrap gap-1 rounded-card border border-line bg-surface p-1">
+      {sections.map(([id, label]) => (
+        <a key={id} href={`#${id}`} className="inline-flex min-h-11 items-center rounded-control px-3 text-footnote font-medium text-ink2 transition hover:bg-raised hover:text-ink">
+          {label}
+        </a>
+      ))}
+    </nav>
+  )
+}
+
 export function Stats(props: StatsProps = {}) {
   const { state } = useStore()
   if (state.gym?.prefs?.goals.skills === 0 && !state.sessions.length) {
     return (
       <div className="animate-rise space-y-6">
         <h1 className="font-display text-title1 font-bold text-ink">Progress</h1>
-        <WeeklySummary />
-        <GymHistory />
+        <ProgressNavigation sections={[[ 'history', 'History' ], [ 'this-week', 'This week' ], [ 'volume', 'Muscles' ]]} />
+        <div id="this-week" className="scroll-mt-5"><WeeklySummary /></div>
+        <div id="history" className="scroll-mt-5"><GymHistory /></div>
         <BodyweightHistory />
-        <WeekVolume />
+        <div id="volume" className="scroll-mt-5"><WeekVolume /></div>
       </div>
     )
   }
@@ -635,7 +648,10 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
   return (
     <div className="animate-rise">
       <h1 className="font-display text-title1 font-bold text-ink">Progress</h1>
-      <p className="mt-0.5 text-body text-ink2">Charts, records, history and trophies.</p>
+      <ProgressNavigation sections={[
+        ['records', 'Records'], ['history', 'History'], ['trends', 'Trends'],
+        ['form-trend', 'Form over time'], ['insights', 'Coach insights'], ['achievements', 'Achievements'],
+      ]} />
       <h2 className="sr-only">This week</h2>
       <div className="mt-6">
         <WeeklySummary />
@@ -680,28 +696,6 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
           {holdCaption ? ` Across everything: ${holdCaption}.` : ''}
         </p>
       </Card>
-
-      <nav
-        aria-label="Progress sections"
-        className="mt-6 flex gap-1 overflow-x-auto rounded-card border border-line bg-surface p-1"
-      >
-        {[
-          ['trends', 'Trends'],
-          ['form-trend', 'Form over time'],
-          ['insights', 'Coach insights'],
-          ['records', 'Records'],
-          ['achievements', 'Achievements'],
-          ['history', 'History'],
-        ].map(([id, label]) => (
-          <a
-            key={id}
-            href={`#${id}`}
-            className="inline-flex min-h-11 shrink-0 items-center rounded-control px-3 text-footnote font-medium text-ink2 transition hover:bg-raised hover:text-ink"
-          >
-            {label}
-          </a>
-        ))}
-      </nav>
 
       {/* Hold trend */}
       <SectionTitle>Trends</SectionTitle>

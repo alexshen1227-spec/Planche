@@ -42,6 +42,7 @@ import { EXERCISE_BY_ID } from '../data/exercises'
 import { isRepGoal } from '../data/skills'
 import { ACHIEVEMENT_VERSION, REVALIDATED_ACHIEVEMENTS } from '../data/achievements'
 import { applySession } from './engine'
+import { continueSkillSession, readSkillRemainder } from './skillSession'
 import { configureAudio } from './audio'
 import { clearMirror, readMirror, requestPersistence, writeMirror } from './persist'
 import { pushToast } from './toast'
@@ -656,6 +657,7 @@ function sanitizeSessions(
     setReport.setsKept += sets.length
     const checkIn = sanitizeCheckIn(c.checkIn)
     const endedAt = isTime(c.endedAt) && c.endedAt >= startedAt ? c.endedAt : startedAt
+    const remaining = c.completion === 'partial' ? readSkillRemainder(c.remaining) : undefined
     const session: Session = {
       id: typeof c.id === 'string' && c.id ? c.id : newId(),
       startedAt,
@@ -675,6 +677,7 @@ function sanitizeSessions(
       ...(isTime(c.savedAt) ? { savedAt: c.savedAt } : {}),
       ...(isTime(c.updatedAt) ? { updatedAt: c.updatedAt } : {}),
       ...(c.completion === 'full' || c.completion === 'partial' ? { completion: c.completion } : {}),
+      ...(remaining ? { remaining } : {}),
       ...(typeof c.plannedRounds === 'number' && Number.isInteger(c.plannedRounds) && c.plannedRounds >= 0
         ? { plannedRounds: Math.min(500, c.plannedRounds) }
         : {}),
@@ -1340,7 +1343,7 @@ export function skipToStep(state: AppState, stepId: StepId): AppState {
 export type SymptomInput = Omit<SymptomEvent, 'id'> & { id?: string }
 
 export type Action =
-  | { type: 'SAVE_SESSION'; session: Session }
+  | { type: 'SAVE_SESSION'; session: Session; resumeFrom?: number }
   | { type: 'DELETE_SESSION'; id: string }
   | { type: 'SET_SETTINGS'; patch: Partial<Settings> }
   /** Set (or, with nothing left in it, clear) the athlete's week plan. */
@@ -1756,7 +1759,7 @@ function completeOnboardingOverHistory(
 function reduceAction(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'SAVE_SESSION': {
-      const incoming = action.session
+      let incoming = action.session
       // A deleted session stays deleted. Saved again (a resumed draft, a second
       // tap), it came back in memory and vanished again on the next load.
       if ((state.deletedSessionIds ?? []).includes(incoming.id)) return state
@@ -1764,6 +1767,10 @@ function reduceAction(state: AppState, action: Action): AppState {
       // save of it replaces the earlier one. Two copies once counted twice for
       // the goal and the load until a reload set one aside as conflicting.
       const existing = state.sessions.find((s) => s.id === incoming.id)
+      if (action.resumeFrom !== undefined) {
+        if (!existing?.remaining || existing.endedAt !== action.resumeFrom) return state
+        incoming = continueSkillSession(existing, incoming)
+      }
       if (existing) {
         if (JSON.stringify(existing) === JSON.stringify(incoming)) return state
         const sessions = state.sessions.map((s) => (s.id === incoming.id ? incoming : s))

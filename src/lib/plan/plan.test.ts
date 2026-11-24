@@ -251,6 +251,7 @@ describe('the week in review', () => {
     const earned = new Set(gymBadges(withGym).filter((b) => b.at !== undefined).map((b) => b.id))
     expect(earned.has('gym-first')).toBe(true)
     expect(earned.has('gym-together')).toBe(true)
+    expect(gymBadges(withGym).find((b) => b.id === 'gym-together')?.at).toBe(withGym.sessions[0].endedAt)
     expect(earned.has('gym-10')).toBe(false)
     expect(gymBadges({ ...withGym, gym: { ...withGym.gym!, sessions: [] } }).some((b) => b.at !== undefined)).toBe(false)
   })

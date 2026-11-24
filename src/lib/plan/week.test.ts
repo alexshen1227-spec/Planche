@@ -849,10 +849,12 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
     const within = (t: number) => t - (MON - 2 * HOUR) < 72 * HOUR
     expect(control.filter((d) => within(d.at) && d.plan.skill?.opener).length, 'the control opens inside the window').toBeGreaterThan(0)
     for (const d of week) if (within(d.at)) expect(d.plan.skill?.opener, `${d.day} ${d.plan.gym?.focus}`).toBeUndefined()
-    // Once the window has passed, the elbow no longer shuts the opener. (With 25-minute openers the week's own
-    // rest rules can leave the rest of this particular week without one, so the rule is asked directly.)
+    // An unresolved report can still produce recovery beyond the three-day window.
+    // A new clear check-in reopens the actual skill.
     const after = MON + 4 * 24 * HOUR + 8 * HOUR
-    expect(gymOpener(sore, 'push', gymA, after, 60)?.skills).toEqual(['planche'])
+    expect(gymOpener(sore, 'push', gymA, after, 60)).toBeUndefined()
+    const cleared: AppState = { ...sore, symptoms: [...sore.symptoms!, { id: 'clear', at: after - 60_000, joints: 'good', source: 'check-in' }] }
+    expect(gymOpener(cleared, 'push', gymA, after, 60)?.skills).toEqual(['planche'])
     expect(gymOpener(sore, 'push', gymA, MON + 8 * HOUR, 60)).toBeUndefined()
   })
 
@@ -913,8 +915,8 @@ describe('one main session a day: the coach picks calisthenics or the gym', () =
     expect(op(elbow, 'pull')).toBeUndefined()
     const wrist = { ...s, symptoms: [symptom('wrist', 'niggle')] }
     expect(op(wrist, 'push')).toBeUndefined()
-    expect(op(wrist, 'pull')).toBe('frontlever')
-    expect(op(wrist, 'upper')).toBe('frontlever')
+    expect(op(wrist, 'pull')).toBeUndefined()
+    expect(op(wrist, 'upper')).toBeUndefined()
     // The rest rule: a hard planche session last night rests the push family, and so does one earlier today: the
     // opener is never a second hard session of its family in a day (found by review: 8 am, then a 6 pm push pick).
     const lastNight = { ...s, sessions: [skillSession(MON - 15 * HOUR)] }

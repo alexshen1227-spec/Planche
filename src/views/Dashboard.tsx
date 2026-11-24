@@ -65,6 +65,8 @@ import { WeekPreview } from '../components/plan/WeekPreview'
 import { TodayPlanCard, type GymEntry, type GymPreset } from '../components/plan/TodayPlanCard'
 import { latestPartialToday } from '../lib/gym/draft'
 import { PartialWorkout } from '../components/gym/PartialWorkout'
+import { PartialSkillWorkout } from '../components/plan/PartialSkillWorkout'
+import { latestSkillPartial } from '../lib/skillSession'
 import { GymHistory } from '../components/gym/GymHistory'
 import { FOCUS_LABEL } from '../lib/gym/builder'
 
@@ -264,8 +266,9 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
   const rememberedLifts = useNextBlock<GymPreset>(today)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const stage = useMemo(() => dayStage(whole, dayPlan, Date.now(), marks), [whole, dayPlan, today, clock, marks])
-  const finished = stage === 'done'
-  const partial = finished ? latestPartialToday(whole.gym?.sessions) : undefined
+  const finished = stage === 'done' || stage === 'skill-partial'
+  const partial = stage === 'done' ? latestPartialToday(whole.gym?.sessions) : undefined
+  const skillPartial = stage === 'skill-partial' ? latestSkillPartial(whole.sessions) : undefined
   // A gym day's opener is saved: the lifts are what is left, and nothing here recommends the opener's skill again.
   const liftsNext = stage === 'lifts-next'
   // "Short on time?" goes through the coach (`shortVersion`): never a hard session inside the rest rule, unsaid.
@@ -563,7 +566,9 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
           </div>
         </div>
         {/* The coach picks one main session a day, and Home says the same as Train: a rest day is a rest day. */}
-        {finished ? (
+        {skillPartial ? (
+          <div className="mt-4 rounded-inner border border-line bg-raised p-3"><PartialSkillWorkout session={skillPartial} startWorkout={startWorkout} /></div>
+        ) : finished ? (
           <div className="mt-4 rounded-inner border border-line bg-raised p-3">
             {partial ? <PartialWorkout session={partial} onContinue={() => startGym ? startGym({ resumeSessionId: partial.id }) : go('train')} /> : <p className="text-footnote text-ink2">
               <span className="font-semibold text-ink">Today: done</span> — today’s main session is in, and nothing more is planned.

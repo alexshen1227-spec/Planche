@@ -6,6 +6,7 @@ import { STEP_BY_ID, stepAfter } from '../../data/progressions'
 import { qualifyingProgress } from '../progression'
 import { addDays, weekStart } from '../time'
 import { goalDaysInWeekOf } from '../stats'
+import { countsSkillDay, latestSkillPartial } from '../skillSession'
 import { missingKit } from '../../data/skills'
 import { readDayMarks, type DayMarks } from './nextBlock'
 import { atActivePlace, gymPlaceOf, insideRestRule, kitAt, MIN_SKILL_MINUTES, placeKit, planToday, skillFamily, skillRequest, type SkillBlock, type TodayPlan } from './planner'
@@ -67,13 +68,13 @@ export function maxTestOffered(state: AppState, blockedReason: string | null | u
 /** Whether a session (skill or gym, a minimum dose aside) was logged today, by the athlete's calendar day. */
 export function trainedToday(state: AppState, now = Date.now()): { skill: boolean; gym: boolean } | false {
   const from = startOfDay(now)
-  const skill = state.sessions.some((s) => s.startedAt >= from && s.startedAt <= now && s.workoutKind !== 'micro')
+  const skill = state.sessions.some((s) => s.startedAt >= from && s.startedAt <= now && countsSkillDay(s))
   const gym = (state.gym?.sessions ?? []).some((s) => s.startedAt >= from && s.startedAt <= now)
   return skill || gym ? { skill, gym } : false
 }
 
 /** Where today's one main session stands: not begun, half done (an opener saved, the lifts owed), or done. */
-export type DayStage = 'open' | 'lifts-next' | 'done'
+export type DayStage = 'open' | 'skill-partial' | 'lifts-next' | 'done'
 
 /**
  * Today's stage, from what was logged and what the day was. A gym day with an
@@ -87,9 +88,10 @@ export type DayStage = 'open' | 'lifts-next' | 'done'
 export function dayStage(state: AppState, plan: Pick<TodayPlan, 'kind'> & { skill?: { opener?: boolean } }, now = Date.now(), marks: DayMarks = readDayMarks(now)): DayStage {
   if (marks.ended) return 'done'
   const done = trainedToday(state, now)
+  if (!(done && done.gym) && latestSkillPartial(state.sessions, now)) return 'skill-partial'
   if (marks.openerSessionId) {
     const opener = state.sessions.find((s) => s.id === marks.openerSessionId)
-    if (opener) {
+    if (opener && countsSkillDay(opener)) {
       const lifted = state.gym?.sessions.some((s) => s.startedAt >= opener.startedAt && s.startedAt <= now)
       // Once yesterday's lifts were saved, today's plan starts normally.
       if (!lifted) return 'lifts-next'
@@ -320,7 +322,8 @@ export function calisthenicsRequest(state: AppState, block: SkillBlock, pickedId
   const base = skillRequest(block)
   const picked = state.gym?.locations.find((l) => l.id === pickedId)
   const kit: EquipmentId[] | undefined = picked ? kitAt(state, picked) : block.kit?.length ? block.kit : placeKit(state)
-  return kit?.length ? { ...base, kit } : base
+  const placeId = picked?.id ?? block.placeId ?? state.gym?.activeLocationId
+  return { ...base, ...(kit?.length ? { kit } : {}), ...(placeId ? { placeId } : {}) }
 }
 
 /** A request already built for a place keeps its kit; any other is built where the athlete is. */

@@ -1,7 +1,7 @@
 import { SetEffort } from '../components/SetEffort'
 import { Button } from '../components/ds'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { useInertBackground } from '../components/gym/GymPlayer'
 import { skillHoldSecOf } from '../lib/progressTotals'
 import {
@@ -32,7 +32,7 @@ import type {
 } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
-import { describeBlock, describeTarget, primaryTargetBlock, adaptiveTarget } from '../data/workouts'
+import { describeBlock, describeTarget, primaryTargetBlock, adaptiveTarget, isPainSafe } from '../data/workouts'
 import { debriefSession, type CoachDecision } from '../lib/coach'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { useStore } from '../lib/store'
@@ -41,6 +41,7 @@ import { sfx, speak, buzz } from '../lib/audio'
 import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
 import { clearDraft, restoredSessionSetup, saveDraft, type SessionDraft } from '../lib/draft'
+import { countsSkillDay, remainingSkillWork } from '../lib/skillSession'
 import { rememberNextBlock } from '../lib/plan/nextBlock'
 import { useFormRecorder, type RecorderStatus } from '../lib/recorder'
 import { saveClip } from '../lib/clips'
@@ -343,7 +344,7 @@ export function SessionPlayer({
   checkInContext?: CheckInContext
   onCheckInAnswered?: (c: CheckIn) => void
 }) {
-  const { state, dispatch, persist } = useStore()
+  const { state, dispatch, persist, getState } = useStore()
   const [measuringWalk, setMeasuringWalk] = useState(false)
   const walkOfferKept = useRef(false)
   // Everything in #root sits behind this full-screen session.
@@ -600,11 +601,11 @@ export function SessionPlayer({
   const sideGap = useMemo(() => readSignals(state).sideGap, [state])
   const weakSideFirst = sideGap?.weakSide ?? 'left'
   const sideFor = useCallback(
-    (setIndex: number): 'left' | 'right' =>
-      setIndex % 2 === 0 ? weakSideFirst : weakSideFirst === 'left' ? 'right' : 'left',
+    (setIndex: number, first = weakSideFirst): 'left' | 'right' =>
+      setIndex % 2 === 0 ? first : first === 'left' ? 'right' : 'left',
     [weakSideFirst],
   )
-  const side = sideFor(si)
+  const side = sideFor(si, block?.firstSide)
   const roundsPerSet = perSide ? 2 : 1
   const displaySet = Math.floor(si / roundsPerSet) + 1
   const displayTotal = block ? Math.ceil(block.sets / roundsPerSet) : 0
@@ -1077,7 +1078,7 @@ export function SessionPlayer({
         kind: ex.type,
         value,
         ...(raw !== undefined && Math.abs(raw - value) > 0.05 ? { raw } : {}),
-        ...(ex.perSide ? { side: sideFor(setIndex) } : {}),
+        ...(ex.perSide ? { side: sideFor(setIndex, b.firstSide) } : {}),
         ...(isSurfaceAware(ex) ? { surface } : {}),
         ...(ex.type === 'hold' && leadInSec !== undefined && leadInSec !== null ? { leadInSec: round1(leadInSec) } : {}),
         ...(ex.type === 'hold' && timing ? { timing } : {}),
@@ -1535,7 +1536,8 @@ export function SessionPlayer({
     savingRef.current = true
     const savedAt = Date.now()
     const endedAt = endedAtRef.current || savedAt
-    const partial = finishedEarly || logs.length < totalSets
+    const partial = finishedEarly || logs.length < totalSets || Boolean(workout.deferredBlocks?.length)
+    const remaining = partial && workout.kind !== 'micro' ? remainingSkillWork(workout, logs, blockLogAts) : undefined
     const lead: SkillId = workout.skills?.[0] ?? 'planche'
     // What each other skill was on, and what the coach gave it today.
     const skillNotes = sessionSkillSteps(state)
@@ -1550,7 +1552,7 @@ export function SessionPlayer({
         ...(meta.retest ? { retestOffered: true } : {}),
       }
     }
-    const session: Session = {
+    let session: Session = {
       id: crypto.randomUUID(),
       // Never 0 in practice — a session cannot reach the summary without
       // leaving the intro — but a real timestamp beats an epoch date if it is.
@@ -1568,6 +1570,7 @@ export function SessionPlayer({
       checkIn: checkIn ?? undefined,
       // Skipped or unstarted work is not adherence; only what was done is here.
       completion: partial ? 'partial' : 'full',
+      ...(remaining ? { remaining } : {}),
       plannedRounds: totalSets,
       ...(workout.baseTargetSec !== undefined ? { baseTargetSec: workout.baseTargetSec } : {}),
       // The top-level re-test flag is the planche's; another skill's is in its own notes.
@@ -1590,10 +1593,29 @@ export function SessionPlayer({
           })()
         : {}),
     }
-    const { next, events: raw } = applySession(state, session)
+    const current = getState()
+    const original = workout.continuation && current.sessions.find((s) => s.id === workout.continuation!.id)
+    const canContinue = Boolean(original?.remaining && original.endedAt === workout.continuation?.endedAt)
+    if (workout.continuation && !canContinue) {
+      const existingTimes = new Set(original?.sets.map((set) => set.at))
+      const newLogs = logs.filter((set) => !existingTimes.has(set.at))
+      if (!newLogs.length && original) {
+        clearDraft()
+        onExit(original.id)
+        return
+      }
+      session = { ...session, sets: newLogs, remaining: undefined }
+      pushToast('The original workout changed in another tab. Your new sets were saved separately.', 'info')
+    }
+    const part = session
+    const { events: raw } = applySession(current, part)
+    if (canContinue && original) session = { ...part, id: original.id }
+    flushSync(() => dispatch({ type: 'SAVE_SESSION', session, ...(canContinue ? { resumeFrom: workout.continuation!.endedAt } : {}) }))
+    const next = getState()
+    session = next.sessions.find((s) => s.id === session.id) ?? session
     // The coach reacts to every finished session, whatever kind it was — read
     // as the skill that led it, so a front lever day is debriefed as one.
-    const before = skillView(state, lead)
+    const before = skillView(current, lead)
     const after = skillView(next, lead)
     const viewed = after.sessions.find((s) => s.id === session.id) ?? session
     const targetBefore = adaptiveTarget(before, before.stepId)
@@ -1627,11 +1649,10 @@ export function SessionPlayer({
             : `${delta}s ${holdName} hold time vs last time — down days are part of it`,
       })
     }
-    const rungs = rungsOpenedBy(state, session)
+    const rungs = rungsOpenedBy(current, part)
     setRungsOpened(rungs)
     savedSessionIdRef.current = session.id
-    dispatch({ type: 'SAVE_SESSION', session })
-    if (workout.request?.gymAfter) rememberNextBlock(workout.request.gymAfter, savedAt, session.id)
+    if (workout.request?.gymAfter && !session.remaining && !isPainSafe(workout) && countsSkillDay(session)) rememberNextBlock(workout.request.gymAfter, savedAt, session.id)
     clearDraft()
     setEvents(ev)
     setSavedSession(session)
@@ -1643,7 +1664,7 @@ export function SessionPlayer({
     if (painReportedIn(next, session)) return
     if (ev.unlockedStep) confetti(2)
     else if (ev.prs.length > 0 || rungs.length > 0) confetti(1)
-  }, [workout, state, logs, rpe, notes, dispatch, checkIn, finishedEarly, totalSets])
+  }, [workout, state, logs, rpe, notes, dispatch, getState, onExit, checkIn, finishedEarly, totalSets, blockLogAts])
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -2705,8 +2726,7 @@ export function SessionPlayer({
         <p className="mt-1 text-center text-footnote text-ink2">Review and save — nothing is kept until you do.</p>
         {doneSets < totalSets ? (
           <p className="mx-auto mt-2 max-w-sm text-center text-footnote leading-relaxed text-ink3">
-            {doneSets} of {totalSets} planned rounds done. Only what you did is saved — skipped work does not count as
-            done{finishedEarly ? ', and stopping early is never held against you' : ''}.
+            {doneSets} of {totalSets} planned rounds done. Save the sets you logged. You can return to unfinished working rounds today.
           </p>
         ) : null}
         <div className="mt-4 grid grid-cols-3 gap-2.5">

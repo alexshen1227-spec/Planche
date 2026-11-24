@@ -74,7 +74,7 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
                 onClick={() => setPicked(i)}
                 aria-pressed={picked === i}
                 aria-label={`${i === 0 ? 'Today' : new Date(at).toLocaleDateString(undefined, { weekday: 'long' })}: ${dayWords(d)}${sport ? `, ${SPORT[sport.kind]}` : ''} — show why`}
-                className={`flex min-h-[104px] w-full flex-col items-stretch gap-1 rounded-control border p-1.5 text-center ${
+                className={`relative flex min-h-[104px] w-full flex-col items-stretch gap-1 rounded-control border p-1.5 text-center ${
                   picked === i ? 'border-accent' : i === 0 ? 'border-line-strong' : 'border-line'
                 } ${plan.rest ? 'bg-raised' : 'bg-surface'}`}
               >
@@ -97,7 +97,7 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
                   <span className="rounded-md border border-line px-1 py-0.5 text-caption leading-tight text-ink2">{SPORT[sport.kind]}</span>
                 ) : null}
                 {!plan.rest ? <span className="mt-auto text-caption tnum text-ink3">{plan.minutes}′</span> : null}
-                <span className="sr-only">{movedFrom ? `Takes over ${movedFrom}’s missed work.` : ''}</span>
+                {movedFrom && <span className="sr-only">Takes over {movedFrom}’s missed work.</span>}
               </button>
             </li>
           )

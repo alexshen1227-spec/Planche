@@ -1,5 +1,5 @@
 import type { GymPlan } from './builder'
-import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import { GYM_EXERCISE_BY_ID, jointsToRest } from '../../data/gym/exercises'
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import { lastPerformance, repPlanFor, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymRemainder, GymSession, GymState, RemainingLift } from './types'
@@ -158,7 +158,7 @@ export function adaptOpenDraft(draft: GymDraft, joints: Joint[], light: boolean,
   const deferred = [...(draft.deferred ?? [])]
   const items = draft.items.flatMap((item): DraftItem[] => {
     const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
-    if (ex?.stress.some((j) => avoidJoints.includes(j)) || missingKit(item.exerciseId)) {
+    if (jointsToRest(item.exerciseId).some((j) => avoidJoints.includes(j)) || missingKit(item.exerciseId)) {
       const left = item.sets.filter((s) => !s.done)
       if (left.length) deferred.push(remainingLift(item, left))
       const done = item.sets.filter((s) => s.done)
@@ -235,7 +235,7 @@ export function resumePartial(session: GymSession, avoid: Joint[] = [], location
   const deferred: RemainingLift[] = []
   for (const it of plan.items) {
     const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
-    if (!ex || ex.stress.some((j) => avoidJoints.includes(j)) || (location && !canDoHere(it.exerciseId, location))) {
+    if (!ex || jointsToRest(it.exerciseId).some((j) => avoidJoints.includes(j)) || (location && !canDoHere(it.exerciseId, location))) {
       deferred.push(it)
       continue
     }

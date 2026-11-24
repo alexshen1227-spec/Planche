@@ -1,3 +1,4 @@
+import { countsSkillDay } from '../skillSession'
 import { MUSCLE_BY_ID, MUSCLES } from '../../data/gym/catalog'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { AppState } from '../../types'
@@ -15,7 +16,7 @@ export const LOW_SKILL_FREQUENCY = 3
 
 /** Skill sessions per week over the four weeks before `now`, or fewer weeks when the athlete is newer (never a flat divide). */
 export function skillSessionsPerWeek(state: Pick<AppState, 'sessions'>, now: number): number {
-  const recent = state.sessions.filter((s) => s.workoutKind !== 'micro' && s.startedAt <= now && s.startedAt > now - 28 * DAY)
+  const recent = state.sessions.filter((s) => s.startedAt <= now && s.startedAt > now - 28 * DAY && countsSkillDay(s))
   if (!recent.length) return 0
   const first = Math.min(...recent.map((s) => s.startedAt))
   const weeks = Math.max(1, Math.min(28, (now - first) / DAY) / 7)
@@ -59,12 +60,14 @@ export function gymBadges(state: Pick<AppState, 'sessions' | 'gym'>): GymBadge[]
   }
   // Skills and the gym in the same calendar week.
   let together: number | undefined
-  const skillWeeks = new Set(state.sessions.map((s) => weekStart(s.startedAt)))
+  const firstSkillEnd = new Map<number, number>()
+  for (const skill of state.sessions.filter(countsSkillDay)) {
+    const week = weekStart(skill.startedAt)
+    firstSkillEnd.set(week, Math.min(firstSkillEnd.get(week) ?? Infinity, skill.endedAt ?? skill.startedAt))
+  }
   for (const s of gym) {
-    if (skillWeeks.has(weekStart(s.startedAt))) {
-      together = s.endedAt
-      break
-    }
+    const skillAt = firstSkillEnd.get(weekStart(s.startedAt))
+    if (skillAt !== undefined) together = Math.min(together ?? Infinity, Math.max(skillAt, s.endedAt))
   }
   const badge = (id: string, name: string, desc: string, icon: GymBadge['icon'], at?: number): GymBadge => ({
     id,

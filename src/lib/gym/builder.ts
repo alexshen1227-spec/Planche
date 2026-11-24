@@ -1,5 +1,5 @@
 import { type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
-import { athleticDomain, GYM_EXERCISE_BY_ID, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
+import { athleticDomain, GYM_EXERCISE_BY_ID, jointsToRest, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
 import { availableAt, preferenceRank } from './availability'
 import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
 import { gateTier, isHardBodyweight, liftTrend, plyoGate, repPlanFor, STALL_SESSIONS, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
@@ -279,7 +279,7 @@ export function planGymExercises(input: GymSessionInput) {
     readyForBodyweight(e.id, input.capacity) &&
     !(e.technical && !e.tier && ratings[e.id] !== 'love' && (youth || (input.capacity && isHardBodyweight(e) && !input.capacity.practiced.has(e.id)))) &&
     !e.primary.some((m) => musclesOff.has(m)) &&
-    !e.stress.some((j) => avoid.has(j)) &&
+    (!avoid.size || !jointsToRest(e.id).some((j) => avoid.has(j))) &&
     ratings[e.id] !== 'avoid' &&
     // Speed and power work is built up to, never started at the top (see plyoGate).
     plyoGate(e, sessions, youth, now).allowed
@@ -311,7 +311,7 @@ export function planGymExercises(input: GymSessionInput) {
   const isPriority = (e: GymExercise) => e.primary.some((m) => priority.has(m))
   const makeItem = (pick: GymExercise, wantsExplosive: boolean, sets?: number) => {
     const base = repPlanFor(pick, wantsExplosive ? 'power' : emphasisOf(pick), youth)
-    const plan = introductory ? { ...base, targetRpe: Math.min(7, base.targetRpe) }
+    const plan = introductory || input.capacity?.buildUpSetLimit ? { ...base, targetRpe: Math.min(7, base.targetRpe) }
       : factor < 1 ? { ...base, targetRpe: Math.max(6, base.targetRpe - 1) } : base
     return {
       exerciseId: pick.id,
@@ -496,7 +496,7 @@ export function planGymExercises(input: GymSessionInput) {
   }
   if (introductory && items.length) {
     items.splice(4)
-    notes.push('Your first two gym visits start with up to four movements and two sets each. Finish each set feeling you could do about three more reps. Your log guides the next workout.')
+    notes.push('Start with up to four movements and two sets each. Leave about three reps in reserve. The next step opens after two days with several manageable sets across at least two lifts.')
   }
   // Fit the time strictly: trim sets on isolation work, then on compounds,
   // down to two; then give up the last slots, down to one block. A block that
@@ -643,6 +643,16 @@ export function planGymExercises(input: GymSessionInput) {
       if (total() + blockMinutes(1, items[i].restSec) > minutes) break
       items[i] = { ...items[i], sets: items[i].sets + 1 }
     }
+  }
+  const buildUpLimit = input.capacity?.buildUpSetLimit
+  if (buildUpLimit && focus !== 'athletic' && items.reduce((n, item) => n + item.sets, 0) > buildUpLimit) {
+    for (const item of items) item.sets = Math.min(3, item.sets)
+    while (items.length && items.reduce((n, item) => n + item.sets, 0) > buildUpLimit) {
+      const extra = [...items].reverse().find((item) => item.sets > 2)
+      if (extra) extra.sets--
+      else items.pop()
+    }
+    notes.push('Your recent working sets support a small increase. This session adds up to two sets to the amount you have handled comfortably.')
   }
   return { name: FOCUS_LABEL[focus], focus, items, dropped, estimatedMin: items.length ? Math.round(total()) : 0, fits, notes }
 }

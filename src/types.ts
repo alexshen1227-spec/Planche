@@ -464,6 +464,8 @@ export interface Block {
   target: BlockTarget
   restSec: number
   section: Section
+  /** On a continued unilateral block, the side still owed the next round. */
+  firstSide?: 'left' | 'right'
   note?: string
   role?: BlockRole
   /**
@@ -522,6 +524,9 @@ export interface WorkoutRequest {
    * this build only; absent builds exactly as before.
    */
   kit?: EquipmentId[]
+  placeId?: string
+  /** Continue the saved prescription and append the new work to this session. */
+  resumeSessionId?: string
   /**
    * The athlete picked this session inside their straight-arm rest rule
    * (`insideRestRule`): hours since the family's last hard session, and the
@@ -544,6 +549,10 @@ export interface Workout {
   minutes: number
   kind: 'auto' | 'template' | 'test' | 'micro'
   blocks: Block[]
+  /** The saved partial this segment continues. Its end time guards against a stale editor. */
+  continuation?: { id: string; endedAt: number }
+  /** Original rounds that cannot be trained at the current place. */
+  deferredBlocks?: Block[]
   strategy?: StrategyId
   /** The request this was built from; absent on drafts saved by older versions. */
   request?: WorkoutRequest
@@ -697,6 +706,8 @@ export interface Session {
   updatedAt?: number
   /** 'partial' when the athlete finished early; planned work they skipped is not adherence. */
   completion?: 'full' | 'partial'
+  /** Unfinished working prescription saved by a player that supports continuation. */
+  remaining?: SkillRemainder
   /** Raw rounds the plan contained. */
   plannedRounds?: number
   /**
@@ -737,6 +748,16 @@ export interface Session {
 
 /** What a skill's share of a mixed session is for. */
 export type LineupRole = 'lead' | 'partner' | 'maintenance' | 'practice'
+
+export interface SkillRemainder {
+  blocks: Block[]
+  recovery?: true
+  skills?: SkillId[]
+  lineup?: Workout['lineup']
+  placeId?: string
+  gymAfter?: WorkoutRequest['gymAfter']
+  focus?: 'ladder'
+}
 
 /** One skill's record inside a session. */
 export interface SessionSkill {

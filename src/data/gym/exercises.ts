@@ -431,6 +431,20 @@ export const GYM_EXERCISES: GymExercise[] = [
 
 export const GYM_EXERCISE_BY_ID: Record<string, GymExercise> = Object.fromEntries(GYM_EXERCISES.map((e) => [e.id, e]))
 
+// Supporting or gripping a load matters when an athlete asks to rest a sore wrist,
+// even when the wrist is not a primary source of training fatigue for that lift.
+const handsFree = new Set(['hip-thrust', 'zercher-squat', 'cable-kickback', 'cable-hip-abduction', 'cable-hip-adduction', 'machine-lateral-raise'])
+const handPatterns = new Set<Pattern>(['horizontal-press', 'incline-press', 'vertical-press', 'dip', 'chest-fly', 'triceps', 'biceps', 'vertical-pull', 'horizontal-pull', 'straight-arm-pull', 'carry', 'throw'])
+const jointRest = new Map<string, Joint[]>(GYM_EXERCISES.map((ex) => {
+  const gripped = !handsFree.has(ex.variantOf ?? ex.id) && (['barbell', 'dumbbell', 'kettlebell', 'cable'].includes(ex.load) ||
+    handPatterns.has(ex.pattern) || ex.id === 'sled-push' || ex.id === 'sled-drag-backward')
+  return [ex.id, gripped && !ex.stress.includes('wrists') ? [...ex.stress, 'wrists'] : ex.stress]
+}))
+
+export function jointsToRest(exerciseId: string): Joint[] {
+  return jointRest.get(exerciseId) ?? []
+}
+
 const SKILL_ALIASES: Record<string, string> = {
   pushup: 'push-up', pullup: 'pull-up', 'negative-pullup': 'negative-pull-up', 'scap-pull': 'scapular-pull-up',
   'pike-pushup': 'pike-push-up', 'elevated-pike-pushup': 'elevated-pike-push-up', 'knee-pushup': 'kneeling-push-up',

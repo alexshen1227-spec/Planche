@@ -5,6 +5,8 @@ import { STEP_BY_ID, stepsOf } from '../../data/progressions'
 import { buildPlan } from '../coach'
 import { readSignals } from '../signals'
 import { skillView, stepOfSkill } from '../skills'
+import { compareLiftingDays } from './weekComparison'
+import { weekForChoice } from './currentWeek'
 import { addDays, dayKey, weekStart } from '../time'
 import { familyWorkingSets, HARD_GYM_FAMILY_SETS, setsPerMuscle } from './load'
 import { exposureDays, exposuresOf, GYM_PLACE, keySets, mainSets, makeAthlete, runLoop, SPORT_WEEK, weeksOf, type AthleteCfg, type DayRun, type LoopOpts, type LoopOut } from './wholeAthleteLoop'
@@ -86,6 +88,36 @@ const handstandAthlete = (fourDays: boolean): AthleteCfg => ({
 })
 
 describe('mixed handstand and front lever weeks', () => {
+  it('compares a real alternative in the same 135 minutes and application reproduces its muscle sets', () => {
+    const cfg = handstandAthlete(false)
+    cfg.skills = ['handstand', 'frontlever', 'planche']
+    cfg.steps = { ...cfg.steps, planche: 'tuck' }
+    cfg.prefs = { ...cfg.prefs, goals: { strength: 3, skills: 4, physique: 5, power: 0, endurance: 0 }, musclesPriority: ['chest', 'quads'] }
+    const state = makeAthlete(cfg)
+    state.gym = { ...state.gym!, locations: state.gym!.locations.map((l) => l.id === GYM_PLACE.id ? handstandGym : l) }
+    const now = new Date(2026, 9, 5, 17).getTime()
+    const { current, alternative } = compareLiftingDays(state, {}, now)!
+    expect(alternative).toBeDefined()
+    const next = alternative!
+    expect(next.practiceDays.handstand).toBeGreaterThan(0)
+    expect((next.muscleSets.chest ?? 0) + (next.muscleSets.quads ?? 0)).toBeGreaterThan((current.muscleSets.chest ?? 0) + (current.muscleSets.quads ?? 0))
+    const prefs = state.gym.prefs!
+    const updated = { ...state, gym: { ...state.gym, prefs: { ...prefs, extraGymDate: next.gymDate } } }
+    expect(weekForChoice(updated, {}, now).weekTotal).toEqual(next.muscleSets)
+    expect(prefs.minutesByDay.reduce((a, b) => a + b)).toBe(135)
+  })
+  it('keeps the first-ranked handstand ahead of a second-ranked lever when physique is the highest goal', () => {
+    const cfg = handstandAthlete(false)
+    cfg.prefs = { ...cfg.prefs, goals: { strength: 3, skills: 4, physique: 5, power: 0, endurance: 0 }, musclesPriority: ['chest', 'quads'] }
+    const out = season(cfg, 28, {}, handstandGym)
+    for (const week of weeksOf(out)) {
+      const touches = (skill: SkillId) => week.filter((d) => d.skill.some((s) => (s.parts[skill]?.main ?? 0) > 0)).length
+      expect(touches('handstand'), dayKey(week[0].at)).toBeGreaterThanOrEqual(2)
+      expect(touches('frontlever')).toBeGreaterThanOrEqual(1)
+      expect(touches('handstand')).toBeGreaterThanOrEqual(touches('frontlever'))
+      expect(week.filter((d) => d.gym).length).toBeGreaterThanOrEqual(2)
+    }
+  })
   it.each(['adult', 'teen'] as const)('gives all three skills and the legs actual work every week for the %s on three training days', (age) => {
     const youth = age === 'teen'
     const minutes = youth ? 60 : 45

@@ -1,3 +1,4 @@
+import { countsSkillDay } from './skillSession'
 import type { AppState, SkillId, StepId } from '../types'
 import { roadOf, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
@@ -112,7 +113,7 @@ export function qualifyingSeries(state: Pick<AppState, 'sessions'>, stepId: Step
   // into "past a year" and a steady climb into a capability jump. Its
   // next-shape holds still count toward early promotion (qualifyingProgress).
   return [...state.sessions]
-    .filter((s) => s.workoutKind !== 'micro')
+    .filter(countsSkillDay)
     .sort((a, b) => a.startedAt - b.startedAt)
     .map((s) => {
       const value = qualifyingSessionValue(s, stepId)

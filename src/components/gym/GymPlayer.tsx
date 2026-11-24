@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { GYM_EXERCISE_BY_ID, type GymExercise } from '../../data/gym/exercises'
+import { GYM_EXERCISE_BY_ID, jointsToRest, type GymExercise } from '../../data/gym/exercises'
 import { PATTERN_LABEL } from '../../data/gym/catalog'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
@@ -261,7 +261,7 @@ export function GymPlayer({
 
   /** What today's plan kept out stays out of swaps and additions too. */
   const fitsToday = (e: GymExercise) =>
-    canDoHere(e.id, location) && !e.stress.some((j) => draft.avoidJoints?.includes(j)) && !e.primary.some((m) => draft.musclesOff?.includes(m))
+    canDoHere(e.id, location) && !jointsToRest(e.id).some((j) => draft.avoidJoints?.includes(j)) && !e.primary.some((m) => draft.musclesOff?.includes(m))
 
   const addExercise = (exerciseId: string) => {
     if (!fitsToday(GYM_EXERCISE_BY_ID[exerciseId])) return

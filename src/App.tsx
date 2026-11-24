@@ -4,6 +4,8 @@ import { useRegisterSW } from 'virtual:pwa-register/react'
 import type { CheckIn, Tab, Workout, WorkoutRequest } from './types'
 import { quarantinedData, useStore } from './lib/store'
 import { loadDraft } from './lib/draft'
+import { resumeSkillWorkout } from './lib/resumeSkillWorkout'
+import { pushToast } from './lib/toast'
 import { finalizeWorkout, finalizeWorkoutWithPlan, requestFor } from './data/workouts'
 import { LONG_GAP_DAYS } from './lib/signals'
 import type { CoachPlan } from './lib/coach'
@@ -19,7 +21,7 @@ import { Path } from './views/Path'
 import { SessionPlayer, type CheckInContext } from './views/SessionPlayer'
 import { APP_NAME } from './data/app'
 import { setAthleteLockout } from './lib/lockout'
-import { legacyOpenerLifts } from './lib/plan/nextBlock'
+import { legacyOpenerLifts, readDayMarks } from './lib/plan/nextBlock'
 import type { GymEntry } from './lib/plan/screens'
 
 /**
@@ -452,11 +454,16 @@ export default function App() {
   const startWorkout = (request: WorkoutRequest) => {
     setResuming(false)
     const now = Date.now()
-    const { workout, plan } = finalizeWorkoutWithPlan(state, request, undefined, now)
+    const session = request.resumeSessionId ? resumeSkillWorkout(state, request.resumeSessionId, undefined, now) : finalizeWorkoutWithPlan(state, request, undefined, now)
+    if (!session) {
+      pushToast('This session has no working rounds available here right now. Check its saved workout, equipment and readiness before continuing.', 'info')
+      return
+    }
+    const { workout, plan } = session
     // Asked on every kind of session when due — a check-in before a template
     // still feeds the rails and the record. A test always asks: a maximal
     // effort needs today's answer, not last week's.
-    setAskCheckIn(request.source === 'test' || plan.askCheckIn)
+    setAskCheckIn(Boolean(request.resumeSessionId) || request.source === 'test' || plan.askCheckIn)
     setCheckInContext(checkInContextFor(plan))
     setActiveWorkout(workout)
   }
@@ -639,13 +646,14 @@ export default function App() {
             // Nothing is logged yet at this point, so the session can be
             // safely rebuilt — from the same request, so a 15-minute version
             // stays a 15-minute version after the answer.
-            setActiveWorkout(finalizeWorkout(state, requestFor(activeWorkout), c))
+            const request = requestFor(activeWorkout)
+            setActiveWorkout(request.resumeSessionId ? resumeSkillWorkout(state, request.resumeSessionId, c)?.workout ?? null : finalizeWorkout(state, request, c))
           }}
           onExit={(savedSessionId) => {
             setResuming(false)
             setAskCheckIn(false)
             setActiveWorkout(null)
-            if (savedSessionId && activeWorkout.request?.gymAfter) setTab('train')
+            if (savedSessionId && readDayMarks().openerSessionId === savedSessionId) setTab('train')
           }}
           onViewSession={(sessionId) => {
             setResuming(false)

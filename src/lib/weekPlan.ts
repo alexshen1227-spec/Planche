@@ -1,3 +1,4 @@
+import { countsSkillDay } from './skillSession'
 import type { AppState, DayPlan, SkillId, WeekPlan, Weekday } from '../types'
 import { SKILL_IDS } from '../types'
 import { missingKit, skillOfExercise, SKILLS } from '../data/skills'
@@ -255,7 +256,7 @@ export function weekOutline(stateIn: AppState, now = Date.now()): WeekOutlineDay
   return WEEK_ORDER.map((weekday, i) => {
     const startsAt = addDays(start, i)
     const ends = addDays(start, i + 1)
-    const sessions = state.sessions.filter((s) => s.startedAt >= startsAt && s.startedAt < ends && s.startedAt <= now && s.workoutKind !== 'micro')
+    const sessions = state.sessions.filter((s) => s.startedAt >= startsAt && s.startedAt < ends && s.startedAt <= now && countsSkillDay(s))
     const trained = [
       ...new Set(
         sessions.flatMap((s) =>

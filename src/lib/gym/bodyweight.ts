@@ -2,7 +2,7 @@ import type { AppState } from '../../types'
 import { STEP_BY_ID } from '../../data/progressions'
 
 type Base = 'pushups' | 'pullups' | 'dips'
-export type BodyweightCapacity = { base: Partial<Record<Base, number>>; practiced: Map<string, number>; introductory?: boolean; introductoryVisitsLeft?: number; tryPullup?: boolean }
+export type BodyweightCapacity = { base: Partial<Record<Base, number>>; practiced: Map<string, number>; introductory?: boolean; introductoryVisitsLeft?: number; buildUpSetLimit?: number; tryPullup?: boolean }
 
 // These are starting gates for automated picks. An athlete can always add a movement manually.
 const gates = new Map<string, { base: Base; reps: number }>()
@@ -70,16 +70,29 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
   }
   const placed = [state.stepId, ...Object.values(state.tracks ?? {}).map((t) => t.stepId)]
   const established = placed.some((id) => (STEP_BY_ID[id]?.order ?? 0) >= 2) || (evidence.get('pushups')?.reps ?? 0) >= 10 || (evidence.get('pullups')?.reps ?? 0) >= 5
-  const visits = new Set((state.gym?.sessions ?? [])
-    .filter((s) => s.startedAt <= now && s.exercises.some((e) => e.sets.some((x) => !x.warmup && x.reps > 0)))
-    .map((s) => new Date(s.startedAt).toDateString()))
-  const introductoryVisitsLeft = established ? 0 : Math.max(0, 2 - visits.size)
+  // A visit advances the beginner's dose when they actually tolerate a few working sets.
+  // A short workout can qualify. Two attempts taken to failure on two days cannot.
+  const days = new Map<string, { sets: number; lifts: Set<string> }>()
+  for (const session of state.gym?.sessions ?? []) {
+    if (session.startedAt < from || session.startedAt > now) continue
+    const key = new Date(session.startedAt).toDateString()
+    const day = days.get(key) ?? { sets: 0, lifts: new Set<string>() }
+    for (const row of session.exercises) {
+      const sets = row.sets.filter((s) => !s.warmup && s.reps >= (row.repRange?.[0] ?? 3) && (s.rpe ?? row.targetRpe ?? 7) <= 8)
+      if (sets.length) { day.sets += sets.length; day.lifts.add(row.exerciseId) }
+    }
+    days.set(key, day)
+  }
+  const visits = [...days.values()].filter((day) => day.sets >= 3 && day.lifts.size >= 2)
+  const introductoryVisitsLeft = established ? 0 : Math.max(0, 2 - visits.length)
+  const buildUpSetLimit = !established && visits.length >= 2 && visits.length < 4 ? Math.min(12, Math.max(...visits.map((day) => day.sets)) + 2) : undefined
   const tryPullup = assistedTrial?.ready && now - assistedTrial.at <= 28 * 86_400_000 &&
     assistedTrial.at > (evidence.get('pullups')?.at ?? 0) && !evidence.has('pull-up')
   return {
     ...(tryPullup ? { tryPullup: true } : {}),
     introductory: introductoryVisitsLeft > 0,
     introductoryVisitsLeft,
+    ...(buildUpSetLimit ? { buildUpSetLimit } : {}),
     base: { pushups: evidence.get('pushups')?.reps, pullups: evidence.get('pullups')?.reps, dips: evidence.get('dips')?.reps },
     practiced: new Map([...evidence].map(([id, e]) => [id, e.reps])),
   }

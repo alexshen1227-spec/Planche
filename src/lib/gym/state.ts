@@ -82,6 +82,7 @@ function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
     musclesOff: muscles(r.musclesOff),
     musclesPriority: muscles(r.musclesPriority),
     minutesByDay: minutes,
+    ...(typeof r.extraGymDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.extraGymDate) ? { extraGymDate: r.extraGymDate } : {}),
     straightArmRestHours: Math.round(clamp(r.straightArmRestHours, 24, 96, 48)),
     ...(r.season === 'in' ? { season: 'in' as const } : {}),
     ...(sportSchedule.length ? { sportSchedule } : {}),
@@ -91,7 +92,7 @@ function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
 }
 
 /** Every setting a training-prefs edit can change on its own (all but the stamps). */
-const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'minutesByDay', 'straightArmRestHours', 'season', 'sportSchedule'] as const
+const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'minutesByDay', 'extraGymDate', 'straightArmRestHours', 'season', 'sportSchedule'] as const
 
 function sanitizeFieldTimes(raw: unknown): Record<string, number> | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined

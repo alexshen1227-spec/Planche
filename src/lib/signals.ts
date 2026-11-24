@@ -1,3 +1,4 @@
+import { countsSkillDay } from './skillSession'
 import type { AppState, BodyRegion, CheckIn, Session, SetLog, SkillId, TrainingSurface } from '../types'
 import { skillOfStep, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
@@ -927,7 +928,7 @@ export function readSignals(state: AppState, now = Date.now(), freshCheckIn?: Ch
   const fourWeeksAgo = now - 28 * DAY
   // A minimum dose is not a training session for frequency's sake: six minutes
   // of short holds must not read as "training as often as planned".
-  const recentCount = sessions.filter((s) => s.startedAt >= fourWeeksAgo && s.workoutKind !== 'micro').length
+  const recentCount = sessions.filter((s) => s.startedAt >= fourWeeksAgo && countsSkillDay(s)).length
   // Over the weeks actually trained, up to four — the same fix the chronic
   // load needed. Dividing a fortnight's history by four weeks told a new
   // athlete training three times a week that they averaged 1.5: "training

@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-24',
+    title: 'Continue your skill work and compare your week',
+    area: 'coach',
+    notes: [
+      'Finish early and come back to your remaining skill rounds that day. Warm-up alone leaves the practice open. New sets join your original session, including the side you still owe.',
+      'Compare a specific lifting day with your current week in Progress. See the estimated sets and skill days, apply it to that date, or undo it.',
+      'The coach keeps room for a first-ranked handstand on busy weeks. Introductory lifting advances after manageable work, and exercises that need a loaded grip stay out when you rest a sore wrist.',
+    ],
+  },
+  {
+    date: '2026-11-24',
     title: 'Train all three skills and lift with the kit at hand',
     area: 'training',
     notes: [

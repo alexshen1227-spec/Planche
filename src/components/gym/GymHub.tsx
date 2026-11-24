@@ -265,7 +265,7 @@ export function GymHub({
       )
       setPending(null)
       // The place's kit goes with it: a lever with no bar at home trains on the gym's.
-      startWorkout({ ...skillRequest(opener), gymAfter })
+      startWorkout({ ...skillRequest(opener), placeId: opener.placeId ?? gymAfter.placeId, gymAfter })
       return
     }
     // A joint named now that the planned lifts did not steer round (the lifts after an opener were planned before

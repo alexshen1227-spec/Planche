@@ -1,3 +1,4 @@
+import { countsSkillDay } from './skillSession'
 import { skillHoldSecOf } from './progressTotals'
 import type { AppState, Session, Settings, TrainingSurface } from '../types'
 import { EXERCISE_BY_ID } from '../data/exercises'
@@ -109,7 +110,7 @@ export function goalDaysInWeekOf(state: AppState, ts: number, now = Date.now()):
   const end = addDays(start, 7)
   const counts = (t: number) => t >= start && t < end && t <= now + CLOCK_SKEW_MS
   const kinds = new Map<string, 'calisthenics' | 'gym'>()
-  for (const s of whole.sessions) if (s.workoutKind !== 'micro' && counts(s.startedAt)) kinds.set(dayKey(s.startedAt), 'calisthenics')
+  for (const s of whole.sessions) if (counts(s.startedAt) && countsSkillDay(s)) kinds.set(dayKey(s.startedAt), 'calisthenics')
   for (const s of whole.gym?.sessions ?? []) if (counts(s.startedAt)) kinds.set(dayKey(s.startedAt), 'gym')
   return kinds
 }
@@ -141,7 +142,7 @@ export function sessionsInWeekOf(state: AppState, ts: number, now = Date.now()):
   // A minimum dose is extra, not one of the week's sessions: counting it let a
   // few six-minute top-ups stand in for the sessions the goal is about.
   return state.sessions.filter(
-    (s) => s.startedAt >= start && s.startedAt < end && s.startedAt <= now + CLOCK_SKEW_MS && s.workoutKind !== 'micro',
+    (s) => s.startedAt >= start && s.startedAt < end && s.startedAt <= now + CLOCK_SKEW_MS && countsSkillDay(s),
   )
 }
 

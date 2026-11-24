@@ -6,6 +6,31 @@ import { bodyweightCapacity, readyForBodyweight } from './bodyweight'
 import { buildGymSession } from './builder'
 import { allowsUnloaded } from './progression'
 import { defaultGym, homeLocation } from './state'
+import type { GymSession } from './types'
+
+it('advances the introductory dose from manageable working sets and limits the first increase', () => {
+  const now = Date.now()
+  const state = initialState()
+  state.profile.birthYear = new Date(now).getFullYear() - 65
+  const gym = defaultGym(['floor'], 'kg', now)
+  const visits = (tolerated: boolean): GymSession[] => [3, 1].map((days) => {
+    const at = now - days * 86_400_000
+    return { id: String(days), locationId: 'home', startedAt: at, endedAt: at + 300_000, name: 'Lifting', completion: 'partial',
+      exercises: (tolerated ? ['bodyweight-squat', 'kneeling-push-up'] : ['goblet-squat']).map((exerciseId) => ({
+        exerciseId, sets: tolerated ? [{ at, reps: 8, rpe: 7 }, { at: at + 30_000, reps: 8, rpe: 7 }] : [{ at, kg: 8, reps: 2, rpe: 10 }],
+      })) }
+  })
+  const plan = (tolerated: boolean) => {
+    const sessions = visits(tolerated)
+    const capacity = bodyweightCapacity({ ...state, gym: { ...gym, sessions } }, now)
+    return buildGymSession({ location: gym.locations[0], capacity, focus: 'full', minutes: 60, sessions, now })
+  }
+  const early = plan(false)
+  expect(early.items.every((i) => i.sets <= 2 && i.plan.targetRpe <= 7)).toBe(true)
+  const next = plan(true)
+  expect(next.items.reduce((n, item) => n + item.sets, 0)).toBeLessThanOrEqual(6)
+  expect(next.items.every((i) => i.plan.targetRpe <= 7)).toBe(true)
+})
 
 it('offers a plain pull-up after confirmed no-help sets on the machine, and keeps unknown or positive assistance on its own progression', () => {
   const now = Date.now()

@@ -5,6 +5,8 @@ import type { AppState, Session, Workout } from '../types'
 import { initialState, StoreProvider } from '../lib/store'
 import { SessionPlayer } from './SessionPlayer'
 import { dayStage } from '../lib/plan/screens'
+import { goalDaysInWeekOf } from '../lib/stats'
+import { resumeSkillWorkout } from '../lib/resumeSkillWorkout'
 import { peekNextBlock, readDayMarks } from '../lib/plan/nextBlock'
 
 /**
@@ -100,7 +102,40 @@ afterEach(() => {
 
 describe('leaving the session never silently discards work', () => {
   const lifts = { focus: 'pull' as const, minutes: 25, placeId: 'gym-a', avoidJoints: [], musclesOff: [], volumeFactor: 1 }
-  const opener: Workout = { ...workout, request: { source: 'auto', gymAfter: lifts } }
+  const opener: Workout = { ...workout, blocks: [
+    { ...workout.blocks[0], exerciseId: 'pushup', section: 'strength' },
+    { ...workout.blocks[1], section: 'cooldown' },
+  ], request: { source: 'auto', gymAfter: lifts } }
+
+  it('saves a warm-up without counting a practice day, then resumes the actual opener and hands off its lifts', () => {
+    const warmThenPress: Workout = { ...opener, blocks: [workout.blocks[0], opener.blocks[0]] }
+    mount(vi.fn(), warmThenPress)
+    logOneSet()
+    click(/Exit session/)
+    click(/Finish early/, screen.getByRole('dialog', { name: /Leave training session/ }))
+    click(/^Save session$/)
+    const first = saved()[0]
+    expect(first.remaining?.blocks.map((b) => b.exerciseId)).toEqual(['pushup'])
+    expect(peekNextBlock(clock)).toBeNull()
+    const snapshot: AppState = JSON.parse(localStorage.getItem('planchelab.v1')!)
+    expect(goalDaysInWeekOf(snapshot, clock, clock).size).toBe(0)
+    expect(dayStage(snapshot, { kind: 'gym', skill: { opener: true } }, clock)).toBe('skill-partial')
+    cleanup()
+    clock += 30 * 60_000
+    const continuation = resumeSkillWorkout(snapshot, first.id, undefined, clock)!.workout
+    expect(continuation.blocks.map((b) => b.exerciseId)).toEqual(['pushup'])
+    mount(vi.fn(), continuation)
+    logOneSet()
+    click(/^Save session$/)
+    const all = saved()
+    expect(all).toHaveLength(1)
+    expect(all[0].id).toBe(first.id)
+    expect(all[0].sets.map((s) => s.exerciseId)).toEqual(['wrist-circles', 'pushup'])
+    expect(all[0].pausedMs).toBe(30 * 60_000)
+    expect(all[0].remaining).toBeUndefined()
+    expect(peekNextBlock(clock)).toEqual(lifts)
+    expect(goalDaysInWeekOf({ ...snapshot, sessions: all }, clock, clock).size).toBe(1)
+  })
 
   it('keeps the exact lifts after saving across midnight and reopening the app', () => {
     clock = new Date(2026, 9, 5, 23, 55).getTime()

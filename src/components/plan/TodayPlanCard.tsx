@@ -21,6 +21,8 @@ import { useStore } from '../../lib/store'
 import { useToday } from '../../lib/useToday'
 import { latestPartialToday } from '../../lib/gym/draft'
 import { PartialWorkout } from '../gym/PartialWorkout'
+import { PartialSkillWorkout } from './PartialSkillWorkout'
+import { countsSkillDay, latestSkillPartial } from '../../lib/skillSession'
 import type { WorkoutRequest } from '../../types'
 import { Button, Card, Sheet, ToggleChip } from '../ds'
 import { Icon } from '../Icon'
@@ -68,13 +70,14 @@ export function TodayPlanCard({
   // Today's parts tick off as they are done, and the next one takes the button.
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
-  const skillDone = state.sessions.some((s) => s.startedAt >= todayStart.getTime())
-  const gymDone = (state.gym?.sessions ?? []).some((s) => s.startedAt >= todayStart.getTime())
+  const skillDone = state.sessions.some((s) => s.startedAt >= todayStart.getTime() && s.startedAt <= Date.now() && countsSkillDay(s))
+  const gymDone = (state.gym?.sessions ?? []).some((s) => s.startedAt >= todayStart.getTime() && s.startedAt <= Date.now())
   // Today's main session done: nothing more is recommended, only a quiet way to train again.
   const marks = useDayMarks(todayKey)
   const remembered = useNextBlock<GymPreset>(todayKey)
   const stage = dayStage(state, plan, Date.now(), marks)
   const allDone = stage === 'done'
+  const skillPartial = stage === 'skill-partial' ? latestSkillPartial(state.sessions) : undefined
   const partial = allDone ? latestPartialToday(state.gym?.sessions) : undefined
   // A gym day whose opener is saved: the lifts are what is left, whatever the planner now calls the day.
   const liftsNext = stage === 'lifts-next'
@@ -130,7 +133,7 @@ export function TodayPlanCard({
     <Card className="mb-5">
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-display text-title3 font-semibold">
-          {partial ? 'Today’s saved workout' : allDone ? 'Today: done' : liftsNext ? 'Today: the lifts are next' : plan.rest ? 'Today: rest' : `Today: ${plan.minutes} minutes`}
+          {partial || skillPartial ? 'Today’s saved workout' : allDone ? 'Today: done' : liftsNext ? 'Today: the lifts are next' : plan.rest ? 'Today: rest' : `Today: ${plan.minutes} minutes`}
         </h2>
         <button onClick={() => setSheet('settings')} className="min-h-11 px-1 text-footnote font-medium text-accent-text">
           Goals and schedule
@@ -170,7 +173,11 @@ export function TodayPlanCard({
         </p>
       ) : null}
 
-      {allDone ? (
+      {skillPartial ? (
+        <section className="mt-4 rounded-inner bg-raised p-4" aria-label="Today’s session">
+          <PartialSkillWorkout session={skillPartial} startWorkout={startWorkout} />
+        </section>
+      ) : allDone ? (
         <section className="mt-4 rounded-inner bg-raised p-4" aria-label="Today’s session">
           {partial ? <PartialWorkout session={partial} onContinue={() => onStartGym({ resumeSessionId: partial.id })} /> : <div className="flex items-start gap-3">
             <span className="min-w-0 flex-1">

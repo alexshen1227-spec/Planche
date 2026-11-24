@@ -1,4 +1,4 @@
-import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import { GYM_EXERCISE_BY_ID, jointsToRest } from '../../data/gym/exercises'
 import type { Joint } from '../../data/gym/catalog'
 import type { GymDraft } from './draft'
 import { countUnit, estimateOneRepMax, repPlanFor, suggestLoad } from './progression'
@@ -46,7 +46,7 @@ export function draftJointConflicts(draft: GymDraft, joints: Joint[]): { exercis
   if (!joints.length) return []
   return draft.items.flatMap((it) => {
     if (!it.sets.some((s) => !s.done)) return []
-    const hit = (GYM_EXERCISE_BY_ID[it.exerciseId]?.stress ?? []).filter((j) => joints.includes(j))
+    const hit = jointsToRest(it.exerciseId).filter((j) => joints.includes(j))
     return hit.length ? [{ exerciseId: it.exerciseId, joints: hit }] : []
   })
 }

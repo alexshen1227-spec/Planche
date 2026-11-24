@@ -142,6 +142,8 @@ export interface TrainingPrefs {
   musclesPriority: import('../../data/gym/catalog').Muscle[]
   /** Minutes available on each weekday, Sunday first; 0 = a rest day. */
   minutesByDay: number[]
+  /** A single calendar date the athlete chose for lifting from the weekly comparison. */
+  extraGymDate?: string
   /** Hours between hard straight-arm sessions of the same family. */
   straightArmRestHours: number
   /**
