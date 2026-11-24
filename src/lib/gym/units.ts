@@ -27,8 +27,13 @@ export function displayLoad(kg: number, unit: Unit): number {
   return Math.round(v * 2) / 2
 }
 
-export function formatLoad(kg: number | undefined, unit: Unit): string {
-  if (kg === undefined || kg <= 0) return 'Bodyweight'
+export function unloadedLabel(ex?: GymExercise): string {
+  if (ex?.assisted) return 'No assistance'
+  return ex?.needs.some((group) => group.length === 1 && group[0] === 'band') ? 'Band' : 'Bodyweight'
+}
+
+export function formatLoad(kg: number | undefined, unit: Unit, ex?: GymExercise): string {
+  if (kg === undefined || kg <= 0) return unloadedLabel(ex)
   const v = displayLoad(kg, unit)
   return `${v} ${unit}`
 }

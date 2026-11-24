@@ -71,7 +71,7 @@ export function SessionDetail({ session, onClose }: { session: GymSession; onClo
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-footnote tnum text-ink2">
                         {set.warmup ? 'Warm-up · ' : ''}
-                        {countUnit(ex) === 'seconds' ? `${countWord(ex, set.reps)}${set.kg ? ` × ${formatLoad(set.kg, set.unit ?? unit)}` : ''}` : `${set.reps} × ${formatLoad(set.kg, set.unit ?? unit)}`}
+                        {countUnit(ex) === 'seconds' ? `${countWord(ex, set.reps)}${set.kg ? ` × ${formatLoad(set.kg, set.unit ?? unit)}` : ''}` : `${set.reps} × ${formatLoad(set.kg, set.unit ?? unit, ex)}`}
                         {effortLabel(set.rpe) ? ` · ${effortLabel(set.rpe)}` : ''}
                       </span>
                       <button

@@ -137,6 +137,22 @@ function expectWeeklyPressing(mixed: LoopOut, restHours: number): number {
 }
 
 describe('the whole athlete: the planche first, then the rest (round five)', () => {
+  it.each([20, 45])('makes time for both skills and both chosen muscles across short %i-minute weeks', (minutes) => {
+    const mixed = season({
+      skills: ['planche', 'frontlever'], birthYear: 1995, active: 'gym', kit: ['floor', 'parallettes', 'pullup-bar'],
+      steps: { planche: 'tuck', frontlever: 'fl-tuck' },
+      prefs: { minutesByDay: [0, minutes, 0, 0, minutes, 0, 0], musclesPriority: ['quads', 'side-delts'],
+        goals: { skills: 5, physique: 5, strength: 3, endurance: 1, power: 1 } },
+    }, 28)
+    for (const skill of ['planche', 'frontlever'] as const) {
+      expect(mixed.days.filter((d) => d.skill.some((s) => (s.parts[skill]?.main ?? 0) > 0)).length, skill).toBeGreaterThanOrEqual(2)
+    }
+    for (const week of weeksOf(mixed)) {
+      const ids = week.flatMap((d) => d.gym?.items.map((i) => GYM_EXERCISE_BY_ID[i.id]) ?? [])
+      expect(ids.some((e) => e.primary.includes('quads'))).toBe(true)
+      expect(ids.some((e) => e.pattern === 'lateral-raise'), ids.map((e) => e.name).join(', ')).toBe(true)
+    }
+  })
   it('keeps skill practice and loggable gym work in a floor-only beginner’s two short days', () => {
     const mixed = season({
       skills: ['planche'], steps: { planche: 'foundations' }, kit: ['floor'], active: 'home', birthYear: 1995,

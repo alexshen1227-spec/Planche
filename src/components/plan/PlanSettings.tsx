@@ -408,7 +408,7 @@ export function ScheduleEditor({ prefs, setPrefs }: Edit) {
         )}
       </section>
 
-      <section>
+      {prefs.goals.skills > 0 && <section>
         <h3 className="font-display text-title3 font-semibold">Rest between hard straight-arm sessions</h3>
         <SegmentedControl
           className="mt-2"
@@ -422,7 +422,7 @@ export function ScheduleEditor({ prefs, setPrefs }: Edit) {
           kind. 48 hours is a common coaching default for connective tissue under straight-arm load — a convention, not a
           measured rule.
         </p>
-      </section>
+      </section>}
 
       <SportWeekEditor prefs={prefs} setPrefs={setPrefs} />
 
@@ -464,7 +464,7 @@ export function PlanSettings({ onDone }: { onDone: () => void }) {
     <div className="space-y-6">
       <h2 className="font-display text-title2 font-semibold text-ink">Goals and schedule</h2>
       <GoalsEditor prefs={prefs} setPrefs={setPrefs} />
-      <SkillGoalsEditor prefs={prefs} setPrefs={setPrefs} />
+      {prefs.goals.skills > 0 && <SkillGoalsEditor prefs={prefs} setPrefs={setPrefs} />}
       <MusclesEditor prefs={prefs} setPrefs={setPrefs} />
       <ScheduleEditor prefs={prefs} setPrefs={setPrefs} />
       <Button size="lg" full onClick={save}>

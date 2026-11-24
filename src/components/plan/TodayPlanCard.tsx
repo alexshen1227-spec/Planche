@@ -207,7 +207,7 @@ export function TodayPlanCard({
             </span>
             {allDone ? marker(true, 1) : null}
           </div>
-          {plan.kind === 'gym' && plan.gym ? (
+          {plan.kind === 'gym' && plan.gym && opener ? (
             <ol className="mt-3 space-y-2">
               {opener ? (
                 <li className="flex items-center gap-3">
@@ -247,14 +247,20 @@ export function TodayPlanCard({
       ) : null}
 
       {plan.reasons.length && !allDone && !liftsNext ? (
-        <ul className="mt-3 space-y-1.5">
+        <details className="group mt-3 rounded-inner border border-line" open={plan.rest || plan.readiness?.level === 'light' ? true : undefined}>
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-footnote font-semibold text-ink2">
+            Why this session
+            <Icon name="chevronR" size={14} className="transition group-open:rotate-90" />
+          </summary>
+          <ul className="space-y-1.5 px-3 pb-3">
           {plan.reasons.map((r) => (
             <li key={r} className="flex gap-2 text-footnote leading-snug text-ink2">
               <span aria-hidden className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ink3" />
               <span>{r}</span>
             </li>
           ))}
-        </ul>
+          </ul>
+        </details>
       ) : null}
 
       {/* The coach's week folds away: today comes first on Train. */}

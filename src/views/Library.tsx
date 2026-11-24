@@ -13,9 +13,14 @@ import { ClipGallery } from '../components/ClipGallery'
 import { isFilmable } from '../lib/poseForm'
 import { ladderOfExercise } from '../lib/repLadder'
 import { activeSkills } from '../lib/skills'
+import { GYM_EXERCISES, type GymExercise } from '../data/gym/exercises'
+import { MUSCLE_BY_ID, PATTERN_LABEL, locationEquipmentLabel } from '../data/gym/catalog'
+import { GymExerciseGuide } from '../components/gym/ExerciseGuide'
 
-const CATS: (Category | 'all')[] = [
+type LibraryCategory = Category | 'all' | 'gym'
+const CATS: LibraryCategory[] = [
   'all',
+  'gym',
   'planche',
   'lever',
   'handstand',
@@ -29,6 +34,17 @@ const CATS: (Category | 'all')[] = [
   'general',
   'mobility',
 ]
+
+type Move = Exercise | GymExercise
+const normalise = (text: string) => text.toLowerCase().replace(/[-–]/g, ' ').replace(/\s+/g, ' ').trim()
+const moves = ([...EXERCISES, ...GYM_EXERCISES] as Move[]).map((exercise) => {
+  const gym = 'pattern' in exercise
+  const words = gym
+    ? [exercise.cue, PATTERN_LABEL[exercise.pattern], ...exercise.primary.map((m) => MUSCLE_BY_ID[m].label),
+        ...exercise.secondary.map((m) => MUSCLE_BY_ID[m].label), ...exercise.needs.flat().map(locationEquipmentLabel)]
+    : [exercise.blurb, ...exercise.howTo, ...exercise.cues, ...exercise.mistakes, ...exercise.muscles]
+  return { exercise, category: gym ? 'gym' : exercise.category, name: normalise(exercise.name), search: normalise([exercise.name, ...words].join(' ')) }
+})
 
 export function Library() {
   const [pane, setPane] = useState<'exercises' | 'basics'>('exercises')
@@ -59,22 +75,19 @@ export function Library() {
 
 function ExercisePane() {
   const { state } = useStore()
-  const [cat, setCat] = useState<Category | 'all'>('all')
+  const [cat, setCat] = useState<LibraryCategory>('all')
   const [query, setQuery] = useState('')
-  const [detail, setDetail] = useState<Exercise | null>(null)
+  const [detail, setDetail] = useState<Move | null>(null)
+  const [limit, setLimit] = useState(24)
+  const gymFirst = state.gym?.prefs?.goals.skills === 0
 
   const list = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return EXERCISES.filter(
-      (e) =>
-        (cat === 'all' || e.category === cat) &&
-        (!q ||
-          [e.name, e.blurb, ...e.howTo, ...e.cues, ...e.mistakes, ...e.muscles]
-            .join(' ')
-            .toLowerCase()
-            .includes(q)),
-    )
-  }, [cat, query])
+    const q = normalise(query)
+    const terms = q.split(' ').filter(Boolean)
+    const matches = moves.filter((m) => (cat === 'all' || m.category === cat) && terms.every((term) => m.search.includes(term)))
+    const rank = (m: (typeof moves)[number]) => !q ? 0 : m.name === q ? 0 : m.name.startsWith(q) ? 1 : m.name.includes(q) ? 2 : 3
+    return matches.sort((a, b) => rank(a) - rank(b) || (gymFirst ? Number(b.category === 'gym') - Number(a.category === 'gym') : 0))
+  }, [cat, query, gymFirst])
 
   return (
     <>
@@ -82,14 +95,14 @@ function ExercisePane() {
         <input
           type="search"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => { setQuery(e.target.value); setLimit(24) }}
           aria-label="Search exercises"
           placeholder="Search cues, muscles…"
           className="min-h-11 w-full rounded-control border border-line bg-surface pl-4 pr-12 text-body text-ink outline-none placeholder:text-ink3 focus:border-accent"
         />
         {query ? (
           <button
-            onClick={() => setQuery('')}
+            onClick={() => { setQuery(''); setLimit(24) }}
             aria-label="Clear exercise search"
             className="absolute right-0 top-0 grid h-11 w-11 place-items-center rounded-full text-ink3 transition hover:text-ink"
           >
@@ -100,8 +113,8 @@ function ExercisePane() {
       <div className="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1" role="group" aria-label="Category">
         {CATS.map((c) => (
           <div key={c} className="shrink-0">
-            <ToggleChip active={cat === c} onClick={() => setCat(c)}>
-              {c === 'all' ? 'All' : CATEGORY_LABEL[c]}
+            <ToggleChip active={cat === c} onClick={() => { setCat(c); setLimit(24) }}>
+              {c === 'all' ? 'All' : c === 'gym' ? 'Gym' : CATEGORY_LABEL[c]}
             </ToggleChip>
           </div>
         ))}
@@ -111,7 +124,20 @@ function ExercisePane() {
       </p>
 
       <ul className="mt-2 divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-        {list.map((e) => {
+        {list.slice(0, limit).map(({ exercise: e }) => {
+          if ('pattern' in e) {
+            return (
+              <li key={`gym-${e.id}`}>
+                <button onClick={() => setDetail(e)} aria-label={`${e.name}, gym exercise, ${PATTERN_LABEL[e.pattern]}`} className="flex min-h-[64px] w-full items-center gap-3 px-4 py-3 text-left hover:bg-raised">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-body font-semibold">{e.name}</span>
+                    <span className="mt-1 block text-footnote text-ink2">Gym · {PATTERN_LABEL[e.pattern]} · {e.primary.map((m) => MUSCLE_BY_ID[m].label).join(', ')}</span>
+                  </span>
+                  <Icon name="chevronR" size={16} className="shrink-0 text-ink3" />
+                </button>
+              </li>
+            )
+          }
           const pr = state.prs[e.id]
           const pinned = state.videoLinks[e.id]
           return (
@@ -156,6 +182,7 @@ function ExercisePane() {
           )
         })}
       </ul>
+      {list.length > limit && <Button full variant="secondary" className="mt-3" onClick={() => setLimit(limit + 24)}>Show more exercises</Button>}
       {list.length === 0 ? (
         <div className="mt-6 rounded-card border border-dashed border-line-strong">
           <EmptyState icon="book" title="No matches">
@@ -170,7 +197,12 @@ function ExercisePane() {
         label={detail ? `${detail.name} exercise guide` : 'Exercise guide'}
         wide
       >
-        {detail ? <ExerciseDetail exercise={detail} /> : null}
+        {detail && ('pattern' in detail ? (
+          <div className="space-y-4 p-4 sm:p-6">
+            <h2 className="pr-10 font-display text-title2 font-bold text-ink">{detail.name}</h2>
+            <GymExerciseGuide exercise={detail} />
+          </div>
+        ) : <ExerciseDetail exercise={detail} />)}
       </Modal>
     </>
   )

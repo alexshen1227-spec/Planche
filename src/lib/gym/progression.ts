@@ -5,7 +5,7 @@ import {
   type GymExercise,
   type IntensityTier,
 } from '../../data/gym/exercises'
-import { formatLoad, maxKgFor, roundToStep, stepKgFor, takesAddedLoad, unitFor } from './units'
+import { formatLoad, maxKgFor, roundToStep, stepKgFor, takesAddedLoad, unitFor, unloadedLabel } from './units'
 import type { GymLocation, GymSession, GymSet } from './types'
 
 /**
@@ -390,6 +390,7 @@ export function suggestLoad(input: {
     }
     if (ex.load === 'bodyweight') {
       if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan) }
+      if (unloadedLabel(ex) === 'Band') return { ...base, kind: 'bodyweight', why: `Choose a band that lets you do ${lo}–${hi} controlled reps. Note the band in your session notes.` }
       if (addedLoad) return { ...base, kind: 'bodyweight', why: `Aim for ${lo}–${hi} clean reps. Enter the extra weight you use, or zero for bodyweight.` }
       if (isHardBodyweight(ex)) return { ...base, kind: 'bodyweight', why: `Hard bodyweight movement: ${lo}–${hi} slow, controlled reps, lowering for about three seconds. Stop a rep before form breaks.` }
       return { ...base, kind: 'bodyweight', why: `Bodyweight: aim for ${lo}–${hi} clean reps.` }

@@ -1171,10 +1171,8 @@ export function Onboarding() {
                     {schedule.days} training day{schedule.days === 1 ? '' : 's'} a week, about {schedule.typicalMinutes} minutes on a typical one.
                   </p>
                   <p className="mt-1 text-caption leading-relaxed text-ink3">
-                    That sets your weekly goal to {schedule.weeklyGoal} and your session length to {schedule.sessionMinutes} minutes;
-                    change either in Settings. Three sessions a week is the number most coaching sources land on for
-                    straight-arm work, but with total work equal frequency itself makes little measured difference — pick the
-                    week you will keep.
+                    Your weekly goal is {schedule.weeklyGoal} and your usual session is {schedule.sessionMinutes} minutes.
+                    You can change both in Settings.
                     {sharing ? ` ${sharing}` : ''}
                     {trainable.length > 1 ? ` ${sessionRoom}` : ''}
                     {placeNote ? ` ${placeNote}` : ''}

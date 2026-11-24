@@ -533,6 +533,8 @@ export interface WorkoutRequest {
   insideRest?: { hours: number; ruleHours: number }
   /** The lifts that follow this particular gym-day opener, including after a draft is resumed. */
   gymAfter?: import('./lib/plan/screens').GymPreset
+  /** A planche opener keeps the holds and leaves bent-arm pressing to the lifts that follow. */
+  deferPressing?: true
 }
 
 export interface Workout {

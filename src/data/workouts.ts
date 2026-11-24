@@ -1173,6 +1173,7 @@ export interface SessionBuildOptions {
    * rather than as a shortened day.
    */
   part?: boolean
+  deferPressing?: boolean
   /**
    * The moment the session is built for; the real clock when absent. A plan
    * made for a stated time must be turned into a session for that same time:
@@ -1234,6 +1235,9 @@ export function todaysSession(
   const blocks: Block[] = []
   const adjustments: string[] = []
   const equipment = state.profile.equipment
+  const prefs = state.gym?.prefs
+  const sharesWithLifts = Boolean(prefs && prefs.goals.skills > 0 && Math.max(prefs.goals.strength, prefs.goals.physique) >= Math.max(3, prefs.goals.skills) &&
+    prefs.minutesByDay.filter((minutes) => minutes >= 20).length >= 2)
 
   // An extended warm-up is a coach safety rail and cannot be disabled by the
   // convenience preference.
@@ -1530,7 +1534,7 @@ export function todaysSession(
       plan.strategy === 'intensity' ? Math.max(1, pressDefault - (planchePress ? 1 : 2)) : pressDefault
     blocks.push({
       exerciseId: pressId,
-      sets: light ? 2 : scale(pressSets + (plan.accessoryEmphasis === 'pressing' ? 1 : 0)),
+      sets: light || (sharesWithLifts && plan.accessoryEmphasis !== 'pressing') ? 2 : scale(pressSets + (plan.accessoryEmphasis === 'pressing' ? 1 : 0)),
       target: reps(pressTargetReps),
       restSec: planchePress || plan.strategy === 'intensity' ? Math.max(rAcc, Math.round(rMain * 0.8)) : plan.strategy === 'density' ? Math.min(60, rAcc) : rAcc,
       section: 'strength',
@@ -1549,7 +1553,7 @@ export function todaysSession(
     // different pressing angle instead of the same exercise twice. Intensity
     // keeps one press and stops, for freshness; density keeps one press so the
     // session stays compact; a light day presses once.
-    if (!light && ((plan.strategy !== 'intensity' && plan.strategy !== 'density') || plan.accessoryEmphasis === 'pressing')) {
+    if (!light && ((!sharesWithLifts && plan.strategy !== 'intensity' && plan.strategy !== 'density') || plan.accessoryEmphasis === 'pressing')) {
       const accessoryId = pressId === 'pppu' ? 'pike-pushup' : 'pppu'
       blocks.push({
         exerciseId: accessoryId,
@@ -1608,7 +1612,7 @@ export function todaysSession(
         // lean at a depth the elbows can hold is the repair, not extra load.
         sets: light
           ? 2 + (lockout ? 1 : 0)
-          : scale(
+          : sharesWithLifts && !lockout ? 2 : scale(
               (plan.strategy === 'intensity' || plan.strategy === 'density' ? 2 : plan.strategy === 'volume' && stepId === 'tuck' ? 4 : 3) +
                 (lockout ? 1 : 0),
             ),
@@ -1764,7 +1768,11 @@ export function todaysSession(
   const budget = options.part && minutesOverride !== undefined ? minutesOverride : sessionBudget(state.settings.sessionMinutes, light, minutesOverride)
   // Sides are expanded before trimming, so the budget accounts for the fact
   // that unilateral work costs twice as long.
-  const whole = withSides(lightened)
+  const skillBlocks = options.deferPressing
+    ? lightened.filter((b) => b.role !== 'press' && b.role !== 'pressing').map((b) =>
+        b.section === 'strength' && b.role === 'straight-arm' && !b.emphasis ? { ...b, sets: Math.min(2, b.sets) } : b)
+    : lightened
+  const whole = withSides(skillBlocks)
   const fit = fitToBudget(whole, budget, plan.accessoryEmphasis === 'core', state.settings.stopLatencySec, state.settings.phoneWithinReach)
   const fitted = fit.blocks
   // Whether the budget took anything off: a block, or a set.
@@ -2336,7 +2344,7 @@ export function finalizeFromPlan(
   const plan = planIn.skill === lead && sameInsideRest(planIn, context) ? planIn : buildPlan(state, now, freshCheckIn, context)
   /** Today's coach-built session: one skill, or the line-up mixed. */
   const coachSession = (): Workout => {
-    if (lineup.length === 1) return todaysSession(state, plan, request.minutes, { now, ...(request.focus ? { focus: request.focus } : {}) })
+    if (lineup.length === 1) return todaysSession(state, plan, request.minutes, { now, deferPressing: request.deferPressing, ...(request.focus ? { focus: request.focus } : {}) })
     const plans: Partial<Record<SkillId, CoachPlan>> = { [lead]: plan }
     for (const entry of lineup) {
       plans[entry.skill] ??= buildPlan(skillView(whole, entry.skill), now, freshCheckIn, context)

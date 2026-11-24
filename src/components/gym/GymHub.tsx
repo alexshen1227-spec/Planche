@@ -26,6 +26,7 @@ import { LocationEditor } from './LocationEditor'
 import { ExerciseHistory } from './ExerciseHistory'
 import { bodyweightCapacity } from '../../lib/gym/bodyweight'
 import { GymHistory } from './GymHistory'
+import { GymExerciseGuide } from './ExerciseGuide'
 
 const MINUTES = [20, 30, 45, 60, 75, 90]
 const SKILL_NAME: Record<SkillId, string> = { planche: 'planche', frontlever: 'front lever', handstand: 'handstand', ninety: '90° hold', flag: 'human flag' }
@@ -88,6 +89,7 @@ export function GymHub({
   const [focus, setFocus] = useState<GymFocus | 'auto'>('auto')
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   const [historyOf, setHistoryOf] = useState<string | null>(null)
+  const [guideId, setGuideId] = useState<string | null>(null)
   const [running, setRunning] = useState<GymDraft | null>(null)
   const [resumable, setResumable] = useState<GymDraft | null>(() => loadDraft())
   // What is open is whatever storage holds now: read again when the player closes (a saved session clears it) and when
@@ -508,7 +510,8 @@ export function GymHub({
             {plan.items.map((it) => {
               const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
               return (
-                <li key={it.exerciseId} className="flex items-baseline justify-between gap-3 py-2.5">
+                <li key={it.exerciseId}>
+                  <button onClick={() => setGuideId(ex.id)} aria-label={`Exercise guide for ${ex.name}`} className="flex min-h-11 w-full items-baseline justify-between gap-3 rounded-control py-2.5 text-left hover:bg-raised">
                   <span className="min-w-0">
                     <span className="block text-body font-medium">{ex.name}</span>
                     <span className="block text-caption text-ink3">{it.suggestion.why}</span>
@@ -516,8 +519,9 @@ export function GymHub({
                   <span className="shrink-0 text-right text-footnote tnum text-ink2">
                     {it.sets} × {it.plan.range[0]}–{it.plan.range[1]}{countUnit(ex) === 'seconds' ? ' s' : ''}
                     <br />
-                    {it.suggestion.kg !== undefined ? formatLoad(it.suggestion.kg, unitFor(ex, location)) : ex.load === 'bodyweight' ? 'Bodyweight' : 'Pick a weight'}
+                    {it.suggestion.kg !== undefined || ex.load === 'bodyweight' ? formatLoad(it.suggestion.kg, unitFor(ex, location), ex) : 'Pick a weight'}
                   </span>
+                  </button>
                 </li>
               )
             })}
@@ -572,8 +576,7 @@ export function GymHub({
         )}
         {youth ? (
           <p className="mt-3 text-caption leading-relaxed text-ink3">
-            Careful mode (under 18, or no age set): rep ranges stay at 6 or more, loads go up one step at a time, and lifts
-            that need coaching are not picked unless you mark them a favourite.
+            Careful mode is on. Most lifts start at six or more reps and weights increase one step at a time.
           </p>
         ) : null}
       </Card>
@@ -607,6 +610,9 @@ export function GymHub({
 
       <WeekVolume />
 
+      <Sheet open={guideId !== null} onClose={() => setGuideId(null)} label="Exercise guide">
+        {guideId && <><h2 className="mb-3 text-title2 font-semibold">{GYM_EXERCISE_BY_ID[guideId].name}</h2><GymExerciseGuide exercise={GYM_EXERCISE_BY_ID[guideId]} /></>}
+      </Sheet>
       <Sheet open={historyOf !== null} onClose={() => setHistoryOf(null)} label="Exercise history">
         {historyOf ? <ExerciseHistory exerciseId={historyOf} /> : null}
       </Sheet>

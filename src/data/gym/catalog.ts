@@ -1,3 +1,6 @@
+import type { EquipmentId } from '../../types'
+import { EQUIPMENT_OPTIONS } from '../equipment'
+
 /**
  * The gym side of Fitness Lab: muscles, equipment and movement patterns.
  *
@@ -172,6 +175,8 @@ export type GymEquipmentId =
   | 'ghd'
   | 'sled'
   | 'cones'
+  | 'nordic-anchor'
+  | 'sliders'
 
 export type Unit = 'kg' | 'lb'
 export const LB_PER_KG = 2.2046226218
@@ -226,9 +231,15 @@ export const GYM_EQUIPMENT: GymEquipmentDef[] = [
   { id: 'ghd', label: 'Glute-ham developer', kind: 'bench' },
   { id: 'sled', label: 'Sled', kind: 'accessory', step: { kg: 5, lb: 10 } },
   { id: 'cones', label: 'Cones or mini hurdles', kind: 'accessory' },
+  { id: 'nordic-anchor', label: 'Nordic bench or secure ankle anchor', kind: 'accessory' },
+  { id: 'sliders', label: 'Sliders or towels on a smooth floor', kind: 'accessory' },
 ]
 
 export const GYM_EQUIPMENT_BY_ID = Object.fromEntries(GYM_EQUIPMENT.map((e) => [e.id, e])) as Record<
   GymEquipmentId,
   GymEquipmentDef
 >
+
+export function locationEquipmentLabel(id: EquipmentId | GymEquipmentId): string {
+  return GYM_EQUIPMENT_BY_ID[id as GymEquipmentId]?.label ?? EQUIPMENT_OPTIONS.find((e) => e.id === id)?.label ?? id
+}

@@ -395,13 +395,14 @@ function keyHold(state: AppState, skill: SkillId, blocks: readonly { exerciseId:
  * delts while the session logged twelve or more (holds, push-ups, leans), so
  * the gym kept pressing into a week already far past its target.
  */
-function builtSkill(state: AppState, skills: SkillId[], minutes: number, at: number, kit?: EquipmentId[]): BuiltSkill {
+function builtSkill(state: AppState, skills: SkillId[], minutes: number, at: number, kit?: EquipmentId[], opener = false): BuiltSkill {
   let memo = builtSkills.get(state)
   if (!memo) builtSkills.set(state, (memo = new Map()))
-  const key = `${skills.join(',')}|${minutes}|${at}|${(kit ?? []).join(',')}`
+  const deferPressing = opener && skills[0] === 'planche'
+  const key = `${skills.join(',')}|${minutes}|${at}|${(kit ?? []).join(',')}|${deferPressing}`
   const hit = memo.get(key)
   if (hit) return hit
-  const built = finalizeWorkout(state, { source: 'auto', minutes, skills, ...(kit ? { kit } : {}) }, undefined, at)
+  const built = finalizeWorkout(state, { source: 'auto', minutes, skills, ...(deferPressing ? { deferPressing: true } : {}), ...(kit ? { kit } : {}) }, undefined, at)
   const sets = { push: 0, pull: 0 }
   const rest = { push: 0, pull: 0 }
   const credit: Credit = {}
@@ -495,13 +496,13 @@ function openerBlock(state: AppState, skill: SkillId, at: number, place: GymLoca
   const f = skillFamily(skill)
   const kit = kitAt(state, place)
   const minutes = openerMinutesOf(state, skill, dayMinutes)
-  const hard = f !== 'balance' && familySets(state, [skill], minutes, at, kit)[f] >= 3
+  const hard = f !== 'balance' && builtSkill(state, [skill], minutes, at, kit, true).sets[f] >= 3
   return { minutes, skills: [skill], hard: hard ? [f as Straight] : [], opener: true, kit, placeId: place.id }
 }
 
 /** The request that starts a skill block — an opener with the place's kit beside the athlete's. */
 export function skillRequest(block: SkillBlock): WorkoutRequest {
-  return { source: 'auto', minutes: block.minutes, skills: block.skills, ...(block.kit?.length ? { kit: block.kit } : {}) }
+  return { source: 'auto', minutes: block.minutes, skills: block.skills, ...(block.opener && block.skills[0] === 'planche' ? { deferPressing: true } : {}), ...(block.kit?.length ? { kit: block.kit } : {}) }
 }
 
 /** The state as seen from one place: the planner builds at the active one. */
@@ -1132,6 +1133,7 @@ type KindWhy =
   | 'legs'
   | 'leg-coverage'
   | 'skill-practice'
+  | 'rotate-skills'
 
 interface SkillSlot {
   /** The day's one main session. */
@@ -1451,15 +1453,13 @@ function markHard(state: AppState, at: number, parts: Part[], minutes: number): 
 
 /**
  * The first priority's day, as its line-up: whatever joins it — a partner, a
- * short dose — stays only while the first priority keeps every key-hold set it
- * gets on its own in these minutes. With a 45-minute session a second skill
- * always took the key hold's reach: the tuck planche did four sets beside the
- * handstand where it did six alone, three sessions a week.
+ * short dose — stays while the first priority keeps its working dose.
+ * A longer solo session can add an optional reach set beyond that dose.
  */
 function exposureParts(state: AppState, at: number, parts: Part[], minutes: number): Part[] {
   const lead = parts[0]?.skill
   if (!lead || parts.length === 1) return parts
-  const alone = builtSkill(state, [lead], minutes, at).key[lead] ?? 0
+  const alone = Math.min(builtSkill(state, [lead], minutes, at).key[lead] ?? 0, builtSkill(state, [lead], UNTRIMMED_MINUTES, at).bare)
   const trials = [parts, parts.filter((p) => p.role !== 'maintenance' && p.role !== 'practice'), parts.filter((p) => p.role !== 'partner'), parts.slice(0, 1)]
   for (const trial of trials) {
     if (trial.length === 1) return trial
@@ -2082,6 +2082,41 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
   // and the handstand would otherwise never train.
   const loggedFull = (skill: SkillId, week: number) =>
     state.sessions.some((s) => s.startedAt >= week && s.startedAt < today && s.startedAt < addDays(week, 7) && fullPartIn(s, skill))
+  // Two short training days can leave only one skill slot beside the gym. Share
+  // that slot across weeks, using completed practice so a missed day costs no turn.
+  const trainingMinutes = prefs.minutesByDay.filter((m) => m > 0)
+  if (skills.length > 1 && ctx.wantsGym && trainingMinutes.length <= 2 && trainingMinutes.every((m) => m < MIN_SKILL_MINUTES[2])) {
+    for (const d of days) {
+      const i = d.index
+      const sl = slots[i]
+      if (sl?.kind !== 'calisthenics' || sl.skills[0] !== first || d.assigned || d.pain || sl.painSafe || (i === 0 && ctx.todayKind)) continue
+      const waited = sinceFull(i)
+      const leadWait = waited(first)
+      if (leadWait === null || leadWait >= 12) continue
+      const candidates = skills.slice(1).filter((s) => (waited(s) ?? Infinity) >= 12 && !loggedFull(s, d.week) &&
+        !slots.some((other, j) => j !== i && days[j].week === d.week && fullOn(other, s)))
+        .sort((a, b) => (waited(b) ?? NEVER_TRAINED_DAYS) - (waited(a) ?? NEVER_TRAINED_DAYS))
+      for (const skill of candidates) {
+        const fam = skillFamily(skill)
+        if (fam !== 'balance' && conflict(fam, i)) continue
+        const home = places.cal(i)
+        const view = trains(home, skill) ? home : places.gymCal && trains(places.gymCal, skill) ? places.gymCal : undefined
+        if (!view) continue
+        const parts = lineupParts(view, d, [skill], d.minutes)
+        if (parts[0]?.skill !== skill) continue
+        const built = builtSkill(view, [skill], d.minutes, d.at)
+        if (built.painSafe || !built.key[skill]) continue
+        const families = new Set(parts.filter((p) => p.hard).map((p) => skillFamily(p.skill) as Straight))
+        const presses = pressesHard(built, families)
+        if (presses && conflict('push', i)) continue
+        for (const f of ['push', 'pull'] as const) planned[f] = planned[f].filter((e) => e.i !== i)
+        slots[i] = { ...sl, why: 'rotate-skills', exposure: undefined, urgent: undefined, hint: undefined,
+          placeId: view === places.gymCal ? places.gym?.id : undefined, skills: [skill], parts, families, presses, credit: built.credit }
+        record(i)
+        break
+      }
+    }
+  }
   for (let i = 0; i < days.length; i++) {
     const sl = slots[i]
     const d = days[i]
@@ -2164,8 +2199,12 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
         for (let b = a + 1; b < others.length; b++) {
           const hi = others[a]
           const lo = others[b]
-          for (let guard = 0; guard < inWeek.length && count(lo) > count(hi); guard++) {
-            if (!moveOne(inWeek, hi, lo)) break
+          const recent = (skill: SkillId) => state.sessions.filter((s) => s.startedAt >= addDays(wk, -21) && s.startedAt < wk && fullPartIn(s, skill)).length
+          const higherRecent = recent(hi)
+          const catchingUp = recent(lo) > higherRecent
+          for (let guard = 0; guard < inWeek.length && count(lo) + Number(catchingUp) > count(hi); guard++) {
+            const shorterPartner = catchingUp || (higherRecent >= 2 && count(lo) > count(hi))
+            if (!moveOne(inWeek, hi, lo, shorterPartner)) break
           }
         }
       }
@@ -2173,15 +2212,16 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
   }
 
   /** Gives one of `lo`'s lead or partner parts in these days to `hi`, when the rules allow it; whether one moved. */
-  function moveOne(inWeek: number[], hi: SkillId, lo: SkillId): boolean {
+  function moveOne(inWeek: number[], hi: SkillId, lo: SkillId, shorterPartner: boolean): boolean {
     const fam = skillFamily(hi)
     for (const i of inWeek) {
       const sl = slots[i]
       const d = days[i]
       if (!sl || sl.kind !== 'calisthenics' || d.assigned || sl.painSafe || (i === 0 && ctx.todayKind)) continue
-      if (!sl.parts.some((p) => p.skill === lo && (p.role === 'lead' || p.role === 'partner')) || sl.skills.includes(hi)) continue
-      const view = sl.placeId && places.gymCal ? places.gymCal : places.cal(i)
-      if (!trains(view, hi)) continue
+      if (!fullOn(sl, lo) || fullOn(sl, hi)) continue
+      const current = sl.placeId && places.gymCal ? places.gymCal : places.cal(i)
+      const view = trains(current, hi) ? current : !(i === 0 && places.fixedToday) && places.gymCal && trains(places.gymCal, hi) ? places.gymCal : undefined
+      if (!view || sl.parts.some((p) => p.skill !== lo && !trains(view, p.skill))) continue
       if (fam !== 'balance') {
         if (conflict(fam, i)) continue
         const sessions = (d.week === thisWeek ? done[fam] : 0) + planned[fam].filter((x) => x.i !== i && days[x.i].week === d.week && !x.press).length
@@ -2192,14 +2232,15 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
       if (!trial.length || trial[0].skill !== (sl.parts[0].skill === lo ? hi : sl.parts[0].skill)) continue
       const part = trial.find((p) => p.skill === hi)
       if (!part || (part.role !== 'lead' && part.role !== 'partner')) continue
-      // Beside the first priority, a straight-arm partner short of a hard session is practice: it does not move.
-      if (sl.exposure && fam !== 'balance' && fam !== lead && !part.hard) continue
+      // An established skill can use a shorter partner session to catch up in the
+      // athlete's order. The lead's dose and both rest rules still apply.
+      if (sl.exposure && fam !== 'balance' && fam !== lead && !part.hard && !shorterPartner) continue
       const session = builtSkill(view, trial.map((p) => p.skill), d.minutes, d.at)
       const families = new Set(trial.filter((p) => p.hard).map((p) => skillFamily(p.skill) as Straight))
       const presses = pressesHard(session, families)
       if (presses && (conflict('push', i) || sl.blocked.push)) continue
       if (sl.exposure && !keepsDose(view, trial.map((p) => p.skill), d.minutes, d.at)) continue
-      slots[i] = { ...sl, skills: trial.map((p) => p.skill), parts: trial, families, presses, credit: session.credit }
+      slots[i] = { ...sl, ...(view !== current && places.gym ? { placeId: places.gym.id } : {}), skills: trial.map((p) => p.skill), parts: trial, families, presses, credit: session.credit }
       record(i)
       return true
     }
@@ -2784,8 +2825,10 @@ export function planWeekAhead(
         musclesOff: off,
         ...(spared.length ? { spare: spared } : {}),
         priority,
+        athletePriority: prefs.musclesPriority,
         avoidJoints: d.liftJoints,
         volumeFactor: factor,
+        ...(minutes < d.minutes ? { warmUpMin: AFTER_OPENER_WARM_UP_MIN } : {}),
         favoriteAt: state.gym?.favoriteAt,
         now: d.at,
       })
@@ -2924,7 +2967,7 @@ export function planWeekAhead(
     openerCredit: (i, focus) => {
       const skill = opener(i, focus)
       const at = placeAt(i)
-      return skill && at ? builtSkill(base, [skill], openerMinutesOf(base, skill, days[i].minutes), days[i].at, kitAt(base, at)).credit : {}
+      return skill && at ? builtSkill(base, [skill], openerMinutesOf(base, skill, days[i].minutes), days[i].at, kitAt(base, at), true).credit : {}
     },
     ...(opts.todayFocus && slots[0]?.kind === 'gym' ? { todayFocus: opts.todayFocus } : {}),
     weeklyPress: shared.push && gymWanted && weights.chest > 0 && targets.chest[0] > 0 && focusOpen('push', prefs.musclesOff),
@@ -3033,7 +3076,7 @@ export function planWeekAhead(
     const at = placeAt(i)
     if (!skill || !at) return slot
     const block = openerBlock(base, skill, days[i].at, at, days[i].minutes)
-    const session = builtSkill(base, [skill], block.minutes, days[i].at, block.kit)
+    const session = builtSkill(base, [skill], block.minutes, days[i].at, block.kit, true)
     const part: Part = { skill, role: 'lead', hard: Boolean(block.hard?.length) }
     const mine = skill === skills[0]
     return {
@@ -3564,6 +3607,8 @@ function kindReason(slot: SkillSlot, d: DayCtx, skills: SkillId[], extra: DayExt
       return 'Your muscle goal reserves this session for lower-body strength. Your skill work has its own days this week.'
     case 'skill-practice':
       return 'Today gives your skill a practice session alongside this week’s gym work.'
+    case 'rotate-skills':
+      return 'There is time for one skill today. Your first skill had recent practice, so this session goes to the one that has waited longest.'
     case 'sets':
       return slot.setsNeed
         ? `Today adds working sets toward your muscle goals. ${slot.setsNeed.left === 0 ? 'This is the last open training day this week.' : `You have ${slot.setsNeed.left} more open training ${slot.setsNeed.left === 1 ? 'day' : 'days'} after today.`}`
@@ -3737,7 +3782,7 @@ function assembleDay(
     )
   }
   if (slot.opener && focus) {
-    reasons.push(`The ${skillName(slot.opener)} opens the session while you are fresh — its ordinary ${slot.skillMin}-minute session, logged with your skills — then the ${FOCUS_LABEL[focus].toLowerCase()} lifts.`)
+    reasons.push(`Start with ${slot.skillMin} minutes for ${skillName(slot.opener)}, then do the ${FOCUS_LABEL[focus].toLowerCase()} lifts. The opener counts in your skill history.`)
   }
   if (skillBlock && conservative(state.profile, d.at) && slot.skills.some((s) => skillFamily(s) !== 'balance')) {
     reasons.push('Warm wrists, elbows and shoulders up fully before the holds — the session starts with it, so do not skip it.')
@@ -3772,7 +3817,11 @@ function assembleDay(
   ) {
     const name = groupStale.f === 'lower' ? 'Legs' : groupStale.f === 'push' ? 'Chest, shoulders and triceps' : 'Back and biceps'
     const n = Math.round(groupStale.days)
-    reasons.push(`${name} ${n >= STALE_CAP_DAYS ? 'have not been trained in two weeks or more' : `were last trained ${n} days ago`} — today’s gym session goes there. Pick a different focus on the Gym side to override it.`)
+    if (FOCUS_MUSCLES[groupStale.f].some((m) => lastHit[m] !== undefined)) {
+      reasons.push(`${name} have had the longest break in your log, about ${n} days. Today’s gym session trains them again.`)
+    } else {
+      reasons.push(`${name} have no logged sets yet. Today’s workout gives you a starting point.`)
+    }
   }
   if (focus === 'athletic') {
     reasons.push('Speed and power today: your legs are fresh — nothing hard yesterday or tomorrow — and explosiveness is one of your goals. Jumps and sprints come first, before anything tiring.')
@@ -3809,7 +3858,7 @@ function assembleDay(
   if (extra.keepOut?.length) {
     const names = extra.keepOut.map((m) => MUSCLE_BY_ID[m].label.toLowerCase())
     reasons.push(
-      `This week as planned — your skill sessions and anything already logged — takes ${joinNames(names)} past one and a half times ${names.length > 1 ? 'their' : 'its'} weekly target, so today’s lifts lean away from ${names.length > 1 ? 'them' : 'it'}: other movements take ${names.length > 1 ? 'their' : 'its'} slots, and what the day is named for keeps one movement at two sets (the app’s own planning line; the targets are coaching conventions).`,
+      `The week already has plenty of work for ${joinNames(names)}. Today uses fewer lifts that train ${names.length > 1 ? 'them' : 'that area'}.`,
     )
   }
   if (d.deload.due && d.deload.why) reasons.push(d.deload.why)
@@ -3889,6 +3938,8 @@ function kindShort(slot: SkillSlot, skills: SkillId[], week: { cal: number; gym:
       return 'Lower-body strength for your muscle goal.'
     case 'skill-practice':
       return 'Skill practice alongside your gym sessions.'
+    case 'rotate-skills':
+      return 'A turn for a skill that has waited between sessions.'
     case 'share':
       return share
     default:

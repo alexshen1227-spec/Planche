@@ -3,7 +3,7 @@ import type { Joint } from '../../data/gym/catalog'
 import type { GymDraft } from './draft'
 import { countUnit, estimateOneRepMax, repPlanFor, suggestLoad } from './progression'
 import type { GymExerciseLog, GymLocation, GymSession } from './types'
-import { formatLoad, unitFor } from './units'
+import { formatLoad, unitFor, unloadedLabel } from './units'
 
 /* Pure lines the gym screens print, so each decision can be pinned without a DOM. */
 
@@ -123,6 +123,7 @@ export function noMaxReason(log: GymExerciseLog): string | undefined {
   if (working.some((s) => estimateOneRepMax(s, log.exerciseId) !== null)) return undefined
   if (!ex) return 'No estimated max: this movement is no longer in the catalogue.'
   if (ex.assisted) return 'No estimated max: the weight logged is help, not load.'
+  if (unloadedLabel(ex) === 'Band') return 'Compare reps using the same band and starting stretch.'
   if (ex.count === 'seconds') return 'No estimated max for a hold; the longest hold is what is tracked.'
   if (ex.load === 'bodyweight') return 'No estimated max: only added load is known for a bodyweight movement.'
   if (!working.some((s) => s.kg !== undefined && s.kg > 0)) return 'No estimated max: no weight was logged.'
@@ -162,7 +163,7 @@ export function nextTimeLines(
           : hasLoad
           ? `Next time: ${formatLoad(s.kg, unit)} × ${lo}–${hi}${word}`
           : s.kind === 'bodyweight' || s.kg === 0
-            ? `Next time: ${ex.assisted ? 'no help' : 'bodyweight'} × ${s.targetReps !== undefined ? `${s.targetReps} reps` : `${lo}–${hi}${word}`}`
+            ? `Next time: ${ex.assisted ? 'no help' : unloadedLabel(ex).toLowerCase()} × ${s.targetReps !== undefined ? `${s.targetReps} reps` : `${lo}–${hi}${word}`}`
             : `Next time: no load suggested yet`
     return [{ ...base, text, why: s.why, ...(later ? { superseded: true } : {}) }]
   })

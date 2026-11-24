@@ -8,7 +8,7 @@ import { addDays, weekStart } from '../time'
 import { goalDaysInWeekOf } from '../stats'
 import { missingKit } from '../../data/skills'
 import { readDayMarks, type DayMarks } from './nextBlock'
-import { atActivePlace, gymPlaceOf, insideRestRule, kitAt, MIN_SKILL_MINUTES, placeKit, planToday, skillFamily, type SkillBlock, type TodayPlan } from './planner'
+import { atActivePlace, gymPlaceOf, insideRestRule, kitAt, MIN_SKILL_MINUTES, placeKit, planToday, skillFamily, skillRequest, type SkillBlock, type TodayPlan } from './planner'
 
 /**
  * Decisions the Home and Train screens make about today and this week, kept
@@ -314,7 +314,7 @@ export function gymPlaceLine(choice: GymPlaceChoice | undefined): string | null 
  * says where the plan had it (`calisthenicsPlaceLine`).
  */
 export function calisthenicsRequest(state: AppState, block: SkillBlock, pickedId?: string): WorkoutRequest {
-  const base: WorkoutRequest = { source: 'auto', minutes: block.minutes, skills: block.skills }
+  const base = skillRequest(block)
   const picked = state.gym?.locations.find((l) => l.id === pickedId)
   const kit: EquipmentId[] | undefined = picked ? kitAt(state, picked) : block.kit?.length ? block.kit : placeKit(state)
   return kit?.length ? { ...base, kit } : base
@@ -356,7 +356,7 @@ export function calisthenicsTitle(block: Pick<SkillBlock, 'skills' | 'minutes' |
  * ones already far past it (`spare`, left out when empty). Every place the app
  * builds lifts from a plan passes this, so the steer reaches the session.
  */
-export function steerInput(limits: { priority?: readonly Muscle[]; spare?: readonly Muscle[] }, own: readonly Muscle[] = []): { priority: Muscle[]; spare?: Muscle[] } {
+export function steerInput(limits: { priority?: readonly Muscle[]; spare?: readonly Muscle[] }, own: readonly Muscle[] = []) {
   const spare = [...new Set(limits.spare ?? [])]
-  return { priority: [...new Set([...own, ...(limits.priority ?? [])])], ...(spare.length ? { spare } : {}) }
+  return { priority: [...new Set([...own, ...(limits.priority ?? [])])], athletePriority: own, ...(spare.length ? { spare } : {}) }
 }

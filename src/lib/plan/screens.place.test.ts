@@ -130,8 +130,8 @@ describe('the week’s steer reaches the lifts', () => {
   })
 
   it('passes the week’s spare muscles and priorities to the builder, beside the athlete’s own', () => {
-    expect(steerInput({ priority: ['side-delts'], spare: ['chest', 'chest'] }, ['biceps'])).toEqual({ priority: ['biceps', 'side-delts'], spare: ['chest'] })
-    expect(steerInput({})).toEqual({ priority: [] })
+    expect(steerInput({ priority: ['side-delts'], spare: ['chest', 'chest'] }, ['biceps'])).toEqual({ priority: ['biceps', 'side-delts'], athletePriority: ['biceps'], spare: ['chest'] })
+    expect(steerInput({})).toEqual({ priority: [], athletePriority: [] })
     // And it changes what is built: a push day leaning away from the chest builds other movements.
     const base = { location: GYM_PLACE, minutes: 45, focus: 'push' as const, sessions: [], now: MON }
     const plain = buildGymSession(base)

@@ -173,7 +173,7 @@ describe('1. long days use their minutes', () => {
       expect(firstAdded(b), muscle).toBe(name)
       expect(ex(b.items.find((i) => ex(i.exerciseId).name === name)!.exerciseId).primary).toContain(muscle)
     }
-    expect(firstAdded(build('pull', 60))).toBe('Chest-supported row')
+    expect(firstAdded(build('pull', 60))).toBe('Chest-supported dumbbell row')
     const upper = build('upper', 120, { priority: ['rear-delts'] })
     expect(credit(upper, 'rear-delts')).toBeGreaterThan(credit(build('upper', 120), 'rear-delts'))
   })

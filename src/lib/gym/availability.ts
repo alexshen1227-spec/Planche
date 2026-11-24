@@ -21,9 +21,18 @@ export function canDoHere(exerciseId: string, location: GymLocation | undefined)
   return Boolean(ex) && hasEquipment(location, ex.needs)
 }
 
+const catalogByKit = new WeakMap<ReadonlyArray<LocationEquipment>, { key: string; exercises: GymExercise[] }>()
+const bareFloor: LocationEquipment[] = []
+
 export function availableAt(location: GymLocation | undefined): GymExercise[] {
+  const equipment = location?.equipment ?? bareFloor
+  const key = equipment.join(',')
+  const cached = catalogByKit.get(equipment)
+  if (cached?.key === key) return cached.exercises.slice()
   const have = equipmentAt(location)
-  return GYM_EXERCISES.filter((e) => meetsNeeds(have, e.needs))
+  const exercises = GYM_EXERCISES.filter((e) => meetsNeeds(have, e.needs))
+  catalogByKit.set(equipment, { key, exercises })
+  return exercises.slice()
 }
 
 const RATING_ORDER: Record<Rating | 'unrated', number> = { love: 0, fine: 1, unrated: 2, avoid: 3 }

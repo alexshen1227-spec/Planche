@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-23',
+    title: 'Both skills and chosen muscles on short weeks',
+    area: 'training',
+    notes: [
+      'With two 20-minute days, the plan can alternate your skills across weeks and keep a direct set for a chosen muscle. A planche opener leaves accessory pressing for the gym.',
+      'Your first two gym visits ease you in when you have no established starting level. The plan checks your equipment and recent reps before picking harder variations.',
+      'Tap a lift in your gym plan, open its guide during a workout, or search for it in Learn. Each guide lists the equipment, muscles, technique cue and what to record.',
+    ],
+  },
+  {
+    date: '2026-11-23',
     title: 'A first week that fits your starting point',
     area: 'coach',
     notes: [

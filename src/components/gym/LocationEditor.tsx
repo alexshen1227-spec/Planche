@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { EQUIPMENT_OPTIONS } from '../../data/equipment'
-import { GYM_EQUIPMENT, GYM_EQUIPMENT_BY_ID, type GymEquipmentId, type Unit } from '../../data/gym/catalog'
+import { GYM_EQUIPMENT, locationEquipmentLabel as labelOf, type GymEquipmentId, type Unit } from '../../data/gym/catalog'
 import type { LocationEquipment } from '../../data/gym/exercises'
 import { availableAt } from '../../lib/gym/availability'
 import type { GymLocation } from '../../lib/gym/types'
@@ -10,18 +10,14 @@ import { Button, SegmentedControl, ToggleChip } from '../ds'
 const GROUPS: { title: string; ids: LocationEquipment[] }[] = [
   { title: 'Calisthenics kit', ids: EQUIPMENT_OPTIONS.map((o) => o.id) },
   { title: 'Free weights', ids: ['barbell', 'dumbbells', 'kettlebells', 'ez-bar', 'trap-bar', 'plates', 'dip-belt'] },
-  { title: 'Benches and racks', ids: ['squat-rack', 'bench', 'incline-bench', 'preacher-bench', 'back-extension'] },
+  { title: 'Benches and racks', ids: GYM_EQUIPMENT.filter((e) => e.kind === 'bench').map((e) => e.id) },
   { title: 'Cables', ids: ['cable', 'lat-pulldown', 'cable-row'] },
   {
     title: 'Machines',
     ids: GYM_EQUIPMENT.filter((e) => e.kind === 'machine' && !['lat-pulldown', 'cable-row'].includes(e.id)).map((e) => e.id),
   },
-  { title: 'Other', ids: ['ab-wheel', 'medicine-ball', 'track'] },
+  { title: 'Other', ids: GYM_EQUIPMENT.filter((e) => (e.kind === 'accessory' || e.kind === 'space') && e.id !== 'plates' && e.id !== 'dip-belt').map((e) => e.id) },
 ]
-
-function labelOf(id: LocationEquipment): string {
-  return GYM_EQUIPMENT_BY_ID[id as GymEquipmentId]?.label ?? EQUIPMENT_OPTIONS.find((o) => o.id === id)?.label ?? id
-}
 
 /** Name, units, equipment and top weights for one location. */
 export function LocationEditor({

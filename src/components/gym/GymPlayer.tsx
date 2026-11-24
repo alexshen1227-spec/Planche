@@ -7,11 +7,12 @@ import { pushToast } from '../../lib/toast'
 import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
 import { alternativesFor, availableAt } from '../../lib/gym/availability'
 import { bodyweightCapacity } from '../../lib/gym/bodyweight'
+import { GymExerciseGuide } from './ExerciseGuide'
 import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../lib/gym/builder'
 import { addedSetReps, conservative, dayOfItem, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
 import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, isUnloadedSet, lastPerformance, plyoGate, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GoalWeights, GymLocation, Rating } from '../../lib/gym/types'
-import { displayLoad, entryLoad, formatLoad, stepKgFor, takesAddedLoad, toKg, unitFor } from '../../lib/gym/units'
+import { displayLoad, entryLoad, formatLoad, stepKgFor, takesAddedLoad, toKg, unitFor, unloadedLabel } from '../../lib/gym/units'
 import { doubtedLoad } from '../../lib/gym/state'
 import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
 import { Icon } from '../Icon'
@@ -453,7 +454,7 @@ export function GymPlayer({
                             }
                           />
                         ) : (
-                          <span className="flex-1 text-center text-footnote text-ink3">Bodyweight</span>
+                          <span className="flex-1 text-center text-footnote text-ink3">{unloadedLabel(ex)}</span>
                         )}
                         <Stepper
                           value={s.reps}
@@ -958,7 +959,7 @@ function MenuSheet({
   return (
     <>
       <h2 className="text-title3 font-semibold">{exercise.name}</h2>
-      <p className="mt-1 text-footnote text-ink2">{exercise.cue}</p>
+      <div className="mt-2"><GymExerciseGuide exercise={exercise} /></div>
       <p className="mt-3 text-caption font-medium text-ink3">How do you like it? The planner picks favourites and leaves out avoided ones.</p>
       <div className="mt-2 flex gap-2">
         {choice('love', 'Love')}

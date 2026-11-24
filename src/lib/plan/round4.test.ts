@@ -84,6 +84,7 @@ function buildLifts(s: AppState, g: ReturnType<typeof gymToday>, minutes: number
     youth: conservative(s.profile, t),
     goals: s.gym!.prefs!.goals,
     priority: [...new Set([...s.gym!.prefs!.musclesPriority, ...g.priority])],
+    athletePriority: s.gym!.prefs!.musclesPriority,
     now: t,
   })
 }

@@ -77,10 +77,9 @@ export function AgeAndSafety({
       <div className="rounded-inner bg-raised p-4 text-footnote leading-relaxed text-ink2" aria-live="polite">
         {careful ? (
           <p>
-            <strong className="text-ink">Careful mode is on{!ageKnown ? ' until you add your age' : ''}.</strong> Rep ranges stay at 6 or more
-            with no max testing (maxes are estimated from your sets), loads go up one step at a time, lifts that need
-            coaching are not picked unless you choose them, lighter weeks come sooner, and straight-arm skills always
-            start with a full warm-up.
+            <strong className="text-ink">Careful mode is on{!ageKnown ? ' until you add your age' : ''}.</strong> Most lifts start at six or more
+            reps. Weights increase one step at a time. The gym estimates your max from logged sets. Lighter weeks come
+            sooner and straight-arm skills begin with a full warm-up.
           </p>
         ) : (
           <p>
