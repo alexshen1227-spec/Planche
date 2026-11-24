@@ -318,6 +318,8 @@ export function planGymExercises(input: GymSessionInput) {
     plyoGate(e, sessions, youth, now).allowed
   const focus = input.focus ?? nextFocus(sessions, now, input.musclesOff)
   const introductory = Boolean(input.capacity?.introductory && focus !== 'athletic')
+  const fullPriorityDose = !introductory && factor >= 1 && (input.goals?.physique ?? 0) >= 3 &&
+    (input.goals?.skills ?? 0) > 0 && requested.size > 0
   const here = availableAt(location)
   const cleanCoverage = new Set<Muscle>()
   if (spare.size && requested.size) {
@@ -502,8 +504,9 @@ export function planGymExercises(input: GymSessionInput) {
       used.add(movement(pick))
       const extraLateral = lateralAccessory && pick.pattern === 'lateral-raise'
       const extraQuad = quadAccessory && pick.pattern === 'knee-extension'
-      items.push(makeItem(pick, wantsExplosive, spared || extraLateral ? 2 : extraQuad ? 3 : undefined))
-      if (spared || extraLateral || extraQuad) steered.add(pick.id)
+      const limitAccessory = extraLateral && !fullPriorityDose
+      items.push(makeItem(pick, wantsExplosive, spared || limitAccessory ? 2 : extraQuad ? 3 : undefined))
+      if (spared || limitAccessory || extraQuad) steered.add(pick.id)
     }
     // Keep the first compound(s) that define the day, then protect a direct exercise
     // for each requested muscle before spending time on another angle of the same lift.
@@ -517,7 +520,7 @@ export function planGymExercises(input: GymSessionInput) {
             e.primary.includes(muscle) && usable(e) && !spareIn(e) && !technicalPenalty(e))
           const best = options.sort((a, b) => scoreOf(a) - scoreOf(b) || a.primary.length - b.primary.length)[0]
           if (best) {
-            const addition = makeItem(best, false, 3)
+            const addition = makeItem(best, false, fullPriorityDose && requested.has(muscle) ? 4 : 3)
             items.push(addition)
             used.add(movement(best))
             steered.add(best.id)
@@ -554,7 +557,9 @@ export function planGymExercises(input: GymSessionInput) {
     const blocks = items.reduce((m, it) => m + blockMinutes(it.sets, it.restSec, GYM_EXERCISE_BY_ID[it.exerciseId].dose?.workSec), 0)
     // A brief visit finishes at its last set. Longer visits keep the usual
     // allowance to change equipment, rerack weights and record the workout.
-    const finalRest = minutes >= 15 && minutes < 20 ? (items.at(-1)?.restSec ?? 0) / 60 : 0
+    const lastRest = items.at(-1)?.restSec ?? 0
+    const finalRest = minutes >= 15 && minutes < 20 ? lastRest / 60 :
+      fullPriorityDose && warm <= 2 && minutes <= 30 ? Math.max(0, lastRest - 30) / 60 : 0
     return warm + blocks - finalRest
   }
   let trimmed = false

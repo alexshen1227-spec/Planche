@@ -280,6 +280,17 @@ describe('deloads and goals', () => {
 })
 
 describe('the builder under the planner', () => {
+  it('fits four direct sets for each selected accessory beside the named lower-body work on a recovered mixed training day', () => {
+    const plan = buildGymSession({ location: { ...gymA, equipment: ['floor', 'dumbbells', 'incline-bench', 'pole'] },
+      minutes: 45, focus: 'lower', sessions: [], goals: { strength: 2, power: 0, physique: 5, skills: 5, endurance: 0 },
+      priority: ['side-delts', 'calves'], athletePriority: ['side-delts', 'calves'] })
+    const patterns = plan.items.map((item) => GYM_EXERCISE_BY_ID[item.exerciseId].pattern)
+    expect(patterns).toEqual(expect.arrayContaining(['squat', 'hinge']))
+    for (const m of ['side-delts', 'calves'] as const) {
+      expect(plan.items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes(m)).reduce((sum, it) => sum + it.sets, 0)).toBeGreaterThanOrEqual(4)
+    }
+    expect(plan.estimatedMin).toBeLessThanOrEqual(45)
+  })
   it('puts explosive work first when power matters, and favours a lagging muscle', () => {
     const goals = { strength: 2, power: 4, physique: 3, skills: 3, endurance: 0 }
     const p = buildGymSession({ location: gymA, minutes: 75, focus: 'push', sessions: [], goals, priority: ['chest-upper'] })

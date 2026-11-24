@@ -478,9 +478,15 @@ const isFirst = (state: AppState, skill: SkillId) => trainedSkills(state)[0] ===
 /** A gym day's opener minutes for this skill on a day of this many minutes (`openerMinutesFor`). */
 function openerMinutesOf(state: AppState, skill: SkillId, dayMinutes: number, at: number, place: GymLocation): number {
   const budget = openerMinutesFor(isFirst(state, skill), dayMinutes)
-  if (skill !== 'frontlever') return budget
+  const prefs = state.gym?.prefs
+  const shareMinutes = prefs && prefs.goals.physique >= 3 && prefs.musclesPriority.length > 0
+  if (skill !== 'frontlever' && !shareMinutes) return budget
   const practice = builtSkill(state, [skill], budget, at, kitAt(state, place), true)
-  return Math.min(budget, Math.max(MIN_SKILL_MINUTES[1], practice.minutes))
+  const fitted = Math.min(budget, Math.max(MIN_SKILL_MINUTES[1], practice.minutes))
+  if (skill === 'frontlever' || fitted === budget) return fitted
+  const rebuilt = builtSkill(state, [skill], fitted, at, kitAt(state, place), true)
+  return rebuilt.key[skill] === practice.key[skill] && rebuilt.rest.push === practice.rest.push &&
+    rebuilt.rest.pull === practice.rest.pull && rebuilt.minutes === practice.minutes ? fitted : budget
 }
 
 /**
