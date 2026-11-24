@@ -1,4 +1,5 @@
-import type { CheckIn, SetLog, Settings, Workout } from '../types'
+import type { AppState, CheckIn, SetLog, Settings, Workout } from '../types'
+import { readinessTimeline } from './signals'
 import { pushToast } from './toast'
 
 /**
@@ -47,6 +48,8 @@ export interface SessionDraft {
   endedAt?: number
   /** The athlete chose to finish before the plan was complete. */
   finishedEarly?: boolean
+  /** The set the athlete reported on. Only a report made during rest can return there after a correction. */
+  attemptReport?: { at: number; setAt: number; interruptedRest: boolean }
   restTotal?: number
   checkIn?: CheckIn
   /** Per-set stop setup carried to the next hold. */
@@ -64,6 +67,21 @@ export interface SessionDraft {
 }
 
 export type DraftInput = Omit<SessionDraft, 'v' | 'savedAt'>
+
+export function restoredAttemptReport(state: AppState, draft?: SessionDraft | null) {
+  if (!draft?.logs.length) return null
+  const saved = draft.attemptReport
+  const report = readinessTimeline(state).reverse().find((entry) =>
+    entry.source === 'attempt' && entry.joints !== 'good' && entry.at >= draft.startedAt &&
+    (saved ? entry.at === saved.at : entry.at <= draft.savedAt),
+  )
+  if (!report || report.joints === 'good') return null
+  return {
+    at: report.at, joints: report.joints, regions: report.regions ?? [],
+    setAt: saved?.setAt ?? draft.logs[draft.logs.length - 1].at,
+    interruptedRest: saved?.interruptedRest ?? draft.phase !== 'summary',
+  }
+}
 
 /**
  * Restore choices made inside the session before falling back to Settings.

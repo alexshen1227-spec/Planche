@@ -40,7 +40,7 @@ import { applySession } from '../lib/engine'
 import { sfx, speak, buzz } from '../lib/audio'
 import { confetti } from '../lib/confetti'
 import { useWakeLock } from '../lib/wakeLock'
-import { clearDraft, restoredSessionSetup, saveDraft, type SessionDraft } from '../lib/draft'
+import { clearDraft, restoredAttemptReport, restoredSessionSetup, saveDraft, type SessionDraft } from '../lib/draft'
 import { countsSkillDay, remainingSkillWork } from '../lib/skillSession'
 import { rememberNextBlock } from '../lib/plan/nextBlock'
 import { useFormRecorder, type RecorderStatus } from '../lib/recorder'
@@ -358,9 +358,11 @@ export function SessionPlayer({
     !restoredSetup.walkedBack,
     state.settings.walkBackSec,
   )
+  const [attemptReport, setAttemptReport] = useState(() => restoredAttemptReport(state, resumeFrom))
+  const [editingSymptom, setEditingSymptom] = useState(false)
   const [phase, setPhase] = useState<Phase>(
     resumeFrom
-      ? resumeFrom.phase === 'summary'
+      ? resumeFrom.phase === 'summary' || attemptReport
         ? 'summary'
         : resumeFrom.phase === 'rest' && (resumeFrom.restEndsAt ?? 0) > Date.now()
           ? 'rest'
@@ -457,7 +459,7 @@ export function SessionPlayer({
   const [busyOps, setBusyOps] = useState<Set<string>>(() => new Set())
   /** The app is hidden; nothing that was running keeps running unseen. */
   const [suspended, setSuspended] = useState(false)
-  const [finishedEarly, setFinishedEarly] = useState(resumeFrom?.finishedEarly === true)
+  const [finishedEarly, setFinishedEarly] = useState(resumeFrom?.finishedEarly === true || attemptReport?.interruptedRest === true)
   const recorder = useFormRecorder()
   const [showCheckIn, setShowCheckIn] = useState(askCheckIn && !resumeFrom)
   const [insight, setInsight] = useState<{ delta: number; label: string } | null>(null)
@@ -477,7 +479,7 @@ export function SessionPlayer({
    * reviewing clips, rating sets and writing notes is not training; saving
    * with Date.now() used to add all of it to the session's duration.
    */
-  const endedAtRef = useRef(resumeFrom?.endedAt ?? 0)
+  const endedAtRef = useRef(resumeFrom?.endedAt ?? attemptReport?.at ?? 0)
   const restoredPausedMs =
     Math.max(0, resumeFrom?.pausedMs ?? 0) +
     (resumeFrom?.startedAt && resumeFrom.pausedAt
@@ -713,7 +715,7 @@ export function SessionPlayer({
         logs,
         wasHolding: phase === 'hold',
         holdElapsed: elapsed,
-        restEndsAt: phase === 'rest' ? restEnd : null,
+        restEndsAt: phase === 'rest' || attemptReport?.interruptedRest ? restEnd : null,
         restTotal,
         ...(checkIn ? { checkIn } : {}),
         // These are live session choices. Falling back to Settings after a
@@ -731,6 +733,7 @@ export function SessionPlayer({
           : {}),
         ...(endedAtRef.current ? { endedAt: endedAtRef.current } : {}),
         ...(finishedEarly ? { finishedEarly: true } : {}),
+        ...(attemptReport ? { attemptReport: { at: attemptReport.at, setAt: attemptReport.setAt, interruptedRest: attemptReport.interruptedRest } } : {}),
         ...(Object.keys(blockLogAts).length ? { blockLogAts } : {}),
         rpe,
         notes,
@@ -839,6 +842,7 @@ export function SessionPlayer({
     walkedBack,
     cameraOn,
     finishedEarly,
+    attemptReport,
     blockLogAts,
   ])
 
@@ -873,7 +877,7 @@ export function SessionPlayer({
   // Countdown cues for lead-in and rest: spoken when voice is on, ticks otherwise.
   useEffect(() => {
     if (phase !== 'lead' && phase !== 'rest') return
-    if (phase === 'rest' && (problemReportOpen || reviewOpen)) return
+    if (phase === 'rest' && (problemReportOpen || reviewOpen || editingSymptom)) return
     const remaining = phase === 'lead' ? leadRemaining : restRemaining
     const whole = Math.ceil(remaining)
     if (whole <= 3 && whole >= 1 && whole !== lastBeepRef.current) {
@@ -881,7 +885,7 @@ export function SessionPlayer({
       if (state.settings.voice) speak(String(whole))
       else if (state.settings.beeps) sfx.tick()
     }
-  }, [phase, leadRemaining, restRemaining, problemReportOpen, reviewOpen, state.settings.beeps, state.settings.voice])
+  }, [phase, leadRemaining, restRemaining, problemReportOpen, reviewOpen, editingSymptom, state.settings.beeps, state.settings.voice])
 
   // Lead-in finished → the hold starts.
   useEffect(() => {
@@ -918,13 +922,13 @@ export function SessionPlayer({
   // Rest finished → back to ready. Never underneath an open review or report:
   // finishing the rest must not dismiss the clip someone is looking at.
   useEffect(() => {
-    if (phase === 'rest' && restRemaining <= 0 && !problemReportOpen && !reviewOpen) {
+    if (phase === 'rest' && restRemaining <= 0 && !problemReportOpen && !reviewOpen && !editingSymptom) {
       sfx.go()
       if (state.settings.voice) speak('Rest over')
       lastBeepRef.current = -1
       setPhase('ready')
     }
-  }, [phase, restRemaining, problemReportOpen, reviewOpen, state.settings.voice])
+  }, [phase, restRemaining, problemReportOpen, reviewOpen, editingSymptom, state.settings.voice])
 
   // The live elbow cue (beta): only on a filmed hold of a position whose
   // profile checks the elbows, and only when the athlete turned it on.
@@ -1339,13 +1343,17 @@ export function SessionPlayer({
 
   /** A joint report from the middle of a session reaches the record now, saved session or not. */
   const recordAttemptSymptom = useCallback(
-    (symptom: AttemptSymptom) => {
+    (symptom: AttemptSymptom, setAt: number) => {
+      const at = Date.now()
+      const interruptedRest = phase === 'rest'
       dispatch({
         type: 'RECORD_SYMPTOM',
-        event: { at: Date.now(), joints: symptom.joints, regions: symptom.regions, source: 'attempt' },
+        event: { at, ...symptom, source: 'attempt' },
       })
+      setAttemptReport({ at, ...symptom, setAt, interruptedRest })
+      if (interruptedRest) enterSummary(true)
     },
-    [dispatch],
+    [dispatch, phase, enterSummary],
   )
 
   /**
@@ -1370,12 +1378,21 @@ export function SessionPlayer({
   /** A mis-tapped report is withdrawn by a correction, never deleted — history stays honest. */
   const undoAttemptSymptom = useCallback(
     (symptom: AttemptSymptom) => {
+      if (!attemptReport) return
       dispatch({
         type: 'RECORD_SYMPTOM',
-        event: { at: Date.now(), joints: symptom.joints, regions: symptom.regions, source: 'attempt', correction: true },
+        event: { at: Math.max(Date.now(), attemptReport.at), ...symptom, source: 'attempt', correction: true, correctsAt: attemptReport.at },
       })
+      setAttemptReport(null)
+      if (attemptReport.interruptedRest) {
+        pausedMsRef.current += Math.max(0, Date.now() - endedAtRef.current)
+        endedAtRef.current = 0
+        setFinishedEarly(false)
+        setNow(Date.now())
+        setPhase(restEnd > Date.now() ? 'rest' : 'ready')
+      }
     },
-    [dispatch],
+    [dispatch, attemptReport, restEnd],
   )
 
   const adjustLastLog = useCallback((delta: number) => {
@@ -1537,7 +1554,7 @@ export function SessionPlayer({
     const savedAt = Date.now()
     const endedAt = endedAtRef.current || savedAt
     const partial = finishedEarly || logs.length < totalSets || Boolean(workout.deferredBlocks?.length)
-    const remaining = partial && workout.kind !== 'micro' ? remainingSkillWork(workout, logs, blockLogAts) : undefined
+    const remaining = partial && !attemptReport && workout.kind !== 'micro' ? remainingSkillWork(workout, logs, blockLogAts) : undefined
     const lead: SkillId = workout.skills?.[0] ?? 'planche'
     // What each other skill was on, and what the coach gave it today.
     const skillNotes = sessionSkillSteps(state)
@@ -1653,7 +1670,7 @@ export function SessionPlayer({
     const rungs = rungsOpenedBy(current, part)
     setRungsOpened(rungs)
     savedSessionIdRef.current = session.id
-    if (workout.request?.gymAfter && !session.remaining && !isPainSafe(workout) && countsSkillDay(session)) rememberNextBlock(workout.request.gymAfter, savedAt, session.id)
+    if (workout.request?.gymAfter && !attemptReport && !session.remaining && !isPainSafe(workout) && countsSkillDay(session)) rememberNextBlock(workout.request.gymAfter, savedAt, session.id)
     clearDraft()
     setEvents(ev)
     setSavedSession(session)
@@ -1662,10 +1679,10 @@ export function SessionPlayer({
     sfx.done()
     // A session with a pain report in it is not one to throw confetti over,
     // whatever else it logged.
-    if (painReportedIn(next, session)) return
+    if (attemptReport || painReportedIn(next, session)) return
     if (ev.unlockedStep) confetti(2)
     else if (ev.prs.length > 0 || rungs.length > 0) confetti(1)
-  }, [workout, state, logs, rpe, notes, dispatch, getState, onExit, checkIn, finishedEarly, totalSets, blockLogAts])
+  }, [workout, state, logs, rpe, notes, dispatch, getState, onExit, checkIn, finishedEarly, totalSets, blockLogAts, attemptReport])
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -2522,7 +2539,7 @@ export function SessionPlayer({
       return (
         <div className="relative mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-10 text-center">
           <div className="mt-4 text-body font-medium uppercase tracking-wide text-ink3">
-            {restRemaining <= 0 && (reviewOpen || problemReportOpen) ? 'Rest over — finish reviewing to continue' : 'Rest'}
+            {restRemaining <= 0 && (reviewOpen || problemReportOpen || editingSymptom) ? 'Rest over — finish reviewing to continue' : 'Rest'}
           </div>
           <ProgressRing value={restRemaining / Math.max(1, total)} size={Math.min(210, ringSize)} stroke={10} className="mt-4">
             <div>
@@ -2571,9 +2588,8 @@ export function SessionPlayer({
               log={lastLog}
               askReason={lastLog.kind === 'hold' && (lastLog.section === 'main' || lastLog.section === 'strength')}
               onReason={(reason) => setEndReason(lastLog.at, reason)}
-              onSymptom={recordAttemptSymptom}
-              onUndoSymptom={undoAttemptSymptom}
-              onEndSession={() => enterSummary(true)}
+              onSymptom={(report) => recordAttemptSymptom(report, lastLog.at)}
+              onEditingChange={setEditingSymptom}
             />
           ) : null}
           {lastLog?.kind === 'hold' &&
@@ -2706,7 +2722,7 @@ export function SessionPlayer({
     // The last *training* set: a session ends on its cool-down, and the
     // summary once reported a stretch as "Last set" above a question about a
     // planche lean.
-    const lastSet = summaryLastSet(logs)
+    const lastSet = (attemptReport && logs.find((set) => set.at === attemptReport.setAt)) || summaryLastSet(logs)
     const lastNote = lastSet ? timingNote(lastSet, state.settings.walkBackSec) : null
     const totalCaption = holdTotalCaption(logs)
     // The first time an assumed walk took off more than half a hold: say it can be measured, once.
@@ -2722,12 +2738,16 @@ export function SessionPlayer({
     return (
       <div className="mx-auto w-full max-w-lg px-5 pb-10">
         <h1 className="mt-6 text-center font-display text-title1 font-bold text-ink">
-          {finishedEarly ? 'Finished early' : 'Session done'}
+          {attemptReport?.interruptedRest ? 'Training stopped' : finishedEarly ? 'Finished early' : 'Session done'}
         </h1>
-        <p className="mt-1 text-center text-footnote text-ink2">Review and save — nothing is kept until you do.</p>
+        <p className="mt-1 text-center text-footnote text-ink2">{attemptReport
+          ? 'Your joint report is saved. Review and save the sets you completed.'
+          : 'Review and save — nothing is kept until you do.'}</p>
         {doneSets < totalSets ? (
           <p className="mx-auto mt-2 max-w-sm text-center text-footnote leading-relaxed text-ink3">
-            {doneSets} of {totalSets} planned rounds done. Save the sets you logged. You can return to unfinished working rounds today.
+            {doneSets} of {totalSets} planned rounds done. {attemptReport
+              ? 'The remaining rounds have been dropped for this session.'
+              : 'Save the sets you logged. You can return to unfinished working rounds today.'}
           </p>
         ) : null}
         <div className="mt-4 grid grid-cols-3 gap-2.5">
@@ -2773,7 +2793,8 @@ export function SessionPlayer({
               log={lastSet}
               askReason={lastSet.kind === 'hold' && (lastSet.section === 'main' || lastSet.section === 'strength')}
               onReason={(reason) => setEndReason(lastSet.at, reason)}
-              onSymptom={recordAttemptSymptom}
+              recorded={attemptReport}
+              onSymptom={(report) => recordAttemptSymptom(report, lastSet.at)}
               onUndoSymptom={undoAttemptSymptom}
             />
           </div>

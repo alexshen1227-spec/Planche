@@ -356,6 +356,8 @@ export interface SymptomEvent {
   energy?: CheckIn['energy']
   /** True when this entry corrects an accidental report rather than claiming recovery. */
   correction?: boolean
+  /** Original report time. Older corrections referred to the most recent complaint. */
+  correctsAt?: number
 }
 
 /**

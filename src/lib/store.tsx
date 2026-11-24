@@ -414,6 +414,7 @@ function sanitizeSymptoms(raw: unknown): SymptomEvent[] {
       source: typeof c.source === 'string' && SYMPTOM_SOURCES.has(c.source) ? c.source : 'manual',
       ...(typeof c.energy === 'string' && ENERGY_STATES.has(c.energy) ? { energy: c.energy } : {}),
       ...(c.correction === true ? { correction: true } : {}),
+      ...(c.correction === true && isTime(c.correctsAt) && c.correctsAt <= c.at ? { correctsAt: c.correctsAt } : {}),
     })
   }
   return out.sort((a, b) => a.at - b.at).slice(-MAX_SYMPTOMS)
@@ -1440,7 +1441,8 @@ function stamp(state: AppState, keys: string[], at = Date.now()): Record<string,
 function appendSymptom(state: AppState, input: SymptomInput): AppState {
   const existing = state.symptoms ?? []
   // The same answer arriving twice (a re-render, a resumed draft) is one report.
-  if (existing.some((e) => e.at === input.at && e.source === input.source && e.joints === input.joints)) return state
+  if (existing.some((e) => e.at === input.at && e.source === input.source && e.joints === input.joints &&
+    Boolean(e.correction) === Boolean(input.correction) && e.correctsAt === input.correctsAt)) return state
   const regions = (input.regions ?? []).filter((r) => REGION_IDS.has(r))
   const event: SymptomEvent = {
     id: input.id ?? newId(),
@@ -1450,6 +1452,7 @@ function appendSymptom(state: AppState, input: SymptomInput): AppState {
     source: input.source,
     ...(input.energy ? { energy: input.energy } : {}),
     ...(input.correction ? { correction: true } : {}),
+    ...(input.correction && isTime(input.correctsAt) && input.correctsAt <= input.at ? { correctsAt: input.correctsAt } : {}),
   }
   return {
     ...state,

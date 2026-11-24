@@ -291,9 +291,9 @@ export interface ReadinessAnswer {
  * left out: a future record cannot outrank a real past pain report. A
  * correction removes the report it corrects instead of counting as recovery.
  */
-export function readinessTimeline(state: AppState, now = Date.now(), fresh?: CheckIn): ReadinessAnswer[] {
+export function readinessTimeline(state: Pick<AppState, 'sessions' | 'symptoms'>, now = Date.now(), fresh?: CheckIn): ReadinessAnswer[] {
   const byAt = new Map<number, ReadinessAnswer>()
-  const corrections: number[] = []
+  const corrections: { at: number; correctsAt?: number }[] = []
   const add = (answer: ReadinessAnswer) => {
     if (answer.at > now + CLOCK_SKEW_MS) return
     const existing = byAt.get(answer.at)
@@ -307,7 +307,7 @@ export function readinessTimeline(state: AppState, now = Date.now(), fresh?: Che
   }
   for (const event of state.symptoms ?? []) {
     if (event.correction) {
-      if (event.at <= now + CLOCK_SKEW_MS) corrections.push(event.at)
+      if (event.at <= now + CLOCK_SKEW_MS) corrections.push(event)
       continue
     }
     add({ joints: event.joints, energy: event.energy, at: event.at, regions: event.regions, source: event.source })
@@ -324,10 +324,9 @@ export function readinessTimeline(state: AppState, now = Date.now(), fresh?: Che
     })
   }
   const timeline = [...byAt.values()].sort((a, b) => a.at - b.at)
-  // Each correction withdraws the most recent complaint made before it.
-  for (const at of corrections.sort((a, b) => a - b)) {
+  for (const { at, correctsAt } of corrections.sort((a, b) => a.at - b.at)) {
     for (let i = timeline.length - 1; i >= 0; i--) {
-      if (timeline[i].at <= at && timeline[i].joints !== 'good') {
+      if ((correctsAt === undefined ? timeline[i].at <= at : timeline[i].at === correctsAt) && timeline[i].joints !== 'good') {
         timeline.splice(i, 1)
         break
       }

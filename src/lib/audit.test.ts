@@ -434,6 +434,17 @@ describe('a mistaken joint report can be withdrawn without rewriting history', (
     expect(complaints.map((r) => r.at)).toEqual([newer.at])
   })
 
+  it('a targeted correction withdraws only the selected report even if another arrived before the correction', () => {
+    let state = athlete('tuck')
+    for (const [at, region] of [[NOW - 3000, 'wrist'], [NOW - 2000, 'elbow']] as const) {
+      state = reducer(state, { type: 'RECORD_SYMPTOM', event: { at, joints: 'pain', regions: [region], source: 'attempt' } })
+    }
+    for (const at of [NOW - 1000, NOW]) {
+      state = reducer(state, { type: 'RECORD_SYMPTOM', event: { at, correctsAt: NOW - 3000, joints: 'pain', source: 'attempt', correction: true } })
+    }
+    expect(readinessTimeline(state, NOW).map((r) => r.regions)).toEqual([['elbow']])
+  })
+
   it('a withdrawn complaint no longer costs the strategy that preceded it', () => {
     // Held to the limit, so each is a measurement the reward can read.
     const limit = { endReason: 'effort' as const }

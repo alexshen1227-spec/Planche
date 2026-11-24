@@ -61,8 +61,7 @@ function Chip({
  *
  * Two equally long holds do not mean the same thing when one stopped at the
  * target and the other fell out of balance, and the timer cannot tell them
- * apart. Nothing here blocks: an unanswered reason stays unknown, which is
- * different from "at target". The pain control is independent of the reason,
+ * apart. An unanswered reason stays unknown. The pain control is independent of the reason,
  * because a hold can end on balance *and* hurt; a report reaches the joint
  * record immediately, so it survives even if the session is never saved.
  */
@@ -70,26 +69,26 @@ export function AttemptEnd({
   log,
   askReason,
   onReason,
+  recorded,
   onSymptom,
   onUndoSymptom,
-  onEndSession,
+  onEditingChange,
 }: {
   log: SetLog
   /** Offer the end-reason chips (timed working holds); the pain control is always offered. */
   askReason: boolean
   onReason: (reason: EndReason | undefined) => void
+  recorded?: AttemptSymptom | null
   onSymptom: (symptom: AttemptSymptom) => void
   /** Withdraw the report just made — a mis-tap must not lock out a week of loading. */
   onUndoSymptom?: (symptom: AttemptSymptom) => void
-  /** Offered after a report, so stopping is one tap. Absent when already finishing. */
-  onEndSession?: () => void
+  /** Keep the rest clock from dismissing an unfinished report. */
+  onEditingChange?: (open: boolean) => void
 }) {
   const [otherOpen, setOtherOpen] = useState(log.endReason !== undefined && log.endReason !== 'target')
   const [hurtOpen, setHurtOpen] = useState(false)
   const [severity, setSeverity] = useState<AttemptSymptom['joints'] | null>(null)
   const [regions, setRegions] = useState<BodyRegion[]>([])
-  const [recorded, setRecorded] = useState<AttemptSymptom | null>(null)
-  const [adviceDismissed, setAdviceDismissed] = useState(false)
   const reasonId = `end-reason-${log.at}`
   const short = log.value < log.target && !log.calledAtTarget
   const moreReasons = short ? OTHER_REASONS.filter((r) => r !== 'interruption') : OTHER_REASONS
@@ -140,54 +139,24 @@ export function AttemptEnd({
 
       <div className={askReason ? 'mt-3' : ''}>
         {recorded ? (
-          adviceDismissed ? (
-            <p className="text-[12px] text-ink3" role="status">
-              {recorded.joints === 'pain' ? 'Pain' : 'Discomfort'}
-              {where(recorded.regions)} recorded.
+          <div className="rounded-xl border border-danger/30 bg-danger-soft p-3" role="status">
+            <p className="text-[12.5px] leading-relaxed text-ink">
+              {recorded.joints === 'pain' ? 'Pain' : 'Discomfort'}{where(recorded.regions)} recorded.
+              Your next plan will take this into account.
             </p>
-          ) : (
-            <div className="rounded-xl border border-danger/30 bg-danger-soft p-3" role="status">
-              <p className="text-[12.5px] leading-relaxed text-ink">
-                Recorded: {recorded.joints === 'pain' ? 'pain' : 'discomfort'}
-                {where(recorded.regions)}. It stays on record even if this session is not saved, and your next plans
-                will account for it.
-              </p>
-              <p className="mt-1 text-[12.5px] leading-relaxed text-ink2">
-                When a joint hurts, loaded work should stop for today — pushing through is how a niggle becomes an
-                injury. Swelling, numbness, or pain that is still there tomorrow needs qualified medical advice.
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {onEndSession ? (
-                  <button
-                    onClick={onEndSession}
-                    className="min-h-11 flex-1 rounded-xl bg-danger-solid px-3 py-2 text-[13px] font-semibold text-white"
-                  >
-                    End the session here
-                  </button>
-                ) : null}
-                <button
-                  onClick={() => setAdviceDismissed(true)}
-                  className="min-h-11 flex-1 rounded-xl border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
-                >
-                  {onEndSession ? 'Carry on carefully' : 'OK'}
-                </button>
-              </div>
-              {onUndoSymptom ? (
-                <button
-                  onClick={() => {
-                    onUndoSymptom(recorded)
-                    setRecorded(null)
-                    setAdviceDismissed(false)
-                    setSeverity(null)
-                    setRegions([])
-                  }}
-                  className="mt-1.5 min-h-9 px-1 text-[12px] font-medium text-ink3 underline-offset-2 hover:text-ink hover:underline"
-                >
-                  Undo — I tapped that by mistake
-                </button>
-              ) : null}
-            </div>
-          )
+            {onUndoSymptom ? (
+              <button
+                onClick={() => {
+                  onUndoSymptom(recorded)
+                  setSeverity(null)
+                  setRegions([])
+                }}
+                className="mt-1 min-h-11 px-1 text-[12px] font-medium text-ink2 underline-offset-2 hover:text-ink hover:underline"
+              >
+                Undo — I tapped that by mistake
+              </button>
+            ) : null}
+          </div>
         ) : hurtOpen ? (
           <div className="rounded-xl border border-line bg-raised p-3">
             <div className="text-[12.5px] font-semibold text-ink" id={`hurt-${log.at}`}>
@@ -225,15 +194,15 @@ export function AttemptEnd({
                   if (!severity || regions.length === 0) return
                   const symptom = { joints: severity, regions }
                   onSymptom(symptom)
-                  setRecorded(symptom)
                   setHurtOpen(false)
+                  onEditingChange?.(false)
                 }}
                 className="min-h-11 flex-1 rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-on-accent disabled:opacity-40"
               >
                 Record it
               </button>
               <button
-                onClick={() => setHurtOpen(false)}
+                onClick={() => { setHurtOpen(false); onEditingChange?.(false) }}
                 className="min-h-11 rounded-xl border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink2 hover:text-ink"
               >
                 Cancel
@@ -242,7 +211,7 @@ export function AttemptEnd({
           </div>
         ) : (
           <button
-            onClick={() => setHurtOpen(true)}
+            onClick={() => { setHurtOpen(true); onEditingChange?.(true) }}
             className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-2 text-[12.5px] font-medium text-ink2 transition hover:border-line-strong hover:text-ink"
           >
             <Icon name="info" size={13} className="text-danger-text" />

@@ -66,16 +66,15 @@ export function JointReports() {
           </span>
           <button
             onClick={() => {
-              // Stamped just after the report it withdraws, so it corrects
-              // exactly that one rather than whatever came last.
               dispatch({
                 type: 'RECORD_SYMPTOM',
                 event: {
-                  at: report.at + 1,
+                  at: Math.max(Date.now(), report.at),
                   joints: report.joints,
                   ...(report.regions?.length ? { regions: report.regions } : {}),
                   source: 'manual',
                   correction: true,
+                  correctsAt: report.at,
                 },
               })
               pushToast('Marked as a mistake. It stays in your history but no longer counts.', 'info', 5000)
