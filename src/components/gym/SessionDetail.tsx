@@ -27,7 +27,7 @@ export function SessionDetail({ session, onClose }: { session: GymSession; onClo
   const place = gym?.locations.find((l) => l.id === session.locationId)
   const unit = place?.unit ?? 'kg'
   // Next time for each lift, from the rule the builder uses on the history as it stands now.
-  const next = nextTimeLines(session, gym?.sessions ?? [], place, conservative(state.profile), Date.now())
+  const next = nextTimeLines(session, gym?.sessions ?? [], place, conservative(state.profile), Date.now(), { state })
   const nextOf = (id: string) => next.find((n) => n.exerciseId === id)
 
   return (

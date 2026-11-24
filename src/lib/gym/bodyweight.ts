@@ -4,6 +4,7 @@ import { STEP_BY_ID } from '../../data/progressions'
 import { addDays, dayKey, weekStart } from '../time'
 import { unassistedSteps, type UnassistedLift, type UnassistedWork } from './bodyweightSteps'
 import { unfinishedLiftSets } from './progression'
+import { conservative } from './draft'
 
 type Base = 'pushups' | 'pullups' | 'dips'
 export type BodyweightCapacity = {
@@ -134,7 +135,7 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
     assistedTrial.at > (evidence.get('pullups')?.at ?? 0) && !evidence.has('pull-up')
   const { trials, practice } = unassistedSteps(state.gym?.sessions ?? [], {
     pushups: evidence.get('pushups')?.reps ?? 0, pullups: evidence.get('pullups')?.reps ?? 0,
-  }, now)
+  }, now, !conservative(state.profile, now))
   return {
     ...(tryPullup ? { tryPullup: true } : {}),
     ...(trials['push-up'] ? { floorPushupTrial: trials['push-up'] } : {}),

@@ -102,6 +102,38 @@ it('builds toward both chosen muscles on three long visits while keeping introdu
 })
 
 describe('one skill and whole-body training on three days', () => {
+  it('keeps two pole practices, one longer, and two lifts after the athlete has demonstrated four controlled pairs', () => {
+    const now = +new Date(2026, 10, 9, 17)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(now)
+    try {
+      const state = makeAthlete({ skills: ['flag'], birthYear: 1995, active: 'home', steps: { flag: 'flag-oneleg' }, kit: ['floor', 'wall', 'band', 'pullup-bar'],
+        prefs: { goals: { skills: 5, physique: 5, strength: 2, endurance: 0, power: 0 }, musclesPriority: ['hamstrings', 'glutes', 'upper-back'],
+          minutesByDay: [0, 45, 0, 45, 0, 30, 0], placeByDay: [null, 'gym', null, 'gym', null, 'home', null] } })
+      state.settings.weeklyGoal = 3
+      state.gym!.locations[1] = { ...GYM_PLACE, equipment: ['floor', 'pole', 'dumbbells', 'bench'] }
+      state.profile.trainingAgeMonths = 24
+      for (const [daysAgo, rounds] of [[7, 8], [5, 14]]) {
+        const at = addDays(now, -daysAgo)
+        state.sessions.push({ id: 'practice' + daysAgo, workoutKind: 'auto', workoutName: 'Flag practice', startedAt: at, endedAt: at + 20 * 60_000,
+          stepId: 'foundations', skills: { flag: { stepId: 'flag-oneleg', baseTargetSec: 3 } }, roles: { flag: 'lead' }, completion: 'full',
+          sets: Array.from({ length: rounds }, (_, i) => {
+            const slip = rounds === 14 && i % 2 === 1
+            return { at: at + (i + 1) * 60_000, exerciseId: 'one-leg-flag', kind: 'hold', section: 'main', side: i % 2 ? 'right' : 'left',
+              target: 3, value: slip ? 2 : 3.4, rpe: slip ? 9 : 7, form: { rating: slip ? 'slipped' : 'clean', confirmed: true } }
+          }) })
+      }
+      const week = weekForChoice(state, {}, now)
+      const days = week.days.filter((d) => d.at < addDays(weekStart(now), 7) && !d.plan.rest)
+      const practices = days.filter((d) => d.plan.skill?.skills.includes('flag'))
+      expect(practices.map((d) => new Date(d.at).getDay())).toEqual([1, 3])
+      expect(practices.every((d) => (d.skillWorkingSets?.flag ?? 0) >= 8)).toBe(true)
+      expect(practices.some((d) => !d.plan.skill!.opener && d.plan.minutes === 45)).toBe(true)
+      expect(days.filter((d) => d.plan.gym)).toHaveLength(2)
+      expect(week.weekTotal.hamstrings).toBeGreaterThanOrEqual(5)
+      expect(week.weekTotal['upper-back']).toBeGreaterThanOrEqual(4)
+    } finally { restoreClock() }
+  })
   it('trains an elbow-flexed pull and the legs on the last gym visit after handstand and lower-body work', () => {
     const monday = new Date(2026, 10, 23, 10)
     vi.useFakeTimers({ toFake: ['Date'] })

@@ -1,6 +1,6 @@
 import type { AppState, CheckIn, Workout, WorkoutRequest } from '../types'
 import { estimateMinutes, finalizeWorkoutWithPlan, hasEquipmentFor, isPainSafe, restrictTemplate } from '../data/workouts'
-import { kitAt } from './plan/planner'
+import { kitAt } from './plan/trainingPlace'
 import { readTodayChoice } from './plan/todayChoice'
 import { latestSkillPartial, skillPlanVersion } from './skillSession'
 

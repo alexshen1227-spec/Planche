@@ -3,6 +3,8 @@ import { initialState, mergeExternalState, normalizeState, reducer } from './sto
 import type { Session, SetLog, Workout } from '../types'
 import { continueSkillSession, countsSkillDay, readSkillRemainder, remainingSkillWork, skillPlanVersion } from './skillSession'
 import { resumeSkillWorkout } from './resumeSkillWorkout'
+import { setsCsv } from './exportImport'
+import { defaultGym } from './gym/state'
 
 const start = new Date(2026, 9, 5, 17).getTime()
 const left: SetLog = { exerciseId: 'side-plank', section: 'core', kind: 'hold', value: 12, target: 12, at: start + 1000, side: 'left' }
@@ -14,6 +16,20 @@ const partial: Session = { id: 'shared', startedAt: start, endedAt: start + 2000
   remaining: remainingSkillWork(workout, [left], { 0: [left.at] }) }
 
 describe('continued skill rounds', () => {
+  it('keeps each set at the place where it happened through a continuation, backup and CSV export', () => {
+    const gym = defaultGym(['floor'], 'kg', start)
+    gym.locations.push({ ...gym.locations[0], id: 'studio', name: 'Dance studio' })
+    const part = { ...partial, startedAt: start + 3000, endedAt: start + 4000, placeId: 'studio',
+      sets: [{ ...left, side: 'right' as const, at: start + 3500 }] }
+    const original = { ...partial, placeId: gym.locations[0].id }
+    expect(continueSkillSession(original, { ...part, placeId: original.placeId }).placeId).toBe(original.placeId)
+    const atBoth = continueSkillSession(original, part)
+    const state = normalizeState({ ...initialState(), gym, sessions: [atBoth] })
+    expect(state.sessions[0].placeId).toBeUndefined()
+    expect(state.sessions[0].sets.map((s) => s.placeId)).toEqual([original.placeId, 'studio'])
+    expect(setsCsv(state).trim().split('\n').slice(1).map((line) => line.split(',')[3])).toEqual([gym.locations[0].name, 'Dance studio'])
+    expect(continueSkillSession(partial, part).sets[0].placeId).toBeUndefined()
+  })
   it('closes unperformed rounds without adding time, work, a training day or a second save', () => {
     const warm: Session = { ...partial, plannedRounds: 3, sets: [{ ...left, section: 'warmup' }] }
     const before = { ...initialState(), sessions: [warm] }

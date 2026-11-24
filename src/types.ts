@@ -633,6 +633,8 @@ export interface SetTiming {
 
 export interface SetLog {
   exerciseId: string
+  /** Where this set was logged when a resumed session spans places. */
+  placeId?: string
   kind: ExerciseType
   /** Seconds for holds, reps for rep work. Latency-corrected for holds. */
   value: number
@@ -699,6 +701,8 @@ export type StrategyId = 'balanced' | 'volume' | 'intensity' | 'density' | 'tech
 
 export interface Session {
   id: string
+  /** Recorded training place when the session took place at one location. */
+  placeId?: string
   startedAt: number
   /** When training actually stopped — not when the summary was saved. */
   endedAt: number

@@ -12,7 +12,7 @@ import { skillOfExercise, SKILLS } from '../../data/skills'
 import { finalizeWorkout, withRequestKit } from '../../data/workouts'
 import type { AppState, BodyRegion, EquipmentId, LineupRole, Session, SkillId, WorkoutRequest } from '../../types'
 import { goalOutlook } from '../forecast'
-import { barMet, daysAtBar, qualifyingProgress } from '../progression'
+import { barMet, daysAtBar, humanRating, isBarAttempt, qualifyingProgress, stoppedAtTarget } from '../progression'
 import { daysSinceFullPart, todaysLineup } from '../lineup'
 import { fullParts, shortDoses } from '../sessionRoom'
 import { readinessTimeline } from '../signals'
@@ -338,6 +338,25 @@ function keyHold(state: AppState, skill: SkillId, blocks: readonly { exerciseId:
   return { sets, kept }
 }
 
+/** Recent controlled rounds on both sides of the current shape, in the same units as the built workout. */
+function repeatedPairedSets(state: AppState, skill: SkillId, now: number): number {
+  const view = skillView(state, skill)
+  const step = STEP_BY_ID[view.stepId]
+  if (!EXERCISE_BY_ID[step?.keyExerciseId]?.perSide) return 0
+  const since = addDays(now, -28)
+  let pairs = 0
+  for (const session of view.sessions) {
+    if (session.stepId !== step.id || session.startedAt < since || session.startedAt >= now ||
+        session.workoutKind !== 'auto' || session.completion === 'partial' || session.plannedDeload) continue
+    const work = session.sets.filter((set) => set.section === 'main' && set.exerciseId === step.keyExerciseId && !set.light &&
+      set.value > 0 && set.target > 0 && !set.repaired?.length && !isBarAttempt(set, step.id) &&
+      (set.rpe ?? session.rpe ?? 10) <= 8 && (humanRating(set.form) ?? 'clean') === 'clean' &&
+      (set.value >= set.target || stoppedAtTarget(set, step.id)))
+    pairs = Math.max(pairs, Math.min(work.filter((set) => set.side === 'left').length, work.filter((set) => set.side === 'right').length))
+  }
+  return pairs * 2
+}
+
 /**
  * The session a skill request builds, counted: the week is planned from the
  * sessions themselves. It once counted a planche day as four sets of front
@@ -407,16 +426,16 @@ function familySets(state: AppState, skills: SkillId[], minutes: number, at: num
 const isFirst = (state: AppState, skill: SkillId) => trainedSkills(state)[0] === skill
 
 /** A gym day's opener minutes for this skill on a day of this many minutes (`openerMinutesFor`). */
-function openerMinutesOf(state: AppState, skill: SkillId, dayMinutes: number, at: number, place: GymLocation): number {
+function openerMinutesOf(state: AppState, skill: SkillId, dayMinutes: number, at: number, place: GymLocation, budgetFloor = 0): number {
   const prefs = state.gym?.prefs
-  const budget = prefs?.shortSkillOpeners ? OPENER_MINUTES : openerMinutesFor(isFirst(state, skill), dayMinutes)
+  const budget = prefs?.shortSkillOpeners ? OPENER_MINUTES : Math.max(budgetFloor, openerMinutesFor(isFirst(state, skill), dayMinutes))
   const shareMinutes = prefs && prefs.goals.physique >= 3 && prefs.musclesPriority.length > 0
   if (skill !== 'frontlever' && !shareMinutes) return budget
   const practice = builtSkill(state, [skill], budget, at, kitAt(state, place), true)
   const fitted = Math.min(budget, Math.max(MIN_SKILL_MINUTES[1], practice.minutes))
   if (skill === 'frontlever' || fitted === budget) return fitted
   const rebuilt = builtSkill(state, [skill], fitted, at, kitAt(state, place), true)
-  return rebuilt.key[skill] === practice.key[skill] && rebuilt.rest.push === practice.rest.push &&
+  return rebuilt.key[skill] === practice.key[skill] && rebuilt.attempts === practice.attempts && rebuilt.rest.push === practice.rest.push &&
     rebuilt.rest.pull === practice.rest.pull && rebuilt.minutes === practice.minutes ? fitted : budget
 }
 
@@ -3215,6 +3234,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   if (((singleSkillWeek && mixedPriorities) || (balancedSkillWeek && skills[0] !== 'handstand')) && g.physique >= g.skills) {
     const skill = skills[0]
     const family = skillFamily(skill) === 'pull' ? 'pull' : 'push'
+    const pairedDose = singleSkillWeek ? repeatedPairedSets(base, skill, now) : 0
     for (const d of days) {
       const sl = slots[d.index], place = placeAt(d.index)
       if (!place || (balancedSkillWeek ? sl.kind !== 'gym' || sl.reservedOpener || !sl.hint : d.minutes >= LONG_OPENER_FROM) ||
@@ -3224,10 +3244,16 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
         d.avoidJoints.some((j) => FAMILY_JOINTS[family].includes(j)) || !openerClear(family, d.index)) continue
       const kit = kitAt(base, place)
       if (missingSkillKit(base, skill, kit).length) continue
-      const minutes = openerMinutesOf(base, skill, d.minutes, d.at, place)
+      const liftingDays = slots.filter((slot, i) => days[i].week === d.week && slot.kind === 'gym').length + (d.week === thisWeek ? before.gym : 0)
+      // At an equipped visit, a proven bilateral practice can share the week’s second lift.
+      // Keep a full skill visit once the two lifting days fit, and retain any next-shape attempts.
+      const sharePairs = !prefs.shortSkillOpeners && pairedDose >= 6 && liftingDays < 2 && hasGymKit(place)
+      const budgetFloor = sharePairs ? Math.min(LONG_OPENER_MINUTES, d.minutes - MIN_LIFTS_AFTER_OPENER) : 0
+      const minutes = openerMinutesOf(base, skill, d.minutes, d.at, place, budgetFloor)
       const practice = builtSkill(base, [skill], minutes, d.at, kit, true)
-      const requiredSets = prefs.shortSkillOpeners ? 2 : builtSkill(base, [skill], d.minutes, d.at, kit).bare
-      if (practice.painSafe || practice.minutes > minutes || (practice.key[skill] ?? 0) < Math.max(1, requiredSets) ||
+      const full = builtSkill(base, [skill], d.minutes, d.at, kit)
+      const requiredSets = prefs.shortSkillOpeners ? 2 : sharePairs ? Math.min(pairedDose, full.bare) : full.bare
+      if (practice.painSafe || practice.minutes > minutes || practice.attempts < full.attempts || (practice.key[skill] ?? 0) < Math.max(1, requiredSets) ||
         !FOCI.some((f) => f !== 'athletic' && openOn(d, f) && viable(d, d.minutes - minutes, f))) continue
       slots[d.index] = { ...sl, kind: 'gym', why: sl.legDay ? 'leg-coverage' : 'skill-practice',
         hint: undefined, reservedOpener: { skill, minutes }, exposure: true,

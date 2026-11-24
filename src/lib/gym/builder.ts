@@ -822,10 +822,18 @@ export function buildGymSession(input: GymSessionInput): GymPlan {
     item.suggestion = { ...item.suggestion, reps: item.plan.range, targetReps: reps, kind: 'bodyweight',
       why: `${basis} Aim for ${reps} clean ${reps === 1 ? 'rep' : 'reps'} per set with a little in reserve.`, easierId: item.practice.easierId }
   }
+  applyBodyweightTrials(items, input, now)
+  return { ...session, items }
+}
+
+type TrialInput = Pick<GymSessionInput, 'location' | 'sessions' | 'capacity' | 'volumeFactor' | 'ratings' | 'avoidJoints' | 'musclesOff'>
+
+/** The same optional variation and fallback reps in a workout and its post-session guidance. */
+export function applyBodyweightTrials(items: Pick<PlannedExercise, 'exerciseId' | 'sets' | 'suggestion'>[], input: TrialInput, now: number) {
   for (const id of UNASSISTED_LIFTS) {
     const target = id === 'push-up' ? input.capacity?.floorPushupTrial : input.capacity?.pullupTrial
     const ex = GYM_EXERCISE_BY_ID[id]
-    if (!target || (input.volumeFactor ?? 1) < 1 || input.ratings?.[id] === 'avoid' || !canDoHere(id, input.location) ||
+    if (!target || (input.volumeFactor ?? 1) < 1 || input.ratings?.[id] === 'avoid' || input.location?.hardHere?.includes(id) || !canDoHere(id, input.location) ||
         jointsToRest(id).some((j) => input.avoidJoints?.includes(j)) || ex.primary.some((m) => input.musclesOff?.includes(m)) || items.some((it) => it.exerciseId === id)) continue
     const prep = items.find((it) => preparesFor(it.exerciseId) === id && it.sets >= 2)
     if (!prep) continue
@@ -847,5 +855,4 @@ export function buildGymSession(input: GymSessionInput): GymPlan {
         ...(id ? { variationTrial: { id, reps: 6 } } : {}) }
     }
   }
-  return { ...session, items }
 }

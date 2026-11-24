@@ -6,6 +6,7 @@ import { bodyweightCapacity, readyForBodyweight } from './bodyweight'
 import { buildGymSession } from './builder'
 import { legPracticeAt, unassistedDose, unassistedSteps } from './bodyweightSteps'
 import { allowsUnloaded } from './progression'
+import { nextTimeLines } from './sessionLines'
 import { defaultGym, homeLocation } from './state'
 import type { GymSession } from './types'
 
@@ -26,6 +27,11 @@ it('offers an available unilateral leg trial, keeps the earned base dose and lea
     expect(canDoHere(it.suggestion.variationTrial!.id, home)).toBe(true)
   }
   const trial = slots.find((it) => it.exerciseId === 'glute-bridge')!.suggestion.variationTrial!
+  const athlete = initialState()
+  athlete.gym = { ...defaultGym(['floor', 'band', 'box'], 'kg', at), locations: [home], sessions: [easy] }
+  const finish = nextTimeLines(easy, [], home, false, easy.endedAt + 1000, { state: athlete }).find((line) => line.exerciseId === 'glute-bridge')!
+  expect(finish.text).toContain('25 reps')
+  expect(finish.why).toBe(slots.find((it) => it.exerciseId === 'glute-bridge')!.suggestion.why)
   const played = now - day
   const visit: GymSession = { ...easy, id: 'trial', startedAt: played, endedAt: played + 1000,
     exercises: [{ exerciseId: trial.id, swappedFrom: 'glute-bridge', plannedWorkingSets: 1, sets: [{ reps: 6, rpe: 7, at: played }] }] }
@@ -34,6 +40,27 @@ it('offers an available unilateral leg trial, keeps the earned base dose and lea
   expect(buildGymSession({ ...input, volumeFactor: 0.6 }).items.some((it) => it.suggestion.variationTrial)).toBe(false)
   expect(legPracticeAt([easy], 'somewhere-else', now).size).toBe(0)
   expect(legPracticeAt([{ ...easy, exercises: easy.exercises.map((e) => ({ ...e, plannedWorkingSets: 3 })) }], home.id, now).get('glute-bridge')?.baseReps).toBeUndefined()
+})
+
+it('uses a repeatable high-rep performance in the next prescription and previews the earned optional floor trial', () => {
+  const now = +new Date(2026, 10, 9, 13)
+  const at = now - 3 * 86_400_000
+  const state = initialState()
+  state.profile.birthYear = 1995
+  const gym = defaultGym(['floor', 'wall'], 'kg', at)
+  const home = gym.locations[0]
+  const workout: GymSession = { id: 'home', name: 'Upper body', locationId: home.id, startedAt: at, endedAt: at + 120_000,
+    exercises: [{ exerciseId: 'incline-push-up', repRange: [6, 10], plannedWorkingSets: 2, targetRpe: 7,
+      sets: [{ at, reps: 24, rpe: 6 }, { at: at + 100_000, reps: 24, rpe: 6 }] }] }
+  state.gym = { ...gym, sessions: [workout] }
+  const plan = buildGymSession({ capacity: bodyweightCapacity(state, now), location: home, minutes: 30, focus: 'upper', sessions: [workout], now })
+  const push = plan.items.find((it) => it.exerciseId === 'incline-push-up')!
+  const [line] = nextTimeLines(workout, [], home, false, workout.endedAt + 1000, { state })
+  expect(push.suggestion).toMatchObject({ targetReps: 24, floorPushupTrial: 1 })
+  expect(line.text).toContain('24 reps')
+  expect(line.why).toBe(push.suggestion.why)
+  state.profile.birthYear = 2011
+  expect(bodyweightCapacity(state, now).floorPushupTrial).toBeUndefined()
 })
 
 it('offers a specific floor push-up trial after two easy preparation days and adapts to the actual result', () => {

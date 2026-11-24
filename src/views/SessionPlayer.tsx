@@ -1632,6 +1632,7 @@ export function SessionPlayer({
       endedAt,
       ...(pausedMsRef.current > 0 ? { pausedMs: pausedMsRef.current } : {}),
       savedAt,
+      ...(workout.request?.placeId ? { placeId: workout.request.placeId } : {}),
       workoutName: workout.name,
       workoutKind: workout.kind,
       stepId: state.stepId,

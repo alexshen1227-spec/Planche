@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState, EquipmentId, LineupRole, SkillId } from '../../types'
 import { startingState } from '../skillLoop'
-import { skillWeekLines, skillDayWords, type SkillWeekLine } from './skillWeek'
+import { dayKey } from '../time'
+import { recordedTrainingDay, skillWeekLines, skillDayWords, type SkillWeekLine } from './skillWeek'
 import type { SkillBlock, WeekAhead } from './planner'
 
 /**
@@ -25,7 +26,7 @@ function week(cells: (Cell | undefined)[]): WeekAhead {
           skill: { minutes: 45, ...cell, skills: cell.skills ?? [] } as SkillBlock,
         }
       : { minutes: 0, rest: true, kind: 'rest' as const }
-    return { day: new Date(at).toISOString().slice(0, 10), at, plan, kind: plan.kind, why: [] }
+    return { day: dayKey(at), at, plan, kind: plan.kind, why: [] }
   })
   return { days, missed: [], shortfall: [], frequency: [] } as unknown as WeekAhead
 }
@@ -43,6 +44,21 @@ const by = (lines: SkillWeekLine[], skill: SkillId) => lines.find((l) => l.skill
 const rest = (n: number) => Array<undefined>(n).fill(undefined)
 
 describe('days a skill trains', () => {
+  it('shows actual main rounds and lifts on a finished day even when the new plan moves the skill elsewhere', () => {
+    const state = athlete(['flag'], ['floor'], [GYM])
+    state.sessions = [{ id: 'flag', startedAt: MONDAY, endedAt: MONDAY + 240_000, stepId: 'foundations',
+      workoutKind: 'auto', workoutName: 'One-leg flag', sets: Array.from({ length: 10 }, (_, i) => ({
+        exerciseId: 'one-leg-flag', kind: 'hold', section: i < 2 ? 'warmup' : 'main', value: 3, target: 3, at: MONDAY + i * 1000,
+      })) }]
+    state.gym!.sessions = [{ id: 'lifts', locationId: GYM.id, startedAt: MONDAY + 250_000, endedAt: MONDAY + 750_000,
+      name: 'Lower body', exercises: [{ exerciseId: 'goblet-squat', sets: [{ at: MONDAY + 300_000, reps: 8, kg: 12 }] }] }]
+    const next = week([{ skills: ['planche'], placeId: GYM.id }, undefined, { skills: ['flag'], placeId: GYM.id }, ...rest(4)])
+    const logged = recordedTrainingDay(state, MONDAY + 800_000)
+    expect(logged.visits.map((v) => [v.name, v.sets, v.places])).toEqual([['One-leg flag', 8, []], ['Lower body', 1, ['Gym A']]])
+    const days = by(skillWeekLines(next, state, logged), 'flag').days
+    expect(days.map(skillDayWords)).toEqual(['Today (logged)', 'Wednesday (first, at Gym A)'])
+    expect(days[0].loggedSets).toBe(8)
+  })
   const state = athlete(['planche', 'handstand', 'frontlever'], ['floor', 'parallettes', 'pullup-bar', 'wall'], [GYM])
   // Mon planche + handstand, Wed gym with a lever opener at Gym A, Fri planche + lever + a short handstand dose.
   const w = week([

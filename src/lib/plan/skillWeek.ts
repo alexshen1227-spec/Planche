@@ -1,11 +1,15 @@
 import type { AppState, EquipmentId, LineupRole, SkillId, Weekday } from '../../types'
 import { kitNeedsPhrase } from '../../data/equipment'
-import { missingKit, SKILLS } from '../../data/skills'
+import { missingKit, skillOfExercise, SKILLS } from '../../data/skills'
 import { placesWithKit } from '../../components/weekPlanCopy'
 import { roomIn } from '../lineup'
 import { activeSkills, stepOfSkill } from '../skills'
 import { WEEKDAY_NAMES } from '../weekPlan'
 import { skillFamily, type WeekAhead } from './planner'
+import { skillSessionPlaces } from '../skillSession'
+import { workingGymSets, workingSkillSets } from '../progressTotals'
+import { dayKey } from '../time'
+import { startOfDay } from './restWindow'
 
 /**
  * Each of the athlete's skills, week by week: which days it trains, and where,
@@ -32,18 +36,43 @@ export type SkillWeekReason =
   /** No day this week trains any skill. */
   | 'no-skill-days'
 
-export interface SkillWeekDay {
+export type SkillWeekDay = {
   /** Local calendar day, YYYY-MM-DD. */
   day: string
   /** Index in the week: 0 is today. */
   index: number
   /** "Today", or the weekday's name. */
   label: string
-  role: LineupRole
-  /** A gym day's opener: the skill starts the gym session. */
-  opener: boolean
   /** The place it trains at: a gym or place the athlete named, or "home". */
   place: string
+} & ({ role: LineupRole; opener: boolean; loggedSets?: undefined }
+  | { loggedSets: number; role?: undefined; opener?: undefined })
+
+export function recordedTrainingDay(state: AppState, now: number) {
+  const from = startOfDay(now)
+  const onDay = (s: { startedAt: number }) => s.startedAt >= from && s.startedAt <= now
+  const locations = state.gym?.locations ?? []
+  const practice: Partial<Record<SkillId, { sets: number; places: Set<string> }>> = {}
+  const visits = state.sessions.filter(onDay).map((s) => {
+    for (const set of s.sets) {
+      if (s.workoutKind === 'micro' || set.section !== 'main' || set.value <= 0) continue
+      const skill = skillOfExercise(set.exerciseId)
+      if (!skill) continue
+      const trained = practice[skill] ??= { sets: 0, places: new Set() }
+      trained.sets++
+      const place = locations.find((p) => p.id === (set.placeId ?? s.placeId))
+      if (place) trained.places.add(place.name)
+    }
+    return { id: s.id, kind: 'skill' as 'skill' | 'gym', at: s.startedAt, name: s.workoutName, places: skillSessionPlaces(s, locations),
+      sets: workingSkillSets(s), partial: s.completion === 'partial' }
+  })
+  for (const s of (state.gym?.sessions ?? []).filter(onDay)) {
+    const place = locations.find((p) => p.id === s.locationId)
+    visits.push({ id: s.id, kind: 'gym', at: s.startedAt, name: s.name, places: place ? [place.name] : [],
+      sets: workingGymSets(s), partial: s.completion === 'partial' })
+  }
+  visits.sort((a, b) => a.at - b.at)
+  return { day: dayKey(now), practice, visits }
 }
 
 export interface SkillWeekLine {
@@ -69,18 +98,19 @@ function listed(items: readonly string[]): string {
 
 /** One day's words: "Wed (first, at Gym A)". */
 export function skillDayWords(d: SkillWeekDay): string {
+  if (d.loggedSets !== undefined) return `${d.label} (logged${d.place ? `, at ${d.place}` : ''})`
   const how = d.opener ? `opens the gym session, at ${d.place}` : `${ROLE_WORDS[d.role]}, at ${d.place}`
   return `${d.label} (${how})`
 }
 
-export function skillWeekLines(week: WeekAhead, state: AppState): SkillWeekLine[] {
+export function skillWeekLines(week: WeekAhead, state: AppState, recorded?: ReturnType<typeof recordedTrainingDay>): SkillWeekLine[] {
   const own = state.profile.equipment
   const locations = state.gym?.locations ?? []
   const placeName = (id: string | undefined) => (id ? (locations.find((l) => l.id === id)?.name ?? 'home') : 'home')
   const labelOf = (i: number, at: number) => (i === 0 ? 'Today' : WEEKDAY_NAMES[new Date(at).getDay() as Weekday])
 
   const painSafeFor = (skill: SkillId) => week.days.some((d) => d.plan.skill?.painSafe && d.plan.skill.skills.includes(skill))
-  const skillDays = week.days.filter((d) => d.plan.skill && !d.plan.rest)
+  const skillDays = week.days.filter((d) => d.day !== recorded?.day && d.plan.skill && !d.plan.rest)
   const trainingSkillDays = skillDays.filter((d) => !d.plan.skill?.painSafe)
   const longest = Math.max(0, ...trainingSkillDays.map((d) => d.plan.skill!.minutes))
   const placesPlanned = new Set(trainingSkillDays.map((d) => placeName(d.plan.skill!.placeId)))
@@ -88,6 +118,14 @@ export function skillWeekLines(week: WeekAhead, state: AppState): SkillWeekLine[
   const lines: SkillWeekLine[] = []
   const trained = new Map<SkillId, SkillWeekDay[]>()
   week.days.forEach((d, index) => {
+    if (recorded?.day === d.day) {
+      for (const [key, work] of Object.entries(recorded.practice)) {
+        const skill = key as SkillId
+        trained.set(skill, [...(trained.get(skill) ?? []), { day: d.day, index, label: labelOf(index, d.at),
+          loggedSets: work.sets, place: [...work.places].join(' / ') }])
+      }
+      return
+    }
     const block = d.plan.skill
     if (!block || d.plan.rest || block.painSafe) return
     block.skills.forEach((skill, i) => {

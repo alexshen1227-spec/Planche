@@ -10,7 +10,9 @@ import { SportOnDate } from './SportOnDate'
 import { WeekPlanComparison } from './WeekPlanComparison'
 import type { SkillId } from '../../types'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
-import { skillDayWords, skillWeekLines } from '../../lib/plan/skillWeek'
+import { recordedTrainingDay, skillDayWords, skillWeekLines } from '../../lib/plan/skillWeek'
+import { useDayMarks } from '../../lib/plan/nextBlock'
+import { dayStage } from '../../lib/plan/screens'
 
 const SHORT: Record<SkillId, string> = {
   planche: 'Planche',
@@ -49,11 +51,20 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
   // Today's choice and the calendar day: the same today as every other screen, re-planned after midnight,
   // and on the coarse clock for the rules that run in hours.
   const todayKey = useToday()
-  usePlanClock()
+  const tick = usePlanClock()
+  const marks = useDayMarks(todayKey)
   const [choice] = useTodayChoice(todayKey)
   const week = given ?? weekForChoice(state, choice)
   const [picked, setPicked] = useState(0)
-  const bySkill = useMemo(() => skillWeekLines(week, state), [week, state])
+  const recorded = useMemo(() => {
+    const now = Date.now()
+    const today = week.days[0]
+    return today?.day === todayKey && dayStage(state, today.plan, now, marks) === 'done'
+      ? recordedTrainingDay(state, now) : undefined
+  }, [week, state, todayKey, tick, marks])
+  const bySkill = useMemo(() => skillWeekLines(week, state, recorded), [week, state, recorded])
+  const activityKinds = [...new Set(recorded?.visits.map((v) => v.kind === 'gym' ? 'Gym' : 'Skills'))]
+  const loggedLabel = activityKinds.join(' + ') || 'Day ended'
   const selected = week.days[Math.min(picked, week.days.length - 1)]
   const locationId = selected?.plan.gym?.placeId ?? selected?.plan.skill?.placeId
   const location = state.gym?.locations.find((place) => place.id === locationId)
@@ -73,36 +84,38 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
           const label = i === 0 ? 'Today' : new Date(at).toLocaleDateString(undefined, { weekday: 'short' })
           const skills = plan.skill?.skills ?? []
           const opener = plan.kind === 'gym' && plan.skill?.opener ? skills[0] : undefined
+          const logged = recorded?.day === day
           return (
             <li key={day}>
               <button
                 onClick={() => setPicked(i)}
                 aria-pressed={picked === i}
-                aria-label={`${i === 0 ? 'Today' : new Date(at).toLocaleDateString(undefined, { weekday: 'long' })}: ${dayWords(d)}${sportLabel ? `, ${sportLabel}` : ''} — show why`}
+                aria-label={`${i === 0 ? 'Today' : new Date(at).toLocaleDateString(undefined, { weekday: 'long' })}: ${logged ? `Logged · ${loggedLabel}` : dayWords(d)}${sportLabel ? `, ${sportLabel}` : ''} — show details`}
                 className={`relative flex min-h-[104px] w-full flex-col items-stretch gap-1 rounded-control border p-1.5 text-center ${
                   picked === i ? 'border-accent' : i === 0 ? 'border-line-strong' : 'border-line'
                 } ${plan.rest ? 'bg-raised' : 'bg-surface'}`}
               >
                 <span className="text-caption font-semibold text-ink3">{label}</span>
-                {plan.rest ? <span className="my-auto text-caption text-ink3">Rest</span> : null}
-                {plan.kind === 'calisthenics' && skills.length ? (
+                {logged ? <span className="my-auto text-caption font-semibold text-ink"><span className="block text-[10px] uppercase text-accent-text">Logged</span>{loggedLabel}</span> : null}
+                {!logged && plan.rest ? <span className="my-auto text-caption text-ink3">Rest</span> : null}
+                {!logged && plan.kind === 'calisthenics' && skills.length ? (
                   <span className="rounded-md bg-accent-soft px-1 py-0.5 text-caption font-medium leading-tight text-accent-text">
                     <span className="block text-[10px] font-semibold uppercase tracking-wide">Skills</span>
                     {skills.length > 2 ? `${skills.length} skills` : skills.map((s) => SHORT[s]).join(' + ')}
                   </span>
                 ) : null}
-                {plan.kind === 'gym' && plan.gym ? (
+                {!logged && plan.kind === 'gym' && plan.gym ? (
                   <span className="rounded-md border border-line-strong px-1 py-0.5 text-caption font-medium leading-tight text-ink">
                     <span className="block text-[10px] font-semibold uppercase tracking-wide text-ink3">Gym</span>
                     {FOCUS_LABEL[plan.gym.focus].replace(' body', '')}
                   </span>
                 ) : null}
-                {opener ? <span className="text-caption leading-tight text-accent-text">{SHORT[opener].toLowerCase()} first</span> : null}
+                {!logged && opener ? <span className="text-caption leading-tight text-accent-text">{SHORT[opener].toLowerCase()} first</span> : null}
                 {sportLabel ? (
                   <span className="rounded-md border border-line px-1 py-0.5 text-caption leading-tight text-ink2">{sportLabel}</span>
                 ) : null}
-                {!plan.rest ? <span className="mt-auto text-caption tnum text-ink3">{plan.minutes}′</span> : null}
-                {movedFrom && <span className="sr-only">Takes over {movedFrom}’s missed work.</span>}
+                {!logged && !plan.rest ? <span className="mt-auto text-caption tnum text-ink3">{plan.minutes}′</span> : null}
+                {!logged && movedFrom && <span className="sr-only">Takes over {movedFrom}’s missed work.</span>}
               </button>
             </li>
           )
@@ -110,6 +123,14 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
       </ol>
       {selected ? (
         <div className="mt-2 rounded-inner bg-raised p-3" aria-live="polite">
+          {recorded?.day === selected.day ? <>
+            <p className="text-caption font-semibold text-ink2">Today · {recorded.visits.length ? 'Logged training' : 'Day ended'}</p>
+            {recorded.visits.length ? <ul className="mt-1 space-y-1">
+              {recorded.visits.map((v) => <li key={v.kind + v.id} className="text-caption leading-snug text-ink2">
+                {v.name}{v.places.length > 0 && ` at ${v.places.join(' / ')}`} · {v.sets} working {v.sets === 1 ? 'set' : 'sets'}{v.partial && ' · partial workout'}
+              </li>)}
+            </ul> : <p className="text-caption text-ink2">No workout logged today.</p>}
+          </> : <>
           <p className="text-caption font-semibold text-ink2">
             {picked === 0 ? 'Today' : new Date(selected.at).toLocaleDateString(undefined, { weekday: 'long' })} · {dayWords(selected)}
             {location ? ` · ${location.name}` : ''}
@@ -122,6 +143,7 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
               </li>
             ))}
           </ul>
+          </>}
           <SportOnDate key={selected.day} at={selected.at} />
           {state.gym?.prefs?.gymWeekdays?.includes(new Date(selected.at).getDay()) && <p className="mt-2 text-caption font-semibold text-ink2">You usually lift on this weekday.</p>}
         </div>
@@ -138,8 +160,8 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
                 {line.days.length ? (
                   <ul className="mt-0.5 space-y-0.5" aria-label={`${line.name} days this week`}>
                     {line.days.map((d) => {
-                      const sets = week.days[d.index].skillWorkingSets?.[line.skill]
-                      return <li key={d.day}>{skillDayWords(d)}{sets !== undefined && ` · ${sets} progression ${sets === 1 ? 'set' : 'sets'}`}</li>
+                      const sets = d.loggedSets ?? week.days[d.index].skillWorkingSets?.[line.skill]
+                      return <li key={d.day}>{skillDayWords(d)}{sets !== undefined && ` · ${sets} ${d.loggedSets !== undefined ? 'main' : 'progression'} ${sets === 1 ? 'set' : 'sets'}`}</li>
                     })}
                   </ul>
                 ) : (
@@ -148,16 +170,11 @@ export function WeekPreview({ week: given, hideTitle = false }: { week?: WeekAhe
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-caption text-ink3">
-            From your plan as it stands — it is planned again from what you log. How often a skill trains is a coaching convention, not a measured amount.
-          </p>
         </div>
       ) : null}
       <WeekPlanComparison />
       <p className="mt-1.5 text-caption text-ink3">
-        A plan, not a promise — each day is planned again from what you actually did. Each day says its kind — Skills (calisthenics)
-        or Gym, with any skill that goes first; which is which follows your goals (the app’s own split). Spreading weekly sets, two-day gaps
-        for hard straight-arm work and fresh legs around your sport are coaching conventions.
+        Upcoming sessions adapt to what you log, your recovery time and your sport.
       </p>
     </section>
   )

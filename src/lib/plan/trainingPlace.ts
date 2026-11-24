@@ -40,8 +40,8 @@ export function hereKit(state: AppState, place: GymLocation): EquipmentId[] {
  * home was "waiting for kit" on a lever day at a gym with one.
  */
 export function atActivePlace(state: AppState, request: WorkoutRequest): WorkoutRequest {
-  const kit = placeKit(state)
-  return kit?.length ? { ...request, kit: [...new Set([...(request.kit ?? []), ...kit])] } : request
+  const place = activePlace(state)
+  return place ? { ...request, placeId: place.id, kit: [...new Set([...(request.kit ?? []), ...hereKit(state, place)])] } : request
 }
 
 export function weekdayPlace(state: AppState, at: number): GymLocation | undefined {

@@ -147,13 +147,14 @@ export function setsCsv(state: AppState): string {
   const rows: (string | number | undefined)[][] = [
     ['date', 'kind', 'session', 'place', 'exercise', 'section', 'set', 'load_kg', 'unit', 'reps', 'hold_sec', 'rpe', 'distance_m', 'contacts'],
   ]
+  const places = new Map((state.gym?.locations ?? []).map((l) => [l.id, l.name]))
   for (const s of state.sessions) {
     s.sets.forEach((set, i) =>
       rows.push([
         new Date(set.at).toISOString(),
         'skill',
         s.workoutName,
-        '',
+        places.get(set.placeId ?? s.placeId ?? '') ?? '',
         set.exerciseId,
         set.section,
         i + 1,
@@ -167,7 +168,6 @@ export function setsCsv(state: AppState): string {
       ]),
     )
   }
-  const places = new Map((state.gym?.locations ?? []).map((l) => [l.id, l.name]))
   for (const s of state.gym?.sessions ?? []) {
     for (const log of s.exercises) {
       const ex = GYM_EXERCISE_BY_ID[log.exerciseId]

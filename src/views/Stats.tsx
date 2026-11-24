@@ -16,6 +16,7 @@ import {
   sessionDurationSec,
 } from '../lib/stats'
 import { coachTodayLabel } from '../lib/coachLabel'
+import { skillSessionPlaces } from '../lib/skillSession'
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { useToday } from '../lib/useToday'
 import { holdTotalCaption } from '../lib/sessionSummary'
@@ -1190,6 +1191,7 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
               )
             }
             const s = entry.session
+            const places = skillSessionPlaces(s, whole.gym?.locations ?? [])
             const open = expanded === s.id
             const panelId = `session-${s.id}`
             return (
@@ -1204,7 +1206,7 @@ function SkillStats({ focusSessionId = null, onFocused }: StatsProps) {
                     <div className="flex flex-wrap items-baseline gap-x-2.5">
                       <span className="text-body font-semibold text-ink">{s.workoutName}</span>
                       <span className="text-footnote text-ink3">
-                        {fmtDate(s.startedAt)} · {fmtTime(s.startedAt)}
+                        {fmtDate(s.startedAt)} · {fmtTime(s.startedAt)}{places.length ? ` · ${places.join(' / ')}` : ''}
                       </span>
                     </div>
                     <div className="mt-0.5 text-footnote text-ink2 tnum">

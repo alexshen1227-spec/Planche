@@ -570,6 +570,7 @@ function sanitizeSet(rawSet: unknown, sessionStart: number, report: NormalizeRep
 
   return {
     exerciseId: exercise.id,
+    ...(typeof x.placeId === 'string' && x.placeId ? { placeId: x.placeId } : {}),
     kind,
     value: clampNum(x.value, 0, max, 0),
     ...(typeof x.raw === 'number' && Number.isFinite(x.raw) ? { raw: clampNum(x.raw, 0, 3600, 0) } : {}),
@@ -669,6 +670,7 @@ function sanitizeSessions(
       : {}
     const session: Session = {
       id: typeof c.id === 'string' && c.id ? c.id : newId(),
+      ...(typeof c.placeId === 'string' && c.placeId ? { placeId: c.placeId } : {}),
       startedAt,
       endedAt,
       ...(typeof c.pausedMs === 'number' && Number.isFinite(c.pausedMs)

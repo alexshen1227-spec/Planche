@@ -590,7 +590,11 @@ export function suggestLoad(input: {
     const reps = atLoad.map((s) => s.reps).sort((a, b) => a - b)
     const typical = reps[Math.floor((reps.length - 1) / 2)]
     const easy = !stale && !unfinished && atLoad.every((s) => s.rpe !== undefined && s.rpe <= plan.targetRpe)
-    const targetReps = Math.max(1, Math.min(hi, typical + (easy ? 1 : grinding || away ? -1 : 0)))
+    // The printed range is a starting point. An easier variation can already be
+    // well below the athlete's capacity, even on the first visit.
+    const repeatable = easy && reps.length >= 2 && !ex.technical && !ex.explosive && !ex.dose &&
+      unloadedLabel(ex) !== 'Band' && reps[0] > hi ? Math.min(30, reps[0]) : undefined
+    const targetReps = repeatable ?? Math.max(1, Math.min(hi, typical + (easy ? 1 : grinding || away ? -1 : 0)))
     let why = `Last time you did ${atLoad.map((s) => s.reps).join(', ')} reps. Aim for ${targetReps} clean reps per set.${incompleteWhy ? ' ' + incompleteWhy : ''}`
     if (grinding && typical < lo) why += ` Swap to an easier version if you need help reaching ${lo} with reps to spare.`
     if (allTop) why += ' When every set feels controlled, try a harder variation.'

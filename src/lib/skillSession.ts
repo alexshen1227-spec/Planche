@@ -2,6 +2,7 @@ import { SKILL_IDS, type Block, type Session, type SetLog, type SkillRemainder, 
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { MUSCLE_BY_ID, type Joint, type Muscle } from '../data/gym/catalog'
 import type { GymFocus } from './gym/builder'
+import type { GymLocation } from './gym/types'
 import type { GymPreset } from './plan/screens'
 import { dayKey } from './time'
 
@@ -64,6 +65,12 @@ export function countsSkillDay(session: Session): boolean {
   if (session.workoutKind === 'micro') return false
   if (!session.sets?.length) return session.completion === undefined
   return session.sets.some((set) => isWorking(set.section) && set.value > 0)
+}
+
+/** A session continued elsewhere can have a different place on each group of sets. */
+export function skillSessionPlaces(session: Session, locations: readonly GymLocation[]): string[] {
+  const ids = new Set([session.placeId, ...session.sets.map((s) => s.placeId)])
+  return locations.filter((p) => ids.has(p.id)).map((p) => p.name)
 }
 
 export function latestSkillPartial(sessions: Session[], now = Date.now()): Session | undefined {
@@ -172,10 +179,14 @@ export function continueSkillSession(previous: Session, part: Session): Session 
     const role = part.roles?.[skill]
     if (role && (!roles[skill] || rank[role] > rank[roles[skill]!])) roles[skill] = role
   }
-  const { remaining: _remaining, ...original } = previous
+  const { remaining: _remaining, placeId, ...original } = previous
+  const samePlace = placeId === part.placeId
+  const atPlace = (sets: SetLog[], id?: string) =>
+    !samePlace && id ? sets.map((set) => set.placeId ? set : { ...set, placeId: id }) : sets
   const skipped = (previous.skippedRounds ?? 0) + (part.skippedRounds ?? 0)
   const endedAt = Math.max(previous.endedAt + 1, part.endedAt)
-  return { ...original, sets: [...previous.sets, ...added], endedAt, prescriptionUpdatedAt: Math.max(endedAt, skillPlanVersion(previous) + 1),
+  return { ...original, ...(samePlace && placeId ? { placeId } : {}), sets: [...atPlace(previous.sets, placeId), ...atPlace(added, part.placeId)],
+    endedAt, prescriptionUpdatedAt: Math.max(endedAt, skillPlanVersion(previous) + 1),
     pausedMs: (previous.pausedMs ?? 0) + Math.max(0, part.startedAt - previous.endedAt) + (part.pausedMs ?? 0),
     savedAt: part.savedAt, updatedAt: Math.max(part.savedAt ?? part.endedAt, (previous.updatedAt ?? 0) + 1),
     completion: skipped ? 'partial' : part.completion, ...(skipped ? { skippedRounds: skipped } : {}), ...(part.remaining ? { remaining: part.remaining } : {}),

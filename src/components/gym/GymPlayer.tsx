@@ -371,7 +371,8 @@ export function GymPlayer({
     return {
       maxes: session.exercises.length ? newMaxes(session) : [],
       // What to aim for next time, lift by lift, from the rule the builder uses.
-      next: nextTimeLines(session, [...gym.sessions.filter((s) => s.id !== session.id), session], location, youth),
+      next: nextTimeLines(session, gym.sessions, location, youth, session.endedAt + 60_000,
+        { state, avoidJoints: draft.avoidJoints, volumeFactor: draft.volumeFactor }),
     }
     // Computed when the sheet opens; the draft cannot change underneath it.
     // eslint-disable-next-line react-hooks/exhaustive-deps

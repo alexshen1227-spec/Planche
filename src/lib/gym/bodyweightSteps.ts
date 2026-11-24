@@ -20,7 +20,7 @@ interface LegPractice {
 export function legPracticeAt(sessions: GymSession[], locationId: string | undefined, now: number) {
   const result = new Map<string, LegPractice>()
   const from = addDays(now, -28)
-  for (const visit of sessions) {
+  for (const visit of [...sessions].sort((a, b) => a.startedAt - b.startedAt)) {
     if (visit.locationId !== locationId || visit.startedAt < from || visit.startedAt >= now) continue
     for (const [base, variants] of Object.entries(LEG_VARIATIONS)) {
       const relevant = visit.exercises.filter((log) => (log.exerciseId === base || variants?.includes(log.exerciseId)) &&
@@ -64,11 +64,12 @@ export interface UnassistedWork {
 
 interface LiftEvidence {
   easyDays: Map<string, number>
+  clearPushupDay?: string
   latest?: { day: string; at: number; sets: GymSet[]; building: boolean }
 }
 
 /** Actual work on the harder movement stays separate from its easier variations. */
-export function unassistedSteps(sessions: GymSession[], known: { pushups: number; pullups: number }, now: number) {
+export function unassistedSteps(sessions: GymSession[], known: { pushups: number; pullups: number }, now: number, adult = false) {
   const recent = addDays(now, -28)
   const from = addDays(now, -84)
   const evidence: Record<UnassistedLift, LiftEvidence> = { 'push-up': { easyDays: new Map() }, 'pull-up': { easyDays: new Map() } }
@@ -80,8 +81,9 @@ export function unassistedSteps(sessions: GymSession[], known: { pushups: number
       if (!prep && !lift) continue
       const sets = row.sets.filter((s) => !s.warmup && s.at >= from && s.at <= now)
       if (prep) {
-        // Two sets on each of two different days. A band does not establish an
-        // equivalent bodyweight load. Success only earns an optional check.
+        if (unfinishedLiftSets(session, row.exerciseId)) continue
+        // Two sets on two days, or an adult's very easy pair of push-up sets far
+        // beyond the assigned range. Either earns one optional check.
         const minimum = prep === 'push-up' ? Math.max(8, row.repRange?.[1] ?? 12) : row.exerciseId === 'negative-pull-up' ? 4 : Math.min(8, row.repRange?.[1] ?? 8)
         const byDate = new Map<string, GymSet[]>()
         for (const set of sets) if (set.at >= recent) {
@@ -91,6 +93,9 @@ export function unassistedSteps(sessions: GymSession[], known: { pushups: number
         }
         for (const [day, work] of byDate) if (work.length >= 2 && work.every((s) => s.reps >= minimum && s.rpe !== undefined && s.rpe <= (prep === 'push-up' ? 7 : 8))) {
           evidence[prep].easyDays.set(day, Math.max(evidence[prep].easyDays.get(day) ?? 0, ...work.map((s) => s.at)))
+          if (adult && prep === 'push-up' && day < dayKey(now) && work.every((s) => s.reps >= Math.max(16, minimum * 2) && s.rpe! <= 6)) {
+            if (!evidence[prep].clearPushupDay || day > evidence[prep].clearPushupDay!) evidence[prep].clearPushupDay = day
+          }
         }
       } else if (lift) {
         const track = evidence[lift]
@@ -122,7 +127,8 @@ export function unassistedSteps(sessions: GymSession[], known: { pushups: number
     }
     if ((lift === 'push-up' ? known.pushups : known.pullups) >= 5 || latest?.day === dayKey(now)) continue
     const afterMiss = latest && best === 0 ? latest.at : -Infinity
-    const ready = [...easyDays].filter(([day, at]) => day !== dayKey(now) && at > afterMiss && (best > 0 || day !== latest?.day)).length >= 2
+    const ready = (!latest && Boolean(evidence[lift].clearPushupDay)) ||
+      [...easyDays].filter(([day, at]) => day !== dayKey(now) && at > afterMiss && (best > 0 || day !== latest?.day)).length >= 2
     if (ready) {
       const last = latest && latest.at >= recent ? latest.sets.reduce((a, b) => a.at > b.at ? a : b) : undefined
       trials[lift] = Math.max(1, Math.min(4, (last?.reps ?? 0) + (last?.rpe !== undefined && last.rpe <= 7 ? 1 : 0)))

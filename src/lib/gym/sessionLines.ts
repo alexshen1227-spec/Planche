@@ -4,6 +4,11 @@ import type { GymDraft } from './draft'
 import { countUnit, countWord, estimateOneRepMax, prescribedCount, repPlanFor, suggestLoad } from './progression'
 import type { GymExerciseLog, GymLocation, GymSession } from './types'
 import { formatLoad, unitFor, unloadedLabel } from './units'
+import { applyBodyweightTrials } from './builder'
+import { bodyweightCapacity } from './bodyweight'
+import { LEG_VARIATIONS, preparesFor } from './bodyweightSteps'
+import { addDays, dayKey } from '../time'
+import type { AppState } from '../../types'
 
 /* Pure lines the gym screens print, so each decision can be pinned without a DOM. */
 
@@ -143,18 +148,29 @@ export function nextTimeLines(
   location: GymLocation | undefined,
   youth: boolean,
   now: number = session.endedAt + 60_000,
+  context?: { state: AppState; avoidJoints?: Joint[]; volumeFactor?: number },
 ): NextTimeLine[] {
-  const all = sessions.some((s) => s.id === session.id) ? sessions : [...sessions, session]
-  return session.exercises.flatMap((log) => {
-    if (!log.sets.some((s) => !s.warmup && s.reps > 0)) return []
+  const all = [...sessions.filter((s) => s.id !== session.id && s.startedAt <= now), session].sort((a, b) => a.startedAt - b.startedAt)
+  const items = session.exercises.filter((log) => log.sets.some((s) => !s.warmup && s.reps > 0)).map((log) => {
+    const ex = GYM_EXERCISE_BY_ID[log.exerciseId]
+    const usual = ex ? repPlanFor(ex, 'muscle', youth) : { range: [8, 12] as [number, number], targetRpe: 7 }
+    const plan = { ...usual, range: ex?.dose ? usual.range : log.repRange ?? usual.range, targetRpe: log.targetRpe ?? usual.targetRpe }
+    const suggestion = suggestLoad({ exerciseId: log.exerciseId, location, sessions: all, plan, youth, now })
+    return { log, exerciseId: log.exerciseId, sets: log.sets.filter((s) => !s.warmup && s.reps > 0).length, plan, suggestion }
+  })
+  if (context?.state.gym && location && items.some((it) => it.sets >= 2 && (preparesFor(it.exerciseId) || LEG_VARIATIONS[it.exerciseId]))) {
+    // A finish screen is about the next visit. A harder variation cannot be earned and tested on the same day.
+    const nextVisit = dayKey(now) === dayKey(session.endedAt) ? addDays(now, 1) : now
+    const gym = { ...context.state.gym, sessions: all }
+    applyBodyweightTrials(items, { location, sessions: all, capacity: bodyweightCapacity({ ...context.state, gym }, nextVisit),
+      ratings: gym.ratings, musclesOff: gym.prefs?.musclesOff, avoidJoints: context.avoidJoints, volumeFactor: context.volumeFactor }, nextVisit)
+  }
+  return items.map(({ log, plan, suggestion: s }) => {
     const ex = GYM_EXERCISE_BY_ID[log.exerciseId]
     const maxNote = noMaxReason(log)
     const base = { exerciseId: log.exerciseId, name: exerciseTitle(log.exerciseId), ...(maxNote ? { maxNote } : {}) }
-    if (!ex) return [{ ...base, text: 'No suggestion: this movement is no longer in the catalogue.', why: 'Its sets are kept as logged.' }]
-    const later = all.some((s) => s.id !== session.id && s.startedAt > session.startedAt && s.exercises.some((e) => e.exerciseId === log.exerciseId))
-    const usual = repPlanFor(ex, 'muscle', youth)
-    const plan = { ...usual, range: ex.dose ? usual.range : log.repRange ?? usual.range, targetRpe: log.targetRpe ?? usual.targetRpe }
-    const s = suggestLoad({ exerciseId: log.exerciseId, location, sessions: [...all].sort((a, b) => a.startedAt - b.startedAt), plan, youth, now })
+    if (!ex) return { ...base, text: 'No suggestion: this movement is no longer in the catalogue.', why: 'Its sets are kept as logged.' }
+    const later = sessions.some((s) => s.id !== session.id && s.startedAt > session.startedAt && s.exercises.some((e) => e.exerciseId === log.exerciseId))
     const unit = unitFor(ex, location)
     const [lo, hi] = s.reps
     const word = countUnit(ex) === 'seconds' ? ' s' : ''
@@ -173,6 +189,6 @@ export function nextTimeLines(
           : s.kind === 'bodyweight' || s.kg === 0
             ? `Next time: ${ex.assisted ? 'no help' : unloadedLabel(ex).toLowerCase()} × ${s.targetReps !== undefined ? `${s.targetReps} reps` : `${lo}–${hi}${word}`}`
             : `Next time: no load suggested yet`
-    return [{ ...base, text, why: s.why, ...(later ? { superseded: true } : {}) }]
+    return { ...base, text, why: s.why, ...(later ? { superseded: true } : {}) }
   })
 }
