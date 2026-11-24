@@ -476,6 +476,10 @@ export function GymPlayer({
             {doneSets > 0 ? ' You can finish and save the work you already did.' : ''}
           </p>}
           {(draft.volumeFactor ?? 1) <= 0.6 && <p className="text-footnote text-ink2">Light session. Use a comfortable weight and keep several reps in reserve.</p>}
+          {draft.avoidJoints?.includes('ankles') && <p className="rounded-control bg-raised p-3 text-footnote text-ink2" role="status">
+            {plannedSets ? 'Keep your feet unloaded. Use a seated or lying setup you can get into comfortably. Stop if it hurts.' : 'No planned sets fit while keeping weight off your ankles. You can rest today.'}
+          </p>}
+          {!plannedSets && !!draft.avoidJoints?.length && !draft.resumeFrom && <Button variant="secondary" onClick={discard}>Rest today and close</Button>}
           {draft.items.map((item, i) => {
             const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
             const option = availableTrial(item)

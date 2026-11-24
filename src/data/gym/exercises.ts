@@ -136,6 +136,7 @@ const BASE_EXERCISES: GymExercise[] = [
   x('db-lateral-raise', 'Dumbbell lateral raise', 'lateral-raise', ['side-delts'], ['traps'], [['dumbbells']], 'dumbbell', false, ['shoulders'], 'Lead with the elbows to shoulder height; light enough to pause at the top.'),
   x('cable-lateral-raise', 'Cable lateral raise', 'lateral-raise', ['side-delts'], [], [['cable']], 'cable', false, ['shoulders'], 'Cable from behind or in front, one arm at a time.', { unilateral: true }),
   x('machine-lateral-raise', 'Machine lateral raise', 'lateral-raise', ['side-delts'], [], [['lateral-raise-machine']], 'machine', false, ['shoulders'], 'Pads on the forearms just below the elbows.', { stepFrom: 'lateral-raise-machine' }),
+  x('seated-db-lateral-raise', 'Seated dumbbell lateral raise', 'lateral-raise', ['side-delts'], ['traps'], [['dumbbells'], ['bench', 'incline-bench']], 'dumbbell', false, ['shoulders'], 'Sit on the bench with the weights by your sides. Keep your legs relaxed and lift the elbows to shoulder height without swinging.', { variantOf: 'db-lateral-raise' }),
   x('reverse-pec-deck', 'Reverse pec deck', 'rear-delt', ['rear-delts'], ['upper-back'], [['pec-deck']], 'machine', false, ['shoulders'], 'Arms long, sweep wide, do not shrug.', { stepFrom: 'pec-deck' }),
   x('face-pull', 'Face pull', 'rear-delt', ['rear-delts', 'upper-back'], ['traps'], [['cable']], 'cable', false, ['shoulders'], 'Rope to the eyes, thumbs pointing back at the end.'),
   x('db-rear-delt-fly', 'Dumbbell rear delt fly', 'rear-delt', ['rear-delts'], ['upper-back'], [['dumbbells']], 'dumbbell', false, ['shoulders'], 'Chest on an incline bench or hinged over; sweep wide.'),
@@ -440,12 +441,26 @@ const handPatterns = new Set<Pattern>(['horizontal-press', 'incline-press', 'ver
 // its usual fatigue contribution in the exercise catalogue.
 const loadedArmPatterns = new Set<Pattern>(['horizontal-press', 'incline-press', 'vertical-press', 'dip', 'horizontal-pull', 'vertical-pull', 'straight-arm-pull', 'carry', 'throw'])
 const loadedArmSupports = new Set(['plank', 'side-plank', 'copenhagen-plank', 'short-copenhagen', 'ab-wheel', 'sled-push', 'nordic-curl', 'dragon-flag'])
+// Keeping weight off an ankle also rules out standing, bracing with the feet,
+// pushing a platform and stepping or jumping up to equipment. List the setups
+// that can actually be done seated or lying down with the feet unloaded.
+const feetUnloaded = new Set([
+  'db-floor-press', 'barbell-floor-press', 'machine-chest-press', 'incline-machine-press',
+  'pec-deck', 'db-fly', 'incline-db-fly', 'db-pullover', 'barbell-pullover', 'ez-pullover',
+  'z-press', 'barbell-z-press', 'seated-db-press', 'machine-shoulder-press',
+  'seated-db-lateral-raise', 'machine-lateral-raise', 'reverse-pec-deck', 'prone-t-raise', 'y-raise',
+  'incline-db-curl', 'preacher-curl', 'db-preacher-curl', 'spider-curl', 'concentration-curl',
+  'skull-crusher', 'db-skull-crusher', 'barbell-skull-crusher',
+  'lat-pulldown', 'neutral-grip-pulldown', 'chest-supported-row', 'seal-row',
+  'side-lying-abduction', 'adductor-squeeze', 'dead-bug', 'hollow-hold', 'reverse-crunch', 'v-up',
+])
 const handSupports = new Set<LocationEquipment>(['pullup-bar', 'rings', 'parallettes', 'dip-bars', 'ab-wheel'])
 const jointRest = new Map<string, Joint[]>(GYM_EXERCISES.map((ex) => {
   const supportedByHands = ex.needs.some((group) => group.length > 0 && group.every((id) => handSupports.has(id)))
   const gripped = !handsFree.has(ex.variantOf ?? ex.id) && (['barbell', 'dumbbell', 'kettlebell', 'cable'].includes(ex.load) ||
     handPatterns.has(ex.pattern) || supportedByHands || ex.id === 'sled-push' || ex.id === 'dragon-flag')
   const joints = new Set(ex.stress)
+  if (!feetUnloaded.has(ex.id)) joints.add('ankles')
   if (gripped) joints.add('wrists')
   if (loadedArmPatterns.has(ex.pattern) || supportedByHands || loadedArmSupports.has(ex.id)) {
     joints.add('elbows')

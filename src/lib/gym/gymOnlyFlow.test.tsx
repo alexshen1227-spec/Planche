@@ -13,7 +13,7 @@ import { Stats } from '../../views/Stats'
 import { defaultGym, defaultPrefs, sanitizeGym } from './state'
 import type { GymEntry } from '../plan/screens'
 import { loadDraft, resumePartial, saveDraft, sessionFromDraft, type DraftItem } from './draft'
-import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import { GYM_EXERCISE_BY_ID, jointsToRest } from '../../data/gym/exercises'
 import { Toasts } from '../../components/Toasts'
 import { GymPlayer } from '../../components/gym/GymPlayer'
 import { PartialWorkout } from '../../components/gym/PartialWorkout'
@@ -419,6 +419,36 @@ it('lets a gym-only athlete log a first set, reload Home and finish the original
   expect(stored()[0]).toMatchObject({ id: original.id, startedAt: original.startedAt, completion: 'full' })
   expect(stored()[0].remaining).toBeUndefined()
   expect(stored()[0].exercises[0].sets[0]).toEqual(original.exercises[0].sets[0])
+})
+
+it('keeps ankle-bearing lifts out of a lower-body session, its swaps and the add menu after an ankle pain report', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const gym = defaultGym(['floor', 'pullup-bar'])
+  gym.locations[0].equipment.push('dumbbells', 'incline-bench')
+  localStorage.setItem('planchelab.v1', JSON.stringify({ ...initialState(), onboarded: true, gym }))
+  const click = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }))
+  render(<StoreProvider><Train startWorkout={vi.fn()} entryPreset={{ focus: 'lower', minutes: 20, placeId: gym.locations[0].id, volumeFactor: 1, avoidJoints: [], musclesOff: [] }} /></StoreProvider>)
+  click('Ankles')
+  click(/it hurts.*keep off it/i)
+  const player = within(screen.getByRole('dialog', { name: 'Gym session' }))
+  const adjusted = loadDraft()!
+  expect(adjusted.avoidJoints).toContain('ankles')
+  expect(adjusted.items.length).toBeGreaterThan(0)
+  expect(adjusted.items.every((item) => !jointsToRest(item.exerciseId).includes('ankles'))).toBe(true)
+  for (const id of ['goblet-squat', 'db-rdl', 'db-lateral-raise', 'split-squat', 'walking-lunge', 'cable-row', 'push-up', 'farmer-carry']) expect(jointsToRest(id), id).toContain('ankles')
+  fireEvent.click(player.getAllByRole('button', { name: /exercise options for /i })[0])
+  click(/swap.*machine taken/i)
+  let sheet = within(screen.getByRole('dialog', { name: 'Exercise options' }))
+  expect(sheet.queryByRole('button', { name: /squat|lunge|deadlift|standing/i })).toBeNull()
+  fireEvent.click(sheet.getByRole('button', { name: /close/i }))
+  fireEvent.click(player.getByRole('button', { name: 'Add an exercise' }))
+  sheet = within(screen.getByRole('dialog', { name: 'Exercise options' }))
+  const search = sheet.getByLabelText('Search exercises')
+  fireEvent.change(search, { target: { value: 'lunge' } })
+  expect(sheet.queryByRole('button', { name: /lunge/i })).toBeNull()
+  fireEvent.change(search, { target: { value: 'lateral raise' } })
+  expect(sheet.getByRole('button', { name: /seated dumbbell lateral raise/i })).toBeTruthy()
+  expect(sheet.queryByRole('button', { name: /^Dumbbell lateral raise/i })).toBeNull()
 })
 
 it('keeps finished sets and applies a new pain check when Home reopens an unfinished gym workout', () => {

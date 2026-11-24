@@ -766,7 +766,7 @@ export function buildGymSession(input: GymSessionInput): GymPlan {
     const target = id === 'push-up' ? input.capacity?.floorPushupTrial : input.capacity?.pullupTrial
     const ex = GYM_EXERCISE_BY_ID[id]
     if (!target || (input.volumeFactor ?? 1) < 1 || input.ratings?.[id] === 'avoid' || !canDoHere(id, input.location) ||
-        ex.stress.some((j) => input.avoidJoints?.includes(j)) || ex.primary.some((m) => input.musclesOff?.includes(m)) || items.some((it) => it.exerciseId === id)) continue
+        jointsToRest(id).some((j) => input.avoidJoints?.includes(j)) || ex.primary.some((m) => input.musclesOff?.includes(m)) || items.some((it) => it.exerciseId === id)) continue
     const prep = items.find((it) => preparesFor(it.exerciseId) === id && it.sets >= 2)
     if (!prep) continue
     const name = id === 'push-up' ? 'floor push-up' : 'unassisted pull-up'
