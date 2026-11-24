@@ -1,7 +1,7 @@
 /**
  * Local storage for form-check video clips.
  *
- * Clips never leave the device. They are also by far the largest thing this
+ * Clips are local unless the athlete exports them. They are the largest thing this
  * app writes, so metadata lives in its own object store: listing clips (which
  * happens after every filmed set, to evict old ones) must not deserialise
  * megabytes of video just to read a few numbers.
@@ -124,6 +124,111 @@ export async function getClipBlob(key: string): Promise<Blob | null> {
   }
 }
 
+export interface BackupClip { meta: ClipMeta; blob: Blob }
+
+/** Read a consistent library, including pins and clips without a surviving set. */
+export function readClipBackup(): Promise<BackupClip[]> {
+  return withTx([META, BLOBS], 'readonly', async (tx) => {
+    const blobStore = tx.objectStore(BLOBS)
+    const [metas, size] = await Promise.all([
+      reqAsPromise<ClipMeta[]>(tx.objectStore(META).getAll()), reqAsPromise(blobStore.count()),
+    ])
+    if (size !== metas.length) throw new Error('The saved video library could not be read in full.')
+    return Promise.all(metas.map(async (meta) => {
+      const blob: Blob | undefined = await reqAsPromise(blobStore.get(meta.key))
+      if (!blob || !blob.size || blob.size !== meta.bytes) throw new Error('A saved video could not be read.')
+      return { meta, blob }
+    }))
+  })
+}
+
+function sameRecording(a: ClipMeta | undefined, b: ClipMeta) {
+  return a && a.exerciseId === b.exerciseId && a.at === b.at && a.seconds === b.seconds && a.reps === b.reps && a.bytes === b.bytes
+}
+
+async function sameBytes(a: Blob, b: Blob) {
+  if (a.size !== b.size) return false
+  const chunk = 256 * 1024
+  for (let offset = 0; offset < a.size; offset += chunk) {
+    const [left, right] = await Promise.all([a, b].map(async (blob) =>
+      new Uint8Array(await blob.slice(offset, offset + chunk).arrayBuffer())))
+    if (left.some((byte, i) => byte !== right[i])) return false
+  }
+  return true
+}
+
+/** Merge recordings without replacing a different video that happens to share its key. */
+export async function restoreClipBackup(
+  clips: BackupClip[], commit: (keys: ReadonlyMap<string, string>) => boolean,
+): Promise<boolean> {
+  const keys = new Map<string, string>()
+  if (!clips.length) return commit(keys)
+  const restore = async () => {
+    const reserved = new Set(clips.map(({ meta }) => meta.key))
+    const additions: BackupClip[] = []
+    const matches: ClipMeta[] = []
+    for (const { meta, blob } of clips) {
+      let key = meta.key
+      let suffix = 1
+      for (;;) {
+        const [local, stored] = await withTx([META, BLOBS], 'readonly', (tx) => Promise.all([
+          reqAsPromise<ClipMeta | undefined>(tx.objectStore(META).get(key)),
+          reqAsPromise<Blob | undefined>(tx.objectStore(BLOBS).get(key)),
+        ]))
+        if (!local && !stored) {
+          additions.push({ meta: { ...meta, key }, blob })
+          break
+        }
+        if (sameRecording(local, meta) && stored && await sameBytes(stored, blob)) {
+          matches.push({ ...meta, key })
+          break
+        }
+        do { key = `${meta.key}:backup:${++suffix}` } while (reserved.has(key))
+      }
+      reserved.add(key)
+      if (key !== meta.key) keys.set(meta.key, key)
+    }
+    const previouslyUnpinned: ClipMeta[] = []
+    await withTx([META, BLOBS], 'readwrite', async (tx) => {
+      const metas = tx.objectStore(META)
+      for (const { meta, blob } of additions) {
+        metas.add(meta)
+        tx.objectStore(BLOBS).add(blob, meta.key)
+      }
+      for (const meta of matches) {
+        const local: ClipMeta | undefined = await reqAsPromise(metas.get(meta.key))
+        if (!local || !sameRecording(local, meta)) throw new Error('A video changed during restore. Pick the file again.')
+        if (meta.pinned && !local.pinned) {
+          previouslyUnpinned.push(local)
+          metas.put({ ...local, pinned: true })
+        }
+      }
+    })
+    let committed = false
+    try {
+      committed = commit(keys)
+      return committed
+    } finally {
+      if (!committed) await withTx([META, BLOBS], 'readwrite', async (tx) => {
+        const metas = tx.objectStore(META)
+        for (const { meta } of additions) {
+          const local: ClipMeta | undefined = await reqAsPromise(metas.get(meta.key))
+          if (!sameRecording(local, meta) || Boolean(local?.pinned) !== Boolean(meta.pinned)) continue
+          metas.delete(meta.key)
+          tx.objectStore(BLOBS).delete(meta.key)
+        }
+        for (const previous of previouslyUnpinned) {
+          const local: ClipMeta | undefined = await reqAsPromise(metas.get(previous.key))
+          if (local?.pinned && sameRecording(local, previous)) metas.put(previous)
+        }
+      })
+    }
+  }
+  return typeof navigator !== 'undefined' && navigator.locks
+    ? navigator.locks.request('fitness-lab-restore-clips', restore)
+    : restore()
+}
+
 export async function deleteClip(key: string): Promise<boolean> {
   try {
     await withTx([BLOBS, META], 'readwrite', (tx) => {
@@ -151,11 +256,11 @@ export async function setPinned(key: string, pinned: boolean): Promise<boolean> 
 
 /** Save a clip and evict the oldest unpinned ones for that exercise. */
 export async function saveClip(exerciseId: string, blob: Blob, seconds: number, reps?: number): Promise<string | null> {
-  const key = `${exerciseId}:${Date.now()}`
+  const key = `${exerciseId}:${Date.now()}:${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`
   try {
     await withTx([BLOBS, META], 'readwrite', (tx) => {
-      tx.objectStore(BLOBS).put(blob, key)
-      tx.objectStore(META).put({
+      tx.objectStore(BLOBS).add(blob, key)
+      tx.objectStore(META).add({
         key,
         exerciseId,
         at: Date.now(),
@@ -179,25 +284,24 @@ export async function saveClip(exerciseId: string, blob: Blob, seconds: number, 
 export async function pruneClips(exerciseId?: string): Promise<number> {
   try {
     const cutoff = Date.now() - CLIP_RETENTION_DAYS * 86_400_000
-    const all = await listClips(exerciseId)
-    const doomed = new Set<string>()
-
-    for (const c of all) if (!c.pinned && c.at < cutoff) doomed.add(c.key)
-
-    const byExercise = new Map<string, ClipMeta[]>()
-    for (const c of all) {
-      if (c.pinned || doomed.has(c.key)) continue
-      const list = byExercise.get(c.exerciseId) ?? []
-      list.push(c)
-      byExercise.set(c.exerciseId, list)
-    }
-    // listClips is newest-first, so anything past the cap is the older tail.
-    for (const list of byExercise.values()) {
-      for (const stale of list.slice(CLIPS_PER_EXERCISE)) doomed.add(stale.key)
-    }
-
-    for (const key of doomed) await deleteClip(key)
-    return doomed.size
+    return await withTx([META, BLOBS], 'readwrite', async (tx) => {
+      const metas = tx.objectStore(META)
+      const all: ClipMeta[] = await reqAsPromise(metas.getAll())
+      const kept = new Map<string, number>()
+      let removed = 0
+      for (const clip of all.sort((a, b) => b.at - a.at)) {
+        if (clip.pinned || (exerciseId && clip.exerciseId !== exerciseId)) continue
+        const count = kept.get(clip.exerciseId) ?? 0
+        if (clip.at >= cutoff && count < CLIPS_PER_EXERCISE) {
+          kept.set(clip.exerciseId, count + 1)
+          continue
+        }
+        metas.delete(clip.key)
+        tx.objectStore(BLOBS).delete(clip.key)
+        removed++
+      }
+      return removed
+    })
   } catch {
     return 0
   }

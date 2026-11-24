@@ -19,10 +19,11 @@ import { activeSkills, stepOfSkill } from '../lib/skills'
 import { AddSkill } from '../components/AddSkill'
 import { APP_NAME } from '../data/app'
 import { defaultSurface, EQUIPMENT_OPTIONS, kitNeedsPhrase, TRAINING_SURFACES } from '../data/equipment'
-import { dataOnDevice, exportCsv, exportData, readImportFile, validateImport } from '../lib/exportImport'
+import { BACKUP_ACCEPT, dataOnDevice, exportCsv, readImportFile, restoreTrainingBackup, validateImport } from '../lib/exportImport'
+import { BackupButton } from '../components/BackupButton'
 import { requestPersistence, storageInfo, type StorageInfo } from '../lib/persist'
 import { INSTALL_STEPS, installState } from '../lib/install'
-import { listClips, clearAllClips, CLIP_RETENTION_DAYS } from '../lib/clips'
+import { listClips, clearAllClips, CLIP_RETENTION_DAYS, type BackupClip } from '../lib/clips'
 import {
   clearAllProblemReports,
   exportProblemReports,
@@ -266,10 +267,13 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
   const [pendingImport, setPendingImport] = useState<{
     state: AppState
     report: NormalizeReport
+    clips: BackupClip[]
+    epoch: AppState['epoch']
     /** The dataset revision the file was reviewed against. */
     stagedRev: number
   } | null>(null)
   const [importBusy, setImportBusy] = useState(false)
+  const [readingImport, setReadingImport] = useState(false)
   const [acceptLosses, setAcceptLosses] = useState(false)
   const [resetBusy, setResetBusy] = useState(false)
   const [quarantine, setQuarantine] = useState(() => quarantinedData())
@@ -315,7 +319,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       setClipCount(c.length)
       setClipBytes(c.reduce((t, x) => t + x.bytes, 0))
     })
-  }, [])
+  }, [state.epoch])
 
   useEffect(() => {
     void listProblemReports().then((reports) => {
@@ -360,16 +364,10 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
     })
   }
 
-  /**
-   * Import is the most destructive action in the app — it replaces every
-   * session, record and achievement, and wipes every saved clip — and it was
-   * the only one with no confirmation. Reset and Load Sample both ask, and
-   * both destroy strictly less. So the file is validated first and the athlete
-   * is shown what they are about to trade before anything is touched.
-   */
   const stageImport = async (file: File) => {
+    setReadingImport(true)
     try {
-      const raw = await readImportFile(file)
+      const { raw, clips } = await readImportFile(file)
       validateImport(raw)
       // Everything the file would lose is counted and shown — a matching
       // session count used to hide sets that were silently dropped.
@@ -378,10 +376,14 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       setPendingImport({
         state: rebuildDerivedState(normalized),
         report,
+        clips,
+        epoch: getState().epoch,
         stagedRev: getState().rev ?? 0,
       })
     } catch (err) {
       pushToast(err instanceof Error ? err.message : 'Import failed.', 'danger')
+    } finally {
+      setReadingImport(false)
     }
   }
 
@@ -392,9 +394,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
    * was reviewed against a specific revision of the data; if anything was
    * saved since (here, or in another tab), the replacement is refused rather
    * than silently erasing that newer work — checked before anything is
-   * touched, and again by the store at the moment of commit. Old clips are
-   * removed only after the new data is in place, so a refusal destroys
-   * nothing.
+   * touched, and again by the store at the moment of commit.
    */
   const applyImport = async () => {
     const staged = pendingImport
@@ -402,7 +402,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
     setImportBusy(true)
     try {
       const before = getState()
-      if ((before.rev ?? 0) !== staged.stagedRev) {
+      if ((before.rev ?? 0) !== staged.stagedRev || before.epoch !== staged.epoch) {
         setPendingImport(null)
         pushToast(
           'Something was saved after you picked the file, so nothing was imported. Pick the file again to review it against what is here now.',
@@ -411,8 +411,12 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         )
         return
       }
-      flushSync(() => dispatch({ type: 'IMPORT_REPLACE', state: staged.state, expectedRev: staged.stagedRev }))
-      if (getState().epoch === before.epoch) {
+      const restored = await restoreTrainingBackup(staged.state, staged.clips, (state) => {
+        if (getState().epoch !== before.epoch) return false
+        flushSync(() => dispatch({ type: 'IMPORT_REPLACE', state, expectedRev: staged.stagedRev }))
+        return getState().epoch !== before.epoch
+      })
+      if (!restored) {
         setPendingImport(null)
         pushToast('Newer data arrived while importing, so nothing was replaced. Try the import again.', 'danger', 8000)
         return
@@ -421,20 +425,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       // An unfinished session belongs to the data that was replaced: resumed,
       // it would save the old history's sets into the imported one.
       forgetUnfinishedWork()
-      // The previous history's clips would otherwise surface under the
-      // imported sessions.
-      const cleared = await clearAllClips()
-      if (cleared) {
-        setClipCount(0)
-        setClipBytes(0)
-        pushToast('Data imported.', 'success')
-      } else {
-        pushToast(
-          'Data imported, but some old form clips could not be removed — delete them under Saved form clips.',
-          'info',
-          8000,
-        )
-      }
+      pushToast('Training data imported.', 'success')
     } catch (err) {
       pushToast(err instanceof Error ? err.message : 'Import failed.', 'danger')
     } finally {
@@ -884,7 +875,7 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       <div className="rounded-card border border-line bg-surface px-4">
         <Row
           label="Film main holds"
-          hint="Records a short clip of your main holds, and of push-up sets on a rung, for form review. A filmed check is required for progression unlocks; sets still save as PRs when filming is off. Clips stay on this device."
+          hint="Records main holds and push-up sets for form review. Filmed checks count toward progression unlocks. Sets still save as PRs when filming is off. A full backup includes saved clips."
         >
           <Toggle label="Film main holds" on={s.recordForm} onChange={(v) => set({ recordForm: v })} />
         </Row>
@@ -1147,22 +1138,18 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
         </Row>
         <Row
           label="Export backup"
-          hint={`Everything — skill and gym sessions, records, achievements, places — as a JSON file. Last export: ${state.lastBackupAt ? fmtDate(state.lastBackupAt) : 'never'}.`}
+          hint={`Training history, settings, places and saved form videos. You get a ZIP if you have videos or a JSON file otherwise. Last full export ${state.lastBackupAt ? fmtDate(state.lastBackupAt) : '— none yet'}.`}
         >
-          <button
-            onClick={() => {
-              const at = Date.now()
-              exportData({ ...state, lastBackupAt: at })
-              dispatch({ type: 'STAMP_BACKUP', at })
-            }}
-            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
-          >
+          <BackupButton className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink">
             <Icon name="download" size={15} /> Export
-          </button>
+          </BackupButton>
+        </Row>
+        <Row label="Training data only" hint="A smaller, restorable JSON file with your history and settings. Video files are omitted.">
+          <BackupButton logsOnly className="min-h-11 rounded-control border border-line bg-raised px-4 text-footnote font-medium text-ink2">Save JSON</BackupButton>
         </Row>
         <Row
           label="Export sets as CSV"
-          hint="Every skill hold and gym set, one row each, for a spreadsheet. Import needs the JSON backup above."
+          hint="Every skill hold and gym set, one row each, for a spreadsheet."
         >
           <button
             onClick={() => exportCsv(state)}
@@ -1171,11 +1158,11 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
             <Icon name="download" size={15} /> CSV
           </button>
         </Row>
-        <Row label="Import backup" hint="Replaces current data with the file's contents.">
+        <Row label="Import backup" hint="Choose a Fitness Lab ZIP or JSON backup to review its contents.">
           <input
             ref={fileRef}
             type="file"
-            accept="application/json"
+            accept={BACKUP_ACCEPT}
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0]
@@ -1185,9 +1172,11 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
           />
           <button
             onClick={() => fileRef.current?.click()}
+            disabled={readingImport}
+            aria-busy={readingImport}
             className="inline-flex items-center gap-1.5 rounded-control border border-line bg-raised min-h-11 px-4 text-footnote font-medium text-ink2 hover:text-ink"
           >
-            <Icon name="upload" size={15} /> Import
+            <Icon name="upload" size={15} /> {readingImport ? 'Reading…' : 'Import'}
           </button>
         </Row>
         <Row label="Load sample data" hint="See the app fully populated with 9 weeks of plausible training. Replaces current data.">
@@ -1412,17 +1401,21 @@ export function Settings({ go }: { go: (t: Tab) => void }) {
       >
         {pendingImport ? (
           <div className="p-6">
-            <h2 className="pr-10 font-display text-title2 font-semibold text-ink">Replace everything with this file?</h2>
+            <h2 className="pr-10 font-display text-title2 font-semibold text-ink">Replace training history?</h2>
             <p className="mt-1.5 text-body leading-relaxed text-ink2">
               The file holds{' '}
               <span className="font-semibold text-ink">
-                {pendingImport.report.sessionsKept} usable session{pendingImport.report.sessionsKept === 1 ? '' : 's'}
+                {pendingImport.report.sessionsKept} skill and {pendingImport.state.gym?.sessions.length ?? 0} gym sessions
               </span>
               . Importing replaces the{' '}
               <span className="font-semibold text-ink">
-                {state.sessions.length} session{state.sessions.length === 1 ? '' : 's'}
+                {state.sessions.length} skill session{state.sessions.length === 1 ? '' : 's'}
               </span>{' '}
-              on this device, along with every record, achievement and saved form clip. There is no undo.
+              on this device, along with records, achievements and settings.
+            </p>
+            <p className="mt-2 text-footnote leading-relaxed text-ink2">
+              {pendingImport.clips.length ? `The file includes ${pendingImport.clips.length} saved video${pendingImport.clips.length === 1 ? '' : 's'} and their pins.` :
+                'This file contains training data only.'} Videos already on this device stay in your clip library.
             </p>
             {(() => {
               const here = dataOnDevice(state)

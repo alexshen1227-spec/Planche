@@ -12,7 +12,7 @@ import type { CoachPlan } from './lib/coach'
 import { MeasurePrompt, measurementDue } from './components/MeasurePrompt'
 import { pruneClips } from './lib/clips'
 import { syncMilestonePins } from './lib/highlights'
-import { exportData } from './lib/exportImport'
+import { BackupButton } from './components/BackupButton'
 import { Icon, type IconName } from './components/Icon'
 import { Toasts } from './components/Toasts'
 import type { CheckInContext } from './views/SessionPlayer'
@@ -178,7 +178,7 @@ function UpdateBanner({ defer = false }: { defer?: boolean }) {
  * protects the data in the meantime.
  */
 function PersistenceBanner() {
-  const { state, persist, dispatch, retrySave } = useStore()
+  const { persist, retrySave } = useStore()
   // A newer version saved this data: this older copy holds every write so it never strips the newer fields.
   // Only a refresh fixes it, and a toast alone was easy to miss.
   if (persist.newer) {
@@ -211,16 +211,9 @@ function PersistenceBanner() {
           Your latest changes are not being saved on this device
           {persist.error ? ` (${persist.error})` : ''}. Export a backup now, then free up storage.
         </span>
-        <button
-          onClick={() => {
-            const at = Date.now()
-            exportData({ ...state, lastBackupAt: at })
-            dispatch({ type: 'STAMP_BACKUP', at })
-          }}
-          className="rounded-lg bg-danger-solid px-3 py-1.5 text-footnote font-semibold text-white"
-        >
+        <BackupButton className="rounded-lg bg-danger-solid px-3 py-1.5 text-footnote font-semibold text-white">
           Export
-        </button>
+        </BackupButton>
         <button
           onClick={retrySave}
           className="rounded-lg border border-line bg-surface px-3 py-1.5 text-footnote font-medium text-ink"

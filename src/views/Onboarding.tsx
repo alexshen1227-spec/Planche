@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type SetStateAction } from 'react
 import { flushSync } from 'react-dom'
 import type { AssessmentRecord, Profile, EquipmentId, SkillId, StepId } from '../types'
 import { normalizeStateWithReport, rebuildDerivedState, reportHasLosses, useStore } from '../lib/store'
-import { readImportFile, validateImport } from '../lib/exportImport'
+import { BACKUP_ACCEPT, readImportFile, restoreTrainingBackup, validateImport } from '../lib/exportImport'
 import { pushToast } from '../lib/toast'
 import { ALL_STEPS, STEPS, STEP_BY_ID } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
@@ -157,18 +157,22 @@ export function Onboarding() {
   const restore = async (file: File) => {
     setRestoring(true)
     try {
-      const raw = await readImportFile(file)
+      const before = getState()
+      const { raw, clips } = await readImportFile(file)
       validateImport(raw)
       const { state: normalized, report } = normalizeStateWithReport(raw)
-      const before = getState()
-      flushSync(() => dispatch({ type: 'IMPORT_REPLACE', state: rebuildDerivedState(normalized), expectedRev: before.rev ?? 0 }))
-      if (getState().epoch === before.epoch) {
+      const restored = await restoreTrainingBackup(rebuildDerivedState(normalized), clips, (state) => {
+        if (getState().epoch !== before.epoch) return false
+        flushSync(() => dispatch({ type: 'IMPORT_REPLACE', state, expectedRev: before.rev ?? 0 }))
+        return getState().epoch !== before.epoch
+      })
+      if (!restored) {
         pushToast('That backup could not be applied. Try picking the file again.', 'danger', 7000)
         return
       }
       const count = report.sessionsKept + (normalized.gym?.sessions.length ?? 0)
       pushToast(
-        `Backup restored — ${count} session${count === 1 ? '' : 's'}.${
+        `Backup restored — ${count} session${count === 1 ? '' : 's'}${clips.length ? ` and ${clips.length} saved video${clips.length === 1 ? '' : 's'}` : ''}.${
           reportHasLosses(report) ? ' Some entries in the file could not be read and were left out.' : ''
         }`,
         'success',
@@ -500,7 +504,7 @@ export function Onboarding() {
             <input
               ref={restoreRef}
               type="file"
-              accept="application/json"
+              accept={BACKUP_ACCEPT}
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0]

@@ -24,7 +24,7 @@ import { CONFIDENCE_NOTE, describeForecast, forecastUnlock, goalOutlook } from '
 import { PLATEAU_LABEL, recentBreakthrough } from '../lib/plateau'
 import { qualifyingProgress } from '../lib/progression'
 import { addDays, dayKey, fmtDate, fmtDuration, fmtHold, weekStart } from '../lib/time'
-import { exportData } from '../lib/exportImport'
+import { BackupButton } from '../components/BackupButton'
 import { useToday } from '../lib/useToday'
 import { pushToast } from '../lib/toast'
 import { Icon } from '../components/Icon'
@@ -205,6 +205,7 @@ export function Dashboard(props: DashboardProps) {
 
 function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardProps) {
   const { state: whole, dispatch } = useStore()
+  const totalSessions = whole.sessions.length + (whole.gym?.sessions.length ?? 0)
   // Everything date-dependent is keyed on today too: a screen left open
   // overnight used to offer yesterday's plan.
   const today = useToday()
@@ -894,11 +895,10 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
             week without a visit; an app on your Home Screen keeps its own data, opens full-screen and works without
             signal.
           </p>
-          {whole.sessions.length > 0 ? (
+          {totalSessions > 0 ? (
             <ol className="mt-1.5 list-decimal space-y-0.5 pl-5 text-ink2">
               <li>
-                Export a backup — the Home Screen app starts empty; it does not share this tab’s data. Saved clips do
-                not move with it.
+                Export your training history and saved videos. The Home Screen app starts with its own storage.
               </li>
               <li>{INSTALL_STEPS['ios-tab']}</li>
               <li>Open the new app, choose “I have a backup file” on its first screen, and pick the file.</li>
@@ -910,18 +910,10 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
             </p>
           )}
           <div className="mt-2 flex flex-wrap gap-2">
-            {whole.sessions.length > 0 ? (
-              <button
-                onClick={() => {
-                  const at = Date.now()
-                  exportData({ ...whole, lastBackupAt: at })
-                  dispatch({ type: 'STAMP_BACKUP', at })
-                  pushToast('Backup exported.', 'success')
-                }}
-                className="min-h-11 rounded-control bg-accent px-4 text-body font-semibold text-on-accent"
-              >
+            {totalSessions > 0 ? (
+              <BackupButton className="min-h-11 rounded-control bg-accent px-4 text-body font-semibold text-on-accent">
                 Export backup
-              </button>
+              </BackupButton>
             ) : null}
             <button
               onClick={closeInstallNotice}
@@ -934,28 +926,19 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
       ) : null}
 
       {/* Backup nudge once real history has accumulated */}
-      {state.sessions.length >= 8 &&
-      (!state.lastBackupAt || Date.now() - state.lastBackupAt > 30 * 86_400_000) ? (
+      {totalSessions >= 8 &&
+      (!whole.lastBackupAt || Date.now() - whole.lastBackupAt > 30 * 86_400_000) ? (
         <div className="animate-rise mt-6 flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-surface p-4" style={{ animationDelay: '20ms' }}>
           <div className="flex items-center gap-2.5 text-body text-ink2">
             <Icon name="download" size={16} className="text-ink3" />
             <span>
-              <span className="font-semibold text-ink">{state.sessions.length} sessions</span> live only on this
+              <span className="font-semibold text-ink">{totalSessions} sessions</span> live only on this
               device. Keep a copy somewhere safe.
             </span>
           </div>
-          <button
-            onClick={() => {
-              const at = Date.now()
-              // The whole athlete, never the one-skill view this screen reads.
-              exportData({ ...whole, lastBackupAt: at })
-              dispatch({ type: 'STAMP_BACKUP', at })
-              pushToast('Backup exported.', 'success')
-            }}
-            className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-footnote font-medium text-ink"
-          >
+          <BackupButton className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-footnote font-medium text-ink">
             Export backup
-          </button>
+          </BackupButton>
         </div>
       ) : null}
 

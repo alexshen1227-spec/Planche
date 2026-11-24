@@ -1,5 +1,6 @@
 import { CURRENT_STATE_VERSION, type AppState } from '../types'
 import { dayKey } from './time'
+import { readClipBackup, restoreClipBackup, type BackupClip } from './clips'
 
 /**
  * Save the whole state to a file the athlete keeps.
@@ -11,12 +12,11 @@ import { dayKey } from './time'
  * the same tick as the click races the download and silently produces nothing
  * on WebKit, which is most of this app's phones.
  */
-export function exportData(state: AppState) {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })
+function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `fitness-lab-backup-${dayKey(Date.now())}.json`
+  a.download = filename
   a.rel = 'noopener'
   a.style.display = 'none'
   document.body.appendChild(a)
@@ -25,8 +25,26 @@ export function exportData(state: AppState) {
   setTimeout(() => URL.revokeObjectURL(url), 30_000)
 }
 
-export function readImportFile(file: File): Promise<unknown> {
-  return new Promise((resolve, reject) => {
+export async function exportData(state: AppState, logsOnly = false): Promise<void> {
+  const clips = logsOnly ? [] : await readClipBackup()
+  const prefix = logsOnly ? 'fitness-lab-training' : 'fitness-lab-backup'
+  const filename = `${prefix}-${dayKey(Date.now())}`
+  if (clips.length) {
+    const { makeMediaArchive } = await import('./mediaArchive')
+    download(await makeMediaArchive(state, clips), filename + '.zip')
+  } else {
+    download(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }), filename + '.json')
+  }
+}
+
+export const BACKUP_ACCEPT = '.json,.zip,application/json,application/zip,application/x-zip-compressed'
+
+export async function readImportFile(file: File): Promise<{ raw: unknown; clips: BackupClip[] }> {
+  if (/\.zip$/i.test(file.name) || ['application/zip', 'application/x-zip-compressed'].includes(file.type)) {
+    const { readMediaArchive } = await import('./mediaArchive')
+    return readMediaArchive(file)
+  }
+  const raw = await new Promise<unknown>((resolve, reject) => {
     const reader = new FileReader()
     reader.onerror = () => reject(new Error('Could not read the file.'))
     reader.onload = () => {
@@ -37,6 +55,24 @@ export function readImportFile(file: File): Promise<unknown> {
       }
     }
     reader.readAsText(file)
+  })
+  return { raw, clips: [] }
+}
+
+export function restoreTrainingBackup(state: AppState, clips: BackupClip[], commit: (next: AppState) => boolean) {
+  return restoreClipBackup(clips, (keys) => {
+    if (!keys.size) return commit(state)
+    const sessions = state.sessions.map((session) => ({
+      ...session,
+      sets: session.sets.map((set) => {
+        const attachment = set.clipKey && keys.get(set.clipKey)
+        const evidence = set.form?.clipKey && keys.get(set.form.clipKey)
+        if (!attachment && !evidence) return set
+        return { ...set, ...(attachment && { clipKey: attachment }),
+          ...(evidence && set.form && { form: { ...set.form, clipKey: evidence } }) }
+      }),
+    }))
+    return commit({ ...state, sessions })
   })
 }
 
@@ -103,7 +139,7 @@ function csvCell(v: string | number | undefined): string {
 
 /**
  * Every logged set as one CSV row — skill holds and gym lifts together, for a
- * spreadsheet. The JSON backup stays the one that can be imported back.
+ * spreadsheet. The downloadable backup can be imported back into the app.
  */
 export function setsCsv(state: AppState): string {
   const rows: (string | number | undefined)[][] = [
@@ -154,14 +190,5 @@ export function setsCsv(state: AppState): string {
 
 export function exportCsv(state: AppState) {
   const blob = new Blob([setsCsv(state)], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `fitness-lab-sets-${dayKey(Date.now())}.csv`
-  a.rel = 'noopener'
-  a.style.display = 'none'
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 30_000)
+  download(blob, `fitness-lab-sets-${dayKey(Date.now())}.csv`)
 }
