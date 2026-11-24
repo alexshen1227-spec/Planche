@@ -9,14 +9,14 @@ import { draftConflictLine, draftContents, EXTRA_SESSION_LINE, leftOutLine, open
 import { adaptOpenDraft, conservative, latestPartialToday, loadDraft, prefillReps, previousSets, resumePartial, type GymDraft } from '../../lib/gym/draft'
 import { AFTER_OPENER_WARM_UP_MIN, gymToday, MIN_GYM_MINUTES, skillFamily, skillRequest, soreJoints } from '../../lib/plan/planner'
 import { weekForChoice } from '../../lib/plan/currentWeek'
-import { dayStage, gymPlaceLine, gymPreset, openerLine, resolveGymPlace, steerInput, type GymEntry, type GymPreset } from '../../lib/plan/screens'
+import { dayStage, gymPlaceLine, gymPreset, openerLine, remainingLifts, resolveGymPlace, steerInput, type GymEntry, type GymPreset } from '../../lib/plan/screens'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
 import { useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useToday } from '../../lib/useToday'
 import type { AppState, SkillId, WorkoutRequest } from '../../types'
-import { countWord, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, lastPerformance, prescribedCount } from '../../lib/gym/progression'
-import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
+import { countWord, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, comparablePerformance, prescribedCount } from '../../lib/gym/progression'
+import { defaultGym, defaultPrefs, newGymSessionId, newLocation } from '../../lib/gym/state'
 import { entryLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { Icon } from '../Icon'
 import { Button, Card, CardTitle, EmptyState, Sheet, ToggleChip } from '../ds'
@@ -24,6 +24,7 @@ import { GymWorkoutGate } from './GymWorkoutGate'
 import { PartialWorkout } from './PartialWorkout'
 import { WeekVolume } from '../plan/WeekVolume'
 import { LocationEditor } from './LocationEditor'
+import { PullupStartingSet } from './PullupStartingSet'
 import { ExerciseHistory } from './ExerciseHistory'
 import { bodyweightCapacity } from '../../lib/gym/bodyweight'
 import { GymHistory } from './GymHistory'
@@ -86,7 +87,7 @@ export function GymHub({
   const liftsNext = stage === 'lifts-next'
   const [editingLifts, setEditingLifts] = useState(false)
   const [pending, setPending] = useState<{ empty: boolean; preset?: GymPreset; resumeSessionId?: string } | null>(null)
-  const remaining = liftsNext && !editingLifts ? remembered : null
+  const remaining = liftsNext && !editingLifts ? remainingLifts(today, remembered, choice.placeId) : null
   const block = pending?.preset ?? preset ?? remaining
   const [skipOpener, setSkipOpener] = useState(false)
   const [focus, setFocus] = useState<GymFocus | 'auto'>('auto')
@@ -206,7 +207,7 @@ export function GymHub({
       })(),
       sets: Array.from({ length: it.sets }, (_, i) => ({
         ...(load !== undefined ? { load } : {}),
-        reps: prefillReps(it.plan, it.suggestion, lastPerformance(gym.sessions, it.exerciseId, location.id)?.sets[i]?.reps),
+        reps: prefillReps(it.plan, it.suggestion, comparablePerformance(gym.sessions, it.exerciseId, location.id)?.sets[i]?.reps),
         done: false,
       })),
     }
@@ -467,6 +468,9 @@ export function GymHub({
             {sore.pain ? ' Never train through pain.' : ''}
           </p>
         ) : null}
+        {(location.equipment.includes('pullup-bar') || location.equipment.includes('rings')) &&
+          <PullupStartingSet saved={gym.prefs?.pullupStartingSet} onSave={(pullupStartingSet) =>
+            dispatch({ type: 'GYM', op: { op: 'setPrefs', prefs: { ...(gym.prefs ?? defaultPrefs()), pullupStartingSet } } })} />}
         {remaining ? (
           <div className="mt-3 flex items-center justify-between gap-2 rounded-inner bg-raised px-3">
             <span className="text-footnote font-semibold">{FOCUS_LABEL[remaining.focus]} · {remaining.minutes} min</span>

@@ -1,7 +1,7 @@
 import type { GymPlan } from './builder'
 import { GYM_EXERCISE_BY_ID, jointsToRest } from '../../data/gym/exercises'
 import type { Joint, Muscle } from '../../data/gym/catalog'
-import { countUnit, lastPerformance, repPlanFor, type LoadSuggestion, type RepPlan } from './progression'
+import { comparablePerformance, countUnit, repPlanFor, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymRemainder, GymSession, GymState, RemainingLift } from './types'
 import { canDoHere } from './availability'
 import { preparesFor } from './bodyweightSteps'
@@ -50,7 +50,7 @@ export function previousSets(
   now = Infinity,
 ): DraftItem['previous'] {
   const ex = GYM_EXERCISE_BY_ID[exerciseId]
-  const last = lastPerformance(sessions, exerciseId, locationId, now, (s) => countUnit(ex, s) === countUnit(ex))
+  const last = comparablePerformance(sessions, exerciseId, locationId, now, (s) => countUnit(ex, s) === countUnit(ex))
   if (!last) return undefined
   return last.sets.map((s) => ({
     ...(s.kg !== undefined ? { load: entryLoad(s.kg, unit) } : {}),

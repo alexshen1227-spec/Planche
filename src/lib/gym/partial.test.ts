@@ -45,7 +45,7 @@ it('restores the original time target and reps needed for a load increase after 
 it('budgets one alternating pair at the same station and carries a timed recovery through a saved partial', () => {
   const gym = defaultGym(['floor', 'pullup-bar'], 'kg', start)
   gym.locations[0].equipment.push('dumbbells', 'incline-bench')
-  const input = { location: gym.locations[0], minutes: 22, warmUpMin: 2, focus: 'upper' as const, sessions: [],
+  const input = { location: gym.locations[0], minutes: 22, warmUpMin: 2, focus: 'full' as const, sessions: [],
     priority: ['calves', 'side-delts'] as ('calves' | 'side-delts')[], athletePriority: ['calves', 'side-delts'] as const,
     goals: { strength: 2, physique: 5, skills: 5, endurance: 0, power: 0 }, now: start }
   const plan = buildGymSession(input), lifts = plan.items.filter((it) => it.pairedWith)

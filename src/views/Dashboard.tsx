@@ -51,6 +51,7 @@ import {
   goalStanding,
   gymPlaceLine,
   gymPreset,
+  remainingLifts,
   homeToday,
   maxTestOffered,
   openerLine,
@@ -266,7 +267,7 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
   // Today's main session done: Home recommends nothing more, only a quiet way to train again.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const marks = useDayMarks(today)
-  const rememberedLifts = useNextBlock<GymPreset>(today)
+  const remainingGym = remainingLifts(dayPlan, useNextBlock<GymPreset>(today), choice.placeId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const stage = useMemo(() => dayStage(whole, dayPlan, Date.now(), marks), [whole, dayPlan, today, clock, marks])
   const finished = stage === 'done' || stage === 'skill-partial'
@@ -490,8 +491,7 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
         </div>
       ) : null}
 
-      {/* Today: one hero card. Title and figure on top, progress and what it
-          means beneath (never a narrow third column), the action last. */}
+      {/* Put the session action before the longer skill progress details on a phone. */}
       <div className={`${several ? 'mt-3' : 'mt-5'} rounded-card border border-line bg-surface p-4`}>
         <div className="flex items-start gap-4">
           <Figure step={step.id} tone="accent" className="h-20 w-24 shrink-0 text-ink" />
@@ -508,79 +508,6 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
                 Practicing {EXERCISE_BY_ID[ladder.pikePreparation ? 'kneeling-pike-pushup' : ladder.rung.exerciseId].name.toLowerCase()} · {ladder.goal.reviewed ? 'Reached' : 'Aiming for'} one {EXERCISE_BY_ID[ladder.goal.rung.exerciseId].name.toLowerCase()}
               </div>
             ) : null}
-          </div>
-        </div>
-        <div className="mt-4 flex items-center gap-4">
-          <ProgressRing value={showPractice ? practice.value / step.unlockSec : unlockPct} size={64} stroke={6}>
-            {showPractice ? <div className="text-center leading-tight">
-              <div className="font-display text-body font-bold text-ink tnum">{fmtHold(practice.value)}</div>
-              <div className="text-[10px] text-ink3">practice</div>
-            </div> : <span className="font-display text-body font-bold text-ink tnum">{Math.round(unlockPct * 100)}%</span>}
-          </ProgressRing>
-          <div className="min-w-0 flex-1">
-            <div className="space-y-1">
-              {showPractice ? <div>
-                <div className="text-footnote font-semibold text-ink">{practiceAtTarget ? 'Hold target reached in practice' : 'Best hold you rated clean'}</div>
-                <button onClick={() => viewSession(practice.sessionId)} className="min-h-11 text-left text-footnote text-accent-text underline underline-offset-2">
-                  {fmtHold(practice.value)}{keyEx.perSide ? ' on both sides' : ''} · {fmtDate(practice.at)} · View session
-                </button>
-              </div> : null}
-              <div className="text-footnote text-ink2">
-                {keyEx.name} verified best{' '}
-                <span className="font-semibold text-ink tnum">{best ? fmtHold(best) : '—'}</span>
-                {prBest > (showPractice ? practice.value : best) ? <span className="text-ink3"> · PR {fmtHold(prBest)}</span> : null}
-              </div>
-              {bestNote ? <p className="text-caption leading-relaxed text-ink3">{bestNote}</p> : null}
-              <div className="text-footnote text-ink2">
-                {next ? (
-                  <>
-                    Hold <span className="font-semibold text-ink tnum">{step.unlockSec}s</span>
-                    {keyEx.perSide ? ' on both sides' : ''} with athlete + filmed form confirmation to unlock{' '}
-                    <span className="font-semibold text-ink">{next.name}</span>
-                  </>
-                ) : (
-                  <>
-                    Mastery bar: <span className="font-semibold text-ink tnum">{step.unlockSec}s</span> verified
-                  </>
-                )}
-              </div>
-              {next ? (
-                <div>
-                  <div>
-                    {practiceAtTarget ? (
-                      <span className="text-footnote leading-relaxed text-ink2">You have held the target time. Film a fresh attempt and review its form to confirm this step.</span>
-                    ) : forecast.kind === 'ready' ? (
-                      <span className="text-footnote font-medium text-accent-text">
-                        Attempt ready — you have already held this bar. Test it.
-                      </span>
-                    ) : forecast.kind === 'range' ? (
-                      <>
-                        <span className="text-footnote font-medium text-accent-text">
-                          {describeForecast(forecast)} at your measured rate
-                        </span>
-                        <div className="mt-0.5 text-caption leading-relaxed text-ink3">
-                          {CONFIDENCE_NOTE[forecast.confidence]}
-                        </div>
-                      </>
-                    ) : forecast.kind === 'not-trending' ? (
-                      // The module's own `basis` rather than a hardcoded
-                      // sentence: three different situations land here — flat,
-                      // falling, and climbing too slowly to date — and calling
-                      // all three "flat" told some athletes the opposite of
-                      // what their own data said.
-                      <span className="text-footnote leading-relaxed text-ink3">{forecast.basis}</span>
-                    ) : forecast.kind === 'noisy' ? (
-                      // Progress's own sentence: the two screens read one noise gate.
-                      <span className="text-footnote leading-relaxed text-ink3">{forecast.basis}</span>
-                    ) : (
-                      <span className="text-footnote leading-relaxed text-ink3">
-                        No forecast yet — {forecast.need}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-            </div>
           </div>
         </div>
         {/* The coach picks one main session a day, and Home says the same as Train: a rest day is a rest day. */}
@@ -608,11 +535,11 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
         {liftsNext ? (
           <div className="mt-4 rounded-inner border border-line bg-raised p-3">
             <p className="text-footnote text-ink2">
-              <span className="font-semibold text-ink">Today: the lifts are next</span> — your skill opener is saved, and the day is not done until the lifts are
-              {rememberedLifts ? ` (${FOCUS_LABEL[rememberedLifts.focus].toLowerCase()}, ${rememberedLifts.minutes} min)` : ''}.
+              <span className="font-semibold text-ink">Today: the lifts are next</span> — your skill session is saved. Continue with your lifts
+              {remainingGym ? ` (${FOCUS_LABEL[remainingGym.focus].toLowerCase()}, ${remainingGym.minutes} min)` : ''}.
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Button onClick={() => rememberedLifts && startGym ? startGym(rememberedLifts) : go('train')}>{rememberedLifts ? 'Go to the lifts' : 'Open the Gym side'}</Button>
+              <Button onClick={() => remainingGym && startGym ? startGym(remainingGym) : go('train')}>{remainingGym ? 'Go to the lifts' : 'Open the Gym side'}</Button>
               <button onClick={() => endTheDay()} className="min-h-11 px-1 text-footnote font-medium text-accent-text">
                 End the day here
               </button>
@@ -691,6 +618,79 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
             movement only — until a check-in says the joint has settled.
           </p>
         ) : null}
+        <div className="mt-4 flex items-center gap-4">
+          <ProgressRing value={showPractice ? practice.value / step.unlockSec : unlockPct} size={64} stroke={6}>
+            {showPractice ? <div className="text-center leading-tight">
+              <div className="font-display text-body font-bold text-ink tnum">{fmtHold(practice.value)}</div>
+              <div className="text-[10px] text-ink3">practice</div>
+            </div> : <span className="font-display text-body font-bold text-ink tnum">{Math.round(unlockPct * 100)}%</span>}
+          </ProgressRing>
+          <div className="min-w-0 flex-1">
+            <div className="space-y-1">
+              {showPractice ? <div>
+                <div className="text-footnote font-semibold text-ink">{practiceAtTarget ? 'Hold target reached in practice' : 'Best hold you rated clean'}</div>
+                <button onClick={() => viewSession(practice.sessionId)} className="min-h-11 text-left text-footnote text-accent-text underline underline-offset-2">
+                  {fmtHold(practice.value)}{keyEx.perSide ? ' on both sides' : ''} · {fmtDate(practice.at)} · View session
+                </button>
+              </div> : null}
+              <div className="text-footnote text-ink2">
+                {keyEx.name} verified best{' '}
+                <span className="font-semibold text-ink tnum">{best ? fmtHold(best) : '—'}</span>
+                {prBest > (showPractice ? practice.value : best) ? <span className="text-ink3"> · PR {fmtHold(prBest)}</span> : null}
+              </div>
+              {bestNote ? <p className="text-caption leading-relaxed text-ink3">{bestNote}</p> : null}
+              <div className="text-footnote text-ink2">
+                {next ? (
+                  <>
+                    Hold <span className="font-semibold text-ink tnum">{step.unlockSec}s</span>
+                    {keyEx.perSide ? ' on both sides' : ''} with athlete + filmed form confirmation to unlock{' '}
+                    <span className="font-semibold text-ink">{next.name}</span>
+                  </>
+                ) : (
+                  <>
+                    Mastery bar: <span className="font-semibold text-ink tnum">{step.unlockSec}s</span> verified
+                  </>
+                )}
+              </div>
+              {next ? (
+                <div>
+                  <div>
+                    {practiceAtTarget ? (
+                      <span className="text-footnote leading-relaxed text-ink2">You have held the target time. Film a fresh attempt and review its form to confirm this step.</span>
+                    ) : forecast.kind === 'ready' ? (
+                      <span className="text-footnote font-medium text-accent-text">
+                        Attempt ready — you have already held this bar. Test it.
+                      </span>
+                    ) : forecast.kind === 'range' ? (
+                      <>
+                        <span className="text-footnote font-medium text-accent-text">
+                          {describeForecast(forecast)} at your measured rate
+                        </span>
+                        <div className="mt-0.5 text-caption leading-relaxed text-ink3">
+                          {CONFIDENCE_NOTE[forecast.confidence]}
+                        </div>
+                      </>
+                    ) : forecast.kind === 'not-trending' ? (
+                      // The module's own `basis` rather than a hardcoded
+                      // sentence: three different situations land here — flat,
+                      // falling, and climbing too slowly to date — and calling
+                      // all three "flat" told some athletes the opposite of
+                      // what their own data said.
+                      <span className="text-footnote leading-relaxed text-ink3">{forecast.basis}</span>
+                    ) : forecast.kind === 'noisy' ? (
+                      // Progress's own sentence: the two screens read one noise gate.
+                      <span className="text-footnote leading-relaxed text-ink3">{forecast.basis}</span>
+                    ) : (
+                      <span className="text-footnote leading-relaxed text-ink3">
+                        No forecast yet — {forecast.need}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Quieter things, kept off the hero. */}

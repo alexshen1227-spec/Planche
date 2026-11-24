@@ -7,17 +7,8 @@ import { legPracticeAt, LEG_VARIATIONS, preparesFor, unassistedDose, UNASSISTED_
 import { canPairExercises, savedPairSeconds } from './pairedSets'
 import { gateTier, isHardBodyweight, liftTrend, plyoGate, repPlanFor, STALL_SESSIONS, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
 import type { GoalWeights, GymLocation, GymSession, Rating } from './types'
-
-export type GymFocus = 'full' | 'upper' | 'lower' | 'push' | 'pull' | 'athletic'
-
-export const FOCUS_LABEL: Record<GymFocus, string> = {
-  full: 'Full body',
-  upper: 'Upper body',
-  lower: 'Lower body',
-  push: 'Push',
-  pull: 'Pull',
-  athletic: 'Speed & power',
-}
+import { fitsGymFocus, FOCUS_LABEL, type GymFocus } from './focus'
+export { FOCUS_LABEL, type GymFocus } from './focus'
 
 /**
  * Slots in priority order: the first ones are the session, the last ones are
@@ -47,7 +38,7 @@ const SLOTS: Record<Exclude<GymFocus, 'athletic'>, Pattern[][]> = {
   ],
   lower: [['squat'], ['hinge'], ['lunge'], ['knee-flexion'], ['knee-extension'], ['calf'], ['core-flexion', 'core-anti-rotation']],
   push: [['horizontal-press', 'incline-press'], ['vertical-press'], ['incline-press', 'dip'], ['lateral-raise'], ['triceps'], ['chest-fly']],
-  pull: [['vertical-pull'], ['horizontal-pull'], ['straight-arm-pull'], ['rear-delt'], ['biceps'], ['core-flexion']],
+  pull: [['vertical-pull'], ['horizontal-pull'], ['straight-arm-pull'], ['rear-delt'], ['biceps'], ['core-flexion'], ['shrug']],
 }
 
 /**
@@ -290,8 +281,8 @@ export function planGymExercises(input: GymSessionInput) {
   const musclesOff = new Set(input.musclesOff ?? [])
   const priority = new Set(input.priority ?? [])
   const requested = new Set(input.athletePriority ?? [])
-  const weeklyAccessories = input.focus === 'lower' && minutes >= 35
-    ? ([...priority].filter((m) => !requested.has(m) && (m === 'chest' || m === 'lats' || m === 'side-delts'))) : []
+  const weeklyAccessories = minutes >= 35
+    ? [...priority].filter((m) => !requested.has(m) && (m === 'chest' || m === 'lats' || m === 'side-delts')) : []
   const priorityExercises = new Set([...requested, ...weeklyAccessories])
   // A muscle the athlete asked for is not spared: a movement built on a priority muscle keeps its slot whatever
   // the week's steer says about the other muscles it leans on, and a muscle on both lists counts as priority.
@@ -324,7 +315,7 @@ export function planGymExercises(input: GymSessionInput) {
   const introductory = Boolean(input.capacity?.introductory && focus !== 'athletic')
   const fullPriorityDose = !introductory && factor >= 1 && (input.goals?.physique ?? 0) >= 3 &&
     (input.goals?.skills ?? 0) > 0 && requested.size > 0
-  const here = availableAt(location)
+  const here = availableAt(location).filter((e) => fitsGymFocus(focus, e))
   const cleanCoverage = new Set<Muscle>()
   if (spare.size && requested.size) {
     for (const e of here) {
@@ -366,7 +357,7 @@ export function planGymExercises(input: GymSessionInput) {
   // not logged it yet, unless they rated it love.
   const technicalPenalty = (e: GymExercise) =>
     e.technical && ratings[e.id] !== 'love' && (youth || !lastLogged.has(e.id)) ? 5 : 0
-  const earnedTrial = (e: GymExercise) => e.id === 'pull-up' && input.capacity?.tryPullup ? 1.5 : 0
+  const earnedTrial = (e: GymExercise) => e.id === 'pull-up' && (input.capacity?.tryPullup || input.capacity?.reportedPullups) ? 1.5 : 0
   const scoreOf = (e: GymExercise, extra = 0) =>
     preferenceRank(e.id, ratings, location) +
     technicalPenalty(e) +
@@ -444,11 +435,8 @@ export function planGymExercises(input: GymSessionInput) {
     if (!brief && focus === 'upper' && priority.has('lats') && !priority.has('chest') && !requested.has('chest-upper')) {
       [slots[2], slots[3]] = [slots[3], slots[2]]
     }
-    // A lateral raise can share a leg or pull day without turning it into hard pressing.
-    const lateralAccessory = requested.has('side-delts') && !slots.some((slot) => slot.includes('lateral-raise'))
+    const lateralAccessory = requested.has('side-delts') && fitsGymFocus(focus, { pattern: 'lateral-raise', primary: ['side-delts'] }) && !slots.some((slot) => slot.includes('lateral-raise'))
     if (lateralAccessory) slots.push(['lateral-raise'])
-    const quadAccessory = requested.has('quads') && ['push', 'pull', 'upper'].includes(focus) && (input.goals?.skills ?? 0) > 0
-    if (quadAccessory) slots.push(['knee-extension'])
     // Explosive work goes first, fresh, when power is a goal (and the legs are on).
     if (goalEmphasis?.power && focus !== 'pull' && !musclesOff.has('quads')) slots.unshift(['jump', 'throw'])
     // What the day is named for, still to be filled: each group keeps one movement whatever the steer says.
@@ -523,12 +511,11 @@ export function planGymExercises(input: GymSessionInput) {
       }
       used.add(movement(pick))
       const extraLateral = lateralAccessory && pick.pattern === 'lateral-raise'
-      const extraQuad = quadAccessory && pick.pattern === 'knee-extension'
       const limitAccessory = extraLateral && !fullPriorityDose
-      const item = makeItem(pick, wantsExplosive, spared || limitAccessory ? 2 : extraQuad ? 3 : undefined)
+      const item = makeItem(pick, wantsExplosive, spared || limitAccessory ? 2 : undefined)
       if (spared && recentPress && PRESSING_PATTERNS.has(pick.pattern)) item.sets = 1
       items.push(item)
-      if (spared || limitAccessory || extraQuad) steered.add(pick.id)
+      if (spared || limitAccessory) steered.add(pick.id)
     }
     // Keep the first compound(s) that define the day, then protect a direct exercise
     // for each requested muscle before spending time on another angle of the same lift.
@@ -536,8 +523,7 @@ export function planGymExercises(input: GymSessionInput) {
       for (const muscle of priorityExercises) {
         let candidates = items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes(muscle))
         if (!candidates.length && !musclesOff.has(muscle)) {
-          // An isolation lift can serve a missing priority even on another focus's day.
-          // Cap its dose so tomorrow can still use the muscle for a full session.
+          // Fill a missing priority with an isolation move that belongs on this day.
           const options = here.filter((e) => !used.has(movement(e)) && !e.compound && !e.explosive && !e.dose &&
             e.primary.includes(muscle) && usable(e) && !spareIn(e) && !technicalPenalty(e))
           const best = options.sort((a, b) => scoreOf(a) - scoreOf(b) || a.primary.length - b.primary.length)[0]
@@ -768,14 +754,17 @@ export function planGymExercises(input: GymSessionInput) {
     notes.push(`Your recent lifting supports up to ${buildUpLimit} working sets this visit. Completing that amount comfortably on two days helps build up the next sessions.`)
   }
   const strongerLegWork = [...legPractice].flatMap(([base, practice]) => practice.working ? [{ base, ...practice.working }] : [])
-  for (const id of [...UNASSISTED_LIFTS, ...strongerLegWork.map((w) => w.id)]) {
+  const reported = input.capacity?.reportedPullups
+  for (const id of [...UNASSISTED_LIFTS, ...(reported ? ['chin-up', 'neutral-pull-up'] : []), ...strongerLegWork.map((w) => w.id)]) {
     const item = items.find((it) => it.exerciseId === id)
     if (!item) continue
     const leg = strongerLegWork.find((w) => w.id === id)
     const work = id === 'push-up' || id === 'pull-up' ? input.capacity?.unassistedWork?.[id]
       : leg ? { reps: Array<number>(leg.sets).fill(leg.reps), manageable: true, hard: false } : undefined
-    const dose = work ? unassistedDose(work, item.sets, item.plan.range[0]) :
-      id === 'pull-up' && input.capacity?.tryPullup ? { sets: 1, reps: 1 } : undefined
+    const reportedDose = reported && ['pull-up', 'chin-up', 'neutral-pull-up'].includes(id)
+      ? { sets: Math.min(item.sets, reported < 3 ? 1 : 3), reps: Math.max(1, Math.min(item.plan.range[1], Math.floor(reported * 2 / 3))) } : undefined
+    const dose = reportedDose ?? (work ? unassistedDose(work, item.sets, item.plan.range[0]) :
+      id === 'pull-up' && input.capacity?.tryPullup ? { sets: 1, reps: 1 } : undefined)
     if (!dose) continue
     const easier = here.filter((ex) => (ex.id === leg?.base || preparesFor(ex.id) === id || (id === 'pull-up' && ex.id === 'assisted-pull-up')) && usable(ex) && !spareIn(ex))
       .sort((a, b) => scoreOf(a) - scoreOf(b) || (lastLogged.get(b.id) ?? 0) - (lastLogged.get(a.id) ?? 0))[0]
@@ -818,7 +807,10 @@ export function buildGymSession(input: GymSessionInput): GymPlan {
   for (const item of items) if (item.practice) {
     const reps = item.plan.range[0]
     const firstPull = item.exerciseId === 'pull-up' && input.capacity?.tryPullup
-    const basis = firstPull ? 'Your last machine sets used zero assistance.' : 'Your recent unassisted sets guide this starting dose.'
+    const reported = input.capacity?.reportedPullups
+    const basis = reported && ['pull-up', 'chin-up', 'neutral-pull-up'].includes(item.exerciseId)
+      ? `You reported ${reported} recent strict ${reported === 1 ? 'pull-up' : 'pull-ups'}.`
+      : firstPull ? 'Your last machine sets used zero assistance.' : 'Your recent unassisted sets guide this starting dose.'
     item.suggestion = { ...item.suggestion, reps: item.plan.range, targetReps: reps, kind: 'bodyweight',
       why: `${basis} Aim for ${reps} clean ${reps === 1 ? 'rep' : 'reps'} per set with a little in reserve.`, easierId: item.practice.easierId }
   }
@@ -851,7 +843,7 @@ export function applyBodyweightTrials(items: Pick<PlannedExercise, 'exerciseId' 
         !jointsToRest(id).some((j) => input.avoidJoints?.includes(j)) && !GYM_EXERCISE_BY_ID[id].primary.some((m) => input.musclesOff?.includes(m)))
       const reps = Math.min(practice.baseReps, 30)
       item.suggestion = { ...item.suggestion, targetReps: reps,
-        why: `You completed at least ${practice.baseReps} controlled reps in each working set here.${id ? ` Try one set of ${GYM_EXERCISE_BY_ID[id].name.toLowerCase()} for up to 6 reps per side, or repeat your usual movement.` : ` Aim for ${reps} with the same control.`}`,
+        why: `You completed at least ${practice.baseReps} controlled reps in each working set.${id ? ` Try one set of ${GYM_EXERCISE_BY_ID[id].name.toLowerCase()} for up to 6 reps per side, or repeat your usual movement.` : ` Aim for ${reps} with the same control.`}`,
         ...(id ? { variationTrial: { id, reps: 6 } } : {}) }
     }
   }

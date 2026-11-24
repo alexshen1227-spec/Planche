@@ -84,6 +84,7 @@ export type Pattern =
   | 'chest-fly'
   | 'lateral-raise'
   | 'rear-delt'
+  | 'shrug'
   | 'triceps'
   | 'biceps'
   | 'vertical-pull'
@@ -114,6 +115,7 @@ export const PATTERN_LABEL: Record<Pattern, string> = {
   'chest-fly': 'Chest fly',
   'lateral-raise': 'Lateral raise',
   'rear-delt': 'Rear delt',
+  shrug: 'Shrug',
   triceps: 'Triceps',
   biceps: 'Biceps',
   'vertical-pull': 'Vertical pull',

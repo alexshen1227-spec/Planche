@@ -1,0 +1,92 @@
+import { describe, expect, it } from 'vitest'
+import { GYM_EQUIPMENT } from '../../data/gym/catalog'
+import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import { planWeekAhead } from '../plan/planner'
+import { makeAthlete } from '../plan/wholeAthleteLoop'
+import { addDays } from '../time'
+import { availableAt, searchExercises } from './availability'
+import { buildGymSession } from './builder'
+import { comparablePerformance, suggestLoad } from './progression'
+import { previousSets } from './draft'
+import { defaultPrefs, homeLocation, sanitizePrefs } from './state'
+import { bodyweightCapacity } from './bodyweight'
+import { fitsGymFocus, loggedFocus } from './focus'
+import type { GymSession } from './types'
+
+const now = +new Date(2026, 10, 30, 9)
+const gym = homeLocation(['floor', 'wall', 'box', 'band', 'pullup-bar', 'rings'], 'kg', now)
+gym.equipment.push(...GYM_EQUIPMENT.map((e) => e.id))
+const logs = (id: string, place: string, exerciseId: string, at: number, reps: number[], rpe = 7): GymSession =>
+  ({ id, name: 'Custom workout', locationId: place, startedAt: at, endedAt: at + 9000,
+    exercises: [{ exerciseId, sets: reps.map((n, i) => ({ at: at + i * 1000, reps: n, rpe })) }] })
+
+describe('lifting splits and portable starting doses', () => {
+  it('keeps every automatic slot, accessory and spare-time lift inside a named split', () => {
+    for (const focus of ['push', 'pull', 'lower', 'upper'] as const) for (const minutes of [20, 45, 90]) {
+      const priority = ['chest', 'upper-back', 'biceps', 'hamstrings', 'side-delts', 'quads', 'triceps'] as const
+      const plan = buildGymSession({ focus, minutes, location: gym, priority: [...priority], athletePriority: priority, sessions: [],
+        goals: { skills: 4, physique: 5, strength: 3, power: 4, endurance: 0 }, now })
+      expect(plan.items.length, focus).toBeGreaterThan(0)
+      expect(plan.items.every((it) => fitsGymFocus(focus, GYM_EXERCISE_BY_ID[it.exerciseId]))).toBe(true)
+      if (focus === 'pull') expect(plan.items.flatMap((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary)).not.toEqual(expect.arrayContaining(['chest']))
+      expect(plan.estimatedMin).toBeLessThanOrEqual(minutes)
+    }
+  })
+
+  it('reads a short off-plan workout across Sunday and Monday, excluding warm-ups and zero reps', () => {
+    const state = makeAthlete({ skills: [], birthYear: 1994, active: 'gym', prefs: { goals: { skills: 0, physique: 5, strength: 4, power: 0, endurance: 0 },
+      minutesByDay: [45, 35, 45, 45, 0, 45, 0], musclesPriority: ['lats', 'biceps'] } })
+    const yesterday = addDays(now, -1)
+    const actual = logs('off-plan', 'gym', 'db-bent-over-row', yesterday, [6, 5])
+    actual.name = 'Push'
+    actual.exercises.push({ exerciseId: 'push-up', sets: [{ at: yesterday, reps: 12, warmup: true }, { at: yesterday, reps: 0 }] })
+    state.gym!.sessions = [actual]
+    expect(loggedFocus([actual], yesterday, now)).toBe('pull')
+    expect(loggedFocus([logs('one', 'home', 'push-up', yesterday, [1])], yesterday, now)).toBeNull()
+    const plan = planWeekAhead(state, now).days[0].plan
+    expect(plan.gym?.focus).toBeDefined()
+    expect(plan.gym?.focus).not.toBe('pull')
+    expect(planWeekAhead(state, now, { todayKind: 'gym', todayFocus: 'pull' }).days[0].plan.gym?.focus).toBe('pull')
+  })
+
+  it('uses Wednesday’s no-equipment reps on Friday at another site and keeps bands and weights local', () => {
+    const home = homeLocation(['floor', 'wall', 'band'], 'kg', now)
+    const earlier = addDays(now, -4), later = addDays(now, -2)
+    const dose = { range: [8, 15] as [number, number], targetRpe: 8 }
+    for (const [exerciseId, travels] of [['hamstring-walkout', true], ['sissy-squat', true], ['band-biceps-curl', false], ['incline-push-up', false]] as const) {
+      const sessions = [logs('away', 'studio', exerciseId, later, [12, 12]), logs('home', home.id, exerciseId, earlier, [12, 10])]
+      expect(comparablePerformance(sessions, exerciseId, home.id, now)?.session.id).toBe(travels ? 'away' : 'home')
+      expect(previousSets(sessions, exerciseId, home.id, 'kg', now)?.map((s) => s.reps)).toEqual(travels ? [12, 12] : [12, 10])
+      expect(suggestLoad({ location: home, exerciseId, sessions, plan: dose, now }).targetReps).toBe(travels ? 13 : 11)
+    }
+    const push = logs('easy', home.id, 'push-up', earlier, [10, 10], 6)
+    expect(suggestLoad({ exerciseId: 'push-up', location: home, sessions: [push], plan: { range: [6, 10], targetRpe: 8 }, now }).targetReps).toBe(11)
+  })
+
+  it('starts a reported six strict pulls at four reps, then lets actual lifting replace the report', () => {
+    const prefs = { ...defaultPrefs(now), pullupStartingSet: { at: addDays(now, -1), reps: 6 } }
+    const state = makeAthlete({ skills: [], birthYear: 1995, prefs })
+    const bar = homeLocation(['floor', 'pullup-bar'], 'kg', now)
+    const plan = buildGymSession({ location: bar, minutes: 20, focus: 'pull', sessions: [], now, capacity: bodyweightCapacity(state, now) })
+    const pull = plan.items.find((it) => it.exerciseId === 'pull-up')
+    expect(pull?.plan.range).toEqual([4, 4])
+    expect(pull?.suggestion.why).toContain('reported 6')
+    expect(state.gym!.sessions).toHaveLength(0)
+    state.gym!.sessions = [logs('fresh', 'home', 'pull-up', now - 20000, [2, 2], 9)]
+    expect(bodyweightCapacity(state, now).reportedPullups).toBeUndefined()
+    expect(sanitizePrefs({ ...prefs, pullupStartingSet: { at: now, reps: -1 } })?.pullupStartingSet).toBeUndefined()
+    expect(sanitizePrefs({ ...prefs, pullupStartingSet: { at: now, reps: 0 } })?.pullupStartingSet?.reps).toBe(0)
+  })
+
+  it('finds real no-bench rows and matches exercise, pattern and muscle names on word boundaries', () => {
+    const home = homeLocation(['floor'], 'kg', now)
+    home.equipment.push('dumbbells')
+    const eligible = availableAt(home)
+    const rows = searchExercises(eligible, 'db rows').map((e) => e.id)
+    expect(rows).toContain('db-bent-over-row')
+    expect(rows).toContain('thigh-braced-db-row')
+    expect(rows).not.toContain('db-row')
+    expect(searchExercises(eligible, 'row').some((e) => e.pattern === 'throw')).toBe(false)
+    expect(searchExercises(eligible, 'traps').map((e) => e.id)).toContain('db-shrug')
+  })
+})

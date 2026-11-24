@@ -15,6 +15,7 @@ export type BodyweightCapacity = {
   introductoryEffort?: boolean
   buildUpSetLimit?: number
   tryPullup?: boolean
+  reportedPullups?: number
   /** An optional single floor set replaces one easier set. It is never a full floor prescription. */
   floorPushupTrial?: number
   pullupTrial?: number
@@ -133,11 +134,17 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
   }
   const tryPullup = assistedTrial?.ready && now - assistedTrial.at <= 28 * 86_400_000 &&
     assistedTrial.at > (evidence.get('pullups')?.at ?? 0) && !evidence.has('pull-up')
+  const startingSet = state.gym?.prefs?.pullupStartingSet
+  const reportedPullups = startingSet && startingSet.at >= from && startingSet.at <= now &&
+    startingSet.at > (evidence.get('pullups')?.at ?? 0) ? startingSet.reps : undefined
+  // A reported strict set can start the standard lift. Advanced variations keep their own prerequisites.
+  const pullups = reportedPullups !== undefined ? Math.min(5, reportedPullups) : evidence.get('pullups')?.reps
   const { trials, practice } = unassistedSteps(state.gym?.sessions ?? [], {
-    pushups: evidence.get('pushups')?.reps ?? 0, pullups: evidence.get('pullups')?.reps ?? 0,
+    pushups: evidence.get('pushups')?.reps ?? 0, pullups: pullups ?? 0,
   }, now, !conservative(state.profile, now))
   return {
-    ...(tryPullup ? { tryPullup: true } : {}),
+    ...(tryPullup && reportedPullups === undefined ? { tryPullup: true } : {}),
+    ...(reportedPullups !== undefined ? { reportedPullups } : {}),
     ...(trials['push-up'] ? { floorPushupTrial: trials['push-up'] } : {}),
     ...(trials['pull-up'] ? { pullupTrial: trials['pull-up'] } : {}),
     ...(Object.keys(practice).length ? { unassistedWork: practice } : {}),
@@ -145,7 +152,7 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
     introductoryVisitsLeft,
     introductoryEffort: !established && visits.length < 6,
     ...(buildUpSetLimit ? { buildUpSetLimit } : {}),
-    base: { pushups: evidence.get('pushups')?.reps, pullups: evidence.get('pullups')?.reps, dips: evidence.get('dips')?.reps },
+    base: { pushups: evidence.get('pushups')?.reps, pullups, dips: evidence.get('dips')?.reps },
     practiced: new Map([...evidence].map(([id, e]) => [id, e.reps])),
   }
 }
@@ -154,6 +161,9 @@ export function readyForBodyweight(id: string, capacity?: BodyweightCapacity): b
   const rule = gates.get(id)
   const prep = specificPrep[id]
   if (!capacity || (!rule && !prep)) return true
+  if (capacity.reportedPullups !== undefined && (id === 'pull-up' || id === 'chin-up' || id === 'neutral-pull-up')) {
+    return capacity.reportedPullups >= (id === 'pull-up' ? 1 : 5)
+  }
   if ((id === 'push-up' || id === 'pull-up') && capacity.unassistedWork?.[id]) return true
   const own = capacity.practiced.get(id)
   if (own !== undefined) return own >= 4

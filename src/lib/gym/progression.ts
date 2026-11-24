@@ -206,18 +206,33 @@ export function lastPerformance(
   before = Infinity,
   keep?: (set: GymSet) => boolean,
 ): LastPerformance | null {
+  let latest: LastPerformance | null = null
   for (let i = sessions.length - 1; i >= 0; i--) {
     const s = sessions[i]
-    if (s.startedAt >= before) continue
+    if (s.startedAt >= before || (latest && s.startedAt <= latest.session.startedAt)) continue
     if (locationId !== undefined && s.locationId !== locationId) continue
     const sets = s.exercises.flatMap((log) => log.exerciseId === exerciseId
-      ? log.sets.filter((set) => !set.warmup && set.reps > 0 && (!keep || keep(set))) : [])
-    if (sets.length) return { session: s, sets }
+      ? log.sets.filter((set) => !set.warmup && set.reps > 0 && (set.at ?? s.startedAt) <= before && (!keep || keep(set))) : [])
+    if (sets.length) latest = { session: s, sets }
   }
-  return null
+  return latest
 }
 
 const isFreeWeight = (ex: GymExercise) => ['barbell', 'dumbbell', 'kettlebell'].includes(ex.load)
+
+/** Reps on flat ground are comparable across sites. Band tension, incline height, assistance and racks are local. */
+export function portableReps(ex: GymExercise): boolean {
+  return ex.load === 'bodyweight' && !ex.stepFrom && !ex.assisted &&
+    (ex.needs.every((group) => group.every((item) => item === 'floor')) || ex.id === 'sissy-squat')
+}
+
+export function comparablePerformance(sessions: GymSession[], exerciseId: string, locationId?: string, now = Infinity, keep?: (set: GymSet) => boolean): LastPerformance | null {
+  const local = lastPerformance(sessions, exerciseId, locationId, now, keep)
+  const ex = GYM_EXERCISE_BY_ID[exerciseId]
+  if (!ex || !portableReps(ex) || local?.sets.some((s) => (s.kg ?? 0) > 0)) return local
+  const latest = lastPerformance(sessions, exerciseId, undefined, now, (set) => !set.kg && (!keep || keep(set)))
+  return latest && (!local || latest.session.startedAt > local.session.startedAt) ? latest : local
+}
 
 /**
  * The estimated max from the latest session of a free-weight lift at any place, for a place the athlete has not
@@ -407,7 +422,7 @@ export function suggestLoad(input: {
   const addedLoad = takesAddedLoad(ex, location)
   const keep = (set: GymSet) => countUnit(ex, set) === countUnit(ex) && !isUnloadedSet(ex, set) &&
     (!recordsZeroLoad(ex) || set.kg !== undefined) && (ex.load !== 'bodyweight' || !ex.stepFrom || addedLoad || !set.kg)
-  const last = lastPerformance(sessions, exerciseId, location?.id, now, keep)
+  const last = comparablePerformance(sessions, exerciseId, location?.id, now, keep)
   const step = stepKgFor(ex, location)
   const top = maxKgFor(ex, location)
   const min = minKgFor(ex, location)
@@ -592,8 +607,9 @@ export function suggestLoad(input: {
     const easy = !stale && !unfinished && atLoad.every((s) => s.rpe !== undefined && s.rpe <= plan.targetRpe)
     // The printed range is a starting point. An easier variation can already be
     // well below the athlete's capacity, even on the first visit.
+    const easyAtTop = reps[0] === hi && atLoad.every((s) => s.rpe !== undefined && s.rpe <= Math.min(7, plan.targetRpe - 1))
     const repeatable = easy && reps.length >= 2 && !ex.technical && !ex.explosive && !ex.dose &&
-      unloadedLabel(ex) !== 'Band' && reps[0] > hi ? Math.min(30, reps[0]) : undefined
+      unloadedLabel(ex) !== 'Band' && (reps[0] > hi || easyAtTop) ? Math.min(30, reps[0] + (easyAtTop ? 1 : 0)) : undefined
     const targetReps = repeatable ?? Math.max(1, Math.min(hi, typical + (easy ? 1 : grinding || away ? -1 : 0)))
     let why = `Last time you did ${atLoad.map((s) => s.reps).join(', ')} reps. Aim for ${targetReps} clean reps per set.${incompleteWhy ? ' ' + incompleteWhy : ''}`
     if (grinding && typical < lo) why += ` Swap to an easier version if you need help reaching ${lo} with reps to spare.`

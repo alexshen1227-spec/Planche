@@ -38,7 +38,9 @@ it('offers an available unilateral leg trial, keeps the earned base dose and lea
   const next = buildGymSession({ ...input, sessions: [easy, visit] }).items.find((it) => it.exerciseId === trial.id)
   expect(next).toMatchObject({ sets: 2, plan: { range: [3, 3] }, practice: { easierId: 'glute-bridge' } })
   expect(buildGymSession({ ...input, volumeFactor: 0.6 }).items.some((it) => it.suggestion.variationTrial)).toBe(false)
-  expect(legPracticeAt([easy], 'somewhere-else', now).size).toBe(0)
+  const elsewhere = legPracticeAt([easy], 'somewhere-else', now)
+  expect([...elsewhere.keys()].sort()).toEqual(['bodyweight-squat', 'glute-bridge'])
+  expect(elsewhere.get('glute-bridge')?.baseReps).toBe(25)
   expect(legPracticeAt([{ ...easy, exercises: easy.exercises.map((e) => ({ ...e, plannedWorkingSets: 3 })) }], home.id, now).get('glute-bridge')?.baseReps).toBeUndefined()
 })
 

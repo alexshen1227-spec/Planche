@@ -280,15 +280,17 @@ describe('deloads and goals', () => {
 })
 
 describe('the builder under the planner', () => {
-  it('fits four direct sets for each selected accessory beside the named lower-body work on a recovered mixed training day', () => {
-    const plan = buildGymSession({ location: { ...gymA, equipment: ['floor', 'dumbbells', 'incline-bench', 'pole'] },
-      minutes: 45, focus: 'lower', sessions: [], goals: { strength: 2, power: 0, physique: 5, skills: 5, endurance: 0 },
-      priority: ['side-delts', 'calves'], athletePriority: ['side-delts', 'calves'] })
+  it('keeps calves and the two leg patterns on Lower and puts an upper-body priority on an appropriate day', () => {
+    const input = { location: { ...gymA, equipment: ['floor', 'dumbbells', 'incline-bench', 'pole'] as typeof gymA.equipment },
+      minutes: 45, sessions: [], goals: { strength: 2, power: 0, physique: 5, skills: 5, endurance: 0 },
+      priority: ['side-delts', 'calves'] as ('side-delts' | 'calves')[], athletePriority: ['side-delts', 'calves'] as const }
+    const plan = buildGymSession({ ...input, focus: 'lower' })
     const patterns = plan.items.map((item) => GYM_EXERCISE_BY_ID[item.exerciseId].pattern)
     expect(patterns).toEqual(expect.arrayContaining(['squat', 'hinge']))
-    for (const m of ['side-delts', 'calves'] as const) {
-      expect(plan.items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes(m)).reduce((sum, it) => sum + it.sets, 0)).toBeGreaterThanOrEqual(4)
-    }
+    expect(patterns).not.toContain('lateral-raise')
+    expect(plan.items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes('calves')).reduce((sum, it) => sum + it.sets, 0)).toBeGreaterThanOrEqual(4)
+    const upper = buildGymSession({ ...input, focus: 'upper' })
+    expect(upper.items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.includes('side-delts')).reduce((n, it) => n + it.sets, 0)).toBeGreaterThanOrEqual(4)
     expect(plan.estimatedMin).toBeLessThanOrEqual(45)
   })
   it('puts explosive work first when power matters, and favours a lagging muscle', () => {

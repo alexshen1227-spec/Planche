@@ -5,13 +5,14 @@ import { PATTERN_LABEL } from '../../data/gym/catalog'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
 import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
-import { alternativesFor, availableAt, canDoHere } from '../../lib/gym/availability'
+import { alternativesFor, availableAt, canDoHere, searchExercises } from '../../lib/gym/availability'
+import { fitsGymFocus, focusFromName, FOCUS_LABEL } from '../../lib/gym/focus'
 import { bodyweightCapacity } from '../../lib/gym/bodyweight'
 import { partnerIndex, restAfterSet, restoreSetRest, useStraightSets } from '../../lib/gym/pairedSets'
 import { GymExerciseGuide } from './ExerciseGuide'
 import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../lib/gym/builder'
 import { addedSetReps, conservative, dayOfItem, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
-import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, isUnloadedSet, lastPerformance, plyoGate, prescribedCount, repPlanFor, suggestLoad } from '../../lib/gym/progression'
+import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, isUnloadedSet, comparablePerformance, plyoGate, prescribedCount, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GoalWeights, GymLocation, Rating } from '../../lib/gym/types'
 import { displayLoad, entryLoad, formatLoad, minKgFor, recordsZeroLoad, stepKgFor, takesAddedLoad, toKg, unitFor, unloadedLabel } from '../../lib/gym/units'
 import { easierDragonFlag } from '../../lib/gym/bodyweightSteps'
@@ -20,7 +21,7 @@ import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
 import { Icon } from '../Icon'
 import { finishBlocker, nextTimeLines, unfinishedLine } from '../../lib/gym/sessionLines'
 import { askStillApplies, parseTypedLoad, type LoadAsk } from '../../lib/gym/loadAsk'
-import { BadgeGlyph, Button, CountUp, RingTimer, Sheet, SwipeRow } from '../ds'
+import { BadgeGlyph, Button, CountUp, RingTimer, Sheet, SwipeRow, ToggleChip } from '../ds'
 import { JointReportFields, JointReportNotice, type AttemptSymptom } from '../AttemptEnd'
 
 const RPE_CHOICES = [6, 7, 8, 9, 10]
@@ -72,7 +73,7 @@ export function draftItemFor(
   const plan = shift ? { ...base, targetRpe: Math.max(6, base.targetRpe + shift) } : base
   const suggestion = suggestLoad({ exerciseId: exercise.id, location, sessions, plan, youth, now })
   const unit = unitFor(exercise, location)
-  const last = lastPerformance(sessions, exercise.id, location.id, now)
+  const last = comparablePerformance(sessions, exercise.id, location.id, now)
   const load = suggestion.kg !== undefined ? entryLoad(suggestion.kg, unit) : undefined
   return {
     exerciseId: exercise.id,
@@ -119,6 +120,9 @@ export function GymPlayer({
   const [trialFor, setTrialFor] = useState<number | null>(null)
   const finishing = finishOpen || Boolean(draft.stopReport)
   const [query, setQuery] = useState('')
+  const [allFocuses, setAllFocuses] = useState(false)
+  const [visibleCount, setVisibleCount] = useState(40)
+  const split = focusFromName(draft.name)
   const playerRef = useRef<HTMLDivElement | null>(null)
   const restEndedRef = useRef((initial.rest?.until ?? Infinity) <= Date.now())
   const [unlocked, setUnlocked] = useState<GymBadge[] | null>(null)
@@ -186,6 +190,11 @@ export function GymPlayer({
   const [needValue, setNeedValue] = useState('')
   /** One sheet at a time: opening any of them closes the others' questions. */
   const openSheet = (next: { kind: 'swap' | 'add' | 'menu'; item?: number } | null) => {
+    if (next?.kind === 'add') {
+      setAllFocuses(false)
+      setVisibleCount(40)
+      setQuery('')
+    }
     if (next) {
       setNeedLoad(null)
       setDoubt(null)
@@ -296,6 +305,9 @@ export function GymPlayer({
   /** What today's plan kept out stays out of swaps and additions too. */
   const fitsToday = (e: GymExercise) =>
     canDoHere(e.id, location) && !jointsToRest(e.id).some((j) => draft.avoidJoints?.includes(j)) && !e.primary.some((m) => draft.musclesOff?.includes(m))
+  const addOptions = sh?.kind === 'add' ? searchExercises(availableAt(location), query).filter((e) =>
+    (allFocuses || !split || fitsGymFocus(split, e)) && gym.ratings[e.id] !== 'avoid' && fitsToday(e) &&
+    plyoGate(e, gym.sessions, youth, Date.now()).allowed) : []
 
   const availableTrial = (item: DraftItem) => {
     const suggestion = item.suggestion
@@ -870,7 +882,7 @@ export function GymPlayer({
                     capacity: bodyweightCapacity(state, Date.now()),
                     sessions: gym.sessions,
                     now: Date.now(),
-                  })}
+                  }).filter((e) => !split || fitsGymFocus(split, e))}
                   fitsToday={fitsToday}
                   keptOut={[
                     ...(draft.avoidJoints?.length ? [`load your ${joinWords(draft.avoidJoints.map((j) => j.replace('-', ' ')))}`] : []),
@@ -906,20 +918,19 @@ export function GymPlayer({
               {sh?.kind === 'add' ? (
                 <>
                   <h2 className="text-title3 font-semibold">Add an exercise</h2>
+                  {split && split !== 'full' && <div className="mt-2 flex flex-wrap gap-2">
+                    <ToggleChip active={!allFocuses} onClick={() => { setAllFocuses(false); setVisibleCount(40) }}>{FOCUS_LABEL[split]} day</ToggleChip>
+                    <ToggleChip active={allFocuses} onClick={() => { setAllFocuses(true); setVisibleCount(40) }}>All exercises</ToggleChip>
+                  </div>}
                   <input
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => { setQuery(e.target.value); setVisibleCount(40) }}
                     placeholder="Search"
                     className="mt-3 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body"
                     aria-label="Search exercises"
                   />
                   <ul className="mt-3 space-y-2">
-                    {availableAt(location)
-                      .filter((e) => gym.ratings[e.id] !== 'avoid')
-                      .filter(fitsToday)
-                      .filter((e) => plyoGate(e, gym.sessions, youth, Date.now()).allowed)
-                      .filter((e) => !query || e.name.toLowerCase().includes(query.toLowerCase()) || PATTERN_LABEL[e.pattern].toLowerCase().includes(query.toLowerCase()))
-                      .slice(0, 40)
+                    {addOptions.slice(0, visibleCount)
                       .map((e) => (
                         <li key={e.id}>
                           <button
@@ -932,6 +943,8 @@ export function GymPlayer({
                         </li>
                       ))}
                   </ul>
+                  {addOptions.length > visibleCount && <Button variant="secondary" onClick={() => setVisibleCount((n) => n + 40)}>Show more exercises</Button>}
+                  {!addOptions.length && <p className="mt-3 text-footnote text-ink2">No matching exercises at {location.name}{split && split !== 'full' && !allFocuses ? ` for this ${FOCUS_LABEL[split].toLowerCase()} day. Choose All exercises to search across focuses.` : '. Try another exercise or muscle name.'}</p>}
                 </>
               ) : null}
         </div>

@@ -276,6 +276,11 @@ export function gymPreset(g: GymLimits, extra: { placeId?: string; warmUpMin?: n
   }
 }
 
+/** A saved opener keeps its promised block. A separate skill session can also leave today's planned lifts to do. */
+export function remainingLifts(plan: Pick<TodayPlan, 'gym'>, saved: GymPreset | null, pickedPlaceId?: string): GymPreset | null {
+  return saved ?? (plan.gym ? gymPreset(plan.gym, { placeId: pickedPlaceId ?? plan.gym.placeId }) : null)
+}
+
 /** Where the lifts go: the place, the place the plan had them, and whether the athlete moved them. */
 export interface GymPlaceChoice {
   place: GymLocation

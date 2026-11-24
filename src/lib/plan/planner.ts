@@ -20,6 +20,7 @@ import { missingSkillKit, skillView } from '../skills'
 import { addDays, dayKey, weekStart } from '../time'
 import { readDay, weekdayOf } from '../weekPlan'
 import { planGymExercises, FOCUS_LABEL, focusMain, focusOpen, NAMED_PATTERNS, type GymFocus } from '../gym/builder'
+import { loggedFocus, trainedFocus } from '../gym/focus'
 import { conservative } from '../gym/draft'
 import { bodyweightCapacity } from '../gym/bodyweight'
 import { estimateOneRepMax } from '../gym/progression'
@@ -2291,6 +2292,8 @@ interface Path {
   prev: Credit
   /** The previous day's gym sets alone, for the two-days-running rule. */
   prevGym: Credit
+  previousFocus: GymFocus | null
+  lastVisit: { focus: GymFocus; at: number } | null
   /** When this path presses or pulls hard in the gym (push, pull or upper days), for the family rest rule. */
   gymEvents: Record<Straight, number[]>
   last: Partial<Record<Muscle, number>>
@@ -2334,6 +2337,7 @@ interface GymCtx {
   gymMinutes: (i: number, focus: GymFocus) => number
   /** The muscle credit of the session a focus builds on a day, set by set: what the two-days-running rule reads. */
   lifts: (d: DayCtx, minutes: number, focus: GymFocus, spare?: Muscle[]) => Credit
+  split: (d: DayCtx, minutes: number, focus: GymFocus, spare?: Muscle[]) => GymFocus | null
   compoundSets: (d: DayCtx, minutes: number, focus: GymFocus, group: Straight) => number
   /** The muscle credit of a day's opener at a focus, from the session it builds. */
   openerCredit: (i: number, focus: GymFocus) => Credit
@@ -2451,9 +2455,9 @@ function allocate(
   days: DayCtx[],
   slots: SkillSlot[],
   idxs: number[],
-  init: Pick<Path, 'P' | 'prev' | 'last' | 'athletic'> & { prevGym?: Credit; prevFocus?: GymFocus | null; gymEvents?: Record<Straight, number[]>; pressed?: boolean },
+  init: Pick<Path, 'P' | 'prev' | 'last' | 'athletic'> & { prevGym?: Credit; prevFocus?: GymFocus | null; lastVisit?: Path['lastVisit']; gymEvents?: Record<Straight, number[]>; pressed?: boolean },
   ctx: GymCtx,
-  fixed?: { index: number; focus: GymFocus | null; credit: Credit; prev: Credit; prevGym: Credit; light?: boolean; logged?: boolean },
+  fixed?: { index: number; focus: GymFocus | null; credit: Credit; prev: Credit; prevGym: Credit; light?: boolean; logged?: boolean; actualFocus?: GymFocus | null },
 ): Path {
   // The week as planned (round six): every calisthenics day's session counts from the start, so a gym day early in the
   // week sees the skill days after it. Monday once chose "push: chest and front delts furthest from this week's sets"
@@ -2470,6 +2474,8 @@ function allocate(
       P: ahead,
       prev: { ...init.prev },
       prevGym: { ...(init.prevGym ?? {}) },
+      previousFocus: init.prevFocus ?? null,
+      lastVisit: init.lastVisit ?? null,
       gymEvents: { push: [...(init.gymEvents?.push ?? [])], pull: [...(init.gymEvents?.pull ?? [])] },
       last: { ...init.last },
       athletic: init.athletic,
@@ -2499,6 +2505,7 @@ function allocate(
     const gymEvents = { push: [...p.gymEvents.push], pull: [...p.gymEvents.pull] }
     // Light pressing is not a hard pressing session: it rests nothing around it.
     for (const f of focus ? focusFamilies(focus) : []) if (!(light && f === 'push')) gymEvents[f].push(days[i].at)
+    const visitFocus = fixed?.index === i && fixed.logged ? fixed.actualFocus ?? null : focus
     return {
       foci: [...p.foci, focus],
       light: [...p.light, light],
@@ -2507,6 +2514,8 @@ function allocate(
       P,
       prev,
       prevGym,
+      previousFocus: visitFocus,
+      lastVisit: visitFocus ? { focus: visitFocus, at: days[i].start } : p.lastVisit,
       gymEvents,
       last,
       athletic: p.athletic + (focus === 'athletic' ? 1 : 0),
@@ -2567,6 +2576,7 @@ function allocate(
         : []
     // The next gym session goes to the part of the body left longest, when anything open today trains it —
     // unless the day was chosen to open with a family's skill, which its focus must train.
+    let preferredForGap: GymFocus[] = []
     if (i === ctx.nextGymDay && ctx.staleGroup && !slot.hint) {
       const group = ctx.staleGroup
       const trainsGroup = (f: GymFocus) => {
@@ -2577,11 +2587,7 @@ function allocate(
         }
         return TRAINS[group].includes(f) && FOCUS_MUSCLES[group].some((m) => !d.off.has(m) && (ctx.lifts(d, minutes, f)[m] ?? 0) >= 1)
       }
-      const trains = open.filter(trainsGroup)
-      if (trains.length) {
-        open.splice(0, open.length, ...trains)
-        lightOpen = lightOpen.filter(trainsGroup)
-      }
+      preferredForGap = [...open, ...lightOpen].filter(trainsGroup)
     }
     // The week's pressing rides on the first gym day chosen for a family's skill that can carry it — those days hold,
     // where a day the goal split gave the gym can change kind as the week is logged (a light push day planned for a
@@ -2642,12 +2648,13 @@ function allocate(
         return main.length > 0 && over.length * 2 >= main.length
       }
       // Not the same focus, nor the same muscles hard, in the gym two days running — while anything else is open.
-      const lastFocus = p.foci.length ? p.foci[p.foci.length - 1] : (init.prevFocus ?? null)
+      const lastFocus = p.previousFocus
       // Read from the session each focus builds, not the estimate: a full-body day the morning after a lower day
       // was four glute sets, past `HARD_SETS`, while the estimate said three.
       const liftsOf = (c: { f: GymFocus; light: boolean }) => ctx.lifts(d, ctx.gymMinutes(i, c.f), c.f, c.light ? lightSpare : [])
       const clash = (c: { f: GymFocus; light: boolean }) =>
-        c.f === lastFocus || (Object.entries(liftsOf(c)) as [Muscle, number][]).some(([m, n]) => n >= HARD_SETS && (p.prevGym[m] ?? 0) >= HARD_SETS)
+        (lastFocus !== null && (c.f === lastFocus || ctx.split(d, ctx.gymMinutes(i, c.f), c.f, c.light ? lightSpare : []) === lastFocus)) ||
+        (Object.entries(liftsOf(c)) as [Muscle, number][]).some(([m, n]) => n >= HARD_SETS && (p.prevGym[m] ?? 0) >= HARD_SETS)
       // A week with no gym pressing yet may press here lightly, where hard pressing is ruled out — on a gym day the
       // day's own rules fill anyway: the weekly pressing changes what a gym day presses, never a day's kind. A light
       // upper day still pulls hard, so the pull family's rest rule holds for it as for any pulling day.
@@ -2659,6 +2666,7 @@ function allocate(
       }
       // A day chosen to open with a family's skill trains that family, when anything open lets it.
       const hint = forced ? undefined : slot.hint
+      const beforeHint = choices
       // Its own family's focus first: an upper day would press and pull, and rest the other family around it too —
       // unless its pressing is light, which rests nothing: then it stays a choice beside the family's own.
       if (hint && choices.some((c) => focusFamilies(c.f).includes(hint) && ctx.opener(i, c.f))) {
@@ -2681,6 +2689,11 @@ function allocate(
         choices = own.length ? [...own, ...others] : opening
       }
       let calm = forced ? choices : choices.filter((c) => !clash(c))
+      if (!calm.length && hint) calm = beforeHint.filter((c) => !clash(c))
+      if (!forced && preferredForGap.length) {
+        const servesGap = calm.filter((c) => preferredForGap.includes(c.f))
+        if (servesGap.length) calm = servesGap
+      }
       if (!forced && pressHere && !p.pressed) {
         const pressing = calm.filter((c) => PRESSING.has(c.f))
         if (pressing.length) calm = pressing
@@ -2745,6 +2758,7 @@ function allocate(
         const main = FOCUS_MUSCLES[f].filter((m) => !d.off.has(m))
         if (main.length) gain += (STALE_WEIGHT * main.reduce((sum, m) => sum + staleDays(m, p), 0)) / main.length
         gain -= penalty(f)
+        if (f !== 'full' && p.lastVisit?.focus === f && p.lastVisit.at >= addDays(d.start, -6)) gain -= Math.min(8, S * 0.5)
         // A push day concentrates the load: pressing goes beside the day's own holds — its opener, first — since the
         // days around them are kept clear of it (CONSENSUS: shared recovery; the weight is a planning heuristic).
         const opener = ctx.opener(i, f)
@@ -2991,6 +3005,12 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     for (const it of plan.items) addLiftVolume(out, it.exerciseId, it.sets)
     credits.set(plan, out)
     return out
+  }
+  const splits = new WeakMap<ReturnType<typeof buildAt>, GymFocus | null>()
+  const builtSplit: GymCtx['split'] = (d, minutes, focus, spare = []) => {
+    const plan = buildAt(d, minutes, focus, spare)
+    if (!splits.has(plan)) splits.set(plan, trainedFocus(plan.items))
+    return splits.get(plan) ?? null
   }
   const g = prefs.goals
   const gymWeight = Math.max(g.strength, g.physique, g.power, g.endurance)
@@ -3300,6 +3320,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       return slots[i].gymMin - (skill ? openerTime(i, skill) : 0)
     },
     lifts: liftCredit,
+    split: builtSplit,
     compoundSets: (d, minutes, focus, group) => buildAt(d, minutes, focus).items.reduce((sets, item) => {
       const pattern = GYM_EXERCISE_BY_ID[item.exerciseId].pattern
       return sets + (NAMED_PATTERNS[group].some((options) => options.includes(pattern)) ? item.sets : 0)
@@ -3322,6 +3343,11 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   // Today's slot is chosen from what was done before today, so it holds still once started.
   // Yesterday as it happened: the two-days-running rule reaches back past today.
   const yesterday = addDays(today, -1)
+  const yesterdayFocus = loggedFocus(gymSessions, yesterday, today)
+  const lastVisitDate = gymSessions.reduce((latest, s) => s.startedAt < today && s.startedAt >= addDays(today, -6) &&
+    s.exercises.some((e) => e.sets.some((set) => !set.warmup && set.reps > 0 && set.at < today)) ? Math.max(latest, startOfDay(s.startedAt)) : latest, 0)
+  const lastVisitFocus = lastVisitDate ? loggedFocus(gymSessions, lastVisitDate, addDays(lastVisitDate, 1)) : null
+  const lastVisit = lastVisitFocus ? { focus: lastVisitFocus, at: lastVisitDate } : null
   /** Gym pressing logged this calendar week before `to`: the weekly pressing rule is met. */
   const pressedBy = (to: number) => gymSessions.some((s) => s.startedAt >= thisWeek && s.startedAt < to && pressedIn(s))
   const first = allocate(
@@ -3332,6 +3358,8 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       P: setsPerMuscle(state.sessions, gymSessions, thisWeek, today),
       prev: setsPerMuscle(state.sessions, gymSessions, yesterday, today),
       prevGym: setsPerMuscle([], gymSessions, yesterday, today),
+      prevFocus: yesterdayFocus,
+      lastVisit,
       gymEvents: { push: [], pull: [] },
       last: {},
       athletic: athleticCount(state, thisWeek, today),
@@ -3364,13 +3392,15 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
         P: setsPerMuscle(state.sessions, gymSessions, thisWeek, now + 1),
         prev: setsPerMuscle(state.sessions, gymSessions, yesterday, today),
         prevGym: setsPerMuscle([], gymSessions, yesterday, today),
+        prevFocus: yesterdayFocus,
+        lastVisit,
         gymEvents: { push: [], pull: [] },
         last: {},
         athletic: athleticCount(state, thisWeek, now + 1),
         pressed: pressedBy(now + 1),
       },
       ctx,
-      { index: 0, focus: todayFocus, credit: remaining, prev, prevGym, light: todayLight, logged: gymDone },
+      { index: 0, focus: todayFocus, credit: remaining, prev, prevGym, light: todayLight, logged: gymDone, actualFocus: gymDone ? loggedFocus(gymSessions, today, now + 1) : null },
     )
   }
   const later = nxt.length
@@ -3378,7 +3408,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
         days,
         slots,
         nxt,
-        { P: {}, prev: week.prev, prevGym: week.prevGym, prevFocus: week.foci[week.foci.length - 1] ?? null, gymEvents: week.gymEvents, last: week.last, athletic: 0 },
+        { P: {}, prev: week.prev, prevGym: week.prevGym, prevFocus: week.previousFocus, lastVisit: week.lastVisit, gymEvents: week.gymEvents, last: week.last, athletic: 0 },
         ctx,
       )
     : undefined

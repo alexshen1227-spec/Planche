@@ -2,7 +2,7 @@ import { GYM_EXERCISE_BY_ID, GYM_EXERCISES, type GymExercise, type LocationEquip
 import { plyoGate } from './progression'
 import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
 import type { GymLocation, GymSession, Rating } from './types'
-import type { Muscle } from '../../data/gym/catalog'
+import { MUSCLE_BY_ID, PATTERN_LABEL, type Muscle } from '../../data/gym/catalog'
 
 /** The floor is everywhere. */
 function equipmentAt(location: Pick<GymLocation, 'equipment'> | undefined): Set<LocationEquipment> {
@@ -24,6 +24,16 @@ export function canDoHere(exerciseId: string, location: GymLocation | undefined)
 
 const catalogByKit = new WeakMap<ReadonlyArray<LocationEquipment>, { key: string; exercises: GymExercise[] }>()
 const bareFloor: LocationEquipment[] = []
+
+const searchWords = (s: string) => s.toLowerCase().match(/[a-z0-9]+/g) ?? []
+const exerciseWords = new Map(GYM_EXERCISES.map((e) => [e.id,
+  searchWords([e.name, PATTERN_LABEL[e.pattern], ...e.primary.map((m) => MUSCLE_BY_ID[m].label)].join(' '))]))
+
+export function searchExercises(exercises: GymExercise[], query: string): GymExercise[] {
+  const aliases: Record<string, string> = { db: 'dumbbell', kb: 'kettlebell', bb: 'barbell', rows: 'row', curls: 'curl', presses: 'press', squats: 'squat', raises: 'raise', pullups: 'pull', pushups: 'push' }
+  const terms = searchWords(query).map((t) => aliases[t] ?? t)
+  return exercises.filter((e) => terms.every((term) => exerciseWords.get(e.id)?.some((word) => word.startsWith(term))))
+}
 
 export function availableAt(location: GymLocation | undefined): GymExercise[] {
   const equipment = location?.equipment ?? bareFloor

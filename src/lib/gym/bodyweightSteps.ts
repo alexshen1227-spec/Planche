@@ -1,6 +1,7 @@
 import { addDays, dayKey } from '../time'
 import type { GymSession, GymSet } from './types'
-import { unfinishedLiftSets } from './progression'
+import { portableReps, unfinishedLiftSets } from './progression'
+import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 
 export const UNASSISTED_LIFTS = ['push-up', 'pull-up'] as const
 export type UnassistedLift = (typeof UNASSISTED_LIFTS)[number]
@@ -16,15 +17,16 @@ interface LegPractice {
   working?: { id: string; reps: number; sets: number }
 }
 
-/** Learn from the latest visit to this place. A trial is one set on each leg. */
+/** Floor work travels with the athlete. A step, bench or added load keeps its local setup. */
 export function legPracticeAt(sessions: GymSession[], locationId: string | undefined, now: number) {
   const result = new Map<string, LegPractice>()
   const from = addDays(now, -28)
   for (const visit of [...sessions].sort((a, b) => a.startedAt - b.startedAt)) {
-    if (visit.locationId !== locationId || visit.startedAt < from || visit.startedAt >= now) continue
+    if (visit.startedAt < from || visit.startedAt >= now) continue
     for (const [base, variants] of Object.entries(LEG_VARIATIONS)) {
       const relevant = visit.exercises.filter((log) => (log.exerciseId === base || variants?.includes(log.exerciseId)) &&
-        log.sets.some((s) => !s.warmup && s.at <= now))
+        log.sets.some((s) => !s.warmup && s.at <= now) && (visit.locationId === locationId ||
+          (portableReps(GYM_EXERCISE_BY_ID[log.exerciseId]) && !log.sets.some((s) => !s.warmup && s.kg))))
       if (!relevant.length) continue
       const evidence: LegPractice = {}
       for (const log of relevant) {

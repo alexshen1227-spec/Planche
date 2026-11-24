@@ -155,6 +155,8 @@ export interface TrainingPrefs {
   musclesOff: import('../../data/gym/catalog').Muscle[]
   /** Lagging muscles that get extra weekly sets. */
   musclesPriority: import('../../data/gym/catalog').Muscle[]
+  /** A set the athlete reports from before logging here. It provides a starting dose, never a workout or record. */
+  pullupStartingSet?: { at: number; reps: number }
   /** Minutes available on each weekday, Sunday first; 0 = a rest day. */
   minutesByDay: number[]
   /** Index 0 is Sunday. An empty entry lets the planner use the usual place. */

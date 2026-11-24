@@ -61,6 +61,8 @@ export const MOVEMENT_VIDEOS: Readonly<Record<string, MovementVideo | undefined>
   'straddle-flag': { id: '5PA4zMBwzZo', by: 'Barstarzz / Bodybuilding.com', start: 399 },
   'human-flag': { id: 'Jjr2oEfHG7c', by: 'Gymless Fitness', start: 467 },
   'db-bench-press': { id: 'U14BvBQNi2M', by: 'CrossFit' },
+  'db-floor-press': { id: 'T0Y3OBF1bNI', by: 'PureGym', watchFor: 'Watch where the upper arms meet the floor and how the wrists stay over the elbows as the weights rise.' },
+  'db-bent-over-row': { id: '6gvmcqr226U', by: 'PureGym', watchFor: 'Watch the hip hinge before the first rep. The torso stays still while both elbows travel back toward the ribs.' },
   'goblet-squat': { id: 'qBZ9pJf7uHY', by: 'CrossFit Affiliate Programming' },
   'dragon-flag': { id: 'kIbY6zq-25Y', by: 'Sarah Herse',
     watchFor: 'The shoulders and upper back carry the body. Follow the line from hips to heels as it lowers.' },

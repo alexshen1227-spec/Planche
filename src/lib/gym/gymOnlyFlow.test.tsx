@@ -585,6 +585,8 @@ it('keeps ankle-bearing lifts out of a lower-body session, its swaps and the add
   fireEvent.change(search, { target: { value: 'lunge' } })
   expect(sheet.queryByRole('button', { name: /lunge/i })).toBeNull()
   fireEvent.change(search, { target: { value: 'lateral raise' } })
+  expect(sheet.queryByRole('button', { name: /seated dumbbell lateral raise/i })).toBeNull()
+  fireEvent.click(sheet.getByRole('button', { name: 'All exercises' }))
   expect(sheet.getByRole('button', { name: /seated dumbbell lateral raise/i })).toBeTruthy()
   expect(sheet.queryByRole('button', { name: /^Dumbbell lateral raise/i })).toBeNull()
 })

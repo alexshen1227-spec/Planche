@@ -72,6 +72,7 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
     : []
   const sportSchedule = sanitizeSportSchedule(r.sportSchedule)
   const fieldTimes = sanitizeFieldTimes(r.fieldTimes)
+  const startingSet = r.pullupStartingSet as Partial<NonNullable<TrainingPrefs['pullupStartingSet']>> | null
   const minutes = Array.isArray(r.minutesByDay) && r.minutesByDay.length === 7
     ? r.minutesByDay.map((m) => Math.round(clamp(m, 0, 240, 0)))
     : base.minutesByDay
@@ -89,6 +90,9 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
     skillGoals,
     musclesOff: muscles(r.musclesOff),
     musclesPriority: muscles(r.musclesPriority),
+    ...(startingSet && isTime(startingSet.at) && typeof startingSet.reps === 'number' &&
+      Number.isInteger(startingSet.reps) && startingSet.reps >= 0 && startingSet.reps <= 100
+      ? { pullupStartingSet: { at: startingSet.at, reps: startingSet.reps } } : {}),
     minutesByDay: minutes,
     ...(places.some(Boolean) ? { placeByDay: places } : {}),
     ...(typeof r.extraGymDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.extraGymDate) ? { extraGymDate: r.extraGymDate } : {}),
@@ -103,7 +107,7 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
 }
 
 /** Every setting a training-prefs edit can change on its own (all but the stamps). */
-const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'minutesByDay', 'placeByDay', 'extraGymDate', 'gymWeekdays', 'shortSkillOpeners', 'straightArmRestHours', 'season', 'sportSchedule'] as const
+const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'pullupStartingSet', 'minutesByDay', 'placeByDay', 'extraGymDate', 'gymWeekdays', 'shortSkillOpeners', 'straightArmRestHours', 'season', 'sportSchedule'] as const
 
 export function setLiftingWeekday(prefs: TrainingPrefs, weekday: number, enabled: boolean): TrainingPrefs {
   const days = new Set(prefs.gymWeekdays)

@@ -10,6 +10,7 @@ import {
   gymPlaceLine,
   gymPreset,
   openerLine,
+  remainingLifts,
   resolveGymPlace,
   type GymEntry,
   type GymPreset,
@@ -86,7 +87,7 @@ export function TodayPlanCard({
   // said they are somewhere else; the card says which.
   const where = plan.kind === 'gym' && plan.gym ? resolveGymPlace(state, Date.now(), { plannedId: pickedId ? undefined : plan.gym.placeId, pickedId }) : undefined
   const preset: GymPreset | null = plan.gym ? gymPreset(plan.gym, { placeId: where?.place.id ?? plan.gym.placeId }) : null
-  const liftsPreset: GymPreset | null = remembered ?? preset
+  const liftsPreset = remainingLifts(plan, remembered, where?.place.id)
   const session =
     plan.kind === 'calisthenics' && plan.skill
       ? { ...calisthenicsTitle(plan.skill), place: calisthenicsPlaceLine(state, plan.skill, pickedId) }

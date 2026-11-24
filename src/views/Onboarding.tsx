@@ -24,6 +24,7 @@ import { Icon } from '../components/Icon'
 import { PressMilestonePicker } from '../components/PressMilestone'
 import { Figure } from '../components/Figure'
 import { LocationEditor } from '../components/gym/LocationEditor'
+import { PullupStartingSet } from '../components/gym/PullupStartingSet'
 import { GYM_EQUIPMENT_BY_ID, locationEquipmentLabel } from '../data/gym/catalog'
 import { AgeAndSafety } from '../components/plan/FitnessSetup'
 import { GoalsEditor, MusclesEditor, ScheduleEditor } from '../components/plan/PlanSettings'
@@ -1077,6 +1078,8 @@ export function Onboarding() {
               <p className="mt-1.5 text-caption leading-relaxed text-ink3">
                 {homeWeights.length ? homeWeights.map(locationEquipmentLabel).join(' · ') : 'Add dumbbells, a bench or machines and set the weights you have.'}
               </p>
+              {[home, ...gyms].some((place) => place.equipment.includes('pullup-bar') || place.equipment.includes('rings')) &&
+                <PullupStartingSet saved={prefs.pullupStartingSet} onSave={(pullupStartingSet) => edit('prefs', { ...prefs, pullupStartingSet })} />}
             </div>
 
             <div className="mt-3 rounded-inner border border-line bg-surface p-4">
