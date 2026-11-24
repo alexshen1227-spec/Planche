@@ -2,7 +2,7 @@ import { MUSCLES, type Joint, type Muscle, type Pattern } from '../../data/gym/c
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { EXERCISE_BY_ID } from '../../data/exercises'
 import { SKILLS } from '../../data/skills'
-import type { AppState, Category, Session, SkillId } from '../../types'
+import type { AppState, Category, Session, SetLog, SkillId } from '../../types'
 import type { GoalWeights, GymSession, OutsideActivity, TrainingPrefs } from '../gym/types'
 import { sportBetween } from './sport'
 
@@ -132,6 +132,13 @@ function add(into: Credit, credit: Credit, scale = 1) {
   for (const [m, v] of Object.entries(credit) as [Muscle, number][]) into[m] = (into[m] ?? 0) + v * scale
 }
 
+/** A planning estimate for muscle work. All attempts still count in the skill log and fatigue model. */
+function skillVolumeCredit(set: SetLog): number {
+  if (!(set.value > 0) || set.value < set.target / 2) return 0
+  if (set.light || (set.rpe !== undefined && set.rpe <= 6)) return 0.5
+  return 1
+}
+
 /** Weekly sets per muscle between `from` and `to` (ms), from gym and skill work alike. */
 export function setsPerMuscle(
   skillSessions: Session[],
@@ -144,7 +151,8 @@ export function setsPerMuscle(
     if (s.startedAt < from || s.startedAt >= to) continue
     for (const set of s.sets) {
       const l = skillSetLoading(set.exerciseId, set.section)
-      if (l) add(out, l.muscles)
+      const credit = skillVolumeCredit(set)
+      if (l && credit > 0) add(out, l.muscles, credit)
     }
   }
   for (const s of gymSessions) {
@@ -362,7 +370,7 @@ export function lastTrainedAt(state: Pick<AppState, 'sessions' | 'gym'>, now: nu
   for (const s of state.sessions) {
     for (const set of s.sets) {
       const l = skillSetLoading(set.exerciseId, set.section)
-      if (l) mark(l.muscles, s.startedAt)
+      if (l && skillVolumeCredit(set) > 0) mark(l.muscles, s.startedAt)
     }
   }
   for (const s of state.gym?.sessions ?? []) {

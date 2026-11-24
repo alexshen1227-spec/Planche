@@ -158,6 +158,14 @@ describe('the day plan', () => {
 })
 
 describe('weekly volume', () => {
+  it('keeps short technical attempts in practice and fatigue without spending the muscle target', () => {
+    const s = skillSession(NOW - DAY, 'tuck-planche', 12)
+    const attempts = { ...s, sets: s.sets.map((set) => ({ ...set, value: 1, target: 10, light: true, endReason: 'balance' as const })) }
+    expect(setsPerMuscle([attempts], [], NOW - 7 * DAY, NOW)['front-delts'] ?? 0).toBe(0)
+    expect(lastHardStraightArm([attempts], NOW).push).toBe(attempts.startedAt)
+    const light = { ...s, sets: s.sets.map((set) => ({ ...set, light: true })) }
+    expect(setsPerMuscle([light], [], NOW - 7 * DAY, NOW)['front-delts']).toBe(6)
+  })
   it('counts gym and skill sets on the same muscles, warm-ups not at all', () => {
     const sets = setsPerMuscle([skillSession(NOW - DAY, 'tuck-planche', 4)], [gymSession(NOW - DAY, 'incline-db-press', 3)], NOW - 7 * DAY, NOW)
     // 4 planche sets (front delts 1 each) + 3 incline presses (front delts primary).

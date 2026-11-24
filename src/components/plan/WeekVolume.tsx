@@ -4,6 +4,7 @@ import { defaultPrefs } from '../../lib/gym/state'
 import { setsPerMuscle, volumeStatus, volumeTarget, type VolumeStatus } from '../../lib/plan/load'
 import { useStore } from '../../lib/store'
 import { weekStart } from '../../lib/time'
+import { useToday } from '../../lib/useToday'
 
 const STATUS: Record<VolumeStatus, { label: string; tone: string }> = {
   off: { label: 'off', tone: 'text-ink3' },
@@ -15,19 +16,20 @@ const STATUS: Record<VolumeStatus, { label: string; tone: string }> = {
 /** This week's sets per muscle — gym and skill work counted together — against the targets. */
 export function WeekVolume() {
   const { state } = useStore()
+  const today = useToday()
   const now = Date.now()
   const prefs = state.gym?.prefs ?? defaultPrefs()
   const sets = useMemo(
     () => setsPerMuscle(state.sessions, state.gym?.sessions ?? [], weekStart(now), now + 1),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state.sessions, state.gym?.sessions],
+    [state.sessions, state.gym?.sessions, today],
   )
   return (
     <section>
       <h2 className="text-footnote font-semibold uppercase tracking-wide text-ink3">This week, sets per muscle</h2>
       <p className="mt-1 text-caption text-ink3">
-        Gym and skill sets together (a secondary muscle counts half). Targets follow your physique goal — a coaching
-        convention: more weekly sets help muscle growth up to roughly 10–20, and the exact number for you is unknown.
+        These are estimated working sets. A secondary muscle gets half credit. Skill attempts below half their target
+        stay in your practice log. Light skill sets that reach that mark get half credit. The ranges are weekly coaching targets.
       </p>
       <div className="mt-3 space-y-4">
         {MUSCLE_GROUPS.map((group) => (
@@ -56,6 +58,7 @@ export function WeekVolume() {
                     </span>
                     <span className={`text-right tnum ${STATUS[status].tone}`}>
                       {status === 'off' ? 'off' : `${done}/${target[0]}–${target[1]}`}
+                      {status !== 'off' ? <span className="block text-caption">{STATUS[status].label}</span> : null}
                     </span>
                   </li>
                 )

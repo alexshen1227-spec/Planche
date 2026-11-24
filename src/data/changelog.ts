@@ -19,6 +19,15 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-23',
+    title: 'Room for legs in a mixed week',
+    area: 'coach',
+    notes: [
+      'On a tight schedule, a top physique goal or a leg priority can reserve a lower-body day alongside your skills. Your plan explains when they share the week.',
+      'Working-set totals use the hold or reps you actually logged. Brief attempts still count as skill practice, and the plan still gives your joints time to recover.',
+    ],
+  },
+  {
+    date: '2026-11-23',
     title: 'Pick up where you left off',
     area: 'training',
     notes: [

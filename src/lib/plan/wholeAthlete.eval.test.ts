@@ -137,6 +137,37 @@ function expectWeeklyPressing(mixed: LoopOut, restHours: number): number {
 }
 
 describe('the whole athlete: the planche first, then the rest (round five)', () => {
+  it.each([
+    [0, 45, 0, 45, 0, 45, 0],
+    [0, 60, 60, 0, 60, 0, 60],
+  ].map((minutesByDay) => ({ minutesByDay })))('trains legs and both skills over four balanced weeks at $minutesByDay', ({ minutesByDay }) => {
+    const mixed = season({
+      skills: ['planche', 'frontlever'], birthYear: 1994, active: 'gym',
+      steps: { planche: 'tuck', frontlever: 'fl-tuck' },
+      prefs: { minutesByDay, goals: { strength: 3, physique: 5, skills: 5, power: 1, endurance: 1 } },
+    }, 28)
+    for (const week of weeksOf(mixed)) {
+      const patterns = week.flatMap((d) => (d.gym?.items ?? []).map((it) => GYM_EXERCISE_BY_ID[it.id].pattern))
+      expect(patterns.some((p) => p === 'squat' || p === 'lunge')).toBe(true)
+      expect(patterns).toContain('hinge')
+      expect(exposuresOf(week, 'planche').length).toBeGreaterThanOrEqual(2)
+      expect(week.some((d) => d.skill.some((s) => (s.parts.frontlever?.main ?? 0) > 0))).toBe(true)
+    }
+  })
+
+  it.each([
+    { name: 'two days a week', minutesByDay: [0, 45, 0, 0, 45, 0, 0], from: FROM, days: 7 },
+    { name: 'Monday missed', minutesByDay: [0, 45, 0, 45, 0, 45, 0], from: new Date(2026, 9, 6), days: 6 },
+  ])('keeps both modes in the remaining week with $name', ({ minutesByDay, from, days }) => {
+    const mixed = season({
+      skills: ['planche', 'frontlever'], birthYear: 1994, active: 'gym',
+      steps: { planche: 'tuck', frontlever: 'fl-tuck' },
+      prefs: { minutesByDay, goals: { strength: 3, physique: 5, skills: 3, power: 1, endurance: 1 } },
+    }, days, { from })
+    expect(mixed.days.some((d) => d.gym?.items.some((it) => GYM_EXERCISE_BY_ID[it.id].pattern === 'hinge'))).toBe(true)
+    expect(exposuresOf(mixed.days, 'planche').length).toBeGreaterThanOrEqual(1)
+  })
+
   // The default week: Sunday and Saturday an hour, Monday, Wednesday and Friday 45 minutes, a 48 h rule, the gym
   // active. Ten weeks; plan stability is read on the first five (each read re-plans twice).
   const FRONT_LEVER: { at: number; restDays: number; queued: boolean }[] = []
