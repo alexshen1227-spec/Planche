@@ -221,8 +221,8 @@ export function goalEmphasisFor(goals: GoalWeights | undefined, ex: GymExercise)
 }
 
 /** Sets a movement is given on a day at this volume factor: the usual three, scaled, never under two. */
-export function setsForFactor(factor: number, priority = false): number {
-  return Math.max(2, Math.round((3 + (priority ? 1 : 0)) * factor))
+export function setsForFactor(factor: number, priority = false, prescribed?: number): number {
+  return Math.max(2, Math.round((prescribed ?? (priority ? 4 : 3)) * factor))
 }
 
 /** Which focus comes next: the part of the body trained longest ago at the gym, among the ones still switched on. */

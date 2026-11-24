@@ -29,6 +29,7 @@ export function displayLoad(kg: number, unit: Unit): number {
 
 export function unloadedLabel(ex?: GymExercise): string {
   if (ex?.assisted) return 'No assistance'
+  if (ex?.stepFrom === 'sled') return 'Empty sled'
   return ex?.needs.some((group) => group.length === 1 && group[0] === 'band') ? 'Band' : 'Bodyweight'
 }
 

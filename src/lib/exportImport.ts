@@ -1,6 +1,8 @@
 import { CURRENT_STATE_VERSION, type AppState } from '../types'
 import { dayKey } from './time'
 import { readClipBackup, restoreClipBackup, type BackupClip } from './clips'
+import { GYM_EXERCISE_BY_ID } from '../data/gym/exercises'
+import { countUnit } from './gym/progression'
 
 /**
  * Save the whole state to a file the athlete keeps.
@@ -143,7 +145,7 @@ function csvCell(v: string | number | undefined): string {
  */
 export function setsCsv(state: AppState): string {
   const rows: (string | number | undefined)[][] = [
-    ['date', 'kind', 'session', 'place', 'exercise', 'section', 'set', 'load_kg', 'unit', 'reps', 'hold_sec', 'rpe'],
+    ['date', 'kind', 'session', 'place', 'exercise', 'section', 'set', 'load_kg', 'unit', 'reps', 'hold_sec', 'rpe', 'distance_m', 'contacts'],
   ]
   for (const s of state.sessions) {
     s.sets.forEach((set, i) =>
@@ -160,12 +162,16 @@ export function setsCsv(state: AppState): string {
         set.kind === 'reps' ? set.value : undefined,
         set.kind === 'hold' ? set.value : undefined,
         set.rpe,
+        undefined,
+        undefined,
       ]),
     )
   }
   const places = new Map((state.gym?.locations ?? []).map((l) => [l.id, l.name]))
   for (const s of state.gym?.sessions ?? []) {
     for (const log of s.exercises) {
+      const ex = GYM_EXERCISE_BY_ID[log.exerciseId]
+      const measure = countUnit(ex)
       log.sets.forEach((set, i) =>
         rows.push([
           new Date(set.at).toISOString(),
@@ -177,9 +183,11 @@ export function setsCsv(state: AppState): string {
           i + 1,
           set.kg !== undefined ? Math.round(set.kg * 100) / 100 : undefined,
           set.unit,
-          set.reps,
-          undefined,
+          measure === 'reps' ? set.reps : undefined,
+          measure === 'seconds' ? set.reps : undefined,
           set.rpe,
+          measure === 'trips' ? set.reps * ex.distanceM! : undefined,
+          measure === 'contacts' ? set.reps : undefined,
         ]),
       )
     }

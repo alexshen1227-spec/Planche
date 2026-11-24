@@ -15,7 +15,7 @@ import { useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useToday } from '../../lib/useToday'
 import type { AppState, SkillId, WorkoutRequest } from '../../types'
-import { countUnit, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, lastPerformance, prescribedCount } from '../../lib/gym/progression'
+import { countWord, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, lastPerformance, prescribedCount } from '../../lib/gym/progression'
 import { defaultGym, newGymSessionId, newLocation } from '../../lib/gym/state'
 import { entryLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { Icon } from '../Icon'
@@ -531,7 +531,7 @@ export function GymHub({
                     <span className="block text-caption text-ink3">{it.suggestion.why}</span>
                   </span>
                   <span className="shrink-0 text-right text-footnote tnum text-ink2">
-                    {it.sets} × {prescribedCount(it.plan, it.suggestion)}{countUnit(ex) === 'seconds' ? ' s' : ''}
+                    {it.sets} × {countWord(ex, prescribedCount(it.plan, it.suggestion))}
                     <br />
                     {it.suggestion.kg !== undefined || ex.load === 'bodyweight' ? formatLoad(it.suggestion.kg, unitFor(ex, location), ex) : 'Pick a weight'}
                   </span>

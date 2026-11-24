@@ -11,7 +11,7 @@ export function GymExerciseGuide({ exercise, onOpen }: { exercise: GymExercise; 
   const tracking = e.assisted ? 'Log the weight helping you and the reps you complete.'
     : countUnit(e) === 'seconds' ? 'Log the seconds held in each set.'
     : e.count === 'contacts' ? 'Log the number of contacts in each set.'
-    : e.distanceM ? `Each rep covers ${e.distanceM} metres. Record the reps you complete.`
+    : e.distanceM ? `One trip is ${e.distanceM} metres. Record the trips you finish in each set.${e.stepFrom === 'sled' ? ' Log the plates you add. Leave weight blank for the empty sled.' : ''}`
     : unloadedLabel(e) === 'Band' ? 'Log your reps. Use the same band and starting stretch when comparing sessions.'
     : e.load === 'bodyweight' ? (e.stepFrom ? 'Record reps and any added weight.' : 'Record the reps you complete.')
     : e.load === 'dumbbell' || e.load === 'kettlebell' ? `Record the weight of one ${e.load} and the reps completed in each set.`

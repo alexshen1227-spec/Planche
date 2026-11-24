@@ -1,7 +1,7 @@
 import { GYM_EXERCISE_BY_ID, jointsToRest } from '../../data/gym/exercises'
 import type { Joint } from '../../data/gym/catalog'
 import type { GymDraft } from './draft'
-import { countUnit, estimateOneRepMax, repPlanFor, suggestLoad } from './progression'
+import { countUnit, countWord, estimateOneRepMax, prescribedCount, repPlanFor, suggestLoad } from './progression'
 import type { GymExerciseLog, GymLocation, GymSession } from './types'
 import { formatLoad, unitFor, unloadedLabel } from './units'
 
@@ -126,6 +126,7 @@ export function noMaxReason(log: GymExerciseLog): string | undefined {
   if (ex.assisted) return 'No estimated max: the weight logged is help, not load.'
   if (unloadedLabel(ex) === 'Band') return 'Compare reps using the same band and starting stretch.'
   if (ex.count === 'seconds') return 'No estimated max for a hold; the longest hold is what is tracked.'
+  if (countUnit(ex) === 'trips') return 'Track the distance completed at the same load.'
   if (ex.load === 'bodyweight') return 'No estimated max: only added load is known for a bodyweight movement.'
   if (!working.some((s) => s.kg !== undefined && s.kg > 0)) return 'No estimated max: no weight was logged.'
   return 'No estimated max: every set was past 12 reps (counting reps left in reserve), too loose an estimate to show.'
@@ -150,14 +151,17 @@ export function nextTimeLines(
     const base = { exerciseId: log.exerciseId, name: exerciseTitle(log.exerciseId), ...(maxNote ? { maxNote } : {}) }
     if (!ex) return [{ ...base, text: 'No suggestion: this movement is no longer in the catalogue.', why: 'Its sets are kept as logged.' }]
     const later = all.some((s) => s.id !== session.id && s.startedAt > session.startedAt && s.exercises.some((e) => e.exerciseId === log.exerciseId))
-    const plan = { range: log.repRange ?? repPlanFor(ex, 'muscle', youth).range, targetRpe: log.targetRpe ?? repPlanFor(ex, 'muscle', youth).targetRpe }
+    const usual = repPlanFor(ex, 'muscle', youth)
+    const plan = { range: ex.dose ? usual.range : log.repRange ?? usual.range, targetRpe: log.targetRpe ?? usual.targetRpe }
     const s = suggestLoad({ exerciseId: log.exerciseId, location, sessions: [...all].sort((a, b) => a.startedAt - b.startedAt), plan, youth, now })
     const unit = unitFor(ex, location)
     const [lo, hi] = s.reps
     const word = countUnit(ex) === 'seconds' ? ' s' : ''
     const hasLoad = s.kg !== undefined && s.kg > 0
     const text =
-      s.chooseAlternative ? 'Next time: choose an easier variation or use lighter equipment'
+      countUnit(ex) === 'trips' || countUnit(ex) === 'contacts'
+        ? `Next time: ${countWord(ex, prescribedCount(plan, s))} per set${ex.stepFrom === 'sled' && s.kg !== undefined ? ` · ${formatLoad(s.kg, unit, ex)}` : ''}`
+        : s.chooseAlternative ? 'Next time: choose an easier variation or use lighter equipment'
         : hasLoad && s.repsToMoveUp !== undefined
         ? `Repeat ${formatLoad(s.kg, unit)}: every set needs ${s.repsToMoveUp} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`
         : hasLoad && s.nearestTo !== undefined

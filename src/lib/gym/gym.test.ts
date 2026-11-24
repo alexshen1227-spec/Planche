@@ -400,7 +400,7 @@ describe('CSV export', () => {
     }
     const csv = setsCsv(s)
     const lines = csv.trim().split('\n')
-    expect(lines[0]).toBe('date,kind,session,place,exercise,section,set,load_kg,unit,reps,hold_sec,rpe')
+    expect(lines[0]).toBe('date,kind,session,place,exercise,section,set,load_kg,unit,reps,hold_sec,rpe,distance_m,contacts')
     expect(lines[1]).toContain('gym,Upper body,"Home, upstairs",push-up,main,1,,,12,,8')
   })
 })
@@ -643,6 +643,22 @@ describe('speed and power: the progression gate', () => {
     const bare = buildGymSession({ location: home, minutes: 45, focus: 'athletic', sessions: [], youth: true, now: NOW })
     for (const i of bare.items) expect(canDoHere(i.exerciseId, home), i.exerciseId).toBe(true)
   })
+  it('keeps the sprint distance and rest when a sled is added manually or repeated with plates', async () => {
+    const { draftItemFor } = await import('../../components/gym/GymPlayer')
+    const { countWord } = await import('./progression')
+    const sled = GYM_EXERCISE_BY_ID['sled-push'], place = everything()
+    const item = draftItemFor(sled, place, [], false)
+    expect(item.sets.map((s) => s.reps)).toEqual([1, 1, 1, 1])
+    expect(item.restSec).toBe(120)
+    expect(countWord(sled, 1)).toBe('15 m')
+    const last = session('sled', place.id, T0, sled.id, [set(20, 1, 7), set(20, 1, 7)])
+    const recommendation = (youth: boolean) => suggestLoad({ exerciseId: sled.id, location: place,
+      sessions: [last], now: T0 + DAY, plan: repPlanFor(sled, 'power', youth), youth })
+    expect(recommendation(true)).toMatchObject({ reps: [1, 1], targetReps: 1, kg: 20, kind: 'repeat' })
+    expect(recommendation(false).why).toContain('15 m')
+    expect(estimateOneRepMax(last.exercises[0].sets[0], sled.id)).toBeNull()
+  })
+
   it('counts contacts and runs, never load', () => {
     const plan = repPlanFor(GYM_EXERCISE_BY_ID['acceleration-start'])
     expect(plan.range).toEqual([1, 1])

@@ -38,21 +38,25 @@ export function isHardBodyweight(ex: GymExercise): boolean {
 }
 
 /** What a set of this movement is counted in. Reps logged on a hold are read as seconds. */
-export function countUnit(ex: Pick<GymExercise, 'count'> | undefined): 'reps' | 'seconds' {
-  return ex?.count === 'seconds' ? 'seconds' : 'reps'
+export function countUnit(ex: Pick<GymExercise, 'count' | 'distanceM'> | undefined): 'reps' | 'seconds' | 'contacts' | 'trips' {
+  if (ex?.count === 'seconds' || ex?.count === 'contacts') return ex.count
+  return ex?.distanceM ? 'trips' : 'reps'
 }
 
 /** "12 reps" or "30 s": a count as the movement is counted (reps logged on a hold read as seconds). */
-export function countWord(ex: Pick<GymExercise, 'count'> | undefined, n: number): string {
-  return countUnit(ex) === 'seconds' ? `${n} s` : `${n} reps`
+export function countWord(ex: Pick<GymExercise, 'count' | 'distanceM'> | undefined, n: number | string): string {
+  const unit = countUnit(ex)
+  if (unit === 'seconds') return `${n} s`
+  if (unit === 'trips') return Number(n) === 1 ? `${ex!.distanceM} m` : `${n} trips of ${ex!.distanceM} m`
+  return `${n} ${Number(n) === 1 ? unit.slice(0, -1) : unit}`
 }
 
 /**
  * Whether a set with no load may be logged as bodyweight: only for a movement
  * that is bodyweight or where the logged weight is help. A loaded lift needs a weight.
  */
-export function allowsUnloaded(ex: Pick<GymExercise, 'load' | 'assisted'> | undefined): boolean {
-  return !ex || ex.load === 'bodyweight' || Boolean(ex.assisted)
+export function allowsUnloaded(ex: Pick<GymExercise, 'load' | 'assisted' | 'stepFrom'> | undefined): boolean {
+  return !ex || ex.load === 'bodyweight' || Boolean(ex.assisted) || ex.stepFrom === 'sled'
 }
 
 /** A loaded movement's set that no weight was logged on: it says nothing about the load. */
@@ -81,7 +85,7 @@ export function repPlanFor(
   youth = false,
 ): RepPlan {
   // Runs, hops and throws are dosed in contacts or reps at an effort, never by load.
-  if (exercise.dose && exercise.load === 'bodyweight') {
+  if (exercise.dose) {
     const [lo, hi] = exercise.dose.range
     // Under 18 a jump or a throw counted in reps never goes under six, like every other rep range (a landing, a
     // box jump, a medicine-ball throw): the dose's own range is the adult one. A run is one rep by definition,
@@ -406,6 +410,8 @@ export function suggestLoad(input: {
     why: `${why} Choose an easier variation or enter a lighter weight if you have one.`,
   })
   if (!last) {
+    if (ex.stepFrom === 'sled' && ex.distanceM) return { ...base, kind: 'first-time', targetReps: 1,
+      why: `Push the sled ${ex.distanceM} m once per set. Start with a load you can move smoothly and log the plates you add. An empty sled is fine.` }
     const shared = sharedEstimate(sessions, exerciseId, now)
     if (shared !== null) {
       const estimate = loadForReps(shared, hi, plan.targetRpe)
@@ -534,6 +540,12 @@ export function suggestLoad(input: {
   }
   const incompleteWhy = unfinished ? `${unfinished} planned ${unfinished === 1 ? 'set of this lift was' : 'sets of this lift were'} unfinished. Repeat the prescription at the same load.` : undefined
   if (ex.assisted) return assistedSuggestion(base, working, lo, hi, plan, step, adjacent, reach, { stale, away, weeksAway, incompleteWhy })
+  if (ex.stepFrom === 'sled' && ex.distanceM) {
+    const lighten = away || atLoad.some((set) => (set.rpe ?? 0) > plan.targetRpe + 0.5)
+    const load = lighten ? adjacent(kg, false) : reach(kg)
+    return { ...base, kg: load, targetReps: 1, kind: load < kg ? 'decrease' : 'repeat',
+      why: `One smooth ${ex.distanceM} m push per set. ${lighten ? 'Use a lighter load if needed to keep your speed.' : 'Keep the same plates while each push stays quick.'} Rest ${ex.dose!.restSec} seconds between pushes.` }
+  }
   if (external && min !== undefined && kg < min - 0.001) return changeLift('Your last working weight is lighter than the first weight listed here.')
   if (ex.load === 'bodyweight' && !(kg > 0)) {
     if (ex.count) return { ...base, kind: 'bodyweight', why: countedWhy(ex, plan, working.map((s) => s.reps)) }

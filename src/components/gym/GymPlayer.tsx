@@ -63,7 +63,7 @@ export function draftItemFor(
   location: GymLocation,
   sessions: Parameters<typeof suggestLoad>[0]['sessions'],
   youth: boolean,
-  sets = 3,
+  sets: number | undefined = undefined,
   now = Date.now(),
   day: { emphasis?: Emphasis; rpeShift?: number; factor?: number; goals?: GoalWeights } = {},
 ): DraftItem {
@@ -84,7 +84,7 @@ export function draftItemFor(
       const previous = previousSets(sessions, exercise.id, location.id, unit, now)
       return previous ? { previous } : {}
     })(),
-    sets: Array.from({ length: sets }, (_, i) => ({
+    sets: Array.from({ length: sets ?? setsForFactor(day.factor ?? 1, false, exercise.dose?.sets) }, (_, i) => ({
       ...(load !== undefined ? { load } : {}),
       reps: prefillReps(plan, suggestion, last?.sets[i]?.reps),
       done: false,
@@ -182,6 +182,7 @@ export function GymPlayer({
   // The question is about one movement: a swap or an edit that moves it away ends the question.
   const needLoad = askStillApplies(needLoadAsk, draft.items) ? needLoadAsk : null
   const asksAssistance = needLoad && GYM_EXERCISE_BY_ID[needLoad.exerciseId]?.assisted
+  const asksSled = needLoad && GYM_EXERCISE_BY_ID[needLoad.exerciseId]?.stepFrom === 'sled'
   const [needValue, setNeedValue] = useState('')
   /** One sheet at a time: opening any of them closes the others' questions. */
   const openSheet = (next: { kind: 'swap' | 'add' | 'menu'; item?: number } | null) => {
@@ -263,7 +264,7 @@ export function GymPlayer({
       const old = d.items[i]
       useStraightSets(d, i, Date.now())
       const done = old.sets.filter((s) => s.done)
-      const left = Math.max(1, old.sets.length - done.length)
+      const left = Math.min(Math.max(1, old.sets.length - done.length), ex.dose?.sets ?? Infinity)
       // The swap keeps what the day gave the movement it replaces: the rep-range kind, the set count
       // and the effort (a light day's easier target stays easier).
       const carried = dayOfItem(old, youth)
@@ -338,7 +339,7 @@ export function GymPlayer({
       const ex = GYM_EXERCISE_BY_ID[exerciseId]
       const factor = d.volumeFactor ?? 1
       d.items.push(
-        draftItemFor(ex, location, gym.sessions, youth, setsForFactor(factor), Date.now(), { factor, goals: d.goals ?? gym.prefs?.goals }),
+        draftItemFor(ex, location, gym.sessions, youth, undefined, Date.now(), { factor, goals: d.goals ?? gym.prefs?.goals }),
       )
       return d
     })
@@ -501,7 +502,7 @@ export function GymPlayer({
                 <p className="mt-1 text-footnote text-ink2">Completed before this check-in</p>
                 <ul className="mt-2 space-y-1 text-footnote text-ink2">
                   {item.sets.filter((s) => s.done).map((s, j) => <li key={j}>
-                    Set {j + 1} · {s.reps} {countUnit(ex) === 'seconds' ? 'sec' : 'reps'}{s.load !== undefined ? ` · ${s.load} ${item.unit}` : ''}{s.rpe ? ` · RPE ${s.rpe}` : ''}
+                    Set {j + 1} · {countWord(ex, s.reps)}{s.load !== undefined ? ` · ${s.load} ${item.unit}` : ''}{s.rpe ? ` · RPE ${s.rpe}` : ''}
                   </li>)}
                 </ul>
               </section>
@@ -523,7 +524,7 @@ export function GymPlayer({
                       {item.sets.length} ×{' '}
                       {item.suggestion?.repsToMoveUp !== undefined
                         ? `${item.suggestion.repsToMoveUp} reps to move up · ${item.plan.range[0]}–${item.plan.range[1]} is the range`
-                        : `${target} ${countUnit(ex) === 'seconds' ? 'seconds' : target === '1' ? 'rep' : 'reps'}`}{' '}
+                        : countWord(ex, target)}{' '}
                       · stop about RPE {item.plan.targetRpe}
                       {ex.load === 'dumbbell' || ex.load === 'kettlebell' ? ` · weight per ${ex.load}` : ''}
                       {best ? ` · est. max ${formatLoad(best.kg, item.unit)}${isFirstEstimate(rec) ? ` (${FIRST_ESTIMATE_NOTE})` : ''}` : ''}
@@ -596,7 +597,7 @@ export function GymPlayer({
                             aria-label={`Previous: ${item.previous[j].load !== undefined ? `${item.previous[j].load} ${item.unit} × ` : ''}${countWord(ex, item.previous[j].reps)} — tap to use`}
                           >
                             Previous: {item.previous[j].load !== undefined ? `${item.previous[j].load} ${item.unit} × ` : ''}
-                            {countUnit(ex) === 'seconds' ? countWord(ex, item.previous[j].reps) : item.previous[j].reps}
+                            {countUnit(ex) === 'reps' ? item.previous[j].reps : countWord(ex, item.previous[j].reps)}
                             {item.previous[j].rpe !== undefined ? ` @${item.previous[j].rpe}` : ''} · tap to use
                           </button>
                         ) : null}
@@ -626,9 +627,9 @@ export function GymPlayer({
                         )}
                         <Stepper
                           value={s.reps}
-                          unit={countUnit(ex) === 'seconds' ? 'sec' : 'reps'}
+                          unit={countUnit(ex) === 'seconds' ? 'sec' : countUnit(ex)}
                           step={countUnit(ex) === 'seconds' ? 5 : 1}
-                          label={`${ex.name}, set ${j + 1} ${countUnit(ex) === 'seconds' ? 'seconds' : 'reps'}`}
+                          label={`${ex.name}, set ${j + 1} ${countUnit(ex)}`}
                           onChange={(v) =>
                             update((d) => {
                               d.items[i].sets[j].reps = Math.max(0, Math.round(v ?? 0))
@@ -740,7 +741,7 @@ export function GymPlayer({
           <div className="space-y-3">
             <h2 className="text-title3 font-semibold">{asksAssistance ? 'How much assistance did you use?' : 'What weight was that?'}</h2>
             <p className="text-footnote text-ink2">
-              {asksAssistance ? 'Enter the help shown on the machine, or confirm you did the set without help.' :
+              {asksSled ? 'Enter the plates you added, or log the empty sled.' : asksAssistance ? 'Enter the help shown on the machine, or confirm you did the set without help.' :
                 `${GYM_EXERCISE_BY_ID[needLoad.exerciseId]?.name} uses an external load. Enter the weight you lifted to set your next target.`}
             </p>
             <label className="flex items-center gap-2 text-footnote text-ink2">
@@ -778,7 +779,7 @@ export function GymPlayer({
                     completeSet(item, set, true, true)
                   }}
                 >
-                  {asksAssistance ? 'Log with no assistance' : 'Log as bodyweight'}
+                    {asksSled ? 'Log empty sled' : asksAssistance ? 'Log with no assistance' : 'Log as bodyweight'}
                 </Button>
               ) : null}
             </div>
