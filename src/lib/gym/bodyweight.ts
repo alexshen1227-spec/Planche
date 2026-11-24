@@ -2,7 +2,7 @@ import type { AppState } from '../../types'
 import { STEP_BY_ID } from '../../data/progressions'
 
 type Base = 'pushups' | 'pullups' | 'dips'
-export type BodyweightCapacity = { base: Partial<Record<Base, number>>; practiced: Map<string, number>; introductory?: boolean; introductoryVisitsLeft?: number }
+export type BodyweightCapacity = { base: Partial<Record<Base, number>>; practiced: Map<string, number>; introductory?: boolean; introductoryVisitsLeft?: number; tryPullup?: boolean }
 
 // These are starting gates for automated picks. An athlete can always add a movement manually.
 const gates = new Map<string, { base: Base; reps: number }>()
@@ -29,6 +29,7 @@ const skillTwins: Record<string, string> = { 'pike-pushup': 'pike-push-up', 'ele
 export function bodyweightCapacity(state: AppState, now: number): BodyweightCapacity {
   const from = now - 84 * 86_400_000
   const evidence = new Map<string, { at: number; reps: number }>()
+  let assistedTrial: { at: number; ready: boolean } | undefined
   const record = (id: string, at: number, reps: number) => {
     if (at < from || at > now || !Number.isFinite(reps)) return
     const was = evidence.get(id)
@@ -51,6 +52,14 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
   for (const s of state.gym?.sessions ?? []) {
     if (s.startedAt < from || s.startedAt > now) continue
     for (const log of s.exercises) {
+      if (log.exerciseId === 'assisted-pull-up' && (!assistedTrial || s.startedAt >= assistedTrial.at)) {
+        const sets = log.sets.filter((x) => !x.warmup && x.reps > 0)
+        const top = log.repRange?.[1] ?? 10
+        if (sets.length) assistedTrial = {
+          at: s.startedAt,
+          ready: sets.length >= 2 && sets.every((x) => x.kg === 0 && x.reps >= top && x.rpe !== undefined && x.rpe <= (log.targetRpe ?? 8) + 0.5),
+        }
+      }
       for (const x of log.sets) {
         if (x.warmup) continue
         record(log.exerciseId, s.startedAt, x.reps)
@@ -65,7 +74,10 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
     .filter((s) => s.startedAt <= now && s.exercises.some((e) => e.sets.some((x) => !x.warmup && x.reps > 0)))
     .map((s) => new Date(s.startedAt).toDateString()))
   const introductoryVisitsLeft = established ? 0 : Math.max(0, 2 - visits.size)
+  const tryPullup = assistedTrial?.ready && now - assistedTrial.at <= 28 * 86_400_000 &&
+    assistedTrial.at > (evidence.get('pullups')?.at ?? 0) && !evidence.has('pull-up')
   return {
+    ...(tryPullup ? { tryPullup: true } : {}),
     introductory: introductoryVisitsLeft > 0,
     introductoryVisitsLeft,
     base: { pushups: evidence.get('pushups')?.reps, pullups: evidence.get('pullups')?.reps, dips: evidence.get('dips')?.reps },
@@ -79,6 +91,7 @@ export function readyForBodyweight(id: string, capacity?: BodyweightCapacity): b
   if (!capacity || (!rule && !prep)) return true
   const own = capacity.practiced.get(id)
   if (own !== undefined) return own >= 4
+  if (id === 'pull-up' && capacity.tryPullup) return true
   if (prep) return (capacity.practiced.get(prep.id) ?? 0) >= prep.reps
   return Boolean(rule && (capacity.base[rule.base] ?? 0) >= rule.reps)
 }

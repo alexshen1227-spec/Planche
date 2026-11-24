@@ -7,6 +7,26 @@ import { buildGymSession } from './builder'
 import { allowsUnloaded } from './progression'
 import { defaultGym, homeLocation } from './state'
 
+it('offers a plain pull-up after confirmed no-help sets on the machine, and keeps unknown or positive assistance on its own progression', () => {
+  const now = Date.now()
+  const state = initialState()
+  const gym = defaultGym(['pullup-bar'], 'kg', now)
+  const location = { ...gym.locations[0], equipment: [...gym.locations[0].equipment, 'assisted-pullup' as const] }
+  const ex = GYM_EXERCISE_BY_ID['assisted-pull-up']
+  for (const help of [undefined, 15, 0]) {
+    const at = now - 3 * 86_400_000
+    gym.sessions = [{ id: 'machine', startedAt: at, endedAt: at + 1000, locationId: location.id, name: 'Pull',
+      exercises: [{ exerciseId: ex.id, repRange: [6, 10], sets: [0, 1, 2].map((j) => ({ reps: 10, rpe: 7, kg: help, at: at + j })) }] }]
+    const capacity = bodyweightCapacity({ ...state, gym }, now)
+    expect(readyForBodyweight('pull-up', capacity)).toBe(help === 0)
+    expect(readyForBodyweight('weighted-pull-up', capacity)).toBe(false)
+    const next = buildGymSession({ location, capacity, sessions: gym.sessions, focus: 'pull', minutes: 55, now })
+    expect(next.items[0].exerciseId).toBe(help === 0 ? 'pull-up' : ex.id)
+    if (help === 0) expect(next.items[0].suggestion.why).toMatch(/zero assistance/)
+    if (help === undefined) expect(next.items[0].suggestion.kind).toBe('first-time')
+  }
+})
+
 it('builds attainable presses and pulls from placement, and responds to later work', () => {
   const now = new Date(2026, 10, 16).getTime()
   const state = initialState()

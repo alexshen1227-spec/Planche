@@ -25,7 +25,8 @@ it('charts the logged bodyweight reps or hold time at the same weight', () => {
 it('compares assistance for a repeatable rep count at the same machine, including zero help', () => {
   const logs = [
     session('a', 1, 'assisted-pull-up', [{ reps: 2, kg: 10 }, { reps: 5, kg: 25 }], 'a'),
-    session('b', 2, 'assisted-pull-up', [{ reps: 6 }], 'a'),
+    session('b', 2, 'assisted-pull-up', [{ reps: 6, kg: 0 }], 'a'),
+    session('unknown help', 3, 'assisted-pull-up', [{ reps: 10 }], 'a'),
     session('c', 3, 'assisted-pull-up', [{ reps: 9, kg: 35 }], 'b'),
   ]
   const [local, away] = liftSeries(logs)

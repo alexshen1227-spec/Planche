@@ -11,6 +11,7 @@ import {
   gymPreset,
   openerLine,
   resolveGymPlace,
+  type GymEntry,
   type GymPreset,
 } from '../../lib/plan/screens'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
@@ -18,6 +19,8 @@ import { endTheDay, useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useStore } from '../../lib/store'
 import { useToday } from '../../lib/useToday'
+import { latestPartialToday } from '../../lib/gym/draft'
+import { PartialWorkout } from '../gym/PartialWorkout'
 import type { WorkoutRequest } from '../../types'
 import { Button, Card, Sheet, ToggleChip } from '../ds'
 import { Icon } from '../Icon'
@@ -26,7 +29,7 @@ import { PlanSettings } from './PlanSettings'
 import { FitnessSetup } from './FitnessSetup'
 import { WeekPreview } from './WeekPreview'
 
-export type { GymPreset }
+export type { GymEntry, GymPreset }
 
 const QUICK = [20, 30, 45, 60, 90]
 const READINESS_LABEL: Record<ReadinessLevel, string> = { light: 'Light day', normal: 'Normal day', push: 'Push day' }
@@ -42,7 +45,7 @@ export function TodayPlanCard({
   onSwitch,
 }: {
   startWorkout: (request: WorkoutRequest) => void
-  onStartGym: (preset: GymPreset) => void
+  onStartGym: (preset: GymEntry) => void
   /** Told when the athlete picks the other kind for today; the card re-plans today as that kind itself. */
   onSwitch?: (kind: 'calisthenics' | 'gym') => void
 }) {
@@ -72,6 +75,7 @@ export function TodayPlanCard({
   const remembered = useNextBlock<GymPreset>(todayKey)
   const stage = dayStage(state, plan, Date.now(), marks)
   const allDone = stage === 'done'
+  const partial = allDone ? latestPartialToday(state.gym?.sessions) : undefined
   // A gym day whose opener is saved: the lifts are what is left, whatever the planner now calls the day.
   const liftsNext = stage === 'lifts-next'
   const opener = plan.kind === 'gym' && plan.skill?.opener ? plan.skill : undefined
@@ -126,7 +130,7 @@ export function TodayPlanCard({
     <Card className="mb-5">
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-display text-title3 font-semibold">
-          {allDone ? 'Today: done' : liftsNext ? 'Today: the lifts are next' : plan.rest ? 'Today: rest' : `Today: ${plan.minutes} minutes`}
+          {partial ? 'Today’s saved workout' : allDone ? 'Today: done' : liftsNext ? 'Today: the lifts are next' : plan.rest ? 'Today: rest' : `Today: ${plan.minutes} minutes`}
         </h2>
         <button onClick={() => setSheet('settings')} className="min-h-11 px-1 text-footnote font-medium text-accent-text">
           Goals and schedule
@@ -168,13 +172,13 @@ export function TodayPlanCard({
 
       {allDone ? (
         <section className="mt-4 rounded-inner bg-raised p-4" aria-label="Today’s session">
-          <div className="flex items-start gap-3">
+          {partial ? <PartialWorkout session={partial} onContinue={() => onStartGym({ resumeSessionId: partial.id })} /> : <div className="flex items-start gap-3">
             <span className="min-w-0 flex-1">
               <span className="block text-body font-semibold">Today’s main session is done</span>
               <span className="block text-caption text-ink3">Nothing more is planned today. Rest is part of the plan.</span>
             </span>
             {marker(true, 1)}
-          </div>
+          </div>}
           <button onClick={start} className="mt-2 min-h-11 px-1 text-footnote font-medium text-accent-text">
             Train again
           </button>

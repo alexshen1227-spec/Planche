@@ -5,7 +5,7 @@ import { defaultGym, defaultPrefs } from '../gym/state'
 import { buildGymSession } from '../gym/builder'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { GymLocation, GymSession, TrainingPrefs } from '../gym/types'
-import { lastHardStraightArm, setsPerMuscle, volumeStatus, volumeTarget } from './load'
+import { fatigueAt, lastHardStraightArm, setsPerMuscle, volumeStatus, volumeTarget } from './load'
 import { gymDeloadDue, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutesFor, planToday, REST_SLACK_HOURS, skillGoalPace } from './planner'
 import { weekStart } from '../time'
 
@@ -172,6 +172,12 @@ describe('weekly volume', () => {
     expect(sets['front-delts']).toBe(7)
     expect(sets['chest-upper']).toBe(3)
     expect(sets.triceps).toBe(4 * 0.5 + 3 * 0.5)
+  })
+  it('counts a speed session toward recovery while crediting its resistance work toward muscle targets', () => {
+    const rows: [string, number][] = [['wall-drill', 2], ['b-skip', 2], ['jump-squat', 3], ['acceleration-run', 4], ['goblet-squat', 3]]
+    const sessions = rows.map(([id, n]) => gymSession(NOW - HOUR, id, n))
+    expect(setsPerMuscle([], sessions, NOW - DAY, NOW)).toEqual({ glutes: 3, quads: 3, adductors: 1.5 })
+    expect(fatigueAt({ sessions: [], gym: { ...defaultGym([]), sessions } }, NOW).muscles.glutes).toBeGreaterThan(10)
   })
   it('sets targets from the physique goal, more for a priority muscle, none for one switched off', () => {
     const prefs = { ...defaultPrefs(1), musclesOff: ['calves' as const], musclesPriority: ['chest-upper' as const] }

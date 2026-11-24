@@ -22,7 +22,7 @@ import {
   activityLoad,
   familyEvents,
   fatigueAt,
-  gymSetLoading,
+  resistanceSetLoading,
   HARD_GYM_FAMILY_SETS,
   lastTrainedAt,
   LIGHT_PRESS_SPARE,
@@ -2858,7 +2858,7 @@ export function planWeekAhead(
     const cached = credits.get(plan)
     if (cached) return cached
     for (const it of plan.items) {
-      const loading = gymSetLoading(it.exerciseId)
+      const loading = resistanceSetLoading(it.exerciseId)
       if (loading) addCredit(out, loading.muscles, it.sets)
     }
     credits.set(plan, out)

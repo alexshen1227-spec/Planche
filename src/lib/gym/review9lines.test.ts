@@ -146,10 +146,10 @@ describe('8. a pending ask must be answered or closed before finishing', () => {
     expect(finishBlocker({ needLoad: false, doubt: false })).toBeNull()
   })
 
-  it('says how many sets not done will not be saved, per lift', () => {
+  it('names each unfinished lift and its remaining sets', () => {
     expect(unfinishedLine(draft([leg], 3))).toBeNull()
-    expect(unfinishedLine(draft([leg], 2))).toContain(`1 set not done will not be saved: ${GYM_EXERCISE_BY_ID[leg].name} (1)`)
-    expect(unfinishedLine(draft([leg, elbowLift.id], 0))).toMatch(/^6 sets not done/)
+    expect(unfinishedLine(draft([leg], 2))).toContain(`1 unfinished set left in your plan. ${GYM_EXERCISE_BY_ID[leg].name} (1)`)
+    expect(unfinishedLine(draft([leg, elbowLift.id], 0))).toMatch(/^6 unfinished sets/)
   })
 })
 

@@ -2,7 +2,9 @@ import type { GymPlan } from './builder'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import { lastPerformance, repPlanFor, type LoadSuggestion, type RepPlan } from './progression'
-import type { GoalWeights, GymSession, GymState } from './types'
+import type { GoalWeights, GymLocation, GymRemainder, GymSession, GymState, RemainingLift } from './types'
+import { canDoHere } from './availability'
+import { dayKey } from '../time'
 import { entryLoad, toKg } from './units'
 import type { Unit } from '../../data/gym/catalog'
 import type { Profile } from '../../types'
@@ -45,7 +47,7 @@ export function previousSets(
   const last = lastPerformance(sessions, exerciseId, locationId, now)
   if (!last) return undefined
   return last.sets.map((s) => ({
-    ...(s.kg !== undefined && s.kg > 0 ? { load: entryLoad(s.kg, unit) } : {}),
+    ...(s.kg !== undefined ? { load: entryLoad(s.kg, unit) } : {}),
     reps: s.reps,
     ...(s.rpe !== undefined ? { rpe: s.rpe } : {}),
   }))
@@ -57,6 +59,13 @@ export interface GymDraft {
   locationId: string
   name: string
   items: DraftItem[]
+  /** End time of the saved partial session being continued. */
+  resumeFrom?: number
+  resumedAt?: number
+  /** Restrictions of the original plan, before a continuation's pain check. */
+  originalAvoidJoints?: Joint[]
+  /** Previously prescribed lifts that the current joint check keeps out. */
+  deferred?: RemainingLift[]
   /** Absolute end time so the timer keeps time while the phone sleeps. */
   rest?: { until: number; total: number }
   effortFor?: { item: number; set: number }
@@ -131,17 +140,22 @@ export function loadDraft(): GymDraft | null {
 
 /** Finished sets only, loads back to kg. Planned sets never done make the session partial. */
 export function sessionFromDraft(draft: GymDraft, endedAt: number): GymSession {
-  let skipped = false
+  const remainingItems: RemainingLift[] = [...(draft.deferred ?? [])]
   const exercises = draft.items
     .map((item) => {
       const done = item.sets.filter((s) => s.done)
-      if (done.length < item.sets.length) skipped = true
+      const left = item.sets.filter((s) => !s.done)
+      if (left.length) remainingItems.push({
+        exerciseId: item.exerciseId, repRange: item.plan.range, targetRpe: item.plan.targetRpe,
+        restSec: item.restSec, unit: item.unit, swappedFrom: item.swappedFrom,
+        sets: left.map(({ reps, load, warmup }) => ({ reps, load, warmup })),
+      })
       return {
         exerciseId: item.exerciseId,
         sets: done.map((s) => ({
           reps: Math.max(0, Math.round(s.reps)),
           at: s.at ?? endedAt,
-          ...(s.load !== undefined && s.load > 0 ? { kg: toKg(s.load, item.unit), unit: item.unit } : {}),
+          ...(s.load !== undefined && (s.load > 0 || GYM_EXERCISE_BY_ID[item.exerciseId]?.assisted) ? { kg: toKg(s.load, item.unit), unit: item.unit } : {}),
           ...(s.rpe !== undefined ? { rpe: s.rpe } : {}),
           ...(s.warmup ? { warmup: true } : {}),
         })),
@@ -155,11 +169,49 @@ export function sessionFromDraft(draft: GymDraft, endedAt: number): GymSession {
     id: draft.id,
     locationId: draft.locationId,
     startedAt: draft.startedAt,
-    endedAt,
+    endedAt: Math.max(endedAt, draft.startedAt, (draft.resumeFrom ?? 0) + 1),
     name: draft.name,
     ...(draft.notes?.trim() ? { notes: draft.notes.trim().slice(0, 2000) } : {}),
     exercises,
-    completion: skipped ? 'partial' : 'full',
+    completion: remainingItems.length ? 'partial' : 'full',
+    ...(remainingItems.length ? { remaining: { items: remainingItems, avoidJoints: draft.originalAvoidJoints ?? draft.avoidJoints, musclesOff: draft.musclesOff, volumeFactor: draft.volumeFactor, goals: draft.goals } } : {}),
+  }
+}
+
+export function remainingSetCount(plan?: GymRemainder): number {
+  return plan?.items.reduce((n, it) => n + it.sets.length, 0) ?? 0
+}
+
+export function latestPartialToday(sessions: GymSession[] = [], now = Date.now()): GymSession | undefined {
+  const today = dayKey(now)
+  const latest = sessions.reduce<GymSession | undefined>((last, s) =>
+    s.startedAt <= now && dayKey(s.startedAt) === today && (!last || s.endedAt > last.endedAt) ? s : last, undefined)
+  return latest?.completion === 'partial' ? latest : undefined
+}
+
+/** Keep the original prescription, unit and location, and leave saved sets in history. */
+export function resumePartial(session: GymSession, avoid: Joint[] = [], location?: GymLocation, now = Date.now()): GymDraft | null {
+  const plan = session.remaining
+  if (session.completion !== 'partial' || !plan?.items.length) return null
+  const avoidJoints = [...new Set([...(plan.avoidJoints ?? []), ...avoid])]
+  const items: DraftItem[] = []
+  const deferred: RemainingLift[] = []
+  for (const it of plan.items) {
+    const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
+    if (!ex || ex.stress.some((j) => avoidJoints.includes(j)) || (location && !canDoHere(it.exerciseId, location))) {
+      deferred.push(it)
+      continue
+    }
+    items.push({
+      exerciseId: it.exerciseId, plan: { range: it.repRange, targetRpe: it.targetRpe }, restSec: it.restSec, unit: it.unit,
+      sets: it.sets.map((s) => ({ ...s, done: false })), swappedFrom: it.swappedFrom,
+    })
+  }
+  if (!items.length) return null
+  return {
+    id: session.id, name: session.name, startedAt: session.startedAt, locationId: session.locationId,
+    resumeFrom: session.endedAt, resumedAt: now, originalAvoidJoints: plan.avoidJoints ?? [],
+    items, deferred, avoidJoints, musclesOff: plan.musclesOff, volumeFactor: plan.volumeFactor, goals: plan.goals, notes: session.notes,
   }
 }
 

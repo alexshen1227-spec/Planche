@@ -27,7 +27,7 @@ export function liftSeries(sessions: GymSession[], exerciseId?: string): LiftSer
       if (exerciseId && log.exerciseId !== exerciseId) continue
       const ex = GYM_EXERCISE_BY_ID[log.exerciseId]
       if (!ex) continue
-      const sets = log.sets.filter((x) => !x.warmup && x.reps > 0 && !isUnloadedSet(ex, x))
+      const sets = log.sets.filter((x) => !x.warmup && x.reps > 0 && !isUnloadedSet(ex, x) && (!ex.assisted || x.kg !== undefined))
       if (sets.length) working.set(ex.id, [...(working.get(ex.id) ?? []), ...sets])
     }
     for (const [id, sets] of working) {

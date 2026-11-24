@@ -189,8 +189,8 @@ export function lastPerformance(
     const s = sessions[i]
     if (s.startedAt >= before) continue
     if (locationId !== undefined && s.locationId !== locationId) continue
-    const log = s.exercises.find((e) => e.exerciseId === exerciseId)
-    const sets = log?.sets.filter((set) => !set.warmup && set.reps > 0 && (!keep || keep(set))) ?? []
+    const sets = s.exercises.flatMap((log) => log.exerciseId === exerciseId
+      ? log.sets.filter((set) => !set.warmup && set.reps > 0 && (!keep || keep(set))) : [])
     if (sets.length) return { session: s, sets }
   }
   return null
@@ -361,7 +361,7 @@ export function suggestLoad(input: {
   if (!ex) return { ...base, kind: 'first-time', why: 'Not a movement this app knows.' }
   // A set of a loaded movement with no weight logged says nothing about the load.
   const addedLoad = takesAddedLoad(ex, location)
-  const keep = (set: GymSet) => !isUnloadedSet(ex, set) && (ex.load !== 'bodyweight' || !ex.stepFrom || addedLoad || !set.kg)
+  const keep = (set: GymSet) => !isUnloadedSet(ex, set) && (!ex.assisted || set.kg !== undefined) && (ex.load !== 'bodyweight' || !ex.stepFrom || addedLoad || !set.kg)
   const last = lastPerformance(sessions, exerciseId, location?.id, now, keep)
   const step = stepKgFor(ex, location)
   const top = maxKgFor(ex, location)
@@ -572,9 +572,10 @@ function assistedSuggestion(
   const anyShort = atHelp.some((s) => s.reps < lo)
   const grinding = atHelp.some((s) => s.rpe !== undefined && s.rpe >= 9.5)
   if (allTop) {
-    if (!(help > 0) || step <= 0) {
+    if (help === 0) {
       return { ...base, kg: 0, kind: 'at-top-weight', why: `Every set reached ${hi} with no help: time for the unassisted version.` }
     }
+    if (step <= 0) return { ...base, kg: help, kind: 'repeat', why: 'You reached the top of the range. Use a smaller amount of assistance when your machine allows it.' }
     const next = Math.max(0, roundToStep(help - step, step, top))
     return {
       ...base,

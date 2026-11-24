@@ -1,6 +1,6 @@
 import { GymHub } from '../components/gym/GymHub'
 import { weekForChoice } from '../lib/plan/currentWeek'
-import { TodayPlanCard, type GymPreset } from '../components/plan/TodayPlanCard'
+import { TodayPlanCard, type GymEntry } from '../components/plan/TodayPlanCard'
 import { useMemo, useState } from 'react'
 import type { AssistType, Section, Session, SetLog, SkillId, TrainingSurface, Workout, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
@@ -775,7 +775,7 @@ const TRAIN_MODE_KEY = 'planchelab.trainMode'
  */
 export function Train({ startWorkout, entryPreset, onEntryUsed }: {
   startWorkout: (request: WorkoutRequest) => void
-  entryPreset?: GymPreset | null
+  entryPreset?: GymEntry | null
   onEntryUsed?: () => void
 }) {
   const { state } = useStore()
@@ -788,7 +788,7 @@ export function Train({ startWorkout, entryPreset, onEntryUsed }: {
       return 'skills'
     }
   })
-  const [gymPreset, setGymPreset] = useState<GymPreset | null>(null)
+  const [gymPreset, setGymPreset] = useState<GymEntry | null>(null)
   const choose = (m: 'skills' | 'gym') => {
     setMode(m)
     try {

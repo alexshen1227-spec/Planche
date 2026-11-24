@@ -27,6 +27,24 @@ afterEach(() => {
   dispatch.mockClear()
 })
 
+it('asks the first time for machine assistance and keeps an intentional zero on subsequent sets and reload', async () => {
+  const { GymPlayer } = await import('../../components/gym/GymPlayer')
+  const it = { ...draft.items[0], exerciseId: 'assisted-pull-up', sets: [0, 1].map(() => ({ reps: 10, done: false })) }
+  render(<GymPlayer draft={{ ...draft, items: [it] }} location={gym.locations[0]} onClose={() => undefined} />)
+  fireEvent.click(screen.getByLabelText('Complete set 1'))
+  expect(screen.getByText('How much assistance did you use?')).toBeTruthy()
+  fireEvent.click(screen.getByText('Log with no assistance'))
+  fireEvent.click(screen.getByRole('button', { name: '7' }))
+  fireEvent.click(screen.getByLabelText('Complete set 2'))
+  expect(screen.queryByText('How much assistance did you use?')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '7' }))
+  fireEvent.click(screen.getByText('Finish'))
+  fireEvent.click(screen.getByText('Save session'))
+  const session = dispatch.mock.calls.map(([a]) => a.op?.session).find(Boolean)
+  const { sanitizeGym } = await import('./state')
+  expect(sanitizeGym({ ...gym, sessions: [session] })?.sessions[0].exercises[0].sets.map((s) => s.kg)).toEqual([0, 0])
+})
+
 it.each(['weighted-pull-up', 'weighted-dip', 'weighted-push-up'])('logs a first fractional added load on %s and carries it into the next session', async (id) => {
   const { GymPlayer, draftItemFor } = await import('../../components/gym/GymPlayer')
   const ex = GYM_EXERCISE_BY_ID[id]
@@ -89,6 +107,6 @@ describe('8. a pending weight question holds Finish and Save', () => {
     render(<GymPlayer draft={draft} location={gym.locations[0]} onClose={() => undefined} />)
     fireEvent.click(screen.getByText('Finish'))
     expect(screen.getByText('Finish this session?')).toBeTruthy()
-    expect(screen.getByText(/1 set not done will not be saved/)).toBeTruthy()
+    expect(screen.getByText(/1 unfinished set left in your plan/)).toBeTruthy()
   })
 })

@@ -86,7 +86,7 @@ export function unfinishedLine(draft: GymDraft): string | null {
   const left = unfinishedSets(draft)
   if (!left.length) return null
   const total = left.reduce((n, x) => n + x.count, 0)
-  return `${total} ${total === 1 ? 'set' : 'sets'} not done will not be saved: ${left.map((x) => `${exerciseTitle(x.exerciseId)} (${x.count})`).join(', ')}. Keep training to do ${total === 1 ? 'it' : 'them'}.`
+  return `${total} unfinished ${total === 1 ? 'set' : 'sets'} left in your plan. ${left.map((x) => `${exerciseTitle(x.exerciseId)} (${x.count})`).join(', ')}.`
 }
 
 /* ---------- copy ---------- */

@@ -2,18 +2,20 @@ import { GYM_EQUIPMENT_BY_ID, type GymEquipmentId, type Unit } from '../../data/
 import { GYM_EXERCISE_BY_ID, type LocationEquipment } from '../../data/gym/exercises'
 import { EQUIPMENT_OPTIONS } from '../../data/equipment'
 import type { EquipmentId } from '../../types'
-import { MUSCLES, type Muscle } from '../../data/gym/catalog'
+import { MUSCLES, type Joint, type Muscle } from '../../data/gym/catalog'
 import { SKILL_IDS, type SkillId, type StepId } from '../../types'
 import { STEP_BY_ID } from '../../data/progressions'
 import type {
   ActivityKind,
   GymExerciseLog,
   GymLocation,
+  GymRemainder,
   GymSession,
   GymSet,
   GymState,
   OutsideActivity,
   Rating,
+  RemainingLift,
   SkillGoal,
   SportSlot,
   TrainingPrefs,
@@ -281,7 +283,7 @@ function sanitizeSet(raw: unknown, exerciseId?: string, lose: Lose = noLoss, whe
   // A load the app cannot believe is kept and reported, never turned into a bodyweight set: that would
   // erase a heavy lift from the athlete's records without a word. Only a load with no meaning at all
   // (negative, not a number) takes the set with it, and says so.
-  let kg: number | undefined
+  let kg = r.kg === 0 && exerciseId && GYM_EXERCISE_BY_ID[exerciseId]?.assisted ? 0 : undefined
   if (r.kg !== undefined && r.kg !== null && r.kg !== 0) {
     if (typeof r.kg === 'number' && Number.isFinite(r.kg) && r.kg > 0) {
       kg = r.kg
@@ -323,7 +325,7 @@ function sanitizeLog(raw: unknown, lose: Lose = noLoss, where = 'an exercise'): 
     ? r.sets.map((x, i) => sanitizeSet(x, id, lose, `${where} (${id}) set ${i + 1}`)).filter((s): s is GymSet => s !== null)
     : []
   const range =
-    Array.isArray(r.repRange) && r.repRange.length === 2 && r.repRange.every((n) => typeof n === 'number' && n > 0 && n < 100)
+    Array.isArray(r.repRange) && r.repRange.length === 2 && r.repRange.every((n) => Number.isInteger(n) && n > 0 && n <= maxCountFor(id)) && r.repRange[1] >= r.repRange[0]
       ? ([r.repRange[0], r.repRange[1]] as [number, number])
       : undefined
   if (r.repRange !== undefined && !range) lose(`${where} (${id}): rep range unreadable, dropped`)
@@ -335,6 +337,45 @@ function sanitizeLog(raw: unknown, lose: Lose = noLoss, where = 'an exercise'): 
     ...(range ? { repRange: range } : {}),
     ...(typeof r.targetRpe === 'number' && r.targetRpe >= 5 && r.targetRpe <= 10 ? { targetRpe: r.targetRpe } : {}),
     ...(typeof r.note === 'string' && r.note ? { note: r.note.slice(0, 500) } : {}),
+  }
+}
+
+function sanitizeRemainder(raw: unknown, lose: Lose, where: string): GymRemainder | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const r = raw as Record<string, unknown>
+  if (!Array.isArray(r.items)) return undefined
+  const items: RemainingLift[] = []
+  for (const it of r.items) {
+    if (!it || typeof it.exerciseId !== 'string' || !Object.hasOwn(GYM_EXERCISE_BY_ID, it.exerciseId) ||
+        !isUnit(it.unit) || !Array.isArray(it.sets)) {
+      lose(`${where}: an unfinished lift could not be restored`)
+      continue
+    }
+    const plan = sanitizeLog({ exerciseId: it.exerciseId, repRange: it.repRange, targetRpe: it.targetRpe, swappedFrom: it.swappedFrom }, lose, where)
+    if (!plan?.repRange || plan.targetRpe === undefined) continue
+    const sets: RemainingLift['sets'] = []
+    for (const set of it.sets) {
+      if (!set || !Number.isInteger(set.reps) || set.reps < 0 || set.reps > maxCountFor(it.exerciseId) ||
+          (set.load !== undefined && !(Number.isFinite(set.load) && set.load >= 0))) {
+        lose(`${where}: an unfinished set could not be restored`)
+        continue
+      }
+      sets.push({ reps: set.reps, ...(set.load !== undefined ? { load: set.load } : {}), ...(set.warmup === true ? { warmup: true } : {}) })
+    }
+    if (sets.length) items.push({
+      exerciseId: it.exerciseId, sets, unit: it.unit, restSec: clamp(it.restSec, 0, 1800, 90),
+      repRange: plan.repRange, targetRpe: plan.targetRpe, ...(plan.swappedFrom ? { swappedFrom: plan.swappedFrom } : {}),
+    })
+  }
+  if (!items.length) return undefined
+  const prefs = sanitizePrefs(r)!
+  const joints: Joint[] = ['wrists', 'elbows', 'shoulders', 'lower-back', 'knees', 'hips', 'ankles']
+  return {
+    items,
+    ...(Array.isArray(r.avoidJoints) ? { avoidJoints: joints.filter((j) => (r.avoidJoints as unknown[]).includes(j)) } : {}),
+    ...(Array.isArray(r.musclesOff) ? { musclesOff: prefs.musclesOff } : {}),
+    ...(typeof r.volumeFactor === 'number' ? { volumeFactor: clamp(r.volumeFactor, 0, 2, 1) } : {}),
+    ...(r.goals ? { goals: prefs.goals } : {}),
   }
 }
 
@@ -353,6 +394,7 @@ function sanitizeSession(raw: unknown, lose: Lose = noLoss): GymSession | null {
     ? r.exercises.map((e, i) => sanitizeLog(e, lose, `${where} exercise ${i + 1}`)).filter((l): l is GymExerciseLog => l !== null)
     : []
   if (!(isTime(r.endedAt) && r.endedAt >= r.startedAt)) lose(`${where}: end time unreadable, read as its start`)
+  const remaining = r.completion === 'partial' ? sanitizeRemainder(r.remaining, lose, where) : undefined
   return {
     id: r.id,
     locationId: typeof r.locationId === 'string' ? r.locationId : 'home',
@@ -360,6 +402,7 @@ function sanitizeSession(raw: unknown, lose: Lose = noLoss): GymSession | null {
     endedAt: isTime(r.endedAt) && r.endedAt >= r.startedAt ? r.endedAt : r.startedAt,
     name: typeof r.name === 'string' && r.name ? r.name.slice(0, 80) : 'Gym session',
     exercises,
+    ...(remaining ? { remaining } : {}),
     ...(typeof r.notes === 'string' && r.notes ? { notes: r.notes.slice(0, 2000) } : {}),
     ...(r.completion === 'full' || r.completion === 'partial' ? { completion: r.completion } : {}),
     ...(isTime(r.updatedAt) ? { updatedAt: r.updatedAt } : {}),
@@ -487,29 +530,51 @@ export function doubtedLoad(
 }
 
 /**
- * Two copies of one session: the newer wins as a whole, except that sets
- * corrected on both sides merge set by set, the later edit taking each set.
+ * A continuation adds performed sets to the original workout in place.
+ * Keep previous corrections and remove a finished prescription.
  */
+export function continueGymSession(previous: GymSession, segment: GymSession): GymSession {
+  const exercises = previous.exercises.slice()
+  for (const log of segment.exercises) {
+    const i = exercises.findIndex((e) => e.exerciseId === log.exerciseId && e.swappedFrom === log.swappedFrom &&
+      e.repRange?.[0] === log.repRange?.[0] && e.repRange?.[1] === log.repRange?.[1] && e.targetRpe === log.targetRpe)
+    if (i < 0) exercises.push(log)
+    else exercises[i] = { ...exercises[i], sets: [...exercises[i].sets, ...log.sets] }
+  }
+  return { ...segment, id: previous.id, locationId: previous.locationId, startedAt: previous.startedAt, name: previous.name, exercises }
+}
+
+/** Across tabs, retain the latest continuation and the latest correction to each performed set. */
 export function mergeSession(a: GymSession, b: GymSession): GymSession {
-  const [older, newer] = sessionStamp(b) > sessionStamp(a) ? [a, b] : [b, a]
-  // A tie keeps `a`.
+  const extended = a.endedAt !== b.endedAt && (a.remaining || b.remaining)
+  const [older, newer] = (extended ? b.endedAt > a.endedAt : sessionStamp(b) > sessionStamp(a)) ? [a, b] : [b, a]
   const shaped =
     older.exercises.length === newer.exercises.length &&
     older.exercises.every((e, i) => e.exerciseId === newer.exercises[i].exerciseId && e.sets.length === newer.exercises[i].sets.length)
-  if (!shaped) return newer
+  if (!shaped && !extended) return newer
+  const edits = new Map<string, GymSet[]>()
+  if (!shaped) {
+    for (const e of older.exercises) for (const set of e.sets) {
+      const key = `${e.exerciseId}:${set.at}`
+      const matches = edits.get(key)
+      if (matches) matches.push(set)
+      else edits.set(key, [set])
+    }
+  }
   let changed = false
   const exercises = newer.exercises.map((e, i) => ({
     ...e,
     sets: e.sets.map((set, j) => {
-      const other = older.exercises[i].sets[j]
-      if ((other.editedAt ?? 0) > (set.editedAt ?? 0)) {
+      const other = shaped ? older.exercises[i].sets[j] : edits.get(`${e.exerciseId}:${set.at}`)?.shift()
+      if (other && (other.editedAt ?? 0) > (set.editedAt ?? 0)) {
         changed = true
         return other
       }
       return set
     }),
   }))
-  return changed ? { ...newer, exercises } : newer
+  const updatedAt = Math.max(sessionStamp(a), sessionStamp(b))
+  return changed || updatedAt > sessionStamp(newer) ? { ...newer, exercises, updatedAt } : newer
 }
 
 const sessionStamp = (s: GymSession) => s.updatedAt ?? s.endedAt
@@ -688,7 +753,7 @@ function stableJson(v: unknown): string {
 
 export type GymOp =
   | { op: 'init'; gym: GymState }
-  | { op: 'saveSession'; session: GymSession }
+  | { op: 'saveSession'; session: GymSession; resumeFrom?: number }
   | { op: 'deleteSession'; id: string }
   /** Fix one logged set. `kg: null` makes it a bodyweight set. Records re-derive by replay. */
   | { op: 'correctSet'; sessionId: string; exerciseIndex: number; setIndex: number; kg?: number | null; reps?: number }
@@ -706,6 +771,7 @@ export type GymOp =
 export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.now()): GymState | undefined {
   if (action.op === 'init') return gym ?? action.gym
   if (!gym && action.op === 'saveSession') {
+    if (action.resumeFrom !== undefined) return gym
     // A finished session must never vanish because the gym side was never opened: the first save makes it.
     const base = defaultGym([], 'kg', now)
     const place = action.session.locationId
@@ -718,7 +784,14 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
   if (!gym) return gym
   switch (action.op) {
     case 'saveSession': {
-      const session = { ...action.session, updatedAt: now }
+      if (gym.deletedSessionIds?.includes(action.session.id)) return gym
+      let next = action.session
+      if (action.resumeFrom !== undefined) {
+        const previous = gym.sessions.find((s) => s.id === next.id)
+        if (previous?.completion !== 'partial' || previous.endedAt !== action.resumeFrom || !next.exercises.length) return gym
+        next = continueGymSession(previous, next)
+      }
+      const session = { ...next, updatedAt: now }
       const rest = gym.sessions.filter((s) => s.id !== session.id)
       return { ...gym, sessions: [...rest, session].sort((a, b) => a.startedAt - b.startedAt) }
     }
@@ -736,7 +809,7 @@ export function reduceGym(gym: GymState | undefined, action: GymOp, now = Date.n
       const fixed: GymSet = { ...set, editedAt: now }
       if (action.kg === null) delete fixed.kg
       else if (action.kg !== undefined) {
-        if (!(action.kg > 0 && action.kg < 1000)) return gym
+        if (!(action.kg >= 0 && action.kg < 1000) || (action.kg === 0 && !GYM_EXERCISE_BY_ID[log.exerciseId]?.assisted)) return gym
         fixed.kg = action.kg
       }
       if (action.reps !== undefined) {

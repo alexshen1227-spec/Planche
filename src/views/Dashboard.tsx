@@ -62,7 +62,9 @@ import {
 import { usePlanClock } from '../lib/plan/usePlanClock'
 import { ladderStatus } from '../lib/repLadder'
 import { WeekPreview } from '../components/plan/WeekPreview'
-import { TodayPlanCard, type GymPreset } from '../components/plan/TodayPlanCard'
+import { TodayPlanCard, type GymEntry, type GymPreset } from '../components/plan/TodayPlanCard'
+import { latestPartialToday } from '../lib/gym/draft'
+import { PartialWorkout } from '../components/gym/PartialWorkout'
 import { GymHistory } from '../components/gym/GymHistory'
 import { FOCUS_LABEL } from '../lib/gym/builder'
 
@@ -180,7 +182,7 @@ function WeekStrip({ trainedDays }: { trainedDays: Set<string> }) {
 
 interface DashboardProps {
   startWorkout: (request: WorkoutRequest) => void
-  startGym?: (preset: GymPreset) => void
+  startGym?: (preset: GymEntry) => void
   go: (t: Tab) => void
   viewSession: (sessionId: string) => void
 }
@@ -263,6 +265,7 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const stage = useMemo(() => dayStage(whole, dayPlan, Date.now(), marks), [whole, dayPlan, today, clock, marks])
   const finished = stage === 'done'
+  const partial = finished ? latestPartialToday(whole.gym?.sessions) : undefined
   // A gym day's opener is saved: the lifts are what is left, and nothing here recommends the opener's skill again.
   const liftsNext = stage === 'lifts-next'
   // "Short on time?" goes through the coach (`shortVersion`): never a hard session inside the rest rule, unsaid.
@@ -562,9 +565,9 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
         {/* The coach picks one main session a day, and Home says the same as Train: a rest day is a rest day. */}
         {finished ? (
           <div className="mt-4 rounded-inner border border-line bg-raised p-3">
-            <p className="text-footnote text-ink2">
+            {partial ? <PartialWorkout session={partial} onContinue={() => startGym ? startGym({ resumeSessionId: partial.id }) : go('train')} /> : <p className="text-footnote text-ink2">
               <span className="font-semibold text-ink">Today: done</span> — today’s main session is in, and nothing more is planned.
-            </p>
+            </p>}
             <button onClick={() => (mode === 'gym' ? go('train') : startWorkout(recommended))} className="mt-1 min-h-11 text-footnote font-medium text-accent-text">
               Train again
             </button>

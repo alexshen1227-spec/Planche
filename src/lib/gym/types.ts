@@ -1,4 +1,4 @@
-import type { GymEquipmentId, Unit } from '../../data/gym/catalog'
+import type { GymEquipmentId, Joint, Muscle, Unit } from '../../data/gym/catalog'
 import type { LocationEquipment } from '../../data/gym/exercises'
 
 /** A named place to train, with what is there. */
@@ -29,7 +29,8 @@ export type Rating = 'love' | 'fine' | 'avoid'
 export interface GymSet {
   /**
    * Load in kg — the canonical unit, whatever was typed. Absent for a
-   * bodyweight set; for an assisted machine it is the assistance.
+   * bodyweight set. On an assisted machine, zero is confirmed no assistance
+   * and an absent value means the help was never recorded.
    */
   kg?: number
   reps: number
@@ -54,6 +55,25 @@ export interface GymExerciseLog {
   note?: string
 }
 
+export interface RemainingLift {
+  exerciseId: string
+  repRange: [number, number]
+  targetRpe: number
+  restSec: number
+  unit: Unit
+  /** Loads stay in the display unit specified on this lift. */
+  sets: { reps: number; load?: number; warmup?: boolean }[]
+  swappedFrom?: string
+}
+
+export interface GymRemainder {
+  items: RemainingLift[]
+  avoidJoints?: Joint[]
+  musclesOff?: Muscle[]
+  volumeFactor?: number
+  goals?: GoalWeights
+}
+
 export interface GymSession {
   id: string
   locationId: string
@@ -63,6 +83,8 @@ export interface GymSession {
   exercises: GymExerciseLog[]
   notes?: string
   completion?: 'full' | 'partial'
+  /** The unlogged prescription, kept separately from completed sets. */
+  remaining?: GymRemainder
   updatedAt?: number
 }
 

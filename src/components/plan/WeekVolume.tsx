@@ -69,7 +69,8 @@ export function WeekVolume() {
         <summary className="cursor-pointer py-3 text-footnote font-semibold">All muscle groups</summary>
         <p className="mt-1 text-caption text-ink3">
           These are estimated working sets. A secondary muscle gets half credit. Skill attempts below half their target
-          stay in your practice log. Light skill sets that reach that mark get half credit. The ranges are weekly coaching targets.
+          stay in your practice log. Light skill sets that reach that mark get half credit. Speed drills, jumps, throws and sprints
+          count toward your athletic training and recovery. The ranges here cover resistance work.
         </p>
         <div className="my-3 space-y-4">
           {MUSCLE_GROUPS.map((group) => (

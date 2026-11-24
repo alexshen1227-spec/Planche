@@ -250,6 +250,8 @@ export interface GymPreset {
   placeId?: string
 }
 
+export type GymEntry = GymPreset | { resumeSessionId: string }
+
 /** What a preset takes from a plan's gym block (or a `GymToday`, which has the same limits). */
 export interface GymLimits {
   focus: GymFocus

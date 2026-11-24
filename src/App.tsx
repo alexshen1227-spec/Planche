@@ -20,7 +20,7 @@ import { SessionPlayer, type CheckInContext } from './views/SessionPlayer'
 import { APP_NAME } from './data/app'
 import { setAthleteLockout } from './lib/lockout'
 import { legacyOpenerLifts } from './lib/plan/nextBlock'
-import type { GymPreset } from './lib/plan/screens'
+import type { GymEntry } from './lib/plan/screens'
 
 /**
  * A bench for the camera form judge, reached at #devlab.
@@ -371,7 +371,7 @@ export default function App() {
   // The judge measures straight-arm bends from this athlete's own lockout.
   useEffect(() => setAthleteLockout(state.settings.lockoutDeg), [state.settings.lockoutDeg])
   const [tab, setTabNow] = useState<Tab>('home')
-  const [gymEntry, setGymEntry] = useState<GymPreset | null>(null)
+  const [gymEntry, setGymEntry] = useState<GymEntry | null>(null)
   // A transition keeps the current screen on show while a lazy one loads,
   // rather than flashing a placeholder over the whole page.
   const setTab = (next: Tab) => startTransition(() => setTabNow(next))

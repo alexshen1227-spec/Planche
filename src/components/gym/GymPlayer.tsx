@@ -13,7 +13,7 @@ import { addedSetReps, conservative, dayOfItem, prefillReps, previousSets, saveD
 import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, isUnloadedSet, lastPerformance, plyoGate, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GoalWeights, GymLocation, Rating } from '../../lib/gym/types'
 import { displayLoad, entryLoad, formatLoad, stepKgFor, takesAddedLoad, toKg, unitFor, unloadedLabel } from '../../lib/gym/units'
-import { doubtedLoad } from '../../lib/gym/state'
+import { continueGymSession, doubtedLoad, newGymSessionId } from '../../lib/gym/state'
 import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
 import { Icon } from '../Icon'
 import { finishBlocker, nextTimeLines, unfinishedLine } from '../../lib/gym/sessionLines'
@@ -103,6 +103,8 @@ export function GymPlayer({
   const youth = conservative(state.profile)
   useInertBackground()
   const [draft, setDraft] = useState<GymDraft>(initial)
+  const previous = draft.resumeFrom === undefined ? undefined : gym.sessions.find((s) => s.id === draft.id)
+  const stale = draft.resumeFrom !== undefined && (previous?.completion !== 'partial' || previous.endedAt !== draft.resumeFrom)
   const [now, setNow] = useState(() => Date.now())
   const rest = draft.rest
   const askRpe = draft.effortFor
@@ -147,6 +149,7 @@ export function GymPlayer({
   const [needLoadAsk, setNeedLoad] = useState<LoadAsk | null>(null)
   // The question is about one movement: a swap or an edit that moves it away ends the question.
   const needLoad = askStillApplies(needLoadAsk, draft.items) ? needLoadAsk : null
+  const asksAssistance = needLoad && GYM_EXERCISE_BY_ID[needLoad.exerciseId]?.assisted
   const [needValue, setNeedValue] = useState('')
   /** One sheet at a time: opening any of them closes the others' questions. */
   const openSheet = (next: { kind: 'swap' | 'add' | 'menu'; item?: number } | null) => {
@@ -171,7 +174,8 @@ export function GymPlayer({
         })
       }
     }
-    if (!set.done && !unloadedOk && isUnloadedSet(GYM_EXERCISE_BY_ID[item.exerciseId], { kg: set.load !== undefined ? toKg(set.load, item.unit) : undefined })) {
+    const exercise = GYM_EXERCISE_BY_ID[item.exerciseId]
+    if (!set.done && !unloadedOk && ((exercise.assisted && set.load === undefined) || isUnloadedSet(exercise, { kg: set.load }))) {
       setNeedValue('')
       setNeedLoad({ item: i, set: j, exerciseId: item.exerciseId })
       return
@@ -200,6 +204,11 @@ export function GymPlayer({
         delete s.rpe
         if (d.effortFor?.item === i && d.effortFor.set === j) delete d.effortFor
       } else {
+        if (exercise.assisted && (withLoad !== undefined || unloadedOk)) {
+          const help = withLoad ?? 0
+          s.load = help
+          for (const later of d.items[i].sets.slice(j + 1)) if (!later.done && later.load === undefined) later.load = help
+        }
         s.at = at
         d.effortFor = { item: i, set: j }
         d.rest = { until: at + secs * 1000, total: secs }
@@ -267,8 +276,9 @@ export function GymPlayer({
   const newMaxes = (session: ReturnType<typeof sessionFromDraft>) => {
     // Beating an earlier session's estimate on the same lift (the same place for a machine), load and reps alone.
     const mine = new Map<string, number>()
+    const alreadyEarned = new Map(previous ? estimatedMaxGains(gym.sessions).filter((g) => g.sessionId === previous.id).map((g) => [g.exerciseId, g.kg]) : [])
     for (const g of estimatedMaxGains([...gym.sessions.filter((x) => x.id !== session.id), session])) {
-      if (g.sessionId === session.id) mine.set(g.exerciseId, g.kg)
+      if (g.sessionId === session.id && g.kg > (alreadyEarned.get(g.exerciseId) ?? 0)) mine.set(g.exerciseId, g.kg)
     }
     return [...mine].map(([id, kg]) => {
       const unit = draft.items.find((it) => it.exerciseId === id)?.unit ?? 'kg'
@@ -278,18 +288,20 @@ export function GymPlayer({
 
   const summary = useMemo(() => {
     if (!finishing) return null
-    const session = sessionFromDraft(draft, Date.now())
+    const segment = sessionFromDraft(draft, Date.now())
+    if (!segment.exercises.length || stale) return null
+    const session = previous ? continueGymSession(previous, segment) : segment
     return {
       maxes: session.exercises.length ? newMaxes(session) : [],
       // What to aim for next time, lift by lift, from the rule the builder uses.
-      next: nextTimeLines(session, [...gym.sessions, session], location, youth),
+      next: nextTimeLines(session, [...gym.sessions.filter((s) => s.id !== session.id), session], location, youth),
     }
     // Computed when the sheet opens; the draft cannot change underneath it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [finishing])
+  }, [finishing, stale, previous])
 
   const blocker = finishBlocker({ needLoad: !!needLoad, doubt: !!doubt })
-  const save = () => {
+  const save = (separate = false) => {
     if (closedRef.current) return
     // A question still waiting on an answer holds a set that is not saved: it is answered or closed first.
     if (blocker) {
@@ -297,18 +309,25 @@ export function GymPlayer({
       pushToast(blocker, 'info')
       return
     }
-    const session = sessionFromDraft(draft, Date.now())
-    closedRef.current = true
-    if (!session.exercises.length) {
+    const segment = sessionFromDraft(draft, Date.now())
+    if (!segment.exercises.length) {
+      closedRef.current = true
       saveDraft(null)
       onClose()
       return
     }
+    if (stale && !separate) return
+    closedRef.current = true
+    if (separate) {
+      segment.id = newGymSessionId()
+      segment.startedAt = draft.resumedAt ?? segment.startedAt
+    }
+    const session = previous && !separate ? continueGymSession(previous, segment) : segment
     const earnedBefore = new Set(gymBadges(state).filter((b) => b.at !== undefined).map((b) => b.id))
-    dispatch({ type: 'GYM', op: { op: 'saveSession', session } })
+    dispatch({ type: 'GYM', op: { op: 'saveSession', session: segment, resumeFrom: separate ? undefined : draft.resumeFrom } })
     saveDraft(null)
     const prs = newMaxes(session).length
-    const fresh = gymBadges({ sessions: state.sessions, gym: { ...gym, sessions: [...gym.sessions, session] } }).filter(
+    const fresh = gymBadges({ sessions: state.sessions, gym: { ...gym, sessions: [...gym.sessions.filter((s) => s.id !== session.id), session] } }).filter(
       (b) => b.at !== undefined && !earnedBefore.has(b.id),
     )
     pushToast(prs ? `Saved — ${prs} new estimated max${prs > 1 ? 'es' : ''}.` : 'Gym session saved.', 'success')
@@ -330,7 +349,8 @@ export function GymPlayer({
 
   const doneSets = draft.items.reduce((n, it) => n + it.sets.filter((s) => s.done).length, 0)
   const plannedSets = draft.items.reduce((n, it) => n + it.sets.length, 0)
-  const elapsed = (now - draft.startedAt) / 1000
+  const elapsed = (now - (draft.resumedAt ?? draft.startedAt)) / 1000
+  const earlierSets = previous?.exercises.reduce((n, log) => n + log.sets.length, 0) ?? 0
   const restLeft = rest ? (rest.until - now) / 1000 : 0
   const rating = (id: string): Rating | undefined => gym.ratings[id]
 
@@ -358,6 +378,11 @@ export function GymPlayer({
 
       <main className="flex-1 overflow-y-auto px-4 pb-40 pt-3">
         <div className="mx-auto max-w-xl space-y-4">
+          {draft.resumeFrom !== undefined && <p className="rounded-control bg-raised p-3 text-footnote text-ink2" role="status">
+            {stale ? 'Another tab changed the original workout. You can save the sets you do here separately.' :
+              `${earlierSets} ${earlierSets === 1 ? 'set was' : 'sets were'} already saved. Continue with the remaining sets below.`}
+            {draft.deferred?.length ? ' Some lifts are held for another time by this joint or equipment check.' : ''}
+          </p>}
           {draft.items.map((item, i) => {
             const ex = GYM_EXERCISE_BY_ID[item.exerciseId]
             const step = stepKgFor(ex, location)
@@ -575,19 +600,19 @@ export function GymPlayer({
       <Sheet open={!!needLoad} onClose={() => setNeedLoad(null)} label="Set the weight">
         {needLoad && draft.items[needLoad.item] ? (
           <div className="space-y-3">
-            <h2 className="text-title3 font-semibold">What weight was that?</h2>
+            <h2 className="text-title3 font-semibold">{asksAssistance ? 'How much assistance did you use?' : 'What weight was that?'}</h2>
             <p className="text-footnote text-ink2">
-              {GYM_EXERCISE_BY_ID[draft.items[needLoad.item].exerciseId]?.name} is a loaded lift, and a set with no weight would count as nothing
-              toward your next load.
+              {asksAssistance ? 'Enter the help shown on the machine, or confirm you did the set without help.' :
+                `${GYM_EXERCISE_BY_ID[needLoad.exerciseId]?.name} uses an external load. Enter the weight you lifted to set your next target.`}
             </p>
             <label className="flex items-center gap-2 text-footnote text-ink2">
-              <span className="shrink-0">Weight</span>
+              <span className="shrink-0">{asksAssistance ? 'Assistance' : 'Weight'}</span>
               <input
                 inputMode="decimal"
                 value={needValue}
                 onChange={(e) => setNeedValue(e.target.value)}
                 className="h-11 min-w-0 flex-1 rounded-lg bg-raised px-3 text-center text-title3 font-semibold tnum"
-                aria-label={`Weight in ${draft.items[needLoad.item].unit}`}
+                aria-label={`${asksAssistance ? 'Assistance' : 'Weight'} in ${draft.items[needLoad.item].unit}`}
               />
               <span className="shrink-0 text-ink3">{draft.items[needLoad.item].unit}</span>
             </label>
@@ -615,7 +640,7 @@ export function GymPlayer({
                     completeSet(item, set, true, true)
                   }}
                 >
-                  Log as bodyweight
+                  {asksAssistance ? 'Log with no assistance' : 'Log as bodyweight'}
                 </Button>
               ) : null}
             </div>
@@ -768,7 +793,7 @@ export function GymPlayer({
       </Sheet>
 
       <Sheet open={finishing} onClose={() => setFinishing(false)} title="Finish this session?">
-        <p className="text-body text-ink2">Only finished sets are saved.</p>
+        <p className="text-body text-ink2">{stale ? 'The original workout changed. Save the new sets as a separate workout, or discard this continuation.' : 'Finished sets go into your workout history. You can return to unfinished sets from Home today.'}</p>
         {unfinishedLine(draft) ? (
           <p className="mt-2 rounded-control bg-raised p-3 text-footnote text-ink2" role="status">
             {unfinishedLine(draft)}
@@ -833,14 +858,14 @@ export function GymPlayer({
           />
         </label>
         <div className="mt-4 grid gap-2">
-          <Button size="lg" full onClick={save}>
-            {doneSets ? 'Save session' : 'Close — nothing to save'}
+          <Button size="lg" full onClick={() => save(stale)}>
+            {doneSets ? stale ? 'Save new sets as a separate workout' : 'Save session' : 'Close — nothing to save'}
           </Button>
           <Button variant="secondary" full onClick={() => setFinishing(false)}>
             Keep training
           </Button>
           <Button variant="ghost" full onClick={discard} className="text-danger-text">
-            Discard session
+            {draft.resumeFrom !== undefined ? 'Discard this continuation' : 'Discard session'}
           </Button>
         </div>
       </Sheet>

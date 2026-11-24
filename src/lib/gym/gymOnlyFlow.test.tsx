@@ -9,7 +9,7 @@ import { Train } from '../../views/Train'
 import { Library } from '../../views/Library'
 import { Stats } from '../../views/Stats'
 import { defaultGym, defaultPrefs } from './state'
-import type { GymPreset } from '../plan/screens'
+import type { GymEntry } from '../plan/screens'
 
 afterEach(() => {
   cleanup()
@@ -53,12 +53,12 @@ it('finds prescribed gym movements in Learn and opens their equipment and techni
   }
 })
 
-it('takes a gym-only athlete from goals through Home into a loggable first set', () => {
+it('lets a gym-only athlete log a first set, reload Home and finish the original workout', () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
   function FirstRun() {
     const { state } = useStore()
     const [train, setTrain] = useState(false)
-    const [entry, setEntry] = useState<GymPreset | null>(null)
+    const [entry, setEntry] = useState<GymEntry | null>(null)
     if (!state.onboarded) return <Onboarding />
     if (train) return <Train startWorkout={vi.fn()} entryPreset={entry} onEntryUsed={() => setEntry(null)} />
     return <Dashboard go={vi.fn()} startWorkout={vi.fn()} viewSession={vi.fn()} startGym={(p) => {
@@ -67,7 +67,8 @@ it('takes a gym-only athlete from goals through Home into a loggable first set',
     }} />
   }
   const click = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }))
-  render(<StoreProvider><FirstRun /></StoreProvider>)
+  const mount = () => render(<StoreProvider><FirstRun /></StoreProvider>)
+  const first = mount()
   click(/let's go/i)
   fireEvent.click(screen.getByRole('radio', { name: 'Calisthenics skills: off' }))
   click(/continue/i)
@@ -87,4 +88,30 @@ it('takes a gym-only athlete from goals through Home into a loggable first set',
   const firstSet = screen.getAllByLabelText('Complete set 1')[0]
   fireEvent.click(firstSet)
   expect(screen.getByRole('group', { name: 'How hard was that set?' })).toBeTruthy()
+  click('8')
+  click('Finish')
+  click('Save session')
+  const stored = () => JSON.parse(localStorage.getItem('planchelab.v1')!).gym.sessions
+  const original = stored()[0]
+  const left = original.remaining.items.reduce((n: number, it: { sets: unknown[] }) => n + it.sets.length, 0)
+  expect(left).toBeGreaterThan(0)
+  first.unmount()
+  mount()
+  expect(screen.getByText(/1 set logged/)).toBeTruthy()
+  click(`Continue ${left} remaining ${left === 1 ? 'set' : 'sets'}`)
+  click(/nothing hurts.*start/i)
+  const player = within(screen.getByRole('dialog', { name: 'Gym session' }))
+  expect(player.getByText(/1 set was already saved/)).toBeTruthy()
+  const pending = player.getAllByLabelText(/^Complete set /)
+  expect(pending.length).toBe(left)
+  for (const set of pending) {
+    fireEvent.click(set)
+    click('8')
+  }
+  click('Finish')
+  click('Save session')
+  expect(stored()).toHaveLength(1)
+  expect(stored()[0]).toMatchObject({ id: original.id, startedAt: original.startedAt, completion: 'full' })
+  expect(stored()[0].remaining).toBeUndefined()
+  expect(stored()[0].exercises[0].sets[0]).toEqual(original.exercises[0].sets[0])
 })

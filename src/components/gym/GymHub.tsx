@@ -6,10 +6,10 @@ import { buildGymSession, FOCUS_LABEL, type GymFocus, type PlannedExercise } fro
 import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
 import { draftConflictLine, draftContents, EXTRA_SESSION_LINE, leftOutLine, openDraftFor, resumeLine } from '../../lib/gym/sessionLines'
-import { conservative, loadDraft, prefillReps, previousSets, type GymDraft } from '../../lib/gym/draft'
+import { conservative, latestPartialToday, loadDraft, prefillReps, previousSets, resumePartial, type GymDraft } from '../../lib/gym/draft'
 import { AFTER_OPENER_WARM_UP_MIN, gymToday, MIN_GYM_MINUTES, skillFamily, skillRequest, soreJoints } from '../../lib/plan/planner'
 import { weekForChoice } from '../../lib/plan/currentWeek'
-import { dayStage, gymPlaceLine, gymPreset, openerLine, resolveGymPlace, steerInput, type GymPreset } from '../../lib/plan/screens'
+import { dayStage, gymPlaceLine, gymPreset, openerLine, resolveGymPlace, steerInput, type GymEntry, type GymPreset } from '../../lib/plan/screens'
 import { usePlanClock } from '../../lib/plan/usePlanClock'
 import { useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
@@ -21,6 +21,7 @@ import { entryLoad, formatLoad, unitFor } from '../../lib/gym/units'
 import { Icon } from '../Icon'
 import { Button, Card, CardTitle, EmptyState, Sheet, ToggleChip } from '../ds'
 import { GymPlayer } from './GymPlayer'
+import { PartialWorkout } from './PartialWorkout'
 import { WeekVolume } from '../plan/WeekVolume'
 import { LocationEditor } from './LocationEditor'
 import { ExerciseHistory } from './ExerciseHistory'
@@ -37,12 +38,13 @@ function dayLabel(at: number): string {
 }
 
 export function GymHub({
-  preset,
+  preset: entry,
   onPresetUsed,
   startWorkout,
-}: { preset?: GymPreset | null; onPresetUsed?: () => void; startWorkout?: (request: WorkoutRequest) => void } = {}) {
+}: { preset?: GymEntry | null; onPresetUsed?: () => void; startWorkout?: (request: WorkoutRequest) => void } = {}) {
   const { state, dispatch } = useStore()
   const gym = state.gym
+  const preset = entry && !('resumeSessionId' in entry) ? entry : null
   const youth = conservative(state.profile)
   // Today as every screen plans it (today's choice included), keyed on the
   // calendar day so a screen left open past midnight plans the new day.
@@ -79,10 +81,11 @@ export function GymHub({
   const remembered = useNextBlock<GymPreset>(todayKey)
   const stage = dayStage(state, today, Date.now(), marks)
   const finished = stage === 'done'
+  const partial = finished ? latestPartialToday(gym?.sessions) : undefined
   // The opener is saved and the lifts are what is left: no second opener, and the lifts keep the minutes the day planned.
   const liftsNext = stage === 'lifts-next'
   const [editingLifts, setEditingLifts] = useState(false)
-  const [pending, setPending] = useState<{ empty: boolean; preset?: GymPreset } | null>(null)
+  const [pending, setPending] = useState<{ empty: boolean; preset?: GymPreset; resumeSessionId?: string } | null>(null)
   const remaining = liftsNext && !editingLifts ? remembered : null
   const block = pending?.preset ?? preset ?? remaining
   const [skipOpener, setSkipOpener] = useState(false)
@@ -107,7 +110,8 @@ export function GymHub({
   // Where the lifts are built: where the plan has them (the gym, even with Home set as the place now) unless the
   // athlete said today that they are somewhere else. Home being active is not a pick.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const fixedPlace = pending?.preset?.placeId ?? preset?.placeId
+  const source = pending?.resumeSessionId ? gym?.sessions.find((s) => s.id === pending.resumeSessionId) : undefined
+  const fixedPlace = source?.locationId ?? pending?.preset?.placeId ?? preset?.placeId
   const where = useMemo(() => (gym ? resolveGymPlace(state, Date.now(), { plannedId: block?.placeId, pickedId: fixedPlace ?? choice.placeId }) : undefined), [state, gym, block?.placeId, fixedPlace, choice.placeId, todayKey, clock])
   const location = where?.place
 
@@ -160,11 +164,11 @@ export function GymHub({
 
   // A session planned on the Today card asks the pain check, then starts.
   useEffect(() => {
-    if (!preset || !gym || !location) return
+    if (!entry || !gym || !location) return
     onPresetUsed?.()
-    setPending({ empty: false, preset })
+    setPending('resumeSessionId' in entry ? { empty: false, resumeSessionId: entry.resumeSessionId } : { empty: false, preset: entry })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preset])
+  }, [entry])
 
   if (!gym || !location) {
     return (
@@ -228,6 +232,18 @@ export function GymHub({
       // 72-hour union still holds (`soreJoints`). Without it a report days old stayed out of the lifts with no way
       // to clear it from the gym.
       dispatch({ type: 'RECORD_SYMPTOM', event: { at: Date.now(), joints: 'good', source: 'check-in' } })
+    }
+    if (pending.resumeSessionId) {
+      setPending(null)
+      if (!source?.remaining || source.completion !== 'partial') {
+        pushToast('The saved workout has changed. Open its latest entry in workout history.', 'info')
+        return
+      }
+      const originalPlace = gym.locations.find((l) => l.id === source.locationId)
+      const next = originalPlace && resumePartial(source, [...sore.joints, ...joints], originalPlace)
+      if (next) setRunning(next)
+      else pushToast(originalPlace ? 'None of the remaining lifts fit this joint check and equipment. Your completed sets are in history.' : 'The original training place was removed. Your completed sets are in history.', 'info')
+      return
     }
     const p = pending.preset
     // The opener runs first as its own skill session; the lifts follow on when
@@ -435,9 +451,9 @@ export function GymHub({
         </p>
         {finished && !again ? (
           <div className="mt-3 rounded-inner border border-line bg-raised p-3">
-            <p className="text-footnote text-ink2">
+            {partial ? <PartialWorkout session={partial} onContinue={() => setPending({ empty: false, resumeSessionId: partial.id })} /> : <p className="text-footnote text-ink2">
               <span className="font-semibold text-ink">Today: done</span> — today’s main session is in, and nothing more is planned.
-            </p>
+            </p>}
             <button onClick={() => setAgain(true)} aria-label="Train again: an extra gym session today" className="mt-1 min-h-11 text-footnote font-medium text-accent-text">
               Train again
             </button>

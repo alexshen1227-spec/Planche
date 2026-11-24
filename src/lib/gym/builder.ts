@@ -326,12 +326,13 @@ export function planGymExercises(input: GymSessionInput) {
   // not logged it yet, unless they rated it love.
   const technicalPenalty = (e: GymExercise) =>
     e.technical && ratings[e.id] !== 'love' && (youth || !lastLogged.has(e.id)) ? 5 : 0
+  const earnedTrial = (e: GymExercise) => e.id === 'pull-up' && input.capacity?.tryPullup ? 1.5 : 0
   const scoreOf = (e: GymExercise, extra = 0) =>
     preferenceRank(e.id, ratings, location) +
     technicalPenalty(e) +
     (e.compound ? 0 : 0.25) -
     (isPriority(e) ? 1 : 0) -
-    favouriteHere(e) +
+    favouriteHere(e) - earnedTrial(e) +
     extra
   // The ladder is climbed from the bottom: the lowest rung never logged comes
   // first; once every rung has been done, the one done longest ago.
@@ -421,7 +422,7 @@ export function planGymExercises(input: GymSessionInput) {
           score:
             preferenceRank(e.id, ratings, location) +
             technicalPenalty(e) -
-            favouriteHere(e) +
+            favouriteHere(e) - earnedTrial(e) +
             // Within a slot the earlier-listed pattern is the one the slot is for.
             slot.indexOf(e.pattern) * 0.5 +
             (e.compound ? 0 : 0.25) -
@@ -633,5 +634,9 @@ export function buildGymSession(input: GymSessionInput): GymPlan {
     ...item,
     suggestion: suggestLoad({ exerciseId: item.exerciseId, location: input.location, sessions: input.sessions, plan: item.plan, youth: input.youth, now }),
   }))
+  const trial = input.capacity?.tryPullup && items.find((item) => item.exerciseId === 'pull-up')
+  if (trial) {
+    trial.suggestion = { ...trial.suggestion, why: 'You reached your rep target on the machine with zero assistance. Try a controlled set on the bar, stop while your form is good, and use assistance for the remaining sets if needed.' }
+  }
   return { ...session, items }
 }

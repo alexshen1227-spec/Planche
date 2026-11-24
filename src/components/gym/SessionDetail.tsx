@@ -99,6 +99,14 @@ export function SessionDetail({ session, onClose }: { session: GymSession; onClo
           </section>
         )
       })}
+      {session.remaining?.items.length ? (
+        <section>
+          <h3 className="text-body font-semibold">Unfinished sets</h3>
+          <ul className="mt-1 text-footnote text-ink2">
+            {session.remaining.items.map((item, i) => <li key={i}>{exerciseTitle(item.exerciseId)} · {item.sets.length} {item.sets.length === 1 ? 'set' : 'sets'} left</li>)}
+          </ul>
+        </section>
+      ) : null}
       {confirming ? (
         <div className="rounded-card border border-line-strong bg-raised p-4" role="alertdialog" aria-label="Confirm delete">
           <p className="text-body font-semibold">
@@ -160,7 +168,7 @@ function SetEditor({
   const exercise = GYM_EXERCISE_BY_ID[exerciseId]
   // A loaded lift cannot be corrected to no weight: that would read as a 0 kg set.
   const needsWeight = typed === null && !allowsUnloaded(exercise)
-  const loadOk = !needsWeight && (typed === null || (Number.isFinite(typed) && typed > 0 && typed < 1000))
+  const loadOk = !needsWeight && (typed === null || (Number.isFinite(typed) && (typed > 0 || (typed === 0 && exercise?.assisted)) && typed < 1000))
 
   if (doubt) {
     const shown = (kg: number) => formatLoad(kg, unit)
@@ -186,8 +194,8 @@ function SetEditor({
   return (
     <div className="flex flex-wrap items-end gap-2 py-1">
       <label className="text-caption text-ink3">
-        Load ({unit})
-        <input className={`${field} mt-0.5 block`} inputMode="decimal" value={load} onChange={(e) => setLoad(e.target.value)} placeholder={allowsUnloaded(exercise) ? 'Bodyweight' : 'Weight'} />
+        {exercise?.assisted ? 'Assistance' : 'Load'} ({unit})
+        <input className={`${field} mt-0.5 block`} inputMode="decimal" value={load} onChange={(e) => setLoad(e.target.value)} placeholder={exercise?.assisted ? 'Unknown' : allowsUnloaded(exercise) ? 'Bodyweight' : 'Weight'} />
       </label>
       <label className="text-caption text-ink3">
         {countUnit(exercise) === 'seconds' ? 'Seconds' : 'Reps'}
@@ -196,7 +204,7 @@ function SetEditor({
       <Button
         disabled={!valid || !loadOk}
         onClick={() => {
-          if (typed === null) return submit(null)
+          if (typed === null || exercise?.assisted) return submit(typed)
           const d = doubtedLoad(state.gym?.sessions ?? [], exerciseId, typed, session.id)
           if (d) setDoubt({ ...d, typedKg: typed })
           else submit(typed)

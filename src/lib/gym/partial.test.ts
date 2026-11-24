@@ -1,0 +1,41 @@
+import { expect, it } from 'vitest'
+import { resumePartial, sessionFromDraft, type GymDraft } from './draft'
+import { defaultGym, mergeSession, reduceGym, sanitizeGymReport } from './state'
+
+const start = new Date(2026, 10, 16, 10).getTime()
+const draft: GymDraft = {
+  id: 'split', startedAt: start, locationId: 'home', name: 'Full body', notes: 'First block',
+  items: [
+    { exerciseId: 'split-squat', plan: { range: [6, 10], targetRpe: 7 }, restSec: 90, unit: 'lb',
+      sets: [{ reps: 8, at: start + 100, done: true, rpe: 7 }, { reps: 9, load: 5.25, done: false }] },
+    { exerciseId: 'db-lateral-raise', plan: { range: [12, 15], targetRpe: 8 }, restSec: 60, unit: 'kg',
+      sets: [{ reps: 12, load: 5, done: false }] },
+  ],
+}
+
+it('keeps unfinished prescription outside volume, carries a late correction, and rejects duplicate or deleted continuations', () => {
+  const first = sessionFromDraft(draft, start + 1000)
+  const base = defaultGym(['floor'], 'kg', start)
+  const logged = reduceGym(base, { op: 'saveSession', session: first }, first.endedAt)!
+  const { gym, losses } = sanitizeGymReport(JSON.parse(JSON.stringify(logged)))
+  expect(losses).toEqual([])
+  const open = resumePartial(gym!.sessions[0], ['shoulders'], undefined, start + 3000)!
+  expect(open.items.map((it) => it.exerciseId)).toEqual(['split-squat'])
+  expect(open.items[0]).toMatchObject({ unit: 'lb', sets: [{ reps: 9, load: 5.25, done: false }] })
+  open.items[0].sets[0] = { ...open.items[0].sets[0], done: true, at: start + 4000, rpe: 8 }
+  const segment = sessionFromDraft(open, start + 5000)
+  expect(segment.remaining?.items.map((it) => it.exerciseId)).toEqual(['db-lateral-raise'])
+  const append = { op: 'saveSession' as const, session: segment, resumeFrom: first.endedAt }
+  const continued = reduceGym(gym, append, segment.endedAt)!
+  expect(continued.sessions).toHaveLength(1)
+  expect(continued.sessions[0].exercises[0].sets.map((x) => x.reps)).toEqual([8, 9])
+  expect(reduceGym(continued, append)).toBe(continued)
+  const corrected = reduceGym(gym, { op: 'correctSet', sessionId: first.id, exerciseIndex: 0, setIndex: 0, reps: 7 }, start + 6000)!.sessions[0]
+  for (const [a, b] of [[corrected, continued.sessions[0]], [continued.sessions[0], corrected]]) {
+    const merged = mergeSession(a, b)
+    expect(merged.exercises[0].sets.map((x) => x.reps)).toEqual([7, 9])
+    expect(resumePartial(merged)?.items[0].exerciseId).toBe('db-lateral-raise')
+  }
+  const deleted = reduceGym(continued, { op: 'deleteSession', id: first.id })!
+  expect(reduceGym(deleted, append)).toBe(deleted)
+})

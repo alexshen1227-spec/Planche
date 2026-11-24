@@ -1,5 +1,5 @@
 import { MUSCLES, type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
-import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import { athleticDomain, GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { EXERCISE_BY_ID } from '../../data/exercises'
 import { SKILLS } from '../../data/skills'
 import type { AppState, Category, Session, SetLog, SkillId } from '../../types'
@@ -139,6 +139,12 @@ function skillVolumeCredit(set: SetLog): number {
   return 1
 }
 
+/** Speed and impact sessions have their own records and recovery cost. Only resistance work enters the lifting volume target. */
+export function resistanceSetLoading(exerciseId: string): Loading | null {
+  const ex = GYM_EXERCISE_BY_ID[exerciseId]
+  return ex && !athleticDomain(ex) ? gymSetLoading(exerciseId) : null
+}
+
 /** Weekly sets per muscle between `from` and `to` (ms), from gym and skill work alike. */
 export function setsPerMuscle(
   skillSessions: Session[],
@@ -158,7 +164,7 @@ export function setsPerMuscle(
   for (const s of gymSessions) {
     if (s.startedAt < from || s.startedAt >= to) continue
     for (const log of s.exercises) {
-      const l = gymSetLoading(log.exerciseId)
+      const l = resistanceSetLoading(log.exerciseId)
       if (!l) continue
       add(out, l.muscles, log.sets.filter((x) => !x.warmup && x.reps > 0).length)
     }

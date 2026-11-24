@@ -33,6 +33,7 @@ export function unloadedLabel(ex?: GymExercise): string {
 }
 
 export function formatLoad(kg: number | undefined, unit: Unit, ex?: GymExercise): string {
+  if (kg === undefined && ex?.assisted) return 'Assistance unrecorded'
   if (kg === undefined || kg <= 0) return unloadedLabel(ex)
   const v = displayLoad(kg, unit)
   return `${v} ${unit}`

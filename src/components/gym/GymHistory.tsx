@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../../lib/store'
 import { fmtDate } from '../../lib/time'
+import { remainingSetCount } from '../../lib/gym/draft'
 import { Button, Card, EmptyState, Sheet } from '../ds'
 import { SessionDetail } from './SessionDetail'
 
@@ -19,6 +20,7 @@ export function GymHistory({ limit }: { limit?: number }) {
           {sessions.slice(0, limit ?? count).map((s) => {
             const sets = s.exercises.reduce((n, e) => n + e.sets.filter((x) => !x.warmup && x.reps > 0).length, 0)
             const place = gym?.locations.find((l) => l.id === s.locationId)?.name ?? 'Previous gym'
+            const left = remainingSetCount(s.remaining)
             return (
               <li key={s.id}>
                 <button onClick={() => setSelected(s.id)} aria-label={`${s.name}, ${fmtDate(s.startedAt)} — open to correct or delete`}
@@ -29,7 +31,7 @@ export function GymHistory({ limit }: { limit?: number }) {
                   </span>
                   <span className="mt-0.5 block text-footnote text-ink2">
                     {place} · {s.exercises.length} {s.exercises.length === 1 ? 'exercise' : 'exercises'} · {sets} {sets === 1 ? 'set' : 'sets'}
-                    {s.completion === 'partial' ? ' · some sets skipped' : ''}
+                    {left ? ` · ${left} ${left === 1 ? 'set' : 'sets'} left` : s.completion === 'partial' ? ' · saved partway' : ''}
                   </span>
                 </button>
               </li>

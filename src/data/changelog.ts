@@ -19,6 +19,16 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-23',
+    title: 'Pick up a workout where you left off',
+    area: 'training',
+    notes: [
+      'Save part of a gym workout and come back from Home or Train that day. The remaining sets keep their weights, reps and place. Finishing adds them to the original workout.',
+      'Assisted pull-ups ask how much help you used. Confirming zero assistance can earn a trial on the bar. Progress compares only sets with recorded assistance.',
+      'Your weekly muscle totals count the resistance lifts in a speed session. Drills, jumps, throws and sprints still contribute to athletic records and recovery.',
+    ],
+  },
+  {
+    date: '2026-11-23',
     title: 'A week that follows the goals you set',
     area: 'coach',
     notes: [
