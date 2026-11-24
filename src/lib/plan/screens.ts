@@ -8,9 +8,10 @@ import { barMet } from '../progression'
 import { addDays, weekStart } from '../time'
 import { goalDaysInWeekOf } from '../stats'
 import { countsSkillDay, latestSkillPartial } from '../skillSession'
+import { atPlanPlace, hereKit } from './trainingPlace'
 import { missingSkillKit } from '../skills'
 import { readDayMarks, type DayMarks } from './nextBlock'
-import { atActivePlace, gymPlaceOf, insideRestRule, kitAt, MIN_SKILL_MINUTES, placeKit, planToday, skillRequest, weekdayPlace, type SkillBlock, type TodayPlan } from './planner'
+import { gymPlaceOf, insideRestRule, MIN_SKILL_MINUTES, placeKit, planToday, skillRequest, type SkillBlock, type TodayPlan } from './planner'
 
 /**
  * Decisions the Home and Train screens make about today and this week, kept
@@ -322,17 +323,12 @@ export function gymPlaceLine(choice: GymPlaceChoice | undefined): string | null 
 export function calisthenicsRequest(state: AppState, block: SkillBlock, pickedId?: string): WorkoutRequest {
   const base = skillRequest(block)
   const picked = state.gym?.locations.find((l) => l.id === pickedId)
-  const kit: EquipmentId[] | undefined = picked ? kitAt(state, picked) : block.kit?.length ? block.kit : placeKit(state)
+  const kit: EquipmentId[] | undefined = picked ? hereKit(state, picked) : block.kit?.length ? block.kit : placeKit(state)
   const placeId = picked?.id ?? block.placeId ?? state.gym?.activeLocationId
   return { ...base, ...(kit?.length ? { kit } : {}), ...(placeId ? { placeId } : {}) }
 }
 
-/** A request already built for a place keeps its kit; any other is built where the athlete is. */
-export function atPlanPlace(state: AppState, request: WorkoutRequest, pickedId?: string, now = Date.now()): WorkoutRequest {
-  if (request.kit?.length) return request
-  const selected = state.gym?.locations.find((p) => p.id === (pickedId ?? request.placeId)) ?? weekdayPlace(state, now)
-  return selected ? { ...request, placeId: selected.id, kit: [...new Set<EquipmentId>(['floor', ...kitAt(state, selected)])] } : atActivePlace(state, request)
-}
+export { atPlanPlace } from './trainingPlace'
 
 /** Where a calisthenics day (or an opener) is planned, when the plan names a place; the athlete's own pick says where the plan had it. */
 export function calisthenicsPlaceLine(state: AppState, block: Pick<SkillBlock, 'placeId'>, pickedId?: string): string | null {

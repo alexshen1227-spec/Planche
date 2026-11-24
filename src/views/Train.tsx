@@ -11,7 +11,7 @@ import {
   describeTarget,
   primaryTargetBlock,
   countRounds,
-  challengeBlockedReason,
+  maximalHoldBlockedReason,
   finalizeFromPlan,
   isPainSafe,
   isRecommendedRequest,
@@ -114,9 +114,13 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   // The skills the athlete trains, and which of them can train with the kit
   // listed: a skill waiting for a bar is not offered a session.
   const skills = activeSkills(state)
-  const trainable = skills.filter((skill) => missingKit(skill, state.profile.equipment, stepOfSkill(state, skill)).length === 0)
+  const [choice] = useTodayChoice(todayKey)
+  const kit = atPlanPlace(state, { source: 'auto' }, choice.placeId).kit ?? state.profile.equipment
+  const trainable = skills.filter((skill) => missingKit(skill, kit, stepOfSkill(state, skill)).length === 0)
   const [testPick, setTestPick] = useState<SkillId | null>(null)
-  const testSkill: SkillId = testPick && trainable.includes(testPick) ? testPick : (trainable[0] ?? skills[0])
+  const testable = trainable.filter((skill) => !maximalHoldBlockedReason(state, plan,
+    atPlanPlace(state, { source: 'test', stepId: stepOfSkill(state, skill) }, choice.placeId)))
+  const testSkill = testPick && testable.includes(testPick) ? testPick : (testable[0] ?? skills[0])
   const [mix, setMix] = useState<SkillId[]>([])
   const mixed = mix.filter((skill) => trainable.includes(skill))
   // The recommended session is the skill block of today's plan — its minutes
@@ -124,7 +128,6 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   // never show different sessions (35 minutes there once read ~42 here).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   // Today's choice ("Rather do … today?", "I have X min") is one for every screen.
-  const [choice] = useTodayChoice(todayKey)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const dayPlan = weekForChoice(state, choice).days[0].plan
   // A skill picked here still outranks the plan, but a pick inside the athlete's rest rule says so.
@@ -163,9 +166,9 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   // What the recommended session trains once the rails have run — none of the
   // skills on a pain-safe day — for the week card's sentence about today.
   const todaySkills = isPainSafe(today) ? [] : (today.lineup?.map((entry) => entry.skill) ?? today.skills)
-  const testBlocked = challengeBlockedReason(plan)
-  // No max test card for a first session, nor on a day it is blocked: it once sat there saying "Not today".
-  const showTest = maxTestOffered(state, testBlocked)
+  const step = STEP_BY_ID[stepOfSkill(state, testSkill)]
+  const testRequest = atPlanPlace(state, { source: 'test', stepId: step.id }, choice.placeId)
+  const showTest = testable.length > 0 && maxTestOffered(state, null)
   const preview: Workout | null = useMemo(
     () =>
       previewRequest
@@ -186,13 +189,12 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
     previewRequest?.skills?.length && !isRecommendedRequest(previewRequest) && requestKey(previewRequest) !== requestKey(recommended)
       ? (insideRestRule(state, previewRequest.skills, Date.now())?.text ?? null)
       : null
-  const step = STEP_BY_ID[stepOfSkill(state, testSkill)]
   // One card per trained skill, and one more for each rep ladder it has. Each
   // is only a request: the preview and Start build it the way every workout is.
   const skillDays = skills.flatMap((skill) => {
     const def = SKILLS[skill]
     // The kit where the athlete is: their own and the active place's (`placeKit`), as the session is built.
-    const needsList = missingKit(skill, atPlanPlace(state, { source: 'auto' }, choice.placeId).kit ?? state.profile.equipment, stepOfSkill(state, skill))
+    const needsList = missingKit(skill, kit, stepOfSkill(state, skill))
     const needs = needsList.length ? kitNeedsPhrase(needsList) : null
     const rest = restNotes.get(skill)?.text ?? null
     const days: { key: string; skill: SkillId; title: string; line: string; needs: string | null; rest: string | null; request: WorkoutRequest }[] = [
@@ -287,9 +289,9 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
           <div className="flex items-center gap-2 text-footnote font-semibold uppercase tracking-wider text-ink3">
             <Icon name="target" size={14} /> Test day
           </div>
-          {trainable.length > 1 ? (
+          {testable.length > 1 ? (
             <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Skill to test">
-              {trainable.map((skill) => (
+              {testable.map((skill) => (
                 <button
                   key={skill}
                   aria-pressed={skill === testSkill}
@@ -309,16 +311,12 @@ function SkillsTrain({ startWorkout }: { startWorkout: (request: WorkoutRequest)
             the {EXERCISE_BY_ID[step.keyExerciseId].name.toLowerCase()}. A verified{' '}
             <span className="font-semibold text-ink tnum">{step.unlockSec}s</span> unlocks the next step.
           </p>
-          {testBlocked ? (
-            <p className="mt-3 text-footnote leading-relaxed text-ink3">Not today — {testBlocked}.</p>
-          ) : (
-            <button
-              onClick={() => setPreviewRequest({ source: 'test', stepId: step.id })}
-              className="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-body font-medium text-accent-text transition hover:border-line-strong"
-            >
-              Test yourself <Icon name="arrowR" size={15} />
-            </button>
-          )}
+          <button
+            onClick={() => setPreviewRequest(testRequest)}
+            className="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-control border border-line bg-raised px-3.5 py-2 text-body font-medium text-accent-text transition hover:border-line-strong"
+          >
+            Test yourself <Icon name="arrowR" size={15} />
+          </button>
         </div>
         ) : null}
       </div>

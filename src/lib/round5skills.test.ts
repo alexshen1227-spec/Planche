@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AppState, CheckIn, Session, SetLog, SkillId, Workout, WorkoutRequest } from '../types'
 import { STEP_BY_ID } from '../data/progressions'
 import { skillOfExercise } from '../data/skills'
-import { challengeBlockedReason, finalizeFromPlan, finalizeWorkout, finalizeWorkoutWithPlan, planForToday, TEMPLATE_BY_ID } from '../data/workouts'
+import { challengeBlockedReason, finalizeFromPlan, finalizeWorkout, finalizeWorkoutWithPlan, hasEquipmentFor, maximalHoldBlockedReason, planForToday, TEMPLATE_BY_ID } from '../data/workouts'
+import { defaultGym, defaultPrefs, newLocation } from './gym/state'
 import { buildPlan } from './coach'
 import { applySession } from './engine'
 import { lineupFor, todaysLineup } from './lineup'
@@ -348,6 +349,33 @@ describe('a session picked inside the rest rule is built lighter', () => {
     const pain = buildPlan(state, at, { joints: 'pain', energy: 'ok', at, regions: ['wrist'] }, { insideRest: note })
     expect(pain.loadPermission).toBe('none')
     expect(pain.decisions.some((d) => /rest rule/.test(d.text))).toBe(false)
+  })
+
+  it('checks the actual place and recent heavy pulling for every max or minimum-dose launch, including a fresh check-in', () => {
+    const t = new Date(2026, 7, 3, 9).getTime()
+    const athlete = startingState({ skills: ['frontlever'], steps: { frontlever: 'fl-advtuck' }, equipment: ['floor', 'band'] })
+    const gym = defaultGym(athlete.profile.equipment, 'kg', t)
+    const club = newLocation('Iron Works', 'kg', ['pullup-bar', 'dumbbells'], t)
+    const home = gym.locations[0]
+    const prefs = { ...defaultPrefs(t), placeByDay: [null, club.id, home.id, null, home.id, null, club.id] }
+    const state: AppState = { ...athlete, gym: { ...gym, locations: [home, club], activeLocationId: club.id, prefs, sessions: [{
+      id: 'rows', name: 'Pulling', locationId: club.id, startedAt: t, endedAt: t + HOUR,
+      exercises: [{ exerciseId: 'pull-up', sets: Array.from({ length: 4 }, (_, i) => ({ reps: 8, at: t + i * 60_000 })) }],
+    }] } }
+    for (const source of ['test', 'micro'] as const) {
+      const request: WorkoutRequest = { source, skills: ['frontlever'] }
+      const run = (at: number, placeId?: string) => finalizeWorkoutWithPlan(state, { ...request, placeId }, { joints: 'good', energy: 'fresh', at }, at)
+      const next = t + 25 * HOUR
+      const atHome = run(next)
+      expect(atHome.workout.kind).not.toBe(source)
+      expect(atHome.workout.blocks.every((b) => hasEquipmentFor(b.exerciseId, home.equipment as AppState['profile']['equipment']))).toBe(true)
+      expect(run(next, club.id).plan.insideRest).toEqual({ hours: 25, ruleHours: 48 })
+      const later = t + 72 * HOUR
+      const homePreview = finalizeFromPlan(state, request, planForToday(state, later), later).workout
+      expect(homePreview.kind).not.toBe(source)
+      expect(maximalHoldBlockedReason(state, planForToday(state, later), request, later)).toMatch(/bar.*Home/)
+      expect(run(later, club.id).workout.kind).toBe(source)
+    }
   })
 })
 

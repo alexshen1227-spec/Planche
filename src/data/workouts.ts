@@ -15,9 +15,9 @@ import { needsYouthWarmup, youthWarmup, YOUTH_WARMUP_NOTE } from './youthWarmup'
 import { hold, reps } from './blocks'
 import { EXERCISE_BY_ID } from './exercises'
 import { skillOfStep, STEP_BY_ID, stepAfter, stepBefore } from './progressions'
-import { defaultSurface, equipmentLabel, equipmentPhrase } from './equipment'
+import { defaultSurface, equipmentLabel, equipmentPhrase, kitNeedsPhrase } from './equipment'
 import { PRESS_LADDER, pressingChoiceFor } from './pressing'
-import { ownsKit, SKILLS } from './skills'
+import { missingKit, ownsKit, SKILLS } from './skills'
 import { skillSession, skillWarmup } from './skillSession'
 import { mixedSession } from './mixedSession'
 import { bridgeStatus, capacityOn } from '../lib/bridge'
@@ -28,6 +28,8 @@ import { leadInSecondsFor, stopLatencySecondsFor } from '../lib/sessionTiming'
 import { adaptiveTarget, workingTargetSec } from '../lib/workingTarget'
 import { skillView, wholeState } from '../lib/skills'
 import { lineupFor, type LineupEntry } from '../lib/lineup'
+import { atPlanPlace } from '../lib/plan/trainingPlace'
+import { holdRestWindow } from '../lib/plan/restWindow'
 
 const DAY = 86_400_000
 
@@ -1880,7 +1882,7 @@ export const MICRO_HOLDS = 5
  * camera keeps flagging the shape (easier positions come first there), and
  * once a day at most.
  */
-export function microBlockedReason(state: Pick<AppState, 'sessions'>, plan: CoachPlan, now = Date.now()): string | null {
+export function microBlockedReason(state: AppState, plan: CoachPlan, now = Date.now(), request: WorkoutRequest = { source: 'micro', skills: [plan.skill] }): string | null {
   // The max-effort gate covers pain, energy, a hard session today and every
   // lighter day; what is left is the minimum dose's own.
   const challenge = challengeBlockedReason(plan)
@@ -1890,7 +1892,7 @@ export function microBlockedReason(state: Pick<AppState, 'sessions'>, plan: Coac
   if (state.sessions.some((s) => s.workoutKind === 'micro' && new Date(s.startedAt).toDateString() === today)) {
     return 'you already did one today'
   }
-  return null
+  return maximalHoldBlockedReason(state, plan, request, now)
 }
 
 /**
@@ -2168,6 +2170,33 @@ export function challengeBlockedReason(plan: CoachPlan): string | null {
   return 'you reported low energy'
 }
 
+/** A queued test uses the equipment still present where the athlete will take it. */
+function maximalRequestAt(state: AppState, request: WorkoutRequest, now: number): WorkoutRequest {
+  const savedPlace = request.placeId && state.gym?.locations.some((place) => place.id === request.placeId)
+  return atPlanPlace(state, savedPlace ? { ...request, kit: undefined } : request, request.placeId, now)
+}
+
+/** The tested shape, its equipment and shared recovery must all be available today. */
+export function maximalHoldBlockedReason(stateIn: AppState, planIn: CoachPlan, request: WorkoutRequest, now = Date.now()): string | null {
+  const state = wholeState(stateIn)
+  const skill = lineupFor(state, request, now)[0].skill
+  const view = skillView(state, skill)
+  const plan = planIn.skill === skill ? planIn : buildPlan(view, now)
+  const readiness = challengeBlockedReason(plan)
+  if (readiness) return readiness
+  const placed = maximalRequestAt(state, request, now)
+  const step = request.stepId ?? view.stepId
+  const bridge = request.source === 'micro' ? bridgeStatus(view, step) : undefined
+  const shape = bridge?.open ? bridge.next.id : step
+  const needs = missingKit(skill, placed.kit ?? state.profile.equipment, shape)
+  if (needs.length) {
+    const place = state.gym?.locations.find((location) => location.id === placed.placeId)
+    return `the ${STEP_BY_ID[shape].name.toLowerCase()} needs ${kitNeedsPhrase(needs)}${place ? ` at ${place.name}` : ' here'}`
+  }
+  const rest = request.insideRest ?? holdRestWindow(state, skill, now)
+  return rest ? `today sits inside your ${rest.ruleHours} h rest rule` : null
+}
+
 /**
  * The one way a workout is built for an athlete to start.
  *
@@ -2200,8 +2229,8 @@ export function finalizeWorkoutWithPlan(
   freshCheckIn?: CheckIn,
   now = Date.now(),
 ): { workout: Workout; plan: CoachPlan; lineup: LineupEntry[] } {
-  const built = withRequestKit(state, request)
-  return finalizeFromPlan(built, request, planForToday(built, now, freshCheckIn, request), now, freshCheckIn)
+  const built = withRequestKit(wholeState(state), request)
+  return finalizeFromPlan(state, request, planForToday(built, now, freshCheckIn, request), now, freshCheckIn)
 }
 
 /**
@@ -2304,9 +2333,16 @@ export function finalizeFromPlan(
   now = Date.now(),
   freshCheckIn?: CheckIn,
 ): { workout: Workout; plan: CoachPlan; lineup: LineupEntry[] } {
-  const whole = wholeState(withRequestKit(stateIn, request))
+  const original = wholeState(stateIn)
+  const maximal = request.source === 'test' || request.source === 'micro'
+  if (maximal) request = maximalRequestAt(original, request, now)
+  const whole = withRequestKit(original, request)
   const lineup = lineupFor(whole, request, now, freshCheckIn)
   const lead = lineup[0].skill
+  if (maximal) {
+    const rest = holdRestWindow(original, lead, now)
+    if (rest) request = { ...request, insideRest: rest }
+  }
   const state = skillView(whole, lead)
   const context = planContext(request)
   // A plan built without the request's rest-rule note is rebuilt with it: the
@@ -2335,12 +2371,15 @@ export function finalizeFromPlan(
       )
     }
   } else if (request.source === 'test') {
-    const blocked = challengeBlockedReason(plan)
+    const blocked = maximalHoldBlockedReason(original, plan, request, now)
     if (blocked) {
       workout = coachSession()
       adjustments.push(`No max test today because ${blocked} — this is an ordinary session instead, with no maximal attempt.`)
     } else {
-      workout = maxTestWorkout(request.stepId ?? state.stepId)
+      const test = maxTestWorkout(request.stepId ?? state.stepId)
+      const kit = resolveEquipment(test.blocks, state.profile.equipment)
+      adjustments.push(...kit.notes)
+      workout = { ...test, blocks: kit.blocks, minutes: estimateMinutes(kit.blocks, state.settings.stopLatencySec, state.settings.phoneWithinReach) }
     }
   } else if (request.source === 'template') {
     const chosen = TEMPLATE_BY_ID[request.templateId ?? '']
@@ -2363,7 +2402,7 @@ export function finalizeFromPlan(
       }
     }
   } else if (request.source === 'micro') {
-    const blocked = microBlockedReason(state, plan, now)
+    const blocked = microBlockedReason(original, plan, now, request)
     if (blocked) {
       workout = coachSession()
       adjustments.push(`No minimum dose today because ${blocked} — this is an ordinary session instead.`)

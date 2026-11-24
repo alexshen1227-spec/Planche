@@ -1,3 +1,7 @@
+import { activePlace, hereKit, kitAt, placeKit, weekdayPlace } from './trainingPlace'
+export { atActivePlace, kitAt, placeKit, weekdayPlace } from './trainingPlace'
+import { apart, insideRest, skillFamily, startOfDay } from './restWindow'
+export { insideRest, REST_SLACK_HOURS, skillFamily } from './restWindow'
 import { countsSkillDay } from '../skillSession'
 import { MUSCLE_BY_ID, MUSCLES, type Joint, type Muscle } from '../../data/gym/catalog'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
@@ -139,13 +143,6 @@ function roomFor(minutes: number): number {
   return fullParts(minutes) < 2 ? 1 : 2 + Math.min(1, shortDoses(minutes))
 }
 
-/** Which straight-arm family a skill's hard work belongs to. The handstand is balance work. */
-export function skillFamily(skill: SkillId): 'push' | 'pull' | 'balance' {
-  if (skill === 'planche' || skill === 'ninety') return 'push'
-  if (skill === 'frontlever' || skill === 'flag') return 'pull'
-  return 'balance'
-}
-
 type Straight = 'push' | 'pull'
 
 const REGION_JOINT: Partial<Record<BodyRegion, Joint>> = {
@@ -224,52 +221,6 @@ const trainedSkills = (state: AppState) => (state.profile.skills?.length ? state
 /** Whether a skill can train with the athlete's own kit: a calisthenics day is built from that list, so only these can hold one. */
 function canTrainAtHome(state: AppState, skill: SkillId): boolean {
   return missingSkillKit(state, skill).length === 0
-}
-
-/** The athlete's kit and the place's together: what a session built there can use. */
-/** Kit an athlete can bring: a doorway bar or a wall at home is not at the gym. */
-const PORTABLE_KIT: EquipmentId[] = ['floor', 'parallettes', 'band', 'rings']
-
-/**
- * What can be used at a place: its own list, plus the athlete's kit that
- * travels. A home pull-up bar once counted at a gym with none, so a lever
- * opener was offered where nothing could hold it.
- */
-export function kitAt(state: AppState, location: GymLocation): EquipmentId[] {
-  const carried = state.profile.equipment.filter((e) => PORTABLE_KIT.includes(e))
-  return [...new Set([...carried, ...(location.equipment as EquipmentId[])])]
-}
-
-/**
- * Rest between two days, counted in calendar days: two 5 pm anchors are 47
- * hours apart across a spring-forward change, and a 48 h rule then pushed a
- * session out a day.
- */
-const apart = (a: number, b: number) => Math.round(Math.abs(startOfDay(a) - startOfDay(b)) / DAY) * DAY
-
-/**
- * How far a logged session's real hours may fall short of the rest rule on a
- * day the calendar already clears: a late session followed by an early one —
- * Sunday 21:00, then Tuesday 07:00 under a 48 h rule — is still refused; a
- * 17:40 session and the 17:00 one two days later are not. The app's own line.
- */
-export const REST_SLACK_HOURS = 12
-
-/**
- * Whether a logged session at `earlier` still rests its family at `later`.
- * In calendar days, the unit planned days are spaced in: a push day's lifts are
- * stamped when they start, after the opener, and in real hours Monday's 17:40
- * lifts refused the Wednesday 17:00 planche day the plan had promised (47 h).
- * A session's event is the moment it started; the real hours decide only a
- * genuinely short gap — more than `REST_SLACK_HOURS` under the rule — with an
- * hour allowed for a clock change.
- */
-export function insideRest(later: number, earlier: number, restMs: number): boolean {
-  if (apart(later, earlier) < restMs) return true
-  const floor = restMs - REST_SLACK_HOURS * HOUR
-  const real = later - earlier
-  const wall = real - (new Date(later).getTimezoneOffset() - new Date(earlier).getTimezoneOffset()) * 60_000
-  return real < floor && wall < floor
 }
 
 /**
@@ -447,30 +398,6 @@ function keepsDose(state: AppState, skills: SkillId[], minutes: number, at: numb
 /** Main sets of each straight-arm family in the session a request builds, counted as a logged one is (`lastHardStraightArm`). */
 function familySets(state: AppState, skills: SkillId[], minutes: number, at: number, kit?: EquipmentId[]): Record<Straight, number> {
   return builtSkill(state, skills, minutes, at, kit).sets
-}
-
-/**
- * The kit a skill session is built with where the athlete is: their own list
- * and the active place's (`kitAt`: its list and their portable kit) together;
- * none without a place. Nothing the athlete has at home is lost by setting a
- * gym up, and the gym's bar counts on a lever day.
- */
-export function placeKit(state: AppState): EquipmentId[] | undefined {
-  const place = activePlace(state)
-  return place ? hereKit(state, place) : undefined
-}
-function hereKit(state: AppState, place: GymLocation): EquipmentId[] {
-  return place.id === 'home' ? [...new Set([...state.profile.equipment, ...kitAt(state, place)])] : kitAt(state, place)
-}
-
-/**
- * A skill request built where the athlete is: the active place's kit beside
- * their own (`placeKit`, `WorkoutRequest.kit`). A front lever with no bar at
- * home was "waiting for kit" on a lever day at a gym with one.
- */
-export function atActivePlace(state: AppState, request: WorkoutRequest): WorkoutRequest {
-  const kit = placeKit(state)
-  return kit?.length ? { ...request, kit: [...new Set([...(request.kit ?? []), ...kit])] } : request
 }
 
 /** Whether a skill is the athlete's first priority. */
@@ -1212,11 +1139,6 @@ interface SkillSlot {
   credit: Credit
 }
 
-const startOfDay = (t: number) => {
-  const d = new Date(t)
-  d.setHours(0, 0, 0, 0)
-  return d.getTime()
-}
 const fivePm = (dayStart: number) => {
   const d = new Date(dayStart)
   d.setHours(17, 0, 0, 0)
@@ -2450,13 +2372,7 @@ function openOnDay(d: DayCtx, f: GymFocus, musclesOff: Muscle[], legsOff: boolea
   return true
 }
 
-/** The place the app is set to: the active one, or the first set up. */
-function activePlace(state: AppState): GymLocation | undefined {
-  const gym = state.gym
-  return gym?.locations.find((l) => l.id === gym.activeLocationId) ?? gym?.locations[0]
-}
-
-/** The athlete's own kind of kit: a place listing nothing else is home, made from that list. */
+/** A place with only skill equipment is treated as a home training space. */
 const SKILL_KIT = new Set<string>(['floor', 'parallettes', 'band', 'pullup-bar', 'rings', 'dip-bars', 'box', 'wall', 'pole'])
 const hasGymKit = (place: GymLocation) => place.equipment.some((e) => !SKILL_KIT.has(e))
 
@@ -2477,11 +2393,6 @@ function usualGymPlace(state: AppState, now: number): GymLocation | undefined {
   const since = now - 56 * DAY
   const used = (place: GymLocation) => gym.sessions.filter((s) => s.locationId === place.id && s.startedAt >= since && s.startedAt <= now).length
   return [...gyms].sort((a, b) => used(b) - used(a) || b.equipment.length - a.equipment.length)[0]
-}
-
-export function weekdayPlace(state: AppState, at: number): GymLocation | undefined {
-  const id = state.gym?.prefs?.placeByDay?.[new Date(at).getDay()]
-  return id ? state.gym?.locations.find((p) => p.id === id) : undefined
 }
 
 export function gymPlaceOf(state: AppState, now: number): GymLocation | undefined {

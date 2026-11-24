@@ -4,15 +4,18 @@ import type { SkillId, StepDef, StepId, WorkoutRequest } from '../types'
 import { useStore } from '../lib/store'
 import { STEP_BY_ID, stepBefore, stepsOf } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
-import { missingKit, SKILL_LIST, SKILLS } from '../data/skills'
-import { kitNeedsPhrase } from '../data/equipment'
+import { SKILL_LIST, SKILLS } from '../data/skills'
+import { kitStatusLine } from '../components/weekPlanCopy'
 import { activeSkills, skillView, viewForStep } from '../lib/skills'
 import { ladderStatus, type LadderStatus } from '../lib/repLadder'
 import { goalChoices } from '../lib/placement'
-import { GOAL_HERE_TEXT, goalStanding, stepPassed } from '../lib/plan/screens'
+import { atPlanPlace, GOAL_HERE_TEXT, goalStanding, stepPassed } from '../lib/plan/screens'
 import { AddSkill } from '../components/AddSkill'
 import { bestHoldPractice, daysAtBar, qualifyingProgress } from '../lib/progression'
-import { challengeBlockedReason } from '../data/workouts'
+import { maximalHoldBlockedReason } from '../data/workouts'
+import { usePlanClock } from '../lib/plan/usePlanClock'
+import { useTodayChoice } from '../lib/plan/todayChoice'
+import { useToday } from '../lib/useToday'
 import { buildPlan } from '../lib/coach'
 import { fmtHold, fmtDate } from '../lib/time'
 import { pushToast } from '../lib/toast'
@@ -127,7 +130,7 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
   const skillDef = SKILLS[viewSkill]
   const STEPS = stepsOf(viewSkill)
   const notTraining = SKILL_LIST.filter((def) => !skills.includes(def.id))
-  const kitGap = missingKit(viewSkill, whole.profile.equipment, state.stepId)
+  const kit = kitStatusLine(viewSkill, whole.profile.equipment, whole.gym?.locations ?? [], state.stepId)
 
   const currentOrder = STEPS.find((s) => s.id === state.stepId)?.order ?? 0
   const goalStepId = state.profile.goalStepId ?? skillDef.defaultGoal
@@ -184,11 +187,9 @@ export function Path({ startWorkout }: { startWorkout: (request: WorkoutRequest)
         ) : null}
       </div>
 
-      {kitGap.length ? (
+      {kit.kind !== 'ready' ? (
         <p className="mt-3 rounded-inner border border-accent/30 bg-accent-soft px-4 py-3 text-footnote leading-relaxed text-ink" role="status">
-          <span className="font-semibold">{skillDef.name} is waiting for kit.</span>{' '}
-          {skillDef.requiresNote ?? `It needs ${kitNeedsPhrase(kitGap)}.`}{' '}
-          Add it under Settings → Equipment and it joins your sessions; until then it is left out of them.
+          {kit.text}{kit.kind === 'waiting' ? ' Update your equipment in Settings when it is available.' : ''}
         </p>
       ) : null}
 
@@ -436,7 +437,15 @@ function StepDetail({
   const skillDef = SKILLS[step.skill]
   const road = stepsOf(step.skill)
   // Decided now, so the button never offers a test today's readiness rules out.
-  const testBlocked = useMemo(() => challengeBlockedReason(buildPlan(state)), [state])
+  const today = useToday()
+  const clock = usePlanClock()
+  const [choice] = useTodayChoice(today)
+  const { testRequest, testBlocked } = useMemo(() => {
+    const now = Date.now()
+    const testRequest = atPlanPlace(whole, { source: 'test', stepId: step.id }, choice.placeId, now)
+    return { testRequest, testBlocked: maximalHoldBlockedReason(whole, buildPlan(state, now), testRequest, now) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, whole, step.id, choice.placeId, today, clock])
   const unlocked = state.unlocked.includes(step.id)
   const isCurrent = state.stepId === step.id
   const pr = state.prs[step.keyExerciseId]
@@ -561,7 +570,7 @@ function StepDetail({
             <Button size="lg"
               onClick={() => {
                 onClose()
-                startWorkout({ source: 'test', stepId: step.id })
+                startWorkout(testRequest)
               }}
               className="inline-flex items-center gap-2 "
             >

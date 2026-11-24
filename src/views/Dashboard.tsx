@@ -7,12 +7,11 @@ import { SKILLS } from '../data/skills'
 import { activeSkills, skillView, stepOfSkill } from '../lib/skills'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import {
-  challengeBlockedReason,
+  maximalHoldBlockedReason,
   finalizeFromPlan,
   finalizeWorkoutWithPlan,
   isPainSafe,
   microBlockedReason,
-  microDoseWorkout,
 } from '../data/workouts'
 import { weekPlan, weekWork, workSets } from '../lib/volume'
 import { BridgeCard } from '../components/BridgeCard'
@@ -44,6 +43,7 @@ import { weekForChoice } from '../lib/plan/currentWeek'
 import { endTheDay, useDayMarks, useNextBlock } from '../lib/plan/nextBlock'
 import { choiceOptions, useTodayChoice } from '../lib/plan/todayChoice'
 import {
+  atPlanPlace,
   calisthenicsPlaceLine,
   calisthenicsRequest,
   dayStage,
@@ -318,11 +318,16 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
   const forecast = useMemo(() => forecastUnlock(state, state.stepId, Date.now(), plan.signals), [state, plan])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const outlook = useMemo(() => goalOutlook(state), [state, today])
-  // The minimum dose is offered only on a day it is allowed (see microBlockedReason).
-  const microMinutes = useMemo(
-    () => (microBlockedReason(state, plan) ? null : microDoseWorkout(state, plan).minutes),
-    [state, plan],
-  )
+  const { testRequest, testBlocked, microRequest, microMinutes } = useMemo(() => {
+    const now = Date.now()
+    const testRequest = atPlanPlace(whole, { source: 'test', stepId: step.id }, choice.placeId, now)
+    const microRequest = atPlanPlace(whole, { source: 'micro', skills: [viewSkill] }, choice.placeId, now)
+    const testBlocked = maximalHoldBlockedReason(whole, plan, testRequest, now)
+    const microMinutes = testBlocked || microBlockedReason(whole, plan, now, microRequest)
+      ? null
+      : finalizeFromPlan(whole, microRequest, plan, now).workout.minutes
+    return { testRequest, testBlocked, microRequest, microMinutes }
+  }, [whole, plan, choice.placeId, step.id, viewSkill])
   const breakthrough = useMemo(() => recentBreakthrough(state, state.stepId, Date.now(), plan.signals), [state, plan])
   const confidence = useMemo(() => coachConfidence(state), [state])
   // An athlete who set up before the other roads existed was never asked which
@@ -394,7 +399,6 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [whole, plan, loadedDay, goal, several],
   )
-  const testBlocked = challengeBlockedReason(plan)
   // Only three decisions fit the card. Warnings are picked first — a safety
   // rail's "joint pain reported" must never be squeezed out by an FYI that
   // happened to be pushed earlier in the plan.
@@ -650,7 +654,7 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
           ) : null}
           {/* The first session comes first: a max test is offered once there is one. */}
           {!maxTestOffered(whole, testBlocked) ? null : (
-            <Button variant="secondary" onClick={() => startWorkout({ source: 'test', stepId: state.stepId })}>
+            <Button variant="secondary" onClick={() => startWorkout(testRequest)}>
               <Icon name="target" size={16} /> Max test{several ? ` · ${skillDef.short}` : ''}
             </Button>
           )}
@@ -804,7 +808,7 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
           <div className="flex flex-wrap items-center gap-2 text-footnote">
             <span className="text-ink3">No full session today?</span>
             <button
-              onClick={() => startWorkout(atActivePlace(whole, { source: 'micro', ...(several ? { skills: [viewSkill] } : {}) }))}
+              onClick={() => startWorkout(microRequest)}
               className="min-h-11 rounded-control border border-line-strong bg-raised px-4 text-body font-medium text-ink"
             >
               Minimum dose · {microMinutes} min
@@ -876,7 +880,7 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
           )}
           {plan.plateau.suggestMaxTest && !testBlocked ? (
             <button
-              onClick={() => startWorkout({ source: 'test', stepId: state.stepId })}
+              onClick={() => startWorkout(testRequest)}
               className="mt-3 inline-flex items-center gap-2 min-h-11 rounded-control border border-line-strong bg-raised px-4 text-footnote font-medium text-ink"
             >
               <Icon name="target" size={15} /> Run a max test
