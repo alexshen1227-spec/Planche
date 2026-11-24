@@ -204,6 +204,22 @@ describe('double progression', () => {
     const hist = [session('s1', 'a', T0, 'db-bench-press', [set(20, 10, 8)])]
     expect(suggestLoad({ exerciseId: 'db-bench-press', location: gymA, sessions: hist, plan }).kind).toBe('repeat')
   })
+
+  it('lets a scheduled single set progress over two separate visits including older completed logs', () => {
+    const visit = (d: number, planned?: number) => {
+      const s = session(String(d), gymA.id, T0 + d * DAY, 'db-row', [set(14, 10, 8)])
+      s.completion = 'full'
+      s.exercises[0].repRange = [6, 10]
+      s.exercises[0].plannedWorkingSets = planned
+      return s
+    }
+    const row = (h: GymSession[]) => suggestLoad({ exerciseId: 'db-row', location: gymA, plan: { range: [6, 10], targetRpe: 8 }, sessions: h })
+    expect(row([visit(0)])).toMatchObject({ kg: 14, targetReps: 10, kind: 'repeat' })
+    expect(row([visit(0), visit(5, 1)])).toMatchObject({ kg: 16, kind: 'increase' })
+    expect(row([visit(0, 2), visit(5, 1)]).kind).toBe('repeat')
+    expect(row([visit(0, 1), visit(0.01, 1)]).kind).toBe('repeat')
+    expect(row([visit(0, 1), visit(50, 1)]).kind).toBe('repeat')
+  })
   it('repeats the load until then', () => {
     const hist = [session('s1', 'a', T0, 'db-bench-press', [set(20, 10, 8), set(20, 9, 8.5), set(20, 8, 9)])]
     const next = suggestLoad({ exerciseId: 'db-bench-press', location: gymA, sessions: hist, plan })

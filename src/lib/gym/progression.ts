@@ -460,9 +460,21 @@ export function suggestLoad(input: {
   // not what the next session repeats.
   const kg = workingLoad(working.map((s) => s.kg ?? 0), 'heaviest')
   const atLoad = working.filter((s) => (s.kg ?? 0) === kg)
-  // One set stopped early is not "every set": a step up needs at least two.
-  // ...and each with its effort logged: a set nobody rated says nothing about effort.
-  const allTop = !stale && !unfinished && atLoad.length >= 2 && atLoad.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
+  const hitTop = (s: GymSet) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5
+  const singleDose = (s: GymSession) => {
+    const logs = s.exercises.filter((log) => log.exerciseId === exerciseId)
+    return logs.length === 1 && logs[0].sets.filter((set) => !set.warmup).length === 1 &&
+      (logs[0].plannedWorkingSets === 1 || (logs[0].plannedWorkingSets === undefined && s.completion === 'full' && !!logs[0].repRange))
+  }
+  const single = !stale && !unfinished && atLoad.length === 1 && hitTop(atLoad[0]) && singleDose(last.session)
+  const previousSingle = single ? lastPerformance(sessions, exerciseId, location?.id, last.session.startedAt, keep) : null
+  const repeatedSingle = Boolean(previousSingle && singleDose(previousSingle.session) &&
+    dayKey(previousSingle.session.startedAt) !== dayKey(last.session.startedAt) &&
+    last.session.startedAt - previousSingle.session.startedAt <= NO_STEP_UP_DAYS * 86_400_000 &&
+    !unfinishedLiftSets(previousSingle.session, exerciseId) && (previousSingle.sets[0].kg ?? 0) === kg && hitTop(previousSingle.sets[0]))
+  // A pair of deliberately programmed singles on separate days can establish the
+  // same repeatability. Stopping after one of several prescribed sets cannot.
+  const allTop = !stale && !unfinished && (atLoad.length >= 2 || repeatedSingle) && atLoad.every(hitTop)
   const anyShort = atLoad.some((s) => s.reps < lo)
   const grinding = atLoad.some((s) => s.rpe !== undefined && s.rpe >= 9.5)
   // No effort was ever logged, so one session at the top of the range proves
@@ -556,7 +568,7 @@ export function suggestLoad(input: {
     if (!bigYouthStep || !allTop) return false
     const before = lastPerformance(sessions, exerciseId, location?.id, last.session.startedAt, keep)
     const prior = before && !unfinishedLiftSets(before.session, exerciseId) ? before.sets.filter((s) => (s.kg ?? 0) === kg) : []
-    return prior.length >= 2 && prior.every((s) => s.reps >= hi && s.rpe !== undefined && s.rpe <= plan.targetRpe + 0.5)
+    return (prior.length >= 2 || repeatedSingle) && prior.every(hitTop)
   })()
   const moveUpBar = Math.max(failedSteps > 0 ? retryBar : hi, bigBar)
   const bigHeld = bigYouthStep && !topTwice
@@ -564,7 +576,7 @@ export function suggestLoad(input: {
   if ((allTop || unratedTwice) && step > 0 && !heldBack) {
     // Sets that blew well past the range at an easy effort earn two steps —
     // for an adult. Under 18 a jump is always the smallest step there is.
-    const easy = !unratedTwice && atLoad.every((s) => s.reps >= hi + 3 && s.rpe !== undefined && s.rpe <= 7)
+    const easy = atLoad.length >= 2 && !unratedTwice && atLoad.every((s) => s.reps >= hi + 3 && s.rpe !== undefined && s.rpe <= 7)
     const twoSteps = !youth && easy && failedSteps === 0 ? roundToStep(here + 2 * step, step, top, min) : next
     // Under 18 a jump is one step of the unit in use from the load that was really lifted: rounding that load to
     // the grid first (20 kg is 44.1 lb, which became 45) and adding a step landed 2.68 kg up against a 2.27 kg step.
@@ -580,7 +592,8 @@ export function suggestLoad(input: {
         kg: jump,
         kind: 'increase',
         why:
-          smallerStep
+          repeatedSingle ? `Your single prescribed set reached ${hi} at target effort on two visits. Try the next available load.`
+            : smallerStep
             ? `Every set reached ${hi}. Try the next small increase available here, up to ${formatLoad(jump, unit)}.`
             : twoSteps > next
             ? `Every set went well past ${hi} at an easy effort last time: up two steps.`
@@ -598,6 +611,8 @@ export function suggestLoad(input: {
   }
   const repeatKg = reach(kg)
   const reps = atLoad.map((s) => s.reps).join(', ')
+  if (single && !allTop && !away && repeatKg === kg) return { ...base, kg: repeatKg, kind: 'repeat', targetReps: hi,
+    why: `You completed the single prescribed set. Repeat ${hi} at the same weight and effort on a second visit to earn a step.` }
   if (heldBack) {
     return {
       ...base,

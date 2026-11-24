@@ -1067,7 +1067,19 @@ export function completedBaseTarget(
     .sort((a, b) => b.startedAt - a.startedAt)[0]
   if (!latest || latest.baseTargetSec === undefined || latest.stepId !== stepId) return null
   if (now - latest.startedAt > CAPPED_FLOOR_DAYS * 86_400_000) return null
-  return sessionTargetCap(latest, stepId, surface) !== null ? latest.baseTargetSec : null
+  const exerciseId = STEP_BY_ID[stepId]?.keyExerciseId
+  if (!exerciseId || latest.remaining?.blocks.some((b) => b.exerciseId === exerciseId && b.section === 'main')) return null
+  const key = latest.sets.filter((set) => set.exerciseId === exerciseId && set.section === 'main' && set.kind === 'hold')
+  const prescribed = latest.plannedMainRounds?.[exerciseId]
+  if (prescribed !== undefined && key.length < prescribed) return null
+  if (key.some((set) => set.repaired?.length || endedForNonCapacityReason(set) || humanRating(set.form) === 'broke' ||
+      isBarAttempt(set, stepId) || !inScope(set, { surface }))) return null
+  if (sessionTargetCap(latest, stepId, surface) !== null) return latest.baseTargetSec
+  // Exceeding every target is a measurement and also evidence the dose was
+  // repeatable. A skipped warm-up does not undo the completed main sets.
+  const base = latest.baseTargetSec
+  const enough = prescribed !== undefined ? prescribed > 0 : latest.completion !== 'partial' && key.length >= 2
+  return enough && key.length && key.every((set) => capacityReading(set) >= Math.max(base, set.target) - 0.05) ? base : null
 }
 
 /** The surface a session's key-hold work was done on, when it is unambiguous. */

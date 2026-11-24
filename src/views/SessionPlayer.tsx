@@ -1,7 +1,7 @@
 import { SetEffort } from '../components/SetEffort'
 import { Button } from '../components/ds'
 import { WorkoutWriter } from '../components/WorkoutWriter'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { useInertBackground } from '../components/gym/GymPlayer'
 import { skillHoldSecOf } from '../lib/progressTotals'
@@ -17,7 +17,7 @@ import {
   stopAllowanceFor,
   summaryLastSet,
 } from '../lib/sessionSummary'
-import { setToSetCeiling } from '../lib/workingTarget'
+import { adaptiveTarget, setToSetCeiling } from '../lib/workingTarget'
 import type {
   CheckIn,
   EndReason,
@@ -34,7 +34,7 @@ import type {
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { STEP_BY_ID } from '../data/progressions'
 import { describeBlock, describeTarget, primaryTargetBlock, isPainSafe } from '../data/workouts'
-import { buildPlan, debriefSession, type CoachDecision } from '../lib/coach'
+import { debriefSession, type CoachDecision } from '../lib/coach'
 import { ACHIEVEMENT_BY_ID } from '../data/achievements'
 import { newId, useStore } from '../lib/store'
 import { applySession } from '../lib/engine'
@@ -723,7 +723,7 @@ export function SessionPlayer({
   // Mirror the live session to storage on every meaningful change, and again
   // the instant the page is hidden — a backgrounded tab can be discarded by
   // the OS without warning, and this is what makes that survivable.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (phase === 'celebrate') return
     const snapshot = () => {
       if (!canEdit() || savedSessionIdRef.current) return
@@ -1691,7 +1691,7 @@ export function SessionPlayer({
     const viewed = after.sessions.find((s) => s.id === session.id) ?? session
     const prescribed = workout.blocks.find((b) => b.section === 'main' && b.exerciseId === STEP_BY_ID[before.stepId]?.keyExerciseId && b.role === 'skill')?.target
     const targets = prescribed?.kind === 'hold' && after.stepId === before.stepId && !session.remaining
-      ? { before: prescribed.sec, after: buildPlan(after).workingHoldSec } : undefined
+      ? { before: viewed.baseTargetSec ?? prescribed.sec, after: adaptiveTarget(after, after.stepId, savedAt), base: true } : undefined
     setDebrief(debriefSession(before, after, viewed, targets))
     // First-ever values on accessories are technically PRs but not worth a
     // party — celebrate improvements, plus any first number on a skill line.

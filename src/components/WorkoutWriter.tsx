@@ -39,10 +39,17 @@ export function WorkoutWriter<T>({ ownerKey, restoring = false, load, onClose, c
     let live = true
     let claimed = false
     let release: (() => void) | undefined
+    let waitingTimer: number | undefined
     const abort = new AbortController()
+    const returnKey = ownerKey + '.returning'
     const claim = () => {
       try { localStorage.setItem(ownerKey, token) } catch { storageWorks.current = false }
+      try { sessionStorage.removeItem(returnKey) } catch { /* The lock also works without session storage. */ }
       claimed = true
+    }
+    const leaving = (event: PageTransitionEvent) => {
+      if (event.persisted || !claimed || !owns()) return
+      try { sessionStorage.setItem(returnKey, token) } catch { /* A returning tab can still use the lock. */ }
     }
     const finish = (message: string) => {
       if (!live) return
@@ -60,6 +67,7 @@ export function WorkoutWriter<T>({ ownerKey, restoring = false, load, onClose, c
       }
     }
     window.addEventListener('storage', changed)
+    window.addEventListener('pagehide', leaving)
     const open = () => {
       if (!live || (claimed && !owns())) return
       if (!claimed) claim()
@@ -72,7 +80,9 @@ export function WorkoutWriter<T>({ ownerKey, restoring = false, load, onClose, c
       if (!live) return
       try {
         const other = localStorage.getItem(ownerKey)
-        if (passive && other && other !== token) { setWaiting(true); return }
+        let returning = false
+        try { returning = sessionStorage.getItem(returnKey) === other } catch { /* Ask before taking another writer. */ }
+        if (passive && other && other !== token && !returning) { setWaiting(true); return }
       } catch { storageWorks.current = false }
       open()
     }
@@ -80,9 +90,12 @@ export function WorkoutWriter<T>({ ownerKey, restoring = false, load, onClose, c
     // An explicit transfer signals the old editor, then waits for it to release the lock.
     if (!passive) claim()
     if (navigator.locks) {
-      void navigator.locks.request(ownerKey, { signal: abort.signal, ifAvailable: passive }, async (lock) => {
+      // On refresh Chrome can still be releasing the previous document's
+      // lock. Queue for it before offering to take over a genuinely busy tab.
+      if (passive) waitingTimer = window.setTimeout(() => { if (live && !claimed) setWaiting(true) }, 450)
+      void navigator.locks.request(ownerKey, { signal: abort.signal }, async () => {
         if (!live) return
-        if (!lock) { setWaiting(true); return }
+        window.clearTimeout(waitingTimer)
         const held = new Promise<void>((resolve) => { release = resolve })
         open()
         if (live) await held
@@ -92,7 +105,9 @@ export function WorkoutWriter<T>({ ownerKey, restoring = false, load, onClose, c
       live = false
       abort.abort()
       release?.()
+      window.clearTimeout(waitingTimer)
       window.removeEventListener('storage', changed)
+      window.removeEventListener('pagehide', leaving)
       try { if (claimed && storageWorks.current && owns()) localStorage.removeItem(ownerKey) } catch { /* Storage may be unavailable. */ }
     }
   }, [ownerKey, owns, passive, retry, token])

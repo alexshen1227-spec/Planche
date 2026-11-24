@@ -515,6 +515,17 @@ describe('stopping at the target does not shrink the next target', () => {
     expect(adaptiveTarget(state, 'tuck', NOW)).toBeLessThan(8)
   })
 
+  it('preserves a dose exceeded on every prescribed main hold even when the athlete skipped a warm-up', () => {
+    const sets = Array.from({ length: 5 }, (_, i) => hold('bent-arm-lean-hold', 10, at(2) + i * 60_000, {
+      target: 8, form: { rating: 'clean', confirmed: true }, rpe: 8,
+    }))
+    const session = trainingDay(2, sets, { stepId: 'n90-lean', baseTargetSec: 8, completion: 'partial',
+      plannedMainRounds: { 'bent-arm-lean-hold': 5 }, skippedRounds: 1 })
+    expect(adaptiveTarget(athlete('n90-lean', { sessions: [session] }), 'n90-lean', NOW)).toBeGreaterThanOrEqual(8)
+    const unfinished = { ...session, sets: sets.slice(0, 2) }
+    expect(adaptiveTarget(athlete('n90-lean', { sessions: [unfinished] }), 'n90-lean', NOW)).toBeLessThan(8)
+  })
+
   it('an old completed prescription does not hold anything up after a long gap', () => {
     const state = athlete('tuck', { sessions: [daySession(30, 8.3, 8)] })
     expect(adaptiveTarget(state, 'tuck', NOW)).toBeLessThan(8)

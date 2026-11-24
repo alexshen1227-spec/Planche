@@ -2232,7 +2232,7 @@ export function debriefSession(
   prev: AppState,
   next: AppState,
   session: Session,
-  targets?: { before: number; after?: number },
+  targets?: { before: number; after?: number; base?: boolean },
 ): CoachDecision[] {
   const out: CoachDecision[] = []
   const step = STEP_BY_ID[session.stepId]
@@ -2356,9 +2356,11 @@ export function debriefSession(
           : ' — it follows your recent holds.'
     }
     out.push({
-      text: `Working target moves ${targets.before}s → ${targets.after}s next session${why || '.'}`,
+      text: `Working target moves ${targets.before}s → ${targets.after}s ${targets.base ? 'before daily adjustments' : 'next session'}${why || '.'}`,
       kind: up ? 'good' : 'info',
     })
+  } else if (!hurt && targets?.base && targets.after === targets.before) {
+    out.push({ text: `Your base working hold stays at ${targets.before}s. The next practice also accounts for its focus and your recovery.`, kind: 'info' })
   }
 
   // Next-shape attempts: say where they stand against early promotion, so the

@@ -204,10 +204,11 @@ export function sessionFromDraft(draft: GymDraft, endedAt: number): GymSession {
     .map((item) => {
       const done = item.sets.filter((s) => s.done)
       const left = item.sets.filter((s) => !s.done)
+      const prescribed = item.sets.filter((s) => !s.warmup).length
       if (left.length) remainingItems.push(remainingLift(item, left))
       return {
         exerciseId: item.exerciseId,
-        ...(left.some((s) => !s.warmup) ? { plannedWorkingSets: item.sets.filter((s) => !s.warmup).length } : {}),
+        ...(prescribed > 0 ? { plannedWorkingSets: prescribed } : {}),
         sets: done.map((s) => ({
           reps: Math.max(0, Math.round(s.reps)),
           at: s.at ?? endedAt,
