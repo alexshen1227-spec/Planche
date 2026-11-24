@@ -7,6 +7,7 @@ import { SPORT_KINDS } from '../../lib/plan/sport'
 import { FOCUS_LABEL, type GymFocus } from '../../lib/gym/focus'
 import { SportAreas } from './SportAreas'
 import { OPENER_MINUTES } from '../../lib/sessionRoom'
+import { REST_SLACK_HOURS } from '../../lib/plan/restWindow'
 import { skillGoalPace } from '../../lib/plan/goalPace'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
@@ -451,14 +452,17 @@ export function ScheduleEditor({ prefs, setPrefs, locations = [] }: Edit & { loc
           className="mt-2"
           label="Hours between hard straight-arm sessions"
           value={String(prefs.straightArmRestHours)}
-          onChange={(v) => setPrefs((p) => ({ ...p, straightArmRestHours: Number(v) }))}
+          onChange={(v) => setPrefs((p) => ({ ...p, straightArmRestHours: Number(v), exactRestHours: true }))}
           options={[24, 36, 48, 72].map((h) => ({ value: String(h), label: `${h}h` }))}
         />
-        <p className="mt-1 text-caption text-ink3">
-          Hard planche-type work and hard front lever work each wait this long before the next hard session of the same
-          kind. 48 hours is a common coaching default for connective tissue under straight-arm load — a convention, not a
-          measured rule.
-        </p>
+        <label className="mt-1 flex min-h-11 items-center gap-2 text-footnote font-medium">
+          <input type="checkbox" className="size-5 accent-accent" checked={Boolean(prefs.exactRestHours)}
+            onChange={(e) => { const exact = e.currentTarget.checked; setPrefs((p) => ({ ...p, exactRestHours: exact || undefined })) }} />
+          Require the full elapsed hours
+        </label>
+        <p className="mt-1 text-caption text-ink3">{prefs.exactRestHours
+          ? `The coach schedules the next hard session for the same skill family at least ${prefs.straightArmRestHours} hours after the last one started.`
+          : `Calendar spacing uses training dates and allows up to ${REST_SLACK_HOURS} hours of variation in local start times. Choosing an hour value requires the full interval.`}</p>
       </section>}
 
       <SportWeekEditor prefs={prefs} setPrefs={setPrefs} />

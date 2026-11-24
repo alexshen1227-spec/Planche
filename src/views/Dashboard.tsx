@@ -578,6 +578,8 @@ function SkillDashboard({ startWorkout, startGym, go, viewSession }: DashboardPr
               {dayPlan.alternative === 'gym' ? 'Rather do the gym today?' : 'Rather do calisthenics today?'}
             </Button>
           ) : null}
+          {choice.kind && !finished && !liftsNext &&
+            <Button variant="ghost" onClick={() => setChoice({ minutes: choice.minutes, placeId: choice.placeId })}>Recalculate today’s session</Button>}
           {/* The first session comes first: a max test is offered once there is one. */}
           {!maxTestOffered(whole, testBlocked) ? null : (
             <Button variant="secondary" onClick={() => startWorkout(testRequest)}>

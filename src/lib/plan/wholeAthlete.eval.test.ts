@@ -104,6 +104,29 @@ it('builds toward both chosen muscles on three long visits while keeping introdu
 })
 
 describe('one skill and whole-body training on three days', () => {
+  it('keeps the planned Thursday Push and Saturday Lower when the athlete logs the home Pull and returns on Thursday', () => {
+    const tuesday = new Date(2026, 10, 24, 10)
+    const state = makeAthlete({ skills: ['planche'], steps: { planche: 'lean' }, active: 'home', kit: ['floor', 'pullup-bar'], birthYear: 1993,
+      prefs: { goals: { skills: 3, physique: 5, strength: 3, endurance: 0, power: 0 }, minutesByDay: [0, 0, 45, 0, 45, 0, 45],
+        gymWeekdays: [2], focusByDay: [null, null, 'pull', null, null, null, null], musclesPriority: ['chest', 'chest-upper', 'side-delts'] } })
+    state.settings.weeklyGoal = 3
+    state.profile.goalStepId = 'tuck'
+    const home = state.gym!.locations[0]
+    home.equipment = ['floor', 'pullup-bar', 'dumbbells', 'incline-bench']
+    state.gym!.locations = [home]
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(tuesday)
+    try {
+      const forecast = weekForChoice(state, {}, +tuesday)
+      expect([0, 2, 4].map((i) => forecast.days[i].plan.gym?.focus)).toEqual(['pull', 'push', 'lower'])
+      const out = runLoop(state, { from: tuesday, days: 5, hour: 10, truthStart: { 'planche-lean': 14 }, setClock: vi.setSystemTime })
+      expect([0, 2, 4].map((i) => out.days[i].gym?.focus)).toEqual(['pull', 'push', 'lower'])
+      for (const i of [2, 4]) {
+        expect(out.days[i].skill[0]?.parts.planche?.key).toBeGreaterThanOrEqual(2)
+        expect(out.days[i].skill[0].minutes + out.days[i].gym!.estimatedMin).toBeLessThanOrEqual(45)
+      }
+    } finally { restoreClock() }
+  })
   it('keeps two pole practices, one longer, and two lifts after the athlete has demonstrated four controlled pairs', () => {
     const now = +new Date(2026, 10, 9, 17)
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -385,14 +408,27 @@ describe('mixed handstand and front lever weeks', () => {
       state.settings.weeklyGoal = 3
       state.tracks!.ninety!.assessment = { at: now, answers: { wrist: 2, pushups: 12, hollow: 35, 'level:ninety': 0, 'ladder:ninety-pushup': 0, experience: 0 },
         placedStepId: 'n90-lean', confidence: 'moderate', gapIds: [] }
-      const { current, compact } = compareLiftingDays(state, {}, now)!
+      // A first-time lifter already gets their introductory dose in the longer-opener week.
+      // Giving up skill practice for unused lifting minutes would buy no priority-muscle work.
+      const novice = compareLiftingDays(state, {}, now)!
+      expect(novice.compact).toBeUndefined()
+      for (const muscle of gym.prefs!.musclesPriority) expect(novice.current.muscleSets[muscle]).toBeGreaterThanOrEqual(6)
+      const trained = { ...state, gym: { ...gym, sessions: [...gym.sessions] } }
+      for (const daysAgo of [21, 18, 14, 11, 7, 4]) {
+        const at = addDays(now, -daysAgo)
+        trained.gym.sessions.push({ id: 'training-' + daysAgo, name: 'Full body', locationId: GYM_PLACE.id,
+          startedAt: at, endedAt: at + 45 * 60_000, exercises: ['goblet-squat', 'db-row', 'leg-curl', 'db-bench-press'].map((exerciseId) => ({
+            exerciseId, repRange: [8, 12], targetRpe: 7,
+            sets: Array.from({ length: 4 }, (_, i) => ({ at: at + (i + 1) * 120_000, reps: 10, kg: 16, rpe: 7 })),
+          })) })
+      }
+      const { current, compact } = compareLiftingDays(trained, {}, now)!
       expect(current.gymDays).toBe(3)
       expect(current.practiceDays.ninety).toBe(3)
-      for (const muscle of gym.prefs!.musclesPriority) expect(current.muscleSets[muscle]).toBeGreaterThanOrEqual(6)
       expect(compact?.practiceDays.ninety).toBe(3)
       expect(compact!.remainingSkillSets.ninety).toBeLessThan(current.remainingSkillSets.ninety!)
       expect(compact!.muscleSets.quads).toBeGreaterThan(current.muscleSets.quads!)
-      const shorter = { ...state, gym: { ...gym, prefs: { ...gym.prefs!, shortSkillOpeners: true as const } } }
+      const shorter = { ...trained, gym: { ...trained.gym, prefs: { ...gym.prefs!, shortSkillOpeners: true as const } } }
       const week = weekForChoice(shorter, {}, now)
       expect(week.weekTotal).toEqual(compact!.muscleSets)
       for (const visit of week.remainingLifts) {

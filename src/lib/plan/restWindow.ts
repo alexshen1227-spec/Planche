@@ -1,6 +1,7 @@
 import type { AppState, SkillId } from '../../types'
 import { familyEvents, familyWorkingSets, HARD_GYM_FAMILY_SETS } from './load'
 import { defaultPrefs } from '../gym/state'
+import type { TrainingPrefs } from '../gym/types'
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -50,22 +51,40 @@ export function insideRest(later: number, earlier: number, restMs: number): bool
   return real < floor && wall < floor
 }
 
+/** A logged visit has a known start. Future days use their projected training time. */
+export function restWindow(prefs: Pick<TrainingPrefs, 'straightArmRestHours' | 'exactRestHours'>) {
+  const duration = prefs.straightArmRestHours * HOUR
+  const elapsed = (a: number, b: number) => Math.abs(a - b) < duration
+  if (prefs.exactRestHours) return { fromLog: elapsed, betweenPlans: elapsed }
+  return {
+    fromLog: (later: number, earlier: number) => insideRest(later, earlier, duration),
+    betweenPlans: (a: number, b: number) => apart(a, b) < duration,
+  }
+}
+
+export function restHoursApart(a: number, b: number, exact = false): number {
+  const hours = Math.abs(a - b) / HOUR
+  return exact ? Math.floor(hours) : Math.round(hours)
+}
+
 /** Maximal holds share recovery with hard work from their own pressing or pulling family. */
 export function holdRestWindow(state: AppState, skill: SkillId, now: number) {
   const family = skillFamily(skill)
   if (family === 'balance') return undefined
-  const ruleHours = (state.gym?.prefs ?? defaultPrefs(now)).straightArmRestHours
-  const hit = familyEvents(state, now)[family].filter((e) => insideRest(now, e.at, ruleHours * HOUR)).at(-1)
+  const prefs = state.gym?.prefs ?? defaultPrefs(now)
+  const recovery = restWindow(prefs)
+  const ruleHours = prefs.straightArmRestHours
+  const hit = familyEvents(state, now)[family].filter((e) => recovery.fromLog(now, e.at)).at(-1)
   if (!hit) return undefined
-  return { hours: Math.max(1, Math.round((now - hit.at) / HOUR)), ruleHours }
+  return { hours: Math.max(1, restHoursApart(now, hit.at, prefs.exactRestHours)), ruleHours }
 }
 
 /** Actual compound lifting in the recovery window, including two short visits on the same day. */
 export function recentGymWork(state: AppState, now: number): Partial<Record<'push' | 'pull', { sets: number; at: number }>> {
-  const rule = (state.gym?.prefs?.straightArmRestHours ?? 48) * HOUR
+  const recovery = restWindow(state.gym?.prefs ?? defaultPrefs(now))
   const days = new Map<number, { push: number; pull: number; at: number }>()
   for (const session of state.gym?.sessions ?? []) {
-    if (session.startedAt > now || !insideRest(now, session.startedAt, rule)) continue
+    if (session.startedAt > now || !recovery.fromLog(now, session.startedAt)) continue
     const date = startOfDay(session.startedAt)
     const entry = days.get(date) ?? { push: 0, pull: 0, at: 0 }
     const working = familyWorkingSets(session.exercises, now)

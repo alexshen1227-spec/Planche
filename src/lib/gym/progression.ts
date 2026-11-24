@@ -242,7 +242,7 @@ export function comparablePerformance(sessions: GymSession[], exerciseId: string
 export function sharedEstimate(sessions: GymSession[], exerciseId: string, before = Infinity): number | null {
   const ex = GYM_EXERCISE_BY_ID[exerciseId]
   if (!ex || !isFreeWeight(ex)) return null
-  const cutoff = Number.isFinite(before) ? before - 120 * 86_400_000 : -Infinity
+  const cutoff = Number.isFinite(before) ? before - LOAD_HISTORY_WINDOW : -Infinity
   const latest = lastPerformance(sessions, exerciseId, undefined, before, (set) => !isUnloadedSet(ex, set))
   if (!latest || latest.session.startedAt < cutoff) return null
   let best: number | null = null
@@ -252,6 +252,8 @@ export function sharedEstimate(sessions: GymSession[], exerciseId: string, befor
   }
   return best
 }
+
+const LOAD_HISTORY_WINDOW = 120 * 86_400_000
 
 /** Past this many days since a lift was last done, it does not step up: the last session is not today's strength. */
 export const NO_STEP_UP_DAYS = 28
@@ -422,7 +424,8 @@ export function suggestLoad(input: {
   const addedLoad = takesAddedLoad(ex, location)
   const keep = (set: GymSet) => countUnit(ex, set) === countUnit(ex) && !isUnloadedSet(ex, set) &&
     (!recordsZeroLoad(ex) || set.kg !== undefined) && (ex.load !== 'bodyweight' || !ex.stepFrom || addedLoad || !set.kg)
-  const last = comparablePerformance(sessions, exerciseId, location?.id, now, keep)
+  const previous = comparablePerformance(sessions, exerciseId, location?.id, now, keep)
+  const last = previous && (!Number.isFinite(now) || previous.session.startedAt >= now - LOAD_HISTORY_WINDOW) ? previous : null
   const step = stepKgFor(ex, location)
   const top = maxKgFor(ex, location)
   const min = minKgFor(ex, location)

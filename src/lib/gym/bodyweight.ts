@@ -56,11 +56,18 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
   const tracks = Object.values(state.tracks ?? {})
   const assessments = [state.assessment, ...tracks.map((t) => t.assessment)]
   let skillDose = 0
+  let lastBeforeWindow = -Infinity
+  let firstInWindow = Infinity
+  const trainingDate = (at: number) => {
+    if (at < from) lastBeforeWindow = Math.max(lastBeforeWindow, at)
+    else if (at <= now) firstInWindow = Math.min(firstInWindow, at)
+  }
   for (const a of assessments) {
     if (!a) continue
     for (const key of ['pushups', 'pullups'] as const) record(key, a.at, a.answers[key])
   }
   for (const s of state.sessions) {
+    if (s.sets.some((set) => set.section !== 'warmup' && set.section !== 'cooldown' && set.value > 0)) trainingDate(s.startedAt)
     if (s.startedAt < from || s.startedAt > now) continue
     const working = s.sets.filter((set) => set.section !== 'warmup' && set.section !== 'cooldown' && set.value > 0 &&
       set.value >= set.target / 2 && !set.light && (set.rpe ?? s.rpe ?? 7) <= 8 && set.at <= now)
@@ -79,6 +86,7 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
     }
   }
   for (const s of state.gym?.sessions ?? []) {
+    if (s.exercises.some((log) => log.sets.some((set) => !set.warmup && set.reps > 0))) trainingDate(s.startedAt)
     if (s.startedAt < from || s.startedAt > now) continue
     for (const log of s.exercises) {
       if (log.exerciseId === 'assisted-pull-up' && (!assistedTrial || s.startedAt >= assistedTrial.at)) {
@@ -97,11 +105,12 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
       }
     }
   }
-  // Placement describes the starting athlete. A newly earned push-up during week one
-  // opens that exercise without also unlocking an experienced lifter's entire session.
+  // A rep report qualifies individual movements. A skill progression or logged
+  // training dose supplies the separate evidence for a larger lifting session.
   const placed = [state.stepId, ...tracks.map((t) => t.stepId)]
-  const placedExperienced = placed.some((id) => (STEP_BY_ID[id]?.order ?? 0) >= 2) ||
-    assessments.some((a) => a && a.at <= now && (a.answers.pushups >= 10 || a.answers.pullups >= 5))
+  const longBreak = Number.isFinite(lastBeforeWindow) && Math.min(now, firstInWindow) - lastBeforeWindow > now - from
+  const placedExperienced = !longBreak && (placed.some((id) => (STEP_BY_ID[id]?.order ?? 0) >= 2) ||
+    assessments.some((a) => a && a.at <= now && a.answers.experience >= 3 && (STEP_BY_ID[a.placedStepId]?.order ?? 0) > 0))
   const established = placedExperienced || skillDose > 0
   const days = new Map<string, { at: number; sets: number; lifts: Set<string> }>()
   for (const session of state.gym?.sessions ?? []) {

@@ -13,6 +13,7 @@ import {
   gymPlaceOf,
   gymToday,
   insideRest,
+  insideRestRule,
   LEG_DAY_EVERY_DAYS,
   openerMinutesFor,
   planToday,
@@ -22,6 +23,8 @@ import {
   type WeekAhead,
 } from './planner'
 import { dayReadiness } from './readiness'
+import { holdRestWindow, recentGymWork, restWindow } from './restWindow'
+import { sanitizePrefs } from '../gym/state'
 import { GYM_PLACE, HOME_KIT, makeAthlete, SPORT_WEEK, type AthleteCfg } from './wholeAthleteLoop'
 
 /**
@@ -227,6 +230,29 @@ describe('following the plan does not change the plan (round five)', () => {
     expect(insideRest(at(2), at(0, 17, 40), 48 * HOUR)).toBe(false)
     expect(insideRest(at(2, 7), at(0, 21), 48 * HOUR)).toBe(true)
     expect(insideRest(at(1, 23), at(0, 8), 48 * HOUR)).toBe(true)
+  })
+
+  it('honors a saved 48-hour minimum after a late lift across planning, custom workouts and hold tests', () => {
+    const last = at(0, 20)
+    const morning = at(2, 9, 15)
+    const state = doLifts(alone({ minutesByDay: [0, 45, 0, 45, 0, 45, 0], sportSchedule: [], exactRestHours: true }), ['bench-press'], last, 4)
+    state.gym!.prefs = sanitizePrefs(JSON.parse(JSON.stringify(state.gym!.prefs)))
+    expect(state.gym!.prefs!.exactRestHours).toBe(true)
+    expect(insideRestRule(state, ['planche'], morning)?.hours).toBe(37)
+    expect(holdRestWindow(state, 'planche', last + 48 * HOUR - 1)?.hours).toBe(47)
+    expect(recentGymWork(state, morning).push?.sets).toBe(4)
+    expect(planWeekAhead(state, morning).days[0].plan.skill?.hard ?? []).not.toContain('push')
+    expect(holdRestWindow(state, 'frontlever', morning)).toBeUndefined()
+    const ready = last + 48 * HOUR
+    expect(insideRestRule(state, ['planche'], ready)).toBeUndefined()
+    expect(holdRestWindow(state, 'planche', ready)).toBeUndefined()
+    expect(recentGymWork(state, ready).push).toBeUndefined()
+    expect(planWeekAhead(state, ready).days[0].plan.skill?.hard).toContain('push')
+    const exact = restWindow(state.gym!.prefs!)
+    // Same local hour, two dates later, across the spring clock change.
+    const fri = Date.parse('2026-03-06T17:00:00-08:00'), sun = Date.parse('2026-03-08T17:00:00-07:00')
+    expect(exact.betweenPlans(fri, sun)).toBe(true)
+    expect(exact.betweenPlans(fri, sun + HOUR)).toBe(false)
   })
 
   it('keeps the weekly goal’s spread when today’s session is the one it planned', () => {

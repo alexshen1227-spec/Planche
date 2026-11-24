@@ -257,6 +257,14 @@ export function TodayPlanCard({
           {switchTo === 'gym' ? 'Rather do the gym today?' : 'Rather do calisthenics today?'}
         </button>
       ) : null}
+      {choice.kind && !allDone && !liftsNext && !skillPartial && (
+        <button type="button" className="min-h-11 px-2 text-footnote font-medium text-accent-text" onClick={() => {
+          const constraints = { minutes: choice.minutes, placeId: choice.placeId }
+          setChoice(constraints)
+          const recommended = weekForChoice(state, constraints).days[0].plan.kind
+          if (recommended === 'gym' || recommended === 'calisthenics') onSwitch?.(recommended)
+        }}>Recalculate today’s session</button>
+      )}
 
       {plan.reasons.length && !allDone && !liftsNext ? (
         <details className="group mt-3 rounded-inner border border-line" open={plan.rest || plan.readiness?.level === 'light' ? true : undefined}>

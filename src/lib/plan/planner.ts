@@ -1,6 +1,6 @@
 import { activePlace, hereKit, kitAt, placeKit, weekdayPlace } from './trainingPlace'
 export { atActivePlace, kitAt, placeKit, weekdayPlace } from './trainingPlace'
-import { apart, insideRest, skillFamily, startOfDay } from './restWindow'
+import { restHoursApart, restWindow, skillFamily, startOfDay } from './restWindow'
 export { insideRest, REST_SLACK_HOURS, skillFamily } from './restWindow'
 import { countsSkillDay } from '../skillSession'
 import { MUSCLE_BY_ID, MUSCLES, type Joint, type Muscle } from '../../data/gym/catalog'
@@ -556,7 +556,7 @@ export function gymToday(state: AppState, opts: { now: number; minutes: number; 
         priority: steered?.priority ?? [],
       }
   const place = activePlace(base)
-  const restMs = prefs.straightArmRestHours * HOUR
+  const recovery = restWindow(prefs)
   const t0 = startOfDay(now)
   const logged = familyEvents(base, now)
   const skills = trainedSkills(base)
@@ -565,16 +565,16 @@ export function gymToday(state: AppState, opts: { now: number; minutes: number; 
   const restWhy = (f: Straight): string | undefined => {
     if (d.sportRest[f]) return upperSportReason(f, d.sportRest[f]!)
     const names = familyNames(skills, f)
-    const hit = logged[f].filter((e) => e.at <= now && insideRest(now, e.at, restMs)).pop()
+    const hit = logged[f].filter((e) => e.at <= now && recovery.fromLog(now, e.at)).pop()
     if (hit) {
       const what = hit.gym ? `heavy ${work(f)}` : hit.press ? HSPU_NAME : `hard ${names}`
       return hit.at >= t0
         ? `You did ${what} work earlier today, so the ${names} does not open a second session of it.`
-        : `Your ${what} session ${Math.round((now - hit.at) / HOUR)}h ago is inside your ${prefs.straightArmRestHours}h rest rule, so the ${names} does not open today.`
+        : `Your ${what} session ${restHoursApart(now, hit.at, prefs.exactRestHours)}h ago is inside your ${prefs.straightArmRestHours}h rest rule, so the ${names} does not open today.`
     }
     const near = week.days
       .slice(1)
-      .find((x) => apart(x.at, now) < restMs && ((x.plan.skill?.hard ?? []).includes(f) || (f === 'push' && Boolean(x.plan.skill?.presses))))
+      .find((x) => recovery.betweenPlans(x.at, now) && ((x.plan.skill?.hard ?? []).includes(f) || (f === 'push' && Boolean(x.plan.skill?.presses))))
     if (!near) return undefined
     return (near.plan.skill?.hard ?? []).includes(f)
       ? `The ${names} is planned for ${dayName(near.at)}, inside your ${prefs.straightArmRestHours}h rest rule, so it does not open today.`
@@ -618,9 +618,9 @@ export function gymToday(state: AppState, opts: { now: number; minutes: number; 
   // A picked focus that presses (or pulls) inside the rest rule still builds — it is the athlete's pick — and says so.
   for (const f of picked ? focusFamilies(picked) : []) {
     const names = familyNames(skills, f)
-    const hit = names ? logged[f].filter((e) => e.at < t0 && insideRest(now, e.at, restMs)).pop() : undefined
+    const hit = names ? logged[f].filter((e) => e.at < t0 && recovery.fromLog(now, e.at)).pop() : undefined
     if (!hit) continue
-    const ago = Math.max(1, Math.round((now - hit.at) / HOUR))
+    const ago = Math.max(1, restHoursApart(now, hit.at, prefs.exactRestHours))
     notes.push(
       `Heavy ${work(f)} shares recovery with ${hit.gym ? `your heavy ${work(f)} session` : hit.press ? `your ${HSPU_NAME} session` : `your hard ${names} session`} ${ago} h ago, inside your ${prefs.straightArmRestHours} h rest rule. It is your pick, so it stays; the coach's plan would leave it out today (a coaching convention).`,
     )
@@ -698,18 +698,20 @@ export function insideRestRule(
   now: number,
   request?: Pick<WorkoutRequest, 'minutes' | 'focus' | 'kit'>,
 ): RestRuleHit | undefined {
-  const ruleHours = (state.gym?.prefs ?? defaultPrefs(now)).straightArmRestHours
+  const prefs = state.gym?.prefs ?? defaultPrefs(now)
+  const ruleHours = prefs.straightArmRestHours
+  const recovery = restWindow(prefs)
   const logged = familyEvents(state, now)
   for (const skill of skills) {
     const own = skillFamily(skill)
     // A handstand session is balance work, unless its handstand push-ups make it a hard push session (`pressesHard`).
     const family: Straight | undefined = own !== 'balance' ? own : PRESS_SKILLS.has(skill) ? 'push' : undefined
     if (!family) continue
-    const hit = logged[family].filter((e) => e.at <= now && insideRest(now, e.at, ruleHours * HOUR)).pop()
+    const hit = logged[family].filter((e) => e.at <= now && recovery.fromLog(now, e.at)).pop()
     if (!hit) continue
     const pressing = own === 'balance'
     if (pressing && !pickPresses(state, skill, now, request)) continue
-    const hours = Math.max(1, Math.round((now - hit.at) / HOUR))
+    const hours = Math.max(1, restHoursApart(now, hit.at, prefs.exactRestHours))
     const kin = trainedSkills(state).filter((s) => skillFamily(s) === family)
     const what = hit.gym
       ? `heavy ${family === 'push' ? 'pressing' : 'pulling'} session`
@@ -1378,7 +1380,7 @@ interface SkillCtx {
   preferredFocus: (d: DayCtx) => GymFocus | undefined
   liftingPlaceDate?: string
   coverLegWeeks?: number[]
-  restMs: number
+  recovery: ReturnType<typeof restWindow>
   /** Whether the gym's goals train the legs: they are switched on and have a weekly target. */
   legsWanted: boolean
   /** Whether a lower-body gym block builds on this day at all (open by the sport and joint rules, and viable). */
@@ -1589,9 +1591,9 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
     const sport = d.sportRest[f]
     if (sport) return { at: sport.at, gym: false, planned: sport.scheduled, sport }
     const near: FamilyBlock[] = [
-      ...ctx.logged[f].filter((e) => e.at < d.start && insideRest(d.at, e.at, ctx.restMs)).map((e) => ({ ...e, planned: false })),
+      ...ctx.logged[f].filter((e) => e.at < d.start && ctx.recovery.fromLog(d.at, e.at)).map((e) => ({ ...e, planned: false })),
       ...planned[f]
-        .filter((x) => x.i !== i && apart(days[x.i].at, d.at) < ctx.restMs)
+        .filter((x) => x.i !== i && ctx.recovery.betweenPlans(days[x.i].at, d.at))
         .map((x) => ({ at: days[x.i].at, gym: false, planned: true, ...(x.press ? { press: true as const } : {}) })),
     ]
     return near.sort((a, b) => Math.abs(d.at - a.at) - Math.abs(d.at - b.at))[0]
@@ -1630,8 +1632,8 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
       if (places.fixed(j) && !skills.some((s) => skillFamily(s) === f && available(s, j))) continue
       // The first priority's days are its own: another family cannot lead one.
       if (f !== lead && exposures.has(j)) continue
-      const clear = !planned[f].some((x) => x.i !== j && apart(days[x.i].at, dj.at) < ctx.restMs)
-      if ((l === undefined || (l.logged ? !insideRest(dj.at, l.at, ctx.restMs) : apart(dj.at, l.at) >= ctx.restMs)) && clear) {
+      const clear = !planned[f].some((x) => x.i !== j && ctx.recovery.betweenPlans(days[x.i].at, dj.at))
+      if ((l === undefined || (l.logged ? !ctx.recovery.fromLog(dj.at, l.at) : !ctx.recovery.betweenPlans(dj.at, l.at))) && clear) {
         k++
         l = { at: dj.at, logged: false }
       }
@@ -1779,8 +1781,8 @@ function planSkills(state: AppState, places: Places, prefs: TrainingPrefs, days:
       if (preferred && !compatibleOpener(preferred, first)) continue
       // Today picked as a gym day of another family is not the first priority's: the pick stands.
       if (i === 0 && ctx.todayKind === 'gym' && ctx.todayFocus && !focusFamilies(ctx.todayFocus).includes(lead as Straight)) continue
-      if (ctx.logged[lead].some((e) => e.at < d.start && insideRest(d.at, e.at, ctx.restMs))) continue
-      if (planned[lead].some((x) => x.i !== i && apart(days[x.i].at, d.at) < ctx.restMs)) continue
+      if (ctx.logged[lead].some((e) => e.at < d.start && ctx.recovery.fromLog(d.at, e.at))) continue
+      if (planned[lead].some((x) => x.i !== i && ctx.recovery.betweenPlans(days[x.i].at, d.at))) continue
       if (gymFirst && (d.week === thisWeek ? done[lead] : 0) + [...exposures].filter((j) => days[j].week === d.week).length >= skillDays) continue
       exposures.add(i)
       if (!planned[lead].some((x) => x.i === i)) planned[lead].push({ i, at: d.at })
@@ -2338,7 +2340,7 @@ interface GymCtx {
   /** The part of the body left longest (five days or more), which that next session goes to. */
   staleGroup?: 'lower' | 'push' | 'pull'
   /** The straight-arm rest rule, in ms. */
-  restMs: number
+  recovery: ReturnType<typeof restWindow>
   /** Families the athlete trains a skill of: only those share recovery with the gym's pressing or pulling. */
   shared: Record<Straight, boolean>
   /** The athlete's own priority muscles: never spared, and never counted as a focus's spent muscles. */
@@ -2622,9 +2624,9 @@ function allocate(
     const pressHere = ctx.weeklyPress && Boolean(slot.hint) && !slot.legDay && !idxs.some((j) => j > i && slots[j].kind === 'gym' && slots[j].hint === 'push')
     /** Whether the push family leaves this day free for hard pressing on a path: nothing of it near, fixed or chosen. */
     const pushFree = (p: Path) =>
-      !ctx.shared.push || (ctx.clear('push', i) && p.gymEvents.push.every((t) => startOfDay(t) === d.start || apart(t, d.at) >= ctx.restMs))
+      !ctx.shared.push || (ctx.clear('push', i) && p.gymEvents.push.every((t) => startOfDay(t) === d.start || !ctx.recovery.betweenPlans(t, d.at)))
     const pullFree = (p: Path) =>
-      !ctx.shared.pull || (ctx.clear('pull', i) && p.gymEvents.pull.every((t) => startOfDay(t) === d.start || apart(t, d.at) >= ctx.restMs))
+      !ctx.shared.pull || (ctx.clear('pull', i) && p.gymEvents.pull.every((t) => startOfDay(t) === d.start || !ctx.recovery.betweenPlans(t, d.at)))
     // Pressing beside planche-type holds, or pulling beside lever work, is no
     // longer marked down on the same day: the family rest rule spaces hard
     // sessions of a family apart on different days, so a push day carries the
@@ -2644,7 +2646,7 @@ function allocate(
     for (const p of paths) {
       // Hard pressing or pulling this path already put on another day inside the rest rule rules the family out today.
       const familyFree = (f: GymFocus) =>
-        focusFamilies(f).every((fam) => !ctx.shared[fam] || p.gymEvents[fam].every((t) => startOfDay(t) === d.start || apart(t, d.at) >= ctx.restMs))
+        focusFamilies(f).every((fam) => !ctx.shared[fam] || p.gymEvents[fam].every((t) => startOfDay(t) === d.start || !ctx.recovery.betweenPlans(t, d.at)))
       // The athlete's own pick for today stands, with every limit of the day; the rest of the week adapts to it. A
       // full-body day beside push-family work presses lightly, picked or not: it is not a pressing pick.
       const forced = i === 0 ? ctx.todayFocus : undefined
@@ -3016,7 +3018,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     ...(place && hasGymKit(place) ? { gymCal: withRequestKit(base, { source: 'auto', kit: kitAt(base, place) }), gym: place } : {}),
   }
   const youth = conservative(state.profile, now)
-  const restMs = prefs.straightArmRestHours * HOUR
+  const recovery = restWindow(prefs)
   const logged = familyEvents(state, now)
   const legsOff = !focusOpen('lower', prefs.musclesOff)
   // A focus counts only when it builds two movements or more at the place with the day's limits —
@@ -3110,7 +3112,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     preferredFocus,
     coverLegWeeks: opts.coverLegWeeks,
     liftingPlaceDate: opts.liftingPlaceDate,
-    restMs,
+    recovery,
     logged,
     wantsGym: gymWanted && Boolean(place),
     gymWanted,
@@ -3191,7 +3193,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   const selectedSkills = g.skills > 0 || days.some((d) => d.assigned?.length)
   const sharesRecovery = (fam: Straight) => (selectedSkills && skills.some((s) => skillFamily(s) === fam)) ||
     slots.some((s) => s.families.has(fam) || s.hint === fam || (fam === 'push' && s.presses)) ||
-    logged[fam].some((e) => e.at < now && insideRest(now, e.at, restMs) &&
+    logged[fam].some((e) => e.at < now && recovery.fromLog(now, e.at) &&
       (!e.gym || state.profile.skills?.some((s) => skillFamily(s) === fam)))
   const shared = { push: sharesRecovery('push'), pull: sharesRecovery('pull') }
   // The days that hold hard sessions of a family: the calisthenics days while the gym is planned, then every day's.
@@ -3206,9 +3208,9 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   const fixedNear = (fam: Straight, i: number) => {
     const d = days[i]
     return [
-      ...logged[fam].filter((e) => e.at < d.start && insideRest(d.at, e.at, restMs)).map((e) => ({ at: e.at, gym: e.gym, logged: true, press: Boolean(e.press) })),
+      ...logged[fam].filter((e) => e.at < d.start && recovery.fromLog(d.at, e.at)).map((e) => ({ at: e.at, gym: e.gym, logged: true, press: Boolean(e.press) })),
       ...familySlots.flatMap((sl, j) =>
-        j !== i && holdsFamily(sl, fam) && apart(days[j].at, d.at) < restMs
+        j !== i && holdsFamily(sl, fam) && recovery.betweenPlans(days[j].at, d.at)
           ? [{ at: days[j].at, gym: false, logged: false, press: fam === 'push' && Boolean(sl.presses) && !sl.families.has('push') }]
           : [],
       ),
@@ -3218,11 +3220,11 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   const openerClear = (fam: Straight, i: number) => {
     const d = days[i]
     if (d.sportRest[fam]) return false
-    if (logged[fam].some((e) => e.at < d.start && insideRest(d.at, e.at, restMs))) return false
+    if (logged[fam].some((e) => e.at < d.start && recovery.fromLog(d.at, e.at))) return false
     return !slots.some(
       (sl, j) =>
         j !== i &&
-        apart(days[j].at, d.at) < restMs &&
+        recovery.betweenPlans(days[j].at, d.at) &&
         (sl.parts.some((p) => (p.role === 'lead' || p.role === 'partner') && skillFamily(p.skill) === fam) ||
           (fam === 'push' && Boolean(sl.presses)) ||
           (Boolean(sl.exposure) && sl.kind === 'gym' && fam === exposureFamily(sl))),
@@ -3332,12 +3334,18 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   // choose the lifts against the athlete's priorities across the whole body.
   const mixedPriorities = prefs.musclesPriority.some((m) => LEG_MUSCLES.includes(m)) &&
     prefs.musclesPriority.some((m) => !LEG_MUSCLES.includes(m))
-  if (((singleSkillWeek && mixedPriorities) || (balancedSkillWeek && skills[0] !== 'handstand')) && g.physique >= g.skills) {
+  // After an opposite-family lifting visit, the remaining pressing or pulling
+  // opportunity is still relevant when every chosen muscle is in the upper body.
+  const leadingFamily = skillFamily(skills[0]) === 'pull' ? 'pull' : 'push'
+  const oppositeLogged = singleSkillWeek && prefs.musclesPriority.some((m) => FOCUS_MUSCLES[leadingFamily].includes(m)) &&
+    loggedFocus(gymSessions, thisWeek, today) === (leadingFamily === 'push' ? 'pull' : 'push')
+  if (((singleSkillWeek && (mixedPriorities || oppositeLogged)) || (balancedSkillWeek && skills[0] !== 'handstand')) && g.physique >= g.skills) {
     const skill = skills[0]
-    const family = skillFamily(skill) === 'pull' ? 'pull' : 'push'
+    const family = leadingFamily
     const pairedDose = singleSkillWeek ? repeatedPairedSets(base, skill, now) : 0
     for (const d of days) {
       const sl = slots[d.index], place = placeAt(d.index)
+      if (singleSkillWeek && !mixedPriorities && (d.week !== thisWeek || sl.legDay || sl.kind !== 'calisthenics')) continue
       if (!place || (balancedSkillWeek ? sl.kind !== 'gym' || sl.reservedOpener || !sl.hint : d.minutes >= LONG_OPENER_FROM) ||
         d.assigned || d.pain || d.niggle || d.held || d.factor < 1 ||
         (d.index === 0 && (opts.todayKind === 'calisthenics' || opts.todayFocus)) ||
@@ -3357,7 +3365,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       if (practice.painSafe || practice.minutes > minutes || practice.attempts < full.attempts || (practice.key[skill] ?? 0) < Math.max(1, requiredSets) ||
         !FOCI.some((f) => f !== 'athletic' && openOn(d, f) && viable(d, d.minutes - minutes, f))) continue
       slots[d.index] = { ...sl, kind: 'gym', why: sl.legDay ? 'leg-coverage' : 'skill-practice',
-        hint: undefined, reservedOpener: { skill, minutes }, exposure: true,
+        hint: singleSkillWeek && !mixedPriorities && oppositeLogged ? family : undefined, reservedOpener: { skill, minutes }, exposure: true,
         skillMin: 0, gymMin: d.minutes, skills: [], parts: [], credit: {} }
     }
   }
@@ -3453,7 +3461,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     legsOff,
     musclesOff: prefs.musclesOff,
     nextGymDay: slots.findIndex((sl) => sl.gymMin > 0),
-    restMs,
+    recovery,
     shared,
     priority: new Set(prefs.musclesPriority),
     clear: (fam, i) => fixedNear(fam, i).length === 0,
@@ -3572,7 +3580,7 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
   const kept: typeof openersByPriority = []
   const restOpeners = [...(opts.restOpeners ?? [])]
   for (const day of openersByPriority) {
-    if (kept.some((prior) => prior.family === day.family && apart(prior.at, day.at) < restMs)) restOpeners.push(`${day.i}:${day.family}`)
+    if (kept.some((prior) => prior.family === day.family && recovery.betweenPlans(prior.at, day.at))) restOpeners.push(`${day.i}:${day.family}`)
     else kept.push(day)
   }
   if (restOpeners.length > (opts.restOpeners?.length ?? 0)) return planWeekAhead(state, now, { ...opts, restOpeners })
@@ -3655,11 +3663,11 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     const d = days[i]
     const view = places.cal(i)
     const near = (fam: Straight) =>
-      logged[fam].some((e) => e.at < d.start && insideRest(d.at, e.at, restMs)) ||
+      logged[fam].some((e) => e.at < d.start && recovery.fromLog(d.at, e.at)) ||
       final.some(
         (sl, j) =>
           j !== i &&
-          apart(days[j].at, d.at) < restMs &&
+          recovery.betweenPlans(days[j].at, d.at) &&
           (gymFamilies(j).includes(fam) || holdsFamily(sl, fam) || sl.parts.some((p) => (p.role === 'lead' || p.role === 'partner') && skillFamily(p.skill) === fam)),
       )
     const allowed = (d.assigned ?? (g.skills > 0 ? skills.filter((s) => skillFamily(s) === 'balance' || !near(skillFamily(s) as Straight)) : [])).filter((s) =>
@@ -3941,10 +3949,10 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       }
       const near = [
         ...fixedNear(fam, d.index),
-        ...plannedGym[fam].filter((x) => startOfDay(x) !== d.start && apart(x, d.at) < restMs).map((x) => ({ at: x, gym: true, logged: false, press: false })),
+        ...plannedGym[fam].filter((x) => startOfDay(x) !== d.start && recovery.betweenPlans(x, d.at)).map((x) => ({ at: x, gym: true, logged: false, press: false })),
       ].sort((a, b) => Math.abs(d.at - a.at) - Math.abs(d.at - b.at))[0]
       if (!near) continue
-      const hours = Math.round(Math.abs(d.at - near.at) / HOUR)
+      const hours = restHoursApart(d.at, near.at, prefs.exactRestHours)
       // How today's own pressing is kept light, when it presses at all.
       const lead = lightHere
         ? `Pressing stays light today — one press at two sets, under the ${HARD_GYM_FAMILY_SETS} working sets of pressing that make a heavy session (the app’s own line)`
@@ -4349,7 +4357,7 @@ function assembleDay(
     const b = slot.blocked[family]
     const names = skills.filter((s) => skillFamily(s) === family).map(skillName)
     if (!b || b.sport || !names.length) continue
-    const hours = Math.round(Math.abs(d.at - b.at) / HOUR)
+    const hours = restHoursApart(d.at, b.at, prefs.exactRestHours)
     if (d.assigned) {
       if (slot.families.has(family)) {
         reasons.push(`Your week plan has ${joinNames(names)} today, inside your ${restH}h rest rule for straight-arm work (${b.planned ? `${dayName(b.at)} as well` : `${hours}h since the last hard session`}) — it is your plan, so it stays.`)

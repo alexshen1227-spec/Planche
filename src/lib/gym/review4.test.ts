@@ -127,13 +127,18 @@ describe('2. time away', () => {
       expect(s.kg).toBe(60)
     }
   })
-  it('past 42 days it starts one step lighter, at any age; 200 days too', () => {
+  it('steps down after six weeks and asks for a new starting weight once the 120-day load history expires', () => {
     for (const youth of [false, true]) {
-      for (const days of [43, 200]) {
+      for (const days of [43, 120]) {
         const s = at(days, youth)
         expect(s.kind).toBe('decrease')
         expect(s.kg).toBe(57.5)
         expect(s.why).toContain('weeks')
+      }
+      for (const days of [121, 200]) {
+        const s = at(days, youth)
+        expect(s.kind).toBe('first-time')
+        expect(s.kg).toBeUndefined()
       }
     }
   })

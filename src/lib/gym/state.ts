@@ -105,6 +105,7 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
     ...(focusByDay.some(Boolean) ? { focusByDay } : {}),
     ...(r.shortSkillOpeners === true ? { shortSkillOpeners: true as const } : {}),
     straightArmRestHours: Math.round(clamp(r.straightArmRestHours, 24, 96, 48)),
+    ...(r.exactRestHours === true ? { exactRestHours: true } : {}),
     ...(r.season === 'in' ? { season: 'in' as const } : {}),
     ...(sportSchedule.length ? { sportSchedule } : {}),
     ...(fieldTimes ? { fieldTimes } : {}),
@@ -113,7 +114,7 @@ export function sanitizePrefs(raw: unknown): TrainingPrefs | undefined {
 }
 
 /** Every setting a training-prefs edit can change on its own (all but the stamps). */
-const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'pullupStartingSet', 'minutesByDay', 'placeByDay', 'extraGymDate', 'gymWeekdays', 'focusByDay', 'shortSkillOpeners', 'straightArmRestHours', 'season', 'sportSchedule'] as const
+const PREF_FIELDS = ['goals', 'skillGoals', 'musclesOff', 'musclesPriority', 'pullupStartingSet', 'minutesByDay', 'placeByDay', 'extraGymDate', 'gymWeekdays', 'focusByDay', 'shortSkillOpeners', 'straightArmRestHours', 'exactRestHours', 'season', 'sportSchedule'] as const
 
 export function setLiftingWeekday(prefs: TrainingPrefs, weekday: number, enabled: boolean): TrainingPrefs {
   const days = new Set(prefs.gymWeekdays)
@@ -616,15 +617,22 @@ export function doubtedLoad(
   kg: number,
   exceptSessionId?: string,
   locationId?: string,
+  currentVisit?: GymSession,
 ): { bestKg: number; probablyKg?: number } | null {
-  let best = 0
-  for (const s of sessions) {
-    if (s.id === exceptSessionId || (locationId && s.locationId !== locationId)) continue
-    for (const log of s.exercises) {
+  const bestFrom = (visit: GymSession, previousBest: number) => {
+    let best = previousBest
+    for (const log of visit.exercises) {
       if (log.exerciseId !== exerciseId) continue
       for (const set of log.sets) if (!set.warmup && set.reps > 0 && set.kg !== undefined && set.kg > best) best = set.kg
     }
+    return best
   }
+  let best = 0
+  for (const s of sessions) {
+    if (s.id !== exceptSessionId && (!locationId || s.locationId === locationId)) best = bestFrom(s, best)
+  }
+  // On a first visit, use only weights already logged before this proposed entry or correction.
+  if (!best && currentVisit && (!locationId || currentVisit.locationId === locationId)) best = bestFrom(currentVisit, 0)
   if (!(best > 0) || !(kg > best * IMPLAUSIBLE_LOAD_RATIO)) return null
   const tenth = Math.round((kg / 10) * 2) / 2
   const poundsAsKg = Math.round((kg / 2.2046) * 2) / 2

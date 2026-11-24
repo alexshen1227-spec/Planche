@@ -5,10 +5,11 @@ import { canDoHere } from './availability'
 import { bodyweightCapacity, readyForBodyweight } from './bodyweight'
 import { buildGymSession } from './builder'
 import { legPracticeAt, unassistedDose, unassistedSteps } from './bodyweightSteps'
-import { allowsUnloaded } from './progression'
+import { allowsUnloaded, suggestLoad } from './progression'
 import { nextTimeLines } from './sessionLines'
 import { defaultGym, homeLocation } from './state'
 import type { GymSession } from './types'
+import { GYM_PLACE, makeAthlete } from '../plan/wholeAthleteLoop'
 
 it('offers an available unilateral leg trial, keeps the earned base dose and learns from the weaker-side result', () => {
   const now = +new Date(2026, 7, 11, 10)
@@ -150,6 +151,43 @@ it('advances the introductory dose from manageable working sets and limits the f
   const next = plan(true)
   expect(next.items.reduce((n, item) => n + item.sets, 0)).toBeLessThanOrEqual(6)
   expect(next.items.every((i) => i.plan.targetRpe <= 7)).toBe(true)
+})
+
+it('keeps first gym visits introductory across push-up assessment bands at the same skill placement', () => {
+  const now = +new Date(2026, 10, 23, 17)
+  const goals = { skills: 5, strength: 4, physique: 4, power: 0, endurance: 0 }
+  for (const pushups of [6, 12, 22]) {
+    const state = makeAthlete({ skills: ['planche'], birthYear: 1993, steps: { planche: 'foundations' }, active: 'gym', prefs: { goals } })
+    state.assessment = { at: now, placedStepId: 'foundations', gapIds: [], confidence: 'moderate', answers: { wrist: 2, pushups, experience: 0 } }
+    const capacity = bodyweightCapacity(state, now)
+    expect(readyForBodyweight('diamond-push-up', capacity)).toBe(pushups >= 8)
+    for (const focus of ['pull', 'lower'] as const) {
+      const plan = buildGymSession({ location: GYM_PLACE, focus, capacity, minutes: 75, sessions: [], now, goals, priority: ['chest', 'quads'] })
+      expect(plan.items.length).toBeGreaterThan(0)
+      expect(plan.items.reduce((n, it) => n + it.sets, 0)).toBeLessThanOrEqual(8)
+      expect(plan.items.every((it) => it.plan.targetRpe <= 7)).toBe(true)
+    }
+  }
+})
+
+it('uses a fresh lifting baseline after a long break at an advanced skill placement', () => {
+  const now = +new Date(2026, 10, 24, 10), day = 86_400_000
+  const athlete = makeAthlete({ skills: ['planche'], steps: { planche: 'tuck' }, active: 'gym', birthYear: 1967 })
+  const at = now - 270 * day
+  const old: GymSession = { id: 'winter', startedAt: at, endedAt: at + 300_000, name: 'Lower body', locationId: GYM_PLACE.id,
+    exercises: [{ exerciseId: 'back-squat', repRange: [6, 10], sets: [{ kg: 65, reps: 6, at, rpe: 7 }] }] }
+  athlete.gym!.sessions = [old]
+  const returning = () => buildGymSession({ capacity: bodyweightCapacity(athlete, now), sessions: athlete.gym!.sessions,
+    location: GYM_PLACE, focus: 'lower', minutes: 75, now })
+  expect(returning().items.reduce((sum, it) => sum + it.sets, 0)).toBeLessThanOrEqual(8)
+  expect(returning().items.every((it) => it.plan.targetRpe <= 7)).toBe(true)
+  const input = { exerciseId: 'back-squat', location: GYM_PLACE, sessions: [old], plan: { range: [6, 10] as [number, number], targetRpe: 7 }, now }
+  expect(suggestLoad(input)).toMatchObject({ kind: 'first-time' })
+  expect(suggestLoad(input).kg).toBeUndefined()
+  athlete.gym!.sessions.push({ ...old, id: 'returned', startedAt: now - 2 * day, endedAt: now - 2 * day + 300_000,
+    exercises: ['back-squat', 'leg-curl'].map((exerciseId) => ({ exerciseId, sets: [1, 2].map((i) => ({ kg: 25, reps: 8, rpe: 7, at: now - 2 * day + i * 60_000 })) })) })
+  expect(bodyweightCapacity(athlete, now).introductoryVisitsLeft).toBe(1)
+  expect(returning().items.reduce((sum, it) => sum + it.sets, 0)).toBeLessThanOrEqual(8)
 })
 
 it('unlocks a stronger push-up without turning a beginner’s short lifting history into a full-volume workout', () => {

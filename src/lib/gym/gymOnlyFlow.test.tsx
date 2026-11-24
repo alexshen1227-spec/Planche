@@ -17,6 +17,7 @@ import { GYM_EXERCISE_BY_ID, jointsToRest } from '../../data/gym/exercises'
 import { Toasts } from '../../components/Toasts'
 import { GymPlayer } from '../../components/gym/GymPlayer'
 import { GymWorkoutGate } from '../../components/gym/GymWorkoutGate'
+import { GYM_PLAN_REVISION } from './replan'
 import { PartialWorkout } from '../../components/gym/PartialWorkout'
 import { WeekVolume } from '../../components/plan/WeekVolume'
 import { PlanSettings } from '../../components/plan/PlanSettings'
@@ -58,6 +59,40 @@ it('retires an open gym writer and its draft when another tab replaces the train
   expect(loadDraft()).toBeNull()
   expect(reducer(replacement, { type: 'GYM', expectedEpoch: athlete.epoch, op: { op: 'saveSession', session: sessionFromDraft(draft, Date.now()) } })).toBe(replacement)
   expect(JSON.parse(localStorage.getItem('planchelab.v1')!).gym.sessions).toHaveLength(0)
+})
+
+it.each([false, true])('refreshes an old home Pull draft against the current 28-minute plan (already logged %s)', (logged) => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const athlete = makeAthlete({ skills: [], active: 'home', birthYear: 1993, prefs: {
+    goals: { skills: 0, physique: 5, strength: 3, endurance: 0, power: 0 }, musclesPriority: ['chest', 'chest-upper', 'side-delts'],
+  } })
+  const place = athlete.gym!.locations[0]
+  place.equipment = ['floor', 'dumbbells', 'incline-bench']
+  const at = Date.now() - 1000
+  const actual = { load: 24, reps: 10, rpe: 7, done: true, at }
+  const item: DraftItem = { exerciseId: 'db-fly', plan: { range: [8, 12], targetRpe: 8 }, unit: 'kg', restSec: 75,
+    sets: [logged ? actual : { reps: 8, done: false }, { reps: 8, done: false }] }
+  localStorage.setItem('planchelab.v1', JSON.stringify(athlete))
+  localStorage.setItem('planchelab.todayChoice', JSON.stringify({ day: dayKey(Date.now()), kind: 'gym', gymFocus: 'pull', minutes: 28, placeId: place.id }))
+  saveDraft({ id: 'old-pull', name: 'Pull', startedAt: at, locationId: place.id, items: [item] })
+  render(<StoreProvider><Train startWorkout={vi.fn()} /></StoreProvider>)
+  const click = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }))
+  click(logged ? 'Rebuild remaining exercises' : 'Start session')
+  click(/nothing hurts.*start/i)
+  const revised = loadDraft()!
+  expect(revised.planRevision).toBe(GYM_PLAN_REVISION)
+  const pending = revised.items.filter((it) => it.sets.some((s) => !s.done))
+  expect(pending.some((it) => GYM_EXERCISE_BY_ID[it.exerciseId].pattern === 'horizontal-pull')).toBe(true)
+  expect(pending.some((it) => GYM_EXERCISE_BY_ID[it.exerciseId].primary.some((m) => ['chest', 'chest-upper', 'side-delts'].includes(m)))).toBe(false)
+  expect(revised.items.flatMap((it) => it.sets.filter((s) => s.done))).toEqual(logged ? [actual] : [])
+  if (logged) {
+    expect(revised.id).toBe('old-pull')
+    click('Finish')
+    click('Save session')
+    const saved = JSON.parse(localStorage.getItem('planchelab.v1')!).gym.sessions
+    expect(saved).toHaveLength(1)
+    expect(saved[0].exercises[0].sets).toEqual([{ at, kg: 24, unit: 'kg', reps: 10, rpe: 7 }])
+  }
 })
 
 it('alternates the two nominated lifts, keeps recovery across a reload, and restores straight sets after a hard effort', () => {
@@ -180,6 +215,27 @@ it('saves separate training locations for weekdays and resets one weekday to aut
   choose('Tuesday', '')
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
   expect(JSON.parse(localStorage.getItem('planchelab.v1')!).gym.prefs.placeByDay).toEqual([null, null, null, null, null, null, 'club'])
+})
+
+it('saves an exact recovery interval from the schedule and can return to calendar spacing', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const state = makeAthlete({ skills: ['planche'], steps: { planche: 'tuck' } })
+  localStorage.setItem('planchelab.v1', JSON.stringify(state))
+  const mount = () => render(<StoreProvider><PlanSettings onDone={() => {}} /></StoreProvider>)
+  const ui = mount()
+  const exact = () => screen.getByRole('checkbox', { name: 'Require the full elapsed hours' }) as HTMLInputElement
+  expect(exact().checked).toBe(false)
+  fireEvent.click(screen.getByRole('radio', { name: '72h' }))
+  expect(exact().checked).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  ui.unmount()
+  mount()
+  expect(exact().checked).toBe(true)
+  fireEvent.click(exact())
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  const saved = JSON.parse(localStorage.getItem('planchelab.v1')!).gym.prefs
+  expect(saved.straightArmRestHours).toBe(72)
+  expect(saved.exactRestHours).toBeUndefined()
 })
 
 it('compares actual skills and lifts from the week view, saves the recurring option and removes it in schedule settings', () => {

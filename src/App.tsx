@@ -32,7 +32,7 @@ function useDevLabRoute(): boolean {
 }
 
 /**
- * Fallback updater for browsers without service workers: poll the deployed
+ * Fallback updater while no service worker controls this page: poll the deployed
  * version.json for a build id different from the one baked into this bundle.
  */
 function useVersionJsonCheck(enabled: boolean): boolean {
@@ -97,7 +97,7 @@ function UpdateBanner({ defer = false }: { defer?: boolean }) {
       document.removeEventListener('visibilitychange', check)
     }
   }, [])
-  const staleFallback = useVersionJsonCheck(!HAS_SW)
+  const staleFallback = useVersionJsonCheck(!HAS_SW || !navigator.serviceWorker?.controller)
   const [dismissed, setDismissed] = useState(false)
 
   // Never invite a reload over a live workout. The update remains waiting and

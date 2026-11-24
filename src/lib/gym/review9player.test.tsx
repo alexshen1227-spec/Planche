@@ -27,11 +27,11 @@ afterEach(() => {
   dispatch.mockClear()
 })
 
-it('checks a large correction to an already logged set before changing the draft, records or next prescription', async () => {
+it.each([true, false])('checks a large correction before changing completed sets and records (prior visit %s)', async (priorVisit) => {
   const { GymPlayer } = await import('../../components/gym/GymPlayer')
   const id = 'chest-supported-db-row'
-  gym.sessions = [{ id: 'previous-row', name: 'Pull', locationId: gym.locations[0].id, startedAt: T - 1, endedAt: T,
-    exercises: [{ exerciseId: id, sets: [{ at: T, reps: 10, kg: 20, rpe: 8 }] }] }]
+  gym.sessions = priorVisit ? [{ id: 'previous-row', name: 'Pull', locationId: gym.locations[0].id, startedAt: T - 1, endedAt: T,
+    exercises: [{ exerciseId: id, sets: [{ at: T, reps: 10, kg: 20, rpe: 8 }] }] }] : []
   try {
     const done = { reps: 10, load: 20, done: true, rpe: 8, at: T }
     const row = { ...draft.items[0], exerciseId: id, sets: [{ ...done }, { ...done, at: T + 10 }] }

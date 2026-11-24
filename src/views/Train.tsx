@@ -774,10 +774,11 @@ const TRAIN_MODE_KEY = 'planchelab.trainMode'
  * coach's session exactly as before; the gym side builds from the place the
  * athlete is at. Which one shows is remembered per device.
  */
-export function Train({ startWorkout, entryPreset, onEntryUsed }: {
+export function Train({ startWorkout, entryPreset, onEntryUsed, onGymWorkoutChange }: {
   startWorkout: (request: WorkoutRequest) => void
   entryPreset?: GymEntry | null
   onEntryUsed?: () => void
+  onGymWorkoutChange?: (open: boolean) => void
 }) {
   const { state } = useStore()
   const gymOnly = state.gym?.prefs?.goals.skills === 0
@@ -821,7 +822,7 @@ export function Train({ startWorkout, entryPreset, onEntryUsed }: {
       {!gymOnly && mode === 'skills' && !entryPreset ? (
         <SkillsTrain startWorkout={startWorkout} />
       ) : (
-        <GymHub preset={entryPreset ?? gymPreset} onPresetUsed={() => {
+        <GymHub preset={entryPreset ?? gymPreset} onWorkoutChange={onGymWorkoutChange} onPresetUsed={() => {
           setGymPreset(null)
           if (entryPreset) {
             choose('gym')

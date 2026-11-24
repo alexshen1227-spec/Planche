@@ -96,8 +96,7 @@ export function compareLiftingDays(state: AppState, choice: TodayChoice, now: nu
     .sort((a, b) => retained(b) - retained(a) || lostWork(a) - lostWork(b) || funded(b) - funded(a))
   const shorter = !prefs.shortSkillOpeners && remaining.some((d) => d.plan.gym && d.plan.skill?.opener && d.plan.skill.minutes > OPENER_MINUTES)
     ? snapshot(prefs.extraGymDate, true) : undefined
-  const compact = shorter && (funded(shorter) >= funded(current) + 1 ||
-    (shorter.remainingSkillMinutes < current.remainingSkillMinutes && shorter.remainingLiftMinutes > current.remainingLiftMinutes)) &&
+  const compact = shorter && funded(shorter) > funded(current) &&
     skills.every((s) => (shorter.practiceDays[s] ?? 0) >= (current.practiceDays[s] ?? 0)) ? shorter : undefined
   const behind = muscles.filter((m) => (current.muscleSets[m] ?? 0) < volumeTarget(m, prefs)[0])
   const lower = behind.some((m) => FOCUS_MUSCLES.lower.includes(m))

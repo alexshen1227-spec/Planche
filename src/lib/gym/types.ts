@@ -190,6 +190,8 @@ export interface TrainingPrefs {
   shortSkillOpeners?: true
   /** Hours between hard straight-arm sessions of the same family. */
   straightArmRestHours: number
+  /** Use elapsed hours for recovery, including across midnight and clock changes. */
+  exactRestHours?: true
   /**
    * In season, the sport comes first: gym volume is kept lower (the weights
    * stay, the sets drop) and legs are kept fresh around games. Absent = off-season.

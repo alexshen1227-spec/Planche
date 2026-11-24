@@ -24,6 +24,7 @@ export interface DraftItem {
   pairedWith?: string
   /** Previously logged sets retained when today's joint check or equipment excludes the movement. */
   held?: boolean
+  heldAfterReplan?: true
   plan: RepPlan
   suggestion?: LoadSuggestion
   restSec: number
@@ -58,6 +59,9 @@ export function previousSets(
 
 export interface GymDraft {
   id: string
+  /** Version of the builder that selected the pending exercises. */
+  planRevision?: number
+  edited?: true
   epoch?: string
   startedAt: number
   locationId: string

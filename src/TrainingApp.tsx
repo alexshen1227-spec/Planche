@@ -90,7 +90,8 @@ export default function TrainingApp({ bench, onWorkoutChange }: { bench: ReactNo
     const older = !workout.request?.gymAfter && legacyOpenerLifts()
     return older ? { ...workout, request: { ...requestFor(workout), gymAfter: older } } : workout
   })
-  useLayoutEffect(() => { onWorkoutChange(Boolean(activeWorkout)) }, [activeWorkout, onWorkoutChange])
+  const [gymWorkoutOpen, setGymWorkoutOpen] = useState(false)
+  useLayoutEffect(() => { onWorkoutChange(Boolean(activeWorkout) || gymWorkoutOpen) }, [activeWorkout, gymWorkoutOpen, onWorkoutChange])
   const [resuming, setResuming] = useState(resumeDraft !== null)
 
   const [askCheckIn, setAskCheckIn] = useState(false)
@@ -241,7 +242,7 @@ export default function TrainingApp({ bench, onWorkoutChange }: { bench: ReactNo
               }}
             />
           ) : null}
-          {tab === 'train' ? <Train startWorkout={startWorkout} entryPreset={gymEntry} onEntryUsed={() => setGymEntry(null)} /> : null}
+          {tab === 'train' ? <Train startWorkout={startWorkout} entryPreset={gymEntry} onEntryUsed={() => setGymEntry(null)} onGymWorkoutChange={setGymWorkoutOpen} /> : null}
           {tab === 'path' ? <Path startWorkout={startWorkout} /> : null}
           {tab === 'library' ? <Library /> : null}
           {tab === 'stats' ? <Stats focusSessionId={focusSessionId} onFocused={() => setFocusSessionId(null)} /> : null}

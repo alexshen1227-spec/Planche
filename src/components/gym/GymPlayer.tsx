@@ -152,7 +152,7 @@ export function GymPlayer({
     setDraft((d) => ({ ...d, rest: undefined }))
   }, [now, rest])
 
-  const update = (fn: (d: GymDraft) => GymDraft) => setDraft((d) => fn(structuredClone(d)))
+  const update = (fn: (d: GymDraft) => GymDraft) => setDraft((d) => fn({ ...structuredClone(d), edited: true }))
   useEffect(() => {
     if (askRpe) playerRef.current?.querySelector<HTMLButtonElement>(`[data-set="${askRpe.item}-${askRpe.set}"] [data-effort] button`)?.focus()
   }, [askRpe?.item, askRpe?.set])
@@ -207,7 +207,7 @@ export function GymPlayer({
     if (!load || GYM_EXERCISE_BY_ID[item.exerciseId].assisted ||
         (item.suggestion?.kg !== undefined && load === entryLoad(item.suggestion.kg, item.unit)) ||
         item.sets.some((s, k) => k !== j && s.done && !s.warmup && s.reps > 0 && s.load === load)) return false
-    const odd = doubtedLoad(gym.sessions, item.exerciseId, toKg(load, item.unit), undefined, location.id)
+    const odd = doubtedLoad(gym.sessions, item.exerciseId, toKg(load, item.unit), undefined, location.id, sessionFromDraft(draft, Date.now()))
     if (!odd) return false
     setDoubt({ item: i, set: j, load, best: displayLoad(odd.bestKg, item.unit),
       ...(odd.probablyKg !== undefined ? { probably: displayLoad(odd.probablyKg, item.unit) } : {}) })
@@ -555,7 +555,7 @@ export function GymPlayer({
             if (item.held) return (
               <section key={`${item.exerciseId}-${i}`} className="rounded-card border border-line bg-surface p-4">
                 <h3 className="text-title3 font-semibold">{ex.name}</h3>
-                <p className="mt-1 text-footnote text-ink2">Completed before this check-in</p>
+                <p className="mt-1 text-footnote text-ink2">{item.heldAfterReplan ? 'Completed before rebuilding the workout' : 'Completed before this check-in'}</p>
                 <ul className="mt-2 space-y-1 text-footnote text-ink2">
                   {item.sets.filter((s) => s.done).map((s, j) => <li key={j}>
                     Set {j + 1} · {countWord(ex, s.reps, item.plan)}{s.load !== undefined ? ` · ${s.load} ${item.unit}` : ''}{s.rpe ? ` · RPE ${s.rpe}` : ''}

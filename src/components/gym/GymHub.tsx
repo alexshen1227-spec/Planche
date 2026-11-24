@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
@@ -27,6 +27,7 @@ import { LocationEditor } from './LocationEditor'
 import { PullupStartingSet } from './PullupStartingSet'
 import { ExerciseHistory } from './ExerciseHistory'
 import { bodyweightCapacity } from '../../lib/gym/bodyweight'
+import { canReplanGym, GYM_PLAN_REVISION, outdatedGymPlan, replanGymDraft, untouchedGymPlan } from '../../lib/gym/replan'
 import { GymHistory } from './GymHistory'
 import { GymExerciseGuide } from './ExerciseGuide'
 
@@ -42,7 +43,8 @@ export function GymHub({
   preset: entry,
   onPresetUsed,
   startWorkout,
-}: { preset?: GymEntry | null; onPresetUsed?: () => void; startWorkout?: (request: WorkoutRequest) => void } = {}) {
+  onWorkoutChange,
+}: { preset?: GymEntry | null; onPresetUsed?: () => void; startWorkout?: (request: WorkoutRequest) => void; onWorkoutChange?: (open: boolean) => void } = {}) {
   const { state, dispatch } = useStore()
   const gym = state.gym
   const preset = entry && !('resumeSessionId' in entry) ? entry : null
@@ -82,7 +84,7 @@ export function GymHub({
   // The opener is saved and the lifts are what is left: no second opener, and the lifts keep the minutes the day planned.
   const liftsNext = stage === 'lifts-next'
   const [editingLifts, setEditingLifts] = useState(false)
-  const [pending, setPending] = useState<{ empty: boolean; preset?: GymPreset; resumeSessionId?: string } | null>(null)
+  const [pending, setPending] = useState<{ empty: boolean; preset?: GymPreset; resumeSessionId?: string; keepOpen?: boolean; replanId?: string } | null>(null)
   const remaining = liftsNext && !editingLifts ? remainingLifts(today, remembered, choice.placeId) : null
   const block = pending?.preset ?? preset ?? remaining
   const skipOpener = choice.skipOpener
@@ -91,6 +93,11 @@ export function GymHub({
   const [historyOf, setHistoryOf] = useState<string | null>(null)
   const [guideId, setGuideId] = useState<string | null>(null)
   const [running, setRunning] = useState<GymDraft | null>(null)
+  useLayoutEffect(() => {
+    onWorkoutChange?.(Boolean(running))
+    return () => onWorkoutChange?.(false)
+  }, [running, onWorkoutChange])
+  const [replacing, setReplacing] = useState<GymDraft | null>(null)
   const [resumable, setResumable] = useState<GymDraft | null>(() => loadDraft(state.epoch))
   // What is open is whatever storage holds now: read again when the player closes (a saved session clears it) and when
   // another tab changes it. It was read once at mount, so a finished session was still "open" beside "today: done".
@@ -226,9 +233,17 @@ export function GymHub({
       dispatch({ type: 'RECORD_SYMPTOM', event: { at: Date.now(), joints: 'good', source: 'check-in' } })
     }
     const open = loadDraft(state.epoch)
+    const refreshOpen = open && !pending.keepOpen && !pending.resumeSessionId && !pending.empty &&
+      (pending.replanId === open.id || (!pending.replanId && outdatedGymPlan(open))) &&
+      canReplanGym(open, location.id, Date.now())
+    if (pending.replanId && (!open || open.id !== pending.replanId)) {
+      setPending(null)
+      pushToast('The open workout changed. Check the latest workout before rebuilding it.', 'info')
+      return
+    }
     const avoid = [...new Set([...sore.joints, ...joints])]
     const light = kind === 'pain' || sore.pain
-    if (open) {
+    if (open && !refreshOpen) {
       setRunning(adaptOpenDraft(open, avoid, light, gym.locations.find((l) => l.id === open.locationId) ?? location))
       setPending(null)
       setResumable(null)
@@ -251,7 +266,7 @@ export function GymHub({
     // it is saved (the same hand-off a mixed day uses). Pain, or a sore joint the
     // skill loads, named just now leaves it out.
     const famJoints: Joint[] = opener ? (skillFamily(opener.skills[0]) === 'push' ? ['wrists', 'elbows', 'shoulders'] : ['elbows', 'shoulders']) : []
-    if (!p && !pending.empty && opener && startWorkout && kind !== 'pain' && !joints.some((j) => famJoints.includes(j))) {
+    if ((!open || untouchedGymPlan(open)) && !p && !pending.empty && opener && startWorkout && kind !== 'pain' && !joints.some((j) => famJoints.includes(j))) {
       const gymAfter = gymPreset(
           {
             focus: resolvedFocus ?? 'full',
@@ -318,17 +333,18 @@ export function GymHub({
           avoidJoints: coach?.avoidJoints ?? [],
           volumeFactor: coach?.volumeFactor ?? 1,
         }
-    const avoidJoints = [...new Set([...base.avoidJoints, ...sore.joints, ...joints])]
-    const musclesOff = base.musclesOff
+    const previous = open && refreshOpen && !untouchedGymPlan(open) ? open : undefined
+    const avoidJoints = [...new Set([...base.avoidJoints, ...sore.joints, ...joints, ...(previous?.avoidJoints ?? [])])]
+    const musclesOff = [...new Set([...base.musclesOff, ...(previous?.musclesOff ?? [])])]
     // Pain named now caps the day; otherwise the plan's own factor stands — a push
     // day's extra set was once clamped away here, so it never reached the lifts.
-    const volumeFactor = kind === 'pain' ? Math.min(base.volumeFactor, 0.6) : base.volumeFactor
+    const volumeFactor = Math.min(base.volumeFactor, previous?.volumeFactor ?? Infinity, kind === 'pain' ? 0.6 : Infinity)
     const built = pending.empty
       ? null
       : buildGymSession({
           location,
           capacity,
-          minutes: p?.minutes ?? minutes,
+          minutes: p?.minutes ?? (previous ? liftMinutes : minutes),
           favoriteAt: gym.favoriteAt,
           ...(base.focus ? { focus: base.focus } : {}),
           sessions: gym.sessions,
@@ -343,8 +359,13 @@ export function GymHub({
           now: Date.now(),
         })
     setPending(null)
-    setRunning({
+    if (refreshOpen && !built?.items.length) {
+      pushToast('No exercises fit the updated plan here. Your open workout is still available.', 'info')
+      return
+    }
+    const fresh: GymDraft = {
       id: newGymSessionId(),
+      ...(built ? { planRevision: GYM_PLAN_REVISION } : {}),
       startedAt: Date.now(),
       locationId: location.id,
       name: built?.name ?? 'Gym session',
@@ -354,7 +375,9 @@ export function GymHub({
       // A movement added or swapped in mid-session keeps the day's dose and the athlete's goals.
       volumeFactor,
       ...(gym.prefs ? { goals: gym.prefs.goals } : {}),
-    })
+    }
+    setReplacing(refreshOpen ? open : null)
+    setRunning(open && refreshOpen ? replanGymDraft(open, fresh, Date.now()) : fresh)
   }
 
   const editingLocation =
@@ -388,7 +411,7 @@ export function GymHub({
           <div className="mt-3 flex gap-2">
             <Button
               className="flex-1"
-              onClick={() => resumable.stopReport ? setRunning(resumable) : setPending({ empty: false })}
+              onClick={() => resumable.stopReport ? setRunning(resumable) : setPending({ empty: false, keepOpen: true })}
             >
               {resumable.stopReport ? 'Review stopped workout' : `Resume ${resumable.name}`}
             </Button>
@@ -407,6 +430,16 @@ export function GymHub({
               Discard it
             </Button>
           </div>
+          {canReplanGym(resumable, location.id, Date.now()) && !!plan?.items.length && (
+            <div className="mt-3 border-t border-line pt-3">
+              <p className="text-footnote text-ink2">{outdatedGymPlan(resumable)
+                ? 'This workout was picked by an earlier version. Use today’s plan to get the current exercises.'
+                : 'Use the focus, time and equipment shown below to rebuild the remaining work. Completed sets keep their original weights and reps.'}</p>
+              <Button variant="secondary" className="mt-2" onClick={() => setPending({ empty: false, replanId: resumable.id, ...(remaining ? { preset: remaining } : {}) })}>
+                {outdatedGymPlan(resumable) ? 'Use today’s updated workout' : 'Rebuild remaining exercises'}
+              </Button>
+            </div>
+          )}
         </Card>
       ) : null}
 
@@ -558,7 +591,7 @@ export function GymHub({
           </p>
         ))}
         {plan && plan.items.length ? <p className="mt-1 text-caption text-ink3">About {plan.estimatedMin} minutes with warm-up and rests.</p> : null}
-        {resumable ? (
+        {resumable && !outdatedGymPlan(resumable) ? (
           <div className="mt-4 space-y-2">
             <p className="rounded-control bg-raised p-3 text-footnote text-ink2">{resumeLine(resumable)}</p>
             <ul className="list-disc pl-5 text-footnote text-ink2">
@@ -570,7 +603,7 @@ export function GymHub({
               size="lg"
               full
               aria-label={resumable.stopReport ? 'Review stopped workout' : `Resume the open ${resumable.name} session, not the plan above`}
-              onClick={() => resumable.stopReport ? setRunning(resumable) : setPending({ empty: false })}
+              onClick={() => resumable.stopReport ? setRunning(resumable) : setPending({ empty: false, keepOpen: true })}
             >
               {resumable.stopReport ? 'Review stopped workout' : `Resume ${resumable.name}`}
             </Button>
@@ -580,9 +613,9 @@ export function GymHub({
           <Button size="lg" disabled={!plan?.items.length} onClick={() => setPending({ empty: false, ...(remaining ? { preset: { ...remaining, placeId: location.id } } : {}) })}>
             Start session
           </Button>
-          <Button size="lg" variant="secondary" onClick={() => setPending({ empty: true })}>
+          {!resumable && <Button size="lg" variant="secondary" onClick={() => setPending({ empty: true })}>
             Empty
-          </Button>
+          </Button>}
         </div>
         )}
         </>
@@ -632,6 +665,16 @@ export function GymHub({
 
 
       <Sheet open={pending !== null} onClose={() => setPending(null)} label="Before you start">
+        {pending && !pending.keepOpen && !pending.resumeSessionId && resumable && outdatedGymPlan(resumable) && (
+          <p className="mb-3 text-footnote text-ink2">Starting uses today’s updated exercises. You can close this check and resume the earlier workout if you prefer.</p>
+        )}
+        {pending?.preset && !pending.keepOpen && !pending.replanId && resumable && !outdatedGymPlan(resumable) &&
+          canReplanGym(resumable, location.id, Date.now()) && (
+            <div className="mb-3 rounded-inner border border-line p-3">
+              <p className="text-footnote text-ink2">You have an open {resumable.name} workout. Continue it as saved, or use the current plan for the remaining exercises.</p>
+              <Button variant="secondary" className="mt-2" onClick={() => setPending({ ...pending, replanId: resumable.id })}>Use current plan for remaining exercises</Button>
+            </div>
+          )}
         {pending ? <PainCheck onAnswer={launch} /> : null}
       </Sheet>
 
@@ -656,8 +699,9 @@ export function GymHub({
       {running ? (
         <GymWorkoutGate
           draft={running}
+          replacing={replacing}
           location={gym.locations.find((l) => l.id === running.locationId) ?? location}
-          onClose={() => setRunning(null)}
+          onClose={() => { setRunning(null); setReplacing(null) }}
         />
       ) : null}
     </div>
