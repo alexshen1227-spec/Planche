@@ -507,6 +507,7 @@ function openerBlock(state: AppState, skill: SkillId, at: number, place: GymLoca
 export function skillRequest(block: Pick<SkillBlock, 'minutes' | 'skills' | 'kit' | 'opener'>): WorkoutRequest {
   return {
     source: 'auto', minutes: block.minutes, skills: block.skills,
+    ...(block.opener && block.minutes < MIN_SKILL_MINUTES[1] && block.skills[0] === 'handstand' ? { focus: 'ladder' } : {}),
     ...(block.opener && (block.skills[0] === 'planche' || block.skills[0] === 'ninety') ? { deferPressing: true } : {}),
     ...(block.opener && block.skills[0] === 'frontlever' ? { deferPulling: true } : {}),
     ...(block.kit?.length ? { kit: block.kit } : {}),
@@ -3183,8 +3184,12 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
     for (const d of byOpportunity) {
       const sl = slots[d.index]
       const place = placeAt(d.index)
+      const gap = daysSinceFullPart(base, 'handstand', d.at)
+      const shortPress = d.index === 0 && d.minutes < OPENER_MINUTES + MIN_LIFTS_AFTER_OPENER &&
+        d.minutes >= MIN_LIFTS_AFTER_OPENER + 8 && g.skills >= 3 && base.tracks?.handstand?.repGoal &&
+        gap !== null && gap >= 6 && d.factor >= 1
       if (!place || sl.kind !== 'gym' || !(['family-opener', 'share', 'leg-coverage', 'legs', 'sets'].includes(sl.why ?? '') ||
-          (balanceWithLifting && sl.why === 'reserved-lifts')) || sl.reservedOpener || d.assigned ||
+          ((balanceWithLifting || shortPress) && sl.why === 'reserved-lifts')) || sl.reservedOpener || d.assigned ||
           d.pain || d.niggle || d.held || d.sportRest.push || (d.index === 0 && opts.todayFocus) || !openerClear('push', d.index)) continue
       const other = skills.find((skill) => skillFamily(skill) === sl.hint)
       const count = (skill: SkillId) => slots.filter((s, j) => days[j].week === d.week && practices(s, skill)).length +
@@ -3194,10 +3199,13 @@ function buildWeekAhead(state: AppState, now: number, opts: WeekOptions): WeekAh
       if (other ? other === 'handstand' || firstDays >= 2 || count(other) <= Math.max(1, firstDays) : firstDays >= wanted) continue
       const kit = kitAt(base, place)
       if (missingSkillKit(base, 'handstand', kit).length || FAMILY_JOINTS.push.some((joint) => d.avoidJoints.includes(joint))) continue
-      const minutes = balanceWithLifting && !canShareBalance ? OPENER_MINUTES : openerMinutes(d.minutes)
+      const minutes = shortPress ? Math.min(MIN_SKILL_MINUTES[1] - 1, d.minutes - MIN_LIFTS_AFTER_OPENER) :
+        balanceWithLifting && !canShareBalance ? OPENER_MINUTES : openerMinutes(d.minutes)
       const practice = builtSkill(base, ['handstand'], minutes, d.at, kit, true)
-      if (practice.painSafe || !practice.key.handstand || !FOCI.some((f) => f !== 'athletic' && openOn(d, f) && viable(d, d.minutes - minutes, f))) continue
-      sl.reservedOpener = { skill: 'handstand', minutes }
+      const fitted = shortPress ? practice.minutes : minutes
+      if (practice.painSafe || !practice.key.handstand || (shortPress && (fitted > minutes || !practice.rest.push)) ||
+        !FOCI.some((f) => f !== 'athletic' && openOn(d, f) && viable(d, d.minutes - fitted, f))) continue
+      sl.reservedOpener = { skill: 'handstand', minutes: fitted }
       sl.hint = undefined
       if (!sl.legDay) sl.why = 'skill-practice'
       sl.presses = practice.rest.push >= 3

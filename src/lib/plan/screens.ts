@@ -192,6 +192,7 @@ const OPENER_HOLDS: Record<SkillId, string> = {
  */
 export function openerLine(block: Pick<SkillBlock, 'skills' | 'minutes' | 'half' | 'practiceFirst'>): string {
   const skill = block.skills[0]
+  if (skill === 'handstand' && block.minutes < MIN_SKILL_MINUTES[1]) return `Press practice and a balance hold (${block.minutes} min), then your planned lifts.`
   if (block.practiceFirst) return `${OPENER_HOLDS[skill]} first (${block.minutes} min), then your planned lifts.`
   return `Opens with ${OPENER_HOLDS[skill]} (${block.minutes} min${block.half ? ', short opener' : ''}), followed by your lifts`
 }

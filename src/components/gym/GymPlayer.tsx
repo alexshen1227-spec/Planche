@@ -346,17 +346,15 @@ export function GymPlayer({
     setQuery('')
   }
 
-  /** Estimated maxes this session would beat, for the summary and the toast. */
+  /** Display the weight and reps that earned each new performance record. */
   const newMaxes = (session: ReturnType<typeof sessionFromDraft>) => {
     // Beating an earlier session's estimate on the same lift (the same place for a machine), load and reps alone.
-    const mine = new Map<string, number>()
     const alreadyEarned = new Map(previous ? estimatedMaxGains(gym.sessions).filter((g) => g.sessionId === previous.id).map((g) => [g.exerciseId, g.kg]) : [])
-    for (const g of estimatedMaxGains([...gym.sessions.filter((x) => x.id !== session.id), session])) {
-      if (g.sessionId === session.id && g.kg > (alreadyEarned.get(g.exerciseId) ?? 0)) mine.set(g.exerciseId, g.kg)
-    }
-    return [...mine].map(([id, kg]) => {
-      const unit = draft.items.find((it) => it.exerciseId === id)?.unit ?? 'kg'
-      return { id, name: GYM_EXERCISE_BY_ID[id]?.name ?? 'Lift', value: displayLoad(kg, unit), unit }
+    return estimatedMaxGains([...gym.sessions.filter((x) => x.id !== session.id), session]).flatMap((g) => {
+      if (g.sessionId !== session.id || g.kg <= (alreadyEarned.get(g.exerciseId) ?? 0) || g.set.kg === undefined) return []
+      const unit = g.set.unit ?? draft.items.find((it) => it.exerciseId === g.exerciseId)?.unit ?? 'kg'
+      return [{ id: g.exerciseId, name: GYM_EXERCISE_BY_ID[g.exerciseId]?.name ?? 'Lift',
+        value: displayLoad(g.set.kg, unit), reps: g.set.reps, unit }]
     })
   }
 
@@ -421,7 +419,7 @@ export function GymPlayer({
     const fresh = gymBadges({ sessions: state.sessions, gym: { ...gym, sessions: [...gym.sessions.filter((s) => s.id !== session.id), session] } }).filter(
       (b) => b.at !== undefined && !earnedBefore.has(b.id),
     )
-    pushToast(prs ? `Saved — ${prs} new estimated max${prs > 1 ? 'es' : ''}.` : 'Gym session saved.', 'success')
+    pushToast(prs ? `Saved with ${prs} new lifting record${prs > 1 ? 's' : ''}.` : 'Gym session saved.', 'success')
     if (fresh.length) {
       // The player stays up for the moment; closing it waits for the sheet.
       buzz([30, 50, 30])
@@ -976,14 +974,15 @@ export function GymPlayer({
         </div>
         {summary && summary.maxes.length ? (
           <div className="mt-3 rounded-inner border border-accent/30 bg-accent-soft p-4" aria-live="polite">
-            <div className="text-footnote font-semibold text-accent-text">New estimated max</div>
+            <div className="text-footnote font-semibold text-accent-text">New lifting record{summary.maxes.length > 1 ? 's' : ''}</div>
+            <p className="mt-1 text-caption text-ink2">Your strongest set by weight and reps.</p>
             <ul className="mt-2 space-y-1.5">
               {summary.maxes.map((m) => (
                 <li key={m.id} className="flex items-baseline justify-between gap-3">
                   <span className="min-w-0 truncate text-body text-ink">{m.name}</span>
                   <span className="shrink-0 font-display text-title3 font-semibold text-ink">
                     <CountUp value={m.value} decimals={Number.isInteger(m.value) ? 0 : 1} />
-                    <span className="ml-1 text-footnote font-normal text-ink3">{m.unit}</span>
+                    <span className="ml-1 text-footnote font-normal text-ink3">{m.unit} × {m.reps}</span>
                   </span>
                 </li>
               ))}

@@ -147,6 +147,7 @@ export interface MaxGain {
   endedAt: number
   kg: number
   before: number
+  set: GymSet
 }
 
 /**
@@ -158,19 +159,19 @@ export function estimatedMaxGains(sessions: GymSession[]): MaxGain[] {
   const out: MaxGain[] = []
   const best = new Map<string, number>()
   for (const s of [...sessions].sort((a, b) => a.startedAt - b.startedAt || a.endedAt - b.endedAt)) {
-    const today = new Map<string, number>()
+    const today = new Map<string, { estimate: number; set: GymSet }>()
     for (const log of s.exercises) {
       const key = maxKey(log.exerciseId, s.locationId)
       for (const set of log.sets) {
         if (set.warmup || !(set.reps > 0)) continue
         const e = comparableMax(set, log.exerciseId)
-        if (e !== null && e > (today.get(key) ?? 0)) today.set(key, e)
+        if (e !== null && e > (today.get(key)?.estimate ?? 0)) today.set(key, { estimate: e, set })
       }
     }
-    for (const [key, e] of today) {
+    for (const [key, { estimate: e, set }] of today) {
       const had = best.get(key)
       const exerciseId = key.includes(':') ? key.slice(key.indexOf(':') + 1) : key
-      if (had !== undefined && e > had + 0.01) out.push({ sessionId: s.id, exerciseId, at: s.startedAt, endedAt: s.endedAt, kg: e, before: had })
+      if (had !== undefined && e > had + 0.01) out.push({ sessionId: s.id, exerciseId, at: s.startedAt, endedAt: s.endedAt, kg: e, before: had, set })
       if (had === undefined || e > had) best.set(key, e)
     }
   }
@@ -288,6 +289,7 @@ function failedStepsAbove(
   kg: number,
   from: GymSession,
   lo: number,
+  targetRpe: number,
   keep: (set: GymSet) => boolean,
 ): number {
   let failed = 0
@@ -300,7 +302,8 @@ function failedStepsAbove(
     const load = workingLoad(prev.sets.map((s) => s.kg ?? 0), 'heaviest')
     if (!(load > kg + 0.01)) continue
     const atHeavier = prev.sets.filter((s) => (s.kg ?? 0) === load)
-    const fell = atHeavier.some((s) => s.reps < lo) && (atHeavier.some((s) => s.rpe !== undefined && s.rpe >= 9.5) || failedWithoutEffort(atHeavier, lo))
+    const fell = atHeavier.some((s) => s.reps < lo && (s.rpe ?? 0) >= 9.5) ||
+      shortAtHighEffort(atHeavier, lo, targetRpe) || failedWithoutEffort(atHeavier, lo)
     if (!fell) break
     failed++
   }
@@ -311,6 +314,12 @@ function failedStepsAbove(
 function failedWithoutEffort(atLoad: GymSet[], lo: number): boolean {
   if (!atLoad.length || atLoad.some((s) => s.rpe !== undefined)) return false
   return atLoad.filter((s) => s.reps < lo).length * 2 >= atLoad.length
+}
+
+/** Several sets missed the bottom even though the athlete worked harder than prescribed. */
+function shortAtHighEffort(sets: GymSet[], floor: number, targetRpe: number): boolean {
+  const misses = sets.filter((s) => s.reps < floor && (s.rpe ?? 0) > targetRpe + 0.5).length
+  return misses >= 2 && misses * 2 >= sets.length
 }
 
 export interface LoadSuggestion {
@@ -489,6 +498,7 @@ export function suggestLoad(input: {
     return prior.length >= 2 && prior.every((s) => s.reps >= hi && (s.rpe === undefined || s.rpe <= plan.targetRpe + 0.5))
   })()
   const failing = failedWithoutEffort(atLoad, lo)
+  const hardMisses = shortAtHighEffort(atLoad, lo, plan.targetRpe)
   const unit = unitFor(ex, location)
   // Two racks with the same nominal increment can include a half-size pair
   // or an extra plate. Compare the next grid stop to weights used here since
@@ -542,7 +552,7 @@ export function suggestLoad(input: {
   if (atMinimum && (away || anyShort)) {
     const reserve = Math.max(1, Math.round(10 - plan.targetRpe))
     const controlled = atLoad.every((set) => set.rpe !== undefined && set.rpe <= plan.targetRpe)
-    const target = grinding || failing || away ? lowestReps - reserve : lowestReps + (controlled && !unfinished && !stale ? 1 : 0)
+    const target = grinding || hardMisses || failing || away ? lowestReps - reserve : lowestReps + (controlled && !unfinished && !stale ? 1 : 0)
     const why = `The next lighter weight is unavailable here. Your shortest set at ${formatLoad(kg, unit)} was ${lowestReps} reps.`
     if (target < Math.min(lo, youth ? YOUTH_REP_FLOOR : 5)) return changeLift(why)
     const targetReps = Math.max(1, Math.min(lo, target))
@@ -570,7 +580,7 @@ export function suggestLoad(input: {
   // A step that fell short lately is not tried again on the same evidence: the sets that earned it last time did
   // not hold at the heavier load. Reps past the top of the range are the proof that there is room (double
   // progression, CONSENSUS; the extra bar is the app's own rule, not a measured one).
-  const failedSteps = wantsUp ? failedStepsAbove(sessions, exerciseId, location?.id, kg, last.session, lo, keep) : 0
+  const failedSteps = wantsUp ? failedStepsAbove(sessions, exerciseId, location?.id, kg, last.session, lo, plan.targetRpe, keep) : 0
   const retryBar = hi + FAILED_STEP_EXTRA_REPS * Math.min(failedSteps, FAILED_STEP_CAP)
   // Under 18 a step that is a large share of the load is earned with reps first, however the equipment is graded.
   const youthNext = youth && wantsUp && kg > 0 ? next : 0
@@ -621,6 +631,9 @@ export function suggestLoad(input: {
   }
   if (failing && step > 0 && kg > 0) {
     return { ...base, kg: lower, kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step lighter, then build back.` }
+  }
+  if (hardMisses && step > 0 && kg > 0) {
+    return { ...base, kg: lower, kind: 'decrease', why: `Several sets fell below ${lo} reps above your target effort of RPE ${plan.targetRpe}. Use the next lighter weight.` }
   }
   const repeatKg = reach(kg)
   const reps = atLoad.map((s) => s.reps).join(', ')
@@ -699,6 +712,9 @@ function assistedSuggestion(
   }
   if (failedWithoutEffort(atHelp, lo) && step > 0) {
     return { ...base, kg: adjacent(help, true), kind: 'decrease', why: `Half the sets fell short of ${lo} reps and no effort was logged: one step more help, then build back.` }
+  }
+  if (shortAtHighEffort(atHelp, lo, plan.targetRpe) && step > 0) {
+    return { ...base, kg: adjacent(help, true), kind: 'decrease', why: `Several sets fell below ${lo} reps above RPE ${plan.targetRpe}. Use one more step of assistance.` }
   }
   return { ...base, kg: repeatLoad(help), kind: 'repeat', why: gap.incompleteWhy ?? `Aim to add a rep to last time’s ${atHelp.map((s) => s.reps).join(', ')} with this assistance.` }
 }

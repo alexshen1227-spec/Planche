@@ -142,7 +142,7 @@ function twinFor(
   capacity: number | undefined,
   easeDown: boolean,
   now: number,
-): { spec: BlockSpec; reason: string; standard?: number; eased?: string; preparation?: 'practice' | 'trial' } | null {
+): { spec: BlockSpec; reason: string; standard?: number; firstGoalRep?: boolean; eased?: string; preparation?: 'practice' | 'trial' } | null {
   if (skill.ladder) {
     const status = ladderStatus(state, skill.id, now)
     if (!status) return null
@@ -158,6 +158,7 @@ function twinFor(
       spec: { exerciseId: rung.exerciseId, sets: 3, amount: rung.startReps, rest: 'main' },
       reason: rung.why,
       standard: rung.standardReps,
+      firstGoalRep: !eased && Boolean(status.openedAt[rung.exerciseId]) && state.tracks?.[skill.id]?.repGoal === rung.exerciseId && !status.goal.logged,
       ...(eased ? { eased: status.rung.exerciseId } : {}),
     }
   }
@@ -454,6 +455,7 @@ export function skillSession(
     const easeForJoints = plan.loadPermission === 'reduced'
     const twin = twinFor(state, skill, step, capacity, easeForJoints || light, now)
     if (twin) {
+      const goalFirst = twin.firstGoalRep && !easyDay && !light && !easeForJoints && !attemptQueued && plan.challengeAllowed
       firstPikeTrial = twin.preparation === 'trial' && !light && !easyDay && !easeForJoints && !attemptQueued && plan.challengeAllowed
       const exercise = EXERCISE_BY_ID[twin.spec.exerciseId]
       const maximal = (exercise?.difficulty ?? 0) >= 4
@@ -478,16 +480,17 @@ export function skillSession(
         role: 'press',
         // Emphasis keeps the rung through the budget fit: a ladder day without
         // its ladder is not one.
-        ...(light ? { light: true } : ladderDay || emphasis === 'pressing' ? { emphasis: true } : {}),
+        ...(light ? { light: true } : ladderDay || goalFirst || emphasis === 'pressing' ? { emphasis: true } : {}),
         note: `${label} ${twin.reason}${easedNote}${standardNote}${
           maximal && !twin.eased ? ' Can’t finish a rep yet? Lower slowly over about three seconds, reset, and log the reps you completed.' : ''
         }`,
       }
-      if (ladderDay) {
+      if (ladderDay || goalFirst) {
         // Right after the warm-up, while fresh.
         const first = blocks.findIndex((b) => b.section !== 'warmup')
         blocks.splice(first < 0 ? blocks.length : first, 0, rungBlock)
-        ladderPlaced = true
+        ladderPlaced = ladderDay
+        if (goalFirst) adjustments.push(`Your first ${exercise.name.toLowerCase()} is your chosen milestone. Try it after the warm-up, while your shoulders are fresh.`)
       } else {
         blocks.push(rungBlock)
       }
@@ -591,6 +594,14 @@ export function skillSession(
   const baseBudget = sessionBudget(state.settings.sessionMinutes, light)
   // One part of a mixed session is built at whatever it is given.
   const budget = options.part && minutesOverride !== undefined ? minutesOverride : sessionBudget(state.settings.sessionMinutes, light, minutesOverride)
+  // In a brief press-first practice, keep the complete warm-up, a set on the
+  // current rung and a balance hold. Spend any remaining time on a second
+  // rung set. The generic accessory trim otherwise removes the press itself.
+  const shortLadder = ladderPlaced && budget < 15
+  const compactBlocks = (repeats: number) => lightened
+    .filter((b) => b.section === 'warmup' || b.role === 'press' || (b.section === 'main' && b.role === 'skill'))
+    .map((b) => b.section === 'warmup' ? b : { ...b, sets: Math.min(b.sets, b.role === 'press' ? repeats : 1), reach: 0 })
+  const compact = shortLadder ? compactBlocks(2) : undefined
   // A ladder day given a time fills it with the skill's own strength work
   // after the rung — the second strength movement, the rung below as back-off
   // volume, a second core exercise — and stops at the budget. A 60-minute
@@ -598,6 +609,8 @@ export function skillSession(
   // Only a ladder day with an explicit time; any other session is built as it
   // always was (ladderDay.golden.json pins that).
   const fill =
+    compact ? { blocks: estimateMinutes(compact, state.settings.stopLatencySec, state.settings.phoneWithinReach) <= budget
+      ? compact : compactBlocks(1), added: [] as string[] } :
     ladderPlaced && minutesOverride !== undefined && !options.part && !light
       ? fillLadderDay(lightened, {
           candidates: ladderFillers(state, skill, stepProgram, equipment, rests, Math.max(2, mainHoldSets(...doseArgs, skill.holdAggregateSec) - sideLess)),
@@ -607,10 +620,11 @@ export function skillSession(
         })
       : { blocks: lightened, added: [] as string[] }
   const whole = withSides(fill.blocks)
-  const fit = fitToBudget(whole, budget, emphasis === 'core', state.settings.stopLatencySec, state.settings.phoneWithinReach)
+  const fit = shortLadder ? { blocks: whole, dropped: [] as string[] } :
+    fitToBudget(whole, budget, emphasis === 'core', state.settings.stopLatencySec, state.settings.phoneWithinReach)
   const fitted = fit.blocks.map((b) => ({ ...b, skill: skill.id }))
   // Whether the budget took anything off: a block, or a set.
-  const trimmed = fit.dropped.length > 0 || totalSetsOf(fit.blocks) < totalSetsOf(whole)
+  const trimmed = shortLadder || fit.dropped.length > 0 || totalSetsOf(fit.blocks) < totalSetsOf(whole)
 
   const present = new Set(fitted.filter((b) => b.section !== 'warmup').map((b) => b.exerciseId))
   // What the athlete's kit left out, said once per missing piece rather than
@@ -687,7 +701,7 @@ export function skillSession(
   return {
     id: `auto-${stepId}-${plan.dayType}-${plan.strategy}${ladderPlaced ? '-ladder' : ''}${shortened ? `-${budget}m` : ''}`,
     name: `${ladderPlaced && skill.ladder ? `${skill.ladder.name} day` : title} · ${strategy.name}${shortened ? ' · Short' : ''}`,
-    focus: shortened
+    focus: shortLadder ? `Warm up, practise your current press, then finish with one ${keyName} hold.` : shortened
       ? `Trimmed to about ${fittedMinutes} minutes${
           fittedMinutes > budget ? ' — as short as this day gets without cutting the work that matters' : ''
         }. The warm-up and your main ${keyName} are intact; accessories came off first, because a short session you actually do beats a full one you skip. ${strategyContext}`

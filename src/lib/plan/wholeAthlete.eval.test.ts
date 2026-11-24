@@ -3,6 +3,8 @@ import type { EquipmentId, SkillId, StepId } from '../../types'
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { GYM_EQUIPMENT } from '../../data/gym/catalog'
 import { STEP_BY_ID, stepsOf } from '../../data/progressions'
+import { finalizeWorkout } from '../../data/workouts'
+import { calisthenicsRequest } from './screens'
 import { buildPlan } from '../coach'
 import { readSignals } from '../signals'
 import { skillView, stepOfSkill } from '../skills'
@@ -100,6 +102,20 @@ it('builds toward both chosen muscles on three long visits while keeping introdu
 })
 
 describe('one skill and whole-body training on three days', () => {
+  it('starts a brief shared handstand session with the assigned press and keeps the warm-up and balance hold', () => {
+    const now = new Date(2026, 10, 13, 8).getTime()
+    const state = makeAthlete({ skills: ['handstand'], birthYear: 1995, steps: { handstand: 'hs-wall' }, kit: ['wall', 'floor', 'box'] })
+    const track = state.tracks!.handstand!
+    track.repGoal = 'wall-hspu'
+    track.assessment = { at: addDays(now, -12), placedStepId: 'hs-wall', confidence: 'moderate', gapIds: [],
+      answers: { wrist: 2, pushups: 22, hollow: 35, 'level:handstand': 1, 'ladder:hspu': 2, experience: 12 } }
+    const request = calisthenicsRequest(state, { minutes: 10, skills: ['handstand'], opener: true, kit: ['wall', 'floor', 'box'] })
+    const visit = finalizeWorkout(state, request, undefined, now)
+    const work = visit.blocks.filter((b) => b.section !== 'warmup' && b.section !== 'cooldown')
+    expect(visit.blocks[0].section).toBe('warmup')
+    expect(work.map((b) => b.exerciseId)).toEqual(['wall-hspu-negative', 'wall-handstand'])
+    expect(visit.minutes).toBeLessThanOrEqual(10)
+  })
   it('keeps both skills and trains the chest, shoulders and legs on a three-day front-lever week', () => {
     const place = { ...GYM_PLACE, equipment: ['floor', 'wall', 'pullup-bar', 'dumbbells', 'incline-bench', 'assisted-pullup', 'cable', 'leg-press', 'leg-curl'] as typeof GYM_PLACE.equipment }
     const out = season({ skills: ['frontlever', 'handstand'], active: 'gym', birthYear: 1994,

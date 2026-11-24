@@ -53,6 +53,16 @@ it('takes the nearest heavier weight from an offset working load and respects ac
   expect(increase('db-lateral-raise', 5, [session('elsewhere', 'another-gym', T0 - DAY, 'db-curl', [trial])]).kg).toBe(6)
 })
 
+it('lowers a working weight when multiple sets miss the range above the prescribed effort', () => {
+  const id = 'db-lateral-raise'
+  const plan = repPlanFor(GYM_EXERCISE_BY_ID[id])
+  const next = (reps: number[], effort: number) => suggestLoad({ exerciseId: id, location: gymA, plan,
+    sessions: [session('raises', gymA.id, T0, id, reps.map((n) => set(8, n, effort)))], now: T0 + DAY })
+  expect(next([8, 7, 7, 6], 9)).toMatchObject({ kind: 'decrease', kg: 6 })
+  expect(next([8, 7], 8).kind).toBe('repeat')
+  expect(next([11, 11, 10, 9], 9).kind).toBe('repeat')
+})
+
 it('carries earned reps forward at a fixed rack and offers an actionable swap below its lightest weight', () => {
   const rack = { ...gymA, gear: { dumbbells: { stepKg: 2, maxKg: 2 } } }
   const log: GymSession[] = []
