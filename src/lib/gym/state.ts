@@ -34,7 +34,7 @@ const isEquipment = (v: unknown): v is LocationEquipment =>
   typeof v === 'string' && (KIT.has(v) || v in GYM_EQUIPMENT_BY_ID)
 const isTime = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0
 const isUnit = (v: unknown): v is Unit => v === 'kg' || v === 'lb'
-const RATINGS: Rating[] = ['love', 'fine', 'avoid']
+const RATINGS: Rating[] = ['love', 'like', 'fine', 'dislike', 'avoid']
 
 const MUSCLE_IDS = new Set<string>(MUSCLES.map((m) => m.id))
 const ACTIVITY_KINDS = SPORT_KINDS.map((k) => k.id)

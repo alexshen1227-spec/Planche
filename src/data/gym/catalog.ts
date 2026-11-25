@@ -106,6 +106,8 @@ export type Pattern =
   | 'drill'
   | 'adduction'
   | 'abduction'
+  | 'wrist'
+  | 'front-raise'
 
 export const PATTERN_LABEL: Record<Pattern, string> = {
   'horizontal-press': 'Horizontal press',
@@ -137,6 +139,8 @@ export const PATTERN_LABEL: Record<Pattern, string> = {
   drill: 'Running drill',
   adduction: 'Adductor',
   abduction: 'Hip abductor',
+  wrist: 'Wrist and grip',
+  'front-raise': 'Front raise',
 }
 
 /**

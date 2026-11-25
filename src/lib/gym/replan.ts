@@ -12,9 +12,11 @@ import { partnerIndex, restoreSetRest } from './pairedSets'
  * 1: stale workouts are rebuilt. 2 (2026-11-24): Push and Pull days fund their main compounds first, curls never
  * outnumber the back compounds, and the pull-up is the default vertical pull. 3: no redundant pairs (an easier
  * version only as a finisher), about two isolation exercises a muscle, lifting capped near an hour, and spare time
- * raises existing exercises to four sets before adding new ones.
+ * raises existing exercises to four sets before adding new ones. 4: accessory slots are shared out by the athlete's
+ * ratings, with a new exercise tried now and then (`rotation.ts`), and movements are classified by the muscles they
+ * actually train (wrist curls are forearm work, not a biceps slot).
  */
-export const GYM_PLAN_REVISION = 3
+export const GYM_PLAN_REVISION = 4
 
 export function untouchedGymPlan(draft: GymDraft): boolean {
   return !!focusFromName(draft.name) && !draft.edited && draft.resumeFrom === undefined && !draft.stopReport &&

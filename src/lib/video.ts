@@ -207,6 +207,11 @@ export function demoSearchUrl(ex: Exercise): string {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`
 }
 
+/** A YouTube search for a gym movement's demonstrations, phrased for lifting rather than calisthenics. */
+export function gymDemoSearchUrl(ex: { name: string }): string {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(`${ex.name} exercise how to proper form`)}`
+}
+
 /** Extract a YouTube video id from the common URL shapes, or null. */
 export function youtubeId(url: string): string | null {
   const trimmed = url.trim()

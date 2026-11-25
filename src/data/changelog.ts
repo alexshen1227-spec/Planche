@@ -19,6 +19,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-24',
+    title: 'Swap or add any exercise, see how to do it, and rate them',
+    area: 'training',
+    notes: [
+      'Swap and Add in a workout now show the app’s recommendations first and every exercise in the bank below them, with a search for names, muscles and equipment. You can also pick an exercise that needs equipment your place does not list. Anything your joint check or switched-off muscles keep out today stays out, and the list says how many and why.',
+      'Every exercise in a workout has a How to button: how to do it, the muscles it works, easier and harder versions, and a demo video that plays right there or a YouTube search for more. You can pin your own video. Opening it never changes your workout.',
+      'Rate exercises Love, Like, Fine, Dislike or Avoid: in a workout, from any exercise guide, or in the Gym tab under Exercise ratings. When exercises would do the same job, the plan picks loved ones most often, liked ones often, disliked ones rarely and avoided ones never, and now and then it tries one you have not done yet. Main lifts stay the same from session to session so your progress on them stays comparable. This is how the app shares out exercises, not a training rule.',
+      'Exercises are filed by the muscles they actually train. Wrist curls train the forearms, not the biceps, so they no longer fill a curl slot or count as biceps work. Reverse curls count as forearm work with half a set for the biceps. Front raises are no longer filed as lateral raises, and a glute kickback is no longer filed as a hip abductor.',
+    ],
+  },
+  {
+    date: '2026-11-24',
     title: 'No doubled-up exercises, and lifting stays within about an hour',
     area: 'training',
     notes: [

@@ -4,9 +4,8 @@ import type { Category, Exercise } from '../types'
 import { useStore } from '../lib/store'
 import { EXERCISES, CATEGORY_LABEL } from '../data/exercises'
 import { GUIDES, GUIDE_GROUPS, GLOSSARY, type Guide } from '../data/learn'
-import { demoSearchUrl, youtubeId } from '../lib/video'
-import { MovementDemo } from '../components/MovementDemo'
-import { pushToast } from '../lib/toast'
+import { demoSearchUrl } from '../lib/video'
+import { DemoVideoPanel } from '../components/DemoVideoPanel'
 import { fmtHold, fmtDate } from '../lib/time'
 import { Icon } from '../components/Icon'
 import { Modal } from '../components/ui'
@@ -202,7 +201,7 @@ function ExercisePane() {
         {detail && ('pattern' in detail ? (
           <div className="space-y-4 p-4 sm:p-6">
             <h2 className="pr-10 font-display text-title2 font-bold text-ink">{detail.name}</h2>
-            <GymExerciseGuide exercise={detail} onOpen={setDetail} />
+            <GymExerciseGuide exercise={detail} onOpen={setDetail} rate />
           </div>
         ) : <ExerciseDetail exercise={detail} />)}
       </Modal>
@@ -211,88 +210,7 @@ function ExercisePane() {
 }
 
 function VideoPanel({ exercise }: { exercise: Exercise }) {
-  const { state, dispatch } = useStore()
-  const pinned = state.videoLinks[exercise.id]
-  const pinnedId = pinned ? youtubeId(pinned) : null
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(pinned ?? '')
-
-  const save = () => {
-    const id = youtubeId(draft)
-    if (!id) {
-      pushToast('That does not look like a YouTube link.', 'danger')
-      return
-    }
-    dispatch({ type: 'SET_VIDEO', exerciseId: exercise.id, url: draft.trim() })
-    setEditing(false)
-    pushToast('Demo video pinned.', 'success')
-  }
-
-  return (
-    <div className="mt-4 rounded-card border border-line bg-raised p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-footnote font-semibold text-ink">
-          <Icon name="play" size={14} className="text-accent-text" /> Demo video
-        </div>
-        <div className="flex items-center gap-2">
-          <a
-            href={demoSearchUrl(exercise)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-footnote font-medium text-ink2 transition hover:text-ink"
-          >
-            Find demos <Icon name="arrowR" size={13} />
-          </a>
-          <button
-            onClick={() => {
-              setDraft(pinned ?? '')
-              setEditing((v) => !v)
-            }}
-            className="min-h-11 rounded-lg border border-line bg-surface px-3 py-1.5 text-footnote font-medium text-ink2 transition hover:text-ink"
-          >
-            {pinned ? 'Change' : 'Pin one'}
-          </button>
-        </div>
-      </div>
-
-      {!editing ? (
-        <>
-          <MovementDemo name={exercise.name} exerciseId={exercise.id} pinnedUrl={pinned} />
-          {pinnedId && <button
-            onClick={() => {
-              dispatch({ type: 'SET_VIDEO', exerciseId: exercise.id, url: null })
-              pushToast('Pinned video removed.', 'info')
-            }}
-            className="mt-2 min-h-11 text-footnote font-medium text-ink3 hover:text-danger-text"
-          >
-            Remove pinned video
-          </button>}
-        </>
-      ) : (
-        <div className="mt-3">
-          <p className="text-footnote leading-relaxed text-ink2">
-            Found a demo you like? Paste its YouTube link and it will play right here, every time.
-          </p>
-          <div className="mt-2 flex gap-2">
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && save()}
-              aria-label="YouTube demonstration link"
-              placeholder="https://youtube.com/watch?v=…"
-              className="min-w-0 flex-1 rounded-control border border-line bg-surface px-3 py-2 text-footnote text-ink outline-none placeholder:text-ink3 focus:border-accent"
-            />
-            <Button
-              onClick={save}
-              className=" "
-            >
-              Pin
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
+  return <DemoVideoPanel exerciseId={exercise.id} name={exercise.name} searchUrl={demoSearchUrl(exercise)} />
 }
 
 function ExerciseDetail({ exercise: e }: { exercise: Exercise }) {

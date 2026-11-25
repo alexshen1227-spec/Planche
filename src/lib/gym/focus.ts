@@ -20,8 +20,8 @@ export function muscleFitsGymFocus(focus: GymFocus, muscle: Muscle): boolean {
 
 const families: Partial<Record<Pattern, Family>> = {
   'horizontal-press': 'push', 'incline-press': 'push', 'vertical-press': 'push', dip: 'push', 'chest-fly': 'push',
-  'lateral-raise': 'push', triceps: 'push',
-  'horizontal-pull': 'pull', 'vertical-pull': 'pull', 'straight-arm-pull': 'pull', 'rear-delt': 'pull', biceps: 'pull', shrug: 'pull',
+  'lateral-raise': 'push', 'front-raise': 'push', triceps: 'push',
+  'horizontal-pull': 'pull', 'vertical-pull': 'pull', 'straight-arm-pull': 'pull', 'rear-delt': 'pull', biceps: 'pull', wrist: 'pull', shrug: 'pull',
   squat: 'lower', lunge: 'lower', hinge: 'lower', 'knee-extension': 'lower', 'knee-flexion': 'lower',
   calf: 'lower', dorsiflexion: 'lower', adduction: 'lower', abduction: 'lower', jump: 'lower', sprint: 'lower', drill: 'lower',
 }

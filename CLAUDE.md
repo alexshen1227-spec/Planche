@@ -1198,8 +1198,32 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     main movers only. Lifting caps at `MAX_LIFTING_MIN` (60): long-day
     thresholds read `input.minutes`. Spare time tops existing exercises up to
     4 sets before the fill adds anything. A pull-up or row is half a biceps
-    set (`volumeShare`). Bump `GYM_PLAN_REVISION` (now 3) whenever the
+    set (`volumeShare`). Bump `GYM_PLAN_REVISION` (now 4) whenever the
     builder's picks change: untouched open plans rebuild themselves.
+  - **Picking, rating and filing exercises (2026-11-24, third round)**,
+    pinned in `gym/exercisePicker.test.tsx`, `gym/rotation.test.ts` and
+    `gym/classification.test.ts` (all mutation-checked). In a workout, Swap
+    and Add are one `ExercisePicker` (`lib/gym/picker.ts`): recommendations
+    (`alternativesFor`: same pattern, then movements whose main muscles
+    include this one's first; `addRecommendations`) above the whole bank,
+    searchable. A pick may need kit the place does not list, but the day's
+    rails (`allowedToday`: rested joints, muscles off, `plyoGate`) still
+    hold, and what they hide is counted with reasons. Every exercise has a
+    How to sheet (`GymExerciseGuide rate` + `DemoVideoPanel`, also in Learn)
+    that only reads and rates: the test compares the stored draft byte for
+    byte. Ratings have five levels (`RATING_CHOICES`). `rotateSlot` shares
+    an accessory slot, never the day's named compounds, among comparable
+    movements (same pattern and main muscle, fit within `COMPARABLE_FIT`) by
+    weight: love 4, like 2, fine 1, dislike ¼, with the unrated ones in play
+    sharing one fine weight. It runs as a deterministic weighted round-robin
+    over the last `ROTATION_WINDOW` slot sessions and tries one never-done
+    movement after `EXPLORE_EVERY − 1` slot sessions with nothing new. A slot
+    with nothing rated keeps its single pick, so the sample matrix did not
+    move. A pattern is a job: every exercise's main muscles include its
+    pattern's target. Wrist curls are `wrist`, the front raise `front-raise`
+    and the kickback `hinge`. A curl is any `biceps`-pattern movement
+    (`isBicepsIsolation`), so reverse curls count against the curl cap and
+    give the biceps half a set.
 
 ## The design system (Phase 5)
 

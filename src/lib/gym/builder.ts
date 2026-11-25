@@ -1,7 +1,8 @@
 import { type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
 import { addDays, dayKey, weekStart } from '../time'
 import { athleticDomain, GYM_EXERCISE_BY_ID, jointsToRest, volumeShare, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
-import { availableAt, canDoHere, preferenceRank } from './availability'
+import { availableAt, canDoHere, preferenceRank, RATING_ORDER } from './availability'
+import { rotateSlot } from './rotation'
 import { hasBodyweightGate, readyForBodyweight, type BodyweightCapacity } from './bodyweight'
 import { legPracticeAt, LEG_VARIATIONS, preparesFor, unassistedDose, UNASSISTED_LIFTS } from './bodyweightSteps'
 import { canPairExercises, savedPairSeconds } from './pairedSets'
@@ -68,7 +69,7 @@ const PRESSING_PATTERNS: ReadonlySet<Pattern> = new Set<Pattern>(['horizontal-pr
 
 /** Movements that pull (a pull skill's family). */
 const PULLING_PATTERNS: ReadonlySet<Pattern> = new Set<Pattern>(['vertical-pull', 'horizontal-pull', 'straight-arm-pull'])
-const UPPER_ISOLATION = new Set<Pattern>(['lateral-raise', 'rear-delt', 'biceps', 'triceps', 'chest-fly', 'shrug'])
+const UPPER_ISOLATION = new Set<Pattern>(['lateral-raise', 'front-raise', 'rear-delt', 'biceps', 'wrist', 'triceps', 'chest-fly', 'shrug'])
 
 /**
  * Working sets each main compound of a Push or Pull day (the rows and pull-ups, the presses) reaches before an
@@ -114,7 +115,8 @@ export function chinUpAllowed(sessions: readonly GymSession[], now: number): boo
   return ![...days.values()].sort((a, b) => b.at - a.at).slice(0, CHIN_UP_EVERY - 1).some((d) => d.chin)
 }
 
-const isBicepsIsolation = (ex: GymExercise) => ex.pattern === 'biceps' && ex.primary.includes('biceps')
+/** Every curl: the elbow-flexion pattern (a reverse curl too). Wrist curls are their own pattern, forearm work. */
+const isBicepsIsolation = (ex: GymExercise) => ex.pattern === 'biceps'
 const isBackCompound = (ex: GymExercise) => ex.compound && (ex.pattern === 'vertical-pull' || ex.pattern === 'horizontal-pull')
 
 /**
@@ -375,6 +377,11 @@ interface GymSessionInput {
   /** Where each movement is liked best (`gym.favoriteAt`): it wins its slot at that place. */
   favoriteAt?: Record<string, string>
   now?: number
+}
+
+/** Said when a slot gives a movement the athlete has never done its turn (`rotateSlot`). */
+export function exploringNote(e: Pick<GymExercise, 'name'>): string {
+  return `${e.name} is new to you: now and then the plan tries an exercise you have not done yet. Rate it afterwards to set how often it comes back.`
 }
 
 /** Fit and sequence the movements. A week compares many candidate sessions before anyone needs load suggestions. */
@@ -671,6 +678,15 @@ export function planGymExercises(input: GymSessionInput) {
       const first = ranked[0]
       if (!first) continue
       let pick = first.e
+      // An accessory slot is shared out by the athlete's ratings, with a new movement tried now and then
+      // (`rotateSlot`). The movements the day is named for stay put, so their progress stays comparable.
+      if (!wantsExplosive && !named.some((group) => group.some((p) => slot.includes(p)))) {
+        const turn = rotateSlot({ ranked: ranked.map((r) => ({ exercise: r.e, fit: r.score + defaultPick(r.e) - RATING_ORDER[ratings[r.e.id] ?? 'unrated'] })), ratings, sessions, now })
+        if (turn && turn.pick !== first.e) {
+          pick = turn.pick
+          if (turn.explored) notes.push(exploringNote(pick))
+        }
+      }
       const learned = legPractice.get(pick.id)?.working
       if (learned && factor >= 1 && !wantsExplosive && ratings[pick.id] !== 'love') {
         const variation = GYM_EXERCISE_BY_ID[learned.id]
@@ -720,7 +736,11 @@ export function planGymExercises(input: GymSessionInput) {
           // Fill a missing priority with an isolation move that belongs on this day.
           const options = here.filter((e) => !used.has(movement(e)) && (!e.compound || (shortMixed && requested.has(muscle))) && !e.explosive && !e.dose &&
             e.primary.includes(muscle) && usable(e) && joinable(e) && rungRole(e).role === 'standalone' && !spareIn(e) && !technicalPenalty(e))
-          const best = options.sort((a, b) => scoreOf(a) - scoreOf(b) || a.primary.length - b.primary.length)[0]
+          const sorted = options.sort((a, b) => scoreOf(a) - scoreOf(b) || a.primary.length - b.primary.length)
+          // The priority's own movement is shared out by the ratings like any accessory slot.
+          const turn = rotateSlot({ ranked: sorted.map((e) => ({ exercise: e, fit: scoreOf(e) - RATING_ORDER[ratings[e.id] ?? 'unrated'] })), ratings, sessions, now })
+          const best = turn?.pick ?? sorted[0]
+          if (turn?.explored && best) notes.push(exploringNote(best))
           if (best) {
             const addition = makeItem(best, false, fullPriorityDose && requested.has(muscle) ? 4 : 3)
             items.push(addition)

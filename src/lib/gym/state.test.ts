@@ -40,6 +40,19 @@ describe('exercise ids used here exist', () => {
   })
 })
 
+describe('the five rating levels', () => {
+  it('keep like and dislike through a save and a merge, and drop anything else', () => {
+    const g = sanitizeGym({ ...base(), ratings: { [BENCH]: 'like', [CURL]: 'dislike', [SQUAT]: 'meh' } })!
+    expect(g.ratings).toEqual({ [BENCH]: 'like', [CURL]: 'dislike' })
+    const { a, b } = fork(
+      base(),
+      (x, t) => reduceGym(x, { op: 'rate', exerciseId: BENCH, rating: 'like' }, t)!,
+      (x, t) => reduceGym(x, { op: 'rate', exerciseId: CURL, rating: 'dislike' }, t)!,
+    )
+    for (const merged of [mergeGym(a, b)!, mergeGym(b, a)!]) expect(merged.ratings).toEqual({ [BENCH]: 'like', [CURL]: 'dislike' })
+  })
+})
+
 describe('mergeGym merges ratings, favourites and hard-here marks key by key', () => {
   it('keeps both tabs\' ratings', () => {
     const { a, b } = fork(

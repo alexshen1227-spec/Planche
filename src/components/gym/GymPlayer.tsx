@@ -1,15 +1,17 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { GYM_EXERCISE_BY_ID, jointsToRest, type GymExercise } from '../../data/gym/exercises'
-import { PATTERN_LABEL } from '../../data/gym/catalog'
 import { useStore } from '../../lib/store'
 import { pushToast } from '../../lib/toast'
 import { primeSignal, releaseSignal, signalTone } from '../../lib/audio'
-import { alternativesFor, availableAt, canDoHere, searchExercises } from '../../lib/gym/availability'
-import { fitsGymFocus, focusFromName, FOCUS_LABEL } from '../../lib/gym/focus'
+import { alternativesFor, canDoHere } from '../../lib/gym/availability'
+import { fitsGymFocus, focusFromName } from '../../lib/gym/focus'
 import { bodyweightCapacity } from '../../lib/gym/bodyweight'
 import { partnerIndex, restAfterSet, restoreSetRest, useStraightSets } from '../../lib/gym/pairedSets'
+import { addRecommendations } from '../../lib/gym/picker'
 import { GymExerciseGuide } from './ExerciseGuide'
+import { ExercisePicker } from './ExercisePicker'
+import { ExerciseRating } from './ExerciseRating'
 import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../lib/gym/builder'
 import { addedSetReps, conservative, dayOfItem, FINISHER_LABEL, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
 import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, isUnloadedSet, comparablePerformance, plyoGate, prescribedCount, repPlanFor, suggestLoad } from '../../lib/gym/progression'
@@ -21,10 +23,13 @@ import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
 import { Icon } from '../Icon'
 import { finishBlocker, nextTimeLines, unfinishedLine } from '../../lib/gym/sessionLines'
 import { askStillApplies, parseTypedLoad, type LoadAsk } from '../../lib/gym/loadAsk'
-import { BadgeGlyph, Button, CountUp, RingTimer, Sheet, SwipeRow, ToggleChip } from '../ds'
+import { BadgeGlyph, Button, CountUp, RingTimer, Sheet, SwipeRow } from '../ds'
 import { JointReportFields, JointReportNotice, type AttemptSymptom } from '../AttemptEnd'
 
 const RPE_CHOICES = [6, 7, 8, 9, 10]
+
+/** The one sheet over the workout: an exercise's options, its guide, a swap, or an addition. */
+type SheetKind = 'menu' | 'guide' | 'swap' | 'add'
 
 function buzz(pattern: number | number[]) {
   try {
@@ -115,15 +120,12 @@ export function GymPlayer({
   const rest = draft.stopReport ? undefined : draft.rest
   const askRpe = draft.stopReport ? undefined : draft.effortFor
   // A quick log starts empty: the exercise list opens straight away, and each pick is logged like any planned lift.
-  const [sheet, setSheet] = useState<{ kind: 'swap' | 'add' | 'menu'; item?: number } | null>(() =>
+  const [sheet, setSheet] = useState<{ kind: SheetKind; item?: number } | null>(() =>
     !initial.items.length && !initial.stopReport && initial.resumeFrom === undefined ? { kind: 'add' } : null)
   const [finishOpen, setFinishing] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [trialFor, setTrialFor] = useState<number | null>(null)
   const finishing = finishOpen || Boolean(draft.stopReport)
-  const [query, setQuery] = useState('')
-  const [allFocuses, setAllFocuses] = useState(false)
-  const [visibleCount, setVisibleCount] = useState(40)
   const split = focusFromName(draft.name)
   const playerRef = useRef<HTMLDivElement | null>(null)
   const restEndedRef = useRef((initial.rest?.until ?? Infinity) <= Date.now())
@@ -191,12 +193,7 @@ export function GymPlayer({
   const asksSled = needLoad && GYM_EXERCISE_BY_ID[needLoad.exerciseId]?.stepFrom === 'sled'
   const [needValue, setNeedValue] = useState('')
   /** One sheet at a time: opening any of them closes the others' questions. */
-  const openSheet = (next: { kind: 'swap' | 'add' | 'menu'; item?: number } | null) => {
-    if (next?.kind === 'add') {
-      setAllFocuses(false)
-      setVisibleCount(40)
-      setQuery('')
-    }
+  const openSheet = (next: { kind: SheetKind; item?: number } | null) => {
     if (next) {
       setNeedLoad(null)
       setDoubt(null)
@@ -307,7 +304,8 @@ export function GymPlayer({
 
   const swapTo = (i: number, exerciseId: string) => {
     const ex = GYM_EXERCISE_BY_ID[exerciseId]
-    if (!fitsToday(ex)) return
+    // A movement the athlete picks may need kit this place does not list; today's safety rails still hold.
+    if (!allowedToday(ex)) return
     update((d) => {
       const old = d.items[i]
       useStraightSets(d, i, Date.now())
@@ -342,12 +340,50 @@ export function GymPlayer({
     pushToast(`Swapped to ${ex.name}.`, 'info')
   }
 
-  /** What today's plan kept out stays out of swaps and additions too. */
-  const fitsToday = (e: GymExercise) =>
-    canDoHere(e.id, location) && !jointsToRest(e.id).some((j) => draft.avoidJoints?.includes(j)) && !e.primary.some((m) => draft.musclesOff?.includes(m))
-  const addOptions = sh?.kind === 'add' ? searchExercises(availableAt(location), query).filter((e) =>
-    (allFocuses || !split || fitsGymFocus(split, e)) && gym.ratings[e.id] !== 'avoid' && fitsToday(e) &&
-    plyoGate(e, gym.sessions, youth, Date.now()).allowed) : []
+  // The player re-renders twice a second for its clock, so what the sheets read is kept until its inputs change.
+  const avoidKey = (draft.avoidJoints ?? []).join(' ')
+  const offKey = (draft.musclesOff ?? []).join(' ')
+  /**
+   * What today's plan kept out stays out of swaps and additions too: the joints the check-in rested, the muscles
+   * switched off, and speed and power work not yet built up to. A pick may still need kit this place does not list.
+   */
+  const allowedToday = useCallback((e: GymExercise) =>
+    !jointsToRest(e.id).some((j) => draft.avoidJoints?.includes(j)) && !e.primary.some((m) => draft.musclesOff?.includes(m)) &&
+    plyoGate(e, gym.sessions, youth, Date.now()).allowed,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [avoidKey, offKey, gym.sessions, youth])
+  /** ...and what the app offers on its own can also be done here. */
+  const fitsToday = useCallback((e: GymExercise) => canDoHere(e.id, location) && allowedToday(e), [location, allowedToday])
+  /** What a search found that today keeps out, counted by reason. */
+  const keptOutNote = useCallback((hidden: readonly GymExercise[]) => {
+    const rested = (e: GymExercise) => jointsToRest(e.id).filter((j) => draft.avoidJoints?.includes(j))
+    const byJoint = hidden.filter((e) => rested(e).length > 0)
+    const byMuscle = hidden.filter((e) => !rested(e).length && e.primary.some((m) => draft.musclesOff?.includes(m)))
+    const byGate = hidden.length - byJoint.length - byMuscle.length
+    const joints = [...new Set(byJoint.flatMap(rested))].map((j) => j.replace('-', ' '))
+    const parts = [
+      ...(byJoint.length ? [`${byJoint.length} that ${byJoint.length === 1 ? 'loads' : 'load'} your ${joinWords(joints)}`] : []),
+      ...(byMuscle.length ? [`${byMuscle.length} that ${byMuscle.length === 1 ? 'works' : 'work'} a muscle you switched off`] : []),
+      ...(byGate > 0 ? [`${byGate} speed and power ${byGate === 1 ? 'movement' : 'movements'} you have not built up to yet`] : []),
+    ]
+    return parts.length ? `Kept out today: ${joinWords(parts)}.` : undefined
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avoidKey, offKey])
+  const inSessionKey = draft.items.filter((it) => !it.held).map((it) => it.exerciseId).join(' ')
+  const inSession = useMemo(() => (inSessionKey ? inSessionKey.split(' ') : []), [inSessionKey])
+  const swapId = sh?.kind === 'swap' && sh.item !== undefined ? draft.items[sh.item]?.exerciseId : undefined
+  const swapExclude = useMemo(() => (swapId ? [swapId] : []), [swapId])
+  const recommendedSwaps = useMemo(() => swapId
+    ? alternativesFor(swapId, location, gym.ratings, inSession, {
+      youth, capacity: bodyweightCapacity(state, Date.now()), sessions: gym.sessions, now: Date.now(),
+    }).filter((e) => fitsToday(e) && (!split || fitsGymFocus(split, e)))
+    : [],
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [swapId, location, gym.ratings, inSession, gym.sessions, youth, fitsToday, split])
+  const adding = sh?.kind === 'add'
+  const recommendedAdds = useMemo(() => adding
+    ? addRecommendations({ location, ratings: gym.ratings, ...(split ? { day: split } : {}), inSession, sessions: gym.sessions, allowed: fitsToday, now: Date.now() })
+    : [], [adding, location, gym.ratings, split, inSession, gym.sessions, fitsToday])
 
   const availableTrial = (item: DraftItem) => {
     const suggestion = item.suggestion
@@ -390,7 +426,7 @@ export function GymPlayer({
   }
 
   const addExercise = (exerciseId: string) => {
-    if (!fitsToday(GYM_EXERCISE_BY_ID[exerciseId])) return
+    if (!allowedToday(GYM_EXERCISE_BY_ID[exerciseId])) return
     update((d) => {
       const ex = GYM_EXERCISE_BY_ID[exerciseId]
       const factor = d.volumeFactor ?? 1
@@ -400,7 +436,6 @@ export function GymPlayer({
       return d
     })
     setSheet(null)
-    setQuery('')
   }
 
   /** Display the weight and reps that earned each new performance record. */
@@ -501,6 +536,31 @@ export function GymPlayer({
   const earlierSets = previous?.exercises.reduce((n, log) => n + log.sets.length, 0) ?? 0
   const restLeft = rest ? (rest.until - now) / 1000 : 0
   const rating = (id: string): Rating | undefined => gym.ratings[id]
+  const sheetItem = sh?.item !== undefined ? draft.items[sh.item] : undefined
+  const sheetExercise = sheetItem ? GYM_EXERCISE_BY_ID[sheetItem.exerciseId] : undefined
+  const sheetLabel = sh?.kind === 'add' ? 'Add an exercise' : !sheetExercise ? 'Exercise options'
+    : sh?.kind === 'swap' ? `Swap ${sheetExercise.name}` : sh?.kind === 'guide' ? `How to do ${sheetExercise.name}` : `Options for ${sheetExercise.name}`
+  /** Leave a movement out of today. Sets already logged on it are kept: they happened. */
+  const removeItem = (i: number) => {
+    const item = draft.items[i]
+    if (!item) return
+    const logged = item.sets.some((s) => s.done)
+    update((d) => {
+      useStraightSets(d, i, Date.now())
+      if (d.effortFor?.item === i) delete d.effortFor
+      if (logged) {
+        d.items[i].sets = d.items[i].sets.filter((s) => s.done)
+      } else {
+        d.items.splice(i, 1)
+        if (d.effortFor && d.effortFor.item > i) d.effortFor = { ...d.effortFor, item: d.effortFor.item - 1 }
+      }
+      return d
+    })
+    setNeedLoad(null)
+    setDoubt(null)
+    setSheet(null)
+    if (logged) pushToast(`Left out the rest of ${GYM_EXERCISE_BY_ID[item.exerciseId].name.toLowerCase()}. Your logged sets stay.`, 'info')
+  }
 
   const body = (
     <div ref={playerRef} className="fixed inset-0 z-50 flex flex-col bg-bg text-ink" role="dialog" aria-label="Gym session">
@@ -589,6 +649,16 @@ export function GymPlayer({
                       {best ? ` · est. max ${formatLoad(best.kg, item.unit)}${isFirstEstimate(rec) ? ` (${FIRST_ESTIMATE_NOTE})` : ''}` : ''}
                     </p>
                     {item.suggestion?.why ? <p className="mt-1 text-caption text-ink3">{item.suggestion.why}</p> : null}
+                    <div className="flex flex-wrap gap-x-5">
+                      <button type="button" aria-label={`How to do ${ex.name}`} onClick={() => openSheet({ kind: 'guide', item: i })}
+                        className="inline-flex min-h-11 items-center gap-1.5 text-footnote font-semibold text-accent-text">
+                        <Icon name="info" size={15} /> How to
+                      </button>
+                      {item.sets.some((s) => !s.done) && <button type="button" aria-label={`Swap ${ex.name}`} onClick={() => openSheet({ kind: 'swap', item: i })}
+                        className="inline-flex min-h-11 items-center gap-1.5 text-footnote font-semibold text-accent-text">
+                        <Icon name="repeat" size={15} /> Swap
+                      </button>}
+                    </div>
                     {partner && <div className="mt-2 border-l-2 border-accent pl-2.5 text-footnote">
                       <p>Alternate one set with {GYM_EXERCISE_BY_ID[partner.exerciseId].name.toLowerCase()}. Rest {item.restSec} seconds before repeating this lift.</p>
                       <button className="min-h-11 text-left font-semibold text-accent-text" onClick={() => update((d) => {
@@ -872,105 +942,66 @@ export function GymPlayer({
         ) : null}
       </Sheet>
 
-      <Sheet open={!!sheet} onClose={() => setSheet(null)} label="Exercise options">
+      <Sheet open={!!sheet} onClose={() => setSheet(null)} label={sheetLabel}>
         <div>
-              {sh?.kind === 'menu' && sh.item !== undefined && draft.items[sh.item] ? (
-                <MenuSheet
-                  exercise={GYM_EXERCISE_BY_ID[draft.items[sh.item].exerciseId]}
-                  rating={rating(draft.items[sh.item].exerciseId)}
-                  hardHere={location.hardHere?.includes(draft.items[sh.item].exerciseId) ?? false}
-                  favoriteHere={gym.favoriteAt[draft.items[sh.item].exerciseId] === location.id}
-                  locationName={location.name}
-                  onRate={(r) => dispatch({ type: 'GYM', op: { op: 'rate', exerciseId: draft.items[sh.item!].exerciseId, rating: r } })}
-                  onHard={() => dispatch({ type: 'GYM', op: { op: 'toggleHardHere', locationId: location.id, exerciseId: draft.items[sh.item!].exerciseId } })}
-                  onFavorite={(on) =>
-                    dispatch({ type: 'GYM', op: { op: 'setFavorite', exerciseId: draft.items[sh.item!].exerciseId, locationId: on ? location.id : null } })
-                  }
-                  onSwap={() => setSheet({ kind: 'swap', item: sh.item })}
-                  onRemove={() => {
-                    update((d) => {
-                      d.items.splice(sh.item!, 1)
-                      return d
-                    })
-                    setSheet(null)
-                  }}
-                />
-              ) : null}
-              {sh?.kind === 'swap' && sh.item !== undefined && draft.items[sh.item] ? (
-                <SwapList
-                  name={GYM_EXERCISE_BY_ID[draft.items[sh.item].exerciseId].name}
-                  locationName={location.name}
-                  all={alternativesFor(draft.items[sh.item].exerciseId, location, gym.ratings, draft.items.map((d) => d.exerciseId), {
-                    youth,
-                    capacity: bodyweightCapacity(state, Date.now()),
-                    sessions: gym.sessions,
-                    now: Date.now(),
-                  }).filter((e) => !split || fitsGymFocus(split, e))}
-                  fitsToday={fitsToday}
-                  keptOut={[
-                    ...(draft.avoidJoints?.length ? [`load your ${joinWords(draft.avoidJoints.map((j) => j.replace('-', ' ')))}`] : []),
-                    ...(draft.musclesOff?.length ? ['work a muscle switched off'] : []),
-                  ]}
-                  onRemove={() => {
-                    update((d) => {
-                      d.items.splice(sh.item!, 1)
-                      return d
-                    })
-                    setSheet(null)
-                  }}
-                  onBack={() => setSheet(null)}
-                >
-                  {(alts) =>
-                    alts.map((alt) => (
-                        <li key={alt.id}>
-                          <button
-                            onClick={() => swapTo(sh.item!, alt.id)}
-                            className="flex min-h-12 w-full items-center justify-between rounded-control border border-line px-3 text-left"
-                          >
-                            <span className="text-body font-medium">{alt.name}</span>
-                            <span className="text-caption text-ink3">
-                              {gym.ratings[alt.id] === 'love' ? 'Favourite · ' : ''}
-                              {PATTERN_LABEL[alt.pattern]}
-                            </span>
-                          </button>
-                        </li>
-                      ))
-                  }
-                </SwapList>
-              ) : null}
-              {sh?.kind === 'add' ? (
-                <>
-                  <h2 className="text-title3 font-semibold">Add an exercise</h2>
-                  {!draft.items.length && <p className="mt-1 text-footnote text-ink2">Quick log: choose an exercise, log its sets, then add the next one. These sets count like any planned workout for your next loads and your weekly volume.</p>}
-                  {split && split !== 'full' && <div className="mt-2 flex flex-wrap gap-2">
-                    <ToggleChip active={!allFocuses} onClick={() => { setAllFocuses(false); setVisibleCount(40) }}>{FOCUS_LABEL[split]} day</ToggleChip>
-                    <ToggleChip active={allFocuses} onClick={() => { setAllFocuses(true); setVisibleCount(40) }}>All exercises</ToggleChip>
-                  </div>}
-                  <input
-                    value={query}
-                    onChange={(e) => { setQuery(e.target.value); setVisibleCount(40) }}
-                    placeholder="Search"
-                    className="mt-3 min-h-11 w-full rounded-control border border-line bg-raised px-3 text-body"
-                    aria-label="Search exercises"
-                  />
-                  <ul className="mt-3 space-y-2">
-                    {addOptions.slice(0, visibleCount)
-                      .map((e) => (
-                        <li key={e.id}>
-                          <button
-                            onClick={() => addExercise(e.id)}
-                            className="flex min-h-12 w-full items-center justify-between rounded-control border border-line px-3 text-left"
-                          >
-                            <span className="text-body font-medium">{e.name}</span>
-                            <span className="text-caption text-ink3">{PATTERN_LABEL[e.pattern]}</span>
-                          </button>
-                        </li>
-                      ))}
-                  </ul>
-                  {addOptions.length > visibleCount && <Button variant="secondary" onClick={() => setVisibleCount((n) => n + 40)}>Show more exercises</Button>}
-                  {!addOptions.length && <p className="mt-3 text-footnote text-ink2">No matching exercises at {location.name}{split && split !== 'full' && !allFocuses ? ` for this ${FOCUS_LABEL[split].toLowerCase()} day. Choose All exercises to search across focuses.` : '. Try another exercise or muscle name.'}</p>}
-                </>
-              ) : null}
+          {sh?.kind === 'menu' && sheetItem && sheetExercise ? (
+            <MenuSheet
+              exercise={sheetExercise}
+              hardHere={location.hardHere?.includes(sheetExercise.id) ?? false}
+              favoriteHere={gym.favoriteAt[sheetExercise.id] === location.id}
+              locationName={location.name}
+              onGuide={() => setSheet({ kind: 'guide', item: sh.item })}
+              onHard={() => dispatch({ type: 'GYM', op: { op: 'toggleHardHere', locationId: location.id, exerciseId: sheetExercise.id } })}
+              onFavorite={(on) => dispatch({ type: 'GYM', op: { op: 'setFavorite', exerciseId: sheetExercise.id, locationId: on ? location.id : null } })}
+              onSwap={() => setSheet({ kind: 'swap', item: sh.item })}
+              onRemove={() => removeItem(sh.item!)}
+            />
+          ) : null}
+          {sh?.kind === 'guide' && sheetExercise ? (
+            <GuideSheet key={`${sh.item}-${sheetExercise.id}`} exercise={sheetExercise} onDone={() => setSheet(null)} />
+          ) : null}
+          {sh?.kind === 'swap' && sheetItem && sheetExercise ? (
+            <>
+              <ExercisePicker
+                key={`${sh.item}-${sheetExercise.id}`}
+                title={`Swap ${sheetExercise.name}`}
+                intro="Recommended first: the same movement, then the same muscles. Search to use anything else."
+                pickLabel="Swap to this"
+                location={location}
+                ratings={gym.ratings}
+                {...(split ? { day: split } : {})}
+                exclude={swapExclude}
+                allowed={allowedToday}
+                recommended={recommendedSwaps}
+                hiddenNote={keptOutNote}
+                onPick={(id) => swapTo(sh.item!, id)}
+              />
+              <div className="mt-4 border-t border-line pt-3">
+                {!recommendedSwaps.length && <p className="mb-2 text-footnote text-ink2">
+                  Nothing at {location.name} does the same job today. Pick any exercise above, or leave it out of today.
+                </p>}
+                <Button variant="ghost" full onClick={() => removeItem(sh.item!)}>Leave it out today</Button>
+              </div>
+            </>
+          ) : null}
+          {sh?.kind === 'add' ? (
+            <ExercisePicker
+              key="add"
+              title="Add an exercise"
+              intro={draft.items.length
+                ? 'Recommended first: movements this workout does not have yet, your favourites and lifts you know. Search to add anything else.'
+                : 'Quick log: choose an exercise, log its sets, then add the next one. These sets count like any planned workout for your next loads and your weekly volume.'}
+              pickLabel="Add to today"
+              location={location}
+              ratings={gym.ratings}
+              {...(split ? { day: split } : {})}
+              exclude={inSession}
+              allowed={allowedToday}
+              recommended={recommendedAdds}
+              hiddenNote={keptOutNote}
+              onPick={addExercise}
+            />
+          ) : null}
         </div>
       </Sheet>
 
@@ -1172,51 +1203,33 @@ function Stepper({
 
 function MenuSheet({
   exercise,
-  rating,
   hardHere,
   favoriteHere,
   locationName,
-  onRate,
+  onGuide,
   onHard,
   onFavorite,
   onSwap,
   onRemove,
 }: {
   exercise: GymExercise
-  rating?: Rating
   hardHere: boolean
   favoriteHere: boolean
   locationName: string
-  onRate: (r: Rating | null) => void
+  onGuide: () => void
   onHard: () => void
   onFavorite: (on: boolean) => void
   onSwap: () => void
   onRemove: () => void
 }) {
-  const [guide, setGuide] = useState(exercise)
-  const choice = (r: Rating, label: string) => (
-    <button
-      onClick={() => onRate(rating === r ? null : r)}
-      aria-pressed={rating === r}
-      className={`min-h-11 flex-1 rounded-control border text-body font-medium ${rating === r ? 'border-transparent bg-accent text-on-accent' : 'border-line'}`}
-    >
-      {label}
-    </button>
-  )
   return (
     <>
       <h2 className="text-title3 font-semibold">{exercise.name}</h2>
-      <div className="mt-2">
-        {guide.id !== exercise.id && <h3 className="mb-2 text-body font-semibold">{guide.name}</h3>}
-        <GymExerciseGuide exercise={guide} onOpen={setGuide} />
-      </div>
-      <p className="mt-3 text-caption font-medium text-ink3">How do you like it? The planner picks favourites and leaves out avoided ones.</p>
-      <div className="mt-2 flex gap-2">
-        {choice('love', 'Love')}
-        {choice('fine', 'Fine')}
-        {choice('avoid', 'Avoid')}
-      </div>
+      <div className="mt-3"><ExerciseRating exerciseId={exercise.id} /></div>
       <div className="mt-3 grid gap-2">
+        <button onClick={onGuide} className="min-h-12 rounded-control border border-line text-body font-medium">
+          How to do it and a video
+        </button>
         <button onClick={onSwap} className="min-h-12 rounded-control border border-line text-body font-medium">
           Swap — machine taken or not today
         </button>
@@ -1234,59 +1247,28 @@ function MenuSheet({
   )
 }
 
+/**
+ * How to do a movement in today's workout, with a demonstration video and its rating. It only reads and rates:
+ * opening it, following an easier or harder version, playing or pinning a video never changes the workout.
+ */
+function GuideSheet({ exercise, onDone }: { exercise: GymExercise; onDone: () => void }) {
+  const [shown, setShown] = useState(exercise)
+  const other = shown.id !== exercise.id
+  return (
+    <>
+      {other && <button type="button" onClick={() => setShown(exercise)}
+        className="inline-flex min-h-11 items-center gap-1 text-footnote font-semibold text-accent-text">
+        <Icon name="chevronL" size={15} /> Back to {exercise.name}
+      </button>}
+      <h2 className="text-title3 font-semibold">{shown.name}</h2>
+      {other && <p className="mt-1 text-caption text-ink3">Reading only: today’s workout still has {exercise.name.toLowerCase()}. Use Swap on the exercise to change it.</p>}
+      <div className="mt-2"><GymExerciseGuide exercise={shown} onOpen={setShown} rate /></div>
+      <Button variant="secondary" full size="lg" className="mt-4" onClick={onDone}>Back to the workout</Button>
+    </>
+  )
+}
 
 function joinWords(words: string[]): string {
   if (words.length <= 1) return words.join('')
   return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`
-}
-
-/** Swaps that fit today, or — when none do — why, and what to do instead. */
-function SwapList({
-  name,
-  locationName,
-  all,
-  fitsToday,
-  keptOut,
-  onRemove,
-  onBack,
-  children,
-}: {
-  name: string
-  locationName: string
-  all: GymExercise[]
-  fitsToday: (e: GymExercise) => boolean
-  keptOut: string[]
-  onRemove: () => void
-  onBack: () => void
-  children: (alts: GymExercise[]) => ReactNode
-}) {
-  const alts = all.filter(fitsToday).slice(0, 10)
-  return (
-    <>
-      <h2 className="text-title3 font-semibold">Swap {name}</h2>
-      {alts.length ? (
-        <>
-          <p className="mt-1 text-footnote text-ink3">Same movement first, then the same muscles — everything here can be done at {locationName}.</p>
-          <ul className="mt-3 space-y-2">{children(alts)}</ul>
-        </>
-      ) : (
-        <div className="mt-2 space-y-3">
-          <p className="text-footnote text-ink2">
-            {all.length && keptOut.length
-              ? `Nothing else here fits today: the other options ${joinWords(keptOut)}, which today’s plan keeps out.`
-              : `Nothing else at ${locationName} does this job. Adding equipment to ${locationName} opens more swaps.`}{' '}
-            You can leave it out of today instead.
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="secondary" onClick={onRemove}>
-              Leave it out today
-            </Button>
-            <Button variant="ghost" onClick={onBack}>
-              Keep it
-            </Button>
-          </div>
-        </div>
-      )}
-    </>
-  )
 }

@@ -24,7 +24,12 @@ export interface GymLocation {
   updatedAt: number
 }
 
-export type Rating = 'love' | 'fine' | 'avoid'
+/**
+ * How much the athlete likes a movement, which sets how often the planner picks it among comparable ones (`rotation.ts`):
+ * love most often, like often, fine sometimes, dislike rarely, avoid never. An accessory slot tries a movement never done
+ * now and then; the day's main lifts keep their single pick.
+ */
+export type Rating = 'love' | 'like' | 'fine' | 'dislike' | 'avoid'
 
 /** Targets in effect for a finished set before a later check-in changed the rest of that lift. */
 export interface OriginalSetTarget {

@@ -31,6 +31,7 @@ import { bodyweightCapacity } from '../../lib/gym/bodyweight'
 import { canReplanGym, GYM_PLAN_REVISION, gymWriterBusy, outdatedGymPlan, regeneratedPlan, replanGymDraft, untouchedGymPlan } from '../../lib/gym/replan'
 import { GymHistory } from './GymHistory'
 import { GymExerciseGuide } from './ExerciseGuide'
+import { ExerciseRatings } from './ExerciseRatings'
 
 const MINUTES = [15, 20, 30, 45, 60, 75, 90]
 const SKILL_NAME: Record<SkillId, string> = { planche: 'planche', frontlever: 'front lever', handstand: 'handstand', ninety: '90° hold', flag: 'human flag' }
@@ -93,6 +94,7 @@ export function GymHub({
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   const [historyOf, setHistoryOf] = useState<string | null>(null)
   const [guideId, setGuideId] = useState<string | null>(null)
+  const [ratingsOpen, setRatingsOpen] = useState(false)
   const [running, setRunning] = useState<GymDraft | null>(null)
   useLayoutEffect(() => {
     onWorkoutChange?.(Boolean(running))
@@ -172,6 +174,7 @@ export function GymHub({
     [gym, location, liftMinutes, resolvedFocus, youth, limits, warmUpMin, capacity, sore, regenerated],
   )
   const records = useMemo(() => (gym ? gymRecords(gym.sessions, location?.id) : {}), [gym, location?.id])
+  const ratedCount = gym ? Object.keys(gym.ratings).filter((id) => GYM_EXERCISE_BY_ID[id]).length : 0
 
   /**
    * An open plan nothing has been done in, built again by the current generator for its own day: the same day
@@ -717,8 +720,20 @@ export function GymHub({
 
       <WeekVolume />
 
+      <Card>
+        <CardTitle>Exercise ratings</CardTitle>
+        <p className="text-footnote text-ink2">
+          {ratedCount ? `${ratedCount} ${ratedCount === 1 ? 'exercise' : 'exercises'} rated. ` : ''}Tell the plan which exercises you
+          love and which you would rather skip: it picks loved ones more often, disliked ones rarely and avoided ones never.
+        </p>
+        <Button variant="secondary" className="mt-3" onClick={() => setRatingsOpen(true)}>Rate exercises</Button>
+      </Card>
+
       <Sheet open={guideId !== null} onClose={() => setGuideId(null)} label="Exercise guide">
-        {guideId && <><h2 className="mb-3 text-title2 font-semibold">{GYM_EXERCISE_BY_ID[guideId].name}</h2><GymExerciseGuide exercise={GYM_EXERCISE_BY_ID[guideId]} onOpen={(ex) => setGuideId(ex.id)} /></>}
+        {guideId && <><h2 className="mb-3 text-title2 font-semibold">{GYM_EXERCISE_BY_ID[guideId].name}</h2><GymExerciseGuide exercise={GYM_EXERCISE_BY_ID[guideId]} onOpen={(ex) => setGuideId(ex.id)} rate /></>}
+      </Sheet>
+      <Sheet open={ratingsOpen} onClose={() => setRatingsOpen(false)} label="Exercise ratings">
+        {ratingsOpen && <ExerciseRatings location={location} />}
       </Sheet>
       <Sheet open={historyOf !== null} onClose={() => setHistoryOf(null)} label="Exercise history">
         {historyOf ? <ExerciseHistory exerciseId={historyOf} /> : null}

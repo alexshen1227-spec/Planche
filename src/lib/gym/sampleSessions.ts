@@ -124,7 +124,7 @@ export function sessionIssues(focus: 'push' | 'pull', plan: GymPlan, minutes: nu
   // Curls never outnumber the back compounds.
   if (focus === 'pull') {
     const back = items.reduce((n, it) => n + (ex(it.exerciseId).compound && ['vertical-pull', 'horizontal-pull'].includes(ex(it.exerciseId).pattern) ? it.sets : 0), 0)
-    const curls = items.reduce((n, it) => n + (ex(it.exerciseId).pattern === 'biceps' && ex(it.exerciseId).primary.includes('biceps') ? it.sets : 0), 0)
+    const curls = items.reduce((n, it) => n + (ex(it.exerciseId).pattern === 'biceps' ? it.sets : 0), 0)
     if (curls > back) issues.push(`${curls} curl sets for ${back} back sets`)
     if (items.some((it) => it.exerciseId === 'chin-up') && here.some((e) => e.id === 'pull-up')) issues.push('chin-up picked where the pull-up can be done')
   }

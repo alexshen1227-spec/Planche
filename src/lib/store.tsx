@@ -39,6 +39,7 @@ import type {
 } from '../types'
 import { firstStep, roadOf, skillOfStep, STEP_BY_ID, stepsOf } from '../data/progressions'
 import { EXERCISE_BY_ID } from '../data/exercises'
+import { GYM_EXERCISE_BY_ID } from '../data/gym/exercises'
 import { isRepGoal } from '../data/skills'
 import { ACHIEVEMENT_VERSION, REVALIDATED_ACHIEVEMENTS } from '../data/achievements'
 import { applySession } from './engine'
@@ -1032,8 +1033,9 @@ export function normalizeStateWithReport(
     videoLinks:
       typeof r.videoLinks === 'object' && r.videoLinks !== null
         ? Object.fromEntries(
+            // A pinned demo belongs to a skill movement or a gym one: both catalogues' ids are kept.
             Object.entries(r.videoLinks).filter(
-              ([id, url]) => Boolean(EXERCISE_BY_ID[id]) && typeof url === 'string',
+              ([id, url]) => Boolean(EXERCISE_BY_ID[id] || GYM_EXERCISE_BY_ID[id]) && typeof url === 'string',
             ),
           )
         : {},

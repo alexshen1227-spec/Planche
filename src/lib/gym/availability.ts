@@ -56,7 +56,17 @@ export function missingPriorityOption(muscle: Muscle, location: GymLocation): { 
     .sort((a, b) => a.needs.length - b.needs.length || Number(b.needs.some((g) => g.includes('band'))) - Number(a.needs.some((g) => g.includes('band'))))[0]
 }
 
-const RATING_ORDER: Record<Rating | 'unrated', number> = { love: 0, fine: 1, unrated: 2, avoid: 3 }
+/** The order ratings put movements in: liked ones first, disliked ones after the unrated, avoided ones last. */
+export const RATING_ORDER: Record<Rating | 'unrated', number> = { love: 0, like: 0.5, fine: 1, unrated: 2, dislike: 2.5, avoid: 3 }
+
+/** How each rating is shown wherever the athlete rates a movement, with what it does to the plan. */
+export const RATING_CHOICES: { value: Rating; label: string; effect: string }[] = [
+  { value: 'love', label: 'Love', effect: 'picked most often' },
+  { value: 'like', label: 'Like', effect: 'picked often' },
+  { value: 'fine', label: 'Fine', effect: 'picked sometimes' },
+  { value: 'dislike', label: 'Dislike', effect: 'picked rarely' },
+  { value: 'avoid', label: 'Avoid', effect: 'never planned' },
+]
 
 /**
  * Preference order for picking among movements that do the same job:
@@ -75,7 +85,7 @@ export function preferenceRank(
 
 /**
  * Swaps for "this machine is taken": the same movement pattern first, then
- * anything sharing a primary muscle, all doable here, best-liked first. An
+ * anything whose main muscles include this one's main target, all doable here, best-liked first. An
  * avoided movement is never offered as a swap.
  */
 export function alternativesFor(
@@ -99,8 +109,10 @@ export function alternativesFor(
       (!athlete || plyoGate(c, athlete.sessions, athlete.youth, athlete.now).allowed),
   )
   const samePattern = candidates.filter((c) => c.pattern === ex.pattern)
+  // The same muscles means the movement's own target (its first main muscle): a wrist curl shares the forearms with
+  // a hammer curl, but it is not a way to train the biceps.
   const sameMuscle = candidates.filter(
-    (c) => c.pattern !== ex.pattern && c.primary.some((m) => ex.primary.includes(m)) && c.compound === ex.compound,
+    (c) => c.pattern !== ex.pattern && c.primary.includes(ex.primary[0]) && c.compound === ex.compound,
   )
   const rank = (c: GymExercise) => preferenceRank(c.id, ratings, location)
   const ordered = [...samePattern.sort((a, b) => rank(a) - rank(b)), ...sameMuscle.sort((a, b) => rank(a) - rank(b))]
