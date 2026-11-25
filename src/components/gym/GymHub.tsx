@@ -6,7 +6,7 @@ import { buildGymSession, FOCUS_LABEL, type GymFocus, type PlannedExercise } fro
 import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
 import { draftConflictLine, draftContents, EXTRA_SESSION_LINE, leftOutLine, openDraftFor, resumeLine } from '../../lib/gym/sessionLines'
-import { adaptOpenDraft, conservative, draftItemFromPlan, latestPartialToday, loadDraft, QUICK_LOG_NAME, resumePartial, saveDraft, type GymDraft } from '../../lib/gym/draft'
+import { adaptOpenDraft, conservative, draftItemFromPlan, FINISHER_LABEL, latestPartialToday, loadDraft, QUICK_LOG_NAME, resumePartial, saveDraft, type GymDraft } from '../../lib/gym/draft'
 import { AFTER_OPENER_WARM_UP_MIN, gymToday, MIN_GYM_MINUTES, skillFamily, skillRequest, soreJoints } from '../../lib/plan/planner'
 import { weekForChoice } from '../../lib/plan/currentWeek'
 import { dayStage, gymPlaceLine, gymPreset, openerLine, remainingLifts, resolveGymPlace, steerInput, type GymEntry, type GymPreset } from '../../lib/plan/screens'
@@ -617,6 +617,7 @@ export function GymHub({
                 <li key={it.exerciseId}>
                   <button onClick={() => setGuideId(ex.id)} aria-label={`Exercise guide for ${ex.name}`} className="flex min-h-11 w-full items-baseline justify-between gap-3 rounded-control py-2.5 text-left hover:bg-raised">
                   <span className="min-w-0">
+                    {it.finisher ? <span className="block text-caption font-semibold uppercase tracking-wide text-accent-text">{FINISHER_LABEL}</span> : null}
                     <span className="block text-body font-medium">{ex.name}</span>
                     <span className="block text-caption text-ink3">{it.suggestion.why}</span>
                   </span>
@@ -639,7 +640,7 @@ export function GymHub({
                 : `Nothing to program for this focus with what ${location.name} has. Add equipment, pick another focus, or use Quick log to choose your own exercises.`}
           </p>
         )}
-        {plan?.dropped.length ? <p className="mt-2 text-caption text-ink3">{leftOutLine(plan.dropped, liftMinutes, opener?.minutes)}</p> : null}
+        {plan?.dropped.length ? <p className="mt-2 text-caption text-ink3">{leftOutLine(plan.dropped, plan.cappedAt ?? liftMinutes, opener?.minutes)}</p> : null}
         {plan?.notes.map((n) => (
           <p key={n} className="mt-2 text-caption text-ink2">
             {n}

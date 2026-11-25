@@ -31,6 +31,8 @@ export interface DraftItem {
   unit: Unit
   sets: DraftSet[]
   swappedFrom?: string
+  /** A drop-set finisher: the easier version of the movement just before it (that movement's id). */
+  finisherOf?: string
   /**
    * Last session's working sets of this movement at this place, in the display
    * unit — shown beside each set ("Previous", as Strong and Hevy do) and one
@@ -122,6 +124,9 @@ export function prefillReps(plan: RepPlan, suggestion: LoadSuggestion | undefine
   return lo
 }
 
+/** How a drop-set finisher is shown wherever the plan or the workout lists it. */
+export const FINISHER_LABEL = 'Finisher (easier variant)'
+
 /** A planned exercise as the player's rows: today's suggested load and reps, with last time's sets beside them. */
 export function draftItemFromPlan(it: PlannedExercise, location: GymLocation, sessions: GymSession[]): DraftItem {
   const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
@@ -135,6 +140,7 @@ export function draftItemFromPlan(it: PlannedExercise, location: GymLocation, se
     suggestion: it.suggestion,
     restSec: it.restSec,
     ...(it.pairedWith ? { pairedWith: it.pairedWith } : {}),
+    ...(it.finisher ? { finisherOf: it.finisher.of } : {}),
     unit,
     ...(previous ? { previous } : {}),
     sets: Array.from({ length: it.sets }, (_, i) => ({

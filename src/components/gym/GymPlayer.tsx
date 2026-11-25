@@ -11,7 +11,7 @@ import { bodyweightCapacity } from '../../lib/gym/bodyweight'
 import { partnerIndex, restAfterSet, restoreSetRest, useStraightSets } from '../../lib/gym/pairedSets'
 import { GymExerciseGuide } from './ExerciseGuide'
 import { goalEmphasisFor, restFor, setsForFactor, type Emphasis } from '../../lib/gym/builder'
-import { addedSetReps, conservative, dayOfItem, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
+import { addedSetReps, conservative, dayOfItem, FINISHER_LABEL, prefillReps, previousSets, saveDraft, sessionFromDraft, type DraftItem, type GymDraft } from '../../lib/gym/draft'
 import { allowsUnloaded, countUnit, countWord, estimatedMaxGains, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, isUnloadedSet, comparablePerformance, plyoGate, prescribedCount, repPlanFor, suggestLoad } from '../../lib/gym/progression'
 import type { GoalWeights, GymLocation, Rating } from '../../lib/gym/types'
 import { displayLoad, entryLoad, formatLoad, minKgFor, recordsZeroLoad, stepKgFor, takesAddedLoad, toKg, unitFor, unloadedLabel } from '../../lib/gym/units'
@@ -574,6 +574,7 @@ export function GymPlayer({
               <section key={`${item.exerciseId}-${i}`} className="rounded-card border border-line bg-surface p-4">
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
+                    {item.finisherOf ? <p className="text-caption font-semibold uppercase tracking-wide text-accent-text">{FINISHER_LABEL}</p> : null}
                     <h3 className="text-title3 font-semibold leading-tight">
                       {ex.name}
                       {rating(ex.id) === 'love' ? <span className="ml-2 text-caption font-medium text-accent-text">Favourite</span> : null}

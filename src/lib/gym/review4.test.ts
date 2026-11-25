@@ -89,9 +89,12 @@ describe('1. a lighter or harder day changes the sets, not only the words', () =
     expect(more).toBeGreaterThan(10)
   })
 
-  it('a 75-minute upper push day has more sets than a normal one (it once had fewer)', () => {
-    expect(sets(build('upper', 75, 1.2))).toBeGreaterThan(sets(build('upper', 75, 1)))
+  it('a harder upper day never has fewer sets than a normal one (a 75-minute one once had fewer)', () => {
+    // Lifting is capped near an hour (2026-11-24), and a usual 60- or 75-minute day already fills it: a harder day
+    // keeps every set, and adds where the hour still has room.
+    expect(sets(build('upper', 75, 1.2))).toBeGreaterThanOrEqual(sets(build('upper', 75, 1)))
     expect(sets(build('upper', 60, 1.2))).toBeGreaterThanOrEqual(sets(build('upper', 60, 1)))
+    expect(sets(build('upper', 40, 1.2))).toBeGreaterThan(sets(build('upper', 40, 1)))
   })
 
   it('the lifts keep the same picks whatever the factor', () => {

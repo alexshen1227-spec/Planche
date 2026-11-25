@@ -166,6 +166,11 @@ export function bodyweightCapacity(state: AppState, now: number): BodyweightCapa
   }
 }
 
+/** Whether a movement has a starting gate here: a rep count the athlete's own evidence must show first. */
+export function hasBodyweightGate(id: string): boolean {
+  return gates.has(id) || id in specificPrep
+}
+
 export function readyForBodyweight(id: string, capacity?: BodyweightCapacity): boolean {
   const rule = gates.get(id)
   const prep = specificPrep[id]

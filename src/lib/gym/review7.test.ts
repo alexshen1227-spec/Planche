@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { GYM_EXERCISES, GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
-import { buildGymSession, type GymFocus } from './builder'
+import type { Muscle } from '../../data/gym/catalog'
+import { buildGymSession, MAX_LIFTING_MIN, type GymFocus } from './builder'
 import { conservative } from './draft'
 import { isHardBodyweight, repPlanFor, suggestLoad, YOUTH_REP_FLOOR } from './progression'
 import { mergeGym, reduceGym, sanitizeGym } from './state'
@@ -30,7 +31,9 @@ const credit = (b: ReturnType<typeof buildGymSession>, m: string) =>
 /**
  * Short-day reference prescriptions, including the available introductory alternatives to barbell bench variants.
  * Push and Pull rows were re-pinned on 2026-11-24 for the athlete's rules: the main compounds reach four sets
- * before any other movement gets time, and a lighter day gives up the other movements first.
+ * before any other movement gets time, and a lighter day gives up the other movements first. Then again for the
+ * second set of rules: no muscle past its session ceiling (a lat pullback beside a pull-up and a row gets two sets),
+ * and spare minutes raise the day's own exercises to four sets before anything new.
  */
 const BEFORE: Record<string, string> = {
   'full|20|1|y': '17:goblet-squatx2,db-bench-pressx2',
@@ -70,23 +73,23 @@ const BEFORE: Record<string, string> = {
   'lower|45|0.8|y': '35:goblet-squatx2,romanian-deadliftx2,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex2,hanging-leg-raisex1',
   'lower|45|0.8|a': '35:goblet-squatx2,romanian-deadliftx2,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex2,hanging-leg-raisex1',
   'push|20|1|y': '19:db-bench-pressx3,db-shoulder-pressx2',
-  'push|20|1|y|s': '17:cable-incline-pressx2,db-lateral-raisex3',
+  'push|20|1|y|s': '19:cable-incline-pressx2,db-lateral-raisex4',
   'push|20|1|a': '19:db-bench-pressx3,db-shoulder-pressx2',
-  'push|20|1|a|s': '17:cable-incline-pressx2,db-lateral-raisex3',
+  'push|20|1|a|s': '19:cable-incline-pressx2,db-lateral-raisex4',
   'push|20|0.8|y': '17:db-bench-pressx2,db-shoulder-pressx2',
-  'push|20|0.8|y|s': '15:cable-incline-pressx2,db-lateral-raisex2',
+  'push|20|0.8|y|s': '17:cable-incline-pressx2,db-lateral-raisex3',
   'push|20|0.8|a': '17:db-bench-pressx2,db-shoulder-pressx2',
-  'push|20|0.8|a|s': '15:cable-incline-pressx2,db-lateral-raisex2',
+  'push|20|0.8|a|s': '17:cable-incline-pressx2,db-lateral-raisex3',
   'push|30|1|y': '27:db-bench-pressx4,db-shoulder-pressx4',
-  'push|30|1|y|s': '23:cable-incline-pressx2,db-lateral-raisex3,low-high-cable-flyx3',
+  'push|30|1|y|s': '27:cable-incline-pressx2,db-lateral-raisex4,low-high-cable-flyx4',
   'push|30|1|a': '27:db-bench-pressx4,db-shoulder-pressx4',
-  'push|30|1|a|s': '23:cable-incline-pressx2,db-lateral-raisex3,low-high-cable-flyx3',
+  'push|30|1|a|s': '27:cable-incline-pressx2,db-lateral-raisex4,low-high-cable-flyx4',
   'push|30|0.8|y': '22:db-bench-pressx3,db-shoulder-pressx3',
-  'push|30|0.8|y|s': '19:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx2',
+  'push|30|0.8|y|s': '23:cable-incline-pressx2,db-lateral-raisex4,low-high-cable-flyx2',
   'push|30|0.8|a': '22:db-bench-pressx3,db-shoulder-pressx3',
-  'push|30|0.8|a|s': '19:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx2',
-  'push|45|1|y': '45:db-bench-pressx4,db-shoulder-pressx4,incline-db-pressx3,db-lateral-raisex3,low-high-cable-flyx2',
-  'push|45|1|a': '45:db-bench-pressx4,db-shoulder-pressx4,incline-db-pressx3,db-lateral-raisex3,low-high-cable-flyx2',
+  'push|30|0.8|a|s': '23:cable-incline-pressx2,db-lateral-raisex4,low-high-cable-flyx2',
+  'push|45|1|y': '44:db-bench-pressx4,db-shoulder-pressx4,incline-db-pressx2,diamond-push-upx2,db-lateral-raisex3',
+  'push|45|1|a': '44:db-bench-pressx4,db-shoulder-pressx4,incline-db-pressx2,diamond-push-upx2,db-lateral-raisex3',
   'push|45|0.8|y': '37:db-bench-pressx4,db-shoulder-pressx4,incline-db-pressx2,db-lateral-raisex2',
   'push|45|0.8|a': '37:db-bench-pressx4,db-shoulder-pressx4,incline-db-pressx2,db-lateral-raisex2',
   'pull|20|1|y': '19:pull-upx2,db-rowx3',
@@ -97,8 +100,8 @@ const BEFORE: Record<string, string> = {
   'pull|30|1|a': '27:pull-upx4,db-rowx4',
   'pull|30|0.8|y': '22:pull-upx3,db-rowx3',
   'pull|30|0.8|a': '22:pull-upx3,db-rowx3',
-  'pull|45|1|y': '45:pull-upx4,db-rowx4,straight-arm-pulldownx3,face-pullx3,barbell-curlx3',
-  'pull|45|1|a': '45:pull-upx4,db-rowx4,straight-arm-pulldownx3,face-pullx3,barbell-curlx3',
+  'pull|45|1|y': '45:pull-upx4,db-rowx4,straight-arm-pulldownx2,face-pullx4,barbell-curlx3',
+  'pull|45|1|a': '45:pull-upx4,db-rowx4,straight-arm-pulldownx2,face-pullx4,barbell-curlx3',
   'pull|45|0.8|y': '35:pull-upx4,db-rowx4,straight-arm-pulldownx2,face-pullx2',
   'pull|45|0.8|a': '35:pull-upx4,db-rowx4,straight-arm-pulldownx2,face-pullx2',
   'athletic|20|1|y': '13:landing-stickx3,goblet-squatx3',
@@ -143,25 +146,24 @@ describe('1. long days use their minutes', () => {
     }
   })
 
-  it('fills a long push day, a full-body day and a steered day with movements, within a ceiling', () => {
-    // Before: a 120-minute push day built 18 sets (50 min) unsteered and 8 sets (23 min) steered; a full-body day 24 sets (66 min).
-    const push = build('push', 120)
-    expect(sets(push)).toBeGreaterThanOrEqual(22)
-    expect(push.estimatedMin).toBeGreaterThanOrEqual(58)
+  it('fills a long day only up to about an hour of lifting, within a ceiling', () => {
+    // Before: a 120-minute push day built 18 sets (50 min) unsteered and 8 sets (23 min) steered; a full-body day 24 sets
+    // (66 min). Since 2026-11-24 lifting is capped near an hour (the athlete's rule), so a longer day fills that hour.
+    for (const focus of ['push', 'pull', 'upper', 'lower', 'full'] as const) for (const minutes of [60, 75, 95, 120]) {
+      const b = build(focus, minutes)
+      expect(b.estimatedMin, `${focus} ${minutes}`).toBeLessThanOrEqual(MAX_LIFTING_MIN)
+      expect(b.estimatedMin, `${focus} ${minutes}`).toBeGreaterThanOrEqual(50)
+      // A ceiling: a long day is not an endless one.
+      expect(sets(b), `${focus} ${minutes}`).toBeLessThanOrEqual(30)
+      if (minutes > MAX_LIFTING_MIN) {
+        expect(b.cappedAt).toBe(MAX_LIFTING_MIN)
+        expect(b.notes.some((n) => n.startsWith(`Lifting is capped at about ${MAX_LIFTING_MIN} of your ${minutes} minutes`)), `${focus} ${minutes}`).toBe(true)
+        expect(b.items).toEqual(build(focus, MAX_LIFTING_MIN).items)
+      }
+    }
     const steered = build('push', 120, { spare: ['front-delts', 'triceps', 'chest'] })
     expect(sets(steered)).toBeGreaterThan(8)
     expect(steered.estimatedMin).toBeGreaterThan(23)
-    for (const minutes of [95, 120]) {
-      const full = build('full', minutes)
-      expect(sets(full), `full ${minutes}`).toBeGreaterThanOrEqual(28)
-      expect(full.estimatedMin, `full ${minutes}`).toBeGreaterThanOrEqual(70)
-      expect(full.estimatedMin).toBeLessThanOrEqual(minutes)
-      // A ceiling: a long day is not an endless one.
-      expect(sets(full)).toBeLessThanOrEqual(30)
-      expect(full.notes.some((n) => n.includes('time left'))).toBe(true)
-    }
-    // Never past the minutes asked for, at any length.
-    for (const focus of ['push', 'pull', 'upper', 'lower', 'full'] as const) for (const minutes of [60, 75, 95, 120]) expect(build(focus, minutes).estimatedMin, `${focus} ${minutes}`).toBeLessThanOrEqual(minutes)
   })
 
   it('adds for the muscles the session gives least: priority first, and no muscle past its ceiling', () => {
@@ -172,15 +174,15 @@ describe('1. long days use their minutes', () => {
     for (const m of ['chest', 'chest-upper', 'side-delts', 'triceps', 'front-delts']) expect(credit(plain, m), m).toBeLessThanOrEqual(14)
     // With little room, the first movement added is for the priority muscle, not the one the session gives least.
     const firstAdded = (b: ReturnType<typeof buildGymSession>) => b.notes.find((n) => n.includes('time left'))!.replace(/^.*so /, '').split(', ')[0].replace(/ w(as|ere) added.*$/, '')
-    // A Pull day's rows and pull-ups take four sets each before anything else (2026-11-24), so the spare time a
-    // fill can use starts later than the 60 minutes it once did.
-    for (const [muscle, name] of [['biceps', 'Hammer curl'], ['rear-delts', 'Incline Y raise'], ['abs', 'Hanging knee raise']] as const) {
-      const b = build('pull', 70, { priority: [muscle] })
+    // Since 2026-11-24 spare time first raises the day's own exercises to four sets, so a Pull or full Push day has
+    // none left for a new movement within its hour; a light-pressing Push day does.
+    const light = { spare: ['front-delts', 'triceps'] as Muscle[] }
+    expect(firstAdded(build('push', 120, light))).toBe('Hanging leg raise')
+    for (const [muscle, name] of [['side-delts', 'Cable lateral raise'], ['chest-upper', 'Incline dumbbell fly']] as const) {
+      const b = build('push', 120, { ...light, priority: [muscle] })
       expect(firstAdded(b), muscle).toBe(name)
       expect(ex(b.items.find((i) => ex(i.exerciseId).name === name)!.exerciseId).primary).toContain(muscle)
     }
-    // Without a priority the muscle the session gives least comes first; the back is already at its ceiling.
-    expect(firstAdded(build('pull', 75))).toBe('Pallof press')
     const upper = build('upper', 120, { priority: ['rear-delts'] })
     expect(credit(upper, 'rear-delts')).toBeGreaterThan(credit(build('upper', 120), 'rear-delts'))
   })
@@ -189,7 +191,7 @@ describe('1. long days use their minutes', () => {
     // A game on Saturday: the legs are switched off, so no leg work is added to a full-body day.
     const legsOff = build('full', 120, { musclesOff: [...LEGS] })
     expect(legsOff.items.some((i) => ex(i.exerciseId).primary.some((m) => (LEGS as readonly string[]).includes(m)))).toBe(false)
-    expect(legsOff.estimatedMin).toBeGreaterThan(build('full', 60, { musclesOff: [...LEGS] }).estimatedMin)
+    expect(legsOff.estimatedMin).toBeGreaterThan(build('full', 45, { musclesOff: [...LEGS] }).estimatedMin)
     // A sore elbow: nothing that loads elbows, including the added movements.
     const sore = build('upper', 120, { avoidJoints: ['elbows'] })
     expect(sore.items.length).toBeGreaterThan(0)
@@ -213,8 +215,9 @@ describe('1. long days use their minutes', () => {
     expect(build('push', 120).items.some((i) => PULL.includes(ex(i.exerciseId).pattern))).toBe(false)
     // A lighter day is lighter: the same long day at 0.6 has well under the usual sets.
     expect(sets(build('full', 120, { volumeFactor: 0.6 }))).toBeLessThan(sets(build('full', 120)) * 0.75)
-    // A harder day has more than the usual one.
-    expect(sets(build('upper', 75, { volumeFactor: 1.2 }))).toBeGreaterThan(sets(build('upper', 75)))
+    // A harder day has more than the usual one where the hour has room, and never fewer.
+    expect(sets(build('upper', 40, { volumeFactor: 1.2 }))).toBeGreaterThan(sets(build('upper', 40)))
+    expect(sets(build('upper', 75, { volumeFactor: 1.2 }))).toBeGreaterThanOrEqual(sets(build('upper', 75)))
   })
 
   it('does not fill a day that had to be trimmed to fit', () => {

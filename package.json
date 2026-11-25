@@ -7,6 +7,7 @@
     "dev": "vite",
     "test": "vitest run",
     "test:clock": "node scripts/clock-sweep.mjs",
+    "sessions:sample": "node scripts/sample-sessions.mjs",
     "check": "npm run test && npm run build",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"

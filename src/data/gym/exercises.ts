@@ -56,6 +56,11 @@ export interface GymExercise {
    * max or a heaviest-lift record.
    */
   assisted?: boolean
+  /**
+   * The movement family this is one rung of, and its difficulty in it (1 = easiest), when the same movement comes in
+   * easier and harder versions (`LADDERS`). `pattern` is the movement pattern; this is the difficulty within it.
+   */
+  ladder?: { id: string; level: number }
 }
 
 export type IntensityTier = 'low' | 'medium' | 'high'
@@ -481,6 +486,42 @@ export const GYM_EXERCISES: GymExercise[] = [
   variant('overhead-carry', 'db-overhead-carry', 'Dumbbell overhead carry', 'dumbbells', 'dumbbell'),
   variant('front-rack-carry', 'db-front-rack-carry', 'Dumbbell front-rack carry', 'dumbbells', 'dumbbell', 'Rest a dumbbell at each shoulder, keep your elbows forward and walk with a steady, upright torso.'),
 ]
+
+/**
+ * One movement at different difficulty, easiest rung first; exercises on one rung are equally hard (CONSENSUS: the
+ * usual progression ladders, not a measured scale). Two of a ladder in one session add little over the harder one, so
+ * the builder never programs both as separate exercises: an easier one may only follow the harder one directly as a
+ * short finisher, and a harder one beside an easier one only in small volume.
+ */
+export const LADDERS: Record<string, readonly (readonly string[])[]> = {
+  'hanging-raise': [['hanging-knee-raise'], ['hanging-leg-raise'], ['toes-to-bar']],
+  'pull-up': [
+    ['assisted-pull-up', 'band-assisted-pull-up', 'negative-pull-up'],
+    ['pull-up', 'chin-up', 'neutral-pull-up'],
+    ['wide-pull-up', 'l-sit-pull-up', 'weighted-pull-up'],
+    ['archer-pull-up', 'typewriter-pull-up'],
+  ],
+  'push-up': [
+    ['kneeling-push-up', 'incline-push-up'],
+    ['push-up'],
+    ['decline-push-up', 'band-resisted-push-up', 'weighted-push-up', 'ring-push-up'],
+    ['archer-push-up'],
+  ],
+  dip: [['bench-dip', 'korean-dip-assisted'], ['dip'], ['straight-bar-dip', 'ring-dip', 'weighted-dip']],
+  'pike-press': [['pike-push-up'], ['elevated-pike-push-up'], ['wall-hspu']],
+  'inverted-row': [['inverted-row'], ['feet-elevated-inverted-row']],
+  'dragon-flag': [['tuck-dragon-flag-lower'], ['one-leg-dragon-flag-lower'], ['dragon-flag']],
+  'bodyweight-calf-raise': [['floor-calf-raise'], ['single-leg-floor-calf-raise', 'single-leg-calf-raise']],
+  'glute-bridge': [['glute-bridge'], ['single-leg-glute-bridge', 'single-leg-hip-thrust']],
+}
+for (const [id, rungs] of Object.entries(LADDERS)) {
+  rungs.forEach((rung, i) => {
+    for (const exerciseId of rung) {
+      const ex = GYM_EXERCISES.find((e) => e.id === exerciseId)
+      if (ex) ex.ladder = { id, level: i + 1 }
+    }
+  })
+}
 
 export const GYM_EXERCISE_BY_ID: Record<string, GymExercise> = Object.fromEntries(GYM_EXERCISES.map((e) => [e.id, e]))
 

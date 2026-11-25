@@ -1182,6 +1182,24 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     day adds `focus: 'ladder'` (rung first, 5 sets). `ladderDay.golden.json`
     pins every session built without it — regenerate only for an intended
     change (`WRITE_GOLDEN=1`).
+  - **The athlete's generator rules (2026-11-24, two rounds)**, pinned in
+    `gym/generatorRules.test.ts`, `gym/duplicateRules.test.ts` and the sample
+    matrix (`gym/sampleSessions.ts`; `npm run sessions:sample` prints it as a
+    table and exits 1 on any broken rule). Push/Pull days take only their
+    day's muscles (core on either) and fund the main compounds first
+    (`allocateSplitDay`, `MAIN_COMPOUND_SETS` 4); curls never outnumber the
+    back compounds; the pull-up is the default vertical pull, the chin-up a
+    variation at most once in three pull days (`chinUpAllowed`). Exercises
+    of one movement at different difficulty share a `LADDERS` rung list:
+    never two standalone, an easier one only as a ≤2-set finisher straight
+    after the harder (`PlannedExercise.finisher`, shown as `FINISHER_LABEL`),
+    a harder one ≤2 sets and only when shown. ≤2 isolation exercises per
+    target muscle; ≤10 sets aimed at a muscle (12 for a priority), counting
+    main movers only. Lifting caps at `MAX_LIFTING_MIN` (60): long-day
+    thresholds read `input.minutes`. Spare time tops existing exercises up to
+    4 sets before the fill adds anything. A pull-up or row is half a biceps
+    set (`volumeShare`). Bump `GYM_PLAN_REVISION` (now 3) whenever the
+    builder's picks change: untouched open plans rebuild themselves.
 
 ## The design system (Phase 5)
 

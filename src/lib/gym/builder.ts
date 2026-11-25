@@ -2,7 +2,7 @@ import { type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
 import { addDays, dayKey, weekStart } from '../time'
 import { athleticDomain, GYM_EXERCISE_BY_ID, jointsToRest, volumeShare, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
 import { availableAt, canDoHere, preferenceRank } from './availability'
-import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
+import { hasBodyweightGate, readyForBodyweight, type BodyweightCapacity } from './bodyweight'
 import { legPracticeAt, LEG_VARIATIONS, preparesFor, unassistedDose, UNASSISTED_LIFTS } from './bodyweightSteps'
 import { canPairExercises, savedPairSeconds } from './pairedSets'
 import { gateTier, isHardBodyweight, liftTrend, plyoGate, repPlanFor, STALL_SESSIONS, suggestLoad, TIER_RANK, type LoadSuggestion, type RepPlan } from './progression'
@@ -75,6 +75,17 @@ const UPPER_ISOLATION = new Set<Pattern>(['lateral-raise', 'rear-delt', 'biceps'
  * isolation movement is given any time (the athlete's rule; "about four" is a coaching convention, CONSENSUS).
  */
 export const MAIN_COMPOUND_SETS = 4
+/**
+ * Lifting is fitted to at most this many minutes, whatever time is free (the athlete's rule; a coaching convention,
+ * not a measured limit): past it the accessories and finishers go first, never a main compound.
+ */
+export const MAX_LIFTING_MIN = 60
+/** An easier version of a movement follows it as a finisher of at most this many sets. */
+export const FINISHER_SETS = 2
+/** A harder version of a movement already in the session goes in with at most this many sets. */
+export const HARDER_VARIANT_SETS = 2
+/** About two isolation exercises for one muscle in a session: a third angle adds little (the athlete's rule). */
+export const ISOLATION_PER_MUSCLE = 2
 /** The chin-up is the pull-up's occasional variation: at most one vertical-pull day in this many uses it. */
 export const CHIN_UP_EVERY = 3
 /** How far the pull-up leads the other vertical pulls when nothing else separates them (one notch and a half of rating). */
@@ -201,6 +212,11 @@ export interface PlannedExercise {
   restSec: number
   /** This movement is being built up from a small number of unassisted reps. */
   practice?: { easierId?: string }
+  /**
+   * A drop-set finisher: an easier version of the movement directly before it (`of`), one or two sets to finish that
+   * movement off. An easier version of a movement in the session is never a separate exercise.
+   */
+  finisher?: { of: string }
 }
 
 export interface GymPlan {
@@ -210,6 +226,8 @@ export interface GymPlan {
   /** Exercises left out to fit the time, by name. */
   dropped: string[]
   estimatedMin: number
+  /** The lifting minutes the plan was fitted to, when the time asked for was over the cap (`MAX_LIFTING_MIN`). */
+  cappedAt?: number
   /**
    * False when the time asked for cannot hold even one block (warm-up
    * included): nothing is built then, rather than inventing minutes.
@@ -361,8 +379,11 @@ interface GymSessionInput {
 
 /** Fit and sequence the movements. A week compares many candidate sessions before anyone needs load suggestions. */
 export function planGymExercises(input: GymSessionInput) {
-  const { location, minutes, sessions, ratings = {}, youth = false, now = Date.now() } = input
+  const { location, sessions, ratings = {}, youth = false, now = Date.now() } = input
   const focus = input.focus ?? nextFocus(sessions, now, input.musclesOff)
+  // Lifting is fitted to about an hour at most (`MAX_LIFTING_MIN`); a speed and power session keeps its own dose.
+  const minutes = focus === 'athletic' ? input.minutes : Math.min(input.minutes, MAX_LIFTING_MIN)
+  const cappedAt = minutes < input.minutes ? minutes : undefined
   const split = focus === 'pull' || focus === 'push'
   const musclesOff = new Set(input.musclesOff ?? [])
   const priority = new Set(input.priority?.filter((m) => muscleFitsGymFocus(focus, m)))
@@ -469,6 +490,50 @@ export function planGymExercises(input: GymSessionInput) {
   const hardHere = (e: GymExercise) => (location?.hardHere?.includes(e.id) ? 1 : 0)
   const ladder = (a: GymExercise, b: GymExercise) => hardHere(a) - hardHere(b) || climb(a, b)
 
+  const exOf = (it: { exerciseId: string }) => GYM_EXERCISE_BY_ID[it.exerciseId]
+  /** Harder versions of a movement already in the session: in small volume only (`HARDER_VARIANT_SETS`). */
+  const smallDose = new Set<string>()
+  /**
+   * How a movement may join the session beside what is already in it (`LADDERS`): as a separate exercise; as a
+   * harder version of one, in small volume; as an easier version of one, only as that movement's finisher; or not
+   * at all, when the same rung is already there (a hanging knee raise beside a hanging leg raise adds nothing).
+   */
+  const rungRole = (e: GymExercise): { role: 'standalone' | 'harder' | 'finisher' | 'blocked'; of?: string } => {
+    if (e.ladder) {
+      for (const it of items) {
+        const x = exOf(it)
+        if (it.finisher || !x.ladder || x.ladder.id !== e.ladder.id) continue
+        if (e.ladder.level === x.ladder.level) return { role: 'blocked' }
+        return e.ladder.level < x.ladder.level ? { role: 'finisher', of: x.id } : { role: 'harder', of: x.id }
+      }
+    }
+    return { role: 'standalone' }
+  }
+  /** A harder version only when the athlete has shown it: logged it before, or passed its starting gate on their own evidence. */
+  const shownHarder = (e: GymExercise) =>
+    lastLogged.has(e.id) || (input.capacity !== undefined && hasBodyweightGate(e.id) && readyForBodyweight(e.id, input.capacity))
+  /** Isolation exercises already aimed at a muscle (each exercise's first main muscle), finishers aside. */
+  const isolationFor = (m: Muscle) => items.filter((it) => !it.finisher && !exOf(it).compound && exOf(it).primary[0] === m).length
+  /** Whether a movement can go in as a separate exercise: never a rung already there or below it, about two isolation exercises a muscle. */
+  const joinable = (e: GymExercise) => {
+    const { role } = rungRole(e)
+    if (role === 'blocked' || role === 'finisher' || (role === 'harder' && !shownHarder(e))) return false
+    return e.compound || isolationFor(e.primary[0]) < ISOLATION_PER_MUSCLE
+  }
+  /** The most sets of credit one muscle gets in a session (the app's own ceiling; more for the athlete's priorities). */
+  const ceilingOf = (m: Muscle) => requested.has(m) || (!input.athletePriority && priority.has(m)) ||
+    (focus === 'pull' && m === 'upper-back') ? FILL_MUSCLE_SETS + 2 : FILL_MUSCLE_SETS
+  /**
+   * The sets that aim at a muscle so far: the movements it is a main muscle of, at their share (`volumeShare`). A
+   * muscle that only assists — the lats in a hanging leg raise — is not what the ceiling guards.
+   */
+  const creditOf = (m: Muscle) => items.reduce((n, it) => n + (exOf(it).primary.includes(m) ? it.sets * volumeShare(exOf(it), m) : 0), 0)
+  /** The sets a movement can add before one of its main muscles passes its ceiling. */
+  const roomFor = (e: GymExercise) => Math.min(...e.primary.map((m) => Math.floor((ceilingOf(m) - creditOf(m)) / volumeShare(e, m) + 1e-9)))
+  /** Pull days: the sets the curls can still take before they outnumber the rows and pull-ups. */
+  const curlRoom = () => focus !== 'pull' ? Infinity : items.reduce((n, it) => n + (isBackCompound(exOf(it)) ? it.sets : 0), 0) -
+    items.reduce((n, it) => n + (isBicepsIsolation(exOf(it)) ? it.sets : 0), 0)
+
   if (focus === 'athletic') {
     // Fresh and fast first, strength last: drills, then jumps, then runs and throws, then one lift.
     const take = (e: GymExercise | undefined, sets?: number) => {
@@ -571,7 +636,7 @@ export function planGymExercises(input: GymSessionInput) {
       // Avoided means avoided: a slot nothing else can fill is left out.
       const firstCalf = calfAngles && slot.includes('calf') && items.find((it) => GYM_EXERCISE_BY_ID[it.exerciseId].pattern === 'calf')
       const fit = here.filter((e) => slot.includes(e.pattern) && !used.has(movement(e)) && (wantsExplosive ? e.explosive : !e.explosive) && usable(e) &&
-        (!firstCalf || e.id.startsWith('seated-') !== firstCalf.exerciseId.startsWith('seated-')))
+        joinable(e) && (!firstCalf || e.id.startsWith('seated-') !== firstCalf.exerciseId.startsWith('seated-')))
       // A muscle the week has plenty of steers the slot to a movement not built on it. When every movement of the
       // slot is, the slot goes — unless it is what the day is named for: then the movement that leans on the spare
       // muscles least goes in, at two sets.
@@ -609,7 +674,7 @@ export function planGymExercises(input: GymSessionInput) {
       const learned = legPractice.get(pick.id)?.working
       if (learned && factor >= 1 && !wantsExplosive && ratings[pick.id] !== 'love') {
         const variation = GYM_EXERCISE_BY_ID[learned.id]
-        if (canDoHere(variation.id, location) && usable(variation) && !used.has(movement(variation)) &&
+        if (canDoHere(variation.id, location) && usable(variation) && joinable(variation) && !used.has(movement(variation)) &&
             !hardHere(variation) && spareIn(variation) <= spareIn(pick)) {
           used.add(movement(pick))
           pick = variation
@@ -639,6 +704,10 @@ export function planGymExercises(input: GymSessionInput) {
       const item = makeItem(pick, wantsExplosive, spared || limitAccessory ? 2 : shortLegs && !items.length ? 4 : undefined)
       if (focus !== 'full' && pick.pattern.startsWith('core-') && !pick.primary.some((m) => requested.has(m))) item.sets = Math.min(3, item.sets)
       if (spared && recentPress && PRESSING_PATTERNS.has(pick.pattern)) item.sets = 1
+      if (rungRole(pick).role === 'harder') {
+        item.sets = Math.min(item.sets, HARDER_VARIANT_SETS)
+        smallDose.add(pick.id)
+      }
       items.push(item)
       if (spared || limitAccessory) steered.add(pick.id)
     }
@@ -650,7 +719,7 @@ export function planGymExercises(input: GymSessionInput) {
         if (!candidates.length && !musclesOff.has(muscle)) {
           // Fill a missing priority with an isolation move that belongs on this day.
           const options = here.filter((e) => !used.has(movement(e)) && (!e.compound || (shortMixed && requested.has(muscle))) && !e.explosive && !e.dose &&
-            e.primary.includes(muscle) && usable(e) && !spareIn(e) && !technicalPenalty(e))
+            e.primary.includes(muscle) && usable(e) && joinable(e) && rungRole(e).role === 'standalone' && !spareIn(e) && !technicalPenalty(e))
           const best = options.sort((a, b) => scoreOf(a) - scoreOf(b) || a.primary.length - b.primary.length)[0]
           if (best) {
             const addition = makeItem(best, false, fullPriorityDose && requested.has(muscle) ? 4 : 3)
@@ -822,8 +891,13 @@ export function planGymExercises(input: GymSessionInput) {
     }
     const mainsFull = splitMains.every((it) => !items.includes(it) || heldMain(it) || it.sets >= MAIN_COMPOUND_SETS)
     for (const it of others) {
+      // No muscle past its ceiling for the session (`ceilingOf`), and on a Pull day no more curl sets than back sets:
+      // a movement with no room for two sets is not needed today (not a cut for time, so not listed as one).
+      const ex = exOf(it)
+      const room = Math.min(roomFor(ex), isBicepsIsolation(ex) ? curlRoom() : Infinity)
+      if (room < 2) continue
       items.push(it)
-      let sets = it.sets
+      let sets = Math.min(it.sets, room)
       for (; sets >= 2; sets--) {
         it.sets = sets
         if (total() <= minutes) break
@@ -915,10 +989,11 @@ export function planGymExercises(input: GymSessionInput) {
   // the athlete's priorities first, then the focus's own muscles, then the rest of what its slots train. Spared and
   // switched-off muscles, avoided joints and kit all hold, no more pressing or pulling is added than the day is
   // named for, and a short day, which has no such room, builds exactly what it always did.
-  if (focus !== 'athletic' && !introductory && fits && items.length && !trimmed) {
+  let fillNotes = () => {}
+  if (focus !== 'athletic' && !introductory && fits && items.length && (splitDose || !trimmed)) {
     const slotPatterns = new Set<Pattern>(SLOTS[focus].flat())
-    if ((focus === 'pull' || focus === 'upper') && (minutes >= 75 || priority.has('traps'))) slotPatterns.add('shrug')
-    if (minutes >= 75) {
+    if ((focus === 'pull' || focus === 'upper') && (input.minutes >= 75 || priority.has('traps'))) slotPatterns.add('shrug')
+    if (input.minutes >= 75) {
       slotPatterns.add('core-anti-rotation')
       slotPatterns.add('core-flexion')
     }
@@ -930,13 +1005,12 @@ export function planGymExercises(input: GymSessionInput) {
     }
     for (const it of items) addCredit(GYM_EXERCISE_BY_ID[it.exerciseId], it.sets)
     const added: GymExercise[] = []
-    const limit = (m: Muscle) => requested.has(m) || (!input.athletePriority && priority.has(m)) ||
-      (focus === 'pull' && m === 'upper-back') ? FILL_MUSCLE_SETS + 2 : FILL_MUSCLE_SETS
+    const limit = ceilingOf
     const differentAccessory = (ex: GymExercise) => {
       if (ex.pattern.startsWith('core-')) {
         const chosen = ex.primary.some((m) => requested.has(m) || (!input.athletePriority && priority.has(m)))
         const core = items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].pattern.startsWith('core-'))
-        return (chosen || minutes >= 75 || !core.length) &&
+        return (chosen || input.minutes >= 75 || !core.length) &&
           core.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].pattern === ex.pattern).length < (chosen ? 2 : 1)
       }
       if (!UPPER_ISOLATION.has(ex.pattern)) return true
@@ -946,7 +1020,40 @@ export function planGymExercises(input: GymSessionInput) {
     }
     // A harder day (factor above 1) keeps room above the usual ceiling for its extra sets.
     const ceiling = Math.round(FILL_SESSION_SETS * Math.max(1, factor))
+    // Spare time first raises the session's own exercises, a set at a time in the order they were funded, to four
+    // sets each (the athlete's rule) — a dose the week's steer, a harder version or a set dose fixed stays as it is,
+    // no muscle passes its ceiling, and on a Pull day the curls never outnumber the rows and pull-ups. Only then does
+    // a new movement go in.
+    for (let grew = true; grew;) {
+      grew = false
+      for (const it of items) {
+        const ex = exOf(it)
+        if (it.sets >= MAIN_COMPOUND_SETS || it.finisher || ex.dose || ex.explosive || steered.has(ex.id) || smallDose.has(ex.id)) continue
+        if (items.reduce((n, x) => n + x.sets, 0) + 1 > ceiling) break
+        if (ex.primary.some((m) => creditOf(m) + volumeShare(ex, m) > limit(m) + 1e-9)) continue
+        if (isBicepsIsolation(ex) && curlRoom() < 1) continue
+        it.sets++
+        if (total() > minutes) {
+          it.sets--
+          continue
+        }
+        addCredit(ex, 1)
+        grew = true
+      }
+    }
+    /**
+     * How a new movement may join: as its own exercise (a new angle, within about two isolation exercises a muscle),
+     * as a harder version in small volume, or — an easier version of a movement in the session — only as that
+     * movement's one finisher. Never the same rung twice.
+     */
+    const fillRole = (e: GymExercise) => {
+      const r = rungRole(e)
+      if (r.role === 'finisher') return items.some((it) => it.finisher?.of === r.of) ? null : r
+      if (!joinable(e) || (r.role === 'standalone' && !differentAccessory(e))) return null
+      return r
+    }
     for (;;) {
+      if (trimmed) break
       const room = minutes - FILL_HEADROOM_MIN - total()
       const setsSoFar = items.reduce((n, it) => n + it.sets, 0)
       if (setsSoFar + 2 > ceiling) break
@@ -957,13 +1064,13 @@ export function planGymExercises(input: GymSessionInput) {
             // The chin-up only ever stands in for the pull-up, never beside it.
             e.id !== 'chin-up' &&
             slotPatterns.has(e.pattern) &&
-            differentAccessory(e) &&
             !e.explosive &&
             (![PRESSING_PATTERNS, PULLING_PATTERNS].some((f) => f.has(e.pattern)) || FILL_FAMILIES[focus].some((f) => f.has(e.pattern))) &&
             usable(e) &&
             spareIn(e) === 0 &&
             technicalPenalty(e) === 0 &&
-            e.primary.every((m) => (credit.get(m) ?? 0) < limit(m)),
+            e.primary.every((m) => creditOf(m) < limit(m)) &&
+            fillRole(e) !== null,
         )
         .map((e) => {
           const tier = isPriority(e) ? 0 : e.primary.some((m) => (main.size ? main.has(m) : true)) ? 1 : 2
@@ -973,13 +1080,22 @@ export function planGymExercises(input: GymSessionInput) {
         .sort((a, b) => a.score - b.score)
       let placed = false
       for (const { e } of candidates) {
-        const want = 3 + (isPriority(e) ? 1 : 0)
+        const role = fillRole(e)!
+        const cap = role.role === 'finisher' ? FINISHER_SETS : role.role === 'harder' ? HARDER_VARIANT_SETS : Infinity
+        const want = Math.min(cap, 3 + (isPriority(e) ? 1 : 0))
         const rest = restFor(e, makeItem(e, false, 2).plan)
-        const muscleRoom = Math.min(...e.primary.map((m) => limit(m) - (credit.get(m) ?? 0)))
-        const sets = [...new Set([want, 3, 2])].find((n) => n <= want && n <= muscleRoom && setsSoFar + n <= ceiling && blockMinutes(n, rest, e.dose?.workSec) <= room)
+        const muscleRoom = Math.min(...e.primary.map((m) => (limit(m) - creditOf(m)) / volumeShare(e, m)), isBicepsIsolation(e) ? curlRoom() : Infinity)
+        const smallest = role.role === 'standalone' ? 2 : 1
+        const sets = [...new Set([want, 3, 2, 1])].find((n) => n >= smallest && n <= want && n <= muscleRoom && setsSoFar + n <= ceiling &&
+          blockMinutes(n, rest, e.dose?.workSec) <= room)
         if (sets === undefined) continue
         used.add(movement(e))
-        items.push(makeItem(e, false, sets))
+        const item: (typeof items)[number] = makeItem(e, false, sets)
+        if (role.role === 'finisher') {
+          item.finisher = { of: role.of! }
+          items.splice(items.findIndex((it) => it.exerciseId === role.of) + 1, 0, item)
+        } else items.push(item)
+        if (role.role === 'harder') smallDose.add(e.id)
         addCredit(e, sets)
         added.push(e)
         placed = true
@@ -987,10 +1103,14 @@ export function planGymExercises(input: GymSessionInput) {
       }
       if (!placed) break
     }
-    if (added.length) {
-      notes.push(
-        `There was time left in the ${minutes} minutes, so ${added.map((e) => e.name).join(', ')} ${added.length === 1 ? 'was' : 'were'} added. These give ${[...new Set(added.flatMap((e) => e.primary))].map((m) => m.replaceAll('-', ' ')).join(', ')} more work on this ${FOCUS_LABEL[focus].toLowerCase()} day.`,
-      )
+    // Said once the day's factor and caps have had their say (`fillNotes`): only what the plan still holds.
+    fillNotes = () => {
+      const addedNow = added.filter((e) => items.some((it) => it.exerciseId === e.id))
+      if (addedNow.length) {
+        notes.push(
+          `There was time left in the ${minutes} minutes, so ${addedNow.map((e) => e.name).join(', ')} ${addedNow.length === 1 ? 'was' : 'were'} added. These give ${[...new Set(addedNow.flatMap((e) => e.primary))].map((m) => m.replaceAll('-', ' ')).join(', ')} more work on this ${FOCUS_LABEL[focus].toLowerCase()} day.`,
+        )
+      }
     }
   }
   // The day's factor works on the fitted session, so it changes the sets and not only the effort:
@@ -999,6 +1119,10 @@ export function planGymExercises(input: GymSessionInput) {
   const setCount = () => items.reduce((n, it) => n + it.sets, 0)
   if (items.length && factor < 1) {
     const target = Math.max(1, Math.floor(setCount() * factor + 0.25))
+    // Finishers are the first thing a lighter day gives up.
+    for (let i = items.length - 1; i >= 0 && setCount() > target; i--) {
+      if (items[i].finisher) dropped.unshift(GYM_EXERCISE_BY_ID[items.splice(i, 1)[0].exerciseId].name)
+    }
     while (splitDose && setCount() > target) {
       // A lighter Push or Pull day gives up the other movements' sets first, down to two, then those movements from
       // the last; only then the main compounds' sets, the larger and later first, and never the first of them.
@@ -1042,7 +1166,7 @@ export function planGymExercises(input: GymSessionInput) {
   } else if (items.length && factor > 1 && !introductory) {
     for (let i = 0; i < items.length; i++) {
       const ex = GYM_EXERCISE_BY_ID[items[i].exerciseId]
-      if (ex.dose || steered.has(ex.id)) continue
+      if (ex.dose || steered.has(ex.id) || smallDose.has(ex.id) || items[i].finisher) continue
       if (total() + blockMinutes(1, items[i].restSec) > minutes) break
       items[i] = { ...items[i], sets: items[i].sets + 1 }
     }
@@ -1099,7 +1223,7 @@ export function planGymExercises(input: GymSessionInput) {
       if (requested.has(m) && combinedGoals && direct >= 3 && direct < 6 && working.length === 1 && added < 3) {
         const movements = new Set(items.map((it) => movement(GYM_EXERCISE_BY_ID[it.exerciseId])))
         const options = here.filter((e) => !e.compound && !e.dose && !e.explosive && !movements.has(movement(e)) &&
-          e.primary.includes(m) && usable(e) && !technicalPenalty(e) && !spareIn(e))
+          e.primary.includes(m) && usable(e) && joinable(e) && rungRole(e).role === 'standalone' && !technicalPenalty(e) && !spareIn(e))
         const pick = options.sort((a, b) => scoreOf(a) - scoreOf(b))[0]
         if (pick) {
           const item = makeItem(pick, false, 2)
@@ -1117,6 +1241,9 @@ export function planGymExercises(input: GymSessionInput) {
   const capped = buildUpLimit !== undefined && focus !== 'athletic' && setCount() > buildUpLimit
   if (capped) {
     const chosen = (id: string) => protectSets.has(id) && GYM_EXERCISE_BY_ID[id].primary.some((m) => requested.has(m))
+    for (let i = items.length - 1; i >= 0 && setCount() > buildUpLimit; i--) {
+      if (items[i].finisher) items.splice(i, 1)
+    }
     while (splitDose && items.length && setCount() > buildUpLimit) {
       // A Push or Pull day keeps its main compounds longest: the other movements give up sets to two, then their
       // places from the last, before a main compound loses a set (the larger first), and the first one stays.
@@ -1176,14 +1303,15 @@ export function planGymExercises(input: GymSessionInput) {
     item.plan = { range: [dose.reps, dose.reps], targetRpe: Math.min(7, item.plan.targetRpe) }
     item.practice = { easierId: easier?.id }
     if (easier && backoffSets > 0) {
+      // The easier version is that lift's drop-set finisher, one or two sets straight after it — never a separate
+      // exercise, even when it was already in the session on its own.
       const existing = items.find((it) => it.exerciseId === easier.id)
-      if (existing) existing.sets += backoffSets
-      else {
-        const backoff = makeItem(easier, false, backoffSets)
-        backoff.sets = backoffSets
-        backoff.restSec = Math.min(backoff.restSec, item.restSec)
-        items.splice(items.indexOf(item) + 1, 0, backoff)
-      }
+      if (existing) items.splice(items.indexOf(existing), 1)
+      const backoff: (typeof items)[number] = existing ?? makeItem(easier, false, backoffSets)
+      backoff.sets = Math.min(FINISHER_SETS, backoffSets + (existing?.sets ?? 0))
+      backoff.restSec = Math.min(backoff.restSec, item.restSec)
+      backoff.finisher = { of: item.exerciseId }
+      items.splice(items.indexOf(item) + 1, 0, backoff)
     }
   }
   // A rule, not the clock: a curl it removes is not listed as left out to fit the time.
@@ -1223,9 +1351,21 @@ export function planGymExercises(input: GymSessionInput) {
       notes.push(`Alternate one set of ${GYM_EXERCISE_BY_ID[first.exerciseId].name.toLowerCase()} with one set of ${GYM_EXERCISE_BY_ID[second.exerciseId].name.toLowerCase()}. Allow 20 seconds to switch and at least ${first.restSec} seconds before repeating a lift. Straight sets are available during the workout.`)
     }
   }
+  // A finisher only ever follows the movement it finishes, straight after it — or it goes. It is also the first
+  // thing to give way when the minutes run over.
+  for (const finisher of items.filter((it) => it.finisher)) {
+    items.splice(items.indexOf(finisher), 1)
+    const parent = items.findIndex((it) => it.exerciseId === finisher.finisher!.of)
+    if (parent >= 0) items.splice(parent + 1, 0, finisher)
+  }
+  for (let i = items.length - 1; i >= 0 && total() > minutes; i--) if (items[i].finisher) items.splice(i, 1)
+  fillNotes()
+  if (cappedAt !== undefined && items.length) {
+    notes.push(`Lifting is capped at about ${cappedAt} of your ${input.minutes} minutes (a coaching convention, not a measured limit): accessories and finishers give way before any main lift.`)
+  }
   const setLimit = introductory ? 8 : capped ? buildUpLimit : undefined
   return { name: FOCUS_LABEL[focus], focus, items, dropped, estimatedMin: items.length ? Math.round(total()) : 0, fits, notes,
-    ...(setLimit !== undefined ? { setLimit } : {}) }
+    ...(setLimit !== undefined ? { setLimit } : {}), ...(cappedAt !== undefined ? { cappedAt } : {}) }
 }
 
 export function buildGymSession(input: GymSessionInput): GymPlan {

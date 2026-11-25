@@ -19,6 +19,17 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-24',
+    title: 'No doubled-up exercises, and lifting stays within about an hour',
+    area: 'training',
+    notes: [
+      'Each exercise now knows which easier and harder versions of the same movement exist. A session never has two of them as separate exercises, such as hanging leg raises with hanging knee raises.',
+      'An easier version only comes straight after the harder one as a finisher of one or two sets, marked “Finisher (easier variant)”: band-assisted pull-ups after pull-ups, or knee raises after leg raises. A harder version you have already done can join in for one or two sets.',
+      'Two exercises for the same muscle are fine when they work it differently, like a dumbbell curl and an incline curl, and there are never more than about two. No muscle gets more than about ten sets in one session, or twelve for one of your priorities.',
+      'Lifting is capped at about 60 minutes, whatever time you have (a coaching convention, not a measured limit). Spare time first takes the exercises you already have up to four sets each, and only then adds anything new. When time is short, finishers and accessories go before any main lift.',
+    ],
+  },
+  {
+    date: '2026-11-24',
     title: 'Push and Pull days build around the big lifts',
     area: 'training',
     notes: [
