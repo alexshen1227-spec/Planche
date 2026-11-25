@@ -190,7 +190,7 @@ export function WeekVolume() {
               <ul className="pl-3 text-ink2">{day.lifts.map((lift) => <li key={lift.name}>{lift.name} · {lift.sets} {lift.sets === 1 ? 'set' : 'sets'}{lift.credit < lift.sets ? ` (${lift.credit} assisting)` : ' direct'}</li>)}</ul>
             </li>)}
           </ul> : <p className="mt-1 text-footnote text-ink2">No remaining lift this week contributes sets for this muscle.</p>}
-          <p className="mt-2 text-footnote text-ink2">A gym set counts once for a primary muscle and half for an assisting muscle. Skill work estimates this muscle’s contribution from the exercise, effort and completed holds or reps.</p>
+          <p className="mt-2 text-footnote text-ink2">A gym set counts once for a muscle the exercise targets and half for one that assists it, such as the biceps in a pull-up or row. Skill work estimates this muscle’s contribution from the exercise, effort and completed holds or reps.</p>
           <p className="mt-2 text-footnote text-ink2">The week plan combines your log with scheduled work. {volumeTarget(detail, prefs)[1] > 0
             ? `Your full-week coaching range is ${volumeTarget(detail, prefs).join('–')} set equivalents.` : 'You have switched off the weekly target for this muscle.'}</p>
         </div>}

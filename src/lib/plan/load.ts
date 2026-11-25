@@ -1,5 +1,5 @@
 import { MUSCLES, type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
-import { athleticDomain, equivalentGymExercise, GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
+import { athleticDomain, equivalentGymExercise, GYM_EXERCISE_BY_ID, volumeShares } from '../../data/gym/exercises'
 import { EXERCISE_BY_ID } from '../../data/exercises'
 import { SKILLS } from '../../data/skills'
 import type { AppState, Category, Session, SetLog, SkillId } from '../../types'
@@ -13,7 +13,9 @@ import { sportBetween } from './sport'
  * elbows, a front lever and a row on the lats and elbows, a sprint on the legs.
  *
  * Credits are the usual volume convention (CONSENSUS): a set counts fully for
- * a primary muscle and half for a secondary one. Skill holds count as sets of
+ * a muscle the movement targets and half for one that assists it — including
+ * the biceps in a multi-joint pull and the triceps in a multi-joint press
+ * (`volumeShare`). Skill holds count as sets of
  * the muscles their category loads — an inference from the positions, not a
  * measurement.
  */
@@ -134,12 +136,9 @@ export function restFamilyOf(set: { exerciseId: string; section: string; light?:
   return l.press && !set.light ? 'push' : undefined
 }
 
-const GYM_MOVEMENT_LOAD: Record<string, Loading> = Object.fromEntries(Object.values(GYM_EXERCISE_BY_ID).map((ex) => {
-  const muscles: Credit = {}
-  for (const m of ex.secondary) muscles[m] = 0.5
-  for (const m of ex.primary) muscles[m] = 1
-  return [ex.id, { muscles, joints: ex.stress }]
-}))
+// The arms assisting a multi-joint pull or press count half a set (`volumeShare`): a pull-up is some biceps work, not a curl.
+const GYM_MOVEMENT_LOAD: Record<string, Loading> = Object.fromEntries(Object.values(GYM_EXERCISE_BY_ID).map((ex) =>
+  [ex.id, { muscles: volumeShares(ex), joints: ex.stress }]))
 const SKILL_MOVEMENT_LOAD: Record<string, Loading | null> = Object.fromEntries(
   Object.keys(EXERCISE_BY_ID).map((id) => [id, loadingOfSkill(id)]),
 )

@@ -1,6 +1,6 @@
 import { type Joint, type Muscle, type Pattern } from '../../data/gym/catalog'
-import { addDays, weekStart } from '../time'
-import { athleticDomain, GYM_EXERCISE_BY_ID, jointsToRest, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
+import { addDays, dayKey, weekStart } from '../time'
+import { athleticDomain, GYM_EXERCISE_BY_ID, jointsToRest, volumeShare, type AthleticDomain, type GymExercise, type IntensityTier } from '../../data/gym/exercises'
 import { availableAt, canDoHere, preferenceRank } from './availability'
 import { readyForBodyweight, type BodyweightCapacity } from './bodyweight'
 import { legPracticeAt, LEG_VARIATIONS, preparesFor, unassistedDose, UNASSISTED_LIFTS } from './bodyweightSteps'
@@ -69,6 +69,87 @@ const PRESSING_PATTERNS: ReadonlySet<Pattern> = new Set<Pattern>(['horizontal-pr
 /** Movements that pull (a pull skill's family). */
 const PULLING_PATTERNS: ReadonlySet<Pattern> = new Set<Pattern>(['vertical-pull', 'horizontal-pull', 'straight-arm-pull'])
 const UPPER_ISOLATION = new Set<Pattern>(['lateral-raise', 'rear-delt', 'biceps', 'triceps', 'chest-fly', 'shrug'])
+
+/**
+ * Working sets each main compound of a Push or Pull day (the rows and pull-ups, the presses) reaches before an
+ * isolation movement is given any time (the athlete's rule; "about four" is a coaching convention, CONSENSUS).
+ */
+export const MAIN_COMPOUND_SETS = 4
+/** The chin-up is the pull-up's occasional variation: at most one vertical-pull day in this many uses it. */
+export const CHIN_UP_EVERY = 3
+/** How far the pull-up leads the other vertical pulls when nothing else separates them (one notch and a half of rating). */
+const PULL_UP_DEFAULT = 1.5
+/** How far the chin-up trails while the pull-up itself can be done: never the default, only a variation. */
+const CHIN_UP_VARIATION = 3
+
+const workingSet = (set: { warmup?: boolean; reps: number }) => !set.warmup && set.reps > 0
+
+/**
+ * Whether the chin-up may be picked today: none of the athlete's last `CHIN_UP_EVERY - 1` days with a vertical pull
+ * (any session, any place) included one. Days are calendar days, so an opener and its lifts are one day.
+ */
+export function chinUpAllowed(sessions: readonly GymSession[], now: number): boolean {
+  const days = new Map<string, { at: number; chin: boolean }>()
+  for (const s of sessions) {
+    if (s.startedAt >= now) continue
+    const pulls = s.exercises.filter((row) => GYM_EXERCISE_BY_ID[row.exerciseId]?.pattern === 'vertical-pull' && row.sets.some(workingSet))
+    if (!pulls.length) continue
+    const key = dayKey(s.startedAt)
+    const day = days.get(key) ?? { at: s.startedAt, chin: false }
+    day.chin ||= pulls.some((row) => row.exerciseId === 'chin-up')
+    day.at = Math.max(day.at, s.startedAt)
+    days.set(key, day)
+  }
+  return ![...days.values()].sort((a, b) => b.at - a.at).slice(0, CHIN_UP_EVERY - 1).some((d) => d.chin)
+}
+
+const isBicepsIsolation = (ex: GymExercise) => ex.pattern === 'biceps' && ex.primary.includes('biceps')
+const isBackCompound = (ex: GymExercise) => ex.compound && (ex.pattern === 'vertical-pull' || ex.pattern === 'horizontal-pull')
+
+/**
+ * Pull days: curls and hammer curls together never get more working sets than the rows and pull-ups (the
+ * athlete's rule). The last curl gives up sets first; one left with none is removed (and named in `dropped`, if given).
+ */
+export function capBicepsIsolation<T extends { exerciseId: string; sets: number }>(items: T[], dropped: string[] = []): T[] {
+  const back = items.reduce((n, it) => n + (isBackCompound(GYM_EXERCISE_BY_ID[it.exerciseId]) ? it.sets : 0), 0)
+  let curls = items.reduce((n, it) => n + (isBicepsIsolation(GYM_EXERCISE_BY_ID[it.exerciseId]) ? it.sets : 0), 0)
+  for (let i = items.length - 1; i >= 0 && curls > back; i--) {
+    const ex = GYM_EXERCISE_BY_ID[items[i].exerciseId]
+    if (!isBicepsIsolation(ex)) continue
+    const cut = Math.min(items[i].sets, curls - back)
+    items[i].sets -= cut
+    curls -= cut
+    if (items[i].sets <= 0) {
+      items.splice(i, 1)
+      dropped.push(ex.name)
+    }
+  }
+  return items
+}
+
+/**
+ * Order matters: the first movements get the freshest effort, and an isolation exercise done before a compound that
+ * leans on the same muscle tires it for the compound — curls before pull-ups shortchange the pull-ups. Each
+ * isolation movement goes after the last compound that works one of its main muscles; nothing else moves. Speed
+ * and power work is never moved: it stays first while fresh.
+ */
+export function fatigueOrder<T extends { exerciseId: string }>(items: T[]): T[] {
+  for (let i = 0; i < items.length; i++) {
+    const ex = GYM_EXERCISE_BY_ID[items[i].exerciseId]
+    if (!ex || ex.compound || ex.explosive) continue
+    let last = -1
+    for (let j = i + 1; j < items.length; j++) {
+      const other = GYM_EXERCISE_BY_ID[items[j].exerciseId]
+      if (other?.compound && !other.explosive && ex.primary.some((m) => volumeShare(other, m) > 0)) last = j
+    }
+    if (last > i) {
+      const [moved] = items.splice(i, 1)
+      items.splice(last, 0, moved)
+      i--
+    }
+  }
+  return items
+}
 
 /** With time for two lifts, alternate knee/hip work and pressing/pulling using
  * the athlete's actual recent working sets. Missing kit leaves the other
@@ -297,7 +378,9 @@ export function planGymExercises(input: GymSessionInput) {
   // week is lighter on them because the skill days carry them.
   const spare = new Set(input.spare ?? [])
   const lightPress = spare.has('front-delts') && spare.has('triceps')
-  const overlap = (e: GymExercise) => e.primary.filter((m) => spare.has(m)).length +
+  // Every vertical pull works the upper back. The catalogue lists it among the pull-up's main muscles and the
+  // chin-up's assisting ones, and a steer off the upper back must not turn that listing into a change of grip.
+  const overlap = (e: GymExercise) => e.primary.filter((m) => spare.has(m) && !(e.pattern === 'vertical-pull' && m === 'upper-back')).length +
     (PRESSING_PATTERNS.has(e.pattern) || (e.compound && e.pattern === 'triceps') ? 0.5 * e.secondary.filter((m) => spare.has(m)).length : 0)
   const spareIn = (e: GymExercise) => {
     const held = lightPress && e.primary.some((m) => m === 'front-delts' || m === 'triceps')
@@ -308,7 +391,9 @@ export function planGymExercises(input: GymSessionInput) {
   const factor = input.volumeFactor ?? 1
   const goalEmphasis = input.goals ? { power: input.goals.power >= 3 } : null
   const emphasisOf = (e: GymExercise) => input.emphasis ?? goalEmphasisFor(input.goals, e)
+  const chinUps = chinUpAllowed(sessions, now)
   const usable = (e: GymExercise) =>
+    (e.id !== 'chin-up' || chinUps) &&
     readyForBodyweight(e.id, input.capacity) &&
     !(e.technical && !e.tier && ratings[e.id] !== 'love' && (youth || (input.capacity && isHardBodyweight(e) && !input.capacity.practiced.has(e.id)))) &&
     !e.primary.some((m) => musclesOff.has(m)) &&
@@ -470,7 +555,10 @@ export function planGymExercises(input: GymSessionInput) {
     // Explosive work goes first, fresh, when power is a goal (and the legs are on).
     if (goalEmphasis?.power && focus !== 'pull' && !musclesOff.has('quads')) slots.unshift(['jump', 'throw'])
     // What the day is named for, still to be filled: each group keeps one movement whatever the steer says.
-    const named = NAMED_PATTERNS[focus].map((group) => [...group])
+    // On a Push day the overhead press is a main compound as well (`splitMains`): the week's steer may change which
+    // press goes in, never leave it out. A light-pressing day is the exception: its rail keeps pressing to one movement.
+    const named = (focus === 'push' && !lightPress ? [...NAMED_PATTERNS.push, ['vertical-press'] as Pattern[]] : NAMED_PATTERNS[focus])
+      .map((group) => [...group])
     // If the skill plan already calls for light pressing and the athlete pressed
     // yesterday, keep one practice set in a named pressing slot.
     const yesterday = addDays(new Date(now).setHours(0, 0, 0, 0), -1)
@@ -491,7 +579,11 @@ export function planGymExercises(input: GymSessionInput) {
       const spared = free.length === 0 && fit.length > 0
       if (spared && !unfilled(slot)) continue
       const options = spared ? fit : free.length ? free : fit
-      const ranked = options
+      // The pull-up is the vertical pull by default; the chin-up is its occasional variation (`CHIN_UP_EVERY`).
+      const pullUpHere = slot.includes('vertical-pull') && options.some((e) => e.id === 'pull-up')
+      const defaultPick = (e: GymExercise) => !slot.includes('vertical-pull') ? 0
+        : e.id === 'pull-up' ? -PULL_UP_DEFAULT : e.id === 'chin-up' && pullUpHere ? CHIN_UP_VARIATION : 0
+      const scored = options
         .map((e) => ({
           e,
           score:
@@ -510,7 +602,7 @@ export function planGymExercises(input: GymSessionInput) {
             (e.tier ? TIER_RANK[gateTier(e)!] * 0.25 : 0) +
             spareIn(e) * 0.5,
         }))
-        .sort((a, b) => a.score - b.score)
+      const ranked = [...scored].sort((a, b) => a.score + defaultPick(a.e) - (b.score + defaultPick(b.e)))
       const first = ranked[0]
       if (!first) continue
       let pick = first.e
@@ -528,7 +620,9 @@ export function planGymExercises(input: GymSessionInput) {
       // restart progress (CONSENSUS). Only a close fit — never one that is
       // hard to do here, or coached-only under 18 — and never a favourite.
       if (pick === first.e && sessions.length > STALL_SESSIONS && !wantsExplosive && ratings[pick.id] !== 'love' && liftTrend(sessions, pick.id, now, location?.id).status === 'stalled') {
-        const alt = ranked.find(
+        // The variation is the closest movement on its own merits (the pull-up's default lead set aside), so a
+        // stalled pull-up can lend its slot to the chin-up — on the days `chinUpAllowed` leaves it in.
+        const alt = [...scored].sort((a, b) => a.score - b.score).find(
           (r) => r.e.id !== first.e.id && r.e.pattern === first.e.pattern && r.score <= first.score + 1.5 && liftTrend(sessions, r.e.id, now, location?.id).status !== 'stalled',
         )
         if (alt) {
@@ -641,8 +735,10 @@ export function planGymExercises(input: GymSessionInput) {
     }
     return warm + blocks - finalRest - saved
   }
+  // Push and Pull days spend their time in the athlete's order (`allocateSplitDay`).
+  const splitDose = split && !introductory
   // Use a single station. Basic strength work and a pair's own recovery stay intact.
-  if (fullPriorityDose && !avoid.size && focus !== 'athletic' && minutes >= 15 && minutes <= 35 && total() > minutes) {
+  if (!splitDose && fullPriorityDose && !avoid.size && focus !== 'athletic' && minutes >= 15 && minutes <= 35 && total() > minutes) {
     const choices = items.filter((it) => protectSets.has(it.exerciseId) && !anchors.has(it.exerciseId) &&
       GYM_EXERCISE_BY_ID[it.exerciseId].primary.some((m) => requested.has(m)))
     for (const first of choices) {
@@ -664,7 +760,83 @@ export function planGymExercises(input: GymSessionInput) {
     return items.indexOf(cut)
   }
   let trimmed = false
-  for (const trimPriority of priorityExercises.size ? [false, true] : [false]) {
+  // The day's main compounds (the row and the vertical pull, the press and the overhead press), most important first.
+  const splitMains = splitDose
+    ? (focus === 'push' ? [['horizontal-press', 'incline-press', 'dip'], ['vertical-press']] as Pattern[][] : NAMED_PATTERNS[focus])
+      .flatMap((group) => items.filter((it) => anchors.has(it.exerciseId) && group.includes(GYM_EXERCISE_BY_ID[it.exerciseId].pattern)).slice(0, 1))
+    : []
+  /** A light-pressing day's presses keep the dose the steer gave them: a recovery rail beside a push skill, not a time fit. */
+  const heldMain = (it: (typeof items)[number]) => lightPress && steered.has(it.exerciseId)
+  /**
+   * Push and Pull days (the athlete's rules): the main compounds get the time first and are raised a set at a time,
+   * in turn, to `MAIN_COMPOUND_SETS` each; only then does any other movement go in — the athlete's priority muscles
+   * first, then the week's, then the day's own order — each at its usual sets, or as few as two, before the next.
+   * Trimming runs the other way: the other movements go before a main compound loses a set, and a main compound
+   * is dropped only when not even one set of each fits.
+   */
+  const allocateSplitDay = () => {
+    const priorityRank = (it: (typeof items)[number]) => {
+      const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
+      return ex.primary.some((m) => requested.has(m)) ? 0 : isPriority(ex) ? 1 : 2
+    }
+    // Speed and power work a power goal puts first keeps its place ahead of the lifts, fresh (`goalEmphasis`).
+    const power = items.filter((it) => !splitMains.includes(it) && GYM_EXERCISE_BY_ID[it.exerciseId].explosive)
+    const others = items.filter((it) => !splitMains.includes(it) && !power.includes(it))
+      .map((it, index) => ({ it, index }))
+      .sort((a, b) => priorityRank(a.it) - priorityRank(b.it) || a.index - b.index)
+      .map(({ it }) => it)
+    const mainsInOrder = items.filter((it) => splitMains.includes(it))
+    items.length = 0
+    items.push(...power, ...mainsInOrder)
+    for (const it of splitMains) if (!heldMain(it)) it.sets = Math.min(it.sets, 3)
+    while (total() > minutes) {
+      const fast = power.filter((it) => items.includes(it)).reverse()
+      const shorter = fast.find((it) => it.sets > 2)
+      if (shorter) {
+        shorter.sets--
+        continue
+      }
+      if (fast.length) {
+        items.splice(items.indexOf(fast[0]), 1)
+        dropped.unshift(GYM_EXERCISE_BY_ID[fast[0].exerciseId].name)
+        continue
+      }
+      const lastFirst = [...splitMains].reverse().filter((it) => items.includes(it))
+      const cut = lastFirst.find((it) => it.sets > 2) ?? lastFirst.find((it) => it.sets > 1)
+      if (cut) {
+        cut.sets--
+        continue
+      }
+      if (items.length <= 1) break
+      items.splice(items.indexOf(lastFirst[0]), 1)
+      dropped.unshift(GYM_EXERCISE_BY_ID[lastFirst[0].exerciseId].name)
+    }
+    for (let grew = true; grew;) {
+      grew = false
+      for (const it of splitMains) {
+        if (!items.includes(it) || heldMain(it) || it.sets >= MAIN_COMPOUND_SETS) continue
+        it.sets++
+        if (total() > minutes) it.sets--
+        else grew = true
+      }
+    }
+    const mainsFull = splitMains.every((it) => !items.includes(it) || heldMain(it) || it.sets >= MAIN_COMPOUND_SETS)
+    for (const it of others) {
+      items.push(it)
+      let sets = it.sets
+      for (; sets >= 2; sets--) {
+        it.sets = sets
+        if (total() <= minutes) break
+      }
+      if (!mainsFull || sets < 2) {
+        items.pop()
+        dropped.push(GYM_EXERCISE_BY_ID[it.exerciseId].name)
+      }
+    }
+    trimmed = dropped.length > 0
+  }
+  if (splitDose) allocateSplitDay()
+  for (const trimPriority of splitDose ? [] : priorityExercises.size ? [false, true] : [false]) {
     if (trimPriority && focus !== 'athletic') {
       for (let i = items.length - 1; i > 0 && items.length > 3 && total() > minutes; i--) {
         const ex = GYM_EXERCISE_BY_ID[items[i].exerciseId]
@@ -694,7 +866,7 @@ export function planGymExercises(input: GymSessionInput) {
       }
     }
   }
-  while (items.length && total() > minutes) {
+  while (!splitDose && items.length && total() > minutes) {
     const cut = lowestPriorityIndex()
     const last = items[cut].exerciseId
     if (split && anchors.has(last)) {
@@ -721,7 +893,7 @@ export function planGymExercises(input: GymSessionInput) {
     dropped.unshift(GYM_EXERCISE_BY_ID[last].name)
     trimmed = true
   }
-  if (combinedGoals && trimmed && !introductory && factor >= 1 && total() <= minutes) {
+  if (!splitDose && combinedGoals && trimmed && !introductory && factor >= 1 && total() <= minutes) {
     // Dropping the final movement can free several minutes after sets have already
     // been reduced. Spend those minutes on the athlete's selected lifts first.
     for (const item of items) {
@@ -752,9 +924,9 @@ export function planGymExercises(input: GymSessionInput) {
     }
     const main = new Set<Muscle>(FOCUS_MAIN[focus])
     const credit = new Map<Muscle, number>()
+    // The same shares as weekly volume (`volumeShare`): a pull-up's sets are part, not all, of a biceps dose.
     const addCredit = (ex: GymExercise, sets: number) => {
-      for (const m of ex.primary) credit.set(m, (credit.get(m) ?? 0) + sets)
-      for (const m of ex.secondary) credit.set(m, (credit.get(m) ?? 0) + sets * 0.5)
+      for (const m of new Set([...ex.primary, ...ex.secondary])) credit.set(m, (credit.get(m) ?? 0) + sets * volumeShare(ex, m))
     }
     for (const it of items) addCredit(GYM_EXERCISE_BY_ID[it.exerciseId], it.sets)
     const added: GymExercise[] = []
@@ -782,6 +954,8 @@ export function planGymExercises(input: GymSessionInput) {
         .filter(
           (e) =>
             !used.has(movement(e)) &&
+            // The chin-up only ever stands in for the pull-up, never beside it.
+            e.id !== 'chin-up' &&
             slotPatterns.has(e.pattern) &&
             differentAccessory(e) &&
             !e.explosive &&
@@ -825,6 +999,27 @@ export function planGymExercises(input: GymSessionInput) {
   const setCount = () => items.reduce((n, it) => n + it.sets, 0)
   if (items.length && factor < 1) {
     const target = Math.max(1, Math.floor(setCount() * factor + 0.25))
+    while (splitDose && setCount() > target) {
+      // A lighter Push or Pull day gives up the other movements' sets first, down to two, then those movements from
+      // the last; only then the main compounds' sets, the larger and later first, and never the first of them.
+      const lastFirst = [...items].reverse()
+      const other = lastFirst.find((it) => !anchors.has(it.exerciseId) && it.sets > 2) ?? lastFirst.find((it) => !anchors.has(it.exerciseId))
+      if (other && other.sets > 2) other.sets--
+      else if (other) {
+        items.splice(items.indexOf(other), 1)
+        dropped.unshift(GYM_EXERCISE_BY_ID[other.exerciseId].name)
+      } else {
+        // Most important first (`splitMains`): the last of them gives up a set on a tie, and goes first.
+        const mains = splitMains.map((m) => items.find((it) => it.exerciseId === m.exerciseId)).filter((it) => it !== undefined).reverse()
+        if (!mains.length) break
+        const main = mains.reduce((a, b) => (b.sets > a.sets ? b : a))
+        if (main.sets > 1) main.sets--
+        else if (items.length > 1) {
+          items.splice(items.indexOf(mains[0]), 1)
+          dropped.unshift(GYM_EXERCISE_BY_ID[mains[0].exerciseId].name)
+        } else break
+      }
+    }
     while (setCount() > target) {
       let cut = -1
       let best = -Infinity
@@ -853,7 +1048,8 @@ export function planGymExercises(input: GymSessionInput) {
     }
   }
   const buildUpLimit = input.capacity?.buildUpSetLimit
-  if (!introductory && factor >= 1 && !avoid.size && focus !== 'athletic' && input.weeklyPriority?.length) {
+  // A Push or Pull day's priorities change its order and sets inside `allocateSplitDay`; they never take a main compound's sets.
+  if (!split && !introductory && factor >= 1 && !avoid.size && focus !== 'athletic' && input.weeklyPriority?.length) {
     const behind = input.weeklyPriority.filter((m) => requested.has(m) ||
       (combinedGoals && ((m === 'chest' || m === 'lats') && (focus === 'upper' || focus === 'full') ||
         (m === 'quads' || m === 'hamstrings') && (focus === 'lower' || focus === 'full'))))
@@ -921,6 +1117,26 @@ export function planGymExercises(input: GymSessionInput) {
   const capped = buildUpLimit !== undefined && focus !== 'athletic' && setCount() > buildUpLimit
   if (capped) {
     const chosen = (id: string) => protectSets.has(id) && GYM_EXERCISE_BY_ID[id].primary.some((m) => requested.has(m))
+    while (splitDose && items.length && setCount() > buildUpLimit) {
+      // A Push or Pull day keeps its main compounds longest: the other movements give up sets to two, then their
+      // places from the last, before a main compound loses a set (the larger first), and the first one stays.
+      const lastFirst = [...items].reverse()
+      const other = lastFirst.find((it) => !anchors.has(it.exerciseId) && it.sets > 2) ?? lastFirst.find((it) => !anchors.has(it.exerciseId))
+      if (other && other.sets > 2) other.sets--
+      else if (other) {
+        items.splice(items.indexOf(other), 1)
+        dropped.unshift(GYM_EXERCISE_BY_ID[other.exerciseId].name)
+      } else {
+        const mains = splitMains.map((m) => items.find((it) => it.exerciseId === m.exerciseId)).filter((it) => it !== undefined).reverse()
+        if (!mains.length) break
+        const main = mains.reduce((a, b) => (b.sets > a.sets ? b : a))
+        if (main.sets > 1) main.sets--
+        else if (items.length > 1) {
+          items.splice(items.indexOf(mains[0]), 1)
+          dropped.unshift(GYM_EXERCISE_BY_ID[mains[0].exerciseId].name)
+        } else break
+      }
+    }
     while (items.length && setCount() > buildUpLimit) {
       const lastFirst = [...items].reverse()
       const ordinary = lastFirst.filter((it) => !chosen(it.exerciseId))
@@ -970,9 +1186,37 @@ export function planGymExercises(input: GymSessionInput) {
       }
     }
   }
+  // A rule, not the clock: a curl it removes is not listed as left out to fit the time.
+  if (focus === 'pull') capBicepsIsolation(items)
+  if (splitDose) {
+    // The session runs as it was funded: speed and power work while fresh, the main compounds (an easier back-off
+    // right behind its lift), any other compound, the isolation work in the athlete's order, then core work nobody
+    // asked for.
+    const backoffs = new Set(items.flatMap((it) => it.practice?.easierId ? [it.practice.easierId] : []))
+    const stage = (it: (typeof items)[number]) => {
+      const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
+      if (ex.explosive) return -1
+      if (anchors.has(ex.id) || backoffs.has(ex.id)) return 0
+      if (ex.compound) return 1
+      return ex.pattern.startsWith('core-') && !isPriority(ex) ? 3 : 2
+    }
+    items.sort((a, b) => stage(a) - stage(b))
+  }
+  if (focus !== 'athletic') fatigueOrder(items)
   if (pair) {
     const [a, b] = pair
     const first = items.find((it) => it.exerciseId === a), second = items.find((it) => it.exerciseId === b)
+    // A pair is done as one block: the reorder above never parts them. The earlier one joins the later one, so
+    // neither moves ahead of a compound it was placed after.
+    if (first && second && items.indexOf(second) !== items.indexOf(first) + 1) {
+      if (items.indexOf(first) < items.indexOf(second)) {
+        items.splice(items.indexOf(first), 1)
+        items.splice(items.indexOf(second), 0, first)
+      } else {
+        items.splice(items.indexOf(second), 1)
+        items.splice(items.indexOf(first) + 1, 0, second)
+      }
+    }
     if (first && second) {
       first.pairedWith = second.exerciseId
       second.pairedWith = first.exerciseId

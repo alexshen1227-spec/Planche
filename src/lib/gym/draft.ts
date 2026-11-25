@@ -1,4 +1,4 @@
-import type { GymPlan } from './builder'
+import type { GymPlan, PlannedExercise } from './builder'
 import { GYM_EXERCISE_BY_ID, jointsToRest } from '../../data/gym/exercises'
 import type { Joint, Muscle } from '../../data/gym/catalog'
 import { comparablePerformance, countUnit, repPlanFor, type LoadSuggestion, type RepPlan } from './progression'
@@ -7,7 +7,7 @@ import { canDoHere } from './availability'
 import { preparesFor } from './bodyweightSteps'
 import { useStraightSets } from './pairedSets'
 import { dayKey } from '../time'
-import { entryLoad, recordsZeroLoad, toKg } from './units'
+import { entryLoad, recordsZeroLoad, toKg, unitFor } from './units'
 import type { Unit } from '../../data/gym/catalog'
 import type { AttemptSymptom, Profile } from '../../types'
 
@@ -59,8 +59,11 @@ export function previousSets(
 
 export interface GymDraft {
   id: string
-  /** Version of the builder that selected the pending exercises. */
+  /** Version of the builder that selected the pending exercises (`GYM_PLAN_REVISION`). */
   planRevision?: number
+  /** The minutes and warm-up the plan was built for, so a newer builder can rebuild it to the same budget. */
+  planMinutes?: number
+  warmUpMin?: number
   edited?: true
   epoch?: string
   startedAt: number
@@ -119,12 +122,39 @@ export function prefillReps(plan: RepPlan, suggestion: LoadSuggestion | undefine
   return lo
 }
 
+/** A planned exercise as the player's rows: today's suggested load and reps, with last time's sets beside them. */
+export function draftItemFromPlan(it: PlannedExercise, location: GymLocation, sessions: GymSession[]): DraftItem {
+  const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
+  const unit = unitFor(ex, location)
+  const load = it.suggestion.kg !== undefined ? entryLoad(it.suggestion.kg, unit) : undefined
+  const previous = previousSets(sessions, it.exerciseId, location.id, unit)
+  const last = comparablePerformance(sessions, it.exerciseId, location.id)
+  return {
+    exerciseId: it.exerciseId,
+    plan: it.plan,
+    suggestion: it.suggestion,
+    restSec: it.restSec,
+    ...(it.pairedWith ? { pairedWith: it.pairedWith } : {}),
+    unit,
+    ...(previous ? { previous } : {}),
+    sets: Array.from({ length: it.sets }, (_, i) => ({
+      ...(load !== undefined ? { load } : {}),
+      reps: prefillReps(it.plan, it.suggestion, last?.sets[i]?.reps),
+      done: false,
+    })),
+  }
+}
+
 /** Reps for a set added to a block: the last set's, else the bar a held-back lift must clear, else the top of the range. */
 export function addedSetReps(lastReps: number | undefined, plan: RepPlan, suggestion: LoadSuggestion | undefined): number {
   return lastReps ?? suggestion?.repsToMoveUp ?? suggestion?.targetReps ?? plan.range[1]
 }
 
 const KEY = 'planchelab.gymDraft'
+/** A workout started empty: the athlete chooses each exercise during it and logs it like any other. */
+export const QUICK_LOG_NAME = 'Quick log'
+/** Held by the tab whose player has the open workout (`WorkoutWriter`). */
+export const GYM_WRITER_KEY = 'planchelab.gymWriter'
 
 /** Older players left their original suggestions in the rows after a completed set. */
 function restoreLegacyPrefills(item: DraftItem): DraftItem {

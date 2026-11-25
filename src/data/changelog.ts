@@ -19,6 +19,19 @@ export interface ChangeEntry {
 export const CHANGELOG: ChangeEntry[] = [
   {
     date: '2026-11-24',
+    title: 'Push and Pull days build around the big lifts',
+    area: 'training',
+    notes: [
+      'Pull days use only back, rear shoulder, biceps, forearm and core work, and Push days only chest, front and side shoulder, triceps and core work. A priority muscle changes the order or adds sets within the day, never brings another day’s muscles in.',
+      'Spare time first raises the rows and pull-ups, or the presses, to about four sets each. Only then do curls, raises and other single-muscle exercises go in, and they are the first to go when time is short. Curls never get more sets than the rows and pull-ups.',
+      'The pull-up is the default vertical pull. The chin-up appears only as an occasional variation, at most once in any three pull days. Single-muscle exercises always come after the big lifts that work the same muscle.',
+      'A pull-up or row now counts as half a biceps set in your weekly volume, the same way other assisting muscles count.',
+      'An open plan you have not started is rebuilt when the workout builder changes, and Regenerate today’s plan rebuilds it any time. Logged sets and saved sessions are never changed.',
+      'Quick log starts an empty workout: pick each exercise as you go and log reps, weight and effort. The coach uses those sets for your next loads and your weekly volume. There are new dumbbell exercises for the lats, shoulders, chest and arms.',
+    ],
+  },
+  {
+    date: '2026-11-24',
     title: 'Choose a lifting split for each weekday',
     area: 'training',
     notes: [

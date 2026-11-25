@@ -114,7 +114,9 @@ export function GymPlayer({
   const [now, setNow] = useState(() => Date.now())
   const rest = draft.stopReport ? undefined : draft.rest
   const askRpe = draft.stopReport ? undefined : draft.effortFor
-  const [sheet, setSheet] = useState<{ kind: 'swap' | 'add' | 'menu'; item?: number } | null>(null)
+  // A quick log starts empty: the exercise list opens straight away, and each pick is logged like any planned lift.
+  const [sheet, setSheet] = useState<{ kind: 'swap' | 'add' | 'menu'; item?: number } | null>(() =>
+    !initial.items.length && !initial.stopReport && initial.resumeFrom === undefined ? { kind: 'add' } : null)
   const [finishOpen, setFinishing] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [trialFor, setTrialFor] = useState<number | null>(null)
@@ -938,6 +940,7 @@ export function GymPlayer({
               {sh?.kind === 'add' ? (
                 <>
                   <h2 className="text-title3 font-semibold">Add an exercise</h2>
+                  {!draft.items.length && <p className="mt-1 text-footnote text-ink2">Quick log: choose an exercise, log its sets, then add the next one. These sets count like any planned workout for your next loads and your weekly volume.</p>}
                   {split && split !== 'full' && <div className="mt-2 flex flex-wrap gap-2">
                     <ToggleChip active={!allFocuses} onClick={() => { setAllFocuses(false); setVisibleCount(40) }}>{FOCUS_LABEL[split]} day</ToggleChip>
                     <ToggleChip active={allFocuses} onClick={() => { setAllFocuses(true); setVisibleCount(40) }}>All exercises</ToggleChip>

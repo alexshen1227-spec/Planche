@@ -423,6 +423,21 @@ const HOME_AND_GYM_EXERCISES: GymExercise[] = [
   x('side-lying-adduction', 'Side-lying inner thigh raise', 'adduction', ['adductors'], [], [], 'bodyweight', false, ['hips'], 'Lie on your side with the top foot planted in front of the lower leg. Keep the lower knee straight and lift that leg a short distance. Work both sides.', { unilateral: true }),
   x('wall-assisted-db-rdl', 'Wall-assisted single-leg Romanian deadlift', 'hinge', ['hamstrings', 'glutes'], ['lower-back', 'forearms'], [['wall'], ['dumbbells']], 'dumbbell', true, ['lower-back', 'hips', 'ankles'], 'Stand a short step in front of a wall with one foot resting against it behind you. Hold a dumbbell on that side. Hinge over the standing leg, keep your hips level and stand tall. Switch sides.', { unilateral: true, variantOf: 'single-leg-rdl' }),
   x('bear-plank-shoulder-tap', 'Bear plank shoulder tap', 'core-anti-rotation', ['abs', 'obliques'], ['front-delts'], [], 'bodyweight', false, ['wrists', 'shoulders', 'knees'], 'From hands and knees, lift the knees just off the floor. Tap the opposite shoulder with one hand and set it back down without rocking the hips. Count taps per side.', { unilateral: true }),
+  // ---- More dumbbell work: lats, shoulders, chest and arms ----
+  x('db-lat-pullback', 'Dumbbell lat pullback', 'straight-arm-pull', ['lats'], ['triceps-long', 'rear-delts'], [['dumbbells']], 'dumbbell', false, ['shoulders', 'elbows'], 'Hinge forward with soft knees and a flat back, arms hanging. Keep the elbows nearly straight and sweep the dumbbells back to your hips, then lower slowly.', { carries: ['frontlever'] }),
+  x('kroc-row', 'Kroc row', 'horizontal-pull', ['lats', 'upper-back'], ['biceps', 'forearms', 'rear-delts'], [['dumbbells'], ['bench', 'incline-bench', 'squat-rack']], 'dumbbell', true, ['elbows', 'wrists', 'lower-back'], 'Brace one hand on a bench or rack with a staggered stance. Row a heavy dumbbell to the hip for higher reps, letting the shoulder reach forward at the bottom without twisting.', { unilateral: true, carries: ['frontlever'] }),
+  x('db-dead-stop-row', 'Dumbbell dead-stop row', 'horizontal-pull', ['lats', 'upper-back'], ['biceps', 'rear-delts', 'lower-back'], [['dumbbells']], 'dumbbell', true, ['lower-back', 'hips', 'elbows', 'wrists'], 'Hinge over two dumbbells resting on the floor. Brace, row both to the lower ribs, then set them down and reset the hinge before each rep.', { carries: ['frontlever'] }),
+  x('db-front-raise', 'Dumbbell front raise', 'lateral-raise', ['front-delts'], ['side-delts'], [['dumbbells']], 'dumbbell', false, ['shoulders'], 'Stand tall with the dumbbells in front of the thighs. Raise them forward to shoulder height with soft elbows, pause, and lower without leaning back.'),
+  x('db-upright-row', 'Dumbbell upright row', 'lateral-raise', ['side-delts'], ['traps', 'front-delts'], [['dumbbells']], 'dumbbell', false, ['shoulders', 'wrists'], 'Hold the dumbbells in front of the thighs. Lead with the elbows out to the sides and lift to about chest height, only as high as the shoulders stay comfortable.'),
+  x('single-arm-db-shoulder-press', 'Single-arm dumbbell shoulder press', 'vertical-press', ['front-delts', 'triceps'], ['side-delts', 'obliques'], [['dumbbells']], 'dumbbell', true, ['shoulders', 'elbows', 'wrists'], 'Stand tall with one dumbbell at the shoulder. Brace your ribs and press straight up without leaning away from the weight. Match the reps on the other side.', { unilateral: true, variantOf: 'db-shoulder-press', carries: ['handstand'] }),
+  x('db-rear-delt-row', 'Dumbbell rear delt row', 'rear-delt', ['rear-delts', 'upper-back'], ['traps', 'biceps'], [['dumbbells']], 'dumbbell', false, ['shoulders', 'elbows', 'lower-back'], 'Hinge forward with light dumbbells. Pull the elbows out wide toward shoulder height, upper arms at about 90 degrees from the body, and lower slowly.'),
+  x('low-incline-db-press', 'Low-incline dumbbell press', 'incline-press', ['chest-upper', 'chest', 'front-delts'], ['triceps'], [['dumbbells'], ['incline-bench']], 'dumbbell', true, ['shoulders', 'elbows', 'wrists'], 'Set the bench to its lowest incline, about 15 degrees. Lower the dumbbells beside the upper chest and press up and slightly in.', { variantOf: 'incline-db-press' }),
+  x('neutral-grip-db-press', 'Neutral-grip dumbbell press', 'horizontal-press', ['chest', 'triceps', 'front-delts'], [], [['dumbbells'], ['bench', 'incline-bench']], 'dumbbell', true, ['shoulders', 'elbows', 'wrists'], 'Lie on a flat bench with palms facing each other. Keep the elbows close to your sides as you lower and press. Many find this grip easier on the shoulders.', { variantOf: 'db-bench-press', carries: ['planche'] }),
+  x('single-arm-db-bench-press', 'Single-arm dumbbell bench press', 'horizontal-press', ['chest', 'front-delts', 'triceps'], ['obliques', 'abs'], [['dumbbells'], ['bench', 'incline-bench']], 'dumbbell', true, ['shoulders', 'elbows', 'wrists'], 'Lie on a flat bench with one dumbbell. Brace so your body does not roll toward the weight, then lower and press. Match the reps on the other side.', { unilateral: true, variantOf: 'db-bench-press' }),
+  x('db-squeeze-press', 'Dumbbell squeeze press', 'horizontal-press', ['chest', 'triceps'], ['front-delts'], [['dumbbells'], ['bench', 'incline-bench']], 'dumbbell', true, ['shoulders', 'elbows', 'wrists'], 'Lie on a bench and press the dumbbells together over your chest. Keep them touching as you lower toward the chest and press back up.', { variantOf: 'db-squeeze-floor-press' }),
+  x('db-floor-fly', 'Dumbbell floor fly', 'chest-fly', ['chest'], ['front-delts'], [['dumbbells']], 'dumbbell', false, ['shoulders', 'wrists'], 'Lie on the floor with soft elbows. Open the arms in a wide arc until the upper arms touch the floor, then bring the dumbbells back together over the chest.'),
+  x('zottman-curl', 'Zottman curl', 'biceps', ['biceps', 'forearms'], [], [['dumbbells']], 'dumbbell', false, ['elbows', 'wrists'], 'Curl with your palms up. At the top, turn the palms down and lower slowly. Turn them back up at the bottom.'),
+  x('db-tate-press', 'Dumbbell Tate press', 'triceps', ['triceps'], ['chest'], [['dumbbells'], ['bench', 'incline-bench']], 'dumbbell', false, ['elbows', 'wrists'], 'Lie on a bench with the dumbbells over your chest and palms facing your feet. Bend the elbows outward so the dumbbells lower toward your chest, then press back up.'),
 ]
 
 const originals: Record<string, GymExercise> = Object.fromEntries([...BASE_EXERCISES, ...HOME_AND_GYM_EXERCISES].map((e) => [e.id, e]))
@@ -469,6 +484,31 @@ export const GYM_EXERCISES: GymExercise[] = [
 
 export const GYM_EXERCISE_BY_ID: Record<string, GymExercise> = Object.fromEntries(GYM_EXERCISES.map((e) => [e.id, e]))
 
+/** The arm muscles that assist a multi-joint pull or press rather than drive it. */
+const ASSISTING_ARMS: Partial<Record<Pattern, readonly Muscle[]>> = {
+  'vertical-pull': ['biceps'],
+  'horizontal-pull': ['biceps'],
+}
+
+/**
+ * The share of one working set a muscle is credited with in volume counts (CONSENSUS, fractional counting): a
+ * whole set for a muscle the movement targets, half a set for one that assists it. In a multi-joint pull the
+ * biceps assist and in a multi-joint press the triceps do, even where the catalogue lists them among the main
+ * movers for choosing exercises: a pull-up gives the biceps some work, not a curl's worth. A dip and a
+ * close-grip press still count whole sets for the triceps.
+ */
+export function volumeShare(ex: Pick<GymExercise, 'pattern' | 'primary' | 'secondary' | 'compound'>, muscle: Muscle): number {
+  if (ex.primary.includes(muscle)) return ex.compound && ASSISTING_ARMS[ex.pattern]?.includes(muscle) ? 0.5 : 1
+  return ex.secondary.includes(muscle) ? 0.5 : 0
+}
+
+/** Every muscle a movement credits, with its share of a set (`volumeShare`). */
+export function volumeShares(ex: Pick<GymExercise, 'pattern' | 'primary' | 'secondary' | 'compound'>): Partial<Record<Muscle, number>> {
+  const shares: Partial<Record<Muscle, number>> = {}
+  for (const m of [...ex.secondary, ...ex.primary]) shares[m] = volumeShare(ex, m)
+  return shares
+}
+
 // Supporting or gripping a load matters when an athlete asks to rest a sore wrist,
 // even when the wrist is not a primary source of training fatigue for that lift.
 const handsFree = new Set(['hip-thrust', 'zercher-squat', 'cable-kickback', 'cable-hip-abduction', 'cable-hip-adduction', 'machine-lateral-raise'])
@@ -483,11 +523,11 @@ const loadedArmSupports = new Set(['plank', 'side-plank', 'copenhagen-plank', 's
 // that can actually be done seated or lying down with the feet unloaded.
 const feetUnloaded = new Set([
   'db-floor-press', 'barbell-floor-press', 'machine-chest-press', 'incline-machine-press',
-  'pec-deck', 'db-fly', 'incline-db-fly', 'db-pullover', 'barbell-pullover', 'ez-pullover',
+  'pec-deck', 'db-fly', 'incline-db-fly', 'db-floor-fly', 'db-pullover', 'barbell-pullover', 'ez-pullover',
   'z-press', 'barbell-z-press', 'seated-db-press', 'machine-shoulder-press',
   'seated-db-lateral-raise', 'machine-lateral-raise', 'reverse-pec-deck', 'prone-t-raise', 'y-raise',
   'incline-db-curl', 'preacher-curl', 'db-preacher-curl', 'spider-curl', 'concentration-curl',
-  'skull-crusher', 'db-skull-crusher', 'barbell-skull-crusher',
+  'skull-crusher', 'db-skull-crusher', 'barbell-skull-crusher', 'db-tate-press',
   'lat-pulldown', 'neutral-grip-pulldown', 'chest-supported-row', 'seal-row',
   'side-lying-abduction', 'side-lying-adduction', 'adductor-squeeze', 'dead-bug', 'hollow-hold', 'reverse-crunch', 'v-up',
 ])

@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { adaptOpenDraft, loadDraft, type GymDraft } from '../../lib/gym/draft'
+import { adaptOpenDraft, GYM_WRITER_KEY, loadDraft, type GymDraft } from '../../lib/gym/draft'
 import type { GymLocation } from '../../lib/gym/types'
 import { useStore } from '../../lib/store'
 import { WorkoutWriter } from '../WorkoutWriter'
@@ -23,7 +23,7 @@ export function GymWorkoutGate({ draft, location, replacing, onClose }: { draft:
     const source = replace ? draft : latest ?? draft
     return { ...adaptOpenDraft(source, draft.avoidJoints ?? [], (draft.volumeFactor ?? 1) <= 0.6, placeFor(source)), epoch }
   }
-  return <WorkoutWriter ownerKey="planchelab.gymWriter" load={open} onClose={onClose}>
+  return <WorkoutWriter ownerKey={GYM_WRITER_KEY} load={open} onClose={onClose}>
     {(source, owns) => <GymPlayer draft={source} location={placeFor(source)} onClose={onClose} canEdit={owns} />}
   </WorkoutWriter>
 }

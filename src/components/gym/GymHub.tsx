@@ -6,7 +6,7 @@ import { buildGymSession, FOCUS_LABEL, type GymFocus, type PlannedExercise } fro
 import type { Joint } from '../../data/gym/catalog'
 import type { BodyRegion } from '../../types'
 import { draftConflictLine, draftContents, EXTRA_SESSION_LINE, leftOutLine, openDraftFor, resumeLine } from '../../lib/gym/sessionLines'
-import { adaptOpenDraft, conservative, latestPartialToday, loadDraft, prefillReps, previousSets, resumePartial, type GymDraft } from '../../lib/gym/draft'
+import { adaptOpenDraft, conservative, draftItemFromPlan, latestPartialToday, loadDraft, QUICK_LOG_NAME, resumePartial, saveDraft, type GymDraft } from '../../lib/gym/draft'
 import { AFTER_OPENER_WARM_UP_MIN, gymToday, MIN_GYM_MINUTES, skillFamily, skillRequest, soreJoints } from '../../lib/plan/planner'
 import { weekForChoice } from '../../lib/plan/currentWeek'
 import { dayStage, gymPlaceLine, gymPreset, openerLine, remainingLifts, resolveGymPlace, steerInput, type GymEntry, type GymPreset } from '../../lib/plan/screens'
@@ -15,9 +15,10 @@ import { useDayMarks, useNextBlock } from '../../lib/plan/nextBlock'
 import { useTodayChoice } from '../../lib/plan/todayChoice'
 import { useToday } from '../../lib/useToday'
 import type { AppState, SkillId, WorkoutRequest } from '../../types'
-import { countWord, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, comparablePerformance, prescribedCount } from '../../lib/gym/progression'
+import { countWord, FIRST_ESTIMATE_NOTE, gymRecords, isFirstEstimate, prescribedCount } from '../../lib/gym/progression'
 import { defaultGym, defaultPrefs, newGymSessionId, newLocation } from '../../lib/gym/state'
-import { entryLoad, formatLoad, unitFor } from '../../lib/gym/units'
+import { formatLoad, unitFor } from '../../lib/gym/units'
+import { focusFromName } from '../../lib/gym/focus'
 import { Icon } from '../Icon'
 import { Button, Card, CardTitle, EmptyState, Sheet, ToggleChip } from '../ds'
 import { GymWorkoutGate } from './GymWorkoutGate'
@@ -27,7 +28,7 @@ import { LocationEditor } from './LocationEditor'
 import { PullupStartingSet } from './PullupStartingSet'
 import { ExerciseHistory } from './ExerciseHistory'
 import { bodyweightCapacity } from '../../lib/gym/bodyweight'
-import { canReplanGym, GYM_PLAN_REVISION, outdatedGymPlan, replanGymDraft, untouchedGymPlan } from '../../lib/gym/replan'
+import { canReplanGym, GYM_PLAN_REVISION, gymWriterBusy, outdatedGymPlan, regeneratedPlan, replanGymDraft, untouchedGymPlan } from '../../lib/gym/replan'
 import { GymHistory } from './GymHistory'
 import { GymExerciseGuide } from './ExerciseGuide'
 
@@ -142,6 +143,8 @@ export function GymHub({
   const opener = skipOpener ? undefined : offeredOpener
   const liftMinutes = block?.minutes ?? minutes - (opener?.minutes ?? 0)
   const warmUpMin = block?.warmUpMin ?? (opener || liftsNext ? AFTER_OPENER_WARM_UP_MIN : undefined)
+  // "Regenerate today's plan" builds the plan again from scratch, whatever was computed before.
+  const [regenerated, setRegenerated] = useState(0)
   const plan = useMemo(
     () =>
       gym && location && limits && resolvedFocus
@@ -165,9 +168,80 @@ export function GymHub({
             now: Date.now(),
           })
         : null,
-    [gym, location, liftMinutes, resolvedFocus, youth, limits, warmUpMin, capacity, sore],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [gym, location, liftMinutes, resolvedFocus, youth, limits, warmUpMin, capacity, sore, regenerated],
   )
   const records = useMemo(() => (gym ? gymRecords(gym.sessions, location?.id) : {}), [gym, location?.id])
+
+  /**
+   * An open plan nothing has been done in, built again by the current generator for its own day: the same day
+   * type and place, the minutes it was built for and the limits its check-in set. Null when anything is logged.
+   */
+  const rebuildUntouched = (open: GymDraft): GymDraft | null => {
+    const place = gym?.locations.find((l) => l.id === open.locationId)
+    const day = focusFromName(open.name)
+    if (!gym || !place || !day || !untouchedGymPlan(open)) return null
+    const now = Date.now()
+    const budget = open.planMinutes ?? liftMinutes
+    const warm = open.planMinutes !== undefined ? open.warmUpMin : warmUpMin
+    const goals = open.goals ?? gym.prefs?.goals
+    const built = buildGymSession({
+      location: place,
+      capacity,
+      minutes: budget,
+      focus: day,
+      musclesOff: open.musclesOff ?? limits?.musclesOff ?? gym.prefs?.musclesOff ?? [],
+      avoidJoints: [...new Set([...(open.avoidJoints ?? []), ...sore.joints])],
+      volumeFactor: open.volumeFactor ?? 1,
+      ...(warm !== undefined ? { warmUpMin: warm } : {}),
+      favoriteAt: gym.favoriteAt,
+      sessions: gym.sessions,
+      ratings: gym.ratings,
+      youth,
+      ...(goals ? { goals } : {}),
+      ...steerInput(limits ?? {}, gym.prefs?.musclesPriority),
+      now,
+    })
+    if (!built.fits) return null
+    return regeneratedPlan(open, { name: built.name, items: built.items.map((it) => draftItemFromPlan(it, place, gym.sessions)),
+      planMinutes: budget, ...(warm !== undefined ? { warmUpMin: warm } : {}) }, now)
+  }
+  /** Replace the stored plan only if it is still the one read: a set logged in another tab always wins. */
+  const replaceUntouched = (open: GymDraft, next: GymDraft): boolean => {
+    const stored = loadDraft(state.epoch)
+    if (gymWriterBusy() || !stored || JSON.stringify(stored) !== JSON.stringify(open)) return false
+    saveDraft(next)
+    setResumable(next)
+    return true
+  }
+  // A plan an older generator built, with nothing done in it, is rebuilt with the current logic as soon as it is
+  // seen; a workout with any logged set is left exactly as it is.
+  useEffect(() => {
+    if (!resumable || running || pending || !outdatedGymPlan(resumable)) return
+    const next = rebuildUntouched(resumable)
+    if (next && replaceUntouched(resumable, next)) {
+      pushToast(`Your open ${next.name} plan was rebuilt with the updated workout builder. Nothing you logged has changed.`, 'info')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumable, running, pending])
+  const regenerateToday = () => {
+    const open = loadDraft(state.epoch)
+    if (open && untouchedGymPlan(open)) {
+      const next = rebuildUntouched(open)
+      if (next && replaceUntouched(open, next)) {
+        pushToast(`Today’s ${next.name} plan was regenerated. Nothing you logged has changed.`, 'info')
+        return
+      }
+      if (gymWriterBusy()) {
+        pushToast('Your workout is open in another tab. Regenerate it from there.', 'info')
+        return
+      }
+    }
+    setRegenerated((n) => n + 1)
+    pushToast(open && !untouchedGymPlan(open)
+      ? 'Today’s plan was regenerated. Your open workout keeps its logged sets as they are.'
+      : 'Today’s plan was regenerated with the current workout builder.', 'info')
+  }
 
   // A session planned on the Today card asks the pain check, then starts.
   useEffect(() => {
@@ -196,28 +270,7 @@ export function GymHub({
     )
   }
 
-  const toDraftItem = (it: PlannedExercise) => {
-    const ex = GYM_EXERCISE_BY_ID[it.exerciseId]
-    const unit = unitFor(ex, location)
-    const load = it.suggestion.kg !== undefined ? entryLoad(it.suggestion.kg, unit) : undefined
-    return {
-      exerciseId: it.exerciseId,
-      plan: it.plan,
-      suggestion: it.suggestion,
-      restSec: it.restSec,
-      ...(it.pairedWith ? { pairedWith: it.pairedWith } : {}),
-      unit,
-      ...(() => {
-        const previous = previousSets(gym.sessions, it.exerciseId, location.id, unit)
-        return previous ? { previous } : {}
-      })(),
-      sets: Array.from({ length: it.sets }, (_, i) => ({
-        ...(load !== undefined ? { load } : {}),
-        reps: prefillReps(it.plan, it.suggestion, comparablePerformance(gym.sessions, it.exerciseId, location.id)?.sets[i]?.reps),
-        done: false,
-      })),
-    }
-  }
+  const toDraftItem = (it: PlannedExercise) => draftItemFromPlan(it, location, gym.sessions)
 
   /** After the pain check: record what hurts, steer round it, and start. */
   const launch = (joints: Joint[], kind: 'none' | 'niggle' | 'pain') => {
@@ -339,12 +392,13 @@ export function GymHub({
     // Pain named now caps the day; otherwise the plan's own factor stands — a push
     // day's extra set was once clamped away here, so it never reached the lifts.
     const volumeFactor = Math.min(base.volumeFactor, previous?.volumeFactor ?? Infinity, kind === 'pain' ? 0.6 : Infinity)
+    const planMinutes = p?.minutes ?? (previous ? liftMinutes : minutes)
     const built = pending.empty
       ? null
       : buildGymSession({
           location,
           capacity,
-          minutes: p?.minutes ?? (previous ? liftMinutes : minutes),
+          minutes: planMinutes,
           favoriteAt: gym.favoriteAt,
           ...(base.focus ? { focus: base.focus } : {}),
           sessions: gym.sessions,
@@ -365,10 +419,11 @@ export function GymHub({
     }
     const fresh: GymDraft = {
       id: newGymSessionId(),
-      ...(built ? { planRevision: GYM_PLAN_REVISION } : {}),
+      ...(built ? { planRevision: GYM_PLAN_REVISION, planMinutes, ...(warmUpMin !== undefined ? { warmUpMin } : {}) } : {}),
       startedAt: Date.now(),
       locationId: location.id,
-      name: built?.name ?? 'Gym session',
+      // An empty start is a quick log: the athlete picks each exercise as they go.
+      name: built?.name ?? QUICK_LOG_NAME,
       items: (built?.items ?? []).map(toDraftItem),
       ...(avoidJoints.length ? { avoidJoints } : {}),
       ...(musclesOff.length ? { musclesOff } : {}),
@@ -578,10 +633,10 @@ export function GymHub({
         ) : (
           <p className="mt-4 rounded-control bg-raised p-3 text-footnote text-ink2">
             {sore.joints.length
-              ? `Nothing for this focus at ${location.name} leaves your ${sore.joints.map((j) => j.replace('-', ' ')).join(' and ')} alone today. Pick another focus, or start an empty session.`
+              ? `Nothing for this focus at ${location.name} leaves your ${sore.joints.map((j) => j.replace('-', ' ')).join(' and ')} alone today. Pick another focus, or use Quick log to choose your own exercises.`
               : plan && !plan.fits
-                ? `${minutes} minutes is not enough for a block of this focus with its warm-up and rests. Pick more time, or start an empty session.`
-                : `Nothing to program for this focus with what ${location.name} has. Add equipment, pick another focus, or start an empty session.`}
+                ? `${minutes} minutes is not enough for a block of this focus with its warm-up and rests. Pick more time, or use Quick log to choose your own exercises.`
+                : `Nothing to program for this focus with what ${location.name} has. Add equipment, pick another focus, or use Quick log to choose your own exercises.`}
           </p>
         )}
         {plan?.dropped.length ? <p className="mt-2 text-caption text-ink3">{leftOutLine(plan.dropped, liftMinutes, opener?.minutes)}</p> : null}
@@ -591,6 +646,10 @@ export function GymHub({
           </p>
         ))}
         {plan && plan.items.length ? <p className="mt-1 text-caption text-ink3">About {plan.estimatedMin} minutes with warm-up and rests.</p> : null}
+        <Button variant="ghost" className="mt-2" onClick={regenerateToday}
+          aria-label="Regenerate today’s plan with the current workout builder. Logged sets are never changed.">
+          Regenerate today’s plan
+        </Button>
         {resumable && !outdatedGymPlan(resumable) ? (
           <div className="mt-4 space-y-2">
             <p className="rounded-control bg-raised p-3 text-footnote text-ink2">{resumeLine(resumable)}</p>
@@ -613,8 +672,9 @@ export function GymHub({
           <Button size="lg" disabled={!plan?.items.length} onClick={() => setPending({ empty: false, ...(remaining ? { preset: { ...remaining, placeId: location.id } } : {}) })}>
             Start session
           </Button>
-          {!resumable && <Button size="lg" variant="secondary" onClick={() => setPending({ empty: true })}>
-            Empty
+          {!resumable && <Button size="lg" variant="secondary" onClick={() => setPending({ empty: true })}
+            aria-label="Quick log: start an empty workout and add each exercise as you go">
+            Quick log
           </Button>}
         </div>
         )}

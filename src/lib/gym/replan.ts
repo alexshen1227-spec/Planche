@@ -1,11 +1,18 @@
 import { GYM_EXERCISE_BY_ID } from '../../data/gym/exercises'
 import { dayKey } from '../time'
-import type { DraftItem, GymDraft } from './draft'
+import { GYM_WRITER_KEY, type DraftItem, type GymDraft } from './draft'
 import { focusFromName } from './focus'
 import { partnerIndex, restoreSetRest } from './pairedSets'
 
-// Change this when a new prescription should take precedence over an untouched saved plan.
-export const GYM_PLAN_REVISION = 1
+/**
+ * The workout generator's version, stored on every plan it builds (`GymDraft.planRevision`). Bump it whenever the
+ * builder would pick different exercises or sets for the same inputs: an open plan that nothing has been done in
+ * (`untouchedGymPlan`) and that an older version built is rebuilt with the new logic when the Gym screen opens
+ * (`regeneratedPlan`). Saved sessions, logged sets and a workout in progress are never rebuilt.
+ * 1: stale workouts are rebuilt. 2 (2026-11-24): Push and Pull days fund their main compounds first, curls never
+ * outnumber the back compounds, and the pull-up is the default vertical pull.
+ */
+export const GYM_PLAN_REVISION = 2
 
 export function untouchedGymPlan(draft: GymDraft): boolean {
   return !!focusFromName(draft.name) && !draft.edited && draft.resumeFrom === undefined && !draft.stopReport &&
@@ -16,6 +23,26 @@ export function untouchedGymPlan(draft: GymDraft): boolean {
 
 export function outdatedGymPlan(draft: GymDraft): boolean {
   return (draft.planRevision ?? 0) < GYM_PLAN_REVISION && untouchedGymPlan(draft)
+}
+
+/** Another tab's player holds the open workout (`WorkoutWriter`): it is that tab's to change. */
+export function gymWriterBusy(): boolean {
+  try {
+    return Boolean(localStorage.getItem(GYM_WRITER_KEY))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * A plan nothing has been done in, rebuilt by the current generator: the same workout (its id, day type, place and
+ * the limits its check-in set) with today's exercises, not yet started. Null when anything was logged or edited in
+ * the old one — work in progress is never rebuilt behind the athlete's back — or when the new build is empty.
+ */
+export function regeneratedPlan(old: GymDraft, fresh: Pick<GymDraft, 'name' | 'items'> & Partial<GymDraft>, now: number): GymDraft | null {
+  if (!untouchedGymPlan(old) || !fresh.items.length) return null
+  return { ...old, ...fresh, id: old.id, locationId: old.locationId, startedAt: now, planRevision: GYM_PLAN_REVISION,
+    ...(old.epoch ? { epoch: old.epoch } : {}) }
 }
 
 /** Work already started belongs to the day and place where it was performed. */

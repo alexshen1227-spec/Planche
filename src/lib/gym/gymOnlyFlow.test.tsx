@@ -77,8 +77,11 @@ it.each([false, true])('refreshes an old home Pull draft against the current 28-
   saveDraft({ id: 'old-pull', name: 'Pull', startedAt: at, locationId: place.id, items: [item] })
   render(<StoreProvider><Train startWorkout={vi.fn()} /></StoreProvider>)
   const click = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }))
-  click(logged ? 'Rebuild remaining exercises' : 'Start session')
-  click(/nothing hurts.*start/i)
+  // A plan nothing was done in is rebuilt as the Gym screen opens; one with a logged set waits for the athlete.
+  if (logged) {
+    click('Rebuild remaining exercises')
+    click(/nothing hurts.*start/i)
+  }
   const revised = loadDraft()!
   expect(revised.planRevision).toBe(GYM_PLAN_REVISION)
   const pending = revised.items.filter((it) => it.sets.some((s) => !s.done))

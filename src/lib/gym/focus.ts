@@ -30,14 +30,15 @@ function exerciseFamily(ex: Pick<GymExercise, 'pattern' | 'primary'>): Family | 
   return ex.pattern === 'throw' && ex.primary.includes('chest') ? 'push' : families[ex.pattern]
 }
 
-/** Free-weight pullovers deliberately train the chest as well as the lats. Keep them
- * available on upper and full-body days, and let a strict Pull day use a row or pulldown. */
+/** The day type comes first: a Push or Pull day takes only movements whose main muscles are that day's (core goes
+ * on either). Free-weight pullovers deliberately train the chest as well as the lats, so nothing that works the
+ * chest at all goes on a Pull day; they stay available on upper and full-body days. */
 export function fitsGymFocus(focus: GymFocus, ex: Pick<GymExercise, 'pattern' | 'primary' | 'explosive'> & Partial<Pick<GymExercise, 'secondary'>>): boolean {
   if (focus === 'full') return true
   if (focus === 'athletic') return Boolean(ex.explosive || ['carry', 'jump', 'throw', 'drill', 'sprint', 'squat', 'hinge'].includes(ex.pattern))
   if ((focus === 'push' || focus === 'pull') && !ex.primary.every((m) => splitMuscles[focus].has(m))) return false
   if (ex.pattern === 'core-flexion' || ex.pattern === 'core-anti-rotation') return true
-  if (focus === 'pull' && ex.pattern === 'straight-arm-pull' && ex.secondary?.includes('chest')) return false
+  if (focus === 'pull' && ex.secondary?.some((m) => m === 'chest' || m === 'chest-upper')) return false
   const family = exerciseFamily(ex)
   return focus === 'upper' ? family === 'pull' || family === 'push' : family === focus
 }

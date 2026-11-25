@@ -33,28 +33,36 @@ it('keeps the row and gives zero chest work on a 28-minute home Pull day with ch
   }
 })
 
-it('trims Pull isolation work before either main pulling movement', () => {
-  const lifts = exercises(plan('pull', ['biceps', 'abs'], { minutes: 22 }))
-  expect(lifts.map((e) => e.pattern)).toEqual(expect.arrayContaining(['horizontal-pull', 'vertical-pull', 'biceps']))
-  expect(lifts.map((e) => e.pattern)).not.toContain('rear-delt')
+it('gives a short Pull day to both main pulls before any isolation work, whatever the priorities', () => {
+  const workout = plan('pull', ['biceps', 'abs'], { minutes: 22 })
+  expect(exercises(workout).map((e) => e.pattern)).toEqual(['vertical-pull', 'horizontal-pull'])
+  expect(workout.items.map((it) => it.sets)).toEqual([3, 3])
+  expect(workout.estimatedMin).toBeLessThanOrEqual(22)
 })
 
-it('uses a weekly curl suggestion to choose which accessory fits a short Pull day', () => {
-  const accessories = (minutes: number) => {
-    const workout = buildGymSession({ location: home, focus: 'pull', minutes, sessions: [],
-      ...steerInput({ priority: ['biceps'] }) })
-    return exercises(workout).map((e) => e.pattern).filter((p) => p === 'biceps' || p === 'rear-delt')
+it('lets a weekly curl suggestion order the accessories once the main pulls have four sets each', () => {
+  const build = (minutes: number) => buildGymSession({ location: home, focus: 'pull', minutes, sessions: [],
+    ...steerInput({ priority: ['biceps'] }) })
+  const accessories = (minutes: number) => exercises(build(minutes)).map((e) => e.pattern).filter((p) => p === 'biceps' || p === 'rear-delt')
+  expect(accessories(22)).toEqual([])
+  expect(accessories(35)).toEqual(['biceps'])
+  expect(build(35).items.filter((it) => !GYM_EXERCISE_BY_ID[it.exerciseId].compound).every((it) => it.sets <= 4)).toBe(true)
+  expect(accessories(60).slice(0, 2)).toEqual(['biceps', 'rear-delt'])
+  for (const minutes of [35, 60]) {
+    expect(build(minutes).items.filter((it) => GYM_EXERCISE_BY_ID[it.exerciseId].compound).map((it) => it.sets), `${minutes}`).toEqual([4, 4])
   }
-  expect(accessories(22)).toEqual(['biceps'])
-  expect(accessories(60).slice(0, 2)).toEqual(['rear-delt', 'biceps'])
 })
 
 it('keeps the main Push presses ahead of accessory priorities and excludes pulling muscles', () => {
   const workout = plan('push', ['side-delts', 'triceps', 'abs', 'lats', 'rear-delts'])
   const lifts = exercises(workout)
-  expect(lifts.map((e) => e.pattern)).toEqual(expect.arrayContaining(['horizontal-press', 'vertical-press', 'lateral-raise']))
+  expect(lifts.map((e) => e.pattern)).toEqual(['horizontal-press', 'vertical-press'])
+  expect(workout.items.map((it) => it.sets)).toEqual([4, 4])
   expect(lifts.flatMap((e) => e.primary).filter((m) => ['lats', 'upper-back', 'rear-delts', 'biceps', 'forearms', 'traps'].includes(m))).toEqual([])
   expect(workout.estimatedMin).toBeLessThanOrEqual(28)
+  // Seven more minutes go to the athlete's own priority, the side delts, before any other accessory.
+  const longer = exercises(plan('push', ['side-delts', 'triceps', 'abs', 'lats', 'rear-delts'], { minutes: 35 }))
+  expect(longer.map((e) => e.pattern)).toEqual(['horizontal-press', 'vertical-press', 'lateral-raise'])
 })
 
 it.each([[9, 1], [12, 0.8]])('keeps a row when only one compound fits (%i minutes at %s volume)', (minutes, volumeFactor) => {

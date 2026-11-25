@@ -27,7 +27,11 @@ const build = (focus: GymFocus, minutes: number, extra: Partial<Parameters<typeo
 const credit = (b: ReturnType<typeof buildGymSession>, m: string) =>
   b.items.reduce((n, i) => n + (ex(i.exerciseId).primary.includes(m as never) ? i.sets : ex(i.exerciseId).secondary.includes(m as never) ? i.sets / 2 : 0), 0)
 
-/** Short-day reference prescriptions, including the available introductory alternatives to barbell bench variants. */
+/**
+ * Short-day reference prescriptions, including the available introductory alternatives to barbell bench variants.
+ * Push and Pull rows were re-pinned on 2026-11-24 for the athlete's rules: the main compounds reach four sets
+ * before any other movement gets time, and a lighter day gives up the other movements first.
+ */
 const BEFORE: Record<string, string> = {
   'full|20|1|y': '17:goblet-squatx2,db-bench-pressx2',
   'full|20|1|a': '17:goblet-squatx2,db-bench-pressx2',
@@ -65,38 +69,38 @@ const BEFORE: Record<string, string> = {
   'lower|45|1|a': '43:goblet-squatx3,romanian-deadliftx3,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex2,hanging-leg-raisex2',
   'lower|45|0.8|y': '35:goblet-squatx2,romanian-deadliftx2,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex2,hanging-leg-raisex1',
   'lower|45|0.8|a': '35:goblet-squatx2,romanian-deadliftx2,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex2,hanging-leg-raisex1',
-  'push|20|1|y': '17:db-bench-pressx2,db-shoulder-pressx2',
-  'push|20|1|y|s': '19:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx2',
-  'push|20|1|a': '17:db-bench-pressx2,db-shoulder-pressx2',
-  'push|20|1|a|s': '19:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx2',
-  'push|20|0.8|y': '14:db-bench-pressx2,db-shoulder-pressx1',
-  'push|20|0.8|y|s': '17:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx1',
-  'push|20|0.8|a': '14:db-bench-pressx2,db-shoulder-pressx1',
-  'push|20|0.8|a|s': '17:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx1',
-  'push|30|1|y': '26:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx2,db-lateral-raisex2',
+  'push|20|1|y': '19:db-bench-pressx3,db-shoulder-pressx2',
+  'push|20|1|y|s': '17:cable-incline-pressx2,db-lateral-raisex3',
+  'push|20|1|a': '19:db-bench-pressx3,db-shoulder-pressx2',
+  'push|20|1|a|s': '17:cable-incline-pressx2,db-lateral-raisex3',
+  'push|20|0.8|y': '17:db-bench-pressx2,db-shoulder-pressx2',
+  'push|20|0.8|y|s': '15:cable-incline-pressx2,db-lateral-raisex2',
+  'push|20|0.8|a': '17:db-bench-pressx2,db-shoulder-pressx2',
+  'push|20|0.8|a|s': '15:cable-incline-pressx2,db-lateral-raisex2',
+  'push|30|1|y': '27:db-bench-pressx4,db-shoulder-pressx4',
   'push|30|1|y|s': '23:cable-incline-pressx2,db-lateral-raisex3,low-high-cable-flyx3',
-  'push|30|1|a': '26:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx2,db-lateral-raisex2',
+  'push|30|1|a': '27:db-bench-pressx4,db-shoulder-pressx4',
   'push|30|1|a|s': '23:cable-incline-pressx2,db-lateral-raisex3,low-high-cable-flyx3',
-  'push|30|0.8|y': '21:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx1,db-lateral-raisex1',
+  'push|30|0.8|y': '22:db-bench-pressx3,db-shoulder-pressx3',
   'push|30|0.8|y|s': '19:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx2',
-  'push|30|0.8|a': '21:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx1,db-lateral-raisex1',
+  'push|30|0.8|a': '22:db-bench-pressx3,db-shoulder-pressx3',
   'push|30|0.8|a|s': '19:cable-incline-pressx2,db-lateral-raisex2,low-high-cable-flyx2',
-  'push|45|1|y': '43:db-bench-pressx3,db-shoulder-pressx3,incline-db-pressx3,db-lateral-raisex2,diamond-push-upx2,low-high-cable-flyx2',
-  'push|45|1|a': '43:db-bench-pressx3,db-shoulder-pressx3,incline-db-pressx3,db-lateral-raisex2,diamond-push-upx2,low-high-cable-flyx2',
-  'push|45|0.8|y': '35:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx2,db-lateral-raisex2,diamond-push-upx2,low-high-cable-flyx2',
-  'push|45|0.8|a': '35:db-bench-pressx2,db-shoulder-pressx2,incline-db-pressx2,db-lateral-raisex2,diamond-push-upx2,low-high-cable-flyx2',
-  'pull|20|1|y': '17:pull-upx2,db-rowx2',
-  'pull|20|1|a': '17:pull-upx2,db-rowx2',
-  'pull|20|0.8|y': '14:pull-upx2,db-rowx1',
-  'pull|20|0.8|a': '14:pull-upx2,db-rowx1',
-  'pull|30|1|y': '28:pull-upx2,db-rowx2,straight-arm-pulldownx2,face-pullx2,barbell-curlx2',
-  'pull|30|1|a': '28:pull-upx2,db-rowx2,straight-arm-pulldownx2,face-pullx2,barbell-curlx2',
-  'pull|30|0.8|y': '24:pull-upx2,db-rowx2,straight-arm-pulldownx2,face-pullx1,barbell-curlx1',
-  'pull|30|0.8|a': '24:pull-upx2,db-rowx2,straight-arm-pulldownx2,face-pullx1,barbell-curlx1',
-  'pull|45|1|y': '45:pull-upx3,db-rowx3,straight-arm-pulldownx3,face-pullx3,barbell-curlx3,hanging-leg-raisex3',
-  'pull|45|1|a': '45:pull-upx3,db-rowx3,straight-arm-pulldownx3,face-pullx3,barbell-curlx3,hanging-leg-raisex3',
-  'pull|45|0.8|y': '37:pull-upx3,db-rowx3,straight-arm-pulldownx2,face-pullx2,barbell-curlx2,hanging-leg-raisex2',
-  'pull|45|0.8|a': '37:pull-upx3,db-rowx3,straight-arm-pulldownx2,face-pullx2,barbell-curlx2,hanging-leg-raisex2',
+  'push|45|1|y': '45:db-bench-pressx4,db-shoulder-pressx4,incline-db-pressx3,db-lateral-raisex3,low-high-cable-flyx2',
+  'push|45|1|a': '45:db-bench-pressx4,db-shoulder-pressx4,incline-db-pressx3,db-lateral-raisex3,low-high-cable-flyx2',
+  'push|45|0.8|y': '37:db-bench-pressx4,db-shoulder-pressx4,incline-db-pressx2,db-lateral-raisex2',
+  'push|45|0.8|a': '37:db-bench-pressx4,db-shoulder-pressx4,incline-db-pressx2,db-lateral-raisex2',
+  'pull|20|1|y': '19:pull-upx2,db-rowx3',
+  'pull|20|1|a': '19:pull-upx2,db-rowx3',
+  'pull|20|0.8|y': '17:pull-upx2,db-rowx2',
+  'pull|20|0.8|a': '17:pull-upx2,db-rowx2',
+  'pull|30|1|y': '27:pull-upx4,db-rowx4',
+  'pull|30|1|a': '27:pull-upx4,db-rowx4',
+  'pull|30|0.8|y': '22:pull-upx3,db-rowx3',
+  'pull|30|0.8|a': '22:pull-upx3,db-rowx3',
+  'pull|45|1|y': '45:pull-upx4,db-rowx4,straight-arm-pulldownx3,face-pullx3,barbell-curlx3',
+  'pull|45|1|a': '45:pull-upx4,db-rowx4,straight-arm-pulldownx3,face-pullx3,barbell-curlx3',
+  'pull|45|0.8|y': '35:pull-upx4,db-rowx4,straight-arm-pulldownx2,face-pullx2',
+  'pull|45|0.8|a': '35:pull-upx4,db-rowx4,straight-arm-pulldownx2,face-pullx2',
   'athletic|20|1|y': '13:landing-stickx3,goblet-squatx3',
   'athletic|20|1|a': '18:jump-squatx3,explosive-push-upx3,goblet-squatx2',
   'athletic|20|0.8|y': '12:landing-stickx2,goblet-squatx3',
@@ -132,7 +136,7 @@ describe('1. long days use their minutes', () => {
       }
     }
     expect(seen).toHaveLength(72)
-    // A steered short day too (the week's pressing spared): up to 30 minutes it is what it was.
+    // A steered short day too (the week's pressing spared): the light presses keep their dose, the rest is pinned.
     for (const minutes of [20, 30]) {
       const b = build('push', minutes, { spare: ['front-delts', 'triceps', 'chest'] })
       expect(`${b.estimatedMin}:${b.items.map((i) => `${i.exerciseId}x${i.sets}`).join(',')}`).toBe(BEFORE[`push|${minutes}|1|a|s`])
@@ -168,12 +172,15 @@ describe('1. long days use their minutes', () => {
     for (const m of ['chest', 'chest-upper', 'side-delts', 'triceps', 'front-delts']) expect(credit(plain, m), m).toBeLessThanOrEqual(14)
     // With little room, the first movement added is for the priority muscle, not the one the session gives least.
     const firstAdded = (b: ReturnType<typeof buildGymSession>) => b.notes.find((n) => n.includes('time left'))!.replace(/^.*so /, '').split(', ')[0].replace(/ w(as|ere) added.*$/, '')
+    // A Pull day's rows and pull-ups take four sets each before anything else (2026-11-24), so the spare time a
+    // fill can use starts later than the 60 minutes it once did.
     for (const [muscle, name] of [['biceps', 'Hammer curl'], ['rear-delts', 'Incline Y raise'], ['abs', 'Hanging knee raise']] as const) {
-      const b = build('pull', 60, { priority: [muscle] })
+      const b = build('pull', 70, { priority: [muscle] })
       expect(firstAdded(b), muscle).toBe(name)
       expect(ex(b.items.find((i) => ex(i.exerciseId).name === name)!.exerciseId).primary).toContain(muscle)
     }
-    expect(firstAdded(build('pull', 60))).toBe('Chest-supported dumbbell row')
+    // Without a priority the muscle the session gives least comes first; the back is already at its ceiling.
+    expect(firstAdded(build('pull', 75))).toBe('Pallof press')
     const upper = build('upper', 120, { priority: ['rear-delts'] })
     expect(credit(upper, 'rear-delts')).toBeGreaterThan(credit(build('upper', 120), 'rear-delts'))
   })

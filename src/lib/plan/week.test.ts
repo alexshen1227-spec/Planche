@@ -17,7 +17,7 @@ import { startingState } from '../skillLoop'
 import { readDay } from '../weekPlan'
 import { conservative } from '../gym/draft'
 import { weekStart } from '../time'
-import { familyEvents, familyWorkingSets, HARD_GYM_FAMILY_SETS, LIGHT_PRESS_SPARE, skillSetLoading } from './load'
+import { familyEvents, familyWorkingSets, HARD_GYM_FAMILY_SETS, LIGHT_PRESS_SPARE, skillSetLoading, volumeTarget } from './load'
 import { focusFamilies, gymOpener, MIN_GYM_MINUTES, MIN_SKILL_MINUTES, openerMinutes, openerMinutesFor, REST_SLACK_HOURS, skillRequest } from './planner'
 import { missingSkillKit } from '../skills'
 import type { StepId, Weekday, WeekPlan } from '../../types'
@@ -181,8 +181,14 @@ describe('the week plan', () => {
   it('meets every big muscle’s weekly sets across the week when the days allow it', () => {
     const six = athlete(['planche'], { goals: { strength: 3, power: 0, physique: 2, skills: 0, endurance: 1 }, minutesByDay: [0, 60, 60, 60, 60, 60, 60] })
     const week = planWeekAhead(six, MON)
-    for (const m of ['chest', 'front-delts', 'triceps', 'lats', 'upper-back', 'biceps', 'quads', 'glutes', 'hamstrings'] as const) {
+    // This athlete has never lifted, so the week's visits are capped at a few sets. Since 2026-11-24 a Push or Pull
+    // day spends those sets on its main compounds first (the athlete's rule), and a pull-up or row counts half a set
+    // for the biceps: the arms can come up short in this first week. When they do, the week says so.
+    for (const m of ['chest', 'front-delts', 'lats', 'upper-back', 'quads', 'glutes', 'hamstrings'] as const) {
       expect(week.shortfall, `${m}: ${week.weekTotal[m] ?? 0} sets across ${week.days.map((d) => d.plan.gym?.focus).join()}`).not.toContain(m)
+    }
+    for (const m of ['triceps', 'biceps'] as const) {
+      if ((week.weekTotal[m] ?? 0) < volumeTarget(m, six.gym!.prefs!)[0]) expect(week.shortfall, m).toContain(m)
     }
     // Four of the days cannot do it: what is left short is said, and the big muscles are not first.
     const four = planWeekAhead(fourDays, MON)
