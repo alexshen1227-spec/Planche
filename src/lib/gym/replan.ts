@@ -14,9 +14,13 @@ import { partnerIndex, restoreSetRest } from './pairedSets'
  * version only as a finisher), about two isolation exercises a muscle, lifting capped near an hour, and spare time
  * raises existing exercises to four sets before adding new ones. 4: accessory slots are shared out by the athlete's
  * ratings, with a new exercise tried now and then (`rotation.ts`), and movements are classified by the muscles they
- * actually train (wrist curls are forearm work, not a biceps slot).
+ * actually train (wrist curls are forearm work, not a biceps slot). 5 (2026-11-26, the generator stress test,
+ * `planInvariants.ts`): every day keeps one set of each movement it is named for before any of them goes, and names it
+ * by a compound; no muscle past its session ceiling on any day; at most two exercises of one pattern; one finisher a
+ * lift; trunk work after the compounds; the time fit reads the order the session runs in; a lift a stall set aside
+ * is not another lift's back-off; and a day that cannot have a movement it is named for says why.
  */
-export const GYM_PLAN_REVISION = 4
+export const GYM_PLAN_REVISION = 5
 
 export function untouchedGymPlan(draft: GymDraft): boolean {
   return !!focusFromName(draft.name) && !draft.edited && draft.resumeFrom === undefined && !draft.stopReport &&

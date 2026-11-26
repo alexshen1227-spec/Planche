@@ -1224,6 +1224,35 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
     and the kickback `hinge`. A curl is any `biceps`-pattern movement
     (`isBicepsIsolation`), so reverse curls count against the curl cap and
     give the biceps half a set.
+  - **The generator's invariants (2026-11-26, the athlete's bug hunt).**
+    `lib/gym/planInvariants.ts` checks one built plan against the request
+    (`planViolations`: day type, exclusions, gates, duplicates and doses,
+    order, time, light and hard days, notes) and the same request built again
+    with one thing changed (`relationalViolations`: a lighter day is never
+    more work, a harder one never less, more time never fewer sets,
+    determinism). `lib/gym/planStress.ts` generates the athletes: every focus
+    × time × place × day factor (`matrixCase`), then seeded random priorities,
+    steers, exclusions, ratings, capacities, opener warm-ups and closed-loop
+    histories (`simulateHistory` logs the builder's own sessions back).
+    `gym/planInvariants.test.ts` holds the sweep at zero, shows each rule
+    firing on a broken plan, and pins each bug the sweep found;
+    `plan/plannerInvariants.test.ts` runs the planner's own gym days (planche
+    days, light pressing, openers, a sport week) through the same checker.
+    What it fixed: every day keeps one set of each movement it is named for
+    before any of them goes, named by a compound (`namedIn`; a scapular
+    pull-up once stood for an upper day's pull); `holdCeilings` keeps every
+    muscle under its session ceiling on every day type, before the time fit
+    and after the last added set; at most `PATTERN_LIMIT` (2) exercises of
+    one pattern; trunk work after the compounds (`fatigueOrder`); the time
+    fit reads the order the session runs in (`putInOrder`); one finisher a
+    lift; a build-up limit takes only its excess; a note about a pick
+    (`pickNotes`) is said only while that movement is planned, and the
+    left-out list is read off the finished plan; a lift a stall set aside
+    (`setAside`) never returns as another lift's back-off; and a day that
+    cannot have a movement it is named for says why (`refusal`).
+    `GYM_PLAN_REVISION` 5. Add an invariant with any new rule; a failing seed
+    rebuilds with `caseFor(seed)`, and `STRESS_N=20000` widens the sweep.
+    The report is `docs/generator-stress-2026-11-26.md`.
 
 ## The design system (Phase 5)
 

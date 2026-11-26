@@ -453,7 +453,13 @@ describe('mixed handstand and front lever weeks', () => {
       expect(current.practiceDays.ninety).toBe(3)
       expect(compact?.practiceDays.ninety).toBe(3)
       expect(compact!.remainingSkillSets.ninety).toBeLessThan(current.remainingSkillSets.ninety!)
-      expect(compact!.muscleSets.quads).toBeGreaterThan(current.muscleSets.quads!)
+      // The shorter opener's minutes buy lifting for the athlete's priorities: none of them loses a set, and together they
+      // gain. It once read the quads alone, which gained only while a full-body day's pull could be a scapular pull-up;
+      // since the day's pull is its row (the generator stress test, 2026-11-26) the minutes go to the hamstrings and back.
+      const priorities = gym.prefs!.musclesPriority
+      for (const m of priorities) expect(compact!.muscleSets[m] ?? 0, m).toBeGreaterThanOrEqual(current.muscleSets[m] ?? 0)
+      const funded = (o: typeof current) => priorities.reduce((n, m) => n + (o.muscleSets[m] ?? 0), 0)
+      expect(funded(compact!)).toBeGreaterThan(funded(current))
       const shorter = { ...trained, gym: { ...trained.gym, prefs: { ...gym.prefs!, shortSkillOpeners: true as const } } }
       const week = weekForChoice(shorter, {}, now)
       expect(week.weekTotal).toEqual(compact!.muscleSets)

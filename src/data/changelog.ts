@@ -18,6 +18,18 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-11-26',
+    title: 'Gym sessions that keep their main lifts and say what is missing',
+    area: 'training',
+    notes: [
+      'A short session keeps one set of each lift its day is named for before any of them goes. A 20-minute full-body day used to drop its pull, and a 20-minute upper day could end as one incline press. A lighter day now trims accessories before it trims those lifts.',
+      'When your switched-off muscles, a rested joint or the equipment rule out every press, pull or squat a day is named for, the plan now says so and why, instead of quietly showing a Push day with no pushing.',
+      'No muscle gets more than about ten sets in a session on any day type, or twelve for one of your priorities. Before, a priority muscle could get an extra set on every exercise that trained it. A session also never has three exercises of the same movement, like three Romanian deadlift variations.',
+      'Core work comes after the big lifts. Notes such as “takes its place” only mention exercises that are still in the plan. Estimated times no longer run a minute over in short sessions.',
+      'Open plans you have not started yet are rebuilt with these rules the next time you open the Gym tab.',
+    ],
+  },
+  {
     date: '2026-11-24',
     title: 'Swap or add any exercise, see how to do it, and rate them',
     area: 'training',

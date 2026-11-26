@@ -33,13 +33,16 @@ const credit = (b: ReturnType<typeof buildGymSession>, m: string) =>
  * Push and Pull rows were re-pinned on 2026-11-24 for the athlete's rules: the main compounds reach four sets
  * before any other movement gets time, and a lighter day gives up the other movements first. Then again for the
  * second set of rules: no muscle past its session ceiling (a lat pullback beside a pull-up and a row gets two sets),
- * and spare minutes raise the day's own exercises to four sets before anything new.
+ * and spare minutes raise the day's own exercises to four sets before anything new. Re-pinned on 2026-11-26 by the
+ * generator stress test: a 20-minute full-body day keeps one set of its pull rather than dropping it (the movements a
+ * day is named for are trimmed last), and a lighter 45-minute lower day takes its last set off the calf raise rather
+ * than the squat it is named for.
  */
 const BEFORE: Record<string, string> = {
-  'full|20|1|y': '17:goblet-squatx2,db-bench-pressx2',
-  'full|20|1|a': '17:goblet-squatx2,db-bench-pressx2',
-  'full|20|0.8|y': '14:goblet-squatx2,db-bench-pressx1',
-  'full|20|0.8|a': '14:goblet-squatx2,db-bench-pressx1',
+  'full|20|1|y': '19:goblet-squatx2,db-bench-pressx2,pull-upx1',
+  'full|20|1|a': '19:goblet-squatx2,db-bench-pressx2,pull-upx1',
+  'full|20|0.8|y': '17:goblet-squatx2,db-bench-pressx1,pull-upx1',
+  'full|20|0.8|a': '17:goblet-squatx2,db-bench-pressx1,pull-upx1',
   'full|30|1|y': '27:goblet-squatx2,db-bench-pressx2,pull-upx2,romanian-deadliftx2',
   'full|30|1|a': '27:goblet-squatx2,db-bench-pressx2,pull-upx2,romanian-deadliftx2',
   'full|30|0.8|y': '22:goblet-squatx2,db-bench-pressx2,pull-upx1,romanian-deadliftx1',
@@ -70,8 +73,8 @@ const BEFORE: Record<string, string> = {
   'lower|30|0.8|a': '26:goblet-squatx2,romanian-deadliftx2,bulgarian-split-squatx2,leg-curlx1,leg-extensionx1',
   'lower|45|1|y': '43:goblet-squatx3,romanian-deadliftx3,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex2,hanging-leg-raisex2',
   'lower|45|1|a': '43:goblet-squatx3,romanian-deadliftx3,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex2,hanging-leg-raisex2',
-  'lower|45|0.8|y': '35:goblet-squatx2,romanian-deadliftx2,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex2,hanging-leg-raisex1',
-  'lower|45|0.8|a': '35:goblet-squatx2,romanian-deadliftx2,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex2,hanging-leg-raisex1',
+  'lower|45|0.8|y': '36:goblet-squatx3,romanian-deadliftx2,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex1,hanging-leg-raisex1',
+  'lower|45|0.8|a': '36:goblet-squatx3,romanian-deadliftx2,bulgarian-split-squatx2,leg-curlx2,leg-extensionx2,standing-calf-raisex1,hanging-leg-raisex1',
   'push|20|1|y': '19:db-bench-pressx3,db-shoulder-pressx2',
   'push|20|1|y|s': '19:cable-incline-pressx2,db-lateral-raisex4',
   'push|20|1|a': '19:db-bench-pressx3,db-shoulder-pressx2',

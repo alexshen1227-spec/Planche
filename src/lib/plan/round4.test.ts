@@ -190,6 +190,7 @@ describe('one decision path for today (round four)', () => {
     expect(paired, 'picked gym days that keep the pairing').toBeGreaterThan(0)
   })
 
+  // Twelve generated athletes, each planned on several days: heavy, like the other fuzz tests in this folder.
   it('holds for athletes nobody designed: whenever the coach says gym, the gym pick and the Gym tab say the same', () => {
     let checked = 0
     for (let seed = 1; seed <= 12; seed++) {
@@ -215,7 +216,7 @@ describe('one decision path for today (round four)', () => {
       }
     }
     expect(checked).toBeGreaterThan(20)
-  })
+  }, 120_000)
 })
 
 describe('the week steers by weekly volume (round four)', () => {

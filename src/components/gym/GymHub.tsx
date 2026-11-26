@@ -640,7 +640,11 @@ export function GymHub({
               ? `Nothing for this focus at ${location.name} leaves your ${sore.joints.map((j) => j.replace('-', ' ')).join(' and ')} alone today. Pick another focus, or use Quick log to choose your own exercises.`
               : plan && !plan.fits
                 ? `${minutes} minutes is not enough for a block of this focus with its warm-up and rests. Pick more time, or use Quick log to choose your own exercises.`
-                : `Nothing to program for this focus with what ${location.name} has. Add equipment, pick another focus, or use Quick log to choose your own exercises.`}
+                // The plan says when your own settings (a switched-off muscle, a rested joint, a rating) ruled the focus out:
+                // the equipment is not the reason then, and the notes below give the real one.
+                : plan?.notes.some((n) => n.startsWith('No ') && n.includes('every option here'))
+                  ? 'Nothing for this focus today, for the reasons below. Pick another focus, or use Quick log to choose your own exercises.'
+                  : `Nothing to program for this focus with what ${location.name} has. Add equipment, pick another focus, or use Quick log to choose your own exercises.`}
           </p>
         )}
         {plan?.dropped.length ? <p className="mt-2 text-caption text-ink3">{leftOutLine(plan.dropped, plan.cappedAt ?? liftMinutes, opener?.minutes)}</p> : null}
