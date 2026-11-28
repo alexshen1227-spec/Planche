@@ -91,3 +91,34 @@ it('starts a quick log with the exercise list open', () => {
   fireEvent.click(screen.getByRole('button', { name: /^Dumbbell lat pullback/ }))
   expect(loadDraft()!.items.map((it) => it.exerciseId)).toEqual(['db-lat-pullback'])
 })
+
+/**
+ * Which of two fixed layers at the top of <body> paints over the other: the higher z-index, or at an equal one the
+ * later in the document. jsdom lays nothing out, so this reads the layer classes the way a browser stacks them.
+ */
+const zIndexOf = (el: Element) => Number(/(?:^|\s)z-\[?(\d+)\]?(?=\s|$)/.exec(el.className)?.[1] ?? 0)
+const paintsOver = (a: Element, b: Element) => zIndexOf(a) !== zIndexOf(b)
+  ? zIndexOf(a) > zIndexOf(b)
+  : Boolean(b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING)
+
+it('shows a quick log’s exercise list over the player, and the app scrolls again once the log is closed', () => {
+  setUp(0)
+  const root = document.body.appendChild(Object.assign(document.createElement('div'), { id: 'root' }))
+  render(<StoreProvider><Train startWorkout={vi.fn()} /></StoreProvider>, { container: root })
+  fireEvent.click(screen.getByRole('button', { name: /^Quick log/ }))
+  fireEvent.click(screen.getByRole('button', { name: /nothing hurts.*start/i }))
+  const player = screen.getByRole('dialog', { name: 'Gym session' })
+  const list = screen.getByRole('dialog', { name: 'Add an exercise' }).parentElement!
+  // The list opens with the player, so React puts it into the page before the player: only its layer keeps it on
+  // top. At the player's old layer it was drawn underneath, and "Add an exercise" showed nothing.
+  expect(paintsOver(list, player)).toBe(true)
+  expect(root.hasAttribute('inert')).toBe(true)
+  // Closed with the list still up: two sheets, then the whole player, gone in one go.
+  fireEvent.click(screen.getByRole('button', { name: 'Finish' }))
+  fireEvent.click(screen.getByRole('button', { name: /nothing to save/ }))
+  expect(screen.queryByRole('dialog', { name: 'Gym session' })).toBeNull()
+  expect(loadDraft()).toBeNull()
+  expect(document.body.style.overflow).toBe('')
+  expect(root.hasAttribute('inert')).toBe(false)
+  expect(root.getAttribute('aria-hidden')).toBeNull()
+})

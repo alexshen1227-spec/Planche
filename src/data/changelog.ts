@@ -18,6 +18,15 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    date: '2026-11-27',
+    title: 'Quick log shows its exercise list again',
+    area: 'app',
+    notes: [
+      'Starting a quick log opens the exercise list on top of the workout, as it should. It used to open hidden behind the workout screen, so pressing Add an exercise seemed to do nothing.',
+      'Closing a quick log, or any workout, no longer leaves the app stuck: the page scrolls again straight away instead of only after a reload.',
+    ],
+  },
+  {
     date: '2026-11-26',
     title: 'Gym sessions that keep their main lifts and say what is missing',
     area: 'training',

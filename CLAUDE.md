@@ -1261,6 +1261,16 @@ across on its own. The PNG icons come from `scripts/make-icons.mjs`.
   `--dur*`, `--ease-out`, `--ease-spring` (a `linear()` spring). Primary
   buttons are one solid accent; no decorative gradients. Everything that
   moves is off under `prefers-reduced-motion`.
+- Layers (`components/layers.ts`): full-screen players sit at `LAYER.screen`
+  (z-40), every Sheet and Modal at `LAYER.dialog` (z-50), toasts and banners
+  above. A dialog open on a portalled screen's first render is inserted into
+  <body> *before* the screen, so at an equal z-index the screen covers it —
+  the quick log's exercise list once opened invisible under the gym player.
+  The page's scroll lock and the inert app behind a player are counted holds
+  (`holdPageScroll`, `holdInert`), never saved and restored per layer: React
+  cleans up a closing screen's dialogs parent first, in document order, and
+  the last restore had left the app unable to scroll. Pinned in
+  `layers.test.tsx` and the quick log test in `gym/regenerate.test.tsx`.
 - Components in `src/components/ds/` (Button, Card, Sheet, SegmentedControl,
   ToggleChip, Stepper, Metric, CountUp, RingTimer, SwipeRow, EmptyState,
   ErrorState, Skeleton, BadgeGlyph). New UI uses them; `Sheet` shares

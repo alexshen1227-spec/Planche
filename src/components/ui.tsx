@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
+import { holdPageScroll, LAYER } from './layers'
 
 /**
  * Focus trap, Escape, scroll lock and focus return for any dialog. Shared by
@@ -45,7 +46,6 @@ export function useDialogFocus(
   useEffect(() => {
     if (!open) return
     const previouslyFocused = returnFocusRef.current
-    const previousOverflow = document.body.style.overflow
     // Media elements are focus stops too. Without them the pinned YouTube
     // embed and the clip's own video controls were skipped by Tab, and a
     // mouse user who clicked into the iframe could Tab straight out of the
@@ -84,11 +84,12 @@ export function useDialogFocus(
       }
     }
     window.addEventListener('keydown', onKey)
-    document.body.style.overflow = 'hidden'
+    // Counted, not saved and restored here: dialogs do not always close in the reverse of the order they opened.
+    const releaseScroll = holdPageScroll()
     return () => {
       window.clearTimeout(focusTimer)
       window.removeEventListener('keydown', onKey)
-      document.body.style.overflow = previousOverflow
+      releaseScroll()
       // Only if it is still in the document: a trigger that unmounted while
       // the modal was open would otherwise drop focus silently onto <body>.
       if (previouslyFocused?.isConnected) previouslyFocused.focus()
@@ -119,7 +120,7 @@ export function Modal({
   // which would place this overlay down the page instead of over the viewport.
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 backdrop-blur-sm sm:items-center sm:p-6 animate-fade"
+      className={`fixed inset-0 ${LAYER.dialog} flex items-end justify-center bg-black/55 backdrop-blur-sm sm:items-center sm:p-6 animate-fade`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}

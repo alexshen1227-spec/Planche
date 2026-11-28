@@ -4,6 +4,7 @@ import { getClipBlob } from '../lib/clips'
 import { replayKeypointsAtTime, type PoseTrack } from '../lib/poseForm'
 import type { FormIssue } from '../types'
 import { Icon } from './Icon'
+import { holdPageScroll } from './layers'
 
 type LoadState =
   | { kind: 'loading' }
@@ -368,8 +369,7 @@ function ClipReviewOverlay({
   onCloseRef.current = onClose
 
   useEffect(() => {
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    const releaseScroll = holdPageScroll()
     closeRef.current?.focus()
     const step = (direction: 1 | -1) => {
       const video = videoRef.current
@@ -418,7 +418,7 @@ function ClipReviewOverlay({
     }
     window.addEventListener('keydown', onKey, true)
     return () => {
-      document.body.style.overflow = previousOverflow
+      releaseScroll()
       window.removeEventListener('keydown', onKey, true)
     }
   }, [])

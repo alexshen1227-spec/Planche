@@ -174,7 +174,8 @@ describe('rating every exercise', () => {
     fireEvent.click(screen.getByRole('button', { name: 'All' }))
     while (screen.queryByRole('button', { name: 'Show more exercises' })) fireEvent.click(screen.getByRole('button', { name: 'Show more exercises' }))
     expect(screen.getAllByRole('group', { name: /^How much you like / })).toHaveLength(GYM_EXERCISES.length)
-  })
+  // Role queries over the whole bank are slow in jsdom: about 20s alone, right at the default limit, before any change.
+  }, 120_000)
 })
 
 describe('the ratings list order', () => {

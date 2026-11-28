@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../Icon'
+import { LAYER } from '../layers'
 import { useDialogFocus } from '../ui'
 import { prefersReducedMotion } from './motion'
 
@@ -76,7 +77,7 @@ export function Sheet({
 
   return createPortal(
     <div
-      className="ds-backdrop fixed inset-0 z-50 flex items-end justify-center bg-black/55 sm:items-center sm:p-6"
+      className={`ds-backdrop fixed inset-0 ${LAYER.dialog} flex items-end justify-center bg-black/55 sm:items-center sm:p-6`}
       data-closing={closing}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()

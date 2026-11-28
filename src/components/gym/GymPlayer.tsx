@@ -21,6 +21,7 @@ import { easierDragonFlag } from '../../lib/gym/bodyweightSteps'
 import { continueGymSession, doubtedLoad, newGymSessionId } from '../../lib/gym/state'
 import { gymBadges, type GymBadge } from '../../lib/plan/weekly'
 import { Icon } from '../Icon'
+import { holdInert, LAYER } from '../layers'
 import { finishBlocker, nextTimeLines, unfinishedLine } from '../../lib/gym/sessionLines'
 import { askStillApplies, parseTypedLoad, type LoadAsk } from '../../lib/gym/loadAsk'
 import { BadgeGlyph, Button, CountUp, RingTimer, Sheet, SwipeRow } from '../ds'
@@ -44,18 +45,7 @@ function buzz(pattern: number | number[]) {
  * screen readers. The player and its sheets are portalled to <body>, outside #root, so they stay live.
  */
 export function useInertBackground(root: HTMLElement | null = typeof document === 'undefined' ? null : document.getElementById('root')) {
-  useEffect(() => {
-    if (!root) return
-    const wasInert = root.hasAttribute('inert')
-    const wasHidden = root.getAttribute('aria-hidden')
-    root.setAttribute('inert', '')
-    root.setAttribute('aria-hidden', 'true')
-    return () => {
-      if (!wasInert) root.removeAttribute('inert')
-      if (wasHidden === null) root.removeAttribute('aria-hidden')
-      else root.setAttribute('aria-hidden', wasHidden)
-    }
-  }, [root])
+  useEffect(() => (root ? holdInert(root) : undefined), [root])
 }
 
 function mmss(sec: number): string {
@@ -563,7 +553,7 @@ export function GymPlayer({
   }
 
   const body = (
-    <div ref={playerRef} className="fixed inset-0 z-50 flex flex-col bg-bg text-ink" role="dialog" aria-label="Gym session">
+    <div ref={playerRef} className={`fixed inset-0 ${LAYER.screen} flex flex-col bg-bg text-ink`} role="dialog" aria-label="Gym session">
       <header className="flex items-center gap-3 border-b border-line bg-surface px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
         <div className="min-w-0 flex-1">
           <p className="truncate text-title3 font-semibold">{draft.name}</p>

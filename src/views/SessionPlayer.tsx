@@ -4,6 +4,7 @@ import { WorkoutWriter } from '../components/WorkoutWriter'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { useInertBackground } from '../components/gym/GymPlayer'
+import { LAYER } from '../components/layers'
 import { skillHoldSecOf } from '../lib/progressTotals'
 import {
   countedNote,
@@ -3152,7 +3153,7 @@ export function SessionPlayer({
       aria-hidden={layerOpen ? true : undefined}
       inert={layerOpen ? true : undefined}
       tabIndex={-1}
-      className="fixed inset-0 z-40 overflow-y-auto overscroll-contain bg-bg outline-none"
+      className={`fixed inset-0 ${LAYER.screen} overflow-y-auto overscroll-contain bg-bg outline-none`}
     >
       <div className="app-ambient min-h-full pb-8">
         {header}
